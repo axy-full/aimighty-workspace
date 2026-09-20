@@ -2,7 +2,8 @@
 import { IconArrowLeft, IconSearch } from "@/components/Icons";
 import { ParticlMark } from "@/components/ParticlMark";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { formatCredits, initialsOf } from "@/lib/workspace/format";
+import { useSession } from "@/lib/session";
+import { creditsLabel, initialsOf } from "@/lib/workspace/format";
 import { getSuite, pageDef } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 
@@ -30,6 +31,11 @@ export function MobileHeader({
 }) {
   const ws = useWorkspace();
   const { state } = ws;
+  /* The unit is the rate table's, never the balance's (lib/price.ts): a
+     workspace on its own keys pays its vendors in dollars and holds no
+     credits at all, and the slot says that rather than inventing a figure. */
+  const { rates } = useSession();
+  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit);
   const suite = getSuite(state.suite);
   const level = state.mobile;
   const onProjects = level === "projects";
@@ -75,9 +81,20 @@ export function MobileHeader({
           <span className="pxm-nav-sub">{sub}</span>
         </span>
       </button>
-      {account?.credits ? (
-        <span className="pxm-credits" data-functional-label="" data-testid="mobile-credits">{formatCredits(account.credits.balance)}</span>
-      ) : null}
+      {/* The balance, at every level. It is one node, always mounted: a
+          missing figure shows the neutral placeholder creditsLabel() picks,
+          because a phone that hides what a screen is about to spend is worse
+          than one that admits it does not know yet. */}
+      <span
+        className="pxm-credits"
+        data-functional-label=""
+        data-testid="mobile-credits"
+        data-known={credits.known ? "" : undefined}
+        title={credits.title}
+        aria-label={credits.known ? `${credits.text} — ${credits.title.toLowerCase()}` : credits.title}
+      >
+        <span className="pxm-credits-figure">{credits.text}</span>
+      </span>
       <button type="button" className="pxm-hit pxm-hit-control" data-testid="mobile-search" aria-label="Search" onClick={() => ws.setSheet("search")}>
         <IconSearch />
       </button>

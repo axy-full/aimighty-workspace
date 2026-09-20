@@ -72,7 +72,11 @@
 }
 .pxw-phone .pxm-nav-title {
   flex: 1;
-  min-width: 0;
+  /* 44px, not 0: the title is a target, and it shares the row with the credit
+     balance, which never shrinks (a truncated balance is a wrong balance). A
+     long figure therefore ellipsises the title — which it already does — and
+     never squeezes this button under the 44×44 floor. */
+  min-width: 44px;
   display: block;
   min-height: 44px;
   padding: 4px 6px;
@@ -98,6 +102,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The balance, or the neutral placeholder standing in for one: mono, 12px on
+   the floor, never shrunk and never hidden — spending happens on every screen,
+   so this slot is on every screen (05-mobile, "Header"). */
 .pxw-phone .pxm-credits {
   font-family: var(--pxw-mono);
   font-size: 12px;
