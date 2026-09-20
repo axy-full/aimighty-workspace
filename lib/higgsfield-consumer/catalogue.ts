@@ -153,18 +153,62 @@ export function mediaKindForRole(role: string): ConnectedMediaKind {
   return "image";
 }
 /**
- * The `data.type` spellings an echoed reference may carry. `media_input` is
- * what the live account actually sends on every entry observed; the per-kind
- * words are the older spellings the contracts used to demand.
+ * The `data.type` spellings an echoed reference has actually been OBSERVED to
+ * carry on the live account, with the date each was recorded. This list is
+ * documentation and test material; the accepting rule is
+ * `echoedMediaTypeAccepted` below, which is deliberately wider than the list.
+ *
+ * - `media_input` — 20 September 2026, image references on `seedance_2_5`,
+ *   `nano_banana_2_lite` and `seedream_v5_pro`.
+ * - `video_input` — 20 September 2026, the single `video` reference on a
+ *   completed `reframe` job (`show_generations(type=video)`).
+ * - `audio_input` — 20 September 2026, the audio reference on completed
+ *   `seed_audio` jobs (`show_generations(type=audio)`).
+ * - `image`, `video`, `audio` — the bare kinds the contracts originally
+ *   demanded. Never observed under `data.type`; kept accepted because the
+ *   provider does use the bare kinds under `role`, so a connection that spells
+ *   the type the same way is plausible and must not cost us a paid job.
  */
-export const ECHOED_MEDIA_TYPES = Object.freeze(["media_input", "image", "video", "audio"] as const);
+export const ECHOED_MEDIA_TYPES = Object.freeze([
+  "media_input",
+  "video_input",
+  "audio_input",
+  "image_input",
+  "image",
+  "video",
+  "audio",
+] as const);
+/** The bare media kinds, accepted under `data.type` and under `role`. */
+const ECHOED_MEDIA_KINDS: readonly string[] = ["image", "video", "audio"];
+/**
+ * `<word>_input`: the family the provider actually uses. Bounded on purpose —
+ * lowercase words and digits joined by single underscores, 40 characters at
+ * most, and it must end in `_input` — so it admits every per-kind spelling
+ * (`media_input`, `video_input`, `audio_input`, `image_input`, and any
+ * `<kind>_input` a future model introduces) without admitting arbitrary junk.
+ */
+const ECHOED_MEDIA_INPUT = /^[a-z0-9]+(?:_[a-z0-9]+)*_input$/;
+/**
+ * Is this echoed `data.type` one of the spellings we are willing to see?
+ *
+ * WHY A FAMILY AND NOT A LIST. On 20 September 2026 a fixed list of four
+ * spellings, written from one sample of `media_input`, refused a completed
+ * `reframe` job whose echo said `video_input` — the same mistake as #251 and
+ * #253, an assumption recorded from one sample and generalised. `data.type` is
+ * a LABEL and no guarantee ever rested on it: the binding is `data.id`, the
+ * uuid of the import we made, compared exactly at the index we submitted it.
+ * So the rule is bounded rather than enumerated, and a spelling we have not
+ * met can never again discard a job we have already paid for.
+ */
+export const echoedMediaTypeAccepted = (value: string) =>
+  value.length <= 40 && (ECHOED_MEDIA_KINDS.includes(value) || ECHOED_MEDIA_INPUT.test(value));
 /**
  * Does one echoed `params.medias[i]` entry correspond to the reference WE
  * submitted at that index?
  *
- * RECORDED FROM LIFE — free, read-only `show_generations(type=video,size=12)`
- * on 20 September 2026, no job submitted, US$0.00 spent. Twelve consecutive
- * completed `seedance_2_5` jobs carrying 3-4 reference files each echo exactly
+ * RECORDED FROM LIFE — free, read-only `show_generations` on 20 September 2026,
+ * no job submitted, US$0.00 spent. Twelve consecutive completed `seedance_2_5`
+ * jobs carrying 3-4 reference files each echo exactly
  *
  *     { "role": "image",
  *       "data": { "id": "<uuid>", "type": "media_input", "url": "https://…" } }
@@ -172,6 +216,20 @@ export const ECHOED_MEDIA_TYPES = Object.freeze(["media_input", "image", "video"
  * `jq '[.items[].params.medias[]?.role] | unique'` returns `["image"]` and the
  * same over `.data.type` returns `["media_input"]`; the entry keys are exactly
  * `["data","role"]` and the data keys exactly `["id","type","url"]`.
+ *
+ * RE-READ 20 September 2026, over the whole video and audio history rather
+ * than the seedance jobs alone. Two more spellings are live:
+ *
+ *     reframe  aa426b31-…  { "role": "video",
+ *                            "data": { "id": "851d883d-…",
+ *                                      "type": "video_input", "url": "…mp4" } }
+ *     seed_audio           { "role": "audio",
+ *                            "data": { "id": "…", "type": "audio_input", … } }
+ *
+ * so `jq '[.items[].params.medias[]?.data.type] | unique'` over the video
+ * history now returns `["media_input","video_input"]`. `data.type` is therefore
+ * per-kind on some models and generic on others, and is matched by family
+ * (`echoedMediaTypeAccepted`) rather than by a list of samples.
  *
  * `seedance_2_5` declares the roles `start_image`, `end_image`,
  * `image_references`, `video_references`, `audio_references` and NOT `image`,
@@ -181,13 +239,14 @@ export const ECHOED_MEDIA_TYPES = Object.freeze(["media_input", "image", "video"
  * name verbatim is therefore still possible.) Comparing the echo against the
  * slot name we sent refused every job with reference media; comparing it
  * against the kind, and accepting the slot name too, matches both readings.
+ * `role` accepts `<kind>_input` as well, for symmetry with `data.type`: every
+ * live role so far is a bare kind, and the widening is precautionary.
  *
  * The binding that carries the guarantee is unchanged and exact: `data.id` is
  * the uuid of the import we made and submitted, at the index we submitted it.
  * The role and `data.type` are labels, and no guarantee ever rested on them:
- * both are checked only against the small set of spellings the provider is
- * known to use, so that a label we have not observed can never again discard a
- * job we paid for.
+ * both are checked only against bounded families of spellings, so that a label
+ * we have not observed can never again discard a job we paid for.
  */
 export function consumerEchoedMediaMatches(
   entry: unknown,
@@ -196,7 +255,13 @@ export function consumerEchoedMediaMatches(
 ): boolean {
   if (!object(entry)) return false;
   const kind = mediaKindForRole(sent.role);
-  if (entry.role !== undefined && entry.role !== kind && entry.role !== sent.role) return false;
+  if (
+    entry.role !== undefined &&
+    entry.role !== kind &&
+    entry.role !== sent.role &&
+    entry.role !== `${kind}_input`
+  )
+    return false;
   if (!object(entry.data)) {
     if (options.requireData) return false;
     return entry.value === undefined || entry.value === sent.value;
@@ -204,7 +269,7 @@ export function consumerEchoedMediaMatches(
   if (entry.data.id !== sent.value) return false;
   return (
     entry.data.type === undefined ||
-    (typeof entry.data.type === "string" && (ECHOED_MEDIA_TYPES as readonly string[]).includes(entry.data.type))
+    (typeof entry.data.type === "string" && echoedMediaTypeAccepted(entry.data.type))
   );
 }
 function parameter(value: unknown): ConnectedParameter {

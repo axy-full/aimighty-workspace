@@ -155,10 +155,12 @@ function generationEvidence(
   if (p.medias != null) {
     if (!Array.isArray(p.medias) || p.medias.length !== params.medias.length)
       return null;
-    // The provider echoes the media KIND under `role` and `media_input` under
-    // `data.type` — recorded from life; see consumerEchoedMediaMatches. This
-    // check used to demand the slot name we sent AND a `video`/`image` type,
-    // so it refused every completed transform job we had already paid for.
+    // The provider echoes the media KIND under `role` and a `<kind>_input`
+    // spelling under `data.type` (`media_input`, `video_input`, `audio_input`
+    // all recorded from life) — see consumerEchoedMediaMatches. This check used
+    // to demand the slot name we sent AND a `video`/`image` type, so it refused
+    // every completed transform job we had already paid for; a fixed list of
+    // four type spellings then still refused any VIDEO reference.
     // `data` is still required here, and `data.id` is still exact.
     if (p.medias.some((m, i) => !consumerEchoedMediaMatches(m, params.medias[i], { requireData: true })))
       return null;

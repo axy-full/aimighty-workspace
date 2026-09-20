@@ -313,6 +313,52 @@ test("the roles the transform path SENDS are the model's declared slots, so they
   // provider echoes back, which is what the collector now compares.
   expect(params.medias.map((m) => mediaKindForRole(m.role))).toEqual(["video", "image"]);
 });
+test("the live `video_input` data.type on a VIDEO reference still collects the paid transform job", () => {
+  // RECORDED FROM PRODUCTION, 20 September 2026, free read-only
+  // `show_generations(type=video)`. Reframe job aa426b31-437c-439f-aca2-93d6bd23a6c9
+  // echoed its source media as
+  //   { "role": "video",
+  //     "data": { "id": "851d883d-…", "type": "video_input", "url": "…mp4" } }
+  // `jq '[.items[].params.medias[]?.data.type] | unique'` over that history
+  // returns ["media_input","video_input"], and the audio history adds
+  // "audio_input". Against origin/main this test fails: ECHOED_MEDIA_TYPES was
+  // the fixed list ["media_input","image","video","audio"], so any generation
+  // or transform carrying a VIDEO reference was paid for and then discarded.
+  const echo = (type: string | undefined, id?: string) => ({
+    generation: {
+      id: jobId,
+      status: "completed",
+      model: params.model,
+      type: "video",
+      results: { rawUrl: "https://media.example/original.mp4" },
+      params: {
+        ...params,
+        medias: params.medias.map((m, i) => ({
+          role: m.role === "video_references" ? "video" : "image",
+          data: {
+            id: i === 0 && id !== undefined ? id : m.value,
+            ...(type === undefined ? {} : { type }),
+            url: "https://media.example/input",
+          },
+        })),
+      },
+    },
+  });
+  // Every spelling recorded live, the bare kinds the contract used to demand,
+  // and an entry with no type at all: all qualify.
+  for (const type of ["video_input", "media_input", "audio_input", "image_input", "video", "image", "audio", undefined])
+    expect(consumerGenjutsuOriginalResult(echo(type), jobId, params), String(type)).toEqual({
+      url: "https://media.example/original.mp4",
+    });
+  // The rule is bounded: a label outside the `<word>_input` family and outside
+  // the bare kinds still refuses, so the envelope cannot carry arbitrary junk.
+  for (const type of ["instruction", "input", "_input", "video input", "VIDEO_INPUT", "video-input", "media_input ", `${"a".repeat(64)}_input`])
+    expect(consumerGenjutsuOriginalResult(echo(type), jobId, params), JSON.stringify(type)).toBeNull();
+  // The binding that carries the guarantee is untouched: the media uuid we
+  // uploaded, at the index we sent it, and the job id we acknowledged.
+  expect(consumerGenjutsuOriginalResult(echo("video_input", other), jobId, params)).toBeNull();
+  expect(consumerGenjutsuOriginalResult(echo("video_input"), other, params)).toBeNull();
+});
 test("collection requires exact model/source settings and original HTTPS result, with unknown schema retained", () => {
   const accepted = {
     id: jobId,
