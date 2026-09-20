@@ -134,7 +134,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
         <div className="cv-bar !h-1.5 w-[220px]">
           {scenes.map((sc) => <span key={sc.n} className={inScene(sc.n).filter((s) => s.kind !== "type").reduce((a, s) => a + (s.planned ?? 0), 0) > sc.secs ? "is-over" : "is-picked"} style={{ flex: Math.max(1, sc.secs) }} />)}
         </div>
-        <span className="ak-sub !text-[12px]">Runtime is the sum of planned durations. Motion video bills 5s minimum, so every shot estimates at {money.price(takeCost(rates, 5))}.</span>
+        <span className="ak-sub !text-[12px]">Runtime is the sum of planned durations. Seedance bills 5s minimum, so every shot estimates at {money.price(takeCost(rates, 5))}.</span>
         <div className="ml-auto ak-cta is-bar"><button type="button" className="btn-primary" onClick={() => router.push("/atomik/shots")}>Build the shot list →</button></div>
       </div>
 

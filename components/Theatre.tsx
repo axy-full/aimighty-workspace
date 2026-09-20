@@ -509,10 +509,10 @@ export default function Theatre({
               <>
                 {["9:16", "1:1", "4:5"].map((r) => (
                   <button key={r} type="button" onClick={() => onStillTool("outpaint", gen, r)} className="chip !py-1.5 !text-[13px]"
-                    title={`Outpaint this still to ${r} — the new frame painted in`}>Outpaint {r}</button>
+                    title={`Outpaint this still to ${r} with Bria — the new frame painted in`}>Outpaint {r}</button>
                 ))}
                 <button type="button" onClick={() => onStillTool("cutout", gen)} className="chip !py-1.5 !text-[13px]"
-                  title="Lift the subject off its background — transparent behind it">Cut out</button>
+                  title="Lift the subject off its background with Bria — transparent behind it">Cut out</button>
               </>
             )}
             {onUse && (
@@ -527,11 +527,11 @@ export default function Theatre({
                 <button type="button" onClick={() => onEditExtend("extend", gen)} className="chip !py-1.5 !text-[13px]"
                   title="Continue this shot from its final frame">Extend</button>
                 <button type="button" onClick={() => onEditExtend("motion", gen)} className="chip !py-1.5 !text-[13px]"
-                  title="Give a still character this clip's movement — Kinetic 3.0 motion control">Motion</button>
+                  title="Give a still character this clip's movement — Kling 3.0 motion control">Motion</button>
                 <button type="button" onClick={() => onEditExtend("upscale", gen)} className="chip !py-1.5 !text-[13px]"
-                  title="Re-render this clip at up to 4K with Upscale 2">Upscale</button>
+                  title="Re-render this clip at up to 4K with Topaz Astra">Upscale</button>
                 <button type="button" onClick={() => onEditExtend("reframe", gen)} className="chip !py-1.5 !text-[13px]"
-                  title="Re-cut this clip to another aspect — 9:16, 1:1 — with Reframe 2">Reframe</button>
+                  title="Re-cut this clip to another aspect — 9:16, 1:1 — with Luma Ray 2">Reframe</button>
               </>
             )}
             {done && (

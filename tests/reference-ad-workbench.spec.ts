@@ -47,7 +47,7 @@ async function fixture(page: Page, compatible = true) {
       const base = { kind: 'video', resolutions: ['720p'], ratios: ['16:9', '9:16'], durations: [4, 7, 15] };
       return json({ models: [
         { ...base, id: 'fal-ai/kling-video/v3/standard', label: 'Kling without video references', family: 'kling-3', maxReferenceImages: 0, maxReferenceVideos: 0 },
-        ...(compatible ? [{ ...base, id: seedance, label: 'Motion 2.5', family: 'seedance-2', maxReferenceImages: 30, maxReferenceVideos: 10 }] : []),
+        ...(compatible ? [{ ...base, id: seedance, label: 'Seedance 2.5', family: 'seedance-2', maxReferenceImages: 30, maxReferenceVideos: 10 }] : []),
       ] });
     }
     if (path === '/api/generate' && request.method() === 'POST') {

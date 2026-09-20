@@ -203,7 +203,7 @@ test("the six paid plans each have a gate between their reads and their dispatch
   }
 });
 
-test("no vendor or competitor name appears in any plan copy, gate line or done line", async () => {
+test("no connected-account name appears in any plan copy, gate line or done line", async () => {
   const { fetcher } = backend();
   for (const ctx of [context(fetcher), { ...context(fetcher, null), projectId: null, productionId: null }]) {
     for (const page of PLAN_PAGES) {
@@ -218,8 +218,9 @@ test("no vendor or competitor name appears in any plan copy, gate line or done l
     const quote = await gate.executor.quote(context(fetcher), { developmentModel: "m", developmentRequestId: "r", agentRequestId: "r", astraRequestId: "requestid1" });
     expect(vendorNameIn(quote.line), `${page}: ${quote.line}`).toBeNull();
   }
-  expect(vendorNameIn("Rendered on Seedance 2.5")).toBe("Seedance");
-  expect(vendorNameIn("Motion 2.5 on the connected account")).toBeNull();
+  expect(vendorNameIn("Rendered on Higgsfield")).toBe("Higgsfield");
+  /* A direct model's real name is required copy, not a leak (see lib/vendorNames.ts). */
+  expect(vendorNameIn("Seedance 2.5 on the connected account")).toBeNull();
 });
 
 test("plan copy carries no fixture counts or dollar prices", () => {

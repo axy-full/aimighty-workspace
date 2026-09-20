@@ -22,7 +22,7 @@ export function videoReferenceProblem(model: Pick<ModelDef, "kind" | "label" | "
   if ((first.length || last.length) && (images.length || videos.length))
     return "First/last frames and reference media cannot be mixed. Choose No first frame to use references, or remove the other references.";
   if (model.family === "kling-3" && images.length)
-    return `${model.label} supports image frames, not ordinary image references. Choose Use as first frame, remove the image, or choose Motion 2.5 for references.`;
+    return `${model.label} supports image frames, not ordinary image references. Choose Use as first frame, remove the image, or choose Seedance 2.5 for references.`;
   if (images.length > model.maxReferenceImages) return `${model.label} accepts at most ${model.maxReferenceImages} image references.`;
   if (videos.length > model.maxReferenceVideos) return `${model.label} accepts at most ${model.maxReferenceVideos} video references.`;
   return null;

@@ -4,51 +4,52 @@ import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, displayModelName, type ModelDef
  * Engines as the Rig names and constrains them.
  *
  * Browser-safe: reads only the public catalogue in lib/models.ts (never
- * lib/vendorRates.ts). Neutral names only — no vendor appears in anything a
- * person reads (workspace brief, owner decision 5). Model ids stay what they
- * are, because an id is what is sent to the engine.
+ * lib/vendorRates.ts). Model ids stay what they are, because an id is what is
+ * sent to the engine.
  *
- * The long name of every catalogue engine comes from `displayModelName`
- * (lib/models.ts), the product's one display-name function; this module adds
- * only the Rig's short column and the capability-only audio names.
+ * Every long name comes from `displayModelName` (lib/models.ts), the product's
+ * one display-name function — so a directly integrated engine reads under its
+ * real name (owner decision, 20 September 2026). This module adds only the
+ * Rig's narrow ENGINE column, which abbreviates rather than renames.
  */
 
 export type EngineLabel = {
-  /** The Rig's ENGINE column: "2.5", "2.0", "Image 2". */
+  /** The Rig's ENGINE column, abbreviated to fit: "2.5", "2.0", "NB 2". */
   short: string;
-  /** Everywhere else: "Motion 2.5", "Image 2". */
+  /** Everywhere else, the real name: "Seedance 2.5", "Nano Banana 2". */
   long: string;
 };
 
 const FIXED: Record<string, EngineLabel> = {
-  "dreamina-seedance-2-5-260628": { short: "2.5", long: "Motion 2.5" },
-  "dreamina-seedance-2-0-260128": { short: "2.0", long: "Motion 2.0" },
-  "fal-ai/kling-video/v3/standard": { short: "K 3.0", long: "Kinetic 3.0" },
-  "fal-ai/kling-video/v3/pro": { short: "K 3.0 Pro", long: "Kinetic 3.0 Pro" },
-  "topaz/upscale/video/creative": { short: "Upscale", long: "Video upscale" },
-  "fal-ai/luma-dream-machine/ray-2-flash/reframe": { short: "Reframe", long: "Reframe" },
-  "fal-ai/topaz/upscale/image": { short: "Upscale", long: "Image upscale" },
-  "fal-ai/bria/expand": { short: "Expand", long: "Image expand" },
-  "fal-ai/bria/background/remove": { short: "Cutout", long: "Background cutout" },
-  "gemini-3-pro-image": { short: "Image Pro", long: "Image Pro" },
-  "gemini-3.1-flash-image": { short: "Image 2", long: "Image 2" },
+  "dreamina-seedance-2-5-260628": { short: "2.5", long: "Seedance 2.5" },
+  "dreamina-seedance-2-0-260128": { short: "2.0", long: "Seedance 2.0" },
+  "fal-ai/kling-video/v3/standard": { short: "K 3.0", long: "Kling 3.0" },
+  "fal-ai/kling-video/v3/pro": { short: "K 3.0 Pro", long: "Kling 3.0 Pro" },
+  "topaz/upscale/video/creative": { short: "Upscale", long: "Topaz Astra 2" },
+  "fal-ai/luma-dream-machine/ray-2-flash/reframe": { short: "Reframe", long: "Luma Ray 2" },
+  "fal-ai/topaz/upscale/image": { short: "Upscale", long: "Topaz Image Upscale" },
+  "fal-ai/bria/expand": { short: "Expand", long: "Bria Expand" },
+  "fal-ai/bria/background/remove": { short: "Cutout", long: "Bria Cutout" },
+  "gemini-3-pro-image": { short: "NB Pro", long: "Nano Banana Pro" },
+  "gemini-3.1-flash-image": { short: "NB 2", long: "Nano Banana 2" },
+  /* Connected-account surfaces keep neutral names (rule 2 in lib/vendorNames.ts). */
   "higgsfield-genjutsu-motion-transfer": { short: "Transfer", long: "Motion transfer" },
   "higgsfield-genjutsu-object-swap": { short: "Swap", long: "Object swap" },
   "higgsfield/marketing-studio-image": { short: "Marketing", long: "Marketing image" },
   marketing_studio_video: { short: "Marketing", long: "Marketing video" },
   "hf-soul-character": { short: "Identity", long: "Identity render" },
-  "fal-ai/flux-lora": { short: "Identity", long: "Identity still" },
+  "fal-ai/flux-lora": { short: "Identity", long: "Flux · Identity" },
 };
 
-/** Sound engines are named by capability only. */
+/** Sound engines: the column abbreviates by capability, the long name is the
+ *  engine's own. */
 function audioLabel(modelId: string): EngineLabel | null {
   if (!AUDIO_LABELS[modelId]) return null;
-  if (modelId === "eleven_sfx") return { short: "SFX", long: "Sound effects" };
-  if (modelId === "eleven_music") return { short: "Music", long: "Music" };
-  return { short: "Voice", long: "Voice" };
+  const short = modelId === "eleven_sfx" ? "SFX" : modelId === "eleven_music" ? "Music" : "Voice";
+  return { short, long: displayModelName(modelId) };
 }
 
-/** A neutral label for any model id; unknown or retired ids never leak their raw id. */
+/** A label for any model id; unknown or retired ids never leak their raw id. */
 export function engineLabel(modelId: string | null | undefined): EngineLabel {
   const id = modelId ?? "";
   const fixed = FIXED[id];

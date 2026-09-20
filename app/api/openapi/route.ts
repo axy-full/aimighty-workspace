@@ -72,7 +72,7 @@ export const GET = withTenant(async function GET(req: Request) {
                     duration: { type: "number", description: "Seconds. 5 is a good default." },
                     resolution: { type: "string", enum: ["480p", "720p", "1080p"] },
                     ratio: { type: "string", enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] },
-                    generateAudio: { type: "boolean", description: "Motion 2.5 only." },
+                    generateAudio: { type: "boolean", description: "Seedance 2.5 only." },
                     projectId: { type: ["string", "null"], description: "From listProjects." },
                   },
                 },

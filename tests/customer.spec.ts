@@ -744,10 +744,10 @@ test("dirty workspace settings survive cancelled navigation and discard only aft
   await page.getByRole("button", { name: "Production", exact: true }).click();
   const video = page.getByLabel("Default video model", { exact: true });
   await expect(
-    video.getByRole("option", { name: "Upscale 2", exact: true }),
+    video.getByRole("option", { name: "Topaz Astra 2", exact: true }),
   ).toHaveCount(0);
   await expect(
-    video.getByRole("option", { name: "Reframe 2", exact: true }),
+    video.getByRole("option", { name: "Luma Ray 2", exact: true }),
   ).toHaveCount(0);
   expect(await video.locator("option").count()).toBeGreaterThan(1);
   await page.getByLabel("Shot credit cap", { exact: true }).fill("75");

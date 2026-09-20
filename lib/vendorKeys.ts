@@ -18,11 +18,11 @@ const ENV: Record<VendorKeyName, string> = {
 };
 
 export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[] = [
-  { name: "ark", label: "Connected video account", does: "Motion video · prompt writer" },
-  { name: "gateway", label: "Connected model gateway", does: "Prompt writer · Image 2 stills" },
+  { name: "ark", label: "Connected video account", does: "Seedance video · prompt writer" },
+  { name: "gateway", label: "Connected model gateway", does: "Prompt writer · Nano Banana stills" },
   { name: "openai", label: "Connected language account", does: "Thinking models · Atomik · script development · Astra, direct" },
-  { name: "gemini", label: "Connected image account", does: "Image 2 stills, direct" },
-  { name: "fal", label: "Connected render account", does: "Kinetic 3.0 video · motion control · Upscale 2 · identity training" },
+  { name: "gemini", label: "Connected image account", does: "Nano Banana stills, direct" },
+  { name: "fal", label: "Connected render account", does: "Kling 3.0 video · motion control · Topaz upscale · identity training" },
   { name: "elevenlabs", label: "Connected audio account", does: "Voice · sound effects · music" },
   { name: "higgsfield", label: "Connected identity account", does: "Identity renders · enter API key ID:API key secret" },
 ];

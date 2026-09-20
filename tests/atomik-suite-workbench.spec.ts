@@ -101,7 +101,7 @@ async function fixture(page: Page) {
             models: [
               {
                 id: "gemini-3-pro-image",
-                label: "Image Pro",
+                label: "Nano Banana Pro",
                 kind: "image",
                 resolutions: ["2k"],
                 ratios: ["16:9"],
@@ -183,7 +183,7 @@ async function fixture(page: Page) {
             featured: [
               {
                 id: "anthropic/claude-sonnet-4.6",
-                name: "Sage 4.6",
+                name: "Claude Sonnet 4.6",
                 efforts: [{ value: "high", label: "High" }],
               },
             ],
@@ -275,7 +275,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
     .getByRole("button", { name: "Thinking model", exact: true })
     .click();
   await page
-    .getByRole("option", { name: "Sage 4.6", exact: true })
+    .getByRole("option", { name: "Claude Sonnet 4.6", exact: true })
     .click();
   await expect(
     suite.getByRole("combobox", { name: "Reasoning effort", exact: true }),

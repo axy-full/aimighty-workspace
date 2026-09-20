@@ -510,7 +510,7 @@ async function finishStill(job: StillJob, img: EngineProduced, queueMs: number, 
   if (job.modelId === TOPAZ_IMAGE_MODEL) {
     const meta = await sharp(img.bytes, { limitInputPixels: 48_000_000 }).metadata();
     if (meta.format !== "png" || !meta.width || !meta.height || meta.width * meta.height > 48_000_000)
-      throw new Error("The upscaler returned an unsupported master. The original provider request is retained for review.");
+      throw new Error("Topaz returned an unsupported master. The original provider request is retained for review.");
     png = img.bytes; // Keep precision, color profile and metadata; the requested PNG needs no transcode.
   } else png = await sharp(img.bytes).png().toBuffer();
   const storeStart = now();
@@ -564,7 +564,7 @@ export async function reconcileTopazImage(genId: string): Promise<void> {
       const state = await falStatus(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
       if (state.status !== "COMPLETED") return;
       const result = await falResult<{ image?: { url?: string; content_type?: string } }>(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
-      if (!result.image?.url) throw new Error("The upscaler returned no image. The existing request remains available for reconciliation.");
+      if (!result.image?.url) throw new Error("Topaz returned no image. The existing request remains available for reconciliation.");
       const out = await finishStill(job, { bytes: await fetchBytes(result.image.url, 60_000, 200 * 1024 * 1024), mime: result.image.content_type ?? "image/png",
         costUsd: estimateImageCostUsd(job.modelId, job.size, 0)?.net ?? null, totalTokens: null, via: "fal" }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0", args: [JSON.stringify(out), now(), genId] });

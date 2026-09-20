@@ -126,7 +126,7 @@ The owner supplied a high-fidelity design handoff (`design_handoff_particl_works
 2. **Nothing is simulated.** The prototype's 150 ms generation bar and 680 ms agent tick are not reproduced. Progress comes from real jobs; a plan step advances when its backend call returns; a plan with no backend reports "Not runnable yet — …" and never animates.
 3. **Atomik Generate stays** as a ninth Atomik page alongside the design's eight.
 4. **Prices are credits from live quotes**, never the provider's USD (the design's "$1.16" is our cost, not the customer's price).
-5. **No vendor or competitor name in any user-visible string.**
+5. **Model names are real on our own surfaces, neutral on the connected one** (amended by the owner, 20 September, reversing part of PR231 for MODEL names only): a model we integrate directly is named — Seedance 2.5, Kling 3.0 Pro, Nano Banana 2, Topaz Astra 2, Eleven v3, GPT-6 Astra, Claude Fable 5.1, Gemini 3.1 Pro — while the catalogue served through the connected account keeps neutral names, and Higgsfield, Supercomputer, Genjutsu and Soul ID are still never printed anywhere.
 
 ### What shipped (main `177bd05`, deployed and checked on production)
 
@@ -140,6 +140,7 @@ The owner supplied a high-fidelity design handoff (`design_handoff_particl_works
 | Spec-card template and every remaining page, each mounting the tool that already works | [PR241](https://github.com/axy-full/aimighty-workspace/pull/241), [PR242](https://github.com/axy-full/aimighty-workspace/pull/242) |
 | Atomik panel, gates and agent surfaces; ⌘K palette and keyboard map | [PR232](https://github.com/axy-full/aimighty-workspace/pull/232), [PR233](https://github.com/axy-full/aimighty-workspace/pull/233) |
 | Neutral vendor copy: one banned-name list, `displayModelName`, 179 files, guard spec | [PR231](https://github.com/axy-full/aimighty-workspace/pull/231), gaps closed in [PR244](https://github.com/axy-full/aimighty-workspace/pull/244) |
+| Real model names restored on the direct surfaces; the guard now bans only the connected-account vocabulary | [PR260](https://github.com/axy-full/aimighty-workspace/pull/260) |
 | Connected account: toolset guard before every paid call and status read; planner reads and priced connected steps; presets and batches; workflows as recipes and slash commands | [PR226](https://github.com/axy-full/aimighty-workspace/pull/226), [PR228](https://github.com/axy-full/aimighty-workspace/pull/228), [PR234](https://github.com/axy-full/aimighty-workspace/pull/234), [PR240](https://github.com/axy-full/aimighty-workspace/pull/240) |
 | Connected features: game-pipeline-only audio models withdrawn plus a voice picker; reframe; Shorts Studio with a multi-clip collector; explainer styles (browse only, no price path) | [PR225](https://github.com/axy-full/aimighty-workspace/pull/225), [PR227](https://github.com/axy-full/aimighty-workspace/pull/227), [PR230](https://github.com/axy-full/aimighty-workspace/pull/230), [PR235](https://github.com/axy-full/aimighty-workspace/pull/235) |
 | Shorts clip polling through the guard's status fallback; Marketing and Shorts plan requests; CI in six browser shards | [PR245](https://github.com/axy-full/aimighty-workspace/pull/245), [PR246](https://github.com/axy-full/aimighty-workspace/pull/246), [PR243](https://github.com/axy-full/aimighty-workspace/pull/243) |

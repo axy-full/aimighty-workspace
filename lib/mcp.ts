@@ -23,7 +23,7 @@ export const TOOLS: ToolDef[] = [
     description:
       "Start a video render in Particl. Returns an id immediately — renders take " +
       "roughly one to three minutes — then use wait_for_render to collect it. Every prompt is " +
-      "rewritten with the engine's own recipe before rendering; prefix with 'raw:' to send " +
+      "rewritten with Seedance's own prompt recipe before rendering; prefix with 'raw:' to send " +
       "exact words. This spends real money from the workspace's credit.",
     inputSchema: {
       type: "object",
@@ -34,7 +34,7 @@ export const TOOLS: ToolDef[] = [
         duration: { type: "number", description: "Seconds. Default 5." },
         resolution: { type: "string", description: "480p | 720p | 1080p. Default 1080p." },
         ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
-        audio: { type: "boolean", description: "Native audio track. Motion 2.5 only. Default false." },
+        audio: { type: "boolean", description: "Native audio track. Seedance 2.5 only. Default false." },
         seed: { type: "number", description: "Fix the seed to make a shot reproducible." },
       },
       required: ["prompt"],

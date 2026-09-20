@@ -103,8 +103,8 @@ test("versions merge filed takes with jobs in flight or failed, newest first", (
   expect(rows.map((r) => [r.v, r.state, r.current])).toEqual([["v4", "failed", false], ["v3", "rendering", false], ["v2", "rendered", false], ["v1", "rendered", true]]);
   expect(rows[0].label).toBe("Failed · not billed");
   expect(rows[1].label).toBe("Rendering");
-  expect(rows[2]).toMatchObject({ label: "Take · Motion 2.5", meta: "2 min" });
-  expect(rows[3]).toMatchObject({ label: "Current · Motion 2.5", meta: "1 hr" });
+  expect(rows[2]).toMatchObject({ label: "Take · Seedance 2.5", meta: "2 min" });
+  expect(rows[3]).toMatchObject({ label: "Current · Seedance 2.5", meta: "1 hr" });
   for (const row of rows) expect(vendorNameIn(row.label)).toBeNull();
   expect(shotVersions(p, "s2", jobs, now)).toEqual([]);
   expect([relativeAge(now - 1000, now), relativeAge(now - 3 * 86_400_000, now), relativeAge(null, now)]).toEqual(["just now", "3 d", ""]);
@@ -139,7 +139,7 @@ test("the dispatch gate sends only the price that was shown", () => {
 });
 
 test("engine labels in messages become neutral names; other vendor names fall back", () => {
-  expect(neutralCopy("Seedance 2.5 accepts at most 30 image references.")).toBe("Motion 2.5 accepts at most 30 image references.");
+  expect(neutralCopy("Seedance 2.5 accepts at most 30 image references.")).toBe("Seedance 2.5 accepts at most 30 image references.");
   expect(neutralCopy("Review a live Genjutsu quote before submitting this take.")).toBe("The engine could not take this request. Nothing was charged.");
   expect(neutralCopy("Insufficient credits.", "x")).toBe("Insufficient credits.");
 });

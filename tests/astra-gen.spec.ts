@@ -57,10 +57,10 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a model" })
-    .getByRole("button", { name: /Upscale 2/ })
+    .getByRole("button", { name: /Topaz Astra 2/ })
     .click();
   const panel = page.getByRole("region", {
-    name: "Upscale 2",
+    name: "Topaz Astra 2",
     exact: true,
   });
   await expect(

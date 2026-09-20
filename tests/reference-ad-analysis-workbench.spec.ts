@@ -126,7 +126,7 @@ test("reference analysis samples the original, quotes the selected thinking cont
           models: [
             {
               id: "anthropic/claude-sonnet-4.6",
-              name: "Sage 4.6",
+              name: "Claude Sonnet 4.6",
               vision: true,
               efforts: [
                 { value: "high", label: "High" },
@@ -260,7 +260,7 @@ test("reference analysis samples the original, quotes the selected thinking cont
     .getByRole("button", { name: "Atomik request model", exact: true })
     .click();
   await page
-    .getByRole("option", { name: "Sage 4.6", exact: true })
+    .getByRole("option", { name: "Claude Sonnet 4.6", exact: true })
     .click();
   await dialog
     .getByRole("combobox", { name: "Atomik request effort", exact: true })

@@ -261,7 +261,7 @@ export const GET = withTenant(async function GET() {
           "Stills bill here too while the gateway is the route to the image engine."
         : p.id === "google"
         ? "Stills, when they go direct on GEMINI_API_KEY. While the model gateway is the route, they bill to the gateway instead."
-        : p.id === "byteplus" ? "Motion video and the engine's own prompt writer."
+        : p.id === "byteplus" ? "Seedance video and its own prompt writer."
         : p.id === "fal" ? "Identity training and identity stills. This account publishes no balance over the API."
         : "Voice, sound effects and music. Billed in the plan's credits; the plan's own counter is the authority.",
       models: byModel.rows.filter((m: any) => String(m.provider ?? "byteplus") === p.id).map((m: any) => ({

@@ -14,11 +14,11 @@ async function sourceBytes(url: string, remaining: number, scope: string) {
   const response = await fetch(url, { headers: { 'X-Workbench-Scope': scope }, redirect: 'error' });
   if (!response.ok || !response.body) throw new Error('An original asset could not be read. Nothing was exported.');
   const limit = Math.min(32 * 1024 * 1024, remaining);
-  if (Number(response.headers.get('content-length')) > limit) throw new Error('3D packages support 32 MB per asset and 100 MB in total.');
+  if (Number(response.headers.get('content-length')) > limit) throw new Error('Blender packages support 32 MB per asset and 100 MB in total.');
   const reader = response.body.getReader(), chunks: Uint8Array[] = [];
   let size = 0;
   try {
-    for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.length; if (size > limit) throw new Error('3D packages support 32 MB per asset and 100 MB in total.'); chunks.push(next.value); }
+    for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.length; if (size > limit) throw new Error('Blender packages support 32 MB per asset and 100 MB in total.'); chunks.push(next.value); }
   } catch (error) { await reader.cancel(); throw error; }
   const bytes = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
@@ -40,5 +40,5 @@ export function AstraExportPanel({ project, scope, enabled, onSave }: { project:
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
-  return <section className={styles.panel}><h3>Continue locally</h3><p>Download the scene, original assets and a build script for the 3D runtime, version 5 or newer. Run it locally to create an editable .blend, a Cycles still and a GLB.</p><button className={`${styles.button} ${styles.primary}`} disabled={!enabled || busy} onClick={() => void exportBlender()}>{busy ? 'Collecting originals…' : 'Download 3D package'}</button><p className={styles.notice}>This package runs in your own 3D runtime installation. Native cloud rendering is available separately below when its runtime is connected. The viewport and PNG export run in your browser.</p>{error && <p role="alert" className={styles.error}>{error}</p>}</section>;
+  return <section className={styles.panel}><h3>Continue in Blender</h3><p>Download the scene, original assets and a build script for Blender 5 or newer. Run it locally to create an editable .blend, a Cycles still and a GLB.</p><button className={`${styles.button} ${styles.primary}`} disabled={!enabled || busy} onClick={() => void exportBlender()}>{busy ? 'Collecting originals…' : 'Download Blender package'}</button><p className={styles.notice}>This package runs in your own Blender installation. Native cloud rendering is available separately below when its runtime is connected. The viewport and PNG export run in your browser.</p>{error && <p role="alert" className={styles.error}>{error}</p>}</section>;
 }

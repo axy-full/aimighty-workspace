@@ -149,7 +149,7 @@ test('unconfigured native 3D explains setup and cannot submit a render', async (
   const state = await fixture(page, { unavailable: true });
   await expect(state.panel.getByRole('button', { name: 'Review render quote', exact: true })).toBeDisabled();
   await expect(state.panel.getByText('Connect a 3D runtime snapshot and sandbox account before starting native jobs.', { exact: true })).toBeVisible();
-  await expect(state.workspace.getByRole('button', { name: 'Download 3D package', exact: true })).toBeEnabled();
+  await expect(state.workspace.getByRole('button', { name: 'Download Blender package', exact: true })).toBeEnabled();
   expect(state.quotes).toEqual([]); expect(state.submissions).toEqual([]); expect(state.forbidden).toEqual([]);
 });
 

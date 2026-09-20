@@ -266,7 +266,7 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 });
 
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
-  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra uses its own model and the saved 3D scene. Start this request from Astra.', 422);
+  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra uses GPT-6 Astra and the saved 3D scene. Start this request from Astra.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);

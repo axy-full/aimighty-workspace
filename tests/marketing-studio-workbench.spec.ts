@@ -59,7 +59,7 @@ async function fixture(page: Page, rejectSave = false) {
   const models = [
     {
       id: "openai/gpt-5.4",
-      name: "Forge 5.4",
+      name: "GPT-5.4",
       efforts: [{ value: "high", label: "High" }],
     },
   ];

@@ -157,9 +157,9 @@ export const MODELS: ModelDef[] = [
     id: "dreamina-seedance-2-5-260628",
     billing: "token",
     use: "Standard video. Highest fidelity, native audio.",
-    label: "Motion 2.5",
+    label: "Seedance 2.5",
     supportsTasks: ["generate", "edit", "extend"],
-    short: "MOTION 2.5",
+    short: "SD 2.5",
     family: "seedance-2",
     provider: "byteplus",
     kind: "video",
@@ -179,8 +179,8 @@ export const MODELS: ModelDef[] = [
     id: "dreamina-seedance-2-0-260128",
     billing: "token",
     use: "Cheaper drafts and roughs.",
-    label: "Motion 2.0",
-    short: "MOTION 2.0",
+    label: "Seedance 2.0",
+    short: "SD 2.0",
     family: "seedance-2",
     provider: "byteplus",
     kind: "video",
@@ -207,8 +207,8 @@ export const MODELS: ModelDef[] = [
     id: "fal-ai/kling-video/v3/standard",
     billing: "second",
     use: "Water, cloth, physics-heavy motion.",
-    label: "Kinetic 3.0",
-    short: "KINETIC 3",
+    label: "Kling 3.0",
+    short: "KLING 3",
     family: "kling-3",
     provider: "fal",
     kind: "video",
@@ -223,14 +223,14 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 2,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "Native audio, 3–15s, priced per second. A first-frame image turns it into image-to-video.",
+    note: "Kling 3.0 — native audio, 3–15s, priced per second. A first-frame image turns it into image-to-video.",
   },
   {
     id: "fal-ai/kling-video/v3/pro",
     billing: "second",
     use: "The same motion, steadier, for finals.",
-    label: "Kinetic 3.0 Pro",
-    short: "KINETIC 3 PRO",
+    label: "Kling 3.0 Pro",
+    short: "KLING 3 PRO",
     family: "kling-3",
     provider: "fal",
     kind: "video",
@@ -256,8 +256,8 @@ export const MODELS: ModelDef[] = [
     id: "topaz/upscale/video/creative",
     billing: "second",
     use: "Creative video upscale with frame rate and detail controls.",
-    label: "Upscale 2",
-    short: "UPSCALE",
+    label: "Topaz Astra 2",
+    short: "ASTRA",
     family: "topaz",
     provider: "fal",
     kind: "video",
@@ -272,7 +272,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 0,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
-    note: "Creative video upscale. The provider chooses output dimensions, typically 4K; quotes use the 4K tier and an explicit 30 or 60 fps output.",
+    note: "Astra 2 creative video upscale. The provider chooses output dimensions, typically 4K; quotes use the 4K tier and an explicit 30 or 60 fps output.",
   },
   /* ── Luma Ray 2 Flash Reframe, on fal.ai ─────────────────────────────
    * Luma's reframe: a finished clip re-cut to another aspect, the missing
@@ -284,8 +284,8 @@ export const MODELS: ModelDef[] = [
     id: "fal-ai/luma-dream-machine/ray-2-flash/reframe",
     billing: "second",
     use: "Re-cut a finished clip to 9:16 or 1:1.",
-    label: "Reframe 2",
-    short: "REFRAME",
+    label: "Luma Ray 2",
+    short: "RAY2",
     family: "luma-ray-2",
     provider: "fal",
     kind: "video",
@@ -300,15 +300,15 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 0,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
-    note: "A finished clip re-cut to another aspect, the new frame's edges painted in. $0.06 a second.",
+    note: "Luma's Ray 2 Flash reframe — a finished clip re-cut to another aspect, the new frame's edges painted in. $0.06 a second.",
   },
   {
-    id: "fal-ai/topaz/upscale/image", billing: "image", use: "Enhance an original image with precision upscale models.",
-    label: "Image Upscale", short: "UPSCALE", family: "topaz", provider: "fal", kind: "image",
+    id: "fal-ai/topaz/upscale/image", billing: "image", use: "Enhance an original image with Topaz precision models.",
+    label: "Topaz Image Upscale", short: "TOPAZ", family: "topaz", provider: "fal", kind: "image",
     hidden: true, stillTask: "upscale", falEndpoint: "fal-ai/topaz/upscale/image", paramStyle: "fields",
     resolutions: ["24MP", "48MP"], ratios: ["adaptive"], durations: [], supportsAudio: false,
     supportsCameraFixed: false, maxReferenceImages: 1, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
-    note: "Precision image enhancement from the original asset. Output up to 48 megapixels, preserved as PNG.",
+    note: "Topaz precision image enhancement from the original asset. Output up to 48 megapixels, preserved as PNG.",
   },
   /* ── Bria on fal.ai: the still post tools (brief 1.2) ───────────────
    * Flat per image, read off fal's model pages on 7 September 2026:
@@ -319,7 +319,7 @@ export const MODELS: ModelDef[] = [
     id: "fal-ai/bria/expand",
     billing: "image",
     use: "Outpaint a still to another aspect.",
-    label: "Expand",
+    label: "Bria Expand",
     short: "EXPAND",
     family: "bria",
     provider: "fal",
@@ -336,13 +336,13 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 1,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "A still extended to another aspect, the new frame painted in. $0.04 an image.",
+    note: "Bria Expand — a still extended to another aspect, the new frame painted in. $0.04 an image.",
   },
   {
     id: "fal-ai/bria/background/remove",
     billing: "image",
     use: "Cut a still's subject out of its background.",
-    label: "Cutout",
+    label: "Bria Cutout",
     short: "CUTOUT",
     family: "bria",
     provider: "fal",
@@ -359,7 +359,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 1,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "The subject lifted off its background, transparent behind it. $0.018 an image.",
+    note: "Bria RMBG 2.0 — the subject lifted off its background, transparent behind it. $0.018 an image.",
   },
   {
     // Google's Nano Banana Pro — stills, on the Gemini API (its own key).
@@ -373,8 +373,8 @@ export const MODELS: ModelDef[] = [
     billing: "image",
     use: "Stills with legible text; up to 14 refs.",
     gatewayId: "google/gemini-3-pro-image",
-    label: "Image Pro",
-    short: "IMAGE PRO",
+    label: "Nano Banana Pro",
+    short: "NB PRO",
     family: "nano-banana",
     provider: "google",
     kind: "image",
@@ -388,7 +388,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 14,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "Studio still-image model — up to 4K, legible text, up to 14 refs.",
+    note: "Nano Banana Pro, the studio still-image model — up to 4K, legible text, up to 14 refs.",
   },
   {
     // Nano Banana 2 (Gemini 3.1 Flash Image): the fast, cheaper still engine.
@@ -397,8 +397,8 @@ export const MODELS: ModelDef[] = [
     billing: "image",
     use: "Quick stills at half the price.",
     gatewayId: "google/gemini-3.1-flash-image",
-    label: "Image 2",
-    short: "IMAGE 2",
+    label: "Nano Banana 2",
+    short: "NB 2",
     family: "nano-banana",
     provider: "google",
     kind: "image",
@@ -411,7 +411,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 14,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "Quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
+    note: "Nano Banana 2, the quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
   },
   ...Object.entries(GENJUTSU_MODELS).map(([variant, id]): ModelDef => ({
     id, label: GENJUTSU_LABELS[variant as keyof typeof GENJUTSU_LABELS], short: "TRANSFORM", family: "genjutsu",
@@ -445,8 +445,8 @@ export const MODELS: ModelDef[] = [
     id: "fal-ai/flux-lora",
     billing: "image",
     use: "A trained face, from the Studio.",
-    label: "Identity · Trained",
-    short: "TRAINED ID",
+    label: "Flux · Identity",
+    short: "FLUX ID",
     family: "flux",
     provider: "fal",
     kind: "image",
@@ -460,7 +460,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 0,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "A trained identity, rendered from its own weights. Made from the Studio.",
+    note: "A trained identity, rendered by Flux. Made from the Studio.",
   },
 ];
 
@@ -475,36 +475,42 @@ export function getModel(id: string): ModelDef {
 /** Engines that render sound rather than pictures live outside the video
  *  catalogue but still need names on the ledger. */
 export const AUDIO_LABELS: Record<string, { label: string; short: string }> = {
-  eleven_v3:              { label: "Voice v3",              short: "VOICE v3" },
-  eleven_multilingual_v2: { label: "Voice Multilingual v2", short: "VOICE ML" },
-  eleven_flash_v2_5:      { label: "Voice Flash v2.5",      short: "VOICE FLASH" },
-  eleven_turbo_v2_5:      { label: "Voice Turbo v2.5",      short: "VOICE TURBO" },
-  eleven_sfx:             { label: "Sound effects",   short: "SFX" },
-  eleven_music:           { label: "Music",           short: "MUSIC" },
+  eleven_v3:              { label: "Eleven v3",              short: "11 v3" },
+  eleven_multilingual_v2: { label: "Eleven Multilingual v2", short: "11 ML" },
+  eleven_flash_v2_5:      { label: "Eleven Flash v2.5",      short: "11 FLASH" },
+  eleven_turbo_v2_5:      { label: "Eleven Turbo v2.5",      short: "11 TURBO" },
+  eleven_sfx:             { label: "Eleven Sound Effects",   short: "11 SFX" },
+  eleven_music:           { label: "Eleven Music",           short: "11 MUSIC" },
 };
 
-/** Connected-account workflows that are not catalogue engines. */
+/**
+ * Connected-account workflows. These are NOT ours: they are served through the
+ * connected account, so rule 2 applies and they keep neutral names even though
+ * the same families appear under their real names above.
+ */
 const WORKFLOW_LABELS: Record<string, { label: string; short: string }> = {
   marketing_studio_video: { label: "Marketing Video", short: "MARKETING VIDEO" },
   hf_mult_motion_control: { label: "Motion Transfer", short: "MOTION TRANSFER" },
   hf_mult_replace_object: { label: "Object Swap", short: "OBJECT SWAP" },
 };
 
-/** Thinking-model lines, by the id's owner. Provider names are not product
- *  vocabulary, so a line is named for the product, never the vendor. */
-const THINKING_LINES: Record<string, string> = { anthropic: "Sage", openai: "Forge", google: "Prism" };
+/** Thinking-model lines, by the id's owner — the real product line each id
+ *  belongs to. Directly integrated, so directly named (rule 1). */
+const THINKING_LINES: Record<string, string> = { anthropic: "Claude", openai: "GPT", google: "Gemini" };
+/** Tier words as each line actually prints them. Anything absent is
+ *  Title-cased, which is what these lines do with a word like "Codex". */
 const THINKING_TIERS: Record<string, string> = {
-  opus: "Max", sonnet: "", haiku: "Lite", fable: "Narrative",
-  pro: "Pro", flash: "Quick", "flash-lite": "Quick Lite", "flash-image": "Image",
-  codex: "Code", mini: "Mini", nano: "Nano", turbo: "Turbo", thinking: "Thinking",
-  max: "Max", preview: "Preview", oss: "Open", luna: "Luna", sol: "Sol", terra: "Terra",
+  mini: "mini", nano: "nano", oss: "OSS", codex: "Codex", "flash-lite": "Flash-Lite",
+  "120b": "120B", "20b": "20B",
 };
 const titleWord = (word: string) => THINKING_TIERS[word] ?? word.charAt(0).toUpperCase() + word.slice(1);
 
 /**
- * A thinking (language) model as the product names it, e.g.
- * "anthropic/claude-opus-5" → "Sage 5 Max", "openai/gpt-5.5-pro" → "Forge 5.5 Pro",
- * "google/gemini-3.1-pro-preview" → "Prism 3.1 Pro Preview", "openai/gpt-6-astra" → "Astra".
+ * A thinking (language) model under its REAL public name, e.g.
+ * "anthropic/claude-opus-5" → "Claude Opus 5", "anthropic/claude-fable-5.1" →
+ * "Claude Fable 5.1", "openai/gpt-5.5-pro" → "GPT-5.5 Pro",
+ * "google/gemini-3.1-pro-preview" → "Gemini 3.1 Pro Preview",
+ * "openai/gpt-6-astra" → "GPT-6 Astra", "openai/o3-mini" → "o3-mini".
  * Returns null for ids that are not thinking models.
  */
 export function thinkingModelDisplayName(id: string): string | null {
@@ -512,28 +518,71 @@ export function thinkingModelDisplayName(id: string): string | null {
   let rest = bare.toLowerCase();
   const fast = /-fast$/.test(rest);
   if (fast) rest = rest.replace(/-fast$/, "");
+  const suffix = fast ? " · Fast" : "";
   let line = THINKING_LINES[owner];
   let words: string[] = [];
-  if (/^gpt-6-astra/.test(rest)) return `Astra${fast ? " · Fast" : ""}`;
   const claude = rest.match(/^claude-(?:(opus|sonnet|haiku|fable)-([\d.]+)|([\d.]+)-(opus|sonnet|haiku|fable))(?:-.*)?$/);
   const gemini = rest.match(/^gemini-([\d.]+)-(.+)$/);
   const gpt = rest.match(/^gpt-(.+)$/);
   const reasoning = rest.match(/^o(\d)(?:-(.+))?$/);
   const seed = rest.match(/seed-(\d+)-(\d+)(?:-(.+))?$/);
-  if (claude) { line ??= "Sage"; words = [claude[2] ?? claude[3], titleWord(claude[1] ?? claude[4])]; }
-  else if (gemini) { line ??= "Prism"; words = [gemini[1], ...(THINKING_TIERS[gemini[2]] !== undefined ? [THINKING_TIERS[gemini[2]]] : gemini[2].split("-").map(titleWord))]; }
-  else if (gpt) { line ??= "Forge"; const [version, ...tail] = gpt[1].split("-"); words = [version === "oss" ? "Open" : version, ...tail.map(titleWord)]; }
-  else if (reasoning) { line ??= "Forge"; words = [`R${reasoning[1]}`, ...(reasoning[2] ?? "").split("-").filter(Boolean).map(titleWord)]; }
-  else if (seed) { line = "Writer"; words = [`${seed[1]}.${seed[2]}`, ...(seed[3] ?? "").split("-").filter(word => !/^\d{6}$/.test(word)).map(titleWord)]; }
-  else return null;
-  return [line, ...words].filter(Boolean).join(" ") + (fast ? " · Fast" : "");
+  if (claude) {
+    line ??= "Claude";
+    /* The id carries the order the name is printed in: claude-opus-5 is
+       "Claude Opus 5", claude-3-haiku is "Claude 3 Haiku". */
+    words = claude[1] ? [titleWord(claude[1]), claude[2]] : [claude[3], titleWord(claude[4])];
+  } else if (gemini) {
+    line ??= "Gemini";
+    /* "flash-lite" is one printed word, so the whole tail is looked up first. */
+    words = [gemini[1], THINKING_TIERS[gemini[2]] ?? gemini[2].split("-").map(titleWord).join(" ")];
+  } else if (gpt) {
+    line ??= "GPT";
+    /* GPT prints its version attached to the line: "GPT-5.5 Pro". */
+    const [version, ...tail] = gpt[1].split("-");
+    return [`${line}-${version === "oss" ? "OSS" : version}`, ...tail.map(titleWord)].join(" ") + suffix;
+  } else if (reasoning) {
+    /* The o-series is named without a line prefix: "o3", "o3-mini". */
+    return rest + suffix;
+  } else if (seed) {
+    line = "Seed";
+    words = [`${seed[1]}.${seed[2]}`, ...(seed[3] ?? "").split("-").filter(word => !/^\d{6}$/.test(word)).map(titleWord)];
+  } else if (line) {
+    /* A gateway id from a known line whose build we do not have a pattern for:
+       still ours, so still named — never renamed as a connected model. */
+    words = rest.split("-").filter((word) => word !== line!.toLowerCase()).map(titleWord);
+  } else return null;
+  return [line, ...words].filter(Boolean).join(" ") + suffix;
 }
 
+/** Families we integrate DIRECTLY, for retired or dated build ids that are no
+ *  longer in MODELS. Hyphenated on purpose: the connected catalogue spells its
+ *  ids with underscores, so a connected id never matches one of these. */
+const DIRECT_FAMILIES: [RegExp, string][] = [
+  [/seedance-2-5/, "Seedance 2.5"],
+  [/seedance-2-0/, "Seedance 2.0"],
+  [/seedance-1/, "Seedance 1.0"],
+  [/kling.*pro/, "Kling 3.0 Pro"],
+  [/kling/, "Kling 3.0"],
+  [/flash-image|nano-banana-2/, "Nano Banana 2"],
+  [/gemini-.*image|nano-banana/, "Nano Banana Pro"],
+  [/^eleven_/, "Eleven"],
+];
+
 /**
- * THE display name for any model id — catalogue engine, audio engine,
- * connected-account workflow or thinking model. Every place a model name
- * reaches a person goes through here, so no vendor or model-family name is
- * ever printed. Unknown ids that still carry a vendor's name read as "Engine".
+ * THE display name for any model id, and the only place a model label is
+ * produced. Which vocabulary it answers in is decided by PROVENANCE, not by a
+ * list of words:
+ *
+ *   - an id we integrate ourselves — the catalogue in MODELS, AUDIO_LABELS, a
+ *     thinking model, or a retired build of one of our own families — gets its
+ *     REAL name (rule 1 in lib/vendorNames.ts);
+ *   - an id we do not know is one the CONNECTED account named, so it gets the
+ *     neutral name (rule 2). Connected workflows are listed above for the same
+ *     reason.
+ *
+ * So the same family can answer twice, differently: `displayModelName` on our
+ * own Seedance 2.5 build reads "Seedance 2.5", while the connected
+ * catalogue's `seedance_2_5` reads "Motion 2.5". That is the rule, not a bug.
  */
 export function displayModelName(modelId: string): string {
   const known = WORKFLOW_LABELS[modelId]?.label
@@ -543,18 +592,11 @@ export function displayModelName(modelId: string): string {
   const thinking = thinkingModelDisplayName(modelId);
   if (thinking) return thinking;
   const id = modelId.toLowerCase();
-  if (/seedance-2-5/.test(id)) return "Motion 2.5";
-  if (/seedance-2-0/.test(id)) return "Motion 2.0";
-  if (/seedance-1/.test(id)) return "Motion 1.0";
-  if (/kling.*pro/.test(id)) return "Kinetic 3.0 Pro";
-  if (/kling/.test(id)) return "Kinetic 3.0";
-  if (/flash-image|nano-banana-2/.test(id)) return "Image 2";
-  if (/gemini-.*image|nano-banana/.test(id)) return "Image Pro";
-  if (/seedream/.test(id)) return "Image";
-  if (/^eleven_/.test(id)) return "Voice";
-  if (!hasVendorName(modelId.replace(/[-_/]/g, " "))) return modelId;
-  const renamed = neutralModelText(modelId.split("/").pop()!.replace(/[-_]/g, " "));
-  return renamed && !hasVendorName(renamed) ? renamed : "Engine";
+  const direct = DIRECT_FAMILIES.find(([pattern]) => pattern.test(id));
+  if (direct) return direct[1];
+  /* Not one of ours: the connected account's vocabulary. */
+  const neutral = neutralModelText(modelId.split("/").pop()!.replace(/[-_]/g, " "));
+  return neutral && !hasVendorName(neutral) ? neutral : "Engine";
 }
 
 /** A readable name for any model id, catalogue or not. */

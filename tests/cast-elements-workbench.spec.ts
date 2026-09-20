@@ -52,7 +52,7 @@ async function fixture(page: Page) {
   await page.route('**/api/workbench/engines*', route => {
     if (new URL(route.request().url()).searchParams.has('model')) return route.fulfill({ json: { credits: 3 } });
     // Identity rendering is gated off: only ordinary image engines are configured.
-    return route.fulfill({ json: { models: [{ id: 'gemini-3-pro-image', label: 'Image Pro', kind: 'image', resolutions: ['1K'], ratios: ['16:9'], durations: [], maxReferenceImages: 8, maxReferenceVideos: 0 }] } });
+    return route.fulfill({ json: { models: [{ id: 'gemini-3-pro-image', label: 'Nano Banana Pro', kind: 'image', resolutions: ['1K'], ratios: ['16:9'], durations: [], maxReferenceImages: 8, maxReferenceVideos: 0 }] } });
   });
   async function current() { return (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then(response => response.json())).project as Project; }
   return { scope, project, current, identities, reads: () => reads };

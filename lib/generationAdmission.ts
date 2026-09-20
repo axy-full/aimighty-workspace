@@ -365,7 +365,7 @@ export async function executeGenerationAdmission(
     if (modelId === ASTRA_MODEL) {
       try { astra = astraSettings(body.astra); }
       catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
-      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Motion 2.5 edit model."},{status:400});
+      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Seedance 2.5 edit model."},{status:400});
     }
     if (task.locked) {
       /* An engine that cannot do the task must say so here, not drop the

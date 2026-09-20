@@ -184,7 +184,7 @@ function Workspace({ project, onChange, assetPreviews = EMPTY_PREVIEWS, assistan
         <label className={styles.templatePicker}><Layers size={14} /><select aria-label="Scene template" value="" onChange={(event) => template(event.target.value as AstraTemplate)}><option value="" disabled>Templates</option>{Object.entries(TEMPLATE_NAMES).map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
         <button className={styles.iconButton} aria-label="Undo scene change" disabled={!undo.length} onClick={undoScene}><Undo2 size={15} /></button>
         <button className={styles.iconButton} aria-label="Redo scene change" disabled={!redo.length} onClick={redoScene}><Redo2 size={15} /></button>
-        <button onClick={() => { setPanel('astra'); setMobileTab('astra'); }} className={styles.assistantButton}><Sparkles size={14} />Astra</button>
+        <button onClick={() => { setPanel('astra'); setMobileTab('astra'); }} className={styles.assistantButton}><Sparkles size={14} />GPT-6 Astra</button>
       </div>
     </header>
     <nav className={styles.mobileTabs} aria-label="3D workspace panels">{[['scene', 'Scene'], ['objects', 'Objects'], ['properties', 'Properties'], ['astra', 'Astra'], ['output', 'Output']].map(([value, label]) => <button key={value} aria-pressed={mobileTab === value} onClick={() => { setMobileTab(value); if (['properties', 'astra', 'output'].includes(value)) setPanel(value as typeof panel); }}>{label}</button>)}</nav>
@@ -227,7 +227,7 @@ function Workspace({ project, onChange, assetPreviews = EMPTY_PREVIEWS, assistan
       <aside className={styles.inspector}>
         <nav className={styles.inspectorTabs} aria-label="Inspector panels">{[['properties', 'Properties'], ['astra', 'Astra'], ['output', 'Output']].map(([value, label]) => <button key={value} aria-pressed={panel === value} onClick={() => setPanel(value as typeof panel)}>{value === 'astra' && <Sparkles size={12} />}{label}</button>)}</nav>
         <div className={styles.inspectorBody}>
-          {panel === 'astra' ? assistant ?? <div className={styles.emptyPanel}><Sparkles size={22} /><h2>Astra</h2><p>Describe your scene to the project assistant. Review its proposal before applying changes.</p></div> : panel === 'output' ? <>
+          {panel === 'astra' ? assistant ?? <div className={styles.emptyPanel}><Sparkles size={22} /><h2>GPT-6 Astra</h2><p>Describe your scene to the project assistant. Review its proposal before applying changes.</p></div> : panel === 'output' ? <>
             <div className={styles.propertyHeading}><h2>Output</h2><p>Export a scene or capture your current view.</p></div>
             <div className={styles.exportActions}><button onClick={() => downloadScene(scene)}><Download size={14} />Download scene JSON</button><button disabled={!viewportReady} onClick={() => actions.current?.downloadPng()}><Camera size={14} />Save viewport PNG</button></div>
             <p className={styles.hint}>Viewport captures use the interactive preview. 3D runtime renders use the saved scene camera and output settings.</p>

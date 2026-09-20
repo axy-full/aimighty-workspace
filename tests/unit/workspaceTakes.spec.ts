@@ -4,6 +4,7 @@ import type { Generation } from "../../lib/jobs";
 import { projectTakes, takesSubtitle } from "../../lib/workspace/takes";
 import { engineLabel, shotEngines, clampShotSeconds, defaultShotSeconds, resolveShotSettings } from "../../lib/workspace/engines";
 import { MODELS, AUDIO_LABELS, getModel } from "../../lib/models";
+import { vendorNameIn } from "../../lib/vendorNames";
 
 const SHA = "a".repeat(64);
 function gen(id: string, extra: Partial<Generation> = {}): LibraryAsset {
@@ -40,7 +41,7 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   expect(takes[2]).toMatchObject({ status: "failed", credits: 0, failedUnbilled: true });
   expect(takes[3]).toMatchObject({ status: "rendering", credits: null });
   expect(takes[4]).toMatchObject({ meta: "2.0 · 5s", status: "changes", credits: 12, sha256: "b".repeat(64) });
-  expect(takes[5]).toMatchObject({ meta: "Image 2 · 1K", status: "picked", credits: 1 });
+  expect(takes[5]).toMatchObject({ meta: "NB 2 · 1K", status: "picked", credits: 1 });
   expect(takes[6]).toMatchObject({ status: "failed", credits: 4 });
   expect(takes[6]).not.toHaveProperty("failedUnbilled");
   expect(takes[7]).toMatchObject({ credits: null, status: "review" });
@@ -56,21 +57,28 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   expect(takesSubtitle([{ credits: 1_200 }])).toBe("1 asset · 1,200 cr settled");
 });
 
-test("engine labels are neutral, short and long, for every catalogue and audio id", () => {
-  expect(engineLabel("dreamina-seedance-2-5-260628")).toEqual({ short: "2.5", long: "Motion 2.5" });
-  expect(engineLabel("dreamina-seedance-2-0-260128")).toEqual({ short: "2.0", long: "Motion 2.0" });
-  expect(engineLabel("dreamina-seedance-2-5-999999")).toEqual({ short: "2.5", long: "Motion 2.5" });
-  expect(engineLabel("gemini-3.1-flash-image").long).toBe("Image 2");
-  expect(engineLabel("eleven_music").long).toBe("Music");
-  expect(engineLabel("eleven_v3").long).toBe("Voice");
+test("engine labels give the real name long, an abbreviation short, for every catalogue and audio id", () => {
+  /* Owner decision, 20 September 2026: a directly integrated engine is named.
+     The Rig's ENGINE column abbreviates it; nothing renames it. */
+  expect(engineLabel("dreamina-seedance-2-5-260628")).toEqual({ short: "2.5", long: "Seedance 2.5" });
+  expect(engineLabel("dreamina-seedance-2-0-260128")).toEqual({ short: "2.0", long: "Seedance 2.0" });
+  expect(engineLabel("dreamina-seedance-2-5-999999")).toEqual({ short: "2.5", long: "Seedance 2.5" });
+  expect(engineLabel("gemini-3.1-flash-image")).toEqual({ short: "NB 2", long: "Nano Banana 2" });
+  expect(engineLabel("fal-ai/kling-video/v3/pro")).toEqual({ short: "K 3.0 Pro", long: "Kling 3.0 Pro" });
+  expect(engineLabel("eleven_music")).toEqual({ short: "Music", long: "Eleven Music" });
+  expect(engineLabel("eleven_v3")).toEqual({ short: "Voice", long: "Eleven v3" });
+  /* Connected-account surfaces stay neutral, both halves. */
+  expect(engineLabel("marketing_studio_video").long).toBe("Marketing Video");
+  expect(engineLabel("higgsfield-genjutsu-motion-transfer").long).toBe("Motion Transfer");
   expect(engineLabel(null)).toEqual({ short: "Engine", long: "Video engine" });
   expect(engineLabel("some/unknown-model").long).toBe("Video engine");
-  const vendors = /seedance|kling|topaz|luma|bria|gemini|nano|banana|genjutsu|higgsfield|soul|flux|eleven|dreamina|google|openai|gpt|claude|veo|wan/i;
+  /* The only names no label may carry are the ones never printed anywhere. */
   for (const id of [...MODELS.map((m) => m.id), ...Object.keys(AUDIO_LABELS), "marketing_studio_video"]) {
     const label = engineLabel(id);
-    expect(label.short, id).not.toMatch(vendors);
-    expect(label.long, id).not.toMatch(vendors);
+    expect(vendorNameIn(label.short), id).toBeNull();
+    expect(vendorNameIn(label.long), id).toBeNull();
     expect(label.short.length, id).toBeGreaterThan(0);
+    expect(label.long.length, id).toBeGreaterThan(0);
   }
 });
 

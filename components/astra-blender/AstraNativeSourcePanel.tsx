@@ -30,7 +30,7 @@ function SourceEditor({ project, enabled, onChange, onSave, error, busy, setErro
     const url = URL.createObjectURL(new Blob([program], { type: 'text/x-python' }));
     const link = document.createElement('a'); link.href = url; link.download = 'astra-scene.py'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  return <section className={styles.panel} aria-label="Native 3D source"><h3>Native 3D source</h3><p>Keep procedural geometry, rigs, material nodes and animation editable in the 3D runtime. The native worker runs the saved source; the visual viewport remains a separate scene preview.</p>
+  return <section className={styles.panel} aria-label="Native 3D source"><h3>Native 3D source</h3><p>Keep procedural geometry, rigs, material nodes and animation editable in Blender. The native worker runs the saved source; the visual viewport remains a separate scene preview.</p>
     <label>Source name<input aria-label="Native source name" value={name} maxLength={160} disabled={!enabled || busy} onChange={event => setName(event.target.value)} /></label>
     <label>Starting scene<select aria-label="Native starting scene" value={base} disabled={!enabled || busy} onChange={event => setBase(event.target.value)}><option value="">Current visual scene</option>{assets.filter(isAstraBlendAsset).map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
     <p className={styles.notice}>A .blend starting scene preserves its native geometry, node graphs, rigs and animation. Uploaded files must be saved without compression. Embedded auto-run scripts are disabled.</p>

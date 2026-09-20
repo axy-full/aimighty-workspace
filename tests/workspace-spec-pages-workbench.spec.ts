@@ -62,7 +62,7 @@ const TOOLS: Partial<Record<PageId, { body: string | null; card?: string; then?:
   recipes: { body: '[data-tool-body="recipes"]', card: "Exact cloning" },
   builds: { body: null },
   skills: { body: null },
-  models: { body: '[data-tool-body="models"]', card: "Motion 2.5" },
+  models: { body: '[data-tool-body="models"]', card: "Seedance 2.5" },
   approvals: { body: '[data-tool-body="approvals"]', card: "Priced gate" },
   budget: { body: '[data-tool-body="budget"]', card: "Caps" },
   /* Marketing Studio itself is mounted; its tool control opens a section inside the one body. */
