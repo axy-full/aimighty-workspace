@@ -22,7 +22,7 @@
  */
 import { z } from "zod";
 import { consumerMediaIdentitySchema, type ConsumerMediaIdentity } from "./genjutsu-contract";
-import { ConsumerVideoError } from "./video-contract";
+import { ConsumerVideoError, connectedListEntry } from "./video-contract";
 
 export const VOICE_TOOL_NAMES = ["voice_change", "dubbing", "video_analysis", "reframe"] as const;
 export type VoiceToolName = (typeof VOICE_TOOL_NAMES)[number];
@@ -280,9 +280,30 @@ const FIGURE = /hook|attention|retention|viral|engagement|overall|score/i;
 const clean = (value: unknown, max: number) =>
   typeof value === "string" ? value.replace(/\p{Cc}/gu, (c) => (c === "\n" ? c : "")).replace(/https?:\/\/[^\s<>"']+/giu, "[link omitted]").trim().slice(0, max) : "";
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+/**
+ * The analysis envelope for exactly the acknowledged job, or null.
+ *
+ * `video_analysis_status` has never replied with an analysis: the connected
+ * account held no analyses at all on 20 September 2026 (`video_analysis_jobs`
+ * -> `{"items":[],"total_count":0,"cursor":null}`, read free), and creating one
+ * costs money. The single-object keys `analysis` and `result` are therefore
+ * still the unverified guesses this module was written with. What is recorded
+ * is the shape of every job envelope this provider DOES send: the job nested
+ * in a top-level array — `results` from `job_display`, `jobs` from
+ * `jobs_wait`, `items` from `video_analysis_jobs` and
+ * `show_marketing_studio_generations`. A reader that only looks under a
+ * single-object key and then falls through to the reply itself finds no
+ * `status` in any of those and returns null forever, never settling a job that
+ * was paid for (#251). Both shapes are accepted here; an entry taken from a
+ * list is bound to the acknowledged id and to nothing else.
+ */
 function reportEvidence(value: unknown, jobId: string): Record<string, unknown> | null {
   if (!object(value)) return null;
-  const body = object(value.analysis) ? value.analysis : object(value.result) ? value.result : value;
+  const listed = connectedListEntry(value, jobId, ACK_ID_KEYS);
+  const body = object(value.analysis) ? value.analysis : object(value.result) ? value.result : listed ?? value;
+  // A listed entry already names the acknowledged job; anything else must be
+  // bound through the acknowledgement keys, exactly as before.
+  if (body === listed) return body;
   const found = consumerVoiceToolAcknowledgement(Object.fromEntries(ACK_ID_KEYS.filter((k) => k in body).map((k) => [k, body[k]])));
   if (found !== null && found !== jobId) return null;
   const top = consumerVoiceToolAcknowledgement(Object.fromEntries(ACK_ID_KEYS.filter((k) => k in value).map((k) => [k, value[k]])));

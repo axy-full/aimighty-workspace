@@ -19,6 +19,7 @@ import {
   voiceToolResultName,
 } from "../../lib/higgsfield-consumer/voice-tools";
 import { voiceToolReferenceRequest } from "../../lib/higgsfield-consumer/voice-tool-sources";
+import { analysisListing } from "../fixtures/connectedStatusEnvelopes";
 
 const discovery = JSON.parse(readFileSync("tests/fixtures/connected-voice-tools.json", "utf8")) as { tools: { name: string; inputSchema: Record<string, unknown> }[] };
 const schema = (name: string) => discovery.tools.find((tool) => tool.name === name)!.inputSchema;
@@ -162,4 +163,35 @@ test("results are named after the source and the tool", () => {
   expect(voiceToolResultName(requireVoiceTool("dubbing"), "Hero take.mp4", { targetLanguage: "fra" })).toBe("Hero take · dubbed (French)");
   expect(voiceToolResultName(requireVoiceTool("dubbing"), "Hero take.mp4")).toBe("Hero take · dubbed");
   expect(voiceToolResultName(requireVoiceTool("video_analysis"), ".mp4")).toBe("Source · analysed");
+});
+
+/**
+ * The account held no analysis on 20 September 2026 (`video_analysis_jobs` ->
+ * `{"items":[],"total_count":0,"cursor":null}`, read free), so a real
+ * `video_analysis_status` reply is unobserved and creating one costs money.
+ * Only the NESTING is recorded, and it is recorded everywhere: this provider
+ * puts a job in a top-level array. The reader therefore accepts both shapes —
+ * UNTESTED AGAINST LIFE for this tool — and a list entry is bound to the
+ * acknowledged id and to nothing else. Against `main` every list case here
+ * returns null forever and the analysis never settles.
+ */
+test("an analysis nested in a top-level list settles exactly the acknowledged job", () => {
+  const body = { status: "completed", summary: "Strong opening.", scores: { hook_strength: 70 }, scenes: [{ start: 0, end: 2, description: "Bottle on a table." }] };
+  const figures = [{ key: "scores.hook_strength", label: "scores hook strength", value: 70 }];
+  expect(consumerVideoAnalysisReport(analysisListing(job, body), job)).toMatchObject({ figures, sceneCount: 1, summary: "Strong opening." });
+  expect(consumerVideoAnalysisReport(analysisListing(job, body, "video_analyze_id"), job)).toMatchObject({ figures, sceneCount: 1 });
+  expect(consumerVideoAnalysisReport({ results: [{ id: job, ...body }] }, job)).toMatchObject({ figures });
+  expect(consumerVideoAnalysisReport({ jobs: [{ job_id: job, ...body }] }, job)).toMatchObject({ figures });
+  // Another job, two entries claiming ours, conflicting ids, or no terminal
+  // status: all stay diagnostic.
+  expect(consumerVideoAnalysisReport(analysisListing(media, body), job)).toBeNull();
+  expect(consumerVideoAnalysisReport({ items: [{ id: job, ...body }, { id: job, ...body }] }, job)).toBeNull();
+  expect(consumerVideoAnalysisReport({ items: [{ id: job, video_analyze_id: media, ...body }] }, job)).toBeNull();
+  expect(consumerVideoAnalysisReport(analysisListing(job, { ...body, status: "processing" }), job)).toBeNull();
+  expect(consumerVideoAnalysisReport({ items: [{ id: "analysis-1", ...body }] }, job)).toBeNull();
+  expect(consumerVideoAnalysisFailure(analysisListing(job, { status: "failed", fail_reason: "Too long" }), job)).toBe("Too long");
+  expect(consumerVideoAnalysisFailure(analysisListing(media, { status: "failed" }), job)).toBeNull();
+  expect(consumerVideoAnalysisFailure(analysisListing(job, body), job)).toBeNull();
+  // The single-object envelopes this module was written against are unchanged.
+  expect(consumerVideoAnalysisReport({ analysis: { id: job, status: "completed", scenes: [] } }, job)).toMatchObject({ sceneCount: 0 });
 });

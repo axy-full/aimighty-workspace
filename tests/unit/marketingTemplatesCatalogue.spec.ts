@@ -13,6 +13,7 @@ import {
   priceForTemplate,
   templateOutputKind,
 } from "../../lib/higgsfield-consumer/marketing-templates";
+import { displayCompleted, displayInProgress, generationsListing, type EnvelopeJob } from "../fixtures/connectedStatusEnvelopes";
 
 const fixture = JSON.parse(readFileSync("tests/fixtures/marketing-templates.json", "utf8"));
 const merged = { items: fixture.pages.flatMap((page: { presets: unknown[] }) => page.presets), total: 6, complete: true };
@@ -110,4 +111,36 @@ test("only one structured job UUID is acceptance; status envelopes qualify exact
   expect(consumerMarketingTemplateFailureResult({ id: jobId, status: "failed" }, jobId)).toBe("failed");
   expect(consumerMarketingTemplateFailureResult({ id: jobId, status: "processing" }, jobId)).toBeNull();
   expect(consumerMarketingTemplateFailureResult({ id: "11111111-1111-4111-8111-111111111111", status: "failed" }, jobId)).toBeNull();
+});
+
+/**
+ * `marketing_studio_v2_status` is not advertised by the connection in use, so
+ * its reply has never been seen. What was recorded free on 20 September 2026 is
+ * that every job envelope this provider does send nests the job in a top-level
+ * array: `job_display` on a real completed `marketing_studio_video` job returns
+ * `{results:[entry]}`, and `show_marketing_studio_generations` returns the same
+ * entry under `items`. Against `main` the reader falls through to the reply
+ * itself, finds no `status`, and returns null forever — a finished, paid job
+ * that never settles.
+ */
+test("a status reply nesting the job in a top-level list settles exactly the acknowledged job", () => {
+  const url = "https://media.example.test/original.png";
+  const live: EnvelopeJob = { jobId, model: "marketing_studio_video", type: "video", prompt: "A plain bottle on a clean studio background.", rawUrl: url };
+  const other = "11111111-1111-4111-8111-111111111111";
+  expect(consumerMarketingTemplateOriginalResult(displayCompleted(live), jobId)).toEqual({ url });
+  expect(consumerMarketingTemplateOriginalResult(generationsListing(live), jobId)).toEqual({ url });
+  expect(consumerMarketingTemplateOriginalResult({ jobs: [{ job_id: jobId, status: "completed", result_url: url }] }, jobId)).toEqual({ url });
+  // Still inert while the job runs, and still inert on everything unrecognised.
+  expect(consumerMarketingTemplateOriginalResult(displayInProgress(live), jobId)).toBeNull();
+  expect(consumerMarketingTemplateOriginalResult(generationsListing({ ...live, jobId: other }), jobId)).toBeNull();
+  expect(consumerMarketingTemplateOriginalResult({ results: [displayCompleted(live).results[0], displayCompleted(live).results[0]] }, jobId)).toBeNull();
+  expect(consumerMarketingTemplateOriginalResult({ items: [{ id: jobId, job_id: other, status: "completed", result_url: url }] }, jobId)).toBeNull();
+  expect(consumerMarketingTemplateOriginalResult({ items: [{ id: jobId, status: "completed", result_url: "http://media.example.test/x.png" }] }, jobId)).toBeNull();
+  expect(consumerMarketingTemplateOriginalResult({ items: [{ id: jobId, status: "completed", thumbnail_url: url }] }, jobId)).toBeNull();
+  expect(consumerMarketingTemplateOriginalResult({ items: [{ id: jobId, result_url: url }] }, jobId)).toBeNull();
+  expect(consumerMarketingTemplateFailureResult({ items: [{ id: jobId, status: "failed" }] }, jobId)).toBe("failed");
+  expect(consumerMarketingTemplateFailureResult({ items: [{ id: other, status: "failed" }] }, jobId)).toBeNull();
+  expect(consumerMarketingTemplateFailureResult(generationsListing(live), jobId)).toBeNull();
+  // A single-object envelope, if that is what the tool really sends, is unchanged.
+  expect(consumerMarketingTemplateOriginalResult({ raw_data: { id: jobId, status: "completed", result_url: url } }, jobId)).toEqual({ url });
 });

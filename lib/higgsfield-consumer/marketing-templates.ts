@@ -18,7 +18,7 @@
  */
 import { z } from "zod";
 import { consumerMediaIdentitySchema } from "./genjutsu-contract";
-import { ConsumerVideoError } from "./video-contract";
+import { ConsumerVideoError, connectedListEntry } from "./video-contract";
 
 export const MARKETING_TEMPLATE_CATEGORIES = ["all", "ugc", "product-shot", "motion", "ads", "posters", "marketplace"] as const;
 export type MarketingTemplateCategory = (typeof MARKETING_TEMPLATE_CATEGORIES)[number];
@@ -361,14 +361,36 @@ export function consumerMarketingTemplateAcknowledgement(value: unknown): string
   return !invalid && new Set(ids).size === 1 ? ids[0] : null;
 }
 const FAILED = new Set(["failed", "canceled", "cancelled", "nsfw", "ip_detected", "error"]);
-/** The status envelope for exactly the acknowledged job. Nothing else is
- * evidence; unknown envelopes stay diagnostic. */
+/**
+ * The status envelope for exactly the acknowledged job. Nothing else is
+ * evidence; unknown envelopes stay diagnostic.
+ *
+ * `marketing_studio_v2_status` is NOT advertised by the connection in use on
+ * 20 September 2026 (the profile offers `show_marketing_studio_v2` and
+ * `show_marketing_studio_generations` and none of the four
+ * `marketing_studio_v2_*` tools), so its reply has never been observed and the
+ * single-object keys below — `raw_data`, `generation` — remain the unverified
+ * guesses this module was written with. What IS recorded, read-only and free,
+ * is that every job envelope this provider does send nests the job in a
+ * top-level ARRAY: `job_display` on a real completed `marketing_studio_video`
+ * job returns `{"results":[{id,type,status,model,params,results:{rawUrl},
+ * createdAt}]}`, and `show_marketing_studio_generations` returns that same
+ * per-entry shape under `items`. So the list shape is searched too, bound to
+ * the acknowledged id (`connectedListEntry`, video-contract.ts), rather than
+ * guessing which of the two the status tool will use. Both are tolerated; one
+ * of them is certainly what arrives.
+ */
 function statusEvidence(value: unknown, jobId: string): { status: string; body: Record<string, unknown> } | null {
   if (!object(value)) return null;
-  const body = object(value.raw_data) ? value.raw_data : object(value.generation) ? value.generation : value;
-  const found = consumerMarketingTemplateAcknowledgement(value);
-  if (found !== null && found !== jobId) return null;
-  if (found === null && ACK_ID_KEYS.some((key) => key in body)) return null;
+  const listed = connectedListEntry(value, jobId, ACK_ID_KEYS);
+  const body = object(value.raw_data) ? value.raw_data : object(value.generation) ? value.generation : listed ?? value;
+  // A listed entry is already bound by the exact acknowledged id; any other
+  // body has to be bound through the acknowledgement, as before.
+  if (body !== listed) {
+    const found = consumerMarketingTemplateAcknowledgement(value);
+    if (found !== null && found !== jobId) return null;
+    if (found === null && ACK_ID_KEYS.some((key) => key in body)) return null;
+  }
   const status = body.status ?? value.status;
   if (typeof status !== "string" || status.length > 64) return null;
   if (typeof value.status === "string" && value.status !== status) return null;
