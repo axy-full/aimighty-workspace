@@ -85,10 +85,7 @@ export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount |
         .then(async (response) => {
           if (!response.ok) return;
           const data = await response.json();
-          setAccount({
-            workspace: data.workspace ? { id: String(data.workspace.id), name: String(data.workspace.name) } : null,
-            credits: data.credits && typeof data.credits.balance === "number" ? { balance: data.credits.balance } : null,
-          });
+          setAccount((prev) => nextAccount(prev, data));
         })
         .catch(() => {});
     };
@@ -102,6 +99,29 @@ export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount |
     };
   }, [workspaceId]);
   return account;
+}
+
+/**
+ * The account a refresh leaves behind.
+ *
+ * /api/me reads its credit state behind `creditState().catch(() => null)`, so
+ * one failed billing read used to wipe a balance the header was already
+ * showing — the refresh replaced the whole account, credits included, and the
+ * figure disappeared until a later poll happened to succeed. A refresh that
+ * brings no balance for the SAME workspace now keeps the last known one; a
+ * different workspace starts clean, because one workspace's balance must never
+ * be shown against another.
+ */
+export function nextAccount(prev: WorkspaceAccount | null, data: {
+  workspace?: { id?: unknown; name?: unknown } | null;
+  credits?: { balance?: unknown } | null;
+}): WorkspaceAccount {
+  const workspace = data.workspace && data.workspace.id != null
+    ? { id: String(data.workspace.id), name: String(data.workspace.name ?? "") }
+    : null;
+  const fresh = data.credits && typeof data.credits.balance === "number" ? { balance: data.credits.balance } : null;
+  const same = Boolean(workspace && prev?.workspace && workspace.id === prev.workspace.id);
+  return { workspace, credits: fresh ?? (same ? prev?.credits ?? null : null) };
 }
 
 /** Uploads filed in the open project's draft: the Library's Media tab. */
