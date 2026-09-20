@@ -99,7 +99,7 @@
  * that walks past it — every reference we sent still matched by its exact uuid,
  * in the order we sent it.
  *
- * 20 September 2026, FOURTH recording — the two readers behind
+ * 20 September 2026, FIFTH recording — the two readers behind
  * `marketing_studio_v2_status` and `video_analysis_status`, probed with free
  * read-only calls only (no submit, no quote, US$0.00):
  *
