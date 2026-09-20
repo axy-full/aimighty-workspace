@@ -87,6 +87,8 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
           }
           case "generate": {
             event.preventDefault();
+            /* Already open: G neither re-opens it nor dispatches past it. */
+            if (current.composer) return;
             /* A selected, ready shot keeps the Rig's Generate; everything else
                — another page, no shot, Home — opens the global composer. */
             if (generateTarget(current, Boolean(onGenerate)) === "rig") onGenerate?.();

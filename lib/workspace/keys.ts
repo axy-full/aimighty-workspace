@@ -6,20 +6,42 @@ import type { AppState } from "./types";
  * The workspace keymap. The shell registers its own bindings here; later PRs
  * (palette, arrows, G, A, Space) add theirs to the same list.
  *
- * Every single-key binding bails while the user is typing — otherwise typing
- * a shot name triggers generation. A binding opts out with `inInputs: true`
- * (⌘K is the deliberate exception).
+ * Two guards, and a binding must clear both:
+ *
+ *  - typing: every single-key binding bails while the caret is in a field —
+ *    otherwise typing a shot name triggers generation. `inInputs: true` opts
+ *    out (⌘K is the deliberate exception).
+ *  - overlays: while a modal overlay owns the screen, the shell's keys stay
+ *    out of it whatever is focused inside — a button, the click-catcher, a
+ *    `tabindex` div, none of which is a field. `inOverlays: true` opts out
+ *    (⌘K again, and Esc, which must always be able to close).
+ *
+ * The overlay guard is by containment rather than by state so it cannot be
+ * forgotten: a binding added later is inert inside the composer by default.
  */
 
-type KeyTarget = { tagName?: string; isContentEditable?: boolean } | null | undefined;
+type KeyTarget =
+  | { tagName?: string; isContentEditable?: boolean; closest?: (selector: string) => unknown }
+  | null
+  | undefined;
 
 const TYPING_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+
+/** Overlays that own the keyboard while they are open. */
+export const KEYBOARD_OVERLAYS = ".pxw-composer";
 
 export function isTypingTarget(target: EventTarget | KeyTarget): boolean {
   const el = target as KeyTarget;
   if (!el) return false;
   if (el.tagName && TYPING_TAGS.has(el.tagName.toUpperCase())) return true;
   return el.isContentEditable === true;
+}
+
+/** Is the event coming from inside a modal overlay that owns the keyboard? */
+export function inKeyboardOverlay(target: EventTarget | KeyTarget): boolean {
+  const el = target as KeyTarget;
+  if (!el || typeof el.closest !== "function") return false;
+  return el.closest(KEYBOARD_OVERLAYS) != null;
 }
 
 export type KeyEventLike = {
@@ -52,6 +74,8 @@ export type KeyBinding<A = unknown> = {
   action: (event: KeyEventLike, ctx: KeyContext) => A;
   /** Fires even when focus is in a text field. */
   inInputs?: boolean;
+  /** Fires even when focus is inside a modal overlay (⌘K, Esc). */
+  inOverlays?: boolean;
   /** Needs ⌘/Ctrl held; plain bindings ignore modified keys. */
   modified?: boolean;
   /** Status-bar legend entry, when the binding should be advertised. */
@@ -85,7 +109,11 @@ export const SHELL_BINDINGS: KeyBinding<ShellAction>[] = [
     hint: (ctx) => ctx.state.view === "studio" ? { key: "I", label: "inspector" } : null,
   },
   {
+    /* Esc reaches the shell from inside an overlay too: it is the one key that
+       must always be able to close what is open, even if the overlay's own
+       handler is gone. */
     id: "escape",
+    inOverlays: true,
     match: (e) => e.key === "Escape",
     action: () => ({ type: "escape" }),
   },
@@ -107,6 +135,7 @@ export const WORKSPACE_BINDINGS: KeyBinding<ShellAction>[] = [
   {
     id: "palette",
     inInputs: true,
+    inOverlays: true,
     modified: true,
     match: (e) => (e.metaKey === true || e.ctrlKey === true) && !e.altKey && e.key.toLowerCase() === "k",
     action: () => ({ type: "palette" }),
@@ -194,11 +223,13 @@ export function stepSelection(list: readonly { id: string }[], selId: string | n
   return list[(at + step + list.length) % list.length].id;
 }
 
-/** The first binding that claims the event, respecting the typing guard. */
+/** The first binding that claims the event, respecting both guards. */
 export function resolveKey<A>(bindings: KeyBinding<A>[], event: KeyEventLike, ctx: KeyContext): KeyBinding<A> | null {
   const typing = isTypingTarget(event.target);
+  const overlay = inKeyboardOverlay(event.target);
   for (const binding of bindings) {
     if (typing && !binding.inInputs) continue;
+    if (overlay && !binding.inOverlays) continue;
     if (!binding.modified && !plain(event)) continue;
     if (binding.match(event, ctx)) return binding;
   }

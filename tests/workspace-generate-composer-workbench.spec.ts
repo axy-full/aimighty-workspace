@@ -193,17 +193,40 @@ test("typing in the prompt never fires G, I or A", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const { project } = await seeded(page);
   await page.goto(url(project.id));
+  /* The shell has to be up before anything is measured against it: an
+     Inspector counted mid-hydration is absent for reasons that have nothing
+     to do with the keyboard. */
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("inspector")).toBeVisible();
   const inspectorWasOpen = await page.getByTestId("inspector").count();
+  expect(inspectorWasOpen).toBe(1);
+
   await page.getByTestId("topbar-generate").click();
   const prompt = composer(page).getByTestId("composer-prompt");
   await expect(prompt).toBeFocused();
   await prompt.fill("");
   await prompt.pressSequentially("a gantry in fog");
+  /* Every letter landed in the field, including the three that are shortcuts. */
   await expect(prompt).toHaveValue("a gantry in fog");
+  await expect(prompt).toBeFocused();
+
+  /* And with focus on a control inside the composer — a button is not a field,
+     so only the overlay guard keeps the shell's keys out. */
+  const typeGroup = composer(page).getByRole("group", { name: "Output type" }).getByRole("button", { name: "Video" });
+  await typeGroup.click();
+  await expect(typeGroup).toBeFocused();
+  for (const key of ["g", "i", "a", "3", " "]) await page.keyboard.press(key);
+
   /* The composer stayed open, no panel opened, and the Inspector did not toggle. */
   await expect(composer(page)).toBeVisible();
   await expect(page.getByTestId("atomik-button")).toHaveAttribute("aria-expanded", "false");
+  await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
   expect(await page.getByTestId("inspector").count()).toBe(inspectorWasOpen);
+
+  /* Esc still gets through from inside the composer, and focus goes back. */
+  await page.keyboard.press("Escape");
+  await expect(composer(page)).toHaveCount(0);
+  await expect(page.getByTestId("topbar-generate")).toBeFocused();
 });
 
 test("a mocked image generation shows its price, runs to completion and files a take", async ({ page }, info) => {

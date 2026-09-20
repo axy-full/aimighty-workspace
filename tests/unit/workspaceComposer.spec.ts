@@ -18,7 +18,7 @@ import {
   type EngineRow,
 } from "../../lib/workspace/composer";
 import { INITIAL_STATE, generateTarget } from "../../lib/workspace/navigation";
-import { WORKSPACE_BINDINGS, keyContextFor, resolveKey } from "../../lib/workspace/keys";
+import { WORKSPACE_BINDINGS, inKeyboardOverlay, keyContextFor, resolveKey } from "../../lib/workspace/keys";
 import { filterPalette, paletteCommands } from "../../lib/workspace/palette";
 import { displayModelName } from "../../lib/models";
 
@@ -239,6 +239,38 @@ test("G obeys the typing guard, answers on Home, and is swallowed while the comp
   expect(resolveKey(WORKSPACE_BINDINGS, { key: "k", metaKey: true }, open)?.id).toBe("palette");
   /* ⌘G is the browser's, not ours. */
   expect(resolveKey(WORKSPACE_BINDINGS, { key: "g", metaKey: true }, inStudio)).toBeNull();
+});
+
+/** A DOM-ish target: `closest` answers for anything the composer contains. */
+const inComposer = (tagName: string) => ({ tagName, closest: (selector: string) => (selector === ".pxw-composer" ? {} : null) });
+const outside = (tagName: string) => ({ tagName, closest: () => null });
+
+test("anything inside the composer is inert to the single-key map, whatever its tag", () => {
+  expect(inKeyboardOverlay(inComposer("BUTTON"))).toBe(true);
+  expect(inKeyboardOverlay(outside("BUTTON"))).toBe(false);
+  expect(inKeyboardOverlay(null)).toBe(false);
+  /* A plain object with no `closest` (the unit fixtures elsewhere) is not in an overlay. */
+  expect(inKeyboardOverlay({ tagName: "BODY" })).toBe(false);
+
+  const open = keyContextFor({ ...studio, composer: true }, { canGenerate: true, canCompose: true, canPlay: true });
+  /* The guard is containment, not tag: a button, the click-catcher and a
+     tabindex div all receive keys without being fields. */
+  for (const tagName of ["BUTTON", "DIV", "A", "LABEL", "SPAN"])
+    for (const key of ["g", "i", "a", "3", " ", "ArrowRight"])
+      expect(resolveKey(WORKSPACE_BINDINGS, { key, target: inComposer(tagName) }, open), `${key} on ${tagName}`).toBeNull();
+
+  /* It holds even if a binding forgot the state flag — which is the point of
+     guarding by containment as well as by state. */
+  const stateForgot = keyContextFor(studio, { canGenerate: true, canCompose: true, canPlay: true });
+  for (const key of ["g", "i", "a"])
+    expect(resolveKey(WORKSPACE_BINDINGS, { key, target: inComposer("BUTTON") }, stateForgot)).toBeNull();
+
+  /* Esc and ⌘K are the two that must still get through, so the composer can
+     always be closed and the palette always opened. */
+  expect(resolveKey(WORKSPACE_BINDINGS, { key: "Escape", target: inComposer("BUTTON") }, open)?.id).toBe("escape");
+  expect(resolveKey(WORKSPACE_BINDINGS, { key: "k", metaKey: true, target: inComposer("TEXTAREA") }, open)?.id).toBe("palette");
+  /* Outside the composer the same keys work as before. */
+  expect(resolveKey(WORKSPACE_BINDINGS, { key: "i", target: outside("BODY") }, keyContextFor(studio, { canGenerate: true }))?.id).toBe("inspector");
 });
 
 test("the palette shows Generate… first on an empty query", () => {
