@@ -66,7 +66,12 @@ export function SpecTool({
     case "deliver":
       return <DeliverTool key={id} tool={tool} projectId={id} scope={scope} onProject={onProject} />;
     case "marketing":
-      return <MarketingTool tool={tool} project={project} />;
+      return (
+        <>
+          <MarketingTool key={id} tool={tool} project={project} scope={scope} onProject={onProject} />
+          <Toaster theme="dark" position="bottom-center" />
+        </>
+      );
     case "motion":
       return <SubatomikTool key={id} variant="motion-transfer" projectId={id} publish="motion" />;
     case "swap":

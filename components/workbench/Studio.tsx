@@ -172,6 +172,7 @@ import {isMarketingPlan,type MarketingTask} from '@/lib/workbench/marketing-stud
 import {useProductionJobs} from './use-production-jobs';
 import {ModelPicker,EffortPicker,thinkingModelName,effortLabel} from '@/components/atomik/ModelPicker';
 import {uploadWorkbench} from '@/lib/workbench/upload';
+import {DRAFT_UPLOAD_ACCEPT,draftUploadAsset} from '@/lib/workbench/draft-upload';
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
 import {SoundGenerate} from './SoundGenerate';
@@ -1010,29 +1011,7 @@ export default function Studio({
       try {
         if(!signedIn)throw new Error('Sign in to upload project media.');
         if(!readyRef.current)throw new Error('Create a project before uploading media.');
-        const data=await uploadWorkbench(file,undefined,storageKey);
-        received.push({
-          id: data.id,
-          uploadId: data.id,
-          ...(typeof data.durationS === "number" && data.durationS > 0 ? { seconds: data.durationS } : {}),
-          name: file.name,
-          kind: file.type.startsWith("image/")
-            ? "image"
-            : file.type.startsWith("video/")
-              ? "video"
-              : file.type.startsWith("audio/")
-                ? "audio"
-                : "document",
-          category,
-          url: data.url,
-          mime: file.type,
-          description: "Uploaded from device",
-          prompt: "",
-          status: "Draft",
-          version: 1,
-          locked: false,
-          refs: [],
-        });
+        received.push(draftUploadAsset(file,await uploadWorkbench(file,undefined,storageKey),category));
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Upload failed");
       }
@@ -3050,7 +3029,7 @@ export default function Studio({
           ref={fileInput}
           type="file"
           multiple
-          accept="image/png,image/jpeg,image/webp,image/avif,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain"
+          accept={DRAFT_UPLOAD_ACCEPT}
           className="hidden"
           aria-label="Upload project files"
           onChange={(e) => void uploadFiles(e.target.files)}

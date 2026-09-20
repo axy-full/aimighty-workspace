@@ -65,7 +65,8 @@ const TOOLS: Partial<Record<PageId, { body: string | null; card?: string; then?:
   models: { body: '[data-tool-body="models"]', card: "Motion 2.5" },
   approvals: { body: '[data-tool-body="approvals"]', card: "Priced gate" },
   budget: { body: '[data-tool-body="budget"]', card: "Caps" },
-  marketing: { body: '[data-tool-body="product"]', card: "Hooks", then: '[data-tool-body="format"]' },
+  /* Marketing Studio itself is mounted; its tool control opens a section inside the one body. */
+  marketing: { body: '[data-tool-body="marketing"]', card: "Hooks" },
   motion: { body: '[data-tool-body="subatomik"]', card: "Source video" },
   swap: { body: '[data-tool-body="subatomik"]', card: "Target element" },
   sources: { body: '[data-tool-body="subatomik"]', card: "Uploads" },
