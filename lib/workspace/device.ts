@@ -18,8 +18,19 @@
    load, and a rotation that reloads re-runs it); only a live media-query
    change inside one document is ignored.
 
-   Nothing here touches React or the DOM: the probe is supplied, so the latch
-   is testable by driving the media query directly.
+   WHEN the reading happens matters as much as latching it. Reading lazily at
+   first render means reading at HYDRATION, and hydration is not a fixed point:
+   on a cold dev compile it lands many seconds after the document was readable,
+   by which time the keyboard has closed and the height has already moved. The
+   answer is therefore recorded on `window` by an inline script while the
+   document PARSES (`deviceProbeScript`), which is the same instant the
+   `pending` CSS decides from the same query, and the latch reads that record
+   rather than the live query. The live query is only the fallback for a
+   document that never parsed one of these pages (a soft navigation), and the
+   answer it gives is recorded too, so everything later agrees with it.
+
+   Nothing here touches React: the probe and the record are supplied, so the
+   latch is testable by driving the media query directly.
    ────────────────────────────────────────────────────────────────────────── */
 
 export type Device = "phone" | "desktop";
@@ -28,6 +39,58 @@ export type DeviceAnswer = Device | "pending";
 
 /** The one thing this needs from a MediaQueryList. */
 export type MediaProbe = { matches: boolean };
+
+/**
+ * Where the document's answer is kept: a `window` key, so the inline script
+ * that runs while the document parses and the latch that reads it later are
+ * talking about the same document and nothing else.
+ */
+export const DEVICE_FLAG = "__pxwDevice";
+
+/**
+ * The record the latch prefers over the live query. Injected rather than read
+ * from `window` directly so the latch stays testable.
+ */
+export type DeviceRecord = {
+  read: () => Device | null;
+  write: (device: Device) => void;
+};
+
+export function isDevice(value: unknown): value is Device {
+  return value === "phone" || value === "desktop";
+}
+
+/** The real record: `window.__pxwDevice`, written by the parse-time script. */
+export function windowDeviceRecord(): DeviceRecord {
+  const store = () => window as unknown as Record<string, unknown>;
+  return {
+    read: () => {
+      try {
+        const value = store()[DEVICE_FLAG];
+        return isDevice(value) ? value : null;
+      } catch {
+        return null;
+      }
+    },
+    write: (device) => {
+      try {
+        store()[DEVICE_FLAG] = device;
+      } catch {
+        /* Nothing to do: the latch still holds its own answer for this document. */
+      }
+    },
+  };
+}
+
+/**
+ * The inline script that takes the decision while the document parses, for the
+ * server-rendered HTML. `query` is a module constant (PHONE_QUERY); nothing
+ * from a URL reaches this, and a unit test says so. It never overwrites an
+ * answer this document already has.
+ */
+export function deviceProbeScript(query: string): string {
+  return `window.${DEVICE_FLAG}=window.${DEVICE_FLAG}||(window.matchMedia("${query}").matches?"phone":"desktop")`;
+}
 
 export type DeviceLatch = {
   /** For `useSyncExternalStore`. A latched answer never changes, so this never fires. */
@@ -38,11 +101,12 @@ export type DeviceLatch = {
 };
 
 /**
- * A latch over one media query. `probe` is called at most once, the first time
- * the answer is wanted — lazily, so this can be created at module scope where
- * `window` does not exist yet.
+ * A latch over one media query. The answer is taken once: from `record` when
+ * the document already has one (the parse-time script), otherwise from `probe`,
+ * which is then written back to `record`. Both are called lazily, so this can
+ * be created at module scope where `window` does not exist yet.
  */
-export function createDeviceLatch(probe: () => MediaProbe): DeviceLatch {
+export function createDeviceLatch(probe: () => MediaProbe, record?: DeviceRecord): DeviceLatch {
   let latched: Device | null = null;
   return {
     /* Deliberately no listener: there is no update to deliver, and not
@@ -50,7 +114,10 @@ export function createDeviceLatch(probe: () => MediaProbe): DeviceLatch {
        than merely unlikely. */
     subscribe: () => () => {},
     snapshot: () => {
-      if (!latched) latched = probe().matches ? "phone" : "desktop";
+      if (!latched) {
+        latched = record?.read() ?? (probe().matches ? "phone" : "desktop");
+        record?.write(latched);
+      }
       return latched;
     },
     serverSnapshot: () => "pending" as const,

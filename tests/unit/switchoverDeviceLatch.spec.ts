@@ -1,5 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { createDeviceLatch, type MediaProbe } from "../../lib/workspace/device";
+import {
+  createDeviceLatch,
+  DEVICE_FLAG,
+  deviceProbeScript,
+  type DeviceRecord,
+  type MediaProbe,
+} from "../../lib/workspace/device";
 import { PHONE_QUERY } from "../../lib/workspace/switchover";
 
 /**
@@ -84,4 +90,58 @@ test("the landscape-phone clause is the one that moves, and it is still in the q
   /* The defect this latch fixes lives in the second clause: a height, on a
      touch phone, which changes without anybody rotating the device. */
   expect(PHONE_QUERY).toContain("(hover: none) and (pointer: coarse) and (max-height: 500px)");
+});
+
+/* ── The record taken while the document parses ─────────────────────────── */
+
+/** A stand-in for `window.__pxwDevice`. */
+function record(initial: "phone" | "desktop" | null = null) {
+  let held = initial;
+  const writes: string[] = [];
+  const store: DeviceRecord = {
+    read: () => held,
+    write: (device) => {
+      writes.push(device);
+      held = device;
+    },
+  };
+  return { store, writes, held: () => held };
+}
+
+test("the record the document took at parse time wins over the live query", () => {
+  /* The keyboard has already closed by the time anything reads: the query says
+     desktop, the document's own answer says phone, and the phone answer holds.
+     This is the case that redirected a phone on CI, where hydration lands
+     seconds after the document was readable. */
+  const { live } = probe(false);
+  const kept = record("phone");
+  const latch = createDeviceLatch(() => live, kept.store);
+
+  expect(latch.snapshot()).toBe("phone");
+  expect(live.reads).toBe(0);
+});
+
+test("with no record yet, the query is read once and the answer is recorded", () => {
+  const { live, set } = probe(true);
+  const fresh = record();
+  const latch = createDeviceLatch(() => live, fresh.store);
+
+  expect(latch.snapshot()).toBe("phone");
+  expect(fresh.held()).toBe("phone");
+  /* Recorded, so a second latch in this document agrees rather than re-reading
+     a query that has since moved. */
+  set(false);
+  expect(createDeviceLatch(() => live, fresh.store).snapshot()).toBe("phone");
+  expect(fresh.writes).toEqual(["phone", "phone"]);
+});
+
+test("the parse-time script is constant text, and never overwrites the document's answer", () => {
+  const script = deviceProbeScript("(max-width: 759px)");
+  expect(script).toBe(
+    `window.${DEVICE_FLAG}=window.${DEVICE_FLAG}||(window.matchMedia("(max-width: 759px)").matches?"phone":"desktop")`,
+  );
+  /* Nothing from a URL can reach it: it takes the query, which is a module
+     constant, and writes two literals. */
+  expect(script).not.toContain("location");
+  expect(script).not.toContain("search");
 });

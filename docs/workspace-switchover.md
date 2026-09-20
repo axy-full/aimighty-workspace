@@ -84,8 +84,17 @@ Before the browser has answered, `components/switchover/switchover.css` decides
 from the same query, so a desktop never flashes the old studio and a phone
 never flashes the hand-off note.
 
-**The answer is latched to the document** (`lib/workspace/device.ts`). The gate
-asks the query once, on the load, and never re-asks. It has to: the second
+**The answer is latched to the document** (`lib/workspace/device.ts`), and it is
+taken while the document *parses* — by an inline script in the server-rendered
+HTML, next to the `?shell=` cookie script and for the same reason. Taking it at
+first render means taking it at hydration, and hydration is not a fixed point: on
+a cold dev compile it lands many seconds after the document was readable, so the
+decision would be made from whatever the viewport had become by then rather than
+from what the person opened. Parse time is also exactly when
+`components/switchover/switchover.css` decides the first paint from the same
+query, so the two halves of the gate can no longer disagree. The latch reads that
+record; the live query is only the fallback for a document that never parsed one
+of these pages (a soft navigation), and its answer is recorded too. It has to: the second
 clause is a *height* on a touch phone, and that height moves while nobody
 rotates anything — a keyboard closing, browser chrome collapsing,
 `interactive-widget=resizes-content`, a dev overlay. Re-deciding is not

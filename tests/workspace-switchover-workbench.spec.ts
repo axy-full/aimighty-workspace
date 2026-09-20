@@ -188,6 +188,37 @@ test("a late viewport change never redirects a phone", async ({ page }, info) =>
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
 });
 
+test("the decision is taken while the document parses, not whenever hydration lands", async ({ page }, info) => {
+  test.skip(!PHONE.includes(info.project.name), "phone viewports");
+  await signedIn(page);
+
+  /* CI's shape, made deterministic: a cold dev compile lands hydration many
+     seconds after the document is readable, so a decision taken at first
+     render is taken from whatever the viewport has become by then. Holding the
+     client bundle back reproduces that exactly. */
+  await page.route(/\/_next\/static\/.*\.js/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    await route.continue();
+  });
+
+  const from = `/workbench?project=${PROJECT}&stage=canvas`;
+  const stayed = new RegExp(from.replace(/[?]/g, "\\?") + "$");
+  await page.goto(from, { waitUntil: "commit" });
+  /* The answer is already recorded, by the inline script in the HTML, before
+     any of this page's JavaScript has run. */
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>).__pxwDevice ?? null))
+    .toBe("phone");
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  /* Past the delay, so hydration happens here — at desktop size, with the
+     phone answer already taken. */
+  await page.waitForTimeout(8_000);
+  await expect(page).toHaveURL(stayed);
+  await expect(page.locator(".pxw")).toHaveCount(0);
+  await expect(legacyShell(page).first()).toBeVisible();
+});
+
 /* ── The escape hatch ──────────────────────────────────────────────────── */
 
 test("the escape hatch opens the old shell, is remembered, and can be cancelled", async ({ page }, info) => {

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
-import { createDeviceLatch } from "@/lib/workspace/device";
+import { createDeviceLatch, deviceProbeScript, windowDeviceRecord } from "@/lib/workspace/device";
 import {
   LEGACY_SHELL,
   NEW_SHELL,
@@ -25,15 +25,27 @@ import "./switchover.css";
    decides from the same media query — so a desktop never flashes the old
    studio and a phone never flashes the hand-off note.
 
-   The answer is LATCHED (lib/workspace/device.ts): asked once per document and
-   never re-asked. The phone half of PHONE_QUERY matches a touch phone held
+   The answer is LATCHED (lib/workspace/device.ts): taken once per document and
+   never re-taken. The phone half of PHONE_QUERY matches a touch phone held
    landscape on `max-height: 500px`, and that height moves within one document
    — a keyboard closing, browser chrome collapsing, a dev overlay — so a live
    re-decide would redirect somebody out of the phone surface they were using.
    A rotation that reloads the document still decides freshly.
+
+   It is taken while the document PARSES, by `DeviceProbe` below, next to the
+   cookie script and for the same reason: hydration is not a fixed point (a cold
+   dev compile lands it seconds after the document was readable), and a decision
+   taken then is a decision taken from whatever the viewport happens to be by
+   then rather than from what the person opened. Parse time is also exactly when
+   switchover.css decides the first paint from the same query, so the two halves
+   of the gate can no longer disagree.
    ────────────────────────────────────────────────────────────────────────── */
 
-const latch = createDeviceLatch(() => window.matchMedia(PHONE_QUERY));
+const latch = createDeviceLatch(() => window.matchMedia(PHONE_QUERY), windowDeviceRecord());
+/* The bundle may load before hydration but after the parse script; deciding
+   here too makes the answer no later than the moment this module runs, which
+   is the fallback for a soft navigation whose script never executed. */
+if (typeof window !== "undefined") latch.snapshot();
 
 /**
  * The same write as shellCookieScript, for a navigation that never re-parsed
@@ -95,15 +107,27 @@ export default function SwitchoverGate({
     if (switching && device === "desktop") window.location.replace(target!);
   }, [switching, target, device]);
 
-  const cookie = <ShellCookie search={search} />;
-  if (!switching) return <>{cookie}{children}</>;
-  if (device === "desktop") return <><SwitchNote target={target!} />{cookie}</>;
-  if (device === "phone") return <>{cookie}{children}</>;
+  /* Both run while the document parses: the device decision and the `?shell=`
+     choice. Neither may wait for hydration. */
+  const scripts = (
+    <>
+      <DeviceProbe />
+      <ShellCookie search={search} />
+    </>
+  );
+  if (!switching) return <>{scripts}{children}</>;
+  if (device === "desktop") return <><SwitchNote target={target!} />{scripts}</>;
+  if (device === "phone") return <>{scripts}{children}</>;
+  /* Undecided — which is what the SERVER renders, so the scripts belong here
+     above all: this is the branch whose HTML a switching visitor parses. */
   return (
-    <div data-pxw-switch="pending">
-      <SwitchNote target={target!} />
-      <div className="pxw-switch-legacy">{children}</div>
-    </div>
+    <>
+      {scripts}
+      <div data-pxw-switch="pending">
+        <SwitchNote target={target!} />
+        <div className="pxw-switch-legacy">{children}</div>
+      </div>
+    </>
   );
 }
 
@@ -116,6 +140,17 @@ function ShellCookie({ search }: { search: string }) {
   const script = shellCookieScript(search);
   if (!script) return null;
   return <script dangerouslySetInnerHTML={{ __html: script }} />;
+}
+
+/**
+ * The device decision, taken while the document parses rather than at
+ * hydration. Server-rendered, so it is in the HTML: a `dangerouslySetInnerHTML`
+ * script inserted by a client render would not execute, which is why the latch
+ * also decides at module evaluation. One constant string, PHONE_QUERY; nothing
+ * from the URL reaches it.
+ */
+function DeviceProbe() {
+  return <script dangerouslySetInnerHTML={{ __html: deviceProbeScript(PHONE_QUERY) }} />;
 }
 
 function SwitchNote({ target }: { target: string }) {
