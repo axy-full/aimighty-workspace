@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
-import { createDeviceLatch, deviceProbeScript, windowDeviceRecord } from "@/lib/workspace/device";
+import { createDeviceLatch, windowDeviceRecord } from "@/lib/workspace/device";
 import {
   LEGACY_SHELL,
   NEW_SHELL,
@@ -32,13 +32,14 @@ import "./switchover.css";
    re-decide would redirect somebody out of the phone surface they were using.
    A rotation that reloads the document still decides freshly.
 
-   It is taken while the document PARSES, by `DeviceProbe` below, next to the
-   cookie script and for the same reason: hydration is not a fixed point (a cold
-   dev compile lands it seconds after the document was readable), and a decision
-   taken then is a decision taken from whatever the viewport happens to be by
-   then rather than from what the person opened. Parse time is also exactly when
-   switchover.css decides the first paint from the same query, so the two halves
-   of the gate can no longer disagree.
+   It is taken while the document PARSES, by `DeviceProbe` — a SERVER component
+   the four entry points render beside this gate, because React never executes a
+   <script> created during a client render and this component re-renders. The
+   reason for parse time is that hydration is not a fixed point: a cold dev
+   compile lands it seconds after the document was readable, so a decision taken
+   then is taken from whatever the viewport has become rather than from what the
+   person opened. Parse time is also exactly when switchover.css decides the
+   first paint from the same query, so the two halves cannot disagree.
    ────────────────────────────────────────────────────────────────────────── */
 
 const latch = createDeviceLatch(() => window.matchMedia(PHONE_QUERY), windowDeviceRecord());
@@ -107,27 +108,15 @@ export default function SwitchoverGate({
     if (switching && device === "desktop") window.location.replace(target!);
   }, [switching, target, device]);
 
-  /* Both run while the document parses: the device decision and the `?shell=`
-     choice. Neither may wait for hydration. */
-  const scripts = (
-    <>
-      <DeviceProbe />
-      <ShellCookie search={search} />
-    </>
-  );
-  if (!switching) return <>{scripts}{children}</>;
-  if (device === "desktop") return <><SwitchNote target={target!} />{scripts}</>;
-  if (device === "phone") return <>{scripts}{children}</>;
-  /* Undecided — which is what the SERVER renders, so the scripts belong here
-     above all: this is the branch whose HTML a switching visitor parses. */
+  const cookie = <ShellCookie search={search} />;
+  if (!switching) return <>{cookie}{children}</>;
+  if (device === "desktop") return <><SwitchNote target={target!} />{cookie}</>;
+  if (device === "phone") return <>{cookie}{children}</>;
   return (
-    <>
-      {scripts}
-      <div data-pxw-switch="pending">
-        <SwitchNote target={target!} />
-        <div className="pxw-switch-legacy">{children}</div>
-      </div>
-    </>
+    <div data-pxw-switch="pending">
+      <SwitchNote target={target!} />
+      <div className="pxw-switch-legacy">{children}</div>
+    </div>
   );
 }
 
@@ -140,17 +129,6 @@ function ShellCookie({ search }: { search: string }) {
   const script = shellCookieScript(search);
   if (!script) return null;
   return <script dangerouslySetInnerHTML={{ __html: script }} />;
-}
-
-/**
- * The device decision, taken while the document parses rather than at
- * hydration. Server-rendered, so it is in the HTML: a `dangerouslySetInnerHTML`
- * script inserted by a client render would not execute, which is why the latch
- * also decides at module evaluation. One constant string, PHONE_QUERY; nothing
- * from the URL reaches it.
- */
-function DeviceProbe() {
-  return <script dangerouslySetInnerHTML={{ __html: deviceProbeScript(PHONE_QUERY) }} />;
 }
 
 function SwitchNote({ target }: { target: string }) {

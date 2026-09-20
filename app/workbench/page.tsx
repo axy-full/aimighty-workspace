@@ -1,5 +1,6 @@
 import Studio from '@/components/workbench/Studio';
 import SwitchoverGate from '@/components/switchover/SwitchoverGate';
+import DeviceProbe from '@/components/switchover/DeviceProbe';
 import {switchoverTargetFor,type RawSearch} from '@/lib/workspace/switchover.server';
 import {redirect} from 'next/navigation';
 import {currentContext} from '@/lib/auth';
@@ -26,7 +27,7 @@ export default async function Workbench({searchParams}:{searchParams:Promise<Raw
  /* The switch-over. Signed-out visitors are never switched: /workspace sends
     anyone without a workspace back here, so the two would bounce forever. */
  const {target,search}=await switchoverTargetFor('/workbench',await searchParams);
- return <SwitchoverGate target={target} search={search} hasWorkspace={Boolean(ctx?.workspace)}>
+ return <><DeviceProbe/><SwitchoverGate target={target} search={search} hasWorkspace={Boolean(ctx?.workspace)}>
   <Studio key={scope} initialAccount={initialAccount} apiBase="/api/workbench" sourceMode signedIn={!!ctx?.workspace} storageKey={scope}/>
- </SwitchoverGate>;
+ </SwitchoverGate></>;
 }
