@@ -90,12 +90,14 @@ async function assertNoClipping(page: Page) {
   expect(problems).toEqual([]);
 }
 
-test("phones keep the existing phone surface", async ({ page }, info) => {
+test("phones render the phone shell", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const { project } = await seeded(page);
   await page.goto(rigUrl(project.id));
-  await expect(page).toHaveURL(new RegExp(`/workbench\\?project=${project.id}$`));
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("shot list, selection, edits that persist and a live estimate", async ({ page }, info) => {

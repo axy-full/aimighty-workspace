@@ -1,0 +1,630 @@
+/*
+ * Particl workspace — the phone shell (below 768px).
+ *
+ * A sibling of app/workspace.css: same `.pxw` token scope, same values, but
+ * every rule here is additionally scoped to `.pxw-phone`, which only the
+ * phone shell sets. The desktop shell cannot be reached by anything in this
+ * file, and the file is imported only by app/workspace/page.tsx.
+ *
+ * Values are measured from design/Particl Mobile.dc.html and 05-mobile.md.
+ * Two rules are absolute and are the reason for several of the numbers:
+ * nothing below 12px, and no target under 44×44.
+ */
+
+.pxw-phone {
+  flex-direction: row;
+  justify-content: center;
+  background: #050506;
+}
+
+.pxw-phone .pxm-shell {
+  width: 100%;
+  max-width: 440px;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--pxw-ground);
+  border-left: 1px solid var(--pxw-hairline);
+  border-right: 1px solid var(--pxw-hairline);
+  overflow: hidden;
+}
+
+/* ── Header (54px) ─────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-header {
+  flex: none;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 8px;
+  background: var(--pxw-ground);
+  border-bottom: 1px solid var(--pxw-divider);
+}
+/* Every header control is a 44×44 target; the avatar's circle is 32 inside it. */
+.pxw-phone .pxm-hit {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: var(--pxw-primary);
+}
+.pxw-phone .pxm-hit-control {
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-control-border);
+}
+.pxw-phone .pxm-hit:active { background: var(--pxw-control-hover); }
+.pxw-phone .pxm-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--pxw-avatar);
+  color: var(--pxw-avatar-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 620;
+}
+.pxw-phone .pxm-nav-title {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  min-height: 44px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border-radius: 10px;
+}
+.pxw-phone .pxm-nav-title:active { background: var(--pxw-hairline); }
+.pxw-phone .pxm-nav-title-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.pxw-phone .pxm-nav-title-text {
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-caret { font-size: 12px; color: var(--pxw-dimmer); flex: none; }
+.pxw-phone .pxm-nav-sub-row { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+.pxw-phone .pxm-nav-sub {
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-credits {
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: var(--pxw-label-floor);
+  flex: none;
+  white-space: nowrap;
+}
+
+/* ── Screens ───────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--pxw-ground);
+  -webkit-overflow-scrolling: touch;
+}
+.pxw-phone .pxm-pad { padding: 16px 14px 26px; }
+.pxw-phone .pxm-pad-x { padding-left: 14px; padding-right: 14px; }
+.pxw-phone .pxm-pad-top { padding-top: 14px; }
+.pxw-phone .pxm-rows { padding-bottom: 6px; }
+
+.pxw-phone .pxm-kicker {
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.13em;
+  color: var(--pxw-label-floor);
+  text-transform: uppercase;
+}
+.pxw-phone .pxm-h1 { font-size: 22px; font-weight: 620; letter-spacing: -0.022em; margin: 8px 0 0; }
+.pxw-phone .pxm-lede { font-size: 13px; color: var(--pxw-dimmer); line-height: 1.5; margin: 5px 0 0; text-wrap: pretty; }
+.pxw-phone .pxm-note { font-size: 13px; color: var(--pxw-body); line-height: 1.5; margin: 14px 0 0; text-wrap: pretty; }
+.pxw-phone .pxm-empty { font-size: 13px; color: var(--pxw-dimmer); padding: 16px 0; }
+.pxw-phone .pxm-foot-note { font-size: 12.5px; color: var(--pxw-dimmer); margin: 6px 0 0; padding: 0 16px 8px; }
+.pxw-phone .pxm-row { display: flex; align-items: center; gap: 11px; }
+.pxw-phone .pxm-grow { flex: 1; min-width: 0; display: block; }
+.pxw-phone .pxm-chevron { font-size: 15px; color: var(--pxw-label-floor); flex: none; }
+.pxw-phone .pxm-dot5 { width: 5px; height: 5px; border-radius: 50%; flex: none; display: block; }
+.pxw-phone .pxm-dot6 { width: 6px; height: 6px; border-radius: 50%; flex: none; display: block; }
+.pxw-phone .pxm-dot9 { width: 9px; height: 9px; border-radius: 50%; flex: none; display: block; }
+
+/* Projects */
+.pxw-phone .pxm-cards { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.pxw-phone .pxm-project {
+  display: block;
+  width: 100%;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  border-radius: 15px;
+  overflow: hidden;
+}
+.pxw-phone .pxm-project[data-open] { border-color: var(--pxw-selected); }
+.pxw-phone .pxm-project:active { background: #131316; }
+.pxw-phone .pxm-project-media { display: block; position: relative; aspect-ratio: 2 / 1; }
+.pxw-phone .pxm-band-a { position: absolute; inset: 0; display: block; }
+.pxw-phone .pxm-band-b { position: absolute; left: 0; right: 0; bottom: 0; height: 52%; display: block; }
+.pxw-phone .pxm-slate {
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  max-width: calc(100% - 22px);
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  color: #121210;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 3px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-project-body { display: block; padding: 13px 14px 15px; }
+.pxw-phone .pxm-project-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 650;
+  color: #1a1204;
+}
+.pxw-phone .pxm-project-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 580;
+  letter-spacing: -0.014em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-project-meta {
+  display: block;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-bar {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--pxw-progress-track);
+  margin-top: 13px;
+  overflow: hidden;
+}
+.pxw-phone .pxm-bar-fill { display: block; height: 100%; border-radius: 2px; }
+.pxw-phone .pxm-bar-blue { background: var(--pxw-blue); }
+.pxw-phone .pxm-project-state { margin-top: 9px; gap: 7px; }
+.pxw-phone .pxm-project-progress { font-size: 12px; color: var(--pxw-dimmer); }
+
+.pxw-phone .pxm-pair { display: flex; gap: 10px; margin-top: 14px; }
+.pxw-phone .pxm-control,
+.pxw-phone .pxm-filled {
+  flex: 1;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 13px;
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+.pxw-phone .pxm-control { background: var(--pxw-control); border: 1px solid var(--pxw-control-border); font-weight: 530; }
+.pxw-phone .pxm-control:active { background: #1a1a1e; }
+.pxw-phone .pxm-filled { background: var(--pxw-blue); color: var(--pxw-primary); font-weight: 570; }
+.pxw-phone .pxm-filled:active { background: #0060c8; }
+
+/* Suite */
+.pxw-phone .pxm-card { background: var(--pxw-card); border: 1px solid var(--pxw-card-border); border-radius: 15px; padding: 15px 15px 16px; }
+.pxw-phone .pxm-chips { display: flex; gap: 7px; margin-top: 12px; flex-wrap: wrap; }
+.pxw-phone .pxm-chip {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--pxw-chip-inner);
+  border: 1px solid var(--pxw-control-border);
+  font-size: 12px;
+  color: var(--pxw-body);
+}
+.pxw-phone .pxm-progress-row { display: flex; align-items: baseline; gap: 8px; margin-top: 15px; }
+.pxw-phone .pxm-progress-count { font-size: 19px; font-weight: 620; letter-spacing: -0.02em; }
+.pxw-phone .pxm-progress-note { font-size: 12.5px; color: var(--pxw-dimmer); }
+
+.pxw-phone .pxm-next { display: block; width: 100%; margin-top: 12px; padding: 0 14px; }
+.pxw-phone .pxm-next:active { opacity: 0.75; }
+.pxw-phone .pxm-next-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+}
+.pxw-phone .pxm-next[data-waiting] .pxm-next-inner { background: var(--pxw-amber-tint); border-color: rgba(255, 159, 10, 0.3); }
+.pxw-phone .pxm-next-kicker {
+  display: block;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.13em;
+  color: var(--pxw-atomik-gold-ink);
+}
+.pxw-phone .pxm-next-line { display: block; font-size: 13px; color: var(--pxw-secondary); line-height: 1.45; margin-top: 5px; text-wrap: pretty; }
+
+.pxw-phone .pxm-section-head { display: flex; align-items: baseline; justify-content: space-between; padding: 22px 16px 10px; }
+.pxw-phone .pxm-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  margin-bottom: 8px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+}
+.pxw-phone .pxm-stage-row[data-on] { border-color: var(--pxw-selected); }
+.pxw-phone .pxm-stage-row:active { background: #131316; }
+.pxw-phone .pxm-stage-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  background: transparent;
+  color: var(--pxw-label-floor);
+  border: 1px solid var(--pxw-dashed);
+}
+.pxw-phone .pxm-stage-row[data-state="done"] .pxm-stage-mark {
+  background: rgba(52, 199, 89, 0.16);
+  color: var(--pxw-green);
+  border-color: rgba(52, 199, 89, 0.3);
+}
+.pxw-phone .pxm-stage-row[data-state="progress"] .pxm-stage-mark {
+  background: rgba(10, 132, 255, 0.16);
+  color: var(--pxw-blue-ink);
+  border-color: rgba(10, 132, 255, 0.35);
+}
+.pxw-phone .pxm-stage-name {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 540;
+  letter-spacing: -0.012em;
+  color: var(--pxw-near-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-stage-row[data-on] .pxm-stage-name { color: var(--pxw-primary); font-weight: 580; }
+.pxw-phone .pxm-stage-state { margin-top: 3px; gap: 6px; }
+.pxw-phone .pxm-stage-state-label { font-size: 12px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-stage-count { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); flex: none; }
+
+/* Page */
+.pxw-phone .pxm-crumbs { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--pxw-faint); }
+.pxw-phone .pxm-crumb-sep { color: var(--pxw-label-floor); }
+.pxw-phone .pxm-crumb-here { color: var(--pxw-body); font-weight: 530; }
+.pxw-phone .pxm-page-title { font-size: 24px; font-weight: 620; letter-spacing: -0.024em; margin: 9px 0 0; }
+.pxw-phone .pxm-page-sub { font-size: 12.5px; color: var(--pxw-dimmer); margin-top: 4px; }
+.pxw-phone .pxm-balance { font-size: 28px; font-weight: 620; letter-spacing: -0.024em; margin-top: 10px; }
+.pxw-phone .pxm-suspended {
+  flex: none;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: var(--pxw-amber-ink);
+  background: var(--pxw-amber-tint);
+  border-bottom: 1px solid rgba(255, 159, 10, 0.3);
+}
+
+/* ── The pinned action bar (46px) ──────────────────────────────────────── */
+
+.pxw-phone .pxm-actions {
+  flex: none;
+  display: flex;
+  gap: 9px;
+  padding: 10px 14px;
+  background: var(--pxw-ground);
+  border-top: 1px solid var(--pxw-divider);
+}
+.pxw-phone .pxm-ask,
+.pxw-phone .pxm-primary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 12px;
+  border-radius: 13px;
+}
+.pxw-phone .pxm-ask { background: var(--pxw-control); border: 1px solid var(--pxw-control-border); }
+.pxw-phone .pxm-ask[data-tone="waiting"] { background: var(--pxw-amber-tint-strong); border-color: rgba(240, 178, 62, 0.4); }
+.pxw-phone .pxm-ask[data-tone="running"] { background: rgba(240, 178, 62, 0.1); border-color: rgba(240, 178, 62, 0.4); }
+.pxw-phone .pxm-ask-label {
+  font-size: 13px;
+  font-weight: 545;
+  color: var(--pxw-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-ask[data-tone="waiting"] .pxm-ask-label { color: var(--pxw-amber-ink); }
+.pxw-phone .pxm-ask[data-tone="running"] .pxm-ask-label { color: var(--pxw-atomik-panel-gold); }
+.pxw-phone .pxm-primary { background: var(--pxw-blue); }
+.pxw-phone .pxm-primary:active { background: #0060c8; }
+/* Blocked: it outlines and says why, rather than disappearing. */
+.pxw-phone .pxm-primary[aria-disabled="true"] {
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-control-border);
+}
+.pxw-phone .pxm-primary-label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 570;
+  color: var(--pxw-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-primary[aria-disabled="true"] .pxm-primary-label { color: var(--pxw-dim); }
+.pxw-phone .pxm-primary-cost { font-family: var(--pxw-mono); font-size: 12px; font-weight: 400; opacity: 0.86; }
+
+/* ── The dock (60px) ───────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-dock {
+  flex: none;
+  min-height: 60px;
+  display: flex;
+  align-items: stretch;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--pxw-panel);
+  border-top: 1px solid var(--pxw-divider);
+}
+.pxw-phone .pxm-tab {
+  flex: 1;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: relative;
+  color: var(--pxw-dimmer);
+}
+.pxw-phone .pxm-tab[data-on] { color: var(--pxw-blue-ink); }
+.pxw-phone .pxm-tab:active { opacity: 0.6; }
+.pxw-phone .pxm-tab-bar {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 26px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--pxw-blue);
+  display: none;
+}
+.pxw-phone .pxm-tab[data-on] .pxm-tab-bar { display: block; }
+.pxw-phone .pxm-tab-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+.pxw-phone .pxm-tab-icon svg { width: 22px; height: 22px; }
+.pxw-phone .pxm-tab-label { font-size: 12px; font-weight: 530; letter-spacing: -0.004em; }
+.pxw-phone .pxm-tab-badge {
+  position: absolute;
+  top: 8px;
+  right: 50%;
+  margin-right: -17px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pxw-amber);
+  color: #1a1200;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* ── Sheets ────────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-sheet-host {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+/* The scrim covers the dock, which is the spec: the dock hides behind it. */
+.pxw-phone .pxm-scrim { position: absolute; inset: 0; background: rgba(5, 6, 8, 0.55); width: 100%; height: 100%; }
+.pxw-phone .pxm-sheet {
+  position: relative;
+  max-height: 88%;
+  display: flex;
+  flex-direction: column;
+  background: var(--pxw-card);
+  border-top: 1px solid var(--pxw-overlay-border);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -18px 54px rgba(0, 0, 0, 0.7);
+  animation: pxm-sheet-up 0.18s ease-out;
+}
+.pxw-phone .pxm-grabber-row { flex: none; display: flex; justify-content: center; padding: 9px 0 3px; }
+.pxw-phone .pxm-grabber { width: 36px; height: 4px; border-radius: 3px; background: var(--pxw-toast-border); display: block; }
+.pxw-phone .pxm-sheet-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px 10px 16px;
+  border-bottom: 1px solid var(--pxw-card-border);
+}
+.pxw-phone .pxm-sheet-titles { flex: 1; min-width: 0; }
+.pxw-phone .pxm-sheet-title {
+  display: block;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.018em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-sheet-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 34px close, in a 44px target — the spec's size inside the spec's floor. */
+.pxw-phone .pxm-sheet-close { width: 44px; height: 44px; flex: none; display: flex; align-items: center; justify-content: center; }
+.pxw-phone .pxm-sheet-close-inner {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--pxw-chip-inner);
+  color: var(--pxw-muted);
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pxw-phone .pxm-sheet-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 26px; }
+
+.pxw-phone .pxm-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: var(--pxw-chip-inner);
+  border: 1px solid var(--pxw-dashed);
+  font-size: 15px;
+  outline: none;
+}
+.pxw-phone .pxm-search-list { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.pxw-phone .pxm-search-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 50px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: var(--pxw-control);
+}
+.pxw-phone .pxm-search-row:active { background: var(--pxw-toggle-on); }
+.pxw-phone .pxm-search-group {
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  color: var(--pxw-label-floor);
+  width: 58px;
+  flex: none;
+}
+.pxw-phone .pxm-search-label { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── The suite dropdown ────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-menu-host { position: absolute; inset: 0; z-index: 45; }
+.pxw-phone .pxm-menu-scrim { position: absolute; inset: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); }
+.pxw-phone .pxm-menu {
+  position: absolute;
+  top: 58px;
+  left: 10px;
+  right: 10px;
+  background: var(--pxw-palette-panel);
+  border: 1px solid var(--pxw-overlay-border);
+  border-radius: 16px;
+  box-shadow: var(--pxw-shadow-palette);
+  overflow: hidden;
+  animation: pxm-sheet-up 0.16s ease-out;
+}
+.pxw-phone .pxm-menu-head { padding: 13px 16px 11px; border-bottom: 1px solid var(--pxw-card-border); }
+.pxw-phone .pxm-menu-sub { font-size: 12.5px; color: var(--pxw-dimmer); margin-top: 5px; }
+.pxw-phone .pxm-menu-list { padding: 7px; }
+.pxw-phone .pxm-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 11px 12px;
+  border-radius: 12px;
+}
+.pxw-phone .pxm-menu-row[data-on] { background: var(--pxw-toggle-on); }
+.pxw-phone .pxm-menu-row:active { background: var(--pxw-toggle-on); }
+.pxw-phone .pxm-menu-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: -0.012em;
+  color: var(--pxw-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-menu-row[data-on] .pxm-menu-name { color: var(--pxw-primary); }
+.pxw-phone .pxm-menu-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-menu-count { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); flex: none; }
+.pxw-phone .pxm-menu-check { font-size: 13px; color: var(--pxw-blue-ink); flex: none; }
+
+/* ── The ring, and the only motion on the phone ────────────────────────── */
+
+.pxw-phone .pxm-ring { display: block; flex: none; }
+.pxw-phone .pxm-ring[data-beating] circle {
+  animation-name: pxm-beat;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+/* The handoff's own beat: one 1.6s lap, each dot 0.2s behind the last. */
+@keyframes pxm-beat {
+  0%, 70%, 100% { opacity: 0.34; }
+  18% { opacity: 1; }
+}
+@keyframes pxm-sheet-up {
+  from { transform: translateY(14px); opacity: 0.4; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pxw-phone .pxm-ring[data-beating] circle { animation: none; opacity: 0.7; }
+  .pxw-phone .pxm-sheet,
+  .pxw-phone .pxm-menu { animation: none; }
+}

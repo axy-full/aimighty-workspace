@@ -11,7 +11,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
  *
  * Nothing here dispatches: the fixture records and refuses every POST that is
  * not a quote or the draft's own save, and every test asserts that list is
- * empty. Desktop only; phones keep the existing phone surface.
+ * empty. Desktop only; phones render the phone shell.
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -150,12 +150,14 @@ async function fixture(page: Page): Promise<State> {
 
 const url = "/workspace?project=ws-mkt-host&suite=moleculr&page=marketing";
 
-test("phones keep the existing phone surface on Marketing Studio", async ({ page }, info) => {
+test("phones render the phone shell on Marketing Studio", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await fixture(page);
   await page.goto(url);
-  await expect(page).toHaveURL(/\/workbench\?project=ws-mkt-host$/);
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("the workspace Marketing page hosts the real four sections, not a link out", async ({ page }, info) => {

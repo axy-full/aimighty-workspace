@@ -22,8 +22,9 @@ import {
   WORKSPACE_PATH,
   type UrlState,
 } from "./navigation";
+import { mobileBack, withLevel } from "./mobile";
 import { NO_PLANS, type PlanSource } from "./plan-source";
-import type { AppState, LibFilter, SelectableLists, Suite } from "./types";
+import type { AppState, LibFilter, MobileLevel, MobileSheetId, SelectableLists, Suite } from "./types";
 
 export type Action =
   | { type: "replace"; state: AppState }
@@ -64,6 +65,12 @@ type Workspace = {
   /** Choose a project and enter a page in one history entry. */
   openProject: (projectId: string, suite: Suite, page: string) => void;
   setLibFilter: (filter: LibFilter) => void;
+  /** Phone: move to a drill-down level (Projects / Suite / Make / Settings). */
+  setLevel: (level: MobileLevel) => void;
+  /** Phone: the back chevron — one level up. */
+  back: () => void;
+  /** Phone: open a bottom sheet, close it, or toggle the one the dock owns. */
+  setSheet: (sheet: MobileSheetId | null) => void;
   /** Replaces the URL (no new history entry), e.g. after a selection repair. */
   syncUrl: () => void;
   toast: (text: string) => void;
@@ -163,6 +170,11 @@ export function WorkspaceProvider({
       commit(navigate(base, suite, page), "push");
     },
     setLibFilter: (libFilter) => dispatch({ type: "libFilter", libFilter }),
+    /* A level is a place, so it gets a history entry; a sheet is not, so it
+       does not touch the URL at all. */
+    setLevel: (level) => commit(withLevel(ref.current, level), "push"),
+    back: () => commit(mobileBack(ref.current), "push"),
+    setSheet: (sheet) => dispatch({ type: "patch", patch: { sheet } }),
     syncUrl: () => writeUrl(ref.current, "replace"),
     toast,
     plans,

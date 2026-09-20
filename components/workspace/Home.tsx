@@ -3,16 +3,22 @@ import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { avatarGradient, initialsOf, mediaBands, shortDate } from "@/lib/workspace/format";
 import { getSuite, PAGES } from "@/lib/workspace/pages";
+import { PAGE_STATE_COLOR, pageStateOf } from "@/lib/workspace/progress";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import { PAGE_ICONS } from "./icons";
 import { Button, ButtonLink, IconTile, Kicker, TILE } from "./ui";
 
-/** Complete / In progress / Ready — derived from runs, never fixed. */
+/**
+ * Complete / In progress / Ready — one derivation, shared with the phone's
+ * project cards and stage rows (lib/workspace/progress.ts). Only the third
+ * word differs: a home card that has not been run reads "Ready", where the
+ * phone's stage row reads "Not started".
+ */
 function featureState(state: ReturnType<typeof useWorkspace>["state"], id: PageId) {
-  if (state.completed[id]) return { label: "Complete", color: "var(--pxw-green)" };
-  if (state.run?.page === id && state.run.status !== "done") return { label: "In progress", color: "var(--pxw-blue-ink)" };
-  return { label: "Ready", color: "var(--pxw-neutral-state)" };
+  const pageState = pageStateOf(state, id);
+  const label = pageState === "done" ? "Complete" : pageState === "progress" ? "In progress" : "Ready";
+  return { label, color: PAGE_STATE_COLOR[pageState] };
 }
 
 /** Project selector first, then the active suite's pages as cards. */

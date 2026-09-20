@@ -7,7 +7,7 @@ import { newProject } from "../lib/workbench/studio";
  * the palette opens from inside a text field, runs its highlighted row on
  * Enter, moves with ↑ ↓ and closes on Esc; plan entries navigate and then
  * run to their gate without dispatching; single keys never fire while
- * typing. Phones keep the existing phone surface.
+ * typing. Phones render the phone shell instead.
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -58,12 +58,14 @@ async function typeIntoFreshInput(page: Page, text: string) {
   return field;
 }
 
-test("phones keep the existing phone surface", async ({ page }, info) => {
+test("phones render the phone shell", async ({ page }, info) => {
   test.skip(DESKTOP.includes(info.project.name), "phone viewports");
   await setup(page);
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=brief");
-  await expect(page).toHaveURL(/\/workbench\?project=ws-palette-a$/);
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("⌘K opens from inside an input; ↑ ↓ move; Enter runs the highlighted row; Esc closes", async ({ page }, info) => {

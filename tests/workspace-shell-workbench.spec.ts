@@ -6,7 +6,7 @@ import { newProject } from "../lib/workbench/studio";
  * /workspace shell (workspace redesign 1/n). Desktop: the four layout rules
  * hold — no toolbar child clips, nothing runs under the Inspector, titles
  * never truncate — navigation writes the URL and survives Back, and single
- * keys stay out of the way while typing. Phones: the existing phone surface.
+ * keys stay out of the way while typing. Phones: the phone shell (tests/workspace-mobile-shell-workbench.spec.ts).
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -67,12 +67,14 @@ function luminance(rgb: string) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-test("phones keep the existing phone surface", async ({ page }, info) => {
+test("phones render the phone shell", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await signedInWithProjects(page);
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=rig");
-  await expect(page).toHaveURL(/\/workbench\?project=ws-shell-a$/);
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("desktop shell: layout rules, navigation, URL, keyboard and label contrast", async ({ page }, info) => {

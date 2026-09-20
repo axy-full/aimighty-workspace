@@ -81,12 +81,15 @@ async function open(page: Page, store: ProjectRoute, audio: Audio) {
 
 const stem = (page: Page, id: string) => page.locator(`[data-stem="${id}"]`);
 
-test("phones keep the existing phone surface for Edit & Sound", async ({ page }, info) => {
+test("phones render the phone shell for Edit & Sound", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await signInLocally(page.request);
   await mockProjects(page, { current: fixture() });
   await page.goto(`/workspace?project=ws-edit&suite=particl&page=edit`);
-  await expect(page).toHaveURL(/\/workbench\?project=ws-edit$/);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("Edit & Sound: assembly from the sequence, stems from the lanes, transport and mix", async ({ page }, info) => {

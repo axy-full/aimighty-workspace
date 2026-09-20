@@ -11,7 +11,7 @@ import type { PageId } from "../lib/workspace/types";
  * Spec-card pages (workspace redesign, wave 2). Each page renders its card
  * groups, its working tool is reachable from the page, the page title never
  * truncates, and nothing clips at 1200, 1440 or 1920. Desktop assertions
- * skip on phones, which keep the existing phone surface.
+ * skip on phones, which render the phone shell instead.
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -129,12 +129,14 @@ async function assertNoClipping(page: Page) {
   expect(problems).toEqual([]);
 }
 
-test("phones keep the existing phone surface on spec pages", async ({ page }, info) => {
+test("phones render the phone shell on spec pages", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await signedInWithProject(page);
   await page.goto(url("marketing"));
-  await expect(page).toHaveURL(/\/workbench\?project=ws-spec-a$/);
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("spec pages: cards, working tool, title and layout", async ({ page }, info) => {

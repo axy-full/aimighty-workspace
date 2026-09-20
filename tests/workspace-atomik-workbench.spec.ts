@@ -108,12 +108,14 @@ async function reachGate(page: Page, credits: number) {
   await expect(page.getByTestId("atomik-state")).toHaveText("WAITING ON YOU");
 }
 
-test("phones keep the existing phone surface", async ({ page }, info) => {
+test("phones render the phone shell", async ({ page }, info) => {
   test.skip(DESKTOP.includes(info.project.name), "phone viewports");
   await setup(page);
   await page.goto("/workspace?project=" + primary.id + "&suite=atomik&page=agent");
-  await expect(page).toHaveURL(/\/workbench\?project=ws-atomik-a$/);
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("a paid plan stops at its gate; Not now dispatches nothing", async ({ page }, info) => {
