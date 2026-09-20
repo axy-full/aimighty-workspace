@@ -71,7 +71,7 @@ export const fal: EngineAdapter = {
       };
     }
     if (req.kind !== "video")
-      throw new Error("Identities on fal are driven from lib/identities.ts.");
+      throw new Error("Identities are driven from lib/identities.ts.");
     const q = await submitFalVideo({
       model: req.model,
       task: req.task,

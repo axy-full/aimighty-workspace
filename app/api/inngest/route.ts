@@ -34,7 +34,7 @@ function notConfigured(): Response {
         "Inngest isn't the dispatcher on this deployment: background work is " +
         `dispatched ${dispatchMode() === "native" ? "natively through /api/worker" : "inline"}. ` +
         "To use Inngest instead, set DISPATCH_MODE=inngest and add INNGEST_EVENT_KEY " +
-        "and INNGEST_SIGNING_KEY (the Vercel marketplace integration sets both), then redeploy.",
+        "and INNGEST_SIGNING_KEY (the hosting platform's marketplace integration sets both), then redeploy.",
     },
     { status: 503 }
   );
