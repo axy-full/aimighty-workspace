@@ -1,7 +1,10 @@
 "use client";
+import { useMemo } from "react";
 import { suiteHref } from "@/lib/suites";
 import { EMPTY_MOLECULR, MOLECULR_FORMATS } from "@/lib/workbench/moleculr";
 import type { Project } from "@/lib/workbench/studio";
+import { usePlanRequest } from "@/lib/workspace/atomik-host";
+import { marketingPlanRequests, marketingRequestGaps } from "@/lib/workspace/marketing-requests";
 
 type Link = { section: string; label: string };
 const LINKS: Record<string, Link[]> = {
@@ -18,9 +21,18 @@ const n = (value: number) => value.toLocaleString("en-US");
  * the existing Marketing Studio at that section. Its variant flow configures
  * generation nodes through Studio's generation dialog and draft engine, so it
  * runs there rather than in a second copy here.
+ *
+ * The page also publishes what the plan prices: the /api/generate body of every
+ * variant whose engine, ratio, resolution and length Marketing Studio already
+ * accepted (lib/workspace/marketing-requests.ts). A variant still waiting on
+ * one of those is named, not guessed at.
  */
 export default function MarketingTool({ tool, project }: { tool: string; project: Project }) {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
+  /* The plan sends exactly these bodies; it never invents one. */
+  const variants = useMemo(() => marketingPlanRequests(project), [project]);
+  const gaps = useMemo(() => marketingRequestGaps(project), [project]);
+  usePlanRequest("variants", variants.length ? variants : undefined);
   const rows: [string, string][] =
     tool === "product"
       ? [
@@ -64,6 +76,16 @@ export default function MarketingTool({ tool, project }: { tool: string; project
           </ol>
         ) : null}
         <p className="pxw-package-note">Marketing Studio edits these on the project, binds each variant to your saved originals and prices it before it runs.</p>
+        {tool === "variants" && gaps.length ? (
+          <div className="pxw-package-gaps" data-testid="marketing-plan-gaps">
+            <span>{n(gaps.length)} {gaps.length === 1 ? "variant is" : "variants are"} not priced by this page&rsquo;s plan yet:</span>
+            <ul>
+              {gaps.map((gap) => (
+                <li key={gap}>{gap}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="pxw-package-actions">
           {LINKS[tool].map((link, i) => (
             <a key={link.section} className={`pxw-btn ${i === 0 ? "pxw-btn--primary" : "pxw-btn--control"}`} href={suiteHref("moleculr", project.id, link.section)}>

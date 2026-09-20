@@ -652,6 +652,8 @@
 .pxw .pxw-package-facts strong { font-size: 13px; font-weight: 545; color: var(--pxw-near-primary); overflow-wrap: anywhere; }
 .pxw .pxw-package-note { font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); margin: 14px 0 0; text-wrap: pretty; }
 .pxw .pxw-package-error { font-size: 12.5px; color: var(--pxw-red-ink); margin: 14px 0 0; }
+.pxw .pxw-package-gaps { margin: 14px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); }
+.pxw .pxw-package-gaps ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .pxw .pxw-package-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .pxw .pxw-hook-list { margin: 14px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--pxw-body); line-height: 1.6; }
 
