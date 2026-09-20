@@ -1,6 +1,6 @@
 /**
  * The ⌘K palette's commands (04 "Command palette"), as data. Sources, in
- * order: every page of every suite · "Run this page with Atomik" · every
+ * order: the global Generate composer · every page of every suite · "Run this page with Atomik" · every
  * plan title · generate the selected shot · toggle the Inspector · each
  * shot by name · all projects. Shots come from the loaded list, never a
  * fixture. The shell turns an action into navigation or a run.
@@ -13,6 +13,7 @@ import type { PageId, SelectableItem, Suite } from "./types";
 
 export type PaletteAction =
   | { type: "go"; suite: Suite; page: PageId }
+  | { type: "composer" }
   | { type: "runPage" }
   | { type: "runPlan"; suite: Suite; page: PageId }
   | { type: "generate" }
@@ -34,6 +35,9 @@ export const PALETTE_LIMIT = 8;
 
 export function paletteCommands(input: { shots: SelectableItem[] | null }): PaletteCommand[] {
   const out: PaletteCommand[] = [];
+  /* Generate is first on an empty query: most people open the palette to make
+     something, not to navigate. */
+  out.push({ id: "composer", group: "ACTION", label: "Generate\u2026", hint: "G", action: { type: "composer" } });
   const suites = Object.keys(PAGES) as Suite[];
   for (const suite of suites) {
     const group = getSuite(suite).short.toUpperCase();
@@ -46,7 +50,7 @@ export function paletteCommands(input: { shots: SelectableItem[] | null }): Pale
       const plan = PLANS[page.id as WorkspacePageId];
       if (plan) out.push({ id: `plan:${page.id}`, group: "ATOMIK", label: plan.title, hint: "", action: { type: "runPlan", suite, page: page.id } });
     }
-  out.push({ id: "generate", group: "ACTION", label: "Generate selected shot", hint: "G", action: { type: "generate" } });
+  out.push({ id: "generate", group: "ACTION", label: "Generate selected shot", hint: "", action: { type: "generate" } });
   out.push({ id: "inspector", group: "ACTION", label: "Toggle inspector", hint: "I", action: { type: "toggleInspector" } });
   for (const shot of input.shots ?? [])
     out.push({ id: `shot:${shot.id}`, group: "SHOT", label: shot.name, hint: "", action: { type: "shot", id: shot.id } });

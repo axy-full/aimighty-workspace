@@ -740,3 +740,62 @@
 .pxw .pxw-insp-reason { font-size: 12px; line-height: 1.5; color: var(--pxw-dimmer); margin: 8px 0 0; text-wrap: pretty; }
 .pxw .pxw-insp-note { font-size: 12px; color: var(--pxw-body); margin: 10px 0 0; }
 .pxw .pxw-insp-error { font-size: 12px; color: var(--pxw-red-ink); margin: 10px 0 0; }
+
+/* ── Global Generate composer ──────────────────────────────────────── */
+/* An overlay over the current view, on the design's overlay tokens: the
+   palette's scrim, the overlay panel and border, and an overlay shadow. */
+.pxw .pxw-composer { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.66); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; z-index: 60; }
+.pxw .pxw-composer-catcher { position: absolute; inset: 0; }
+.pxw .pxw-composer-panel {
+  position: relative;
+  width: min(880px, 94vw);
+  max-height: calc(100dvh - 12vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--pxw-overlay-panel);
+  border: 1px solid var(--pxw-overlay-border);
+  border-radius: 14px;
+  box-shadow: var(--pxw-shadow-atomik);
+}
+.pxw .pxw-composer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid var(--pxw-card-border); }
+.pxw .pxw-composer-title { font-size: 17px; font-weight: 600; margin: 4px 0 0; }
+.pxw .pxw-composer-close { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 8px; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); color: var(--pxw-muted); }
+.pxw .pxw-composer-close:hover { background: var(--pxw-control-hover); color: var(--pxw-primary); }
+.pxw .pxw-composer-body { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 300px); gap: 0; min-height: 0; overflow: hidden; }
+.pxw .pxw-composer-form { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; overflow: auto; min-width: 0; }
+.pxw .pxw-composer-library { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px 18px; border-left: 1px solid var(--pxw-card-border); background: var(--pxw-panel-raised); overflow: auto; min-width: 0; }
+.pxw .pxw-textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-field-border);
+  color: var(--pxw-primary);
+  font-family: var(--pxw-font);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+.pxw .pxw-textarea:focus { border-color: var(--pxw-selected); }
+.pxw .pxw-composer-billing { font-size: 12px; line-height: 1.5; color: var(--pxw-body); margin: -4px 0 0; text-wrap: pretty; }
+.pxw .pxw-composer-hint { font-size: 12px; line-height: 1.5; color: var(--pxw-dimmer); margin: 0; text-wrap: pretty; }
+.pxw .pxw-composer-problem { font-size: 12px; line-height: 1.5; color: var(--pxw-red-ink); margin: 0; text-wrap: pretty; }
+.pxw .pxw-composer-refs { display: flex; flex-direction: column; gap: 7px; }
+.pxw .pxw-composer-ref-list { display: flex; flex-direction: column; gap: 5px; list-style: none; margin: 0; padding: 0; }
+.pxw .pxw-composer-ref-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; border-radius: 9px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); font-size: 12.5px; min-width: 0; }
+.pxw .pxw-composer-ref-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pxw .pxw-composer-ref-list li button { flex: none; color: var(--pxw-dimmer); }
+.pxw .pxw-composer-ref-list li button:hover { color: var(--pxw-primary); }
+.pxw .pxw-composer-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.pxw .pxw-composer-actions .pxw-btn { justify-content: center; }
+.pxw .pxw-topbar-generate { flex: none; }
+/* Below the two-column floor the library stacks under the form rather than squeezing it. */
+@media (max-width: 860px) {
+  .pxw .pxw-composer-body { grid-template-columns: minmax(0, 1fr); }
+  .pxw .pxw-composer-library { border-left: none; border-top: 1px solid var(--pxw-card-border); }
+}
+/* The strip also reports a composer render started from Home. */
+.pxw[data-view="home"] .pxw-gen { position: sticky; bottom: 0; }

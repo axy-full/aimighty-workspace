@@ -13,20 +13,23 @@ const shots = [
 const studio: AppState = { ...INITIAL_STATE, view: "studio", page: "rig", selKind: "shot", selId: "s2", lists: { shots, takes: null, cast: null } };
 const ctx = (state: AppState, live = {}) => keyContextFor(state, live);
 
-test("palette sources, in order: pages, run this page, plans, actions, shots, projects", () => {
+test("palette sources, in order: the composer, pages, run this page, plans, actions, shots, projects", () => {
   const all = paletteCommands({ shots });
   const pageCount = Object.values(PAGES).flat().length;
-  expect(all.slice(0, pageCount).map((c) => c.action.type)).toEqual(Array(pageCount).fill("go"));
-  expect(all.slice(0, 8).map((c) => c.label)).toEqual(PAGES.particl.map((p) => p.title));
-  expect(new Set(all.slice(0, pageCount).map((c) => c.group))).toEqual(new Set(["STUDIO", "AGENT", "BUSINESS", "VIRAL"]));
-  expect(all[pageCount]).toMatchObject({ group: "ATOMIK", label: "Run this page with Atomik", hint: "A" });
+  /* The global Generate composer is the first row (#composer track). */
+  expect(all[0]).toMatchObject({ group: "ACTION", label: "Generate\u2026", hint: "G", action: { type: "composer" } });
+  const pages = all.slice(1);
+  expect(pages.slice(0, pageCount).map((c) => c.action.type)).toEqual(Array(pageCount).fill("go"));
+  expect(pages.slice(0, 8).map((c) => c.label)).toEqual(PAGES.particl.map((p) => p.title));
+  expect(new Set(pages.slice(0, pageCount).map((c) => c.group))).toEqual(new Set(["STUDIO", "AGENT", "BUSINESS", "VIRAL"]));
+  expect(pages[pageCount]).toMatchObject({ group: "ATOMIK", label: "Run this page with Atomik", hint: "A" });
   const plans = all.filter((c) => c.action.type === "runPlan");
   expect(plans).toHaveLength(pageCount);
   expect(plans.every((c) => c.group === "ATOMIK")).toBe(true);
-  expect(all.findIndex((c) => c.action.type === "runPlan")).toBe(pageCount + 1);
-  const tail = all.slice(pageCount + 1 + plans.length);
+  expect(pages.findIndex((c) => c.action.type === "runPlan")).toBe(pageCount + 1);
+  const tail = pages.slice(pageCount + 1 + plans.length);
   expect(tail.map((c) => `${c.group}:${c.label}:${c.hint}`)).toEqual([
-    "ACTION:Generate selected shot:G",
+    "ACTION:Generate selected shot:",
     "ACTION:Toggle inspector:I",
     "SHOT:Opening:", "SHOT:The turn:", "SHOT:Departure:",
     "GO:All projects:",
@@ -38,7 +41,7 @@ test("palette sources, in order: pages, run this page, plans, actions, shots, pr
 test("filtering is a case-insensitive substring on label or group, capped at eight", () => {
   const all = paletteCommands({ shots });
   expect(filterPalette(all, "")).toHaveLength(PALETTE_LIMIT);
-  expect(filterPalette(all, "")[0].label).toBe("Brief & Script");
+  expect(filterPalette(all, "").map((c) => c.label).slice(0, 2)).toEqual(["Generate\u2026", "Brief & Script"]);
   expect(filterPalette(all, "RIG")[0]).toMatchObject({ label: "Rig", group: "STUDIO" });
   expect(filterPalette(all, "  DEPART ").map((c) => c.label)).toEqual(["Departure"]);
   expect(filterPalette(all, "viral").every((c) => c.group === "VIRAL")).toBe(true);

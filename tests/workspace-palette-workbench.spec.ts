@@ -92,8 +92,11 @@ test("⌘K opens from inside an input; ↑ ↓ move; Enter runs the highlighted 
   const rows = page.getByTestId("palette-row");
   await expect(rows).toHaveCount(8);
   await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
-  await expect(rows.nth(0)).toContainText("STUDIO");
-  await expect(rows.nth(0)).toContainText("Brief & Script");
+  /* The global Generate composer leads on an empty query (#composer track). */
+  await expect(rows.nth(0)).toContainText("ACTION");
+  await expect(rows.nth(0)).toContainText("Generate\u2026");
+  await expect(rows.nth(1)).toContainText("STUDIO");
+  await expect(rows.nth(1)).toContainText("Brief & Script");
   if (info.project.name === "workbench-1440x900") await page.screenshot({ path: info.outputPath("palette.png") });
 
   /* The query filters; typing i/g/a inside the palette fires nothing. */
@@ -171,9 +174,11 @@ test("the keyboard map: Enter on home, 1–9, A, I, G, Esc, and the status-bar l
   await expect(page.getByTestId("inspector")).toHaveCount(0);
   await page.keyboard.press("i");
   await expect(page.getByTestId("inspector")).toBeVisible();
-  /* G has no shot to generate in this view: it says why instead of doing nothing. */
+  /* G has no shot to generate in this view, so it opens the global composer. */
   await page.keyboard.press("g");
-  await expect(page.locator(".pxw-toast")).toHaveText(/shot/i);
+  await expect(page.getByTestId("generate-composer")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("generate-composer")).toHaveCount(0);
 
   const legend = page.locator('[data-row="status"]');
   for (const text of ["1–8", "stage", "A", "atomik", "I", "inspector", "⌘K", "commands"]) await expect(legend).toContainText(text);

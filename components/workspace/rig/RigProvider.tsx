@@ -1,17 +1,18 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { useProductionJobs } from "@/components/workbench/use-production-jobs";
 import { DraftRequestError, draftRequest, writeDraft } from "@/lib/workbench/draft-request";
-import { generationRequestBody, resolveGenerationReferences } from "@/lib/workbench/generation-request";
-import { claimPendingGeneration, clearPendingGeneration, pendingGenerationKey, readPendingGeneration, type PendingGeneration } from "@/lib/workbench/pending-generation";
+import { resolveGenerationReferences } from "@/lib/workbench/generation-request";
+import { pendingGenerationKey, readPendingGeneration } from "@/lib/workbench/pending-generation";
+import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine } from "@/lib/workspace/engines";
 import { connectNodes } from "@/lib/workspace/rig-graph";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
-import { addShotNode, dispatchGate, dispatchQuoteQuery, generationPhase, neutralCopy, referenceRole, shotReferenceAssets } from "@/lib/workspace/rig";
+import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, referenceRole, shotReferenceAssets } from "@/lib/workspace/rig";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -333,11 +334,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setSubmitting(true);
     setNotice(null);
     const storageId = pendingGenerationKey(scope, draftId, shot.id);
-    let attempt: PendingGeneration | null = null;
     void (async () => {
       try {
-        attempt = readPendingGeneration(window.localStorage, storageId);
-        if (!attempt) {
+        /* Mapping, references and the request body are the shot's; the re-quote,
+           the gate and the paid POST are the shared dispatch (generate-submit). */
+        let request: ReturnType<typeof shotRequestInput> = null;
+        if (!readPendingGeneration(window.localStorage, storageId)) {
           if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new Error("Save your latest work before generating.");
           const mapping = await studioRequest<unknown>(`${API}/projects`, {
             method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
@@ -350,46 +352,29 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
             scope,
             onAsset: (id: string, fields: Partial<Asset>) => update((p) => ({ ...p, assets: p.assets.map((a) => (a.id === id ? { ...a, ...fields } : a)) })),
           });
-          const request = shotRequestInput(current, node, shot, mapping, references);
+          request = shotRequestInput(current, node, shot, mapping, references);
           if (!request) throw new Error("Choose an available engine for this shot.");
-          /* Re-quote the exact body that will be sent. */
-          const fresh = await studioRequest<{ estimatedCredits: number; fingerprint: string }>("/api/generate/quote", {
-            method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-            body: JSON.stringify(generationRequestBody(request)),
-          });
-          if (!Number.isFinite(fresh.estimatedCredits) || fresh.estimatedCredits < 0 || !/^[a-f0-9]{64}$/.test(fresh.fingerprint ?? ""))
-            throw new Error("The live price could not be confirmed. Nothing was submitted.");
-          const gate = dispatchGate(shown, fresh.estimatedCredits);
-          if (!gate.ok) {
-            setRepriced({ key: live.current.quote?.key ?? "", credits: gate.credits });
-            setNotice(gate.reason);
-            return;
-          }
-          const body = generationRequestBody({ ...request, maxCredits: fresh.estimatedCredits, quoteFingerprint: fresh.fingerprint });
-          attempt = claimPendingGeneration(window.localStorage, storageId, {
-            key: crypto.randomUUID(), body: JSON.stringify(body), credits: fresh.estimatedCredits, endpoint: "/api/generate",
-          });
         }
-        const credits = attempt.credits;
-        setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId: null });
-        const result = await studioRequest<{ id: string }>(attempt.endpoint ?? "/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key, "X-Workbench-Scope": scope },
-          body: attempt.body,
+        const outcome = await dispatchGeneration({
+          scope,
+          storageId,
+          shown,
+          /* A claimed attempt is replayed from storage; `input` is only read when there is none. */
+          request: { endpoint: "/api/generate", input: request },
+          onClaim: (credits) => setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId: null }),
         });
-        if (!result.id) throw new Error("The server has not confirmed a job yet. Generate again to recover this same request.");
-        clearPendingGeneration(window.localStorage, storageId, attempt.key);
-        accepted(result.id);
-      } catch (err) {
-        if (attempt && err instanceof StudioRequestError) {
-          if (typeof err.data.id === "string") {
-            clearPendingGeneration(window.localStorage, storageId, attempt.key);
-            accepted(err.data.id);
-            return;
-          }
-          /* Only a durable, completed refusal permits a fresh request and another quote. */
-          if (err.resolved && err.status >= 400 && err.status < 500) clearPendingGeneration(window.localStorage, storageId, attempt.key);
+        if (outcome.state === "repriced") {
+          setRepriced({ key: live.current.quote?.key ?? "", credits: outcome.credits });
+          setNotice(outcome.reason);
+          return;
         }
+        if (outcome.state === "refused") {
+          setRun((r) => (r && r.shotId === shot.id && !r.jobId ? null : r));
+          setNotice(outcome.reason);
+          return;
+        }
+        accepted(outcome.jobId, outcome.credits);
+      } catch (err) {
         setRun((r) => (r && r.shotId === shot.id && !r.jobId ? null : r));
         setNotice(neutralCopy(err instanceof Error ? err.message : "Generation could not be submitted."));
       } finally {
@@ -398,8 +383,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       }
     })();
 
-    function accepted(jobId: string) {
-      setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(attempt!.credits)].join(" · "), jobId });
+    function accepted(jobId: string, credits: number) {
+      setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId });
       setRepriced(null);
       /* The node renders this kind now (GenerationDialog's onQueued does the same). */
       update((p) => ({ ...p, nodes: p.nodes.map((n) => (n.id === shot.id && !n.locked ? { ...n, mode: kind === "video" ? "Video" : "Image" } : n)) }));

@@ -6,7 +6,7 @@ import { getSuite, PAGES } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import { PAGE_ICONS } from "./icons";
-import { ButtonLink, IconTile, Kicker, TILE } from "./ui";
+import { Button, ButtonLink, IconTile, Kicker, TILE } from "./ui";
 
 /** Complete / In progress / Ready — derived from runs, never fixed. */
 function featureState(state: ReturnType<typeof useWorkspace>["state"], id: PageId) {
@@ -29,7 +29,7 @@ export function Home({
   error: string | null;
   onOpenProject: (id: string) => void;
 }) {
-  const { state, go } = useWorkspace();
+  const { state, go, dispatch } = useWorkspace();
   const suite = getSuite(state.suite);
   const pages = PAGES[state.suite];
   return (
@@ -46,7 +46,9 @@ export function Home({
                 has no create flow of its own yet (docs/workspace-switchover.md),
                 and `?new=1` is a legacy-only param, so it renders there. The
                 old "Open saved…" link pointed at `/`, which IS this page now. */}
-            <ButtonLink variant="primary" href="/workbench?new=1">New project</ButtonLink>
+            {/* Generation is the first thing most people come for; it needs no project. */}
+            <Button variant="primary" data-testid="home-generate" onClick={() => dispatch({ type: "patch", patch: { composer: true } })}>Generate</Button>
+            <ButtonLink href="/workbench?new=1">New project</ButtonLink>
           </div>
         </div>
 

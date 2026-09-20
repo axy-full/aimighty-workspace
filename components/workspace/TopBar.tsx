@@ -66,6 +66,15 @@ export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount |
         <span className="pxw-atomik-badge" style={{ color: look.badgeColor }}>{look.badge}</span>
         <span className="pxw-atomik-caret" aria-hidden="true">{look.caret}</span>
       </button>
+      {/* Generate is always one click away, left of the credits it spends. */}
+      <button
+        type="button"
+        className="pxw-btn pxw-btn--primary pxw-topbar-generate"
+        data-testid="topbar-generate"
+        onClick={() => dispatch({ type: "patch", patch: { composer: true } })}
+      >
+        Generate
+      </button>
       {account?.credits ? (
         <a className="pxw-credits" href="/billing" title="Workspace credits and billing" data-testid="workspace-credits">
           {formatCredits(account.credits.balance)}

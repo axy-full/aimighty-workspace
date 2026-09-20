@@ -32,6 +32,7 @@ export const INITIAL_STATE: AppState = {
   palette: false,
   query: "",
   agentOpen: false,
+  composer: false,
   run: null,
   completed: {},
   activity: [],
@@ -209,4 +210,16 @@ export function generateAvailability(
     return { enabled: false, reason: "Select a shot to generate." };
   if (!connected) return { enabled: false, reason: "Generation is not connected to this view yet." };
   return { enabled: true, reason: null };
+}
+
+/**
+ * What G (and the palette's Generate row) does. The Rig's own Generate owns a
+ * selected shot; anything else — no shot, another page, Home — opens the
+ * global composer, which is the point of having one.
+ */
+export function generateTarget(
+  state: Pick<AppState, "view" | "page" | "selKind" | "selId" | "lists">,
+  connected: boolean,
+): "rig" | "composer" {
+  return generateAvailability(state, connected).enabled ? "rig" : "composer";
 }

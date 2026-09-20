@@ -38,6 +38,8 @@ export type KeyContext = {
   selectionCount?: number;
   /** The shell has a Generate seam (G). */
   canGenerate?: boolean;
+  /** The global Generate composer exists (G with no shot selected). */
+  canCompose?: boolean;
   /** The shell has a play seam (Space). */
   canPlay?: boolean;
 };
@@ -72,13 +74,13 @@ const plain = (event: KeyEventLike) => !event.metaKey && !event.ctrlKey && !even
 export const SHELL_BINDINGS: KeyBinding<ShellAction>[] = [
   {
     id: "stage",
-    match: (e, ctx) => ctx.state.view === "studio" && /^[1-9]$/.test(e.key) && Number(e.key) <= ctx.pageCount,
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.composer && /^[1-9]$/.test(e.key) && Number(e.key) <= ctx.pageCount,
     action: (e) => ({ type: "page", index: Number(e.key) - 1 }),
     hint: (ctx) => ctx.state.view === "studio" && ctx.pageCount > 1 ? { key: `1–${Math.min(9, ctx.pageCount)}`, label: "stage" } : null,
   },
   {
     id: "inspector",
-    match: (e, ctx) => ctx.state.view === "studio" && e.key.toLowerCase() === "i",
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.composer && e.key.toLowerCase() === "i",
     action: () => ({ type: "toggleInspector" }),
     hint: (ctx) => ctx.state.view === "studio" ? { key: "I", label: "inspector" } : null,
   },
@@ -113,13 +115,13 @@ export const WORKSPACE_BINDINGS: KeyBinding<ShellAction>[] = [
   SHELL_BINDINGS[0],
   {
     id: "item",
-    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && (e.key === "ArrowLeft" || e.key === "ArrowRight") && (ctx.selectionCount ?? 0) > 0,
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && !ctx.state.composer && (e.key === "ArrowLeft" || e.key === "ArrowRight") && (ctx.selectionCount ?? 0) > 0,
     action: (e) => ({ type: "item", step: e.key === "ArrowRight" ? 1 : -1 }),
     hint: (ctx) => ctx.state.view === "studio" && (ctx.selectionCount ?? 0) > 1 ? { key: "← →", label: "item" } : null,
   },
   {
     id: "atomik",
-    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key.toLowerCase() === "a",
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && !ctx.state.composer && e.key.toLowerCase() === "a",
     action: () => ({ type: "toggleAtomik" }),
     hint: (ctx) => ctx.state.view === "studio" ? { key: "A", label: "atomik" } : null,
   },
@@ -139,28 +141,31 @@ export const WORKSPACE_BINDINGS: KeyBinding<ShellAction>[] = [
     action: () => ({ type: "toggleAtomik" }),
   },
   {
+    /* G is the one key that answers everywhere: the Rig's own Generate when a
+       shot is selected, and the global composer otherwise — including Home,
+       which has no shot to select. */
     id: "generate",
-    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key.toLowerCase() === "g",
+    match: (e, ctx) => !ctx.state.palette && !ctx.state.composer && e.key.toLowerCase() === "g" && (ctx.state.view === "studio" || ctx.canCompose === true),
     action: () => ({ type: "generate" }),
-    hint: (ctx) => ctx.state.view === "studio" && ctx.canGenerate ? { key: "G", label: "generate" } : null,
+    hint: (ctx) => ctx.state.view === "studio" && (ctx.canGenerate || ctx.canCompose) ? { key: "G", label: "generate" } : null,
   },
   SHELL_BINDINGS[1],
   {
     id: "play",
-    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key === " " && ctx.canPlay === true,
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && !ctx.state.composer && e.key === " " && ctx.canPlay === true,
     action: () => ({ type: "play" }),
     hint: (ctx) => ctx.state.view === "studio" && ctx.canPlay ? { key: "Space", label: "play" } : null,
   },
   {
     id: "enter",
-    match: (e, ctx) => ctx.state.view === "home" && e.key === "Enter" && !activates(e.target),
+    match: (e, ctx) => ctx.state.view === "home" && !ctx.state.composer && e.key === "Enter" && !activates(e.target),
     action: () => ({ type: "enterStudio" }),
   },
   SHELL_BINDINGS[2],
 ];
 
 /** The KeyContext for the current state: page count, the selection's visible list, live seams. */
-export function keyContextFor(state: AppState, live: { canGenerate?: boolean; canPlay?: boolean } = {}): KeyContext {
+export function keyContextFor(state: AppState, live: { canGenerate?: boolean; canPlay?: boolean; canCompose?: boolean } = {}): KeyContext {
   const list = state.view === "studio" ? listFor(state.selKind, state.lists, state.libFilter) : null;
   return {
     state,
@@ -168,6 +173,7 @@ export function keyContextFor(state: AppState, live: { canGenerate?: boolean; ca
     selectionCount: list?.length ?? 0,
     canGenerate: live.canGenerate === true,
     canPlay: live.canPlay === true,
+    canCompose: live.canCompose === true,
   };
 }
 
