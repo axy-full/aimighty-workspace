@@ -92,10 +92,12 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         stored = await storeVideoBytes(id, bytes);
       }
       if (!original) throw new Error("Missing original receipt");
-      await writeGenerationOutcome({ sql: `UPDATE generations SET status='succeeded',stored_url=?,source_url=NULL,bytes=?,cost_usd=?,error=NULL,
+      // duration_s is the column the per-second tools price from; the receipt's
+      // measured length is the same number params.duration carries.
+      await writeGenerationOutcome({ sql: `UPDATE generations SET status='succeeded',stored_url=?,source_url=NULL,bytes=?,cost_usd=?,error=NULL,duration_s=?,
         params=json_set(params,'$.duration',?,'$.width',?,'$.height',?,'$.ratio',?),updated_at=?
         WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=? AND json_extract(params,'$.higgsfieldVideoPollUntil')>?`,
-        args: [stored.url,stored.bytes,usd,original.seconds,original.width,original.height,`${original.width}:${original.height}`,now(),id,token,now()] },
+        args: [stored.url,stored.bytes,usd,Math.round(original.seconds * 1000) / 1000,original.seconds,original.width,original.height,`${original.width}:${original.height}`,now(),id,token,now()] },
         { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "succeeded", engineCostUsd: usd,
           projectId: row.project_id == null ? null : String(row.project_id), shotId: row.shot_id == null ? null : String(row.shot_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
       await deliverGenerationSettlement(id);

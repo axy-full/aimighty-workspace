@@ -115,6 +115,8 @@ test("accepted receipt recovers tenant handle outage, collects original bytes on
     const gen=(await getGeneration(id))!;expect(gen.status).toBe("succeeded");expect(gen.storedUrl).toBe(`/api/media/${id}`);expect(gen.costUsd).toBe(.75);
     expect(gen.params).not.toHaveProperty("higgsfieldVideoHandle");expect(JSON.stringify(gen)).not.toContain("credentialFingerprint");
     expect(await readVideoBytes(id)).toEqual(readFileSync("public/fixtures/clip.mp4"));
+    // The measured length is on the column the per-second tools price from, not only in params.
+    expect(Number((await db().execute({sql:"SELECT duration_s FROM generations WHERE id=?",args:[id]})).rows[0].duration_s)).toBeCloseTo(Number(gen.params.duration),3);
     const receipt=(await platformDb().execute({sql:"SELECT settled_at FROM higgsfield_generation_receipts WHERE id=?",args:[id]})).rows[0];expect(Number(receipt.settled_at)).toBeGreaterThan(0);
   },actor);}finally{engine.render=render;engine.poll=poll;await unlink(path.resolve(".data/generations",id+".mp4")).catch(()=>{});}
 });

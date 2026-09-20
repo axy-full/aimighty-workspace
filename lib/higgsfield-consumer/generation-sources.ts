@@ -15,6 +15,7 @@ import { consumerMediaKey } from "./genjutsu-contract";
 import { ConsumerGenjutsuError, consumerMediaImportsReady } from "./genjutsu-sources";
 import { mediaKindForRole, type ConnectedMediaKind } from "./catalogue";
 import { parseConsumerGenerationInput, type ConsumerGenerationInput } from "./generation-contract";
+import { findStoredSource, resolveStoredDuration } from "@/lib/mediaSource.server";
 
 export const GENERATION_SOURCE_BYTES = 50 * 1024 * 1024;
 export type GenerationSource = {
@@ -79,6 +80,31 @@ export async function validateConsumerGenerationSources(
   }
   return sources;
 }
+/**
+ * The stored length of a validated video/audio source, in seconds.
+ *
+ * The column when it is recorded; otherwise the same measure-once-and-persist
+ * that uploads get (`resolveStoredDuration`): bounded inspection of the stored
+ * original, written back to `generations.duration_s` / `uploads.duration_s`.
+ * Originals collected before the column was filled in are therefore priced on
+ * first read instead of needing a re-upload.
+ *
+ * Tenant scoping is the resolved tenant database `db()` returns — the same
+ * client `validateConsumerGenerationSources` read the row through — so no
+ * cross-workspace original is ever measured or written. A length that cannot be
+ * read is null and the caller refuses to quote rather than guess.
+ */
+export async function storedSourceDuration(source: GenerationSource): Promise<number | null> {
+  if (source.durationS !== null) return source.durationS;
+  if (source.kind !== "video" && source.kind !== "audio") return null;
+  const stored = await findStoredSource(source.fromGeneration ? { genId: source.id } : { uploadId: source.id });
+  if (!stored) return null;
+  const { seconds } = await resolveStoredDuration(stored);
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return null;
+  source.durationS = seconds;
+  return seconds;
+}
+
 /** Role, kind and display name of each validated source, for job snapshots. */
 export async function describeConsumerGenerationSources(input: ConsumerGenerationInput) {
   await ready();

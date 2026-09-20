@@ -9,7 +9,7 @@
 import type { Transaction } from "@libsql/client";
 import type { ConsumerGenerationInput } from "./generation-contract";
 import { db, ready } from "@/lib/db";
-import { describeConsumerGenerationSources, resolveConsumerGenerationImport, resolveConsumerGenerationSources, validateConsumerGenerationSources } from "./generation-sources";
+import { describeConsumerGenerationSources, resolveConsumerGenerationImport, resolveConsumerGenerationSources, validateConsumerGenerationSources, storedSourceDuration } from "./generation-sources";
 import { parseConsumerVoiceToolInput } from "./voice-tools";
 
 export const VOICE_TOOL_SOURCE_ROLE = "video";
@@ -43,7 +43,10 @@ export async function resolveConsumerVoiceToolSource(value: unknown): Promise<{ 
   // The stored duration (never the browser's) prices a reframe.
   const [validated] = await validateConsumerGenerationSources(db(), request);
   const [source] = await resolveConsumerGenerationSources(request);
-  return { url: source.url, type: "video", ...(validated.durationS === null ? {} : { durationSeconds: validated.durationS }) };
+  // Missing lengths are measured from the stored original and written back, so
+  // an original collected without one is priced without being re-uploaded.
+  const durationSeconds = await storedSourceDuration(validated);
+  return { url: source.url, type: "video", ...(durationSeconds === null ? {} : { durationSeconds }) };
 }
 /** One import claim per quote; success is reused, an unconfirmed attempt never repeats. */
 export const resolveConsumerVoiceToolImport = (

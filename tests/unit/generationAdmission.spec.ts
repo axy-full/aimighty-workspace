@@ -734,6 +734,8 @@ test("Astra reconciles measured output below its quote, leases collection and re
     const first=syncFalVideo(gen,{strict:true});await started;
     await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);release();expect((await first).status).toBe("succeeded");
     const result=(await getGeneration(id))!;expect(result.params.astraOutput).toMatchObject({width:720,height:1280,seconds:1.5,fps:24});
+    // The delivered length is on the column the per-second tools price from.
+    expect(Number((await db().execute({sql:"SELECT duration_s FROM generations WHERE id=?",args:[id]})).rows[0].duration_s)).toBeCloseTo(1.5,3);
     expect(result.params).toMatchObject({resolution:"720p",ratio:"720:1280",duration:1.5,astraQuotedOutput:{resolution:"4k",fps60:true}});
     const edit=await service.gen.prepareGeneration({model:"dreamina-seedance-2-5-260628",task:"edit",sourceGenId:id,prompt:"Edit the sky",refine:false},actor);
     expect(edit).toMatchObject({ok:false,status:400});if(!edit.ok)expect(edit.body.error).toMatch(/at least 4 seconds/);

@@ -304,7 +304,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
       sql: `UPDATE generations
           SET status='succeeded', source_url=?, stored_url=?,
               cost_usd=COALESCE(cost_usd, ?), duration_ms=COALESCE(duration_ms, ?),
-              store_ms=?, bytes=?, error=NULL, updated_at=?
+              store_ms=?, bytes=?, error=NULL, duration_s=COALESCE(?, duration_s), updated_at=?
               ${output ? ",params=json_patch(params,json(?))" : ""}
           WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
       args: [
@@ -314,6 +314,9 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
         Math.max(0, ts - gen.createdAt),
         ts - storeStart,
         stored.bytes,
+        // The length the per-second tools price from; Astra's is measured above,
+        // and any other fal video is backfilled on first read.
+        output ? Math.round(output.seconds * 1000) / 1000 : null,
         ts,
         ...(deliveredParams ? [JSON.stringify(deliveredParams)] : []),
         gen.id,
