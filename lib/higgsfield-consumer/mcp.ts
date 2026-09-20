@@ -29,7 +29,7 @@ import {
   type ConsumerVideoInput,
   type ConsumerVideoWorkspace,
 } from "./video-contract";
-import { consumerGenjutsuParams, parseConsumerGenjutsuInput, type ConsumerGenjutsuInput, type ConsumerGenjutsuParams, type ConsumerGenjutsuMedia } from "./genjutsu-contract";
+import { consumerGenjutsuParams, consumerGenjutsuRole, parseConsumerGenjutsuInput, type ConsumerGenjutsuInput, type ConsumerGenjutsuParams, type ConsumerGenjutsuMedia } from "./genjutsu-contract";
 import {
   GENERATION_TOOLS,
   GENERATION_BATCH_TOOLS,
@@ -1216,7 +1216,7 @@ export async function getConsumerGenjutsuQuote(
         await requireConnectedTools(session, [
           WALLET_READ,
           ...importCalls(sources),
-          { name: "generate_video", args: { params: { ...consumerGenjutsuParams(input, sources.map((_, i) => ({ value: IMPORT_PLACEHOLDER, role: i === 0 ? "video" : "image" }))), get_cost: true } } },
+          { name: "generate_video", args: { params: { ...consumerGenjutsuParams(input, sources.map((_, i) => ({ value: IMPORT_PLACEHOLDER, role: consumerGenjutsuRole(i) }))), get_cost: true } } },
         ]);
         const workspace = parseConsumerVideoWorkspace(
           videoReadResult(session, await session.videoWorkspaces()),
@@ -1248,7 +1248,7 @@ export async function getConsumerGenjutsuQuote(
           } catch (error) {
             throw new ConsumerAdmissionStopped(error);
           }
-          medias.push({ value: mediaId, role: i === 0 ? "video" : "image" });
+          medias.push({ value: mediaId, role: consumerGenjutsuRole(i) });
         }
         const params = consumerGenjutsuParams(input, medias);
         await requireConnectedTools(session, [{ name: "generate_video", args: { params: { ...params, get_cost: true } } }]);

@@ -45,7 +45,7 @@ const params = consumerGenerationParams(kling, input, [{ value: media, role: "st
 const sources = [{ url: "https://fixtures.particl.invalid/uploads/still.png", type: "image" as const, role: "start_image" }];
 const rawUrl = "https://fixtures.particl.invalid/outputs/take.mp4";
 /** The recorded live envelopes, re-keyed to this spec's job, model and media. */
-const live: EnvelopeJob = { jobId, model: "kling3_0", type: "video", prompt: input.prompt, media: { id: media, role: "start_image", url: sources[0].url }, rawUrl };
+const live: EnvelopeJob = { jobId, model: "kling3_0", type: "video", prompt: input.prompt, medias: [{ id: media, url: sources[0].url }], rawUrl };
 const without = (tools: Tool[], ...names: string[]) => tools.filter((tool) => !names.includes(tool.name));
 const replacing = (tools: Tool[], name: string, inputSchema: Record<string, unknown>) => tools.map((tool) => (tool.name === name ? { name, inputSchema } : tool));
 
@@ -218,6 +218,46 @@ test("the echoed params.model is a family variant, not the model id — and a di
   // A different real model id, or a non-string, is still a mismatch.
   for (const refused of ["seedance_2_5", "nano_banana_2", "autosprite", "", 5, null, { id: "kling3_0" }])
     expect(consumerGenerationOriginalResult(variant(refused), jobId, params, "video"), JSON.stringify(refused)).toBeNull();
+});
+
+test("the echoed media role is the KIND, not the slot we sent — a paid job with reference media is still collected", () => {
+  // Recorded live on 20 September 2026 from twelve completed seedance_2_5 jobs
+  // with reference media: every entry echoes
+  //   { role: "image", data: { id, type: "media_input", url } }
+  // while our request sends the model's declared slot role `start_image`.
+  // Against origin/main this whole test fails: evidence() compared "image" to
+  // "start_image", returned null, and consumerGenerationOriginalResult
+  // discarded a COMPLETED, PAID job with a valid output URL.
+  expect(params.medias).toEqual([{ value: media, role: "start_image" }]);
+  const echoed = displayCompleted(live).results[0].params.medias;
+  expect(echoed).toEqual([{ role: "image", data: { id: media, type: "media_input", url: sources[0].url } }]);
+  expect(consumerGenerationOriginalResult(displayOf(displayCompleted(live)), jobId, params, "video")).toEqual({ url: rawUrl });
+
+  const withMedias = (medias: unknown) => {
+    const one = displayCompleted(live).results[0];
+    return displayOf({ results: [{ ...one, params: { ...one.params, medias } }] });
+  };
+  // A connection that DOES echo the slot name verbatim still qualifies: both
+  // readings of the live sample are accepted, and neither is load-bearing.
+  for (const role of ["image", "start_image"])
+    expect(consumerGenerationOriginalResult(withMedias([{ role, data: { id: media, type: "media_input", url: sources[0].url } }]), jobId, params, "video"), role).toEqual({ url: rawUrl });
+  // The older per-kind `data.type` spellings, and an entry with no type at all.
+  for (const type of ["media_input", "image", undefined])
+    expect(consumerGenerationOriginalResult(withMedias([{ role: "image", data: { id: media, ...(type === undefined ? {} : { type }) } }]), jobId, params, "video"), String(type)).toEqual({ url: rawUrl });
+  // The binding that carries the guarantee is the media id we uploaded, and it
+  // is exact. A different id, a different count, an unrecognised data.type, a
+  // role of another kind, or a non-object entry all still refuse the job.
+  for (const [name, medias] of [
+    ["another media id", [{ role: "image", data: { id: randomUUID(), type: "media_input" } }]],
+    ["no media id", [{ role: "image", data: { type: "media_input" } }]],
+    ["a second reference we never sent", [{ role: "image", data: { id: media, type: "media_input" } }, { role: "image", data: { id: media, type: "media_input" } }]],
+    ["no references at all", []],
+    ["an unknown data.type", [{ role: "image", data: { id: media, type: "instruction" } }]],
+    ["a role of another kind", [{ role: "video", data: { id: media, type: "media_input" } }]],
+    ["a string entry", ["image"]],
+    ["not an array", { role: "image" }],
+  ] as const)
+    expect(consumerGenerationOriginalResult(withMedias(medias), jobId, params, "video"), name).toBeNull();
 });
 
 test("on the 91-tool surface a generation quotes, submits and polls through jobs_wait without job_status", async () => {

@@ -113,8 +113,8 @@ test("real ledger checks sources in creation/dispatch and source deletion pins q
       prompt: input.prompt,
       resolution: input.resolution,
       medias: [
-        { value: randomUUID(), role: "video" },
-        { value: randomUUID(), role: "image" },
+        { value: randomUUID(), role: "video_references" },
+        { value: randomUUID(), role: "image_references" },
       ],
       count: 1,
       use_unlim: false,
