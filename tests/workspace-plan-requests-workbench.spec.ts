@@ -225,7 +225,7 @@ test("Marketing Studio's plan prices the variants the page holds, and dispatches
   const state = await fixture(page, project);
   await page.goto(url(project.id, "moleculr", "marketing"));
   await expect(page.getByTestId("page-title")).toHaveText("Marketing Studio");
-  await expect(page.locator('[data-tool-body="product"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-tool-body="marketing"]')).toBeVisible({ timeout: 30_000 });
 
   await openAtomik(page);
   await expect(page.getByTestId("atomik-plan-title")).toHaveText("Build the campaign set");

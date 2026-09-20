@@ -56,6 +56,8 @@ function campaignProject(): Project {
 
 type State = {
   quotes: Record<string, unknown>[];
+  /** Shot mappings the dialog asks for while preparing a quote — not a paid call. */
+  maps: number;
   saves: number;
   dispatches: string[];
   external: string[];
@@ -72,7 +74,7 @@ async function fixture(page: Page): Promise<State> {
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=",
     "base64",
   );
-  const state: State = { quotes: [], saves: 0, dispatches: [], external: [], errors: [] };
+  const state: State = { quotes: [], maps: 0, saves: 0, dispatches: [], external: [], errors: [] };
   page.on("pageerror", (error) => state.errors.push(error.message));
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
@@ -93,8 +95,14 @@ async function fixture(page: Page): Promise<State> {
         return json({ revision: ++revision, productionProjectId: project.productionProjectId, shotMappings: project.shotMappings });
       }
       if (method === "POST") {
-        /* The draft is already mapped, so the dialog never asks; a request here would be a real write. */
-        state.dispatches.push("POST /api/workbench/projects " + String(request.postDataJSON()?.action));
+        /* Mapping the node to its production shot: what the dialog does before it can be priced. */
+        const body = request.postDataJSON();
+        if (body?.action !== "map-shot") {
+          state.dispatches.push("POST /api/workbench/projects " + String(body?.action));
+          return json({ error: "Only map-shot is permitted in this test." }, 409);
+        }
+        state.maps++;
+        expect(body).toMatchObject({ action: "map-shot", projectId: project.id, nodeId: "marketing-node" });
         return json({ productionProjectId: "ws-mkt-production", shotId: "marketing-shot" });
       }
       return json({
@@ -168,7 +176,10 @@ test("the workspace Marketing page hosts the real four sections, not a link out"
   /* No link out to the old workbench Marketing Studio remains on the page. */
   await expect(tool.locator('a[href*="/workbench?project=ws-mkt-host&suite=moleculr"]')).toHaveCount(0);
 
-  /* The agent slot is this page's own Atomik plan, on the shell's engine. */
+  /* The agent slot is this page's own Atomik plan, on the shell's engine. It
+     sits in Brand & cast, where /workbench puts its own agent panels. */
+  await page.getByTestId("spec-work").getByRole("button", { name: "Brand & cast", exact: true }).click();
+  await expect(tool.locator("#brand .moleculr-section-body")).toBeVisible();
   const plan = page.getByTestId("marketing-plan-panel");
   await expect(plan).toContainText("Build the campaign set");
   await expect(plan.getByRole("button", { name: "Run with Atomik", exact: true })).toBeEnabled();
@@ -206,11 +217,14 @@ test("a variant is configured, priced and gated on the workspace page; nothing d
     refine: false,
     references: [{ uploadId: "product-upload", role: "reference_image" }],
   });
-  /* Approval is the only thing that could send it: nothing has. */
+  /* Approval is the only thing that could send it: nothing has. The only write
+     was mapping the node to its production shot, which is what makes a price
+     possible in the first place. */
   expect(state.dispatches).toEqual([]);
+  expect(state.maps).toBeGreaterThan(0);
 
   /* The page's plan prices the same variant, and stops at its gate. */
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click().catch(() => page.keyboard.press("Escape"));
+  await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Atomik/ }).click();
   await expect(page.getByTestId("atomik-plan-title")).toHaveText("Build the campaign set");

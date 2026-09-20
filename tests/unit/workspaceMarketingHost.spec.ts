@@ -67,9 +67,10 @@ test("the workspace Marketing page mounts the shared flow, the shared picker and
     "bindMoleculrReferences",
     "referenceAdBinding",
     "GenerationDialog",
-    "/api/generate",
   ])
     expect(tool, marker).not.toContain(marker);
+  /* And it calls no route of its own: every request belongs to the flow or the engine. */
+  expect(tool).not.toContain("fetch(");
   /* The page still publishes what its plan prices, and never a price. */
   expect(tool).toContain('usePlanRequest("variants"');
   expect(tool).not.toContain("maxCredits");
@@ -77,7 +78,8 @@ test("the workspace Marketing page mounts the shared flow, the shared picker and
   /* The agent slot is the page's own plan on the shell's engine. */
   const panel = readFileSync("components/workspace/spec/tools/MarketingPlanPanel.tsx", "utf8");
   expect(panel).toContain('atomik.start("marketing")');
-  for (const marker of ["/api/generate", "quote", "approve"]) expect(panel, marker).not.toContain(marker);
+  expect(panel).not.toContain("fetch(");
+  for (const marker of ["/api/", "maxCredits", "quoteFingerprint"]) expect(panel, marker).not.toContain(marker);
 
   /* One upload rule: Studio files the same asset through the same builder. */
   const studio = readFileSync("components/workbench/Studio.tsx", "utf8");
