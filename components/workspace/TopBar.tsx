@@ -1,9 +1,10 @@
 "use client";
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { agentButton, type AgentLook } from "@/lib/workspace/atomik-view";
-import { formatCredits } from "@/lib/workspace/format";
+import { creditsLabel } from "@/lib/workspace/format";
 import { getSuite, SUITES } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
+import { useSession } from "@/lib/session";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { AccountMenu } from "./AccountMenu";
 import { Keycap } from "./ui";
@@ -31,6 +32,10 @@ export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount |
   const run = atomik.state.run;
   const look = atomikButtonLook(agentButton(run, run ? atomik.plan(run.page) : null, state.agentOpen), Boolean(state.gen));
   const workspace = account?.workspace ?? null;
+  /* Same source and same unit rule as the phone header (lib/price.ts): the
+     rate table's unit decides, never the balance's own shape. */
+  const { rates } = useSession();
+  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit);
   return (
     <header className="pxw-topbar" data-row="topbar">
       <button type="button" className="pxw-wordmark" onClick={() => home()} aria-label={`particl ${suite.short} home`}>
@@ -75,11 +80,17 @@ export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount |
       >
         Generate
       </button>
-      {account?.credits ? (
-        <a className="pxw-credits" href="/billing" title="Workspace credits and billing" data-testid="workspace-credits">
-          {formatCredits(account.credits.balance)}
-        </a>
-      ) : null}
+      {/* The slot is always mounted, as it is on the phone: a missing balance
+          and a workspace that holds none are different facts, and neither is
+          "no slot". creditsLabel carries the neutral text and the reason. */}
+      <a
+        className={`pxw-credits${credits.known ? "" : " pxw-credits--unknown"}`}
+        href="/billing"
+        title={credits.title}
+        data-testid="workspace-credits"
+      >
+        {credits.text}
+      </a>
       {/* The account menu: every destination the new shell has no page for,
           the workspace switch, sign out, and the switch-over escape hatch. */}
       {workspace ? <AccountMenu account={account} /> : null}
