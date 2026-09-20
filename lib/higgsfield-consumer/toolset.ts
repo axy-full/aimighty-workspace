@@ -133,11 +133,24 @@ export function checkTool(toolset: ConnectedToolset, name: string, args: Record<
 
 /* ── Status reads ───────────────────────────────────────────────────── */
 
-/** In order of preference. `job_status` is the qualified normalized envelope;
- * `job_display` (one job by id) and `jobs_wait` (an immediate snapshot of up to
- * twelve jobs) are the per-product status reads some connections advertise
- * instead. Every one is read-only. */
-export const STATUS_TOOLS = ["job_status", "job_display", "jobs_wait"] as const;
+/**
+ * In order of preference. `job_status` is the qualified normalized envelope and
+ * stays first: it is the only read that can also return the raw provider
+ * envelope, and the only one whose shape is the contract's own.
+ *
+ * `jobs_wait` is preferred over `job_display` because it is the fallback whose
+ * live envelope we have actually verified end to end against a real completed
+ * job on the connected account (20 September 2026): a flat
+ * `{jobs:[{index,job_id,status,type,model,result_url,thumbnail_url}],all_terminal}`
+ * that `normalizeFallbackStatus` rewrites correctly, with `all_terminal`
+ * suppressing the poll hint and `thumbnail_url` deliberately not a recognised
+ * result key. `job_display` returns the provider's gallery envelope
+ * (`{results:[{id,…,params,results:{rawUrl,thumbnailUrl}}]}`) whose echoed
+ * `params` then have to survive the contract's own params checks; it is a
+ * strictly larger surface for the same answer, so it is the last resort.
+ * Both are read-only and free.
+ */
+export const STATUS_TOOLS = ["job_status", "jobs_wait", "job_display"] as const;
 export type StatusTool = (typeof STATUS_TOOLS)[number];
 export function statusArguments(tool: StatusTool, jobId: string, rawData = false): Record<string, unknown> {
   if (tool === "job_status") return { jobId, sync: false, raw_data: rawData };
@@ -196,13 +209,26 @@ export function normalizeFallbackStatus(tool: Exclude<StatusTool, "job_status">,
   if (!record(raw)) return unrecognised;
   let entry: Record<string, unknown> | undefined;
   let wait: unknown;
-  if (tool === "job_display") {
-    const candidate = [raw.generation, raw.job, raw].find((value) => record(value) && idOf(value) !== null);
-    if (record(candidate)) entry = candidate;
-  } else {
-    const list = [raw.jobs, raw.results, raw.statuses].find(Array.isArray) as unknown[] | undefined;
+  const single = (value: unknown) => (record(value) && idOf(value) !== null ? value : undefined);
+  /** Exactly one entry of a top-level list naming the acknowledged job, or
+   * undefined. Two entries with that id, or none, leave the reply inert. */
+  const fromList = (...lists: unknown[]) => {
+    const list = lists.find(Array.isArray) as unknown[] | undefined;
     const matching = (list ?? []).filter((item) => record(item) && idOf(item) === jobId.toLowerCase());
-    if (matching.length === 1 && record(matching[0])) entry = matching[0];
+    return matching.length === 1 && record(matching[0]) ? matching[0] : undefined;
+  };
+  if (tool === "job_display") {
+    // The live reply nests the job inside a top-level `results` ARRAY — it is
+    // the provider's gallery envelope:
+    //   {"results":[{id,type,status,model,params,results:{rawUrl,…},createdAt}]}
+    // so `idOf(raw)` is null and the single-object shapes below never match.
+    // Other/older replies put the job under `generation`, under `job`, or at
+    // the top level. Try the single-object shapes first (unchanged), then
+    // search the list exactly as the `jobs_wait` branch does: bound to the
+    // acknowledged id, and only when ONE entry names it.
+    entry = single(raw.generation) ?? single(raw.job) ?? single(raw) ?? fromList(raw.results, raw.jobs, raw.data);
+  } else {
+    entry = fromList(raw.jobs, raw.results, raw.statuses);
     if (raw.all_terminal !== true) wait = raw.poll_after_seconds;
   }
   if (!entry || idOf(entry) !== jobId.toLowerCase() || typeof entry.status !== "string") return unrecognised;

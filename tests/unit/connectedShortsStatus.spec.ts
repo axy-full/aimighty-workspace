@@ -16,6 +16,7 @@ import {
   type ConsumerShortsInput,
 } from "../../lib/higgsfield-consumer/shorts-studio";
 import { consumerVoiceToolFailureResult, consumerVoiceToolOriginalResult } from "../../lib/higgsfield-consumer/voice-tools";
+import { displayCompleted, waitCompleted, type EnvelopeJob } from "../fixtures/connectedStatusEnvelopes";
 
 /**
  * Shorts polling goes through the connected-toolset guard (#226), like every
@@ -43,6 +44,16 @@ const clips: string[] = [randomUUID(), randomUUID()];
 const rawUrl = (index: number) => `https://fixtures.particl.invalid/outputs/short-${index}.mp4`;
 const input: ConsumerShortsInput = { source: { uploadId: "source-video" }, preset: { id: randomUUID(), source: "cms", name: "Neon cut" }, aspectRatio: "9:16" };
 const params = consumerShortsParams(input, media, 12);
+/** A clip's job as the live provider describes it. Shorts clips are polled
+ * through the same fallbacks as every other product, so they are asserted
+ * against the same recorded envelopes. */
+const clipJob = (id: unknown): EnvelopeJob => ({
+  jobId: String(id),
+  model: "cinematic_studio_video",
+  type: "video",
+  prompt: "A short cut.",
+  rawUrl: rawUrl(clips.indexOf(String(id))),
+});
 
 type Packet = { id: string; method: string; params: { name: string; arguments: Record<string, unknown> } };
 function session(options: { tools: Tool[]; reply?: (p: Packet) => unknown }) {
@@ -65,8 +76,8 @@ function session(options: { tools: Tool[]; reply?: (p: Packet) => unknown }) {
       : p.params.name === SHORTS_TOOLS.status ? { id: sessionId, status: "completed", job_ids: clips }
       : p.params.name === SHORTS_TOOLS.create ? (args.get_cost === true ? { cost: { credits: 42, credits_exact: 42 } } : { id: sessionId, job_ids: [] })
       : p.params.name === "job_status" ? { generation: { id: args.jobId, type: "video", status: "completed", results: { rawUrl: rawUrl(clipOf(args.jobId)) } } }
-      : p.params.name === "job_display" ? { id: args.id, status: "completed", type: "video", results: { rawUrl: rawUrl(clipOf(args.id)) } }
-      : p.params.name === "jobs_wait" ? { all_terminal: true, jobs: (args.jobs as { job_id: string }[]).map((job, index) => ({ index, job_id: job.job_id, status: "completed", result_url: rawUrl(clipOf(job.job_id)) })) }
+      : p.params.name === "job_display" ? displayCompleted(clipJob(args.id))
+      : p.params.name === "jobs_wait" ? waitCompleted(clipJob((args.jobs as { job_id: string }[])[0].job_id))
       : {});
     return Response.json({ jsonrpc: "2.0", id: p.id, result: { structuredContent: value } });
   };
@@ -98,11 +109,25 @@ test("on our 98-tool surface Shorts polls the session and every clip through job
   expect(f.names()).not.toContain("job_display");
 });
 
-test("on the 91-tool surface, with no job_status, Shorts falls back to job_display and the collector still qualifies each clip", async () => {
+test("on the 91-tool surface, with no job_status, Shorts falls back to jobs_wait and the collector still qualifies each clip", async () => {
   const f = session({ tools: THEIRS });
   expect(parseShortsSessionStatus(await readSession(f), sessionId).jobIds).toEqual(clips);
   const read = await readClips(f);
   expect(f.names()).not.toContain("job_status");
+  expect(f.names().filter((name) => name === "jobs_wait")).toHaveLength(2);
+  read.forEach((clip, index) => {
+    expect(clip.raw).toMatchObject({ status_source: "jobs_wait", generation: { id: clip.jobId, status: "completed", type: "video" } });
+    expect(consumerVoiceToolOriginalResult(clip.raw, clip.jobId)).toEqual({ url: rawUrl(index) });
+  });
+});
+
+test("with only job_display advertised, every clip is still collected from the real gallery envelope", async () => {
+  // Against the previous code this test fails on every clip: the live
+  // job_display reply nests each job in a top-level `results` array, the
+  // normalizer did not look there, and a whole PAID Shorts session — up to
+  // twenty clips — stayed uncollectable.
+  const f = session({ tools: without(THEIRS, "jobs_wait") });
+  const read = await readClips(f);
   expect(f.names().filter((name) => name === "job_display")).toHaveLength(2);
   read.forEach((clip, index) => {
     expect(clip.raw).toMatchObject({ status_source: "job_display", generation: { id: clip.jobId, status: "completed", type: "video" } });
@@ -110,17 +135,13 @@ test("on the 91-tool surface, with no job_status, Shorts falls back to job_displ
   });
 });
 
-test("with only jobs_wait advertised, Shorts reads an immediate snapshot per clip", async () => {
-  const f = session({ tools: without(THEIRS, "job_display") });
-  const read = await readClips(f);
-  expect(f.names().filter((name) => name === "jobs_wait")).toHaveLength(2);
-  read.forEach((clip, index) => expect(consumerVoiceToolOriginalResult(clip.raw, clip.jobId)).toEqual({ url: rawUrl(index) }));
-});
-
 test("a failed clip is still a failure through the fallback, and never a collected original", async () => {
   const f = session({
     tools: THEIRS,
-    reply: (p) => (p.params.name === "job_display" ? { id: p.params.arguments.id, status: "failed", type: "video" } : undefined),
+    reply: (p) =>
+      p.params.name === "jobs_wait"
+        ? { all_terminal: true, summary: { total: 1, completed: 0, failed: 1, active: 0, errors: 0 }, jobs: [{ index: 0, job_id: (p.params.arguments.jobs as { job_id: string }[])[0].job_id, status: "failed", type: "video", model: "cinematic_studio_video" }] }
+        : undefined,
   });
   const read = await readClips(f);
   read.forEach((clip) => {
@@ -178,5 +199,5 @@ test("Shorts quotes, submits and then polls end to end on the 91-tool surface", 
   const read = await readClips(f);
   expect(read).toHaveLength(2);
   expect(f.names()).not.toContain("job_status");
-  expect(f.names().filter((name) => name === "job_display")).toHaveLength(2);
+  expect(f.names().filter((name) => name === "jobs_wait")).toHaveLength(2);
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { GENJUTSU_VARIANTS } from "../genjutsuTypes";
 import {
+  CONNECTED_MODEL_VARIANTS,
   ConsumerVideoError,
   consumerVideoAcknowledgement,
 } from "./video-contract";
@@ -122,8 +123,15 @@ function generationEvidence(
   if (consumerGenjutsuAcknowledgement(aliases, params.model) !== jobId)
     return null;
   const p = g.params;
+  // `params.model` is a per-family VARIANT selector on some families, not a
+  // model id (see CONNECTED_MODEL_VARIANTS): the live connected account echoes
+  // `params.model: "default"` beside a top-level `model: "seedance_2_5"`. The
+  // model identity is `g.model`, compared strictly above; a variant word is
+  // tolerated here and every other differing value still refuses the job.
   if (
-    ("model" in p && p.model !== params.model) ||
+    ("model" in p &&
+      p.model !== params.model &&
+      !(typeof p.model === "string" && CONNECTED_MODEL_VARIANTS.has(p.model))) ||
     ("count" in p && p.count !== 1) ||
     ("use_unlim" in p && p.use_unlim !== false)
   )
