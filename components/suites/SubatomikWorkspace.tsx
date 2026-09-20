@@ -47,6 +47,7 @@ import { suiteHref } from "@/lib/suites";
 import type { Project, Plan } from "@/lib/workbench/studio";
 import type { Generation } from "@/lib/jobs";
 import type { AdmissionQuote } from "@/lib/admissionTypes";
+import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { projectAssetFromLibrary } from "@/components/workbench/ProjectLibraryPage";
 import { ToastHost } from "@/components/ui/Toast";
@@ -150,8 +151,19 @@ const price = (quote: AdmissionQuote) =>
 type BillingAccount = "particl" | "higgsfield";
 type ConnectionStatus = { connected?: boolean; requiresReconnect?: boolean };
 
-export default function SubatomikWorkspace() {
-  usePageTitle("Subatomik Viral Studio");
+export default function SubatomikWorkspace({
+  variant: requestedVariant,
+  embedded = false,
+  onConnectedInput,
+}: {
+  /** Set by a host that routes its own pages (the /workspace shell); otherwise read from `?page=`. */
+  variant?: GenjutsuVariant;
+  /** Hosted inside another page's chrome: no page title or suite header of its own. */
+  embedded?: boolean;
+  /** The connected-account form's current quote input (ConsumerGenjutsu `onInput`). */
+  onConnectedInput?: (input: ConsumerGenjutsuInput | null) => void;
+} = {}) {
+  usePageTitle(embedded ? null : "Subatomik Viral Studio");
   const session = useSession(),
     query = useSearchParams(),
     captured = useSuiteProject();
@@ -159,7 +171,8 @@ export default function SubatomikWorkspace() {
   // Shorts runs only on the connected account; the other pages are Genjutsu variants.
   const shorts = query.get("page") === "shorts";
   const variant: GenjutsuVariant =
-    query.get("page") === "object-swap" ? "object-swap" : "motion-transfer";
+    requestedVariant ??
+    (query.get("page") === "object-swap" ? "object-swap" : "motion-transfer");
   // Billing is folded in silently: with a connected account the owner's
   // connected credits are used by default. `?account=particl` is an explicit,
   // unadvertised override to Particl workspace (Cloud) billing;
@@ -204,7 +217,7 @@ export default function SubatomikWorkspace() {
   return (
     <ToastHost>
       <div className={`suite-workspace ${styles.workspace}`}>
-        <header className="suite-page-intro">
+        {!embedded && <header className="suite-page-intro">
           <div>
             <span className="suite-kicker">
               <i className="suite-dot" style={{ background: "#D48CF5" }} />
@@ -217,7 +230,7 @@ export default function SubatomikWorkspace() {
             </p>
           </div>
           <span className="suite-badge">{shorts || account === "higgsfield" ? "Connected account" : "Transform"}</span>
-        </header>
+        </header>}
         {!session.signedIn ? (
           <section className="suite-panel">
             <h2>Bring your next visual idea.</h2>
@@ -296,6 +309,7 @@ export default function SubatomikWorkspace() {
                 scope={session.requestScope}
                 variant={variant}
                 refreshProject={drafts.refresh}
+                onInput={onConnectedInput}
               />
             ) : (
               <>
@@ -1358,6 +1372,7 @@ function Studio({
           ref={library}
           className={`suite-panel ${styles.library}`}
           aria-label="Subatomik workspace assets"
+          data-subatomik-section="sources"
         >
           <div className="suite-section-heading">
             <div>
@@ -1399,6 +1414,7 @@ function Studio({
       <section
         className={`suite-panel ${styles.results}`}
         aria-label="Subatomik project results"
+        data-subatomik-section="history"
       >
         <div className="suite-section-heading">
           <div>

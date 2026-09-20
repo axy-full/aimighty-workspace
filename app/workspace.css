@@ -118,9 +118,12 @@
 .pxw *::after {
   box-sizing: border-box;
 }
-.pxw a { color: var(--pxw-blue); text-decoration: none; }
-.pxw a:hover { color: var(--pxw-blue-ink); }
-.pxw button {
+/* Element resets carry no class weight (:where), so any class wins over
+   them, and they skip .pxw-embed: an existing tool mounted in a page keeps
+   the styles it brings (its CSS modules are single-class selectors). */
+:where(.pxw) a:where(:not(.pxw-embed *)) { color: var(--pxw-blue); text-decoration: none; }
+:where(.pxw) a:where(:not(.pxw-embed *)):hover { color: var(--pxw-blue-ink); }
+:where(.pxw) button:where(:not(.pxw-embed *)) {
   font: inherit;
   color: inherit;
   background: none;
@@ -130,12 +133,10 @@
   margin: 0;
   padding: 0;
 }
-.pxw button:disabled { cursor: not-allowed; }
-.pxw input,
-.pxw textarea,
-.pxw select { font: inherit; color: inherit; }
-.pxw textarea { resize: none; }
-.pxw select { appearance: none; -webkit-appearance: none; }
+:where(.pxw) button:where(:not(.pxw-embed *)):disabled { cursor: not-allowed; }
+:where(.pxw) :where(input, textarea, select):where(:not(.pxw-embed *)) { font: inherit; color: inherit; }
+:where(.pxw) textarea:where(:not(.pxw-embed *)) { resize: none; }
+:where(.pxw) select:where(:not(.pxw-embed *)) { appearance: none; -webkit-appearance: none; }
 .pxw :focus-visible { outline: 2px solid var(--pxw-blue); outline-offset: 1px; }
 
 .pxw ::-webkit-scrollbar { width: 11px; height: 11px; }
@@ -590,3 +591,93 @@
 .pxw .pxw-palette-label { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-palette-hint { font-size: 10px; flex: none; }
 .pxw .pxw-palette-empty { padding: 12px; font-size: 13px; color: var(--pxw-dimmer); }
+
+/* ── Spec-card template (03, "Spec-card template") ──────────────────── */
+
+.pxw .pxw-spec { padding: 18px 20px 34px; }
+.pxw .pxw-spec-intro { max-width: 720px; margin: 0 0 22px; font-size: 13.5px; line-height: 1.6; color: var(--pxw-muted); text-wrap: pretty; }
+.pxw .pxw-spec-group { margin-bottom: 26px; }
+.pxw .pxw-spec-group-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 12px; }
+.pxw .pxw-spec-note { font-size: 12px; color: var(--pxw-faint); }
+.pxw .pxw-spec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 12px; }
+.pxw .pxw-spec-card { display: flex; flex-direction: column; justify-content: flex-start; width: 100%; min-width: 0; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); border-radius: 13px; padding: 14px 15px 15px; color: var(--pxw-primary); text-align: left; }
+.pxw button.pxw-spec-card:hover { border-color: var(--pxw-hover-border); background: var(--pxw-row-hover); }
+.pxw .pxw-spec-card[aria-current="true"] { border-color: var(--pxw-selected); }
+.pxw .pxw-spec-card-title { display: block; font-size: 14px; font-weight: 565; letter-spacing: -0.012em; }
+.pxw .pxw-spec-card-desc { display: block; margin-top: 7px; font-size: 12.5px; line-height: 1.5; color: var(--pxw-dim); text-wrap: pretty; }
+.pxw .pxw-spec-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.pxw .pxw-spec-chip { padding: 2px 8px; border-radius: 6px; background: var(--pxw-chip-inner); font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-muted); white-space: nowrap; }
+.pxw .pxw-spec-card-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 11px; border-top: 1px solid var(--pxw-inner-rule); }
+.pxw .pxw-spec-chips + .pxw-spec-card-foot { margin-top: 11px; }
+.pxw .pxw-spec-card-state { font-size: 11.5px; color: var(--pxw-dimmer); }
+
+.pxw .pxw-spec-work { margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--pxw-hairline); scroll-margin-top: 12px; }
+.pxw .pxw-spec-work-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.pxw .pxw-spec-work-name { font-size: 13px; font-weight: 545; color: var(--pxw-secondary); }
+.pxw .pxw-spec-work-body { min-width: 0; }
+.pxw .pxw-spec-work-empty { font-size: 12.5px; color: var(--pxw-dimmer); margin: 0; }
+.pxw .pxw-link-button { color: var(--pxw-blue-ink); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Mounted tools keep their own styles; these rules only contain them. */
+.pxw .pxw-embed { overflow-x: auto; }
+.pxw .pxw-embed .stage-scroll { height: auto; max-height: none; overflow: visible; padding: 0; }
+.pxw .pxw-tool { min-width: 0; }
+.pxw .pxw-draft-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; font-size: 11.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-draft-state { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-muted); }
+.pxw .pxw-draft-error { color: var(--pxw-red-ink); }
+
+.pxw .pxw-brief-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+.pxw .pxw-field-block { display: flex; flex-direction: column; gap: 6px; }
+.pxw .pxw-field-label { font-size: 12.5px; color: var(--pxw-body); }
+.pxw .pxw-textarea { width: 100%; padding: 10px 12px; border-radius: 10px; background: var(--pxw-card); border: 1px solid var(--pxw-field-border); color: var(--pxw-primary); font-size: 13px; line-height: 1.55; resize: vertical; }
+.pxw .pxw-textarea:focus { border-color: var(--pxw-selected); outline: none; }
+.pxw .pxw-brief-actions { display: flex; gap: 8px; }
+
+.pxw .pxw-look { margin-bottom: 18px; border: 1px solid var(--pxw-card-border); border-radius: 12px; background: var(--pxw-card); padding: 12px 14px; }
+.pxw .pxw-look > summary { display: flex; align-items: baseline; gap: 10px; cursor: pointer; list-style: none; }
+.pxw .pxw-look > summary::-webkit-details-marker { display: none; }
+.pxw .pxw-look-title { font-size: 13.5px; font-weight: 560; }
+.pxw .pxw-look-sub { font-size: 12px; color: var(--pxw-dimmer); }
+.pxw .pxw-look-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+.pxw .pxw-look-item { margin: 0; }
+.pxw .pxw-look-item img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: var(--pxw-control); }
+.pxw .pxw-look-item figcaption { font-size: 11px; color: var(--pxw-dimmer); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-look-empty { font-size: 12.5px; color: var(--pxw-dimmer); margin: 10px 0 0; }
+.pxw .pxw-look-edit { margin-top: 12px; }
+
+.pxw .pxw-package { max-width: 760px; }
+.pxw .pxw-package-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.pxw .pxw-package-facts > div { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); min-width: 0; }
+.pxw .pxw-package-facts span { font-size: 11.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-package-facts strong { font-size: 13px; font-weight: 545; color: var(--pxw-near-primary); overflow-wrap: anywhere; }
+.pxw .pxw-package-note { font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); margin: 14px 0 0; text-wrap: pretty; }
+.pxw .pxw-package-error { font-size: 12.5px; color: var(--pxw-red-ink); margin: 14px 0 0; }
+.pxw .pxw-package-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pxw .pxw-hook-list { margin: 14px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--pxw-body); line-height: 1.6; }
+
+/* Inspector: specification and plan */
+.pxw .pxw-insp-kicker { display: block; margin: 20px 0 10px; }
+.pxw .pxw-facts { margin: 0; }
+.pxw .pxw-fact { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--pxw-inner-rule); }
+.pxw .pxw-fact dt { font-size: 12.5px; color: var(--pxw-dimmer); flex: none; }
+.pxw .pxw-fact dd { margin: 0; font-family: var(--pxw-mono); font-size: 11.5px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.pxw .pxw-insp-plan-title { font-size: 14px; font-weight: 570; letter-spacing: -0.012em; }
+.pxw .pxw-insp-plan-line { font-size: 12.5px; line-height: 1.5; color: var(--pxw-dim); margin: 6px 0 0; text-wrap: pretty; }
+.pxw .pxw-insp-plan-price { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); margin-top: 8px; }
+.pxw .pxw-insp-steps { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pxw .pxw-insp-step { display: grid; grid-template-columns: 20px 1fr; column-gap: 9px; align-items: center; font-size: 12.5px; }
+.pxw .pxw-insp-step-mark { grid-row: span 2; width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: var(--pxw-mono); font-size: 10px; background: var(--pxw-control); color: var(--pxw-label-floor); }
+.pxw .pxw-insp-step[data-mark="done"] .pxw-insp-step-mark { background: var(--pxw-green-tint); color: var(--pxw-green-ink); }
+.pxw .pxw-insp-step[data-mark="current"] .pxw-insp-step-mark { background: var(--pxw-blue-tint); color: var(--pxw-blue-ink); }
+.pxw .pxw-insp-step[data-mark="gate"] .pxw-insp-step-mark { background: var(--pxw-amber-tint-strong); color: var(--pxw-amber-ink); }
+.pxw .pxw-insp-step-label { color: var(--pxw-secondary); }
+.pxw .pxw-insp-step-detail { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-insp-gate { margin-top: 14px; padding: 12px 13px; border-radius: 11px; background: var(--pxw-amber-tint); border: 1px solid rgba(255, 159, 10, 0.3); }
+.pxw .pxw-insp-gate-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--pxw-amber-ink); }
+.pxw .pxw-insp-gate-head strong { font-family: var(--pxw-mono); font-weight: 500; }
+.pxw .pxw-insp-gate p { font-size: 12px; line-height: 1.5; color: var(--pxw-body); margin: 8px 0 0; }
+.pxw .pxw-insp-gate-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.pxw .pxw-insp-run { width: 100%; justify-content: center; margin-top: 16px; padding: 10px; border-radius: 10px; font-size: 13px; }
+.pxw .pxw-insp-reason { font-size: 12px; line-height: 1.5; color: var(--pxw-dimmer); margin: 8px 0 0; text-wrap: pretty; }
+.pxw .pxw-insp-note { font-size: 12px; color: var(--pxw-body); margin: 10px 0 0; }
+.pxw .pxw-insp-error { font-size: 12px; color: var(--pxw-red-ink); margin: 10px 0 0; }

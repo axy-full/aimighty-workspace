@@ -4,6 +4,8 @@ import type { Project } from "@/lib/workbench/studio";
 import { getSuite, pageDef } from "@/lib/workspace/pages";
 import type { AppState, SelKind } from "@/lib/workspace/types";
 import { RigInspector } from "../rig/RigInspector";
+import { specFor } from "@/lib/workspace/spec-cards";
+import { SpecInspector } from "../spec/SpecInspector";
 import { Kicker } from "../ui";
 import { CastInspector } from "./CastInspector";
 import { TakeInspector } from "./TakeInspector";
@@ -32,10 +34,15 @@ function Placeholder({ state }: InspectorBodyProps) {
   );
 }
 
+/** Spec-card pages show their specification and plan; other page-kind pages keep the placeholder. */
+function PageInspector(props: InspectorBodyProps) {
+  return specFor(props.state.page) ? <SpecInspector {...props} /> : <Placeholder {...props} />;
+}
+
 /** Selection kind → Inspector body. Later PRs replace an entry. */
 export const INSPECTOR_BODIES: Record<SelKind, ComponentType<InspectorBodyProps>> = {
   shot: RigInspector,
   take: TakeInspector,
   cast: CastInspector,
-  page: Placeholder,
+  page: PageInspector,
 };
