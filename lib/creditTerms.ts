@@ -94,6 +94,38 @@ export const usdToCredits = (usd: number, engine?: string | null): number => (us
 export const creditsToUsd = (credits: number): number => credits * creditUsd();
 
 /**
+ * The rate, written out: `1 credit = $0.10`.
+ *
+ * One sentence, one place. Every surface that tells a person what a credit is
+ * worth — the top-up screen, the Settings credits card, the tooltip on the
+ * balance in the header — calls this, and passes the rate it was GIVEN rather
+ * than one it typed. On the server that rate is `creditUsd()`; in the browser
+ * it is the `creditUsd` field of the rate table the server built (lib/
+ * rateTable.ts), because `process.env.CREDIT_USD` does not exist there and a
+ * browser falling back to 0.10 would be a second place the launch rate is
+ * baked in — exactly what CREDIT_USD is meant to make impossible.
+ *
+ * A rate that is missing, zero or not a number returns null, and the surface
+ * leaves the line out. Nothing invents ten cents to fill a gap.
+ *
+ * Two decimals normally, up to four when the rate needs them: at $0.125 a
+ * credit, "$0.13" would misstate the unit by 4% on a screen whose whole job is
+ * to state it exactly.
+ */
+export function creditRateLine(perCredit: number | null | undefined): string | null {
+  const usd = creditRateUsd(perCredit);
+  return usd === null ? null : `1 credit = $${usd}`;
+}
+
+/** The rate as a money string, for a surface that words the sentence itself. */
+export function creditRateUsd(perCredit: number | null | undefined): string | null {
+  if (typeof perCredit !== "number" || !Number.isFinite(perCredit) || perCredit <= 0) return null;
+  const trimmed = perCredit.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  const decimals = trimmed.split(".")[1]?.length ?? 0;
+  return decimals < 2 ? perCredit.toFixed(2) : trimmed;
+}
+
+/**
  * Where a credit came from, and whether anyone paid for it.
  *
  * `credit_grants` recorded an amount and a note and nothing else, so the

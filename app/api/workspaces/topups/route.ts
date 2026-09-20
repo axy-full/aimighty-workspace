@@ -3,6 +3,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { creditState, creditsApply } from "@/lib/credits";
 import { packs } from "@/lib/packs";
+import { creditUsd } from "@/lib/creditTerms";
 import { paymentProvider, startCheckout } from "@/lib/payments";
 import { listTopups, requestTopup, cancelTopup, OPEN_LIMIT } from "@/lib/topups";
 import { listGrants, SUPER_ADMIN_EMAIL } from "@/lib/platform";
@@ -24,6 +25,11 @@ export const GET = withTenant(async function GET() {
     provider: paymentProvider(),
     canRequest: applies && got.user.role === "admin",
     openLimit: OPEN_LIMIT,
+    /* The unit the packs were priced at, stated alongside them. `credits` also
+       carries it, but only when the billing read succeeded — and the top-up
+       screen's own sentence about what a credit costs must not disappear
+       because a balance failed to load. Same source either way: creditUsd(). */
+    creditUsd: creditUsd(),
     credits, packs: packs(), requests, history,
   });
 });

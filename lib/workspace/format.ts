@@ -1,3 +1,4 @@
+import { creditRateLine } from "@/lib/creditTerms";
 import type { Unit } from "@/lib/rateTable";
 
 /** Numbers group Western-style regardless of the browser's locale. */
@@ -25,14 +26,29 @@ export function formatCredits(balance: number) {
  *    credit balance at all. lib/price.ts is explicit that a balance says what
  *    somebody HAS and is never what they pay in, so nothing is invented here:
  *    the slot holds a neutral dash and its label explains why.
+ *
+ * The title carries the rate — "Workspace credits · 1 credit = $0.10" — because
+ * the balance is where most people meet the unit, and a figure in a unit nobody
+ * has defined is not information. `perCredit` is the rate the rate table
+ * carried over the wire (lib/rateTable.ts `creditUsd`), never a number typed
+ * here: a deployment on a different CREDIT_USD moves this line with it, and a
+ * browser that has no table yet gets no rate and says nothing about one.
  */
 export type CreditsLabel = { text: string; known: boolean; title: string };
 
-export function creditsLabel(balance: number | null | undefined, unit: Unit = "cr"): CreditsLabel {
+/** "Workspace credits", plus the rate when the table carried one. */
+export function creditsTitle(base: string, perCredit?: number | null): string {
+  const rate = creditRateLine(perCredit);
+  return rate ? `${base} · ${rate}` : base;
+}
+
+export function creditsLabel(
+  balance: number | null | undefined, unit: Unit = "cr", perCredit?: number | null,
+): CreditsLabel {
   if (unit === "usd")
     return { text: "—", known: false, title: "This workspace is billed in dollars, so it has no credit balance." };
   if (typeof balance === "number" && Number.isFinite(balance))
-    return { text: formatCredits(balance), known: true, title: "Workspace credits" };
+    return { text: formatCredits(balance), known: true, title: creditsTitle("Workspace credits", perCredit) };
   return { text: "— cr", known: false, title: "Credit balance unavailable just now." };
 }
 

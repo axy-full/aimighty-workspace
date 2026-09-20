@@ -36,6 +36,8 @@ export function SettingsScreen({ account }: { account: WorkspaceAccount | null }
           {data.credits?.usd ? <span className="pxm-balance-usd" data-testid="mobile-settings-usd">{data.credits.usd}</span> : null}
         </div>
         {data.credits?.month ? <div className="pxm-settings-month" data-testid="mobile-settings-month">{data.credits.month}</div> : null}
+        {/* What a credit is, once, on the screen the top-up button lives on. */}
+        {data.credits?.rate ? <div className="pxm-settings-month" data-testid="mobile-settings-rate">{data.credits.rate}</div> : null}
         {data.topup ? (
           <a className="pxm-primary pxm-primary-wide" href={data.topup.href} data-testid="mobile-settings-topup">
             <span className="pxm-primary-label">{data.topup.label}</span>

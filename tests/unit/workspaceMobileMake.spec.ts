@@ -179,7 +179,11 @@ const me = {
 
 test("the credits card is computed from /api/me and the usage feed", () => {
   const card = creditsCard(me, { byMonth: [{ month: monthKey(NOW), credits: 612 }] }, NOW);
-  expect(card).toEqual({ balance: "1,240 CR", usd: "$124.00", month: "612 CR this month" });
+  /* The rate is on the card because this is where a person decides to spend:
+     one short line, from the same unit the dollar figure uses. */
+  expect(card).toEqual({
+    balance: "1,240 CR", usd: "$124.00", month: "612 CR this month", rate: "1 credit = $0.10",
+  });
 });
 
 test("a figure no route supplies is left out, not invented", () => {
@@ -190,6 +194,8 @@ test("a figure no route supplies is left out, not invented", () => {
   expect(creditsCard({ ...me, credits: null }, null, NOW)).toBeNull();
   /* No credit unit, no dollar line. */
   expect(creditsCard({ ...me, credits: { ...me.credits, creditUsd: Number.NaN } }, null, NOW)?.usd).toBeNull();
+  /* ...and no rate line either: nothing invents ten cents to fill the gap. */
+  expect(creditsCard({ ...me, credits: { ...me.credits, creditUsd: Number.NaN } }, null, NOW)?.rate).toBeNull();
 });
 
 test("Top up names a real pack and links to the flow that owns it", () => {

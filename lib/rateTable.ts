@@ -50,11 +50,29 @@ export type RateTable = {
   text: Record<string, TextRate>;
   /** Per model id. A model absent here cannot be priced on this client. */
   models: Record<string, ModelRates>;
-  /** What one credit costs, for the top-up screen — the only place §2 allows dollars. */
+  /**
+   * What one credit costs, for the top-up screen and the one line each surface
+   * is allowed to state it on — the only place §2 allows dollars.
+   *
+   * This is the browser's ONLY source for the rate. `creditUsd()` reads
+   * `CREDIT_USD` from the environment, which does not reach the client, so a
+   * browser that called it would silently fall back to the launch rate and
+   * bake 0.10 into a second place. Everything client-side reads this field and
+   * passes it to `creditRateLine`.
+   */
   creditUsd: number;
 };
 
-export const EMPTY_TABLE: RateTable = { unit: "cr", models: {}, text: {}, creditUsd: 0.1 };
+/**
+ * The table before one has loaded: no rates, and NO RATE for a credit either.
+ *
+ * Zero means "not known yet", not "free": `creditRateLine(0)` is null, so a
+ * surface holding the empty table says nothing about what a credit is worth
+ * rather than printing a rate nobody sent it. It used to read 0.1 — a copy of
+ * the launch rate, shipped to every browser, which a deployment setting
+ * CREDIT_USD to anything else would have been silently contradicted by.
+ */
+export const EMPTY_TABLE: RateTable = { unit: "cr", models: {}, text: {}, creditUsd: 0 };
 
 /** The writer's frozen instruction is about this long; a finished prompt about this long. */
 export const WRITER_SYSTEM_TOKENS = 1400;

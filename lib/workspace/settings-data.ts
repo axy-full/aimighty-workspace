@@ -16,6 +16,8 @@
  * of either.
  */
 
+import { creditRateLine } from "@/lib/creditTerms";
+
 /* ── What the routes give ─────────────────────────────────────────────── */
 
 /** `/api/me`, as this screen reads it. */
@@ -69,6 +71,16 @@ export type CreditsCard = {
   usd: string | null;
   /** "612 CR this month", only when the usage feed actually carries this month. */
   month: string | null;
+  /**
+   * "1 credit = $0.10" — one short line (ground rule 9), from the same unit the
+   * dollar figure uses, so a deployment on another CREDIT_USD says so here.
+   *
+   * This is where a person meets the unit on the phone: the card is one tap
+   * from the top-up button, and deciding whether to spend means knowing what is
+   * being spent. Null when `/api/me` carried no unit — the line is dropped
+   * rather than guessed.
+   */
+  rate: string | null;
 };
 
 /** The current month as `/api/usage` groups it: `YYYY-MM`, in local time. */
@@ -93,6 +105,7 @@ export function creditsCard(me: MeRead | null, usage: UsageRead | null, now: num
     balance: `${n(credits.balance)} CR`,
     usd: unit === null ? null : `$${(credits.balance * unit).toFixed(2)}`,
     month: month === null ? null : `${n(month)} CR this month`,
+    rate: creditRateLine(unit),
   };
 }
 
