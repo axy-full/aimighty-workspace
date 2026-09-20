@@ -125,10 +125,10 @@ test("fal status logs and request IDs cannot alter queue routing", async () => {
     "https://other.invalid/model",
   ]) {
     await expect(fal.falStatus(endpoint, "existing")).rejects.toThrow(
-      "Invalid fal queue",
+      "Invalid render queue",
     );
     await expect(fal.falResult(endpoint, "existing")).rejects.toThrow(
-      "Invalid fal queue",
+      "Invalid render queue",
     );
   }
   expect(calls).toHaveLength(1);

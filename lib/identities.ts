@@ -769,7 +769,7 @@ return await withRecoveryJob(requireTenant().id, row.id, async () => {
       await failRender(
         row.id,
         `Could not reach the render service to find out how this render went: ${msg} ` +
-          "If it did complete, fal will still have charged for it.",
+          "If it did complete, the render service will still have charged for it.",
         row.createdAt,
       );
     }

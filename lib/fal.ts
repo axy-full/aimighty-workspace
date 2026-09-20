@@ -150,7 +150,7 @@ function queueApp(endpoint: string): string {
   if (
     parts.length < length ||
     parts.some((part) => !/^[a-zA-Z0-9_.-]+$/.test(part) || part === "." || part === "..")
-  ) throw new Error("Invalid fal queue application identifier.");
+  ) throw new Error("Invalid render queue application identifier.");
   return parts.slice(0, length).join("/");
 }
 

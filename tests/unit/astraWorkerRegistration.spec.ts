@@ -27,7 +27,7 @@ test("the served worker list registers the Astra render function on its event wi
     concurrency?: { limit: number; key?: string }[];
     retries?: number;
   };
-  expect(opts.name).toBe("Render Astra Blender");
+  expect(opts.name).toBe("Render Astra 3D");
   expect(opts.triggers?.map((t) => t.event)).toEqual([EVENTS.astraRender]);
   expect(EVENTS.astraRender).toBe("astra-blender/render.requested");
   expect(opts.retries).toBe(2);

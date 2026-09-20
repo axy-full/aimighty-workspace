@@ -103,7 +103,7 @@ export const render = inngest.createFunction(
 export const astraRender = inngest.createFunction(
   {
     id: "astra-blender-render",
-    name: "Render Astra Blender",
+    name: "Render Astra 3D",
     triggers: [{ event: EVENTS.astraRender }],
     concurrency: [{ limit: 4 }, { limit: 2, key: "event.data.workspaceId" }],
     retries: 2,

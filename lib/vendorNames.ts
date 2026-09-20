@@ -12,7 +12,7 @@ export const VENDOR_NAMES = [
   "Claude", "Anthropic", "Sonnet", "Opus", "Haiku", "Fable", "Blender",
   "Kling", "Kuaishou", "Veo", "Google", "Gemini", "Runway", "Sora",
   "Midjourney", "Flux", "Luma", "Pika", "Nano Banana", "Soul ID",
-  "Soul Character", "Vercel", "Topaz", "Bria", "fal.ai",
+  "Soul Character", "Vercel", "Topaz", "Bria", "fal.ai", "fal", "Wan",
 ] as const;
 
 /** Case-insensitive, whole-word. "GPT" also catches "GPT-6", "GPT Image".

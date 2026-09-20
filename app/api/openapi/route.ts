@@ -21,8 +21,8 @@ export const GET = withTenant(async function GET(req: Request) {
     info: {
       title: "Particl",
       description:
-        "Generate video with Seedance, and read what it cost. Every call spends or reads " +
-        "the workspace's own BytePlus credit.",
+        "Generate video, and read what it cost. Every call spends or reads " +
+        "the workspace's own connected video credit.",
       version: "1.0.0",
     },
     servers: [{ url: origin }],
@@ -72,7 +72,7 @@ export const GET = withTenant(async function GET(req: Request) {
                     duration: { type: "number", description: "Seconds. 5 is a good default." },
                     resolution: { type: "string", enum: ["480p", "720p", "1080p"] },
                     ratio: { type: "string", enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] },
-                    generateAudio: { type: "boolean", description: "Seedance 2.5 only." },
+                    generateAudio: { type: "boolean", description: "Motion 2.5 only." },
                     projectId: { type: ["string", "null"], description: "From listProjects." },
                   },
                 },
