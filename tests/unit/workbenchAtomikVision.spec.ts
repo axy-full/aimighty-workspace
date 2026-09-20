@@ -421,6 +421,82 @@ test("oversized, corrupt, duplicate and excessive references fail before a model
   });
 });
 
+test("a sampled time past the end of a generation-backed video is refused, from the column or the rendered duration", async () => {
+  await runInTenant(workspace(), async () => {
+    await ready();
+    const take = async (id: string, durationS: number | null, params: string) =>
+      db().execute({
+        sql: `INSERT INTO generations(id,model,prompt,params,status,kind,bytes,stored_url,duration_s,created_at,updated_at) VALUES(?,'mock','',?,'succeeded','video',100,?,?,?,?)`,
+        args: [id, params, "/api/media/" + id, durationS, Date.now(), Date.now()],
+      });
+    await take("measured", 6, "{}");
+    await take("rendered", null, '{"duration":6}');
+    await take("unknown", null, "{}");
+    const frames = atomikFrameTimes(6).map((timeSeconds, i) => ({
+      assetId: "take-clip",
+      uploadId: "gen-frame-" + i,
+      timeSeconds,
+    }));
+    for (const frame of frames) await upload(frame.uploadId);
+    const readers = { upload: async () => image(), image: async () => image() };
+    const projectFor = (generationId: string) => ({
+      ...seedProject(),
+      assets: [
+        asset("take-clip", {
+          kind: "video" as const,
+          uploadId: undefined,
+          generationId,
+          url: "/api/media/" + generationId,
+        }),
+      ],
+    });
+    for (const generationId of ["measured", "rendered"]) {
+      const project = projectFor(generationId);
+      expect(
+        (
+          await loadAtomikReferences(
+            project,
+            ["take-clip"],
+            "owner",
+            frames,
+            readers,
+          )
+        ).images.map((frame) => frame.timeSeconds),
+      ).toEqual([0.6, 3, 5.4]);
+      await expect(
+        loadAtomikReferences(
+          project,
+          ["take-clip"],
+          "owner",
+          [{ ...frames[0], timeSeconds: 7 }, ...frames.slice(1)],
+          readers,
+        ),
+      ).rejects.toThrow("outside");
+    }
+    // No length on the take and none in its params: unbounded, held only by the ceiling.
+    await expect(
+      loadAtomikReferences(
+        projectFor("unknown"),
+        ["take-clip"],
+        "owner",
+        [{ ...frames[0], timeSeconds: 3601 }, ...frames.slice(1)],
+        readers,
+      ),
+    ).rejects.toThrow("outside");
+    expect(
+      (
+        await loadAtomikReferences(
+          projectFor("unknown"),
+          ["take-clip"],
+          "owner",
+          [{ ...frames[0], timeSeconds: 7 }, ...frames.slice(1)],
+          readers,
+        )
+      ).images,
+    ).toHaveLength(3);
+  });
+});
+
 test("sampled video frames are authorized, bounded, labeled and never substituted with descriptions", async () => {
   await runInTenant(workspace(), async () => {
     await ready();
