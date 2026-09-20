@@ -18,7 +18,6 @@ import { DESKTOP, PHONE, generation, mockMedia, upload } from "./helpers/workspa
  * and 1920 the desktop pages are unchanged.
  */
 
-const SHOTS = "/private/tmp/mobile-pages-shots";
 const PROJECT = "ws-mb";
 const PRODUCTION = "prod-mb";
 
@@ -55,6 +54,9 @@ function fixture(): Project {
       shot("s1", "The approach", "Wide. The water holds still.", ["n-look"], { status: "approved" }),
       shot("s2", "The encounter", "The lead enters frame.", ["n-look", "n-lead", "n-sphere"]),
       shot("s3", "Mirror fold", "The sphere takes the frame.", ["n-sphere"]),
+      /* Its engine is no longer in the catalogue: the one shot that cannot be
+         priced, so the blocked primary has something real to report. */
+      shot("s4", "Departure", "Wide again.", ["n-look"], { engine: "engine-that-left" }),
     ],
   };
 }
@@ -142,7 +144,8 @@ async function open(page: Page): Promise<State> {
     /* The shot and node thumbs read the workbench's own preview route. */
     if (path.startsWith("/api/workbench/preview/"))
       return route.fulfill({ body: readFileSync("public/campaign/environment.webp"), contentType: "image/webp" });
-    if (path === "/api/me") return json({ id: "u1", owner: true, workspace: { id: "w1", suspended: false } });
+    if (path === "/api/me")
+      return json({ id: "u1", owner: true, workspace: { id: "w1", name: "Studio", suspended: false }, credits: { balance: 250 } });
     if (path === "/api/jobs") return json({ generations: [], nextCursor: null, nextPageCursor: null });
     if (path === "/api/projects") return json({ projects: [{ id: PRODUCTION, credits: 96, capCredits: 500 }] });
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
@@ -262,18 +265,42 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
   await goTo(page, "rig");
   await expect(page.getByTestId("mobile-shot-list")).toBeVisible();
   const rows = page.locator(".pxm-shot-row");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   /* The row carries the number, the name, the note, the chip and the mono line. */
   await expect(rows.first().locator(".pxm-shot-num")).toHaveText("01");
   await expect(rows.first().locator(".pxm-shot-name")).toHaveText("The approach");
   await expect(rows.first().locator(".pxm-shot-note")).toHaveText("Wide. The water holds still.");
   await expect(rows.first().locator(".pxm-status-chip-label")).toHaveText("Approved");
   await expect(rows.first().locator(".pxm-shot-meta")).toContainText("·");
+
+  /* 05-mobile's header, at the level where the spending happens: credits in
+     mono, then search, then the avatar. The page level drops none of them. */
+  await expect(page.getByTestId("mobile-credits")).toHaveText("250 cr");
+  await expect(page.getByTestId("mobile-search")).toBeVisible();
+  await expect(page.getByTestId("mobile-avatar")).toBeVisible();
+
+  /* One FILLED primary with its cost inline: the live quote for the selected
+     shot, on the button, exactly as the desktop's Generate carries it. */
+  const primary = page.getByTestId("mobile-primary");
+  await expect(primary).toContainText("Generate");
+  await expect(primary).toContainText(/\d+ cr/);
+  await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("mobile-action-reason")).toHaveCount(0);
+  expect(await page.locator(".pxm-primary").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(10, 132, 255)");
+
+  if (capture) await page.screenshot({ path: info.outputPath("shot-list-390x844.png"), animations: "disabled" });
+
+  /* And the blocked state: the shot whose engine is gone cannot be priced, so
+     the primary keeps its place, carries no figure and says why. */
+  await rows.nth(3).click();
+  await page.locator(".pxm-sheet-close").click();
+  await expect(primary).toHaveAttribute("aria-disabled", "true");
+  await expect(primary).not.toContainText("cr");
+  await expect(page.getByTestId("mobile-action-reason")).toContainText(/engine/i);
   /* The derived sub is the desktop's: counted, never stored. */
   await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
-  await expect(page.locator(".pxm-page-sub")).toHaveText("3 shots · 1 approved");
+  await expect(page.locator(".pxm-page-sub")).toHaveText("4 shots · 1 approved");
   await floors(page, "shot list");
-  if (capture) await page.screenshot({ path: `${SHOTS}/shot-list-390x844.png`, animations: "disabled" });
 
   /* Tapping a shot selects it and opens the Inspector sheet. */
   await rows.nth(1).click();
@@ -286,18 +313,18 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
   /* The flow is Rig's second tab, and the same graph: blue in, grey after. */
   await page.locator('[data-testid="mobile-page-views"] [data-view="graph"]').click();
   await expect(page.getByTestId("mobile-flow")).toBeVisible();
-  await expect(page.locator(".pxm-flow-step")).toHaveCount(6);
+  await expect(page.locator(".pxm-flow-step")).toHaveCount(7);
   await expect(page.locator('.pxm-flow-step[data-scene]')).toHaveCount(1);
   await expect(page.locator('.pxm-flow-step[data-scene]')).toHaveAttribute("data-node-id", "s2");
   const wires = await page.locator(".pxm-flow-wire").evaluateAll((els) => els.map((el) => el.getAttribute("data-wire")));
   expect(wires.slice(0, 3)).toEqual(["blue", "blue", "blue"]);
-  expect(wires.slice(3)).toEqual(["grey", "grey"]);
+  expect(wires.slice(3)).toEqual(["grey", "grey", "grey"]);
   /* 15px pins, and the scene's own ring — the only loader on the phone. */
   const pin = await page.locator(".pxm-flow-pin").first().boundingBox();
   expect(Math.round(pin!.width)).toBe(15);
   await expect(page.locator('.pxm-flow-step[data-scene] .pxm-ring')).toHaveCount(1);
+  if (capture) await page.screenshot({ path: info.outputPath("flow-390x844.png"), animations: "disabled" });
   await floors(page, "flow");
-  if (capture) await page.screenshot({ path: `${SHOTS}/flow-390x844.png`, animations: "disabled" });
 
   expect(state.paid).toEqual([]);
   expect(errors).toEqual([]);
@@ -318,8 +345,8 @@ test("cards: Cast & Elements and Takes, 2-up from the real project", async ({ pa
   await expect(page.locator('[data-cast-id="up_lead"] .pxm-tile-tag-label')).toHaveText("Identity locked");
   await expect(page.locator('[data-cast-id="up_lead"] .pxm-tile-badge')).toHaveText("IDENTITY");
   await expect(page.locator(".pxm-page-sub")).toHaveText("1 cast · 3 elements");
+  if (capture) await page.screenshot({ path: info.outputPath("cards-cast-390x844.png"), animations: "disabled" });
   await floors(page, "cast cards");
-  if (capture) await page.screenshot({ path: `${SHOTS}/cards-cast-390x844.png`, animations: "disabled" });
   /* A card opens the Inspector sheet, as every phone detail does. */
   await page.locator('[data-cast-id="up_lead"]').click();
   await expect(page.getByTestId("mobile-sheet")).toBeVisible();
@@ -359,8 +386,8 @@ test("rows: the same groups, cards and states the desktop spec page shows", asyn
   expect([Math.round(lead!.width), Math.round(lead!.height)]).toEqual([36, 36]);
   await expect(rows.first().locator(".pxm-spec-name")).not.toHaveText("");
   await expect(rows.first().locator(".pxm-spec-value")).not.toHaveText("");
+  if (capture) await page.screenshot({ path: info.outputPath("rows-brief-390x844.png"), animations: "disabled" });
   await floors(page, "rows");
-  if (capture) await page.screenshot({ path: `${SHOTS}/rows-brief-390x844.png`, animations: "disabled" });
 
   /* Every rows page in every suite renders from its own spec config. */
   for (const [suite, id, count] of [["particl", "deliver", 5], ["atomik", "budget", 4], ["subatomik", "sources", 4]] as const) {
@@ -388,7 +415,7 @@ test("the accordion opens one section at a time", async ({ page }, info) => {
   await expect(page.locator('[data-section="product"]')).toHaveAttribute("data-open", "");
   /* Its rows are the brief's own values, and an empty field is a dash. */
   await expect(page.locator('[data-section="product"] .pxm-acc-row-value').first()).toHaveText("saved");
-  if (capture) await page.screenshot({ path: `${SHOTS}/accordion-390x844.png`, animations: "disabled" });
+  if (capture) await page.screenshot({ path: info.outputPath("accordion-390x844.png"), animations: "disabled" });
 
   await page.locator('[data-section="brand"] .pxm-acc-head').click();
   await expect(page.locator(".pxm-acc-body:visible")).toHaveCount(1);
@@ -414,7 +441,7 @@ test("the form blocks on a stale quote, and sends nothing", async ({ page }, inf
   /* Nothing chosen yet: the quote is missing and the primary says so. */
   await expect(page.getByTestId("mobile-form-quote-figure")).toHaveText("—");
   await expect(page.getByTestId("mobile-primary")).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByTestId("mobile-form-blocked")).toContainText("source video");
+  await expect(page.getByTestId("mobile-action-reason")).toContainText("source video");
 
   /* Choose the project's own source video: now a quote exists for exactly this
      composition — and it has aged out, so it still blocks and prints no figure. */
@@ -423,7 +450,8 @@ test("the form blocks on a stale quote, and sends nothing", async ({ page }, inf
   await expect(page.getByTestId("mobile-form-source")).toContainText("wind-test.mp4");
   await expect(page.getByTestId("mobile-form-quote")).toHaveAttribute("data-quote", "expired");
   await expect(page.getByTestId("mobile-form-quote-figure")).toHaveText("—");
-  await expect(page.getByTestId("mobile-form-blocked")).toContainText("aged out");
+  await expect(page.getByTestId("mobile-form-quote-note")).toContainText("aged out");
+  await expect(page.getByTestId("mobile-action-reason")).toContainText("aged out");
   await expect(page.getByTestId("mobile-primary")).toHaveAttribute("aria-disabled", "true");
   await expect(page.getByTestId("mobile-primary")).not.toContainText("142");
 
@@ -436,8 +464,8 @@ test("the form blocks on a stale quote, and sends nothing", async ({ page }, inf
   await expect(page.locator('[data-res="1080p"]')).toHaveAttribute("aria-pressed", "true");
   /* The composition changed, so the old estimate no longer applies at all. */
   await expect(page.getByTestId("mobile-form-quote")).toHaveAttribute("data-quote", "changed");
+  if (capture) await page.screenshot({ path: info.outputPath("form-motion-390x844.png"), animations: "disabled" });
   await floors(page, "form");
-  if (capture) await page.screenshot({ path: `${SHOTS}/form-motion-390x844.png`, animations: "disabled" });
 
   /* Pressing the blocked primary says why and dispatches nothing. It is
      aria-disabled, not disabled, so a thumb still reaches it — and gets the
@@ -482,7 +510,7 @@ test("above the breakpoint the desktop pages are unchanged", async ({ page }, in
   await goTo(page, "rig");
   await expect(page.getByTestId("rig-list")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
-  await expect(page.locator(".pxw-rig-row")).toHaveCount(3);
+  await expect(page.locator(".pxw-rig-row")).toHaveCount(4);
   /* Nothing of the phone exists here. */
   await expect(page.getByTestId("phone-shell")).toHaveCount(0);
   await expect(page.getByTestId("mobile-dock")).toHaveCount(0);

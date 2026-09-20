@@ -1,5 +1,5 @@
 "use client";
-import { engineLabel } from "@/lib/workspace/engines";
+import { engineLabel, shotEngine } from "@/lib/workspace/engines";
 import { mediaBands } from "@/lib/workspace/format";
 import { shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot, RigShotStatus } from "@/lib/workspace/shots";
@@ -39,9 +39,15 @@ function Thumb({ id, index, asset }: { id: string; index: number; asset: Asset |
   );
 }
 
-/** `2.5 · 6s · Desert daylight` — every part from the shot, nothing invented. */
+/**
+ * `2.5 · 6s · Desert daylight` — every part from the shot, nothing invented.
+ * An engine the catalogue no longer lists is left out rather than printed as
+ * the generic fallback: the row's Draft state and the Inspector say what is
+ * wrong, and a name nobody can render with is not a name.
+ */
 export function shotMeta(shot: RigShot): string {
-  return [shot.engine ? engineLabel(shot.engine).short : null, shot.durationS != null ? `${shot.durationS}s` : null, shot.look || null]
+  const engine = shotEngine(shot.engine);
+  return [engine ? engineLabel(engine.id).short : null, shot.durationS != null ? `${shot.durationS}s` : null, shot.look || null]
     .filter(Boolean)
     .join(" · ");
 }

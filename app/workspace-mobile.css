@@ -343,11 +343,18 @@
 
 .pxw-phone .pxm-actions {
   flex: none;
-  display: flex;
-  gap: 9px;
+  display: block;
   padding: 10px 14px;
   background: var(--pxw-ground);
   border-top: 1px solid var(--pxw-divider);
+}
+.pxw-phone .pxm-action-row { display: flex; gap: 9px; }
+.pxw-phone .pxm-action-reason {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pxw-dimmer);
+  margin: 0 0 8px;
+  text-wrap: pretty;
 }
 .pxw-phone .pxm-ask,
 .pxw-phone .pxm-primary {

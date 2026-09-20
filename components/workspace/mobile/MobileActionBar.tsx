@@ -37,6 +37,12 @@ export function MobileActionBar({ primary }: { primary: MobilePrimary | null }) 
 
   return (
     <div className="pxm-actions" data-testid="mobile-actions">
+      {/* A blocked primary keeps its place and SAYS WHY, in one line above the
+          row — the reason is not hidden in a title a thumb cannot hover. */}
+      {primary?.blocked ? (
+        <p className="pxm-action-reason" role="status" data-testid="mobile-action-reason">{primary.blocked}</p>
+      ) : null}
+      <div className="pxm-action-row">
       <button
         type="button"
         className="pxm-ask"
@@ -74,6 +80,7 @@ export function MobileActionBar({ primary }: { primary: MobilePrimary | null }) 
           </span>
         </button>
       ) : null}
+      </div>
     </div>
   );
 }

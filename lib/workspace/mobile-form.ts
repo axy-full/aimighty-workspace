@@ -199,6 +199,18 @@ export const FORM_QUOTE_NOTE: Record<FormQuoteState, string> = {
 };
 
 /**
+ * What the pinned primary says when the quote is why it cannot run. The card
+ * above explains the PRICE; this says what to do about it, so the two lines
+ * carry different work rather than repeating one sentence twice.
+ */
+export const FORM_BLOCKED: Record<Exclude<FormQuoteState, "ready">, string> = {
+  none: "Take a live estimate before submitting.",
+  changed: "The composition changed — take a new estimate.",
+  expired: "That estimate has aged out — take a new one.",
+  attempted: "Already submitted once; take a new estimate to send it again.",
+};
+
+/**
  * Why the pinned primary cannot submit, or null when it can. The order is the
  * desktop's: the connection first, then the composition, then the quote.
  */
@@ -215,7 +227,7 @@ export function formBlocked(input: {
   if (!input.connected) return "This needs a connected account. Connect one in Settings.";
   if (!input.creative.source) return "Choose a source video from this project.";
   if (!input.request) return "This composition is not one the engine accepts yet.";
-  if (input.quote.state !== "ready") return FORM_QUOTE_NOTE[input.quote.state];
+  if (input.quote.state !== "ready") return FORM_BLOCKED[input.quote.state];
   return null;
 }
 

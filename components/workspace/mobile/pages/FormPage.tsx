@@ -265,8 +265,8 @@ export function FormPage({ page, project, scope }: MobilePageProps) {
           <span className="pxm-quote-label">Live quote</span>
           <span className="pxm-quote-figure" data-testid="mobile-form-quote-figure">{formQuoteLabel(quote)}</span>
         </div>
-        {/* One line, not two: what blocks the price IS what the card says. */}
-        <p className="pxm-quote-note" data-testid="mobile-form-blocked">{blocked ?? FORM_QUOTE_NOTE.ready}</p>
+        {/* The card explains the price; the pinned bar says what to do. */}
+        <p className="pxm-quote-note" data-testid="mobile-form-quote-note">{FORM_QUOTE_NOTE[quote.state]}</p>
       </div>
       {library.state.status !== "ready" ? (
         <p className="pxm-note" role="status">

@@ -16,6 +16,7 @@ import {
 } from "../../lib/workspace/mobile-templates";
 import {
   EMPTY_CREATIVE,
+  FORM_BLOCKED,
   FORM_QUOTE_NOTE,
   formBlocked,
   formDraftKey,
@@ -232,8 +233,13 @@ test("a missing or stale quote blocks submission, and the reason is the honest o
   expect(formBlocked({ projectOpen: true, connected: null, creative, request, quote: ready })).toMatch(/Checking/);
   expect(formBlocked({ projectOpen: true, connected: false, creative, request, quote: ready })).toMatch(/connected account/);
   expect(formBlocked({ projectOpen: true, connected: true, creative: EMPTY_CREATIVE, request: null, quote: ready })).toMatch(/source video/);
-  for (const state of ["none", "changed", "expired", "attempted"] as const)
-    expect(formBlocked({ projectOpen: true, connected: true, creative, request, quote: { state, credits: null, expiresAt: null } })).toBe(FORM_QUOTE_NOTE[state]);
+  /* The card explains the price, the button says what to do: two lines of
+     different work, never the same sentence twice. */
+  for (const state of ["none", "changed", "expired", "attempted"] as const) {
+    expect(formBlocked({ projectOpen: true, connected: true, creative, request, quote: { state, credits: null, expiresAt: null } })).toBe(FORM_BLOCKED[state]);
+    expect(FORM_BLOCKED[state]).not.toBe(FORM_QUOTE_NOTE[state]);
+    expect(FORM_BLOCKED[state]).toMatch(/estimate/i);
+  }
 });
 
 /* ── Edit & Sound, and the primary's reason ──────────────────────────────── */
