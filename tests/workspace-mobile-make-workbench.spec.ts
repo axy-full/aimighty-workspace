@@ -27,7 +27,6 @@ import { newProject, type CanvasNode, type Project } from "../lib/workbench/stud
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const SHOTS = "/private/tmp/mobile-make-shots";
 const ENGINE = "dreamina-seedance-2-5-260628";
 const DAY = 86_400_000;
 
@@ -125,7 +124,9 @@ async function smallTargets(page: Page, root = ".pxm-shell") {
     for (const el of Array.from(scope.querySelectorAll<HTMLElement>("button, a[href], select, input, textarea"))) {
       if (!el.getClientRects().length) continue;
       const rect = el.getBoundingClientRect();
-      if (el.classList.contains("pxm-segment")) {
+      /* Both waves' segmented option classes take the one exception 05-mobile
+         allows: 40px inside a 44px control (M-B ships .pxm-seg, M-C .pxm-segment). */
+      if (el.classList.contains("pxm-segment") || el.classList.contains("pxm-seg")) {
         if (rect.height < 40) out.push(`segment ${Math.round(rect.height)}px`);
         continue;
       }
@@ -234,7 +235,7 @@ test("the Make wall groups the unfiled takes by day and derives every count", as
   /* Exactly one filled primary, and its cost is inline. */
   expect(await filledPrimaries(page)).toHaveLength(1);
   await expect(page.getByTestId("mobile-primary")).toContainText("Render");
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: `${SHOTS}/make-390x844.png`, animations: "disabled" });
+  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("make-390x844.png"), animations: "disabled" });
   /* Last, because it scrolls the wall to its end. */
   expect(await lastRowClearsPinned(page)).toEqual([]);
 
@@ -404,7 +405,7 @@ test("the Atomik sheet reaches its gate, and the action bar's approve APPROVES â
   });
   expect(dockCovered).toBe(true);
   expect(await smallText(page)).toEqual([]);
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: `${SHOTS}/atomik-gate-390x844.png`, animations: "disabled" });
+  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("atomik-gate-390x844.png"), animations: "disabled" });
 
   /* Close the sheet: the action bar now carries the approval, in amber. */
   await page.locator(".pxm-sheet-close").click();
@@ -476,7 +477,7 @@ test("the Inspector sheet is the desktop Inspector, and an edit made in it persi
   await expect(tabs.getByRole("button", { name: /Versions/ })).toBeVisible();
   expect(await smallText(page)).toEqual([]);
   expect(await smallTargets(page)).toEqual([]);
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: `${SHOTS}/inspector-sheet-390x844.png`, animations: "disabled" });
+  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("inspector-sheet-390x844.png"), animations: "disabled" });
 
   /* The edit goes through the same revision-checked draft save as the desktop's. */
   await page.getByRole("textbox", { name: "Direction note" }).fill("She enters, and the ridge answers.");
@@ -537,7 +538,7 @@ test("Settings reads the real account: balance, its dollar value, the workspace 
   expect(await smallTargets(page)).toEqual([]);
   /* Settings spends nothing, so it pins no action bar; Top up is its one filled control. */
   expect((await filledPrimaries(page)).length).toBeLessThanOrEqual(1);
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: `${SHOTS}/settings-390x844.png`, animations: "disabled" });
+  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("settings-390x844.png"), animations: "disabled" });
   /* Last, because it scrolls the screen to its end. */
   expect(await lastRowClearsPinned(page)).toEqual([]);
 
