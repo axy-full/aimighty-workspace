@@ -1,99 +1,163 @@
 "use client";
-import { useMemo } from "react";
-import { suiteHref } from "@/lib/suites";
-import { EMPTY_MOLECULR, MOLECULR_FORMATS } from "@/lib/workbench/moleculr";
-import type { Project } from "@/lib/workbench/studio";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import MarketingStudioFlow, { type MarketingDraftHost } from "@/components/suites/MarketingStudioFlow";
+import { DraftUploadInput, type DraftUploadHandle } from "@/components/workbench/DraftUploadInput";
+import { moleculrSection } from "@/lib/suites";
+import type { Asset, Project } from "@/lib/workbench/studio";
 import { usePlanRequest } from "@/lib/workspace/atomik-host";
 import { marketingPlanRequests, marketingRequestGaps } from "@/lib/workspace/marketing-requests";
-
-type Link = { section: string; label: string };
-const LINKS: Record<string, Link[]> = {
-  product: [{ section: "product", label: "Open Product" }],
-  brand: [{ section: "brand", label: "Open Brand" }, { section: "cast", label: "Open Cast" }],
-  format: [{ section: "format", label: "Open Format" }],
-  variants: [{ section: "variants", label: "Open Variants" }, { section: "design", label: "Open Design" }, { section: "publish", label: "Open Publish" }],
-};
-
-const n = (value: number) => value.toLocaleString("en-US");
+import { useWorkspace } from "@/lib/workspace/state";
+import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
+import "./studio-css";
+import { DraftGate, DraftStatus } from "./DraftStatus";
+import { MarketingPlanPanel } from "./MarketingPlanPanel";
 
 /**
- * Marketing Studio's four areas as the saved project holds them, each opening
- * the existing Marketing Studio at that section. Its variant flow configures
- * generation nodes through Studio's generation dialog and draft engine, so it
- * runs there rather than in a second copy here.
+ * Marketing Studio itself, inside the workspace shell.
  *
- * The page also publishes what the plan prices: the /api/generate body of every
+ * The page mounts MarketingStudioFlow — the same component /workbench mounts,
+ * with the same four sections, the same campaign actions and the same
+ * generation dialog. There is no second copy of the paid path and no second
+ * quote or approval: the flow's dialog prices and dispatches, and the page's
+ * Atomik plan runs on the shell's engine.
+ *
+ * What the flow asks of a host, this page answers from the workspace:
+ *  - the draft engine is `useDraftEditor` (the revision-checked save every
+ *    workspace page uses);
+ *  - `onUpload` mounts the shared categorised picker (DraftUploadInput), the
+ *    same input and upload path Studio uses;
+ *  - `onIdentity` navigates to Cast, which already owns identity creation with
+ *    its live-priced approval — never a second identity panel;
+ *  - the agent slot is the page's own Atomik plan (MarketingPlanPanel).
+ *
+ * It also publishes what that plan prices: the /api/generate body of every
  * variant whose engine, ratio, resolution and length Marketing Studio already
- * accepted (lib/workspace/marketing-requests.ts). A variant still waiting on
- * one of those is named, not guessed at.
+ * accepted, read from the draft as edited on this screen.
  */
-export default function MarketingTool({ tool, project }: { tool: string; project: Project }) {
-  const brief = project.moleculr ?? EMPTY_MOLECULR;
+export default function MarketingTool({
+  tool,
+  project,
+  scope,
+  onProject,
+}: {
+  tool: string;
+  project: Project;
+  scope: string;
+  /** Report the edited draft up so the page's cards and Inspector count what is on screen. */
+  onProject: (project: Project) => void;
+}) {
+  const { go, dispatch } = useWorkspace();
+  const editor = useDraftEditor(scope, project.id);
+  const live = editor.project && editor.project.id === project.id ? editor.project : null;
+  /* The draft at call time: the flow re-reads it across every await, so it
+     tracks both the editor's state and this render's own changes (Studio's
+     pRef does exactly this). */
+  const latest = useRef<Project>(project);
+  useEffect(() => {
+    latest.current = live ?? project;
+  }, [live, project]);
+
+  /* A section link and the page's tool control choose the same open section. */
+  const [section, setSection] = useState<string | null>(() => moleculrSection(tool));
+  const chosen = moleculrSection(tool);
+  const [lastTool, setLastTool] = useState(tool);
+  if (lastTool !== tool) {
+    setLastTool(tool);
+    if (chosen) setSection(chosen);
+  }
+
+  useEffect(() => {
+    if (live) onProject(live);
+  }, [live, onProject]);
+
+  const [uploads, setUploads] = useState(0);
+  const picker = useRef<DraftUploadHandle>(null);
+
   /* The plan sends exactly these bodies; it never invents one. */
-  const variants = useMemo(() => marketingPlanRequests(project), [project]);
-  const gaps = useMemo(() => marketingRequestGaps(project), [project]);
+  const variants = useMemo(() => marketingPlanRequests(live), [live]);
+  const gaps = useMemo(() => marketingRequestGaps(live), [live]);
   usePlanRequest("variants", variants.length ? variants : undefined);
-  const rows: [string, string][] =
-    tool === "product"
-      ? [
-          ["Product", brief.productName || "Not named yet"],
-          ["Product URL", brief.productUrl || "None saved"],
-          ["Product images", `${n(brief.productAssetIds.length)} of 5`],
-          ["Saved products", n(brief.products?.length ?? 0)],
-        ]
-      : tool === "brand"
-        ? [
-            ["Brand kit", brief.brandKit?.name || "Not set"],
-            ["Presenters", `${n(brief.castAssetIds.length)} of 6`],
-          ]
-        : tool === "format"
-          ? [
-              ["Format", MOLECULR_FORMATS.find((item) => item.id === brief.format)?.label ?? brief.format],
-              ["Hooks", `${n(brief.hooks.length)} of 12`],
-              ["Aspect", brief.creative?.aspect ?? "Not set"],
-            ]
-          : [
-              ["Variants", `${n(brief.variants.length)} of 100`],
-              ["Video variants", n(brief.variants.filter((item) => item.kind === "video").length)],
-              ["Design", brief.poster ? "Saved" : "Not started"],
-            ];
+
+  /* Rebuilt every render on purpose: the flow must call this render's save,
+     never a captured older one. */
+  const change = useCallback(
+    (fn: (previous: Project) => Project) =>
+      editor.change((old) => {
+        const next = fn(old);
+        latest.current = next;
+        return next;
+      }),
+    [editor],
+  );
+  const host: MarketingDraftHost = {
+    scope,
+    project: live ?? project,
+    latest: () => latest.current,
+    /* No project switching happens under a workspace page: the draft is the URL's. */
+    live: () => editor.status === "ready",
+    owns: (draftId) => latest.current.id === draftId && editor.status !== "error",
+    change,
+    /* useDraftEditor re-reads identities with the draft, so the flag needs no separate pass. */
+    ensureSaved: (draftId) => (draftId === latest.current.id ? editor.ensureSaved() : Promise.resolve(false)),
+    beginUpload: () => setUploads((count) => count + 1),
+    endUpload: () => setUploads((count) => Math.max(0, count - 1)),
+    updateAsset: (id, fields) =>
+      change((old) => ({ ...old, assets: old.assets.map((asset) => (asset.id === id ? { ...asset, ...fields } : asset)) })),
+  };
+
+  const onAssets = useCallback(
+    (assets: Asset[], category: string) => {
+      if (!assets.length) return;
+      change((old) => ({ ...old, assets: [...old.assets, ...assets] }));
+      toast.success(`${assets.length.toLocaleString("en-US")} ${category.toLowerCase()} ${assets.length === 1 ? "reference" : "references"} added`);
+    },
+    [change],
+  );
+
+  if (editor.status !== "ready" || !live) return <DraftGate editor={editor} label="Marketing Studio" />;
   return (
-    <div className="pxw-tool pxw-tool--marketing" data-tool-body={tool}>
-      <div className="pxw-package">
-        <div className="pxw-package-facts">
-          {rows.map(([label, value]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <strong>{value}</strong>
-            </div>
-          ))}
-        </div>
-        {tool === "format" && brief.hooks.length ? (
-          <ol className="pxw-hook-list">
-            {brief.hooks.map((hook, i) => (
-              <li key={i}>{hook}</li>
+    <div className="pxw-tool pxw-tool--marketing" data-tool-body="marketing">
+      <DraftStatus editor={editor}>
+        {uploads ? <span className="pxw-draft-state" role="status">Uploading…</span> : null}
+      </DraftStatus>
+      {gaps.length ? (
+        <div className="pxw-package-gaps" data-testid="marketing-plan-gaps">
+          <span>
+            {gaps.length.toLocaleString("en-US")} {gaps.length === 1 ? "variant is" : "variants are"} not priced by this page&rsquo;s plan yet:
+          </span>
+          <ul>
+            {gaps.map((gap) => (
+              <li key={gap}>{gap}</li>
             ))}
-          </ol>
-        ) : null}
-        <p className="pxw-package-note">Marketing Studio edits these on the project, binds each variant to your saved originals and prices it before it runs.</p>
-        {tool === "variants" && gaps.length ? (
-          <div className="pxw-package-gaps" data-testid="marketing-plan-gaps">
-            <span>{n(gaps.length)} {gaps.length === 1 ? "variant is" : "variants are"} not priced by this page&rsquo;s plan yet:</span>
-            <ul>
-              {gaps.map((gap) => (
-                <li key={gap}>{gap}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <div className="pxw-package-actions">
-          {LINKS[tool].map((link, i) => (
-            <a key={link.section} className={`pxw-btn ${i === 0 ? "pxw-btn--primary" : "pxw-btn--control"}`} href={suiteHref("moleculr", project.id, link.section)}>
-              {link.label}
-            </a>
-          ))}
+          </ul>
         </div>
-      </div>
+      ) : null}
+      <DraftUploadInput
+        handle={picker}
+        scope={scope}
+        onAssets={onAssets}
+        onError={(message) => toast.error(message)}
+        onBusy={(busy) => setUploads((count) => (busy ? count + 1 : Math.max(0, count - 1)))}
+      />
+      <MarketingStudioFlow
+        draft={host}
+        enabled
+        page="marketing"
+        section={section}
+        marketing={<MarketingPlanPanel />}
+        onPage={(target) => setSection(moleculrSection(target) ?? section)}
+        onUpload={(category) => picker.current?.pick(category)}
+        /* Cast owns identity creation and its live-priced approval. */
+        onIdentity={() => go("particl", "cast")}
+        onStage={(stage) => go("particl", stage)}
+        onRig={() => go("particl", "rig")}
+        /* The sequence is the Edit page's; the take is already filed to the project. */
+        onSequence={() => go("particl", "edit")}
+        onAgent={() => dispatch({ type: "patch", patch: { agentOpen: true } })}
+        onDispatched={() => dispatch({ type: "patch", patch: { agentOpen: true } })}
+        onSaved={() => void editor.refresh()}
+      />
     </div>
   );
 }

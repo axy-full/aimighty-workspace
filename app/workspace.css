@@ -652,6 +652,14 @@
 .pxw .pxw-package-facts strong { font-size: 13px; font-weight: 545; color: var(--pxw-near-primary); overflow-wrap: anywhere; }
 .pxw .pxw-package-note { font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); margin: 14px 0 0; text-wrap: pretty; }
 .pxw .pxw-package-error { font-size: 12.5px; color: var(--pxw-red-ink); margin: 14px 0 0; }
+.pxw .pxw-tool--marketing { display: grid; gap: 12px; min-width: 0; }
+.pxw .pxw-mkt-plan { display: grid; gap: 6px; padding: 14px; border-radius: 12px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); }
+.pxw .pxw-mkt-plan-title { font-size: 14px; font-weight: 565; color: var(--pxw-primary); }
+.pxw .pxw-mkt-plan-line { font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); margin: 0; text-wrap: pretty; }
+.pxw .pxw-mkt-plan-price { font-family: var(--pxw-mono); font-size: 11.5px; color: var(--pxw-blue); }
+.pxw .pxw-mkt-plan-run { justify-self: start; margin-top: 4px; }
+.pxw .pxw-mkt-plan-reason { font-size: 12px; color: var(--pxw-dimmer); margin: 0; }
+.pxw .pxw-mkt-plan-error { font-size: 12px; color: var(--pxw-red-ink); margin: 0; }
 .pxw .pxw-package-gaps { margin: 14px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); }
 .pxw .pxw-package-gaps ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .pxw .pxw-package-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
