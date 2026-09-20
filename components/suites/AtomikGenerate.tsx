@@ -175,7 +175,11 @@ function ExplainerStyles({ load, disabled }: { load: (refresh: boolean) => Promi
 
 /** Catalogue-driven generation on the workspace owner's connected account.
  * Opening only reads local records; the catalogue, quotes and status checks are explicit. */
-export function AtomikGenerate({ project, scope, refreshProject }: { project: Project; scope: string; refreshProject: () => Promise<void> }) {
+export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
+  project: Project; scope: string; refreshProject: () => Promise<void>;
+  /** The exact quote input this form would send whenever it could send it, else null (a host's Atomik plan prices the same request). */
+  onInput?: (input: ConsumerGenerationInput | null) => void;
+}) {
   const request = useScopedFetch(scope);
   const draftId = project.id;
   const draft = useDraft<Creative>(`atomik-generate:${project.id}`, empty), input = creative(draft.value);
@@ -219,6 +223,12 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
   const unresolved = missing.length > 0 || jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
   const ready = !!capability?.owner && capability.connected && !capability.suspended && !busy;
   const canQuote = ready && !validation && !unresolved && (!input.medias.length || disclosed);
+  const offerable = !!capability?.owner && capability.connected && !capability.suspended && !validation && !unresolved && (!input.medias.length || disclosed);
+  const offeredKey = offerable ? JSON.stringify(consumerGenerationInputSchema.parse(normalized)) : "null";
+  const report = useRef(onInput);
+  useEffect(() => { report.current = onInput; }, [onInput]);
+  useEffect(() => { report.current?.(offeredKey === "null" ? null : (JSON.parse(offeredKey) as ConsumerGenerationInput)); }, [offeredKey]);
+  useEffect(() => () => report.current?.(null), []);
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   const change = (patch: Partial<Creative>) => { draft.set((before) => ({ ...creative(before), ...patch })); setApproved(false); setNotice(""); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
