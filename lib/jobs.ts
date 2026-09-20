@@ -5,6 +5,7 @@ import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
+import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd } from "./models";
 import { effectiveRate } from "./vendorPricing";
 import { creditsApply } from "./credits";
@@ -365,6 +366,13 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
   let storeMs: number | null = null;
   /** How much of the store this render occupies — rent, not a one-off charge. */
   let storedBytes: number | null = null;
+  /* The DELIVERED length of the clip we just stored, in seconds, which is the
+     column every per-second tool prices from. `params.duration` is only what was
+     ASKED for; a vendor that trims or pads a render makes the two differ, and the
+     library has to carry the length of the file it actually holds. Measured from
+     the stored bytes with the same bounded inspector the lazy backfill uses, so
+     the first reframe/Shorts quote is a column read instead of a storage read. */
+  let deliveredSeconds: number | null = null;
   if (
     task.vendorStartedAt &&
     task.vendorEndedAt &&
@@ -382,6 +390,20 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
         storedUrl = put.url;
         storedBytes = put.bytes;
         storeMs = now() - storeStart;
+        /* BEST EFFORT, and deliberately so: a length we cannot read is not a
+           reason to unsettle a render that is safely stored and about to be
+           billed. It leaves duration_s NULL exactly as before, and
+           resolveStoredDuration measures it on first read instead. */
+        try {
+          const measured = await inspectOriginalVideo(
+            { id: gen.id, kind: "video", role: "reference_video", mime: "video/mp4", ext: "mp4", storedUrl: put.url, fromGeneration: true },
+            put.bytes,
+          );
+          if (Number.isFinite(measured.seconds) && measured.seconds > 0)
+            deliveredSeconds = Math.round(measured.seconds * 1000) / 1000;
+        } catch (e) {
+          console.warn(`duration measurement failed for ${gen.id}:`, (e as Error).message);
+        }
       } catch (e) {
         // Keep the (expiring) Ark URL as a fallback rather than losing the render.
         // Loud in the logs: a silent failure here cost us two near-lost videos.
@@ -420,6 +442,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
               notice_ms=COALESCE(?, notice_ms),
               store_ms=COALESCE(?, store_ms),
               bytes=COALESCE(?, bytes),
+              duration_s=COALESCE(?, duration_s),
               error=?, updated_at=?
           WHERE id=? AND (status IN ('queued','running') OR (?='succeeded' AND status!='cancelled'))`,
     args: [
@@ -434,6 +457,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
       noticeMs,
       storeMs,
       storedBytes,
+      deliveredSeconds,
       task.error,
       ts,
       gen.id,
@@ -508,6 +532,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     sourceUrl: task.videoUrl,
     storedUrl,
     totalTokens: task.totalTokens,
+    durationS: deliveredSeconds ?? gen.durationS,
     costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
     creditsBilled: creditsApply(currentTenant()?.workspace)
       ? billCredits(
