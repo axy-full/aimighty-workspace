@@ -1,6 +1,7 @@
 import type { Reference } from "./ark";
 import { db, ready, now } from "./db";
 import { INSPECTABLE_AUDIO_EXTS, isAudioMime } from "./audioMeta";
+import { isDemoMediaUrl } from "./demoProduction";
 import { openUploadStream, readOriginalBytesLimited, readUploadBytes } from "./storage";
 import { inspectOriginalVideo, VIDEO_INSPECTION_LIMIT } from "./videoMetadata.server";
 
@@ -25,6 +26,17 @@ import { inspectOriginalVideo, VIDEO_INSPECTION_LIMIT } from "./videoMetadata.se
  * A length that cannot be read is null WITH A REASON, and the admissions
  * refuse to quote rather than guess: a per-minute price from a guessed
  * minute is a wrong bill.
+ *
+ * DEMO TAKES ARE THE ONE SOURCE THAT IS NEVER MEASURED OR PERSISTED. The
+ * starter production's takes (lib/starter.ts) are inserted already succeeded
+ * with a `stored_url` of `demoMediaUrl(...)`: a shared platform preview or the
+ * shipped `public/fixtures/clip.mp4`. Neither is a tenant original, so neither
+ * inspector can open one — they resolve a generation's bytes under the
+ * workspace's own Blob prefix. The rows carry a `params.duration` from
+ * `DEMO_TAKES`, but that is a fixture number, and pricing a per-second job from
+ * it is exactly the guessed minute the rules forbid. So a demo take is
+ * NON-QUOTABLE, with a reason, ahead of both the column read and the inspection
+ * — the guard holds even if something later writes a length onto the row.
  */
 
 export type StoredSource = {
@@ -37,6 +49,8 @@ export type StoredSource = {
   bytes: number;
   storedUrl: string | null;
   seconds: number | null;
+  /** Demo media (a platform preview or the shipped fixture clip), not a stored original of this workspace: never measured, never priced. */
+  demo: boolean;
 };
 export type SourceRef = { uploadId?: string | null; genId?: string | null };
 
@@ -159,7 +173,7 @@ export async function inspectOriginalAudio(src: Pick<StoredSource, "kind" | "id"
 
 /** The upload finish route's best-effort measurement of a freshly stored file. */
 export async function inspectStoredUploadSeconds(upload: { id: string; ext: string; kind: string; storedUrl: string; bytes: number }): Promise<number | null> {
-  const src: StoredSource = { kind: "upload", id: upload.id, ext: upload.ext, storedUrl: upload.storedUrl, bytes: upload.bytes, mediaKind: upload.kind === "video" ? "video" : "audio", name: "", mime: "", seconds: null };
+  const src: StoredSource = { kind: "upload", id: upload.id, ext: upload.ext, storedUrl: upload.storedUrl, bytes: upload.bytes, mediaKind: upload.kind === "video" ? "video" : "audio", name: "", mime: "", seconds: null, demo: false };
   return (await measure(src)).seconds;
 }
 
@@ -182,7 +196,7 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
       : row.kind === "audio" || isAudioMime(row.mime) || (row.kind !== "image" && INSPECTABLE_AUDIO_EXTS.has(ext)) ? "audio"
       : null;
     if (!mediaKind) return null;
-    return { kind: "upload", id: row.id, mediaKind, name: String(row.filename ?? row.id), mime: String(row.mime ?? ""), ext, bytes: Number(row.bytes ?? 0), storedUrl: String(row.stored_url ?? ""), seconds: row.duration_s == null ? null : Number(row.duration_s) };
+    return { kind: "upload", id: row.id, mediaKind, name: String(row.filename ?? row.id), mime: String(row.mime ?? ""), ext, bytes: Number(row.bytes ?? 0), storedUrl: String(row.stored_url ?? ""), seconds: row.duration_s == null ? null : Number(row.duration_s), demo: false };
   }
   if (ref.genId) {
     const row = (await db().execute({
@@ -197,12 +211,18 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
       kind: "generation", id: row.id, mediaKind: row.kind, name: row.title || String(row.prompt ?? "").slice(0, 80) || row.id,
       mime, ext: row.kind === "video" ? "mp4" : extOf(mime), bytes: Number(row.bytes ?? 0), storedUrl: row.stored_url,
       seconds: row.duration_s == null ? null : Number(row.duration_s),
+      demo: params.demo === true || isDemoMediaUrl(row.stored_url),
     };
   }
   return null;
 }
 
+/** The one refusal both the column read and the inspection are behind. */
+export const DEMO_SOURCE_REASON =
+  "This is a demo take. Its picture is a shared sample clip, not a stored original in this workspace, so its length cannot be measured and it cannot be priced per second. Render or upload your own take to use it here.";
+
 async function measure(src: StoredSource): Promise<{ seconds: number | null; reason?: string }> {
+  if (src.demo) return { seconds: null, reason: DEMO_SOURCE_REASON };
   try {
     if (src.mediaKind === "video") {
       if (src.bytes > VIDEO_INSPECTION_LIMIT) return { seconds: null, reason: "Video originals over 200 MB cannot be measured." };
@@ -224,6 +244,8 @@ async function measure(src: StoredSource): Promise<{ seconds: number | null; rea
  * otherwise measured now and written back. Null carries the reason.
  */
 export async function resolveStoredDuration(src: StoredSource): Promise<{ seconds: number | null; reason?: string }> {
+  // Ahead of the column: a demo take's length is a fixture, whatever is in the row.
+  if (src.demo) return { seconds: null, reason: DEMO_SOURCE_REASON };
   if (src.seconds != null && Number.isFinite(src.seconds) && src.seconds > 0) return { seconds: src.seconds };
   const measured = await measure(src);
   if (measured.seconds == null) return measured;

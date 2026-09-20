@@ -70,9 +70,42 @@ export const DEMO_PRODUCTION = {
   takes: DEMO_TAKES,
 };
 
+/**
+ * The two places a demo take's picture can come from, and NEITHER of them is a
+ * tenant original:
+ *
+ *   `/api/platform/previews/<key>` — one shared object in the PLATFORM asset
+ *      store, outside every workspace's Blob prefix, served to all workspaces.
+ *   `/fixtures/clip.mp4`          — a static file in `public/`, shipped with the
+ *      build (Big Buck Bunny, CC BY). Not in storage at all.
+ *
+ * A real take's `stored_url` is `/api/media/<genId>`, and its bytes are at the
+ * workspace's own `generations/<genId>.mp4` / `originals/video/<genId>` keys —
+ * which is the only thing `lib/videoMetadata.server.ts` can open (it resolves a
+ * generation by id, under the tenant prefix). So a demo take has no original for
+ * the inspectors to read, and no length that can be measured from it.
+ *
+ * That is why `lib/starter.ts` leaves `generations.duration_s` and
+ * `generations.bytes` NULL on a demo row, and why `lib/mediaSource.server.ts`
+ * refuses to quote one: `params.duration` is a fixture number from `DEMO_TAKES`,
+ * and per-second pricing off a fixture is a wrong bill.
+ */
+export const DEMO_FIXTURE_CLIP_URL = "/fixtures/clip.mp4";
+export const DEMO_PREVIEW_URL_PREFIX = "/api/platform/previews/";
+
 /** Where a demo take's picture comes from: the platform's neutral preview for its move when published, else the fixture clip. */
 export function demoMediaUrl(previewKey: string, published: ReadonlySet<string>): string {
-  return published.has(previewKey) ? `/api/platform/previews/${encodeURIComponent(previewKey)}` : "/fixtures/clip.mp4";
+  return published.has(previewKey) ? `${DEMO_PREVIEW_URL_PREFIX}${encodeURIComponent(previewKey)}` : DEMO_FIXTURE_CLIP_URL;
+}
+
+/**
+ * True when a stored URL names demo media rather than one of this workspace's
+ * own stored originals — the shared platform preview or the shipped fixture
+ * clip. Nothing a render path writes takes either shape.
+ */
+export function isDemoMediaUrl(storedUrl: string | null | undefined): boolean {
+  const url = String(storedUrl ?? "");
+  return url === DEMO_FIXTURE_CLIP_URL || url.startsWith(DEMO_PREVIEW_URL_PREFIX);
 }
 
 /** The production's own numbers: takes, approved, credits spent (in dollars, for the caller to price). */
