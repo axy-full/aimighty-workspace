@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { displayModelName } from "../lib/models";
 
 /**
  * /workspace — the global Generate composer. Real local routes against an
@@ -160,10 +161,11 @@ test("the top-bar button opens the composer in every suite, Esc closes it and re
     await expect(composer(page)).toHaveCount(0);
     await expect(opener).toBeFocused();
   }
-  /* No vendor name anywhere a person reads. */
+  /* The connected account is never named, here or anywhere (#262 keeps the
+     connected catalogue neutral while the integrated models carry their names). */
   await page.getByTestId("topbar-generate").click();
   await expect(composer(page)).toBeVisible();
-  await expect(composer(page)).not.toContainText(/Seedance|Kling|Gemini|Nano Banana|Higgsfield|Eleven/i);
+  await expect(composer(page)).not.toContainText(/Higgsfield/i);
   expect(errors).toEqual([]);
 });
 
@@ -215,8 +217,10 @@ test("a mocked image generation shows its price, runs to completion and files a 
   /* Type first, model second and already defaulted: the composer works untouched. */
   await expect(composer(page).getByRole("group", { name: "Output type" }).getByRole("button", { name: "Image" })).toHaveAttribute("aria-pressed", "true");
   await expect(composer(page).getByTestId("composer-model")).toHaveValue(IMAGE_ENGINE);
-  /* The default reads through the catalogue, never a hard-coded label. */
-  await expect(composer(page).getByTestId("composer-model")).toContainText("Image 2");
+  /* The default's label reads through the catalogue's own display name, never a
+     label written in the composer — so a renaming PR renames it here too. */
+  const defaultLabel = await composer(page).getByTestId("composer-model").locator("option[value='" + IMAGE_ENGINE + "']").textContent();
+  expect(defaultLabel).toBe(displayModelName(IMAGE_ENGINE));
   /* This workspace's credits are the default, and the composer says so. */
   await expect(composer(page).getByRole("group", { name: "Credits used" }).getByRole("button", { name: "This workspace’s credits" })).toHaveAttribute("aria-pressed", "true");
   await expect(composer(page).getByTestId("composer-billing")).toContainText("credits");
@@ -236,7 +240,7 @@ test("a mocked image generation shows its price, runs to completion and files a 
   /* Progress comes from the real job, through the shell's own strip. */
   const strip = page.locator(".pxw-gen");
   await expect(strip).toBeVisible({ timeout: 30_000 });
-  await expect(strip).toContainText("Image 2");
+  await expect(strip).toContainText(displayModelName(IMAGE_ENGINE));
   await expect.poll(() => sent.map((s) => s.path)).toEqual(["/api/generate/quote", "/api/generate"]);
   const [quoted, dispatched] = sent.map((s) => s.body);
   /* The same body is quoted and sent; the approved ceiling and the fingerprint ride along. */

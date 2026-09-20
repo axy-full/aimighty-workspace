@@ -58,10 +58,9 @@ test("the composer opens on Image with a defaulted model, so it works untouched"
   expect(activeModel(INITIAL_COMPOSER, models)?.id).toBe("gemini-3.1-flash-image");
   expect(activeModel({ ...INITIAL_COMPOSER, type: "video" }, models)?.id).toBe("dreamina-seedance-2-5-260628");
   expect(activeModel({ ...INITIAL_COMPOSER, type: "audio" }, models)?.id).toBe("eleven_sfx");
-  /* Every label is the product's own display name — none is written here. */
+  /* Every label is the product's own display name; the composer writes none of
+     its own, so #262's renaming of the integrated models reaches it for free. */
   for (const model of models) expect(model.label).toBe(displayModelName(model.id));
-  /* Ids stay what the engine is called; nothing a person reads names a vendor. */
-  expect(models.map((m) => m.label).join(" ")).not.toMatch(/Seedance|Kling|Gemini|Nano Banana|Eleven/i);
 });
 
 test("sound models appear only when sound is configured, and speech only with a voice", () => {

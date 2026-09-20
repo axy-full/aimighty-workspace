@@ -174,16 +174,21 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
   return out;
 }
 
-/** The connected account's standalone models of each type, catalogue order kept. */
+/**
+ * The connected account's standalone models of each type, catalogue order kept.
+ *
+ * A connected model's name is the catalogue's own, which the catalogue reader
+ * has already stripped of the provider (#262: models we integrate directly read
+ * under their real names, models served through the connected account stay
+ * neutral). Nothing is renamed here.
+ */
 export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] {
   return rows.flatMap((row) => {
     const type = row.outputType === "image" || row.outputType === "video" || row.outputType === "audio" ? row.outputType : null;
     if (!type) return [];
     return [{
       id: row.id,
-      /* The connected catalogue already supplies neutral names; an id the
-         product knows still goes through the one display-name function. */
-      label: displayModelName(row.id) === row.id ? row.name : displayModelName(row.id),
+      label: row.name,
       type,
       referenceRoles: [...new Set((row.medias ?? []).flatMap((slot) => slot.roles))],
     }];
