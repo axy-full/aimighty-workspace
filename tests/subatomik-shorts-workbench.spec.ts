@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { saveSchema } from "../lib/workbench/studio-schema";
+import { legacyShell } from "./helpers/legacyShell";
 
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=", "base64");
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -110,7 +111,7 @@ const noOverflow = async (page: Page) =>
 
 test("Shorts picks a style and one project video, quotes the whole set once, runs once, and files every collected clip", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/subatomik?project=shorts-draft&page=shorts");
+  await page.goto(await legacyShell(page, "/subatomik?project=shorts-draft&page=shorts"));
   const panel = page.getByRole("region", { name: "Shorts on the connected account", exact: true });
   await expect(panel.getByRole("heading", { name: "Shorts", exact: true })).toBeVisible();
   expect(state.posts.filter((body) => body.action === "presets")).toHaveLength(0);
@@ -167,7 +168,7 @@ test("Shorts picks a style and one project video, quotes the whole set once, run
 
 test("without a connected account Shorts shows the connect prompt and asks the provider nothing", async ({ page }) => {
   const state = await fixture(page, { connected: false });
-  await page.goto("/subatomik?project=shorts-draft&page=shorts");
+  await page.goto(await legacyShell(page, "/subatomik?project=shorts-draft&page=shorts"));
   const panel = page.getByRole("region", { name: "Shorts on the connected account", exact: true });
   await expect(panel).toContainText("Shorts run on the owner’s connected account.");
   await expect(panel.getByRole("link", { name: "Workspace settings", exact: true })).toHaveAttribute("href", "/settings#engines");

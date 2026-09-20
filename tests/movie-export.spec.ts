@@ -3,11 +3,12 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project, type Asset } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 const moduleUrl = "/__movie-test__/mediabunny.js";
 async function openDelivery(page: Page) {
   if (new URL(page.url()).pathname === "/workbench/movie")
-    await page.goto("/workbench");
+    await page.goto(await legacyShell(page, "/workbench"));
   await goWorkbenchStage(page, "export");
   await page
     .getByRole("button", { name: "Open movie renderer", exact: true })
@@ -158,7 +159,7 @@ async function movieFixture(page: Page) {
       });
     throw new Error(`Unexpected source read: ${path}`);
   });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   const fixture = await page.evaluate(async (url) => {
     const {
       Output,
@@ -318,7 +319,7 @@ test("timeline scrubbing and the final movie use the same saved multitrack stere
       },
     ],
   }));
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await goWorkbenchStage(page, "edit");
   const playhead = page.getByRole("slider", { name: "Sequence playhead" });
   await playhead.focus();

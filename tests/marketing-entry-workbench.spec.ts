@@ -1,9 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
+import { askForLegacyShell } from "./helpers/legacyShell";
 
 async function fixture(page: Page, rememberedOnly: boolean) {
   await signInLocally(page.request);
+  /* This spec drives the OLD shell; ask for it (docs/workspace-switchover.md). */
+  await askForLegacyShell(page);
   const me = await page.request
     .get("/api/me")
     .then((response) => response.json());

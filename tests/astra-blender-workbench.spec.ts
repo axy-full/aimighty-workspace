@@ -4,6 +4,7 @@ import { signInLocally } from './helpers/workbenchLocal';
 import { newProject, type Project } from '../lib/workbench/studio';
 import { projectSchema } from '../lib/workbench/studio-schema';
 import { createAstraScene } from '../lib/astra-blender/scene';
+import { legacyShell } from "./helpers/legacyShell";
 
 function triangleGlb(external = false) {
   const binary = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer);
@@ -61,7 +62,7 @@ async function fixture(page: Page, withAssets = false) {
     }
     return route.fulfill({ json: { jobs: [] } });
   });
-  await page.goto('/workbench?project=astra-browser-study&stage=astra-blender');
+  await page.goto(await legacyShell(page, '/workbench?project=astra-browser-study&stage=astra-blender'));
   const workspace = page.getByRole('region', { name: 'Astra', exact: true });
   await expect(workspace).toBeVisible();
   return { workspace, paidRequests, assetReads, get project() { return project; } };

@@ -1,6 +1,7 @@
 import {test,expect,type Page} from '@playwright/test';
 import {signInLocally} from './helpers/workbenchLocal';
 import {newProject,type Project} from '../lib/workbench/studio';
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page:Page, failure:'none'|'lost'|'offline'|'conflict'|'load'='none') {
  await signInLocally(page.request);
@@ -38,7 +39,7 @@ async function fixture(page:Page, failure:'none'|'lost'|'offline'|'conflict'|'lo
   if(path==='/api/budget')return json({allowed:true});
   return json({});
  });
- await page.goto(`/workbench?project=${draft.id}&stage=brief`);
+ await page.goto(await legacyShell(page, `/workbench?project=${draft.id}&stage=brief`));
  await expect(page.locator('#project-name')).toHaveValue('Project first fixture');
  return {id:draft.id,errors,get writes(){return writes;},get project(){return draft;}};
 }

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { scannedScreenplayPdf } from "./helpers/screenplayPdf";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function setup(page: Page) {
   const existingEmail = process.env.PW_OCR_EXISTING_EMAIL;
@@ -50,7 +51,7 @@ async function setup(page: Page) {
       })
     ).ok(),
   ).toBe(true);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
     id: project.id,

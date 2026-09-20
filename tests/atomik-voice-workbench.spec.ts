@@ -6,6 +6,7 @@ import { saveSchema } from "../lib/workbench/studio-schema";
 import { parseConnectedCatalogue } from "../lib/higgsfield-consumer/catalogue";
 import { CONNECTED_TOOLS } from "../lib/higgsfield-consumer/tools";
 import { DUBBING_LANGUAGES, VOICE_TOOLS, findVoiceTool } from "../lib/higgsfield-consumer/voice-tools";
+import { legacyShell } from "./helpers/legacyShell";
 
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=", "base64");
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -157,7 +158,7 @@ async function runTool(page: Page, state: Awaited<ReturnType<typeof fixture>>, l
 
 test("Change voice picks a listed voice and one project video, quotes at the exact price, runs once and files “<source> · voice changed”", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   const voiceGroup = panel.getByRole("group", { name: "Voice tools", exact: true });
   // Analyse video is absent while the capability stays off.
@@ -219,7 +220,7 @@ test("Change voice picks a listed voice and one project video, quotes at the exa
 
 test("Dub chooses one of the advertised target languages, quotes and runs once, and files “<source> · dubbed (<language>)”", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   await panel.getByRole("group", { name: "Voice tools", exact: true }).getByRole("button", { name: "Dub", exact: true }).click();
   await expect(panel.getByRole("combobox", { name: "Voice", exact: true })).toHaveCount(0);
@@ -250,7 +251,7 @@ test("Dub chooses one of the advertised target languages, quotes and runs once, 
 
 test("Analyse video appears only when the capability is on, and a completed report is shown as the connected account’s estimate and saved as a project note", async ({ page }) => {
   const state = await fixture(page, { analysis: true });
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   const voiceGroup = panel.getByRole("group", { name: "Voice tools", exact: true });
   await expect(voiceGroup.getByRole("button")).toHaveText(["Change voice", "Dub", "Analyse video"]);
@@ -285,7 +286,7 @@ test("Analyse video appears only when the capability is on, and a completed repo
 
 test("Reframe sits with the Tools, takes an advertised aspect ratio and resolution, is priced for the stored length and files “<source> · reframed (<ratio>)”", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   await expect(panel.getByRole("group", { name: "Voice tools", exact: true }).getByRole("button", { name: "Reframe", exact: true })).toHaveCount(0);
   await panel.getByRole("group", { name: "Tools", exact: true }).getByRole("button", { name: "Reframe", exact: true }).click();

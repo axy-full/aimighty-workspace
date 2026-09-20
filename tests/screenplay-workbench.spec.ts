@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { screenplayPdf } from "./helpers/screenplayPdf";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function scriptStage(page: Page) { await goWorkbenchStage(page, "script"); }
 
@@ -34,7 +35,7 @@ test("complete PDF screenplay retains pages, beats, original asset and all 120 s
     data: { project, revision: 0 },
   });
   expect(save.ok(), await save.text()).toBeTruthy();
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
     id: project.id,
@@ -185,7 +186,7 @@ test("PDF pages without text require explicit review and cannot silently replace
       })
     ).ok(),
   ).toBe(true);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
     id: project.id,

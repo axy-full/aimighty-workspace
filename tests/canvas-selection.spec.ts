@@ -3,6 +3,7 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page: Page, nativeRender = false) {
   await signInLocally(page.request);
@@ -160,7 +161,7 @@ async function fixture(page: Page, nativeRender = false) {
     if (path === "/api/productions") return json({ productions: [] });
     return json({});
   });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await goWorkbenchStage(page, "canvas");
   await expect(page.getByLabel("Project node canvas")).toBeVisible();
   const library = page.getByRole("button", {

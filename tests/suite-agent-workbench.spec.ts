@@ -3,6 +3,7 @@ import { signInLocally } from './helpers/workbenchLocal';
 import { seedProject, type Project, type Plan } from '../lib/workbench/studio';
 import { projectSchema } from '../lib/workbench/studio-schema';
 import { atomikPendingKey } from '../lib/workbench/atomik-pending-request';
+import { legacyShell } from "./helpers/legacyShell";
 
 type Submission = { suite: string; projectId: string; requestId: string; request: string; model: string; effort: string; refs: string[]; maxCredits?: number; quoteOnly?: boolean };
 async function fixture(page: Page, lostResponse = false, googleOnly = false) {
@@ -60,7 +61,7 @@ async function fixture(page: Page, lostResponse = false, googleOnly = false) {
 }
 
 async function openAgent(page: Page) {
-  await page.goto('/workbench?project=agent-browser-project&suite=moleculr&page=brand');
+  await page.goto(await legacyShell(page, '/workbench?project=agent-browser-project&suite=moleculr&page=brand'));
   const panel = page.getByRole('region', { name: 'Campaign agent', exact: true }).first();
   await expect(panel.getByLabel('Creative request')).toBeEnabled();
   return panel;

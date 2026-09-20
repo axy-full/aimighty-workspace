@@ -4,6 +4,7 @@ import { signInLocally } from './helpers/workbenchLocal';
 import { seedProject, type Project } from '../lib/workbench/studio';
 import { EMPTY_MOLECULR } from '../lib/workbench/moleculr';
 import { saveSchema } from '../lib/workbench/studio-schema';
+import { legacyShell } from "./helpers/legacyShell";
 
 const wallet = '22222222-2222-4222-8222-222222222222';
 const providerId = '33333333-3333-4333-8333-333333333333';
@@ -106,7 +107,7 @@ const sectionLink = (page: Page, name: string) => page.getByRole('navigation', {
 
 test('browse the template catalogue in Format, pick one, quote, approve, create, check status and save the original as a variant', async ({ page }) => {
   const state = await fixtureFor(page);
-  await page.goto('/workbench?project=template-campaign&suite=moleculr&page=format');
+  await page.goto(await legacyShell(page, '/workbench?project=template-campaign&suite=moleculr&page=format'));
   const browser = page.getByRole('region', { name: 'Template catalogue', exact: true });
   await expect(browser).toBeVisible();
   await expect(browser.getByText(/6 of 6 templates \(986 in the catalogue; first 6 loaded\)/)).toBeVisible();
@@ -170,7 +171,7 @@ test('browse the template catalogue in Format, pick one, quote, approve, create,
 
 test('a lost create acknowledgement stays guarded until its saved record is recovered, and the catalogue is not read while disconnected', async ({ page }) => {
   const state = await fixtureFor(page, { loseSubmit: true });
-  await page.goto('/workbench?project=template-campaign&suite=moleculr&page=format');
+  await page.goto(await legacyShell(page, '/workbench?project=template-campaign&suite=moleculr&page=format'));
   const browser = page.getByRole('region', { name: 'Template catalogue', exact: true });
   await browser.getByRole('list', { name: 'Templates', exact: true }).getByRole('button', { name: /Studio product shot/ }).click();
   await sectionLink(page, 'Variants').click();
@@ -194,7 +195,7 @@ test('a lost create acknowledgement stays guarded until its saved record is reco
 
 test('without a connected account the catalogue is not read and the creator explains the connection step', async ({ page }) => {
   const state = await fixtureFor(page, { connected: false });
-  await page.goto('/workbench?project=template-campaign&suite=moleculr&page=format');
+  await page.goto(await legacyShell(page, '/workbench?project=template-campaign&suite=moleculr&page=format'));
   const browser = page.getByRole('region', { name: 'Template catalogue', exact: true });
   await expect(browser.getByRole('link', { name: /Workspace settings/ })).toBeVisible();
   await expect(browser.getByRole('list', { name: 'Templates', exact: true })).toHaveCount(0);

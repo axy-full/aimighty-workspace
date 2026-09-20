@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { projectUploads, useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
 import { useProjectLibrary } from "@/lib/workspace/library";
@@ -129,6 +130,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
     <div className="pxw" data-view={state.view}>
+      <SuspendedNotice />
       <TopBar account={account} onOpenPalette={seams.onOpenPalette ?? (() => dispatch({ type: "patch", patch: { palette: true, query: "" } }))} />
       {state.view === "studio" ? (
         <>
@@ -163,3 +165,14 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
   );
 }
 
+/** A suspended workspace says so on every screen, this one included. */
+function SuspendedNotice() {
+  const { workspace } = useSession();
+  if (!workspace?.suspended) return null;
+  return (
+    <div className="pxw-suspended" role="status" data-testid="workspace-suspended">
+      This workspace is suspended{workspace.suspendedReason ? ` — ${workspace.suspendedReason}` : ""}. Rendering is paused;
+      everything already made is still here. Contact the platform.
+    </div>
+  );
+}

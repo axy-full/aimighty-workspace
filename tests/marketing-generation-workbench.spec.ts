@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
+import { legacyShell } from "./helpers/legacyShell";
 
 const modelId = "higgsfield/marketing-studio-image";
 async function fixture(page: Page, brokenMapping = false, campaign = false) {
@@ -279,7 +280,7 @@ test("Marketing edits require a new mapped live quote and lost acknowledgement r
     "one phone and one desktop",
   );
   const f = await fixture(page);
-  await page.goto("/workbench?project=marketing-generation&stage=canvas");
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&stage=canvas"));
   let dialog = await openNode(page);
   const generate = dialog.getByRole("button", {
     name: "Generate · 5 cr estimated",
@@ -341,7 +342,7 @@ test("Marketing edits require a new mapped live quote and lost acknowledgement r
 test("Moleculr restores accepted prompt and 4k marketing settings after lost acknowledgement recovery and reload without another submission", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone and one desktop");
   const f = await fixture(page, false, true);
-  await page.goto("/workbench?project=marketing-generation&suite=moleculr&page=variants");
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&suite=moleculr&page=variants"));
   const openVariant = async () => {
     await page.getByRole("button", { name: "Review generation", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Generate a new take", exact: true });
@@ -405,7 +406,7 @@ test("invalid project mapping cannot quote or submit and explicit preparation re
     "bounded malformed mapping guard",
   );
   const f = await fixture(page, true);
-  await page.goto("/workbench?project=marketing-generation&stage=canvas");
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&stage=canvas"));
   const dialog = await openNode(page);
   await expect(dialog.getByRole("alert")).toBeVisible();
   expect(f.quotes).toHaveLength(0);

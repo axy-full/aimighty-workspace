@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { DEFAULT_PLANS } from "../lib/plans";
 import type { Project } from "../lib/workbench/studio";
+import { legacyShell, askForLegacyShell } from "./helpers/legacyShell";
 
 async function noOverflow(page: Page) {
   expect(
@@ -13,6 +14,8 @@ async function noOverflow(page: Page) {
 }
 async function customerFixture(page: Page) {
   const signed = await signInLocally(page.request);
+  /* This spec drives the OLD shell; ask for it (docs/workspace-switchover.md). */
+  await askForLegacyShell(page);
   const account = {
     name: "Production House Owner",
     workspace: { id: signed.workspace.id, name: "Customer Pictures" },
@@ -567,7 +570,7 @@ test("workspace switch drains saves and a refused switch retains editing", async
     "desktop save-drain regression; customer flow covers each responsive layout",
   );
   const state = await customerFixture(page);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page
     .getByRole("button", { name: "Start a project", exact: true })
     .click();
@@ -949,7 +952,7 @@ test("opening Gen drains the latest studio edit before leaving", async ({
     "one focused save-drain check",
   );
   const state = await customerFixture(page);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page
     .getByRole("button", { name: "Start a project", exact: true })
     .click();

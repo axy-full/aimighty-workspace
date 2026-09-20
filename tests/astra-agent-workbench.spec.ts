@@ -6,6 +6,7 @@ import { createAstraScene, ASTRA_BLENDER_MODEL } from '../lib/astra-blender/scen
 import { atomikPendingKey, type AtomikSubmission } from '../lib/workbench/atomik-pending-request';
 import { astraNativeDigest } from '../lib/astra-blender/native';
 import { readFile } from 'node:fs/promises';
+import { legacyShell } from "./helpers/legacyShell";
 
 type Request = AtomikSubmission & { quoteOnly?: boolean };
 const EFFORTS = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'xhigh', label: 'Extra high' }, { value: 'max', label: 'Maximum' }];
@@ -61,7 +62,7 @@ async function fixture(page: Page, loseResponse = false, nativeAssets = false, f
     if (request.method() !== 'GET') { forbidden.push(url.pathname); return route.fulfill({ status: 409, json: { error: 'Media generation and 3D runtime dispatch are forbidden in the assistant fixture.' } }); }
     return json({});
   });
-  await page.goto('/workbench?project=astra-assistant-study&stage=astra-blender');
+  await page.goto(await legacyShell(page, '/workbench?project=astra-assistant-study&stage=astra-blender'));
   const workspace = page.getByRole('region', { name: 'Astra', exact: true });
   await expect(workspace).toBeVisible();
   await panel(workspace, 'Astra');

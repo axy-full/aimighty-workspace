@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { totpAt } from "../lib/totp";
+import { legacyShell } from "./helpers/legacyShell";
 const password = "a local browser test passphrase 42";
 async function enrol(page: Page) {
   await page.getByLabel("Current password", { exact: true }).fill(password);
@@ -80,7 +81,7 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     });
     expect((await bearer.get("/api/jobs?sync=0")).status()).toBe(200);
     expect((await member.request.get("/api/jobs?sync=0")).status()).toBe(200);
-    await member.goto("/workbench");
+    await member.goto(await legacyShell(member, "/workbench"));
     // The suite header keeps the account status visible on phone and desktop;
     // it no longer uses the legacy mobile workspace drawer.
     await expect(

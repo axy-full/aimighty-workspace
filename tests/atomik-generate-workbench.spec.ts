@@ -4,6 +4,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { saveSchema } from "../lib/workbench/studio-schema";
 import { parseConnectedCatalogue } from "../lib/higgsfield-consumer/catalogue";
+import { legacyShell } from "./helpers/legacyShell";
 
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=", "base64");
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -115,7 +116,7 @@ const noOverflow = async (page: Page) =>
 
 test("Generate picks a catalogue model, quotes in connected credits, approves the exact price, collects the original and saves it to the project", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   await expect(page.getByRole("heading", { name: "Generate", exact: true }).first()).toBeVisible();
   await expect(panel.getByRole("combobox", { name: "Generate model", exact: true })).toBeVisible();
@@ -184,7 +185,7 @@ test("Generate picks a catalogue model, quotes in connected credits, approves th
 
 test("a disconnected account cannot quote, unlimited-eligible models are flagged, and settings the model does not declare cannot be sent", async ({ page }) => {
   const state = await fixture(page, { connected: false, unlim: true });
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   await expect(panel.getByText("Connect or reconnect the owner’s account", { exact: false })).toBeVisible();
   await expect(panel.getByText("The connected catalogue is not loaded.", { exact: false })).toBeVisible();
@@ -197,7 +198,7 @@ test("a disconnected account cannot quote, unlimited-eligible models are flagged
 
 test("the Sound and Video workflows expose declared enum, number and toggle settings and refuse an incomplete required setting", async ({ page }) => {
   const state = await fixture(page, { unlim: true });
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   const workflows = panel.getByRole("group", { name: "Generate workflow", exact: true });
   await workflows.getByRole("button", { name: "Sound", exact: true }).click();
@@ -241,7 +242,7 @@ test("the Sound and Video workflows expose declared enum, number and toggle sett
 
 test("explainer styles are browsable on request and clearly not runnable: nothing is quoted, resolved or generated", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Explainer styles", exact: true });
   await expect(panel.getByText("Not runnable yet", { exact: true })).toBeVisible();
   await expect(panel.getByRole("status")).toContainText("Browsing only: the connected catalogue lists no explainer model to quote");

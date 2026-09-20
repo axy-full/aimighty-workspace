@@ -4,6 +4,7 @@ import { seedProject, type Project } from '../lib/workbench/studio';
 import { EMPTY_MOLECULR } from '../lib/workbench/moleculr';
 import { saveSchema } from '../lib/workbench/studio-schema';
 import { generationReferenceIds } from '../lib/workbench/node-graph';
+import { legacyShell } from "./helpers/legacyShell";
 
 const seedance = 'dreamina-seedance-2-5-260628';
 async function fixture(page: Page, compatible = true) {
@@ -68,7 +69,7 @@ async function fixture(page: Page, compatible = true) {
 
 test('Moleculr stores one original reference, quotes a compatible engine and sends that exact video only after review', async ({ page }, info) => {
   const state = await fixture(page);
-  await page.goto('/workbench?project=reference-ad&suite=moleculr&page=variants');
+  await page.goto(await legacyShell(page, '/workbench?project=reference-ad&suite=moleculr&page=variants'));
   await page.getByLabel('Reference ad video', { exact: true }).selectOption('ad-upload');
   await page.getByLabel('Reference ad notes', { exact: true }).fill('A quiet detail opening.');
   await page.getByLabel('Reference ad matching direction', { exact: true }).fill('Adapt the pace to our product; use a warm setting.');
@@ -114,7 +115,7 @@ test('Moleculr stores one original reference, quotes a compatible engine and sen
 
 test('reference video with no compatible configured engine cannot quote or submit', async ({ page }) => {
   const state = await fixture(page, false);
-  await page.goto('/workbench?project=reference-ad&suite=moleculr&page=variants');
+  await page.goto(await legacyShell(page, '/workbench?project=reference-ad&suite=moleculr&page=variants'));
   await page.getByLabel('Reference ad video', { exact: true }).selectOption('ad-upload');
   await page.getByRole('button', { name: 'Configure generation', exact: true }).click();
   const dialog = page.getByRole('dialog');

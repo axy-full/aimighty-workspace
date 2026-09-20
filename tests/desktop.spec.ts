@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Desktop acceptance (brief rule 7, revised 8 September 2026).
@@ -249,7 +250,7 @@ test("four nav items, a balance, and Usage / Settings only behind the avatar", a
 
 /** §5: ⌘J toggles the rail state, Esc closes it — the button shows which. */
 test("⌘J opens Atomik and Esc closes it", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(await legacyShell(page, "/"));
   await settle(page);
   // The shell header is the page's banner; the rail has a header of its own.
   const atomik = page.getByRole("banner").getByRole("button", { name: /Atomik/ });

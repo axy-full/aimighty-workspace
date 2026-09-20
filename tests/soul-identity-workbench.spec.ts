@@ -8,6 +8,7 @@ import { goWorkbenchStage } from './helpers/workbenchNavigation';
 import { newProject, type Project } from '../lib/workbench/studio';
 import { paidActionStorageKey } from '../lib/usePaidAction';
 import type { SoulIdentity } from '../lib/workbench/soul-identity';
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page: Page, options: {realSoul?:boolean} = {}) {
   await signInLocally(page.request);
@@ -64,7 +65,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded phone and desktop coverage');
   const f = await fixture(page);
   const errors:string[]=[]; page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:'Identity',exact:true}).click();
   let panel=page.getByRole('dialog',{name:'Identity',exact:true});
@@ -162,7 +163,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
 test('Soul ID submits through the real mock backend and saves a usable local binding',async({page},info)=>{
   test.skip(info.project.name!=='workbench-1440x900','one full local mock integration');
   const f=await fixture(page,{realSoul:true});
-  await page.goto('/workbench');await goWorkbenchStage(page,'characters');
+  await page.goto(await legacyShell(page, '/workbench'));await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:'Identity',exact:true}).click();
   const panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await expect(panel.getByText('No identities yet.',{exact:false})).toBeVisible();
@@ -194,7 +195,7 @@ test('Soul IDs still load when recovery storage is malformed, while training fai
   f.setConfigured(false);
   f.identities.push({id:'soul-ready',projectId:f.project.id,name:'Saved identity',description:'',subjectType:'character',references:[{uploadId:f.uploaded.id}],status:'ready',previewUrl:f.uploaded.url,createdAt:1,updatedAt:1,creditsBilled:250,error:null});
   await page.addInitScript(key=>localStorage.setItem(key,'broken-record'),paidActionStorageKey(f.scope,'workbench',`soul-identity:${f.project.id}`));
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goWorkbenchStage(page,'elements');
   await page.getByRole('button',{name:'Element identity',exact:true}).click();
   const panel=page.getByRole('dialog',{name:'Identity',exact:true});
@@ -219,7 +220,7 @@ test('ordinary generation keeps a regular image engine as default when Soul is a
     const base={kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceVideos:0};
     return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Identity render',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Image Pro',maxReferenceImages:8}]}});
   });
-  await page.goto('/workbench');await goWorkbenchStage(page,'canvas');
+  await page.goto(await legacyShell(page, '/workbench'));await goWorkbenchStage(page,'canvas');
   const node=page.getByRole('article',{name:'Generate node: Ordinary image shot',exact:true});await node.focus();await node.press('Enter');
   await page.getByRole('button',{name:'Generate take',exact:true}).click();
   const generation=page.getByRole('dialog',{name:'Generate a new take',exact:true});
@@ -237,7 +238,7 @@ test('Soul training limits copied metadata without changing the original asset',
   draft.project.assets[0].name=name;draft.project.assets[0].description=description;
   const saved=await page.request.put('/api/workbench/projects',{headers,data:{project:draft.project,revision:draft.revision}});
   expect(saved.ok(),await saved.text()).toBe(true);
-  await page.goto('/workbench');await goWorkbenchStage(page,'characters');
+  await page.goto(await legacyShell(page, '/workbench'));await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:`Actions for ${name}`,exact:true}).click();
   await page.getByRole('menuitem',{name:'Attach identity',exact:true}).click();
   const panel=page.getByRole('dialog',{name:'Identity',exact:true});

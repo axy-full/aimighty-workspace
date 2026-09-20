@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Asset, type Project } from "../lib/workbench/studio";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { projectSchema } from "../lib/workbench/studio-schema";
+import { legacyShell } from "./helpers/legacyShell";
 
 test("Moleculr discovers real preset IDs, saves selection and quotes ordered image references without submitting", async ({
   page,
@@ -129,7 +130,7 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
     return json({});
   });
   await page.goto(
-    "/workbench?project=marketing-draft&suite=moleculr&page=brand",
+    await legacyShell(page, "/workbench?project=marketing-draft&suite=moleculr&page=brand"),
   );
   await expect(
     page.getByRole("heading", { name: "Build a brand worth knowing." }),

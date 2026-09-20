@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { SUITES, suiteHref } from "../lib/suites";
 import { DEFAULT_PLANS } from "../lib/plans";
+import { askForLegacyShell } from "./helpers/legacyShell";
 
 test("shared suite shell keeps draft context, account controls and guarded keyboard navigation", async ({
   page,
@@ -18,6 +19,8 @@ test("shared suite shell keeps draft context, account controls and guarded keybo
     "every configured viewport",
   );
   await signInLocally(page.request);
+  /* This spec drives the OLD shell; ask for it (docs/workspace-switchover.md). */
+  await askForLegacyShell(page);
   const me = await page.request
     .get("/api/me")
     .then((response) => response.json());

@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { saveSchema } from "../lib/workbench/studio-schema";
 import { GENJUTSU_MODELS } from "../lib/genjutsuTypes";
+import { legacyShell } from "./helpers/legacyShell";
 
 const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=",
@@ -388,7 +389,7 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   page,
 }, info) => {
   const f = await fixture(page);
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=particl"));
   await expect(
     page.getByRole("heading", { name: "Subatomik Viral Studio", exact: true }),
   ).toBeVisible();
@@ -576,7 +577,7 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
   page,
 }) => {
   const f = await fixture(page, true);
-  await page.goto("/subatomik?project=viral-draft&page=object-swap&account=particl");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=object-swap&account=particl"));
   await dropIdentity(
     page,
     page.getByLabel("Transform source drop area"),
@@ -636,7 +637,7 @@ test("queued cancellation remains pending until the existing job confirms it", a
   page,
 }) => {
   const f = await fixture(page);
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=particl"));
   await useCard(page, "upload:motion-original");
   await page
     .getByRole("button", { name: "Review transform cost", exact: true })
@@ -679,7 +680,7 @@ test("connected transform is the default: it reviews media transfer and its own 
   page,
 }, info) => {
   const f = await fixture(page);
-  await page.goto("/subatomik?project=viral-draft&page=object-swap");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=object-swap"));
   await expect(
     page.getByRole("region", {
       name: "Connected account transform",
@@ -799,7 +800,7 @@ test("an uncertain connected submission survives reload and polls its saved job 
   page,
 }) => {
   const f = await fixture(page, false, { loseSubmit: true });
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer"));
   await useCard(page, "upload:motion-original");
   await page
     .getByRole("checkbox", {
@@ -858,7 +859,7 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
 }) => {
   const f = await fixture(page, false, { loseQuote: true });
   await page.goto(
-    "/subatomik?project=viral-draft&page=motion-transfer&account=higgsfield",
+    await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=higgsfield"),
   );
   await useCard(page, "upload:motion-original");
   await page
@@ -917,7 +918,7 @@ test("the main flow has no billing toggle; the connected default shows the exact
   page,
 }, info) => {
   const f = await fixture(page);
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer"));
   await expect(
     page.getByRole("region", { name: "Connected account transform", exact: true }),
   ).toBeVisible();
@@ -983,7 +984,7 @@ test("without a connected account the page falls back to workspace billing with 
   page,
 }) => {
   const f = await fixture(page, false, { connected: false });
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer"));
   await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeDisabled();
   const prompt = page.getByRole("status").filter({ hasText: "No connected account yet." });
   await expect(prompt).toContainText("Until then this project bills the Particl workspace.");

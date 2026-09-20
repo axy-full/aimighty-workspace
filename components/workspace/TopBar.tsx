@@ -1,10 +1,11 @@
 "use client";
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { agentButton, type AgentLook } from "@/lib/workspace/atomik-view";
-import { formatCredits, initialsOf } from "@/lib/workspace/format";
+import { formatCredits } from "@/lib/workspace/format";
 import { getSuite, SUITES } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import { AccountMenu } from "./AccountMenu";
 import { Keycap } from "./ui";
 
 /** idle / running / waiting / open, from the engine's run (anywhere in the project) and agentOpen. */
@@ -70,11 +71,9 @@ export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount |
           {formatCredits(account.credits.balance)}
         </a>
       ) : null}
-      {workspace ? (
-        <span className="pxw-avatar" title={workspace.name} aria-label={`Workspace: ${workspace.name}`} role="img">
-          {initialsOf(workspace.name)}
-        </span>
-      ) : null}
+      {/* The account menu: every destination the new shell has no page for,
+          the workspace switch, sign out, and the switch-over escape hatch. */}
+      {workspace ? <AccountMenu account={account} /> : null}
     </header>
   );
 }

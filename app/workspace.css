@@ -343,6 +343,55 @@
 .pxw .pxw-atomik-badge { font-family: var(--pxw-mono); font-size: 10px; }
 .pxw .pxw-atomik-caret { font-size: 8px; color: var(--pxw-faintest); }
 .pxw .pxw-credits { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-dimmer); flex: none; white-space: nowrap; }
+/* The account menu. A <details> popover: the destinations the new shell has
+   no page of its own for, the workspace switch, sign out, and the
+   switch-over escape hatch (docs/workspace-switchover.md). */
+.pxw .pxw-account { position: relative; flex: none; }
+.pxw .pxw-account-summary { display: flex; align-items: center; gap: 5px; cursor: default; list-style: none; padding: 2px; border-radius: 15px; }
+.pxw .pxw-account-summary::-webkit-details-marker { display: none; }
+.pxw .pxw-account-summary:hover { background: var(--pxw-hairline); }
+.pxw .pxw-account-caret { font-size: 9px; color: var(--pxw-label-floor); }
+.pxw .pxw-account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 90;
+  width: 268px;
+  max-height: min(560px, calc(100vh - 80px));
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--pxw-panel);
+  border: 1px solid var(--pxw-control-border);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pxw .pxw-account-identity { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px 10px; }
+.pxw .pxw-account-identity strong { font-size: 13px; font-weight: 570; color: var(--pxw-primary); }
+.pxw .pxw-account-identity small { font-size: 11.5px; color: var(--pxw-label-floor); }
+.pxw .pxw-account-kicker { margin: 8px 8px 3px; font-family: var(--pxw-mono); font-size: 10px; letter-spacing: 0.1em; color: var(--pxw-label-floor); }
+.pxw .pxw-account-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--pxw-secondary);
+  text-align: left;
+  width: 100%;
+}
+.pxw .pxw-account-item small { font-size: 11px; color: var(--pxw-label-floor); }
+.pxw .pxw-account-item:hover { background: var(--pxw-control-hover); color: var(--pxw-primary); }
+.pxw .pxw-account-item:disabled { color: var(--pxw-label-floor); background: none; }
+.pxw .pxw-account-item[aria-current="true"] { background: var(--pxw-selected-chip); color: var(--pxw-primary); }
+.pxw .pxw-account-item--legacy { border: 1px solid var(--pxw-control-border); }
+.pxw .pxw-account-error { margin: 0 8px 6px; font-size: 11.5px; color: var(--pxw-amber-ink); }
+
+/* A suspended workspace says so on this surface too. */
+.pxw .pxw-suspended { padding: 7px 16px; font-size: 12.5px; color: var(--pxw-amber-ink); background: rgba(255, 159, 10, 0.12); border-bottom: 1px solid var(--pxw-divider); flex: none; }
 .pxw .pxw-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--pxw-avatar); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 620; color: var(--pxw-avatar-ink); flex: none; }
 
 /* ── Stage tabs (44px) ──────────────────────────────────────────────── */

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { parseWorkflowCatalog } from "../lib/higgsfield-consumer/workflows";
+import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * The connected account's workflows as Atomik recipes (A5 + A6): listed on the
@@ -45,7 +46,7 @@ const composer = (page: Page) => page.getByRole("textbox", { name: "Ask Atomik",
 
 test("connected recipes are listed neutrally and Use in Atomik starts a /recipe in the composer", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=recipes");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=recipes"));
   const section = page.getByRole("region", { name: "Connected recipes", exact: true });
   await expect(section.getByRole("heading", { name: "/character-sheet", exact: true })).toBeVisible();
   await expect(section.locator("article")).toHaveCount(13);
@@ -61,7 +62,7 @@ test("connected recipes are listed neutrally and Use in Atomik starts a /recipe 
 
 test("typing / in the composer offers the recipes and a pick inserts /name before any price is asked", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   if (!(await composer(page).isVisible().catch(() => false)))
     await page.getByRole("button", { name: /Toggle Atomik creative engine|Ask Atomik/ }).filter({ visible: true }).first().click();
   await composer(page).fill("/ugc");

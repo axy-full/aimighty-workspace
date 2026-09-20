@@ -5,6 +5,7 @@ import ts from "typescript";
 import sharp from "sharp";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function decoderFixture(page: Page) {
   const compiled = ts.transpileModule(await readFile("lib/videoFrameCapture.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -129,7 +130,7 @@ async function controlsFixture(page: Page, holdSource = false) {
     if (name === "/api/engines" || name === "/api/workbench/engines") return json({ engines: [], models: [] });
     return json({});
   });
-  await page.goto("/subatomik?project=frames-draft&page=motion-transfer");
+  await page.goto(await legacyShell(page, "/subatomik?project=frames-draft&page=motion-transfer"));
   const data = await page.evaluateHandle(() => { const data = new DataTransfer(); data.setData("application/x-particl-asset", JSON.stringify({ kind: "upload", upload: { id: "frame-source" } })); return data; });
   await page.getByLabel("Transform source drop area").dispatchEvent("drop", { dataTransfer: data }); await data.dispose();
   await expect(page.getByRole("button", { name: "Extract start frame", exact: true })).toBeEnabled();
