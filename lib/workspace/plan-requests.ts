@@ -22,7 +22,17 @@ import type { PageId } from "./types";
 
 export type RequestKey = keyof PlanRequest;
 
-/** Paid plans whose bodies come from a page, and which page owns that data. */
+/**
+ * Paid plans whose bodies come from a page, and which page owns that data.
+ *
+ * `boards` has no provider and cannot have one yet. A board frame is a `Shot`
+ * (lib/workbench/studio.ts: id, name, assetId, duration, sourceIn, note) — it
+ * cites an existing asset and carries no prompt, engine, ratio, resolution or
+ * production mapping, and no surface in the product generates a board image.
+ * Building an /api/generate body for one would mean inventing all five, so the
+ * Boards plan stays "Needs Boards data" until a Boards generate UI makes those
+ * choices; the seam is here, ready for it.
+ */
 export const PLAN_REQUEST_NEEDS: Partial<Record<WorkspacePageId, { key: RequestKey; page: PageId }>> = {
   boards: { key: "boards", page: "boards" },
   astra: { key: "astra", page: "astra" },

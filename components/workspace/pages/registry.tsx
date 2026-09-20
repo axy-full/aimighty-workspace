@@ -10,6 +10,7 @@ import { SpecTool } from "../spec/SpecTool";
 import { Kicker } from "../ui";
 import { CastPage } from "./CastPage";
 import { EditPage } from "./EditPage";
+import { ShortsPage } from "./ShortsPage";
 import { TakesPage } from "./TakesPage";
 
 /** Everything a page body receives from the shell. */
@@ -67,6 +68,7 @@ const BUILT: Partial<Record<PageId, ComponentType<PageBodyProps>>> = {
   cast: CastPage,
   edit: EditPage,
   takes: TakesPage,
+  shorts: ShortsPage,
 };
 
 /** One component per page, so moving between two spec pages starts each fresh. */

@@ -65,7 +65,13 @@ function clipAsset(job: Job, clip: Clip, total: number): Asset | null {
 /** Shorts Studio on the connected account: one project video restyled into a
  * set of short clips. Opening only reads saved sessions; styles, quotes and
  * status checks are explicit. */
-export function ConsumerShorts({ project, scope, refreshProject }: { project: Project; scope: string; refreshProject: () => Promise<void> }) {
+export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
+  project: Project;
+  scope: string;
+  refreshProject: () => Promise<void>;
+  /** The form's current quote input, reported only once the form could send it (null otherwise). */
+  onInput?: (input: ConsumerShortsInput | null) => void;
+}) {
   const request = useScopedFetch(scope);
   const draftId = project.id;
   const stored = useDraft<Draft>(`subatomik-shorts:${project.id}`, empty), input = draft(stored.value);
@@ -93,6 +99,14 @@ export function ConsumerShorts({ project, scope, refreshProject }: { project: Pr
   const ready = !!capability?.owner && capability.connected && !busy;
   const canQuote = ready && !validation && !unresolved && disclosed;
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
+  /* What a host (the /workspace Shorts page) may price: exactly the body this
+     form would post, and only while it could post it. */
+  const offered = canQuote && normalized ? consumerShortsInputSchema.safeParse(normalized) : null;
+  const offeredKey = JSON.stringify(offered?.success ? offered.data : null);
+  const report = useRef(onInput);
+  useEffect(() => { report.current = onInput; }, [onInput]);
+  useEffect(() => { report.current?.(offeredKey === "null" ? null : (JSON.parse(offeredKey) as ConsumerShortsInput)); }, [offeredKey]);
+  useEffect(() => () => report.current?.(null), []);
   const change = (patch: Partial<Draft>) => { stored.set((before) => ({ ...draft(before), ...patch })); setApproved(false); setNotice(""); };
   const saveAttempts = (next: string[]) => { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
