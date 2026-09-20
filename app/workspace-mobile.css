@@ -681,9 +681,10 @@
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: var(--pxw-panel);
+  background: var(--pxw-control);
   border: 1px solid var(--pxw-control-border);
   border-radius: 12px;
+  min-height: 44px;
 }
 .pxw-phone .pxm-page-views { margin: 14px 14px 0; }
 /* 40px inside a 44px control is the one target exception 05-mobile allows. */
@@ -1182,3 +1183,457 @@
 /* A long live price ("Quote at gate", "1,296 cr") must be readable, not clipped:
    the filled primary takes the larger share of the pinned bar. */
 .pxw-phone .pxm-primary { flex: 1.35; }
+
+/* ══ Wave M-C: Make, Settings and the three remaining sheets ═════════════ */
+
+/* ── Segmented controls (options 40px inside a 44px control) ───────────── */
+
+.pxw-phone .pxm-segment {
+  flex: 1;
+  min-height: 40px;
+  padding: 10px 6px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 530;
+  color: var(--pxw-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.pxw-phone .pxm-segment[data-on] { background: var(--pxw-selected-chip); color: var(--pxw-primary); }
+.pxw-phone .pxm-segment:active { background: var(--pxw-control-hover); }
+.pxw-phone .pxm-segment-count { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); }
+
+.pxw-phone .pxm-dot4 { width: 4px; height: 4px; border-radius: 50%; background: var(--pxw-neutral-state); flex: none; display: block; }
+.pxw-phone .pxm-problem { font-size: 12.5px; color: var(--pxw-red-ink); line-height: 1.5; margin: 12px 0 0; text-wrap: pretty; }
+
+/* ── Make: the derived header line ─────────────────────────────────────── */
+
+.pxw-phone .pxm-make-head { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: 18px 0 12px; }
+.pxw-phone .pxm-make-head-part { display: flex; align-items: center; gap: 9px; }
+.pxw-phone .pxm-make-head-text {
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--pxw-label-floor);
+}
+
+/* ── Make: the wall, grouped by day, 2-up ──────────────────────────────── */
+
+.pxw-phone .pxm-make-day { margin-bottom: 18px; }
+.pxw-phone .pxm-make-day-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px; }
+.pxw-phone .pxm-make-day-count { font-size: 12px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-make-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.pxw-phone .pxm-take {
+  display: block;
+  text-align: left;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  border-radius: 14px;
+  overflow: hidden;
+  min-height: 44px;
+}
+.pxw-phone .pxm-take:active { background: var(--pxw-row-hover); }
+.pxw-phone .pxm-take-well { display: block; position: relative; aspect-ratio: 16 / 9; background: var(--pxw-control); }
+.pxw-phone .pxm-take-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.pxw-phone .pxm-take-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 6, 8, 0.62);
+}
+.pxw-phone .pxm-take-body { display: block; padding: 10px 11px 12px; }
+.pxw-phone .pxm-take-spec {
+  display: block;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--pxw-label-floor);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-take-prompt {
+  display: -webkit-box;
+  font-size: 13px;
+  color: var(--pxw-body);
+  line-height: 1.45;
+  margin-top: 7px;
+  text-wrap: pretty;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.pxw-phone .pxm-take-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--pxw-inner-rule);
+}
+.pxw-phone .pxm-take-by { font-size: 12px; color: var(--pxw-dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw-phone .pxm-take-cost { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-muted); flex: none; }
+.pxw-phone .pxm-take-cost[data-failed] { color: var(--pxw-red-ink); }
+
+/* ── Make: the docked composer card ────────────────────────────────────── */
+
+.pxw-phone .pxm-composer-dock { flex: none; display: block; width: 100%; padding: 10px 14px 0; background: var(--pxw-ground); }
+.pxw-phone .pxm-composer-dock:active { opacity: 0.75; }
+.pxw-phone .pxm-composer-dock-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  text-align: left;
+}
+.pxw-phone .pxm-composer-eyebrow {
+  display: block;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  color: var(--pxw-label-floor);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-composer-line {
+  display: block;
+  font-size: 13px;
+  color: var(--pxw-body);
+  margin-top: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-composer-line[data-empty] { color: var(--pxw-dimmer); }
+.pxw-phone .pxm-composer-open { font-size: 15px; color: var(--pxw-label-floor); flex: none; }
+
+/* ── Sheet forms (the composer sheet) ──────────────────────────────────── */
+
+.pxw-phone .pxm-form { display: flex; flex-direction: column; gap: 10px; }
+.pxw-phone .pxm-form-label { font-size: 12.5px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-select,
+.pxw-phone .pxm-input,
+.pxw-phone .pxm-textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-field-border);
+  color: var(--pxw-primary);
+  font-family: inherit;
+  font-size: 13.5px;
+}
+.pxw-phone .pxm-textarea { min-height: 96px; line-height: 1.5; resize: vertical; }
+.pxw-phone .pxm-ref-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pxw-phone .pxm-ref-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 11px;
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-card-border);
+  font-size: 13px;
+  color: var(--pxw-body);
+}
+.pxw-phone .pxm-ref-remove { width: 44px; height: 44px; flex: none; font-size: 16px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-primary-wide {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 4px;
+  border-radius: 13px;
+  align-items: center;
+  justify-content: center;
+  background: var(--pxw-blue);
+  text-decoration: none;
+}
+
+/* ── Settings ──────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-balance-row { display: flex; align-items: baseline; gap: 10px; }
+.pxw-phone .pxm-balance-usd { font-family: var(--pxw-mono); font-size: 13px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-settings-month { font-size: 12.5px; color: var(--pxw-dimmer); margin-top: 6px; }
+.pxw-phone .pxm-settings-kicker { margin: 22px 0 10px; }
+.pxw-phone .pxm-settings-group {
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.pxw-phone .pxm-settings-row,
+.pxw-phone .pxm-team-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pxw-inner-rule);
+  text-decoration: none;
+  color: inherit;
+}
+.pxw-phone .pxm-settings-group > *:last-child { border-bottom: none; }
+.pxw-phone a.pxm-settings-row:active { background: var(--pxw-row-hover); }
+.pxw-phone .pxm-settings-label { display: block; font-size: 13.5px; font-weight: 530; color: var(--pxw-primary); }
+.pxw-phone .pxm-settings-value {
+  display: block;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-settings-action { font-size: 12px; color: var(--pxw-label-floor); flex: none; }
+.pxw-phone .pxm-team-row { min-height: 56px; }
+.pxw-phone .pxm-team-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pxw-avatar);
+  font-size: 12px;
+  font-weight: 620;
+  color: var(--pxw-avatar-ink);
+}
+.pxw-phone .pxm-team-name { font-size: 13.5px; font-weight: 530; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw-phone .pxm-team-role { font-size: 12.5px; color: var(--pxw-muted); flex: none; }
+.pxw-phone .pxm-invite {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  font-weight: 560;
+  color: var(--pxw-blue-ink);
+  text-decoration: none;
+}
+.pxw-phone .pxm-invite:active { background: var(--pxw-row-hover); }
+.pxw-phone .pxm-rule { padding: 13px 14px; border-bottom: 1px solid var(--pxw-inner-rule); }
+.pxw-phone .pxm-rule-label { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: 0.09em; color: var(--pxw-atomik-gold); }
+.pxw-phone .pxm-rule-sub { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.45; margin-top: 5px; text-wrap: pretty; }
+
+/* ── The Atomik sheet ──────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-elsewhere {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--pxw-amber-tint);
+  border: 1px solid rgba(255, 159, 10, 0.28);
+  font-size: 12.5px;
+  color: var(--pxw-amber-ink);
+  text-align: left;
+}
+.pxw-phone .pxm-elsewhere-go { font-size: 12.5px; color: var(--pxw-blue-ink); flex: none; }
+.pxw-phone .pxm-plan-title { font-size: 17px; font-weight: 600; letter-spacing: -0.018em; margin-top: 7px; }
+.pxw-phone .pxm-plan-line { font-size: 13px; color: var(--pxw-muted); line-height: 1.55; margin: 6px 0 0; text-wrap: pretty; }
+.pxw-phone .pxm-plan-reason { font-size: 12.5px; color: var(--pxw-amber-ink); line-height: 1.5; margin: 8px 0 0; text-wrap: pretty; }
+.pxw-phone .pxm-steps { list-style: none; margin: 16px 0 0; padding: 0; }
+.pxw-phone .pxm-step { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+.pxw-phone .pxm-step-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-control-border);
+  color: var(--pxw-label-floor);
+}
+.pxw-phone .pxm-step[data-tone="done"] .pxm-step-mark { background: var(--pxw-green-tint); border-color: rgba(52, 199, 89, 0.4); color: var(--pxw-green-ink); }
+.pxw-phone .pxm-step[data-tone="now"] .pxm-step-mark { background: var(--pxw-blue-tint); border-color: var(--pxw-blue-tint-border); color: var(--pxw-blue-ink); }
+.pxw-phone .pxm-step[data-tone="gate"] .pxm-step-mark { background: var(--pxw-amber-tint); border-color: rgba(255, 159, 10, 0.32); color: var(--pxw-amber-ink); }
+.pxw-phone .pxm-step[data-tone="failed"] .pxm-step-mark { background: var(--pxw-red-tint); border-color: rgba(255, 69, 58, 0.4); color: var(--pxw-red-ink); }
+.pxw-phone .pxm-step-label { font-size: 13.5px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw-phone .pxm-step[data-tone="done"] .pxm-step-label { color: var(--pxw-dimmer); }
+.pxw-phone .pxm-step-meta { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; flex: none; }
+.pxw-phone .pxm-step-meta[data-gate] { color: var(--pxw-amber-ink); }
+
+.pxw-phone .pxm-gate {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border-radius: 13px;
+  background: var(--pxw-amber-tint);
+  border: 1px solid rgba(255, 159, 10, 0.28);
+}
+.pxw-phone .pxm-gate-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pxw-phone .pxm-gate-title { font-size: 13px; font-weight: 560; color: var(--pxw-amber-ink); }
+.pxw-phone .pxm-gate-price { font-family: var(--pxw-mono); font-size: 14px; font-weight: 620; color: var(--pxw-amber-ink); }
+.pxw-phone .pxm-gate-line { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.5; margin-top: 7px; text-wrap: pretty; }
+.pxw-phone .pxm-gate-notice { font-size: 12.5px; color: var(--pxw-amber-ink); margin-top: 7px; }
+.pxw-phone .pxm-gate-actions { display: flex; gap: 9px; margin-top: 13px; }
+.pxw-phone .pxm-gate-decline,
+.pxw-phone .pxm-gate-approve {
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 11px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pxw-phone .pxm-gate-decline { flex: 1; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); color: var(--pxw-body); }
+.pxw-phone .pxm-gate-approve { flex: 1.5; background: var(--pxw-amber); color: #1a1200; font-weight: 620; }
+.pxw-phone .pxm-gate-approve:disabled,
+.pxw-phone .pxm-gate-decline:disabled { opacity: 0.5; }
+
+.pxw-phone .pxm-plan-foot { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.pxw-phone .pxm-plan-price { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; }
+.pxw-phone .pxm-plan-price[data-paid] { color: var(--pxw-amber-ink); }
+.pxw-phone .pxm-plan-run { min-height: 46px; padding: 0 20px; border-radius: 12px; font-size: 13.5px; font-weight: 570; flex: none; }
+.pxw-phone .pxm-plan-run:disabled { opacity: 0.55; }
+
+.pxw-phone .pxm-activity { margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--pxw-card-border); }
+.pxw-phone .pxm-activity-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; }
+.pxw-phone .pxm-activity-label { font-size: 12.5px; color: var(--pxw-body); text-wrap: pretty; }
+.pxw-phone .pxm-activity-meta { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; flex: none; }
+.pxw-phone .pxm-activity-empty { font-size: 12.5px; color: var(--pxw-dimmer); padding: 6px 0; }
+
+/* ── The Library sheet ─────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-lib-group { margin-top: 14px; }
+.pxw-phone .pxm-lib-group-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px 8px; }
+.pxw-phone .pxm-lib-group-count { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); }
+.pxw-phone .pxm-lib-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-card-border);
+  margin-bottom: 7px;
+}
+.pxw-phone .pxm-lib-tile {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pxw-chip-inner);
+  border: 1px solid var(--pxw-card-border);
+  color: var(--pxw-muted);
+}
+.pxw-phone .pxm-lib-tile svg { width: 19px; height: 19px; }
+.pxw-phone .pxm-lib-tile[data-tint="1"] { color: var(--pxw-blue-ink); }
+.pxw-phone .pxm-lib-tile[data-tint="2"] { color: var(--pxw-atomik-gold); }
+.pxw-phone .pxm-lib-tile[data-tint="3"] { color: var(--pxw-green-ink); }
+.pxw-phone .pxm-lib-name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 545;
+  letter-spacing: -0.01em;
+  color: var(--pxw-near-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-lib-sub { display: block; font-size: 12px; color: var(--pxw-dimmer); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.pxw-phone .pxm-media-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
+.pxw-phone .pxm-media-item {
+  display: block;
+  text-align: left;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--pxw-control);
+  border: 1px solid var(--pxw-card-border);
+  min-height: 44px;
+}
+.pxw-phone .pxm-media-item:active { border-color: var(--pxw-hover-border); }
+.pxw-phone .pxm-media-thumb { display: block; position: relative; aspect-ratio: 4 / 3; background: var(--pxw-chip-inner); }
+.pxw-phone .pxm-media-name { display: block; padding: 9px 10px 10px; font-size: 12px; color: var(--pxw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── The Inspector sheet ───────────────────────────────────────────────────
+   The desktop Inspector is rendered unchanged inside the sheet, which is the
+   point of it — but the desktop's functional labels are 10–11.5px, below the
+   phone's floor. Rather than a second Inspector with its own copy, the sheet
+   raises exactly those labels to 12px and drops the rail's own box. */
+
+.pxw-phone .pxm-inspector.pxw-inspector-body { padding: 0; overflow: visible; flex: none; }
+.pxw-phone .pxm-inspector .pxw-kicker,
+.pxw-phone .pxm-inspector .pxw-fact,
+.pxw-phone .pxm-inspector .pxw-field-label,
+.pxw-phone .pxm-inspector .pxw-pill-label,
+.pxw-phone .pxm-inspector .pxw-keycap,
+.pxw-phone .pxm-inspector .pxw-btn-key,
+.pxw-phone .pxm-inspector .pxw-insp-estimate-meta,
+.pxw-phone .pxm-inspector .pxw-insp-output-label,
+.pxw-phone .pxm-inspector .pxw-insp-owner,
+.pxw-phone .pxm-inspector .pxw-insp-plan-price,
+.pxw-phone .pxm-inspector .pxw-insp-play,
+.pxw-phone .pxm-inspector .pxw-insp-play-key,
+.pxw-phone .pxm-inspector .pxw-insp-row-kind,
+.pxw-phone .pxm-inspector .pxw-insp-row-v,
+.pxw-phone .pxm-inspector .pxw-insp-tab-count,
+.pxw-phone .pxm-inspector .pxw-insp-version-meta,
+.pxw-phone .pxm-inspector .pxw-insp-version-v,
+.pxw-phone .pxm-inspector small,
+.pxw-phone .pxm-inspector figcaption { font-size: 12px; }
+/* The phone has no keyboard layer, so the desktop's key hints are hidden
+   rather than lying about a shortcut nothing can press. */
+.pxw-phone .pxm-inspector .pxw-keycap,
+.pxw-phone .pxm-inspector .pxw-btn-key,
+.pxw-phone .pxm-inspector .pxw-insp-play-key { display: none; }
+/* Every control inside the sheet still clears the 44px floor. */
+.pxw-phone .pxm-inspector button,
+.pxw-phone .pxm-inspector select,
+.pxw-phone .pxm-inspector input,
+.pxw-phone .pxm-inspector textarea { min-height: 44px; min-width: 44px; }
+.pxw-phone .pxm-inspector .pxw-insp-play { min-height: 44px; min-width: 44px; padding: 0 13px; }
+
+/* ── The generation strip ──────────────────────────────────────────────────
+   Real job progress above the pinned block: the ring beats, the 3px bar is
+   the job's own percentage. Determinate, so a stalled job looks stalled. */
+
+.pxw-phone .pxm-gen {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  background: var(--pxw-panel-raised);
+  border-top: 1px solid var(--pxw-hairline);
+}
+.pxw-phone .pxm-gen-label { font-size: 12.5px; font-weight: 530; white-space: nowrap; }
+.pxw-phone .pxm-gen-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--pxw-progress-track);
+  overflow: hidden;
+  display: block;
+}
+.pxw-phone .pxm-gen-fill { display: block; height: 100%; border-radius: 2px; }
+.pxw-phone .pxm-gen-pct { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-dimmer); white-space: nowrap; }

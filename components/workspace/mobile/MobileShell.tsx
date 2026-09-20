@@ -10,14 +10,17 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { primaryAvailability, type GenerateStatus } from "../PageHeader";
 import { ToastHost } from "../ui";
 import { MobileActionBar, type MobilePrimary } from "./MobileActionBar";
+import { MakeComposerCard, MakeComposerProvider, MakeComposerSheet, makePrimary, useMakeComposer } from "./MakeComposer";
 import { MobileDock } from "./MobileDock";
+import { MobileGenerationStrip } from "./MobileGenerationStrip";
 import { MobileHeader } from "./MobileHeader";
 import { MobileSheet } from "./MobileSheet";
 import { MOBILE_SHEETS, SHEET_PENDING } from "./sheets/registry";
 import { PageScreen } from "./screens/PageScreen";
 import { ProjectsScreen } from "./screens/ProjectsScreen";
 import { SuiteScreen } from "./screens/SuiteScreen";
-import { MakeScreen, SettingsScreen } from "./screens/SiblingScreens";
+import { MakeScreen } from "./screens/MakeScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { MOBILE_PAGES } from "./screens/registry";
 import { SuiteMenu } from "./SuiteMenu";
 
@@ -64,6 +67,15 @@ export function MobileShell({
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
+      {/* One composer for the phone, over the same host the desktop overlay
+          uses (lib/workspace/use-composer.ts): the wall, the docked card and
+          the pinned primary all read it, so there is one state machine. */}
+      <MakeComposerProvider
+        scope={scope}
+        project={project}
+        onProject={(id) => selectProject(id, { replace: true })}
+        workspaceName={account?.workspace?.name ?? null}
+      >
       <div className="pxw pxw-phone" data-view={state.view} data-level={state.mobile}>
         <div className="pxm-shell" data-testid="phone-shell">
           <MobileHeader
@@ -85,20 +97,24 @@ export function MobileShell({
             ) : state.mobile === "suite" ? (
               <SuiteScreen project={project} />
             ) : state.mobile === "make" ? (
-              <MakeScreen />
+              <MakeScreen project={project} scope={scope} />
             ) : state.mobile === "settings" ? (
               <SettingsScreen account={account} />
             ) : (
               <PageScreen project={project} scope={scope} />
             )}
           </div>
+          <MobileGenerationStrip />
+          {state.mobile === "make" ? <MakeComposerCard /> : null}
           <ActionBarForLevel seams={seams} />
           <MobileDock gateWaiting={gateWaiting(ws.state)} />
           {suiteMenu ? <SuiteMenu onClose={() => setSuiteMenu(false)} /> : null}
           <SheetHost scope={scope} project={project} onGenerate={seams.onGenerate} />
+          <MakeComposerSheet />
           <ToastHost />
         </div>
       </div>
+      </MakeComposerProvider>
     </AtomikHost>
   );
 }
@@ -121,6 +137,7 @@ function ActionBarForLevel({ seams }: { seams: MobileSeams }) {
   /* A mounted page can own its primary when only the page holds its live figure
      (the Form template's connected-account quote). One primary, one place. */
   const published = useMobilePrimary(state.page);
+  const composer = useMakeComposer();
 
   const pagePrimary = (): MobilePrimary | null => {
     if (published) return published;
@@ -163,7 +180,11 @@ function ActionBarForLevel({ seams }: { seams: MobileSeams }) {
 
   if (state.mobile !== "page" && state.mobile !== "make") return null;
   if (state.mobile === "page" && !plan) return null;
-  return <MobileActionBar primary={state.mobile === "page" ? pagePrimary() : null} />;
+  /* Make's primary is the composer's own Render, carrying the live quote. */
+  const primary = state.mobile === "make"
+    ? composer ? makePrimary(composer.host) : null
+    : pagePrimary();
+  return <MobileActionBar primary={primary} />;
 }
 
 /** One chrome, four sheets: Search is wired, the other three register in M-C. */
@@ -178,7 +199,7 @@ function SheetHost({ scope, project, onGenerate }: { scope: string; project: Pro
   return (
     <MobileSheet
       title={def.title}
-      sub={def.sub?.(project)}
+      sub={def.sub?.({ project, state: ws.state })}
       dot={def.ring ? (run?.status === "waiting" ? "var(--pxw-amber)" : run?.status === "running" ? "var(--pxw-blue)" : "var(--pxw-atomik-gold)") : undefined}
       beating={def.ring && (run?.status === "running" || run?.status === "waiting")}
       onClose={() => ws.setSheet(null)}
