@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { lastRowClearsPinned, smallTargets, smallText } from "./phoneFloors";
 import { newProject } from "../lib/workbench/studio";
 
 /**
@@ -30,58 +31,6 @@ async function signedInWithProjects(page: Page) {
   });
 }
 
-/** Every text node on screen, with its computed size — the 12px floor. */
-async function smallText(page: Page) {
-  return page.evaluate(() => {
-    const out: string[] = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = (node.textContent ?? "").trim();
-      if (!text) continue;
-      const el = node.parentElement;
-      if (!el || !el.getClientRects().length) continue;
-      const size = Number.parseFloat(getComputedStyle(el).fontSize);
-      if (size < 12) out.push(`${size}px: “${text.slice(0, 40)}” (${el.className || el.tagName})`);
-    }
-    return out;
-  });
-}
-
-/** Header controls, and any other button the phone shell pins. */
-async function smallTargets(page: Page, selector: string) {
-  return page.evaluate((sel) => {
-    const out: string[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
-      const rect = el.getBoundingClientRect();
-      if (!rect.width && !rect.height) continue;
-      if (rect.width < 44 || rect.height < 44) out.push(`${el.dataset.testid ?? el.className}: ${Math.round(rect.width)}×${Math.round(rect.height)}`);
-    }
-    return out;
-  }, selector);
-}
-
-/** At max scroll, the last row is fully visible above whatever is pinned below. */
-async function lastRowClearsPinned(page: Page) {
-  return page.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>('[data-testid="mobile-scroll"]')!;
-    scroller.scrollTop = scroller.scrollHeight;
-    const rows = Array.from(scroller.querySelectorAll<HTMLElement>("button, p, a")).filter((el) => el.getClientRects().length);
-    const last = rows[rows.length - 1];
-    const problems: string[] = [];
-    const box = scroller.getBoundingClientRect();
-    const pinned = ['[data-testid="mobile-actions"]', '[data-testid="mobile-dock"]']
-      .map((sel) => document.querySelector<HTMLElement>(sel))
-      .filter((el): el is HTMLElement => Boolean(el));
-    if (last && last.getBoundingClientRect().bottom > box.bottom + 1)
-      problems.push(`last row ends at ${last.getBoundingClientRect().bottom}, scroller ends at ${box.bottom}`);
-    for (const block of pinned) {
-      const rect = block.getBoundingClientRect();
-      if (box.bottom > rect.top + 1) problems.push(`scroller (${box.bottom}) runs under ${block.dataset.testid} (${rect.top})`);
-    }
-    return problems;
-  });
-}
-
 test("the phone shell: screens, dock, sheet, drill-down and the floors", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const errors: string[] = [];
@@ -101,7 +50,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
   expect(shellWidth).toBeLessThanOrEqual(440);
 
   /* 2 — the floors: 44×44 targets and no text under 12px. */
-  expect(await smallTargets(page, '[data-testid="mobile-header"] button')).toEqual([]);
+  expect(await smallTargets(page, '[data-testid="mobile-header"]')).toEqual([]);
   expect(await smallText(page)).toEqual([]);
   if (shot) await page.screenshot({ path: info.outputPath(`projects-390x844.png`), animations: "disabled" });
 
