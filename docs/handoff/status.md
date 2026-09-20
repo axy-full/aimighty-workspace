@@ -117,3 +117,52 @@ Measured on the Vercel usage page for the current period: Blob data transfer 51 
 8. Product restructure ordered 19 September: PR A (information architecture only: suite names, the eight-stage Particl dock with `script`/`moodboard`/`elements` as aliases, Moleculr collapsed to one Marketing Studio page with seven sections, the project selector first on home) is done on `feat/four-suites-ia`; PRs B+ (features) follow the inventory. See [docs/four-suite-workspace.md](../four-suite-workspace.md).
 
 Design decisions awaiting the owner: which palette declaration is the approved desktop appearance; whether the suite dock has replaced the supplied mobile tab-bar navigation; the exact suite tab labels.
+
+## Workspace redesign and connected-account parity — 19–20 September
+
+The owner supplied a high-fidelity design handoff (`design_handoff_particl_workspace`: tokens, shell, pages, state/agent docs and an HTML prototype) and asked for it to be rebuilt in this codebase, then said "start work on all fronts". Five decisions were taken before any code and hold for all of it:
+
+1. **Phones keep today's surfaces.** The new shell is desktop (≥1100px); below 760px `/workspace` redirects to `/workbench`. Ground rule 7 still applies: every change ships with the five-viewport Playwright run.
+2. **Nothing is simulated.** The prototype's 150 ms generation bar and 680 ms agent tick are not reproduced. Progress comes from real jobs; a plan step advances when its backend call returns; a plan with no backend reports "Not runnable yet — …" and never animates.
+3. **Atomik Generate stays** as a ninth Atomik page alongside the design's eight.
+4. **Prices are credits from live quotes**, never the provider's USD (the design's "$1.16" is our cost, not the customer's price).
+5. **No vendor or competitor name in any user-visible string.**
+
+### What shipped (main `177bd05`, deployed and checked on production)
+
+| Area | PRs |
+| --- | --- |
+| Foundation: `--pxw-*` tokens, primitives, shell (top bar, stage tabs, Library, three header rows, Inspector, status bar), `go()` with selection repair, Home | [PR223](https://github.com/axy-full/aimighty-workspace/pull/223) |
+| Shot/take data: optional `look`/`engine`/`durationS`/`ratio`/`resolution` on draft nodes, `rigShots`, `projectTakes`, live credit estimate matching the server formula | [PR221](https://github.com/axy-full/aimighty-workspace/pull/221) |
+| Plan registry and gated run engine (23 plans; `ApprovedQuote` token only `approve()` can mint) | [PR222](https://github.com/axy-full/aimighty-workspace/pull/222) |
+| Rig: shot list, Inspector controls that persist, generation with the exact live quote; node graph over the real draft | [PR236](https://github.com/axy-full/aimighty-workspace/pull/236), [PR237](https://github.com/axy-full/aimighty-workspace/pull/237) |
+| Takes, Cast & Elements, Edit & Sound | [PR229](https://github.com/axy-full/aimighty-workspace/pull/229), [PR238](https://github.com/axy-full/aimighty-workspace/pull/238), [PR239](https://github.com/axy-full/aimighty-workspace/pull/239) |
+| Spec-card template and every remaining page, each mounting the tool that already works | [PR241](https://github.com/axy-full/aimighty-workspace/pull/241), [PR242](https://github.com/axy-full/aimighty-workspace/pull/242) |
+| Atomik panel, gates and agent surfaces; ⌘K palette and keyboard map | [PR232](https://github.com/axy-full/aimighty-workspace/pull/232), [PR233](https://github.com/axy-full/aimighty-workspace/pull/233) |
+| Neutral vendor copy: one banned-name list, `displayModelName`, 179 files, guard spec | [PR231](https://github.com/axy-full/aimighty-workspace/pull/231), gaps closed in [PR244](https://github.com/axy-full/aimighty-workspace/pull/244) |
+| Connected account: toolset guard before every paid call and status read; planner reads and priced connected steps; presets and batches; workflows as recipes and slash commands | [PR226](https://github.com/axy-full/aimighty-workspace/pull/226), [PR228](https://github.com/axy-full/aimighty-workspace/pull/228), [PR234](https://github.com/axy-full/aimighty-workspace/pull/234), [PR240](https://github.com/axy-full/aimighty-workspace/pull/240) |
+| Connected features: game-pipeline-only audio models withdrawn plus a voice picker; reframe; Shorts Studio with a multi-clip collector; explainer styles (browse only, no price path) | [PR225](https://github.com/axy-full/aimighty-workspace/pull/225), [PR227](https://github.com/axy-full/aimighty-workspace/pull/227), [PR230](https://github.com/axy-full/aimighty-workspace/pull/230), [PR235](https://github.com/axy-full/aimighty-workspace/pull/235) |
+| Shorts clip polling through the guard's status fallback; Marketing and Shorts plan requests; CI in six browser shards | [PR245](https://github.com/axy-full/aimighty-workspace/pull/245), [PR246](https://github.com/axy-full/aimighty-workspace/pull/246), [PR243](https://github.com/axy-full/aimighty-workspace/pull/243) |
+
+`/workspace` is a new route; `/`, `/workbench`, `/atomik` and `/subatomik` are untouched. The switch-over is a separate PR and needs the owner's word, because it changes what every user sees.
+
+### Differences from the handoff, and why
+
+- A finished render does **not** flip its shot to Approved. The lifecycle is draft → picked → approved (ground rule 4); the take is filed for review. Pinned by a test.
+- The progress strip shows the job's phase, not a percentage: no engine reports one.
+- Edit & Sound has three stem rows, not four. The edit has dialogue, effects and music lanes; ambience beds are generated as effects onto the effects lane, and the page says so.
+- Home project cards carry no progress bar or "Sample project" pill: nothing records stage completion per project yet.
+- Five labels the prototype set below `#7C7C84` were raised to the contrast floor.
+- Marketing Studio is linked, not mounted, until its flow is extracted from `Studio.tsx` ([PR](https://github.com/axy-full/aimighty-workspace/pull/247) in progress).
+
+### Not runnable, and what each needs
+
+`builds` (an app build-and-deploy service with its own quote), `skills` (a skills registry endpoint), `takes` triage (a verdict-per-take endpoint), `budget` reconcile (an on-demand ledger route; today it runs only from `/api/cron/sync`), `sources` (a re-hash and re-measure endpoint), and `boards` — a board frame is a `Shot` citing an existing asset, with no prompt, engine, ratio or resolution, and nothing in the product generates board images (SOW §2.8 records the board pipeline as unbuilt). None of these fakes progress.
+
+### Owed before these can be called proven
+
+Each needs an explicit, stated ceiling: the first live connected **batch**, **preset** run and **status-fallback** poll; **Shorts** and **reframe** first runs; Marketing v2's first run; an identity render; Astra on a non-legacy workspace. Response shapes for the batch submit, `presets_show`, Shorts session/clip and the `job_display`/`jobs_wait` fallback have never been seen live — every one of them fails closed, so an unrecognised reply leaves the job uncertain and collects nothing rather than re-spending.
+
+### Atomik parity backlog (from the capability audit)
+
+Supercomputer parity is the owner's standard for Atomik. Landed: connected reads, priced connected steps, presets, batches, workflows-as-recipes and slash commands. Remaining, in order: memory (A7), schedules with an owner credit ceiling (A8), Soul/Reference pickers (A9), AI Employees (A10), marketplace apps (A11), the connected agent API (A12, spends inside a turn with no prior quote — off by default), owner-only websites (A13), our own connectors (A14). Tools with no price path (voice clone, video analysis, virality, personal clipper, sandbox, apps, 3D scene builder, websites) cannot pass the quote → approval → claim → poll → collect contract until one approved run establishes a price.
