@@ -5,6 +5,7 @@ import { getSuite, pageDef } from "@/lib/workspace/pages";
 import type { AppState, SelKind } from "@/lib/workspace/types";
 import { RigInspector } from "../rig/RigInspector";
 import { Kicker } from "../ui";
+import { CastInspector } from "./CastInspector";
 import { TakeInspector } from "./TakeInspector";
 
 export type InspectorBodyProps = { state: AppState; scope: string; project: Project | null };
@@ -35,6 +36,6 @@ function Placeholder({ state }: InspectorBodyProps) {
 export const INSPECTOR_BODIES: Record<SelKind, ComponentType<InspectorBodyProps>> = {
   shot: RigInspector,
   take: TakeInspector,
-  cast: Placeholder,
+  cast: CastInspector,
   page: Placeholder,
 };
