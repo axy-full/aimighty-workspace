@@ -7,6 +7,7 @@ import { useProductionJobs } from "@/components/workbench/use-production-jobs";
 import { colorLutAsset } from "@/lib/workbench/color";
 import { readSoundPlacements, soundPlacementsKey, type SoundJobTask, type SoundPlacement } from "@/lib/workbench/sound-generate";
 import type { Project } from "@/lib/workbench/studio";
+import { usePlanRequest } from "@/lib/workspace/atomik-host";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { useProjectLibrary } from "@/lib/workspace/library";
 import { assembly, mmss, shotAt, stemRequests, stemRows, type StemId, type StemRow } from "@/lib/workspace/stems";
@@ -93,9 +94,9 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
     }).length
     : null;
 
-  /* The Edit & Sound plan's request: what each open stem form would submit. Wired to the
-     plan host (usePlanRequest("stems", …)) once lib/workspace/atomik-host lands. */
+  /* The Edit & Sound plan's request: what each open stem form would submit. */
   const stems = useMemo(() => stemRequests(project, composed), [project, composed]);
+  usePlanRequest("stems", stems);
 
   const toggle = (row: StemRow) => setOpen((o) => (o?.stem === row.id && o.task === row.action.task ? null : { stem: row.id, task: row.action.task }));
   const uploadAudio = async (files: File[]) => {
