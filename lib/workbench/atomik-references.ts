@@ -9,6 +9,7 @@ import { readImageBytes, readUploadBytes } from "../storage";
 import { findWorkbenchMedia } from "./media-records";
 import type { Asset, Project } from "./studio";
 import { mediaReferenceIdentity } from "./media-reference-input";
+import { generatedReferenceSeconds } from "../referenceDuration";
 import {
   ATOMIK_IMAGE_EDGE,
   ATOMIK_IMAGE_TOKENS,
@@ -109,7 +110,7 @@ async function sourceFor(asset: Asset, owner: string, canonical = false) {
   if (generationId) {
     const row = (
       await db().execute({
-        sql: "SELECT id,kind,bytes AS size,stored_url FROM generations WHERE id=? AND deleted=0 AND status='succeeded'",
+        sql: "SELECT id,kind,bytes AS size,stored_url,duration_s,params FROM generations WHERE id=? AND deleted=0 AND status='succeeded'",
         args: [generationId],
       })
     ).rows[0];
@@ -118,12 +119,20 @@ async function sourceFor(asset: Asset, owner: string, canonical = false) {
         "A selected take is unavailable in this workspace.",
         404,
       );
+    const { params, ...stored } = row;
     return {
       type: "generation" as const,
       mime: row.kind === "image" ? "image/png" : "video/mp4",
       ext: row.kind === "image" ? "png" : "mp4",
-      ...row,
+      ...stored,
       kind: String(row.kind),
+      /* A take's length is the measured column when one was written, and otherwise
+       * the duration it was rendered at, which the saved params keep. Without this
+       * the frame-bounds guard below never fired for a generated clip. */
+      duration_s:
+        row.duration_s == null
+          ? generatedReferenceSeconds(params)
+          : Number(row.duration_s),
     };
   }
   if (legacyId) {
@@ -135,6 +144,7 @@ async function sourceFor(asset: Asset, owner: string, canonical = false) {
       );
     return {
       type: "upload" as const,
+      duration_s: null as number | null,
       ...row,
       kind: String(row.mime).startsWith("video/")
         ? "video"
@@ -283,13 +293,18 @@ export async function loadAtomikReferences(
           throw new AtomikReferenceError("The sampled times do not match this original. Prepare its review frames again.");
         result.durationSeconds = metadata.seconds;
       }
+      /* One known length per source, whichever kind it is: a sampled time past the
+       * end is refused for an upload and for a take alike. Unknown stays unbounded,
+       * held only by the absolute ceiling below. */
+      const clipSeconds = Number(source.duration_s);
+      const knownSeconds =
+        Number.isFinite(clipSeconds) && clipSeconds > 0 ? clipSeconds : null;
       for (const frame of frames) {
         if (
           !Number.isFinite(frame.timeSeconds) ||
           frame.timeSeconds < 0 ||
           frame.timeSeconds > 3600 ||
-          (Number(source.duration_s) > 0 &&
-            frame.timeSeconds > Number(source.duration_s))
+          (knownSeconds !== null && frame.timeSeconds > knownSeconds)
         )
           throw new AtomikReferenceError(
             "A sampled frame is outside the selected video.",
