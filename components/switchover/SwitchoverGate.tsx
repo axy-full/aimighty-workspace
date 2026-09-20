@@ -8,6 +8,7 @@ import {
   SHELL_COOKIE,
   SHELL_COOKIE_MAX_AGE,
   SHELL_PARAM,
+  shellCookieScript,
 } from "@/lib/workspace/switchover";
 import "./switchover.css";
 
@@ -32,7 +33,11 @@ const subscribe = (update: () => void) => {
 const snapshot = () => (window.matchMedia(PHONE_QUERY).matches ? "phone" : "desktop");
 const serverSnapshot = () => "pending" as const;
 
-/** Remember, or forget, that this browser asked for the old shell. */
+/**
+ * The same write as shellCookieScript, for a navigation that never re-parsed
+ * the document (a soft navigation into one of these routes). Harmless when the
+ * script has already run: it writes the same value.
+ */
 export function rememberShellChoice(search: string) {
   const asked = new URLSearchParams(search).get(SHELL_PARAM);
   if (asked !== LEGACY_SHELL && asked !== NEW_SHELL) return;
@@ -88,15 +93,27 @@ export default function SwitchoverGate({
     if (switching && device === "desktop") window.location.replace(target!);
   }, [switching, target, device]);
 
-  if (!switching) return children;
-  if (device === "desktop") return <SwitchNote target={target!} />;
-  if (device === "phone") return children;
+  const cookie = <ShellCookie search={search} />;
+  if (!switching) return <>{cookie}{children}</>;
+  if (device === "desktop") return <><SwitchNote target={target!} />{cookie}</>;
+  if (device === "phone") return <>{cookie}{children}</>;
   return (
     <div data-pxw-switch="pending">
       <SwitchNote target={target!} />
       <div className="pxw-switch-legacy">{children}</div>
     </div>
   );
+}
+
+/**
+ * The cookie, written while the document parses rather than after hydration,
+ * so a `?shell=` choice is already remembered by the time anything can act on
+ * it. Constant strings only (lib/workspace/switchover.ts).
+ */
+function ShellCookie({ search }: { search: string }) {
+  const script = shellCookieScript(search);
+  if (!script) return null;
+  return <script dangerouslySetInnerHTML={{ __html: script }} />;
 }
 
 function SwitchNote({ target }: { target: string }) {

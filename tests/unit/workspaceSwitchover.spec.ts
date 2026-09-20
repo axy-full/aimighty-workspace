@@ -14,6 +14,8 @@ import {
   WORKSPACE_IS_DEFAULT,
   workspaceUrlFor,
   searchStringOf,
+  shellCookieScript,
+  SHELL_COOKIE,
 } from "../../lib/workspace/switchover";
 
 
@@ -179,4 +181,21 @@ test("home's way back is the old suite home, and withLegacyShell keeps a hash la
 test("searchStringOf keeps repeated params and drops the ones Next did not send", () => {
   expect(searchStringOf({ project: "p1", stage: "canvas" })).toBe("project=p1&stage=canvas");
   expect(searchStringOf({ tag: ["a", "b"], missing: undefined })).toBe("tag=a&tag=b");
+});
+
+test("the shell choice is written by a script with no URL text in it, or not at all", () => {
+  const set = shellCookieScript(`${SHELL_PARAM}=${LEGACY_SHELL}`);
+  expect(set).toContain(`${SHELL_COOKIE}=${LEGACY_SHELL}`);
+  expect(set).toContain("path=/");
+  expect(set).toContain("samesite=lax");
+  const clear = shellCookieScript(`${SHELL_PARAM}=${NEW_SHELL}`);
+  expect(clear).toContain(`${SHELL_COOKIE}=;`);
+  expect(clear).toContain("max-age=0");
+  /* Nothing else asks for a cookie, and nothing from the URL reaches the
+     script: an injected value neither runs nor appears in it. */
+  expect(shellCookieScript("")).toBeNull();
+  expect(shellCookieScript("project=p1&stage=canvas")).toBeNull();
+  const hostile = `${SHELL_PARAM}=${encodeURIComponent('legacy"; alert(1); x="')}`;
+  expect(shellCookieScript(hostile)).toBeNull();
+  for (const script of [set, clear]) expect(script).not.toContain("alert");
 });

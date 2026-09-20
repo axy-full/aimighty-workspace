@@ -11,6 +11,11 @@ import { LEGACY_SHELL, SHELL_COOKIE } from "../../lib/workspace/switchover";
  *
  * Idempotent: calling it again overwrites the same cookie.
  *
+ * Pass the page whose context is about to navigate. A spec driving a second
+ * browser context has to seed THAT context — `legacyShell(page, …)` in front
+ * of `other.goto(…)` sets the cookie on the wrong jar, which is how CI run
+ * 35489550908 found `tests/workspace-security.spec.ts`.
+ *
  * When the old shell is retired, this helper and its call sites go with it.
  */
 export async function legacyShell(page: Page, href: string): Promise<string> {

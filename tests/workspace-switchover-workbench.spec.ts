@@ -163,17 +163,26 @@ test("the escape hatch opens the old shell, is remembered, and can be cancelled"
   await expect(page.locator(".pxw")).toHaveCount(0);
   await expect(legacyShell(page).first()).toBeVisible();
 
-  /* It is remembered, so the old shell's own links do not bounce back out. */
-  const cookie = (await page.context().cookies()).find((one) => one.name === SHELL_COOKIE);
-  expect(cookie?.value).toBe(LEGACY_SHELL);
+  /* It is remembered, so the old shell's own links do not bounce back out.
+     Polled rather than read once: the cookie is written by an inline script
+     while the document parses, and the assertions above can be satisfied by
+     the server-rendered markup before that script has run. */
+  const shellCookie = async () =>
+    (await page.context().cookies()).find((one) => one.name === SHELL_COOKIE)?.value;
+  await expect.poll(shellCookie).toBe(LEGACY_SHELL);
   await page.goto(`/workbench?project=${PROJECT}&stage=assets`);
   await expect(page).toHaveURL(new RegExp(`/workbench\\?project=${PROJECT}&stage=assets$`));
   await expect(page.locator(".pxw")).toHaveCount(0);
 
-  /* …and cancelled explicitly, which puts the new workspace back in front. */
+  /* …and cancelled explicitly, which clears the cookie and puts the new
+     workspace back in front — and keeps it there on the next plain URL. */
   await page.goto(`/workbench?project=${PROJECT}&stage=assets&${SHELL_PARAM}=new`);
   await expect(page).toHaveURL(/[?&]page=takes(&|$)/);
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect.poll(shellCookie).toBeUndefined();
+  await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
+  await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
 });
 
 test("the account menu carries the person back to the previous workspace", async ({ page }, info) => {

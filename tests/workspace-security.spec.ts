@@ -81,7 +81,7 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     });
     expect((await bearer.get("/api/jobs?sync=0")).status()).toBe(200);
     expect((await member.request.get("/api/jobs?sync=0")).status()).toBe(200);
-    await member.goto(await legacyShell(page, "/workbench"));
+    await member.goto(await legacyShell(member, "/workbench"));
     // The suite header keeps the account status visible on phone and desktop;
     // it no longer uses the legacy mobile workspace drawer.
     await expect(

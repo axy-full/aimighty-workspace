@@ -85,6 +85,24 @@ export function legacyShellRequested(search: string, cookie: string | null | und
   return cookie === LEGACY_SHELL;
 }
 
+/**
+ * The `document.cookie` write for a `?shell=` choice, as a string the gate can
+ * put in an inline <script>, or null when the URL asks for nothing.
+ *
+ * Why a script and not only an effect: an effect runs after hydration, and on
+ * a slow machine that is a long way after the document is readable. The cookie
+ * is what makes the choice survive the old shell's own links, so it is written
+ * while the document parses. Both literals below are constants — nothing from
+ * the URL reaches the script.
+ */
+export function shellCookieScript(search: string): string | null {
+  const asked = new URLSearchParams(search).get(SHELL_PARAM);
+  if (asked === LEGACY_SHELL)
+    return `document.cookie="${SHELL_COOKIE}=${LEGACY_SHELL}; path=/; max-age=${SHELL_COOKIE_MAX_AGE}; samesite=lax"`;
+  if (asked === NEW_SHELL) return `document.cookie="${SHELL_COOKIE}=; path=/; max-age=0; samesite=lax"`;
+  return null;
+}
+
 /* ── Legacy URL → workspace URL ───────────────────────────────────────── */
 
 /**

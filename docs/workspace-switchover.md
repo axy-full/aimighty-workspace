@@ -63,8 +63,10 @@ shell, and a client gate calls `router.replace` on a desktop:
 - **The back button** is sane, because `replace` does not add a history entry:
   going back from a switched page returns to wherever the person was, not to
   the old URL and forward again.
-- **Existing specs** stay honest: they ask for the surface they assert with
-  `?shell=legacy`, and their assertions are untouched.
+- **Existing specs** stay honest: they ask for the surface they assert through
+  `tests/helpers/legacyShell.ts`, which seeds the cookie on **that page's own
+  browser context** and returns the URL unchanged, so their assertions are
+  untouched. A spec driving a second context has to seed that context.
 
 ## Phones and small viewports
 
@@ -91,6 +93,12 @@ For **one release**:
 - The choice is remembered in a `particl_shell=legacy` cookie for 30 days,
   because the old shell's own links (`suiteHref`) carry no `shell` param — a
   second click would otherwise bounce the person back out.
+- The cookie is written by an inline `<script>` in the server-rendered HTML
+  (`shellCookieScript`), not only by an effect, so the choice is remembered
+  while the document parses rather than whenever hydration happens to finish.
+  The effect stays as the path for a soft navigation that never re-parsed the
+  document. Both write the same two constant strings; nothing from the URL
+  reaches the script, and there is a unit test that says so.
 - `?shell=new` cancels it and clears the cookie.
 - The new shell's account menu carries **Use the previous workspace**, which
   opens the same project and page in the old shell.
