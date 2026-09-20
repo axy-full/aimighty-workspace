@@ -12,6 +12,7 @@ import {
   MODEL_ID,
   PROMPT_LIMIT,
   MEDIA_LIMIT,
+  consumerEchoedMediaMatches,
   mediaKindForRole,
   validateGenerationRequest,
   type ConnectedModel,
@@ -153,10 +154,12 @@ function evidence(value: unknown, jobId: string, params: ConsumerGenerationParam
     if ("count" in p && p.count !== 1) return null;
     if ("use_unlim" in p && p.use_unlim !== false) return null;
     if (p.medias != null) {
+      // The echoed `role` is the media KIND, not the slot name we sent, and
+      // `data.type` is `media_input` — both recorded from life. The reference
+      // identity is `data.id`, still compared exactly, at the index we sent it.
+      // See consumerEchoedMediaMatches for the recording and the reasoning.
       if (!Array.isArray(p.medias) || p.medias.length !== params.medias.length) return null;
-      if (p.medias.some((m, i) => !record(m) || m.role !== params.medias[i].role ||
-          (record(m.data) ? m.data.id !== params.medias[i].value : m.value !== undefined && m.value !== params.medias[i].value)))
-        return null;
+      if (p.medias.some((m, i) => !consumerEchoedMediaMatches(m, params.medias[i]))) return null;
     }
   }
   return g;

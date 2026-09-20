@@ -152,6 +152,61 @@ export function mediaKindForRole(role: string): ConnectedMediaKind {
   if (/audio/.test(role)) return "audio";
   return "image";
 }
+/**
+ * The `data.type` spellings an echoed reference may carry. `media_input` is
+ * what the live account actually sends on every entry observed; the per-kind
+ * words are the older spellings the contracts used to demand.
+ */
+export const ECHOED_MEDIA_TYPES = Object.freeze(["media_input", "image", "video", "audio"] as const);
+/**
+ * Does one echoed `params.medias[i]` entry correspond to the reference WE
+ * submitted at that index?
+ *
+ * RECORDED FROM LIFE — free, read-only `show_generations(type=video,size=12)`
+ * on 20 September 2026, no job submitted, US$0.00 spent. Twelve consecutive
+ * completed `seedance_2_5` jobs carrying 3-4 reference files each echo exactly
+ *
+ *     { "role": "image",
+ *       "data": { "id": "<uuid>", "type": "media_input", "url": "https://…" } }
+ *
+ * `jq '[.items[].params.medias[]?.role] | unique'` returns `["image"]` and the
+ * same over `.data.type` returns `["media_input"]`; the entry keys are exactly
+ * `["data","role"]` and the data keys exactly `["id","type","url"]`.
+ *
+ * `seedance_2_5` declares the roles `start_image`, `end_image`,
+ * `image_references`, `video_references`, `audio_references` and NOT `image`,
+ * so for that model the echoed `image` is the media KIND, not a slot name.
+ * (Other models — `higgsfield_preset` — do declare a slot literally named
+ * `image`, where slot and kind coincide, and a connection that echoes the slot
+ * name verbatim is therefore still possible.) Comparing the echo against the
+ * slot name we sent refused every job with reference media; comparing it
+ * against the kind, and accepting the slot name too, matches both readings.
+ *
+ * The binding that carries the guarantee is unchanged and exact: `data.id` is
+ * the uuid of the import we made and submitted, at the index we submitted it.
+ * The role and `data.type` are labels, and no guarantee ever rested on them:
+ * both are checked only against the small set of spellings the provider is
+ * known to use, so that a label we have not observed can never again discard a
+ * job we paid for.
+ */
+export function consumerEchoedMediaMatches(
+  entry: unknown,
+  sent: { value: string; role: string },
+  options: { requireData?: boolean } = {},
+): boolean {
+  if (!object(entry)) return false;
+  const kind = mediaKindForRole(sent.role);
+  if (entry.role !== undefined && entry.role !== kind && entry.role !== sent.role) return false;
+  if (!object(entry.data)) {
+    if (options.requireData) return false;
+    return entry.value === undefined || entry.value === sent.value;
+  }
+  if (entry.data.id !== sent.value) return false;
+  return (
+    entry.data.type === undefined ||
+    (typeof entry.data.type === "string" && (ECHOED_MEDIA_TYPES as readonly string[]).includes(entry.data.type))
+  );
+}
 function parameter(value: unknown): ConnectedParameter {
   if (!object(value)) return invalid();
   const name = text(value.name, 64);

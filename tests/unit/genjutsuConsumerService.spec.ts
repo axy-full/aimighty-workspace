@@ -275,8 +275,8 @@ async function serviceFixture() {
           params: (
             await import("../../lib/higgsfield-consumer/genjutsu-contract")
           ).consumerGenjutsuParams(input, [
-            { value: state.providerJobId, role: "video" },
-            { value: state.wallet, role: "image" },
+            { value: state.providerJobId, role: "video_references" },
+            { value: state.wallet, role: "image_references" },
           ]),
           workspace: { id: state.wallet, name: "Fixture wallet", credits: 100 },
           credits: state.credits,
@@ -390,11 +390,14 @@ async function terminal(
       status,
       params: {
         ...params,
+        // The live echo: the media KIND under `role`, `media_input` under
+        // `data.type`. Recorded read-only from the connected account on
+        // 20 September 2026; see tests/fixtures/connectedStatusEnvelopes.ts.
         medias: params.medias.map((m: { value: string; role: string }) => ({
-          role: m.role,
+          role: m.role === "video_references" ? "video" : "image",
           data: {
             id: m.value,
-            type: m.role,
+            type: "media_input",
             url: "https://private.example/source",
           },
         })),

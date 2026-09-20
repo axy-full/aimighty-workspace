@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GENJUTSU_VARIANTS } from "../genjutsuTypes";
+import { consumerEchoedMediaMatches } from "./catalogue";
 import {
   CONNECTED_MODEL_VARIANTS,
   ConsumerVideoError,
@@ -37,7 +38,21 @@ export const consumerGenjutsuInputSchema = z
   });
 export type ConsumerGenjutsuInput = z.infer<typeof consumerGenjutsuInputSchema>;
 export type ConsumerMediaIdentity = z.infer<typeof consumerMediaIdentitySchema>;
-export type ConsumerGenjutsuMedia = { value: string; role: "video" | "image" };
+/**
+ * The roles the transform workflow SENDS, taken from the live catalogue rather
+ * than invented. `hf_mult_motion_control` and `hf_mult_replace_object` both
+ * declare exactly `["image_references", "video_references"]` (read free from
+ * `models_explore(get …)` on 20 September 2026), and
+ * `validateGenerationRequest` rejects any role that is not a declared slot.
+ * This path used to send `video` / `image`, which no model declares: it only
+ * survived because it never ran through that validator. The source video is
+ * index 0; every later entry is an image reference.
+ */
+export const CONSUMER_GENJUTSU_ROLES = ["video_references", "image_references"] as const;
+export type ConsumerGenjutsuRole = (typeof CONSUMER_GENJUTSU_ROLES)[number];
+export const consumerGenjutsuRole = (index: number): ConsumerGenjutsuRole =>
+  index === 0 ? "video_references" : "image_references";
+export type ConsumerGenjutsuMedia = { value: string; role: ConsumerGenjutsuRole };
 export type ConsumerGenjutsuParams = {
   model: (typeof CONSUMER_GENJUTSU_MODELS)[keyof typeof CONSUMER_GENJUTSU_MODELS];
   prompt: string;
@@ -70,7 +85,7 @@ export function consumerGenjutsuParams(
     medias.some(
       (m, i) =>
         !z.uuid().safeParse(m.value).success ||
-        m.role !== (i === 0 ? "video" : "image"),
+        m.role !== consumerGenjutsuRole(i),
     )
   )
     throw new ConsumerVideoError("invalid_input");
@@ -140,16 +155,12 @@ function generationEvidence(
   if (p.medias != null) {
     if (!Array.isArray(p.medias) || p.medias.length !== params.medias.length)
       return null;
-    if (
-      p.medias.some(
-        (m, i) =>
-          !record(m) ||
-          m.role !== params.medias[i].role ||
-          !record(m.data) ||
-          m.data.id !== params.medias[i].value ||
-          m.data.type !== (i === 0 ? "video" : "image"),
-      )
-    )
+    // The provider echoes the media KIND under `role` and `media_input` under
+    // `data.type` — recorded from life; see consumerEchoedMediaMatches. This
+    // check used to demand the slot name we sent AND a `video`/`image` type,
+    // so it refused every completed transform job we had already paid for.
+    // `data` is still required here, and `data.id` is still exact.
+    if (p.medias.some((m, i) => !consumerEchoedMediaMatches(m, params.medias[i], { requireData: true })))
       return null;
   }
   return g;

@@ -12,6 +12,12 @@ import {
   CONSUMER_MCP_URL,
 } from "../../lib/higgsfield-consumer/mcp";
 import {
+  parseConnectedCatalogue,
+  findCatalogueModel,
+  mediaKindForRole,
+  validateGenerationRequest,
+} from "../../lib/higgsfield-consumer/catalogue";
+import {
   consumerGenjutsuParams,
   consumerGenjutsuInputSchema,
   consumerGenjutsuOriginalResult,
@@ -30,8 +36,8 @@ const input: ConsumerGenjutsuInput = {
   references: [{ genId: "still" }],
 };
 const params = consumerGenjutsuParams(input, [
-  { value: media, role: "video" },
-  { value: other, role: "image" },
+  { value: media, role: "video_references" },
+  { value: other, role: "image_references" },
 ]);
 type Packet = {
   id: string;
@@ -144,9 +150,11 @@ test("quote imports exact originals as typed UUID media, costs only, with no pai
   );
   expect(imported).toEqual([0, 1]);
   expect(quote.credits).toBe(75);
+  // The roles we SEND are the model's declared slots (image_references /
+  // video_references), the only roles validateGenerationRequest admits.
   expect(quote.params.medias).toEqual([
-    { value: media, role: "video" },
-    { value: media, role: "image" },
+    { value: media, role: "video_references" },
+    { value: media, role: "image_references" },
   ]);
   expect(
     f.calls
@@ -280,6 +288,31 @@ test("lost paid response is uncertain once, and polling uses exact UUID without 
   ).toEqual({ jobId, sync: false, raw_data: false });
   expect(read.paid()).toHaveLength(0);
 });
+test("the roles the transform path SENDS are the model's declared slots, so they pass the catalogue validator", () => {
+  // The catalogue rejects any role that is not a declared slot name, and the
+  // transform submit path does not run through it — so the roles it sends had
+  // never been checked against a declaration. `hf_mult_motion_control` and
+  // `hf_mult_replace_object` each declare exactly image_references and
+  // video_references (read free from models_explore on 20 September 2026, and
+  // recorded in tests/fixtures/connected-models.json). Against origin/main
+  // this test fails: the path sent `video` / `image`, which neither declares.
+  const catalogue = parseConnectedCatalogue(JSON.parse(readToolsFixture("tests/fixtures/connected-models.json", "utf8")));
+  for (const id of ["hf_mult_motion_control", "hf_mult_replace_object"]) {
+    const model = findCatalogueModel(catalogue, id)!;
+    expect(model.medias.flatMap((slot) => slot.roles).sort()).toEqual(["image_references", "video_references"]);
+    const sent = params.medias.map((m) => ({ role: m.role, kind: mediaKindForRole(m.role) }));
+    expect(sent).toEqual([
+      { role: "video_references", kind: "video" },
+      { role: "image_references", kind: "image" },
+    ]);
+    expect(() => validateGenerationRequest(model, { type: "video", model: id, prompt: input.prompt, parameters: { resolution: input.resolution }, medias: sent })).not.toThrow();
+    // The old vocabulary, had it ever reached the validator:
+    expect(() => validateGenerationRequest(model, { type: "video", model: id, prompt: input.prompt, parameters: { resolution: input.resolution }, medias: [{ role: "video", kind: "video" }, { role: "image", kind: "image" }] })).toThrow(/video/);
+  }
+  // And the kinds those declared roles resolve to are exactly the labels the
+  // provider echoes back, which is what the collector now compares.
+  expect(params.medias.map((m) => mediaKindForRole(m.role))).toEqual(["video", "image"]);
+});
 test("collection requires exact model/source settings and original HTTPS result, with unknown schema retained", () => {
   const accepted = {
     id: jobId,
@@ -289,9 +322,15 @@ test("collection requires exact model/source settings and original HTTPS result,
     results: { rawUrl: "https://media.example/original.mp4" },
     params: {
       ...params,
+      // The echo as the live account really sends it: the media KIND under
+      // `role` and `media_input` under `data.type` — never the slot role we
+      // sent. Against origin/main this fixture alone sinks the whole test:
+      // generationEvidence demanded role === "video_references" and
+      // data.type === "video"/"image", so a COMPLETED, PAID transform job was
+      // refused by our own collector.
       medias: params.medias.map((m) => ({
-        role: m.role,
-        data: { id: m.value, type: m.role, url: "https://media.example/input" },
+        role: m.role === "video_references" ? "video" : "image",
+        data: { id: m.value, type: "media_input", url: "https://media.example/input" },
       })),
     },
   };
@@ -308,7 +347,27 @@ test("collection requires exact model/source settings and original HTTPS result,
     {
       params: {
         ...accepted.params,
-        medias: [{ role: "video", data: { id: other, type: "video" } }],
+        medias: [{ role: "video", data: { id: other, type: "media_input" } }],
+      },
+    },
+    // One reference too few: the count and the per-index id binding both hold.
+    {
+      params: {
+        ...accepted.params,
+        medias: [accepted.params.medias[0]],
+      },
+    },
+    // `data` is still required on this path, and an unknown type still refuses.
+    {
+      params: {
+        ...accepted.params,
+        medias: accepted.params.medias.map((m) => ({ role: m.role, value: m.data.id })),
+      },
+    },
+    {
+      params: {
+        ...accepted.params,
+        medias: accepted.params.medias.map((m) => ({ ...m, data: { ...m.data, type: "instruction" } })),
       },
     },
     { params: { ...accepted.params, resolution: "480p" } },
