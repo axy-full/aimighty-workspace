@@ -501,3 +501,39 @@ test("normalized status refuses conflicting generation identity before returning
     expect(f.paid()).toHaveLength(0);
   }
 });
+test("the transform path tolerates the same provider-injected medias entry, and still refuses a reorder", () => {
+  // The equal-length rule was shared with the generation contract, and the
+  // account's injection was recorded there: a completed `seed_audio` job echoes
+  // its voice reference as an extra `params.medias` entry whose `data` carries
+  // only a `url` — no `id`, no `type` (RECORDED FROM PRODUCTION, free read-only
+  // `show_generations(type=audio)`, 20 September 2026, US$0.00 spent). This path
+  // sends no voice of its own, but the envelope and the rule are the same, so an
+  // entry that names no media must not sink a paid transform job either.
+  // Against origin/main the first expect below fails on the count alone.
+  const echoed = params.medias.map((m) => ({
+    role: m.role === "video_references" ? "video" : "image",
+    data: { id: m.value, type: "media_input", url: "https://media.example/input" },
+  }));
+  const injected = { role: "video", data: { url: "https://media.example/voice.wav" } };
+  const envelope = (medias: unknown) => ({
+    generation: {
+      id: jobId,
+      status: "completed",
+      model: params.model,
+      type: "video",
+      results: { rawUrl: "https://media.example/original.mp4" },
+      params: { ...params, medias },
+    },
+  });
+  const collected = { url: "https://media.example/original.mp4" };
+  expect(consumerGenjutsuOriginalResult(envelope([injected, ...echoed]), jobId, params)).toEqual(collected);
+  expect(consumerGenjutsuOriginalResult(envelope([echoed[0], injected, echoed[1]]), jobId, params)).toEqual(collected);
+  expect(consumerGenjutsuOriginalResult(envelope(echoed), jobId, params)).toEqual(collected);
+  // Order, identity and `data` all still bind: a reordered echo, an extra that
+  // claims an id, a dropped reference and a data-less entry each still refuse.
+  expect(consumerGenjutsuOriginalResult(envelope([injected, echoed[1], echoed[0]]), jobId, params)).toBeNull();
+  expect(consumerGenjutsuOriginalResult(envelope([...echoed, { role: "image", data: { id: randomUUID(), type: "media_input" } }]), jobId, params)).toBeNull();
+  expect(consumerGenjutsuOriginalResult(envelope([injected, echoed[0]]), jobId, params)).toBeNull();
+  expect(consumerGenjutsuOriginalResult(envelope([injected]), jobId, params)).toBeNull();
+  expect(consumerGenjutsuOriginalResult(envelope([{ role: "video", value: params.medias[0].value }, echoed[1]]), jobId, params)).toBeNull();
+});

@@ -80,12 +80,24 @@
  * from it would have refused every paid job carrying a VIDEO reference. That is
  * what `RECORDED_MEDIA_DATA_TYPES` and `echoedMediaVideoInput` below exist for.
  *
- * Also recorded, and NOT yet handled anywhere: a `seed_audio` job echoes the
- * voice reference as an EXTRA `params.medias` entry we never sent, whose `data`
- * has only a `url` — no `id`, no `type`:
+ * 20 September 2026, FOURTH recording — `show_generations(type=audio)`, free and
+ * read-only, no job submitted. Completed `seed_audio` jobs
+ * (70990834-1f07-45aa-a325-a8bc55d1d921, 87c8a5b1-1863-43b8-8265-614605d17fad,
+ * d0450755-703e-43c0-b15e-24a8f75d433e) echo TWO `params.medias` entries where
+ * we would have sent ONE. The extra entry is the VOICE reference, supplied
+ * through the model's own `voice_type` / `voice_id` pair and not through any
+ * medias array, and its `data` carries only a `url` — no `id`, no `type`:
  *
- *     "medias":[{"role":"audio","data":{"url":"https://…mp3"}},
- *               {"role":"audio","data":{"id":"<uuid>","type":"audio_input",…}}]
+ *     "medias":[{"role":"audio","data":{"url":"https://…/6f332b29-….wav"}},
+ *               {"role":"audio","data":{"id":"70bbc31b-18b4-4ccd-b60f-8b06e380af61",
+ *                                       "type":"audio_input","url":"https://…_sfx.wav"}}]
+ *
+ * The third recording's comment said this was "NOT yet handled anywhere", and it
+ * was not: both contracts required `p.medias.length === params.medias.length`,
+ * so a job that used a voice was refused on the COUNT alone. `injectedVoiceUrl`
+ * below builds that first entry, and `consumerEchoedMediasMatch` is the rule
+ * that walks past it — every reference we sent still matched by its exact uuid,
+ * in the order we sent it.
  *
  * `show_generations` returns the same per-entry shape as `job_display`'s
  * `results` elements. The live `nano_banana_2` image entries carry NO nested
@@ -124,6 +136,10 @@ export type EnvelopeJob = {
   prompt: string;
   /** Reference files echoed under `params.medias`, in the order we sent them. */
   medias?: EnvelopeMedia[];
+  /** The voice reference the account INJECTS ahead of our own references when
+   * the request used a voice (`voice_type` / `voice_id`) — recorded from life on
+   * `seed_audio`; we never sent it, and its `data` carries only this url. */
+  injectedVoiceUrl?: string;
   rawUrl: string;
 };
 
@@ -135,6 +151,21 @@ export const echoedMedia = (media: EnvelopeMedia) => ({
   role: media.kind ?? "image",
   data: { id: media.id, type: media.dataType ?? RECORDED_MEDIA_DATA_TYPES.media_input, url: media.url },
 });
+
+/** The extra `params.medias` entry the account injects for a voice, exactly as
+ * recorded from production on 20 September 2026 (url synthetic; the key set and
+ * every label as recorded): the media KIND under `role`, and a `data` carrying
+ * only a `url` — no `id`, no `type`, so it names no media of ours. */
+export const echoedInjectedVoice = (url: string, kind: "audio" | "video" | "image" = "audio") => ({
+  role: kind,
+  data: { url },
+});
+/** Every echoed `params.medias` entry for a job, in the recorded order: the
+ * provider's injected voice first, then our own references. */
+export const echoedMedias = (job: EnvelopeJob) => [
+  ...(job.injectedVoiceUrl ? [echoedInjectedVoice(job.injectedVoiceUrl, job.medias?.[0]?.kind ?? "audio")] : []),
+  ...(job.medias ?? []).map(echoedMedia),
+];
 
 /** The reframe entry as recorded from production on 20 September 2026 (ids and
  * url synthetic; every key, shape and label as recorded): a `video` role with
@@ -154,7 +185,7 @@ export const displayCompleted = (job: EnvelopeJob) => ({
         prompt: job.prompt,
         aspect_ratio: "9:16",
         duration: 5,
-        ...(job.medias?.length ? { medias: job.medias.map(echoedMedia) } : {}),
+        ...(echoedMedias(job).length ? { medias: echoedMedias(job) } : {}),
         width: 720,
         height: 1280,
         resolution: "720p",

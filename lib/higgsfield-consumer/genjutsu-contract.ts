@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { GENJUTSU_VARIANTS } from "../genjutsuTypes";
-import { consumerEchoedMediaMatches } from "./catalogue";
+import { consumerEchoedMediasMatch } from "./catalogue";
 import {
   CONNECTED_MODEL_VARIANTS,
   ConsumerVideoError,
@@ -153,8 +153,6 @@ function generationEvidence(
     return null;
   if ("resolution" in p && p.resolution !== params.resolution) return null;
   if (p.medias != null) {
-    if (!Array.isArray(p.medias) || p.medias.length !== params.medias.length)
-      return null;
     // The provider echoes the media KIND under `role` and a `<kind>_input`
     // spelling under `data.type` (`media_input`, `video_input`, `audio_input`
     // all recorded from life) — see consumerEchoedMediaMatches. This check used
@@ -162,7 +160,15 @@ function generationEvidence(
     // every completed transform job we had already paid for; a fixed list of
     // four type spellings then still refused any VIDEO reference.
     // `data` is still required here, and `data.id` is still exact.
-    if (p.medias.some((m, i) => !consumerEchoedMediaMatches(m, params.medias[i], { requireData: true })))
+    // The equal-length rule went with it: the account injects entries we never
+    // sent (recorded on `seed_audio`, whose voice is echoed as an extra medias
+    // entry with only a `url` under `data`), and refusing on the count alone
+    // discarded a completed, PAID job. This path has no voice of its own, but
+    // the echo is the same envelope and the same injection is possible. Every
+    // reference we sent must still appear, `data` and all, matched by its exact
+    // uuid and in the order we sent it; only entries naming no media are
+    // skipped — see consumerEchoedMediasMatch.
+    if (!consumerEchoedMediasMatch(p.medias, params.medias, { requireData: true }))
       return null;
   }
   return g;

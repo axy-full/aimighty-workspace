@@ -272,6 +272,102 @@ export function consumerEchoedMediaMatches(
     (typeof entry.data.type === "string" && echoedMediaTypeAccepted(entry.data.type))
   );
 }
+/**
+ * Is this echoed entry an extra the PROVIDER injected, rather than one of our
+ * references? The tolerated shape is exactly the one recorded from life: a
+ * `data` object that carries no `id` (in the recording, only a `url`), and no
+ * top-level `value` either. It therefore claims NO reference identity at all.
+ *
+ * That is the whole reason the relaxation below is safe, and it is why the test
+ * is written as "claims no identity" rather than "looks like a voice": an entry
+ * that claims no identity can neither be mistaken for one of our references
+ * (each of ours is matched by the exact uuid of the import we made) nor stand in
+ * for one (every reference we sent must still be matched, in order). An entry
+ * that DOES carry a `data.id` is never an extra: it is matched against the next
+ * reference we sent and refuses the whole echo if it is anything else.
+ */
+const echoedMediaClaimsNoIdentity = (entry: unknown) =>
+  object(entry) &&
+  entry.value === undefined &&
+  object(entry.data) &&
+  entry.data.id === undefined;
+/**
+ * How many provider-injected extras we tolerate, over and above the references
+ * we sent. Deliberately as wide as the limit we impose on our OWN references:
+ * an extra carries no identity (see above), so a tighter bound could only ever
+ * do what #251, #253 and #255 each did — discard a completed, PAID job over a
+ * shape we had not happened to record yet — while buying no guarantee back. The
+ * bound exists only so that an echo padded with an unbounded number of
+ * unexplained entries, a shape nothing in the recording resembles, is still
+ * refused rather than walked.
+ */
+export const ECHOED_MEDIA_EXTRA_LIMIT = MEDIA_LIMIT;
+/**
+ * Does the whole echoed `params.medias` array correspond to the references WE
+ * submitted?
+ *
+ * RECORDED FROM PRODUCTION, 20 September 2026 — free read-only
+ * `show_generations(type=audio)` on the connected account; no job submitted,
+ * US$0.00 spent. Completed `seed_audio` jobs (70990834-1f07-45aa-a325-a8bc55d1d921,
+ * 87c8a5b1-1863-43b8-8265-614605d17fad, d0450755-703e-43c0-b15e-24a8f75d433e)
+ * echo TWO entries where we would have sent one:
+ *
+ *     "medias": [
+ *       {"role":"audio","data":{"url":"https://…/6f332b29-….wav"}},
+ *       {"role":"audio","data":{"id":"70bbc31b-18b4-4ccd-b60f-8b06e380af61",
+ *                               "type":"audio_input","url":"https://…_sfx.wav"}}
+ *     ]
+ *
+ * The FIRST entry is the VOICE reference. It was never sent through a medias
+ * array: `seed_audio` takes a voice through the `voice_type` / `voice_id` pair
+ * it declares (`modelVoiceParameters`), and the account echoed it back as a
+ * medias entry of its own, with only a `url` under `data` — no `id`, no `type`.
+ * `seed_audio` declares the roles `image_references` and `audio_references`
+ * BESIDE those voice parameters, so a request that uses a voice AND sends an
+ * audio reference is one our own workflow can compose today.
+ *
+ * WHY A SUBSEQUENCE, AND WHAT IS STILL EXACT. The rule was
+ * `p.medias.length === params.medias.length` plus a match at each index, so
+ * one provider-injected entry refused the job on the COUNT alone — a completed,
+ * paid job discarded as uncollectable, the same class of bug as #251, #253 and
+ * #255. The relaxation keeps every part of the binding that carried a guarantee:
+ *
+ *   • every reference we sent must appear, matched by the exact uuid of the
+ *     import we made (`consumerEchoedMediaMatches`, `data.id` compared
+ *     verbatim), and
+ *   • they must appear IN THE ORDER WE SENT THEM — a reordered echo still
+ *     refuses, because order is what binds a reference to its slot, and
+ *   • an entry carrying any reference identity we do not expect next refuses
+ *     the whole echo.
+ *
+ * WHY THIS CANNOT ADMIT ANOTHER JOB'S OUTPUT. Only entries that name no media
+ * at all are skipped. An echo belonging to another job differs from ours in the
+ * identities it names — a different import uuid, a missing reference, or ours in
+ * a different order — and each of those is refused here, exactly as before:
+ * skipping an identity-less entry never supplies a reference we did not find,
+ * because the walk must still consume all of `sent` by exact uuid in order.
+ * (The job identity itself is bound separately and strictly: `generation.id`
+ * equals the acknowledged job id, and the model and output type are compared
+ * exactly, before this array is ever looked at.)
+ */
+export function consumerEchoedMediasMatch(
+  echoed: unknown,
+  sent: readonly { value: string; role: string }[],
+  options: { requireData?: boolean } = {},
+): boolean {
+  if (!Array.isArray(echoed)) return false;
+  if (echoed.length > sent.length + ECHOED_MEDIA_EXTRA_LIMIT) return false;
+  let next = 0;
+  for (const entry of echoed) {
+    if (next < sent.length && consumerEchoedMediaMatches(entry, sent[next], options)) {
+      next += 1;
+      continue;
+    }
+    // Not the reference we expect next: tolerated only if it names no media.
+    if (!echoedMediaClaimsNoIdentity(entry)) return false;
+  }
+  return next === sent.length;
+}
 function parameter(value: unknown): ConnectedParameter {
   if (!object(value)) return invalid();
   const name = text(value.name, 64);
