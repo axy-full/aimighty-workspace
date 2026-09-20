@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import {
   CatalogueError,
   effectiveParameters,
@@ -8,12 +9,16 @@ import {
   isStandaloneModel,
   listCatalogueModels,
   mediaKindForRole,
+  consumerEchoedMediaMatches,
+  echoedMediaTypeAccepted,
+  ECHOED_MEDIA_TYPES,
   modelVoiceParameters,
   parseConnectedCatalogue,
   parseConnectedModel,
   validateGenerationRequest,
   type ConnectedModel,
 } from "../../lib/higgsfield-consumer/catalogue";
+import { RECORDED_MEDIA_DATA_TYPES, echoedMediaVideoInput } from "../fixtures/connectedStatusEnvelopes";
 import {
   consumerGenerationInputSchema,
   consumerGenerationParams,
@@ -191,4 +196,43 @@ test("speech models that declare voice_type + voice_id are offered the connected
   expect(modelVoiceParameters(model("nano_banana_2"))).toBeNull();
   // The picker fills a pair the catalogue validation accepts as declared settings.
   expect(validateGenerationRequest(model("seed_audio"), { type: "audio", model: "seed_audio", prompt: "Hello there.", parameters: { voice_type: "preset", voice_id: "voice-1" }, medias: [] })).toEqual({ voice_type: "preset", voice_id: "voice-1" });
+});
+
+test("an echoed reference is matched by the `<kind>_input` FAMILY, not a list of samples", () => {
+  // RECORDED FROM PRODUCTION on 20 September 2026 (free read-only
+  // `show_generations`; no job submitted, US$0.00 spent). Reframe job
+  // aa426b31-437c-439f-aca2-93d6bd23a6c9 echoed its source as
+  //   { "role": "video",
+  //     "data": { "id": "851d883d-…", "type": "video_input", "url": "…mp4" } }
+  // and seed_audio jobs echo "audio_input", while every image reference echoes
+  // "media_input". Against origin/main the first expect below fails:
+  // ECHOED_MEDIA_TYPES was ["media_input","image","video","audio"], so a video
+  // reference's own spelling refused the entry and the contracts threw away a
+  // completed, PAID job.
+  const sent = { value: media, role: "video_references" };
+  expect(consumerEchoedMediaMatches(echoedMediaVideoInput({ id: media, url: "https://fixtures.particl.invalid/uploads/source.mp4" }), sent)).toBe(true);
+  // Every spelling we have actually seen, plus the bare kinds the contracts
+  // used to demand, plus an entry with no type at all.
+  for (const type of [...ECHOED_MEDIA_TYPES, ...Object.values(RECORDED_MEDIA_DATA_TYPES), "model_input", "start_image_input", "video3d_input"])
+    expect(echoedMediaTypeAccepted(type), type).toBe(true);
+  for (const type of Object.values(RECORDED_MEDIA_DATA_TYPES))
+    expect(consumerEchoedMediaMatches({ role: "video", data: { id: media, type } }, sent), type).toBe(true);
+  expect(consumerEchoedMediaMatches({ role: "video", data: { id: media } }, sent)).toBe(true);
+  // Bounded: anything outside the bare kinds and outside `<word>_input` is junk
+  // and still refuses, so the widening buys no licence for arbitrary labels.
+  for (const type of ["instruction", "input", "_input", "video input", "VIDEO_INPUT", "video-input", "media_input ", "input_video", `${"a".repeat(64)}_input`])
+    expect(echoedMediaTypeAccepted(type), type).toBe(false);
+  for (const type of ["instruction", "input_video", "VIDEO_INPUT"])
+    expect(consumerEchoedMediaMatches({ role: "video", data: { id: media, type } }, sent), type).toBe(false);
+  // The guarantee is the media uuid we uploaded — still exact, whatever the
+  // label says — and the role must still be this reference's kind or slot.
+  expect(consumerEchoedMediaMatches({ role: "video", data: { id: randomUUID(), type: "video_input" } }, sent)).toBe(false);
+  expect(consumerEchoedMediaMatches({ role: "video", data: { type: "video_input" } }, sent)).toBe(false);
+  expect(consumerEchoedMediaMatches({ role: "image", data: { id: media, type: "video_input" } }, sent)).toBe(false);
+  // `role` accepts `<kind>_input` too, for symmetry with `data.type`.
+  for (const role of ["video", "video_references", "video_input"])
+    expect(consumerEchoedMediaMatches({ role, data: { id: media, type: "video_input" } }, sent), role).toBe(true);
+  // `requireData` (the transform path) still refuses an entry with no `data`.
+  expect(consumerEchoedMediaMatches({ role: "video", value: media }, sent)).toBe(true);
+  expect(consumerEchoedMediaMatches({ role: "video", value: media }, sent, { requireData: true })).toBe(false);
 });

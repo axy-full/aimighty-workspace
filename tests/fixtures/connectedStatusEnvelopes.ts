@@ -62,6 +62,31 @@
  *      "summary":{"total":1,"completed":1,"failed":0,"active":0,"errors":0},
  *      "all_terminal":true}
  *
+ * 20 September 2026, THIRD recording — `show_generations` over the whole
+ * `video` and `audio` history rather than the seedance jobs alone. `data.type`
+ * is NOT always `media_input`; it is per-kind on some models:
+ *
+ *     jq '[.items[].params.medias[]?.data.type] | unique' (type=video)
+ *       => ["media_input","video_input"]
+ *
+ *     reframe job: {"role":"video",
+ *                   "data":{"id":"<uuid>","type":"video_input",
+ *                           "url":"https://…/<uuid>.mp4"}}
+ *     seed_audio:  {"role":"audio",
+ *                   "data":{"id":"<uuid>","type":"audio_input","url":"…"}}
+ *
+ * The second recording's `["media_input"]` was true of the twelve seedance jobs
+ * it covered and false of the account, and a fixed four-spelling list built
+ * from it would have refused every paid job carrying a VIDEO reference. That is
+ * what `RECORDED_MEDIA_DATA_TYPES` and `echoedMediaVideoInput` below exist for.
+ *
+ * Also recorded, and NOT yet handled anywhere: a `seed_audio` job echoes the
+ * voice reference as an EXTRA `params.medias` entry we never sent, whose `data`
+ * has only a `url` — no `id`, no `type`:
+ *
+ *     "medias":[{"role":"audio","data":{"url":"https://…mp3"}},
+ *               {"role":"audio","data":{"id":"<uuid>","type":"audio_input",…}}]
+ *
  * `show_generations` returns the same per-entry shape as `job_display`'s
  * `results` elements. The live `nano_banana_2` image entries carry NO nested
  * `params.model` at all and an extra `results.minUrl`, so a nested `model` is
@@ -71,7 +96,25 @@
 /** One reference file as the provider echoes it back. `kind` is the media KIND
  * the provider reports under `role` — NOT the slot role we sent; recorded from
  * life (see above). It defaults to `image`, the only kind observed so far. */
-export type EnvelopeMedia = { id: string; url: string; kind?: "image" | "video" | "audio" };
+export type EnvelopeMedia = {
+  id: string;
+  url: string;
+  kind?: "image" | "video" | "audio";
+  /** The echoed `data.type`. Defaults to `media_input`; the live per-kind
+   * spellings are in `RECORDED_MEDIA_DATA_TYPES`. */
+  dataType?: string;
+};
+
+/** Every `data.type` spelling recorded from the live account on 20 September
+ * 2026, with the model each came from. Recorded, not assumed. */
+export const RECORDED_MEDIA_DATA_TYPES = Object.freeze({
+  /** seedance_2_5, nano_banana_2_lite, seedream_v5_pro — image references. */
+  media_input: "media_input",
+  /** reframe — the single `video` reference on a completed job. */
+  video_input: "video_input",
+  /** seed_audio — the audio reference. */
+  audio_input: "audio_input",
+} as const);
 
 export type EnvelopeJob = {
   jobId: string;
@@ -87,11 +130,17 @@ export type EnvelopeJob = {
 const THUMBNAIL = "https://fixtures.particl.invalid/outputs/thumb.jpg";
 
 /** One echoed `params.medias` entry, exactly as recorded: the KIND under
- * `role`, and `media_input` under `data.type`. */
+ * `role`, and a `<kind>_input` spelling under `data.type`. */
 export const echoedMedia = (media: EnvelopeMedia) => ({
   role: media.kind ?? "image",
-  data: { id: media.id, type: "media_input", url: media.url },
+  data: { id: media.id, type: media.dataType ?? RECORDED_MEDIA_DATA_TYPES.media_input, url: media.url },
 });
+
+/** The reframe entry as recorded from production on 20 September 2026 (ids and
+ * url synthetic; every key, shape and label as recorded): a `video` role with
+ * `video_input` under `data.type`. */
+export const echoedMediaVideoInput = (media: Omit<EnvelopeMedia, "kind" | "dataType">) =>
+  echoedMedia({ ...media, kind: "video", dataType: RECORDED_MEDIA_DATA_TYPES.video_input });
 
 /** The live `job_display` envelope for a completed job. */
 export const displayCompleted = (job: EnvelopeJob) => ({

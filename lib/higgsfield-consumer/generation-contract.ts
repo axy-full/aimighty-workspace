@@ -155,7 +155,9 @@ function evidence(value: unknown, jobId: string, params: ConsumerGenerationParam
     if ("use_unlim" in p && p.use_unlim !== false) return null;
     if (p.medias != null) {
       // The echoed `role` is the media KIND, not the slot name we sent, and
-      // `data.type` is `media_input` — both recorded from life. The reference
+      // `data.type` is one of a family of `<kind>_input` spellings —
+      // `media_input` on image references, `video_input` on reframe,
+      // `audio_input` on seed_audio, all recorded from life. The reference
       // identity is `data.id`, still compared exactly, at the index we sent it.
       // See consumerEchoedMediaMatches for the recording and the reasoning.
       if (!Array.isArray(p.medias) || p.medias.length !== params.medias.length) return null;
