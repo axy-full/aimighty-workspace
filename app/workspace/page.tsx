@@ -11,6 +11,7 @@ import { SessionProvider } from "@/lib/session";
 import { runInTenant } from "@/lib/tenant";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import "../workspace.css";
+import "../workspace-mobile.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };

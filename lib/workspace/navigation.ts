@@ -1,3 +1,4 @@
+import { LEVEL_PARAM, levelFor, levelFromParam, levelParam, viewForLevel } from "./mobile";
 import {
   PAGES,
   firstPage,
@@ -9,6 +10,7 @@ import {
 import type {
   AppState,
   LibFilter,
+  MobileLevel,
   PageId,
   SelKind,
   SelectableItem,
@@ -41,6 +43,8 @@ export const INITIAL_STATE: AppState = {
   playhead: 0,
   toast: "",
   lists: { shots: null, takes: null, cast: null },
+  mobile: "projects",
+  sheet: null,
 };
 
 /** Takes respect the active filter, so selection never lands on a hidden card. */
@@ -91,12 +95,15 @@ export function go(state: AppState, suite: Suite, page: string): AppState {
   const resolved = resolvePageId(page);
   const id = resolved && list.some((p) => p.id === resolved) ? resolved : list[0].id;
   const sel = repairSelection(state, id);
-  return { ...state, view: "studio", suite, page: id, ...sel, inspTab: "Controls" };
+  /* The phone's level follows the same call: a page opened from anywhere —
+     a stage row, the Search sheet, a deep link — is the Page level, and the
+     sheet it was chosen from closes behind it. */
+  return { ...state, view: "studio", suite, page: id, ...sel, inspTab: "Controls", mobile: "page", sheet: null };
 }
 
 /** Home for a suite: the page is kept as that suite's first, selection untouched. */
 export function goHome(state: AppState, suite: Suite = state.suite): AppState {
-  return { ...state, view: "home", suite, page: suite === state.suite ? state.page : firstPage(suite) };
+  return { ...state, view: "home", suite, page: suite === state.suite ? state.page : firstPage(suite), mobile: "projects", sheet: null };
 }
 
 /** Suite pill: stays in the current view; in the studio it opens the suite's first page. */
@@ -127,7 +134,7 @@ export const WORKSPACE_PATH = "/workspace";
 const SEL_KINDS: SelKind[] = ["shot", "take", "cast"];
 
 /** `/workspace?project=&suite=&page=&sel=` — no page means the home view. */
-export function toSearch(state: Pick<AppState, "projectId" | "suite" | "page" | "view" | "selKind" | "selId">): string {
+export function toSearch(state: Pick<AppState, "projectId" | "suite" | "page" | "view" | "selKind" | "selId"> & { mobile?: MobileLevel }): string {
   const query = new URLSearchParams();
   if (state.projectId) query.set("project", state.projectId);
   query.set("suite", state.suite);
@@ -135,6 +142,11 @@ export function toSearch(state: Pick<AppState, "projectId" | "suite" | "page" | 
     query.set("page", state.page);
     if (state.selId && state.selKind !== "page") query.set("sel", `${state.selKind}:${state.selId}`);
   }
+  /* Only the levels the desktop URL cannot express (Suite, Make, Settings):
+     Projects is `view=home` and Page is `page=`, so a desktop URL is
+     byte-identical to what it was. */
+  const level = state.mobile ? levelParam(state.mobile) : null;
+  if (level) query.set(LEVEL_PARAM, level);
   return "?" + query.toString();
 }
 
@@ -148,6 +160,8 @@ export type UrlState = {
   view: AppState["view"];
   page: PageId;
   sel: { kind: SelKind; id: string } | null;
+  /** The phone's level, when the URL names one. */
+  level: MobileLevel | null;
 };
 
 /**
@@ -168,12 +182,16 @@ export function fromSearch(search: string): UrlState {
     const id = rawSel.slice(at + 1);
     if (at > 0 && id && SEL_KINDS.includes(kind)) sel = { kind, id };
   }
+  const level = levelFromParam(query.get(LEVEL_PARAM));
   return {
     projectId: query.get("project") || null,
     suite,
-    view: rawPage === null ? "home" : "studio",
+    /* A level of its own wins over the page the URL also carries: `level=suite`
+       opens the stage list with that page still selected in it. */
+    view: level ? viewForLevel(level) : rawPage === null ? "home" : "studio",
     page: page ?? firstPage(suite),
     sel,
+    level,
   };
 }
 
@@ -185,6 +203,8 @@ export function applyUrl(state: AppState, url: UrlState): AppState {
     suite: url.suite,
     page: url.page,
     view: url.view,
+    mobile: levelFor(url.level, url.view),
+    sheet: null,
   };
   if (url.view === "home") return base;
   const seeded = url.sel ? { ...base, selKind: url.sel.kind, selId: url.sel.id } : base;

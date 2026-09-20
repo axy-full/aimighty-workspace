@@ -146,9 +146,12 @@ test("phones keep today's surfaces at today's URLs", async ({ page }, info) => {
     await expect(page.locator(".pxw"), from).toHaveCount(0);
     await expect(page.getByTestId("switchover-note"), from).toHaveCount(0);
   }
-  /* And /workspace itself still hands a phone back, as it already did. */
+  /* /workspace itself now renders the phone shell (wave M-A) — the gate above
+     is what still keeps phones on today's surfaces at today's URLs, and that
+     redirect flips in its own PR. */
   await page.goto(`/workspace?project=${PROJECT}&suite=particl&page=rig`);
-  await expect(page).toHaveURL(new RegExp(`/workbench\\?project=${PROJECT}$`));
+  await expect(page).toHaveURL(/\/workspace\?/);
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
 });
 
 /* ── The escape hatch ──────────────────────────────────────────────────── */

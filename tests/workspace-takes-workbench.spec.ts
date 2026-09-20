@@ -46,12 +46,15 @@ async function open(page: Page, store: LibraryRoute, onFile?: (id: string) => vo
 
 const card = (page: Page, id: string) => page.locator(`[data-take-id="${id}"]`);
 
-test("phones keep the existing phone surface for Takes", async ({ page }, info) => {
+test("phones render the phone shell for Takes", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await signInLocally(page.request);
   await mockProjects(page, { current: project });
   await page.goto(`/workspace?project=${project.id}&suite=particl&page=takes`);
-  await expect(page).toHaveURL(/\/workbench\?project=ws-takes$/);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("Takes renders the project library, filters, walks the visible list and inspects", async ({ page }, info) => {

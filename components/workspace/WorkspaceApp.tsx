@@ -1,50 +1,52 @@
 "use client";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createPlanBridge } from "@/lib/workspace/atomik-host";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
-import { PHONE_QUERY } from "@/lib/workspace/switchover";
+import { MOBILE_QUERY } from "@/lib/workspace/mobile";
+import { MobileShell } from "./mobile/MobileShell";
 import { RigProvider, RigSeams } from "./rig/RigProvider";
 import { WorkspaceShell } from "./WorkspaceShell";
 
 /**
- * Phones keep the existing phone surface: below 760px, and on a touch phone
- * held landscape (short and coarse-pointed), /workspace hands over to
- * /workbench with the same project instead of rendering the desktop shell.
+ * Which shell /workspace renders. Below 768px — and on a touch phone held
+ * landscape, which is a phone whatever its width says — it is the phone shell
+ * (05-mobile); at 768px and up it is the desktop shell, unchanged.
  *
- * One definition, shared with the switch-over gate that guards the old entry
- * points — the two must agree on what "not a desktop" means.
+ * The switch-over gate on the OLD entry points still sends phones to
+ * /workbench (lib/workspace/switchover.ts PHONE_QUERY); that redirect flips in
+ * its own PR once the phone build is complete. This module decides only what
+ * /workspace itself renders.
  */
-export { PHONE_QUERY };
+export { MOBILE_QUERY };
 
 const subscribe = (update: () => void) => {
-  const query = window.matchMedia(PHONE_QUERY);
+  const query = window.matchMedia(MOBILE_QUERY);
   query.addEventListener("change", update);
   return () => query.removeEventListener("change", update);
 };
 /* Undecided on the server: render nothing until the browser answers, so a
-   phone never flashes the desktop shell. */
-const snapshot = () => (window.matchMedia(PHONE_QUERY).matches ? "phone" : "desktop");
+   phone never flashes the desktop shell and a desktop never flashes the phone's. */
+const snapshot = () => (window.matchMedia(MOBILE_QUERY).matches ? "phone" : "desktop");
 const serverSnapshot = () => "pending";
-
-export function phoneSurfaceHref(search: string) {
-  const project = new URLSearchParams(search).get("project");
-  return "/workbench" + (project ? "?" + new URLSearchParams({ project }) : "");
-}
 
 export default function WorkspaceApp({ scope, initialAccount }: { scope: string; initialAccount: WorkspaceAccount | null }) {
   const device = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
   /* The live plan source: filled by the Atomik host once a project's engine exists. */
   const [bridge] = useState(createPlanBridge);
-  useEffect(() => {
-    if (device === "phone") window.location.replace(phoneSurfaceHref(window.location.search));
-  }, [device]);
-  if (device !== "desktop") return null;
+  if (device === "pending") return null;
+  /* One state layer for both shells: the phone is a different shell over the
+     same machine, so the provider (and `go`, and the selection repair) is the
+     same on either side of the breakpoint. */
   return (
     <WorkspaceProvider initialSearch={window.location.search} plans={bridge.source}>
-      <RigProvider scope={scope}>
-        <RigSeams>{(seams) => <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
-      </RigProvider>
+      {device === "phone" ? (
+        <MobileShell scope={scope} initialAccount={initialAccount} planBridge={bridge} />
+      ) : (
+        <RigProvider scope={scope}>
+          <RigSeams>{(seams) => <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
+        </RigProvider>
+      )}
     </WorkspaceProvider>
   );
 }

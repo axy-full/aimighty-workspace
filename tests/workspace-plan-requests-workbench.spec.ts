@@ -210,13 +210,15 @@ async function openAtomik(page: Page) {
 
 /* ---------------------------------------------------------------- tests */
 
-test("phones keep the existing phone surface on Shorts", async ({ page }, info) => {
+test("phones render the phone shell on Shorts", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
   await fixture(page, project);
   await page.goto(url(project.id, "subatomik", "shorts"));
-  await expect(page).toHaveURL(/\/workbench\?project=ws-plan-shorts$/);
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone shell renders here now (wave M-A): /workspace is the phone's
+     surface below 768px, and the desktop studio row is not mounted. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
+  await expect(page.getByTestId("studio-row")).toHaveCount(0);
 });
 
 test("Marketing Studio's plan prices the variants the page holds, and dispatches nothing before approval", async ({ page }, info) => {

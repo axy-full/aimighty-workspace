@@ -12,6 +12,14 @@ export type SubatomikPageId = "motion" | "swap" | "shorts" | "sources" | "compar
 export type PageId = ParticlPageId | AtomikPageId | MoleculrPageId | SubatomikPageId;
 
 export type View = "home" | "studio";
+/**
+ * The phone's drill-down level (05-mobile). The desktop ignores it; the
+ * phone shell reads it instead of adding a second router. Projects and the
+ * two siblings are the home view, Page is the studio view.
+ */
+export type MobileLevel = "projects" | "suite" | "page" | "make" | "settings";
+/** The four bottom sheets; every desktop right rail is one of these. */
+export type MobileSheetId = "search" | "inspector" | "atomik" | "library";
 export type SelKind = "shot" | "take" | "cast" | "page";
 export type RunStatus = "running" | "waiting" | "paused" | "done" | "failed";
 export type RigView = "list" | "graph";
@@ -92,4 +100,8 @@ export interface AppState {
   toast: string;
 
   lists: SelectableLists;
+
+  /** Phone only: where in the drill-down, and which sheet is up. */
+  mobile: MobileLevel;
+  sheet: MobileSheetId | null;
 }
