@@ -5,6 +5,7 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../lib/wo
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import type { SoulIdentity } from "../lib/workbench/soul-identity";
 import { DESKTOP, PHONE, generation, mockMedia, upload } from "./helpers/workspaceFixtures";
+import { expectFloors } from "./phoneFloors";
 
 /**
  * The phone's six page templates and Edit & Sound's own layout (wave M-B,
@@ -166,91 +167,11 @@ const goTo = (page: Page, id: string, suite = "particl") => page.goto(`/workspac
 
 /* ── The floors ──────────────────────────────────────────────────────────── */
 
-/** Every visible text node, with its computed size: the 12px floor. */
-async function smallText(page: Page) {
-  return page.evaluate(() => {
-    const out: string[] = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = (node.textContent ?? "").trim();
-      if (!text) continue;
-      const el = node.parentElement;
-      if (!el || !el.getClientRects().length) continue;
-      const size = Number.parseFloat(getComputedStyle(el).fontSize);
-      if (size < 12) out.push(`${size}px: “${text.slice(0, 40)}” (${el.className || el.tagName})`);
-    }
-    return out;
-  });
-}
-
-/**
- * Every visible button on the screen is at least 44×44 — except a segmented
- * option, which 05-mobile allows at 40px inside its 44px control.
- */
-async function smallTargets(page: Page) {
-  return page.evaluate(() => {
-    const out: string[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-screen="page"] button, [data-testid="mobile-actions"] button, [data-testid="mobile-dock"] button'))) {
-      const rect = el.getBoundingClientRect();
-      if (!rect.width && !rect.height) continue;
-      const floor = el.classList.contains("pxm-seg") ? 40 : 44;
-      if (rect.width < 44 || rect.height < floor) out.push(`${el.className}: ${Math.round(rect.width)}×${Math.round(rect.height)}`);
-    }
-    return out;
-  });
-}
-
-/** At max scroll the last row is fully visible above whatever is pinned below. */
-async function lastRowClearsPinned(page: Page) {
-  return page.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>('[data-testid="mobile-scroll"]')!;
-    scroller.scrollTop = scroller.scrollHeight;
-    const rows = Array.from(scroller.querySelectorAll<HTMLElement>("button, p, div[data-door], div[data-stem], div[data-node-id]")).filter((el) => el.getClientRects().length);
-    const last = rows[rows.length - 1];
-    const problems: string[] = [];
-    const box = scroller.getBoundingClientRect();
-    for (const sel of ['[data-testid="mobile-actions"]', '[data-testid="mobile-dock"]']) {
-      const block = document.querySelector<HTMLElement>(sel);
-      if (block && box.bottom > block.getBoundingClientRect().top + 1) problems.push(`scroller (${box.bottom}) runs under ${sel}`);
-    }
-    if (last && last.getBoundingClientRect().bottom > box.bottom + 1)
-      problems.push(`last row ends at ${last.getBoundingClientRect().bottom}, scroller ends at ${box.bottom}`);
-    return problems;
-  });
-}
-
-/**
- * No functional label is dimmer than #7C7C84 (the brief's floor). Kickers,
- * counts, mono values and lead chips all carry `data-functional-label`.
- */
-async function dimLabels(page: Page) {
-  return page.evaluate(() => {
-    const luminance = (color: string) => {
-      const [r, g, b] = (color.match(/\d+(\.\d+)?/g) ?? ["0", "0", "0"]).slice(0, 3).map(Number);
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-    /* #7C7C84 itself, computed the same way, is the floor. */
-    const floor = 0.2126 * 0x7c + 0.7152 * 0x7c + 0.0722 * 0x84 - 0.5;
-    const out: string[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-screen="page"] [data-functional-label]'))) {
-      if (!el.getClientRects().length) continue;
-      const style = getComputedStyle(el);
-      /* A badge that carries its own background (the white shot number, the
-         kind chip over media) owns its own contrast; the floor is about labels
-         on the ground. */
-      if (!/^rgba\(0, 0, 0, 0\)$|^transparent$/.test(style.backgroundColor)) continue;
-      const color = style.color;
-      if (luminance(color) < floor) out.push(`${el.className || el.tagName}: ${color} — “${(el.textContent ?? "").trim().slice(0, 24)}”`);
-    }
-    return out;
-  });
-}
-
+/* All four live in tests/phoneFloors.ts, with the one documented exemption:
+   the copies that used to sit here disagreed on which class a segmented option
+   carries, and that disagreement was itself a false failure. */
 async function floors(page: Page, where: string) {
-  expect(await smallText(page), `${where}: text under 12px`).toEqual([]);
-  expect(await smallTargets(page), `${where}: targets under 44×44`).toEqual([]);
-  expect(await dimLabels(page), `${where}: functional labels under #7C7C84`).toEqual([]);
-  expect(await lastRowClearsPinned(page), `${where}: clearance at max scroll`).toEqual([]);
+  await expectFloors(page, where, { scope: '[data-screen="page"], [data-testid="mobile-actions"], [data-testid="mobile-dock"]' });
 }
 
 /* ── The templates ───────────────────────────────────────────────────────── */

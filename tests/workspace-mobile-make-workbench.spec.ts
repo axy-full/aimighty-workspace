@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
+import { lastRowClearsPinned, smallTargets, smallText } from "./phoneFloors";
 
 /**
  * /workspace on a phone, wave M-C: the Make wall, Settings, and the Inspector,
@@ -95,68 +96,6 @@ async function mockLibrary(page: Page, rows: Record<string, unknown>[]) {
 const makeUrl = (id: string) => `/workspace?project=${id}&level=make`;
 const pageUrl = (id: string, suite: string, pageId: string, sel?: string) =>
   `/workspace?project=${id}&suite=${suite}&page=${pageId}${sel ? `&sel=${sel}` : ""}`;
-
-/* ── The phone's floors ─────────────────────────────────────────────────── */
-
-/** Every visible text node with its computed size — the 12px floor. */
-async function smallText(page: Page) {
-  return page.evaluate(() => {
-    const out: string[] = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = (node.textContent ?? "").trim();
-      if (!text) continue;
-      const el = node.parentElement;
-      if (!el || !el.getClientRects().length) continue;
-      const size = Number.parseFloat(getComputedStyle(el).fontSize);
-      if (size < 12) out.push(`${size}px: “${text.slice(0, 40)}” (${el.className || el.tagName})`);
-    }
-    return out;
-  });
-}
-
-/** Every visible control, with the 44×44 floor (a segmented option may be 40 inside a 44 control). */
-async function smallTargets(page: Page, root = ".pxm-shell") {
-  return page.evaluate((sel) => {
-    const out: string[] = [];
-    const scope = document.querySelector<HTMLElement>(sel);
-    if (!scope) return ["no shell"];
-    for (const el of Array.from(scope.querySelectorAll<HTMLElement>("button, a[href], select, input, textarea"))) {
-      if (!el.getClientRects().length) continue;
-      const rect = el.getBoundingClientRect();
-      /* Both waves' segmented option classes take the one exception 05-mobile
-         allows: 40px inside a 44px control (M-B ships .pxm-seg, M-C .pxm-segment). */
-      if (el.classList.contains("pxm-segment") || el.classList.contains("pxm-seg")) {
-        if (rect.height < 40) out.push(`segment ${Math.round(rect.height)}px`);
-        continue;
-      }
-      if (rect.width < 44 || rect.height < 44)
-        out.push(`${el.dataset.testid || el.className || el.tagName}: ${Math.round(rect.width)}×${Math.round(rect.height)}`);
-    }
-    return out;
-  }, root);
-}
-
-/** At max scroll the last row is fully visible above whatever is pinned below. */
-async function lastRowClearsPinned(page: Page) {
-  return page.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>('[data-testid="mobile-scroll"]')!;
-    scroller.scrollTop = scroller.scrollHeight;
-    const rows = Array.from(scroller.querySelectorAll<HTMLElement>("button, p, a, div[data-rule], div[data-member]")).filter((el) => el.getClientRects().length);
-    const last = rows[rows.length - 1];
-    const problems: string[] = [];
-    const box = scroller.getBoundingClientRect();
-    if (last && last.getBoundingClientRect().bottom > box.bottom + 1)
-      problems.push(`last row ends at ${last.getBoundingClientRect().bottom}, scroller ends at ${box.bottom}`);
-    for (const sel of ['[data-testid="mobile-actions"]', '[data-testid="mobile-dock"]', ".pxm-composer-dock"]) {
-      const block = document.querySelector<HTMLElement>(sel);
-      if (!block) continue;
-      const rect = block.getBoundingClientRect();
-      if (box.bottom > rect.top + 1) problems.push(`scroller (${box.bottom}) runs under ${sel} (${rect.top})`);
-    }
-    return problems;
-  });
-}
 
 /**
  * The filled primaries a thumb can actually reach. One per screen is the
