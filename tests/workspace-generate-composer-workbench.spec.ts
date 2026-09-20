@@ -13,7 +13,8 @@ import { displayModelName } from "../lib/models";
  * /api/generate. Only the connected account and the moved-price case are
  * intercepted, because neither can happen against the local mock.
  *
- * Desktop asserts the composer; phones assert the existing redirect.
+ * Desktop asserts this overlay; phones assert that they get the docked
+ * composer on Make instead, over the same host.
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -117,13 +118,18 @@ async function assertNoClipping(page: Page) {
   expect(problems).toEqual([]);
 }
 
-test("phones keep the existing phone surface", async ({ page }, info) => {
+test("phones get the phone's own composer, not this overlay", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const { project } = await seeded(page);
   await page.goto(url(project.id));
-  await expect(page).toHaveURL(new RegExp(`/workbench\\?project=${project.id}$`));
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* /workspace is the phone's surface below 768px (wave M-A), and the phone
+     skins the same composer host as a docked card on Make (wave M-C) — this
+     desktop overlay is never mounted there. */
+  await expect(page.getByTestId("phone-shell")).toBeVisible();
   await expect(page.getByTestId("generate-composer")).toHaveCount(0);
+  await expect(page.getByTestId("topbar-generate")).toHaveCount(0);
+  await page.locator('[data-tab="make"]').click();
+  await expect(page.getByTestId("mobile-composer-card")).toBeVisible();
 });
 
 test("the top-bar button opens the composer in every suite, Esc closes it and returns focus", async ({ page }, info) => {

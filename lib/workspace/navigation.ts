@@ -1,4 +1,4 @@
-import { LEVEL_PARAM, levelFor, levelFromParam, levelParam, viewForLevel } from "./mobile";
+import { LEVEL_PARAM, levelFor, levelFromParam, levelParam, SHEET_PARAM, sheetFromParam, viewForLevel } from "./mobile";
 import {
   PAGES,
   firstPage,
@@ -11,6 +11,7 @@ import type {
   AppState,
   LibFilter,
   MobileLevel,
+  MobileSheetId,
   PageId,
   SelKind,
   SelectableItem,
@@ -162,6 +163,8 @@ export type UrlState = {
   sel: { kind: SelKind; id: string } | null;
   /** The phone's level, when the URL names one. */
   level: MobileLevel | null;
+  /** A sheet the URL opens on arrival (`?sheet=inspector`). Read, never written. */
+  sheet: MobileSheetId | null;
 };
 
 /**
@@ -184,6 +187,7 @@ export function fromSearch(search: string): UrlState {
   }
   const level = levelFromParam(query.get(LEVEL_PARAM));
   return {
+    sheet: sheetFromParam(query.get(SHEET_PARAM)),
     projectId: query.get("project") || null,
     suite,
     /* A level of its own wins over the page the URL also carries: `level=suite`
@@ -204,7 +208,7 @@ export function applyUrl(state: AppState, url: UrlState): AppState {
     page: url.page,
     view: url.view,
     mobile: levelFor(url.level, url.view),
-    sheet: null,
+    sheet: url.sheet,
   };
   if (url.view === "home") return base;
   const seeded = url.sel ? { ...base, selKind: url.sel.kind, selId: url.sel.id } : base;

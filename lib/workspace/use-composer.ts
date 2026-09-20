@@ -34,7 +34,9 @@ import {
   type ComposerModel,
   type ComposerQuote,
   type ComposerReference,
+  type ComposerSettings,
   type ComposerState,
+  type ComposerType,
   type ConnectedCapability,
   type EngineRow,
 } from "./composer";
@@ -120,6 +122,8 @@ export type ComposerHost = {
   model: ComposerModel | null;
   quote: ComposerQuote | null;
   quoteKey: string;
+  /** The exact settings the engine would render with (ratio, resolution, duration). */
+  settings: ComposerSettings;
   credits: number | null;
   buttonLabel: string;
   blocked: string | null;
@@ -146,10 +150,21 @@ export function useComposer(options: {
   onProject: (projectId: string) => void;
   /** The workspace's own name, for the billing line. */
   workspaceName: string | null;
+  /**
+   * The output type the composer opens on. The desktop overlay opens on Image
+   * (the cheapest first render); the phone's wall opens on Video, because the
+   * wall it is docked to is a video wall. It is the same control either way —
+   * only where it starts differs.
+   */
+  initialType?: ComposerType;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
-  const [state, dispatch] = useReducer(composerReducer, INITIAL_COMPOSER);
+  const [state, dispatch] = useReducer(
+    composerReducer,
+    options.initialType,
+    (type) => (type ? { ...INITIAL_COMPOSER, type } : INITIAL_COMPOSER),
+  );
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
   const [capability, setCapability] = useState<ConnectedCapability | null>(null);
@@ -545,7 +560,7 @@ export function useComposer(options: {
   useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
 
   return {
-    state, dispatch, models, offered, model, quote, quoteKey, credits,
+    state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
     buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
