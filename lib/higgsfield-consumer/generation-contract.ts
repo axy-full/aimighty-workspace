@@ -12,7 +12,7 @@ import {
   MODEL_ID,
   PROMPT_LIMIT,
   MEDIA_LIMIT,
-  consumerEchoedMediaMatches,
+  consumerEchoedMediasMatch,
   mediaKindForRole,
   validateGenerationRequest,
   type ConnectedModel,
@@ -160,8 +160,15 @@ function evidence(value: unknown, jobId: string, params: ConsumerGenerationParam
       // `audio_input` on seed_audio, all recorded from life. The reference
       // identity is `data.id`, still compared exactly, at the index we sent it.
       // See consumerEchoedMediaMatches for the recording and the reasoning.
-      if (!Array.isArray(p.medias) || p.medias.length !== params.medias.length) return null;
-      if (p.medias.some((m, i) => !consumerEchoedMediaMatches(m, params.medias[i]))) return null;
+      // The account also INJECTS entries we never sent: a `seed_audio` job that
+      // uses a voice echoes the voice reference as an extra medias entry whose
+      // `data` carries only a `url` — no `id`, no `type` (recorded live on
+      // 20 September 2026). Requiring equal lengths therefore discarded a
+      // completed, PAID job on the count alone. Every reference we sent must
+      // still appear, matched by its exact uuid, in the order we sent it; only
+      // entries naming no media at all are skipped. See
+      // consumerEchoedMediasMatch for the recording and the full argument.
+      if (!consumerEchoedMediasMatch(p.medias, params.medias)) return null;
     }
   }
   return g;

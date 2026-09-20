@@ -10,6 +10,8 @@ import {
   listCatalogueModels,
   mediaKindForRole,
   consumerEchoedMediaMatches,
+  consumerEchoedMediasMatch,
+  ECHOED_MEDIA_EXTRA_LIMIT,
   echoedMediaTypeAccepted,
   ECHOED_MEDIA_TYPES,
   modelVoiceParameters,
@@ -18,7 +20,7 @@ import {
   validateGenerationRequest,
   type ConnectedModel,
 } from "../../lib/higgsfield-consumer/catalogue";
-import { RECORDED_MEDIA_DATA_TYPES, echoedMediaVideoInput } from "../fixtures/connectedStatusEnvelopes";
+import { RECORDED_MEDIA_DATA_TYPES, echoedInjectedVoice, echoedMedia, echoedMediaVideoInput } from "../fixtures/connectedStatusEnvelopes";
 import {
   consumerGenerationInputSchema,
   consumerGenerationParams,
@@ -235,4 +237,67 @@ test("an echoed reference is matched by the `<kind>_input` FAMILY, not a list of
   // `requireData` (the transform path) still refuses an entry with no `data`.
   expect(consumerEchoedMediaMatches({ role: "video", value: media }, sent)).toBe(true);
   expect(consumerEchoedMediaMatches({ role: "video", value: media }, sent, { requireData: true })).toBe(false);
+});
+
+test("a provider-injected extra medias entry is walked past, and every reference we sent must still appear in order", () => {
+  // RECORDED FROM PRODUCTION, 20 September 2026 (free read-only
+  // `show_generations(type=audio)`; no job submitted, US$0.00 spent). Completed
+  // `seed_audio` jobs 70990834-1f07-45aa-a325-a8bc55d1d921,
+  // 87c8a5b1-1863-43b8-8265-614605d17fad and d0450755-703e-43c0-b15e-24a8f75d433e
+  // echo TWO entries where we would have sent ONE: the voice reference — which
+  // goes out through `voice_type`/`voice_id`, never through a medias array —
+  // followed by our own audio reference. The injected entry's `data` has only a
+  // `url`: no `id`, no `type`.
+  // Against origin/main there is no consumerEchoedMediasMatch at all; the rule
+  // was `p.medias.length === params.medias.length`, so the first expect below —
+  // and every voice-plus-reference case under it — refused a PAID job.
+  const second = "55555555-5555-4555-8555-555555555555";
+  const voice = echoedInjectedVoice("https://fixtures.particl.invalid/voices/6f332b29.wav");
+  const one = echoedMedia({ id: media, url: "https://fixtures.particl.invalid/uploads/sfx.wav", kind: "audio", dataType: RECORDED_MEDIA_DATA_TYPES.audio_input });
+  const two = echoedMedia({ id: second, url: "https://fixtures.particl.invalid/uploads/room.wav", kind: "audio", dataType: RECORDED_MEDIA_DATA_TYPES.audio_input });
+  const sent = [{ value: media, role: "audio_references" }, { value: second, role: "audio_references" }];
+  const sentOne = [sent[0]];
+
+  // The recorded envelope, verbatim in shape: the injected voice then our one
+  // reference. This is the job origin/main threw away.
+  expect(voice).toEqual({ role: "audio", data: { url: "https://fixtures.particl.invalid/voices/6f332b29.wav" } });
+  expect(consumerEchoedMediasMatch([voice, one], sentOne)).toBe(true);
+  // The extra may sit anywhere, there may be more than one, and a job that sent
+  // NO reference at all but used a voice collects too — the commonest case, and
+  // one the equal-length rule also refused.
+  expect(consumerEchoedMediasMatch([one, voice], sentOne)).toBe(true);
+  expect(consumerEchoedMediasMatch([voice, one, voice, two], sent)).toBe(true);
+  expect(consumerEchoedMediasMatch([voice], [])).toBe(true);
+  expect(consumerEchoedMediasMatch([], [])).toBe(true);
+  expect(consumerEchoedMediasMatch([one, two], sent)).toBe(true);
+  // `requireData` (the transform path) is unchanged for OUR references.
+  expect(consumerEchoedMediasMatch([voice, one], sentOne, { requireData: true })).toBe(true);
+  expect(consumerEchoedMediasMatch([voice, { role: "audio", value: media }], sentOne, { requireData: true })).toBe(false);
+
+  // WHAT STAYS EXACT. A wrong media id, a missing reference, and a reordered
+  // reference all still refuse: only an entry naming NO media is walked past,
+  // so nothing skipped can ever supply a reference we did not find by uuid.
+  expect(consumerEchoedMediasMatch([voice, echoedMedia({ id: randomUUID(), url: "https://fixtures.particl.invalid/uploads/other.wav", kind: "audio", dataType: RECORDED_MEDIA_DATA_TYPES.audio_input })], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch([voice, one], sent)).toBe(false);
+  expect(consumerEchoedMediasMatch([voice, two], sent)).toBe(false);
+  expect(consumerEchoedMediasMatch([two, one], sent)).toBe(false);
+  expect(consumerEchoedMediasMatch([voice], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch([], sentOne)).toBe(false);
+  // An entry that DOES claim an identity is never treated as an extra: a
+  // reference of ours repeated, or one carrying a `value` we never sent, refuses.
+  expect(consumerEchoedMediasMatch([one, one], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch([one, { role: "audio", value: second }], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch([one, { role: "audio", data: { id: second, type: "audio_input" } }], sentOne)).toBe(false);
+  // Neither is a non-object entry, an entry with no `data` at all, or a
+  // non-array echo: the tolerated extra is exactly the recorded shape.
+  expect(consumerEchoedMediasMatch([one, "audio"], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch([one, { role: "audio" }], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch([one, null], sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch({ 0: one }, sentOne)).toBe(false);
+  expect(consumerEchoedMediasMatch(undefined, sentOne)).toBe(false);
+  // Bounded: extras are tolerated up to ECHOED_MEDIA_EXTRA_LIMIT, so an echo
+  // padded without limit is still refused rather than walked.
+  expect(ECHOED_MEDIA_EXTRA_LIMIT).toBe(30);
+  expect(consumerEchoedMediasMatch([...Array.from({ length: ECHOED_MEDIA_EXTRA_LIMIT }, () => voice), one], sentOne)).toBe(true);
+  expect(consumerEchoedMediasMatch([...Array.from({ length: ECHOED_MEDIA_EXTRA_LIMIT + 1 }, () => voice), one], sentOne)).toBe(false);
 });

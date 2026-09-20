@@ -10,12 +10,13 @@ import {
   readConsumerVideoJob,
   readConsumerVoiceToolJob,
 } from "../../lib/higgsfield-consumer/mcp";
-import { parseConnectedCatalogue, findCatalogueModel } from "../../lib/higgsfield-consumer/catalogue";
+import { parseConnectedCatalogue, findCatalogueModel, mediaKindForRole, modelVoiceParameters, validateGenerationRequest } from "../../lib/higgsfield-consumer/catalogue";
 import { consumerGenerationParams, consumerGenerationOriginalResult, type ConsumerGenerationInput } from "../../lib/higgsfield-consumer/generation-contract";
 import { CONNECTED_MODEL_VARIANTS } from "../../lib/higgsfield-consumer/video-contract";
 import {
   displayCompleted,
   displayInProgress,
+  echoedInjectedVoice,
   waitCompleted,
   waitInProgress,
   type EnvelopeJob,
@@ -351,4 +352,93 @@ test("the cache re-reads the list on a miss, and a failed status read drops a st
   expect(f.toolCalls().at(-1)!.params.name).toBe("jobs_wait");
   expect(f.lists()).toBe(3);
   expect(TOOLSET_TTL_MS).toBeLessThanOrEqual(60_000);
+});
+
+test("a completed AUDIO job whose echo carries the provider's injected voice entry is still collected", () => {
+  // RECORDED FROM PRODUCTION, 20 September 2026 — free read-only
+  // `show_generations(type=audio)` on the connected account; no job submitted,
+  // US$0.00 spent. Completed `seed_audio` jobs
+  // 70990834-1f07-45aa-a325-a8bc55d1d921, 87c8a5b1-1863-43b8-8265-614605d17fad
+  // and d0450755-703e-43c0-b15e-24a8f75d433e echo TWO `params.medias` entries
+  // where we sent ONE:
+  //   [{"role":"audio","data":{"url":"https://…/6f332b29-….wav"}},
+  //    {"role":"audio","data":{"id":"70bbc31b-…","type":"audio_input","url":"…_sfx.wav"}}]
+  // The first is the VOICE reference, sent through `voice_type`/`voice_id` and
+  // never through a medias array. Against origin/main this test fails at the
+  // first collection expect: evidence() required
+  // `p.medias.length === params.medias.length`, so a completed, PAID audio job
+  // that used a voice was discarded as uncollectable.
+  const seedAudio = findCatalogueModel(catalogue, "seed_audio")!;
+  // Our own path really can compose this request: `seed_audio` declares the
+  // voice pair AND the reference roles, so the refusal was reachable, not
+  // theoretical.
+  expect(modelVoiceParameters(seedAudio)).toEqual({ kinds: ["preset", "element"], required: false });
+  expect(seedAudio.medias.flatMap((slot) => slot.roles)).toContain("audio_references");
+  const audioInput: ConsumerGenerationInput = {
+    type: "audio", model: "seed_audio", prompt: "A dry room tone under the line.",
+    parameters: { voice_type: "preset", voice_id: "voice-1", format: "wav" },
+    medias: [{ role: "audio_references", source: { uploadId: "sfx" } }],
+  };
+  expect(() => validateGenerationRequest(seedAudio, {
+    type: "audio", model: "seed_audio", prompt: audioInput.prompt, parameters: audioInput.parameters,
+    medias: audioInput.medias.map((m) => ({ role: m.role, kind: mediaKindForRole(m.role) })),
+  })).not.toThrow();
+  const reference = randomUUID(), audioJobId = randomUUID();
+  const audioParams = consumerGenerationParams(seedAudio, audioInput, [{ value: reference, role: "audio_references" }]);
+  expect(audioParams).toMatchObject({ voice_type: "preset", voice_id: "voice-1", medias: [{ value: reference, role: "audio_references" }] });
+  const sfx = "https://fixtures.particl.invalid/uploads/sfx.wav";
+  const voiceUrl = "https://fixtures.particl.invalid/voices/6f332b29.wav";
+  const audioRaw = "https://fixtures.particl.invalid/outputs/line.wav";
+  const liveAudio: EnvelopeJob = {
+    jobId: audioJobId, model: "seed_audio", type: "audio", prompt: audioInput.prompt,
+    medias: [{ id: reference, url: sfx, kind: "audio", dataType: "audio_input" }],
+    injectedVoiceUrl: voiceUrl, rawUrl: audioRaw,
+  };
+  const audioOf = (raw: unknown) => normalizeFallbackStatus("job_display", raw, audioJobId, { model: "seed_audio", type: "audio" });
+  // The envelope as recorded: two entries, the injected voice first.
+  expect(displayCompleted(liveAudio).results[0].params.medias).toEqual([
+    { role: "audio", data: { url: voiceUrl } },
+    { role: "audio", data: { id: reference, type: "audio_input", url: sfx } },
+  ]);
+  expect(consumerGenerationOriginalResult(audioOf(displayCompleted(liveAudio)), audioJobId, audioParams, "audio")).toEqual({ url: audioRaw });
+  // A voice and NO reference of our own — the commonest shape, refused on the
+  // count by origin/main too.
+  const voiceOnly = { ...liveAudio, medias: [] };
+  const voiceOnlyParams = consumerGenerationParams(seedAudio, { ...audioInput, medias: [] }, []);
+  expect(consumerGenerationOriginalResult(audioOf(displayCompleted(voiceOnly)), audioJobId, voiceOnlyParams, "audio")).toEqual({ url: audioRaw });
+
+  const withMedias = (medias: unknown) => {
+    const one = displayCompleted(liveAudio).results[0];
+    return audioOf({ results: [{ ...one, params: { ...one.params, medias } }] });
+  };
+  const ours = { role: "audio", data: { id: reference, type: "audio_input", url: sfx } };
+  const voice = echoedInjectedVoice(voiceUrl);
+  const second = randomUUID();
+  // WHAT STILL REFUSES. A wrong media id, a missing reference and a reordered
+  // reference are each still uncollectable: only an entry naming NO media is
+  // walked past, so nothing skipped can substitute for a reference of ours.
+  for (const [name, medias] of [
+    ["a wrong media id beside the voice", [voice, { role: "audio", data: { id: randomUUID(), type: "audio_input", url: sfx } }]],
+    ["the reference missing, voice only", [voice]],
+    ["no medias at all", []],
+    ["an extra entry that DOES claim an id", [ours, { role: "audio", data: { id: second, type: "audio_input", url: sfx } }]],
+    ["our reference echoed twice", [ours, ours]],
+    ["an extra with no data at all", [ours, { role: "audio" }]],
+    ["a string entry beside the voice", [voice, "audio"]],
+    ["not an array", { 0: voice, 1: ours }],
+  ] as const)
+    expect(consumerGenerationOriginalResult(withMedias(medias), audioJobId, audioParams, "audio"), name).toBeNull();
+  // Order is still load-bearing: two references echoed in the wrong order, with
+  // the injected voice in front, refuses.
+  const twoInput: ConsumerGenerationInput = { ...audioInput, medias: [{ role: "audio_references", source: { uploadId: "sfx" } }, { role: "audio_references", source: { uploadId: "room" } }] };
+  const twoParams = consumerGenerationParams(seedAudio, twoInput, [{ value: reference, role: "audio_references" }, { value: second, role: "audio_references" }]);
+  const other = { role: "audio", data: { id: second, type: "audio_input", url: "https://fixtures.particl.invalid/uploads/room.wav" } };
+  const twoLive: EnvelopeJob = { ...liveAudio, medias: [{ id: reference, url: sfx, kind: "audio", dataType: "audio_input" }, { id: second, url: "https://fixtures.particl.invalid/uploads/room.wav", kind: "audio", dataType: "audio_input" }] };
+  const twoOf = (medias: unknown) => {
+    const one = displayCompleted(twoLive).results[0];
+    return audioOf({ results: [{ ...one, params: { ...one.params, medias } }] });
+  };
+  expect(consumerGenerationOriginalResult(twoOf([voice, ours, other]), audioJobId, twoParams, "audio")).toEqual({ url: audioRaw });
+  expect(consumerGenerationOriginalResult(twoOf([voice, other, ours]), audioJobId, twoParams, "audio")).toBeNull();
+  expect(consumerGenerationOriginalResult(twoOf([ours, voice, other]), audioJobId, twoParams, "audio")).toEqual({ url: audioRaw });
 });
