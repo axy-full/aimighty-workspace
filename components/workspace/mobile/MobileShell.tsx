@@ -4,6 +4,7 @@ import { useSession } from "@/lib/session";
 import type { Project } from "@/lib/workbench/studio";
 import { AtomikHost, useAtomik, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
+import { useMobilePrimary } from "@/lib/workspace/mobile-primary";
 import { primaryAction } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import { primaryAvailability, type GenerateStatus } from "../PageHeader";
@@ -117,8 +118,12 @@ function ActionBarForLevel({ seams }: { seams: MobileSeams }) {
   const { state } = ws;
   const atomik = useAtomik();
   const plan = ws.plans(state.page);
+  /* A mounted page can own its primary when only the page holds its live figure
+     (the Form template's connected-account quote). One primary, one place. */
+  const published = useMobilePrimary(state.page);
 
   const pagePrimary = (): MobilePrimary | null => {
+    if (published) return published;
     const registered = MOBILE_PAGES[state.page]?.primary;
     if (registered) {
       const own = registered({ page: state.page, project: null, scope: "", onGenerate: seams.onGenerate, quote: seams.generate?.quote ?? null, blocked: seams.generate?.blocked ?? null });

@@ -1,7 +1,8 @@
 "use client";
 import type { Project } from "@/lib/workbench/studio";
-import { getSuite, pageDef, subtitle } from "@/lib/workspace/pages";
+import { getSuite, pageDef, pageViews, subtitle } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
+import type { LibFilter, RigView } from "@/lib/workspace/types";
 import { MOBILE_PAGES } from "./registry";
 
 /**
@@ -10,11 +11,18 @@ import { MOBILE_PAGES } from "./registry";
  * template, registered in ./registry.tsx by wave M-B. A page with no template
  * yet says so in one line and keeps its stage plan reachable from the action
  * bar; it shows no placeholder content and no loader.
+ *
+ * A page with views carries them as the design's segmented row under the title:
+ * Rig's List / Canvas and Takes' All / Uploads / Generations, from the same
+ * `pageViews` and the same state the desktop header's control sets, so the two
+ * surfaces switch one page rather than two.
  */
 export function PageScreen({ project, scope }: { project: Project | null; scope: string }) {
-  const { state } = useWorkspace();
+  const { state, dispatch, setLibFilter } = useWorkspace();
   const def = pageDef(state.page);
   const sub = subtitle(state, { aspect: project?.aspect, fps: project?.fps });
+  const views = pageViews(state.page);
+  const value = state.page === "rig" ? state.rigView : state.libFilter;
   const registered = MOBILE_PAGES[state.page];
   return (
     <div data-screen="page" data-page={state.page}>
@@ -27,6 +35,26 @@ export function PageScreen({ project, scope }: { project: Project | null; scope:
         <h1 className="pxm-page-title" data-testid="mobile-page-title">{def.title}</h1>
         {sub ? <div className="pxm-page-sub">{sub}</div> : null}
       </div>
+      {views.length ? (
+        <div className="pxm-segmented pxm-page-views" role="group" aria-label={`${def.title} view`} data-testid="mobile-page-views">
+          {views.map((view) => (
+            <button
+              type="button"
+              key={view.id}
+              className="pxm-seg"
+              data-view={view.id}
+              aria-pressed={value === view.id}
+              onClick={() =>
+                state.page === "rig"
+                  ? dispatch({ type: "patch", patch: { rigView: view.id as RigView } })
+                  : setLibFilter(view.id as LibFilter)
+              }
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {registered ? (
         <registered.Body page={state.page} project={project} scope={scope} />
       ) : (
