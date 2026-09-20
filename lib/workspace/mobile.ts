@@ -30,7 +30,19 @@ export const MOBILE_SHEETS: readonly MobileSheetId[] = ["search", "inspector", "
 
 /** The URL param. Only the three levels the desktop URL cannot express carry it. */
 export const LEVEL_PARAM = "level";
+/**
+ * A sheet the URL may open on arrival (`?sheet=inspector`). It is read, never
+ * written: a sheet is a look at what is already selected, so a deep link can
+ * say "open this shot's Inspector" without every open and close pushing
+ * history. Only the sheets that read a selection or a page are worth linking.
+ */
+export const SHEET_PARAM = "sheet";
 const URL_LEVELS: readonly MobileLevel[] = ["suite", "make", "settings"];
+
+/** The sheet a URL names, or null. */
+export function sheetFromParam(value: string | null | undefined): MobileSheetId | null {
+  return value && (MOBILE_SHEETS as readonly string[]).includes(value) ? (value as MobileSheetId) : null;
+}
 
 export function isMobileLevel(value: unknown): value is MobileLevel {
   return typeof value === "string" && (MOBILE_LEVELS as readonly string[]).includes(value);

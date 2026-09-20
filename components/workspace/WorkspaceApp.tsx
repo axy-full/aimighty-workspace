@@ -40,18 +40,22 @@ export default function WorkspaceApp({ scope, initialAccount }: { scope: string;
      same on either side of the breakpoint. */
   return (
     <WorkspaceProvider initialSearch={window.location.search} plans={bridge.source}>
-      {device === "phone" ? (
-        /* The Rig's live state sits above BOTH shells: the phone's shot list,
-           its flow and its pinned Generate read the same draft, the same jobs
-           and the same live quote the desktop does, through the same seams. */
-        <RigProvider scope={scope}>
-          <RigSeams>{(seams) => <MobileShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
-        </RigProvider>
-      ) : (
-        <RigProvider scope={scope}>
-          <RigSeams>{(seams) => <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
-        </RigProvider>
-      )}
+      {/* Both shells sit inside the Rig's provider: the phone's Inspector sheet
+          renders the desktop inspector bodies unchanged (one of which is the
+          Rig's), and its Generate primary reads the Rig's own live quote through
+          the same seams. The phone has no keyboard layer; RigSeams only feeds
+          seams, so nothing keyboard-shaped comes with it. */}
+      <RigProvider scope={scope}>
+        <RigSeams>
+          {(seams) =>
+            device === "phone" ? (
+              <MobileShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />
+            ) : (
+              <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />
+            )
+          }
+        </RigSeams>
+      </RigProvider>
     </WorkspaceProvider>
   );
 }
