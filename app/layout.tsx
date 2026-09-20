@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import DeviceProbe from "@/components/switchover/DeviceProbe";
 import { Outfit, Kode_Mono } from "next/font/google";
 import "./globals.css";
 import "./four-suites.css";
@@ -49,6 +50,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
        about. The flash this used to prevent cannot happen — the page has
        been dark since the stylesheet loaded. */
     <html lang="en" className={`${outfit.variable} ${kode.variable}`}>
+      <head>
+        {/* The switch-over gate's one decision, taken while the document parses.
+            It belongs to the root layout because this is the only place React
+            renders exactly once per document: a page segment is re-rendered by a
+            client-side navigation, and a <script> created during a client render
+            is never executed — React logs an error saying so, which the dev
+            overlay counts as an issue. See components/switchover/DeviceProbe.tsx
+            and docs/workspace-switchover.md. */}
+        <DeviceProbe />
+      </head>
       <body className="font-sans antialiased">{children}</body>
     </html>
   );

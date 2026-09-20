@@ -84,6 +84,41 @@ Before the browser has answered, `components/switchover/switchover.css` decides
 from the same query, so a desktop never flashes the old studio and a phone
 never flashes the hand-off note.
 
+**The answer is latched to the document** (`lib/workspace/device.ts`), and it is
+taken while the document *parses* — by an inline script in the server-rendered
+HTML (`components/switchover/DeviceProbe.tsx`, mounted by the **root layout**),
+for the same reason the `?shell=` cookie is written by a script. Taking it at
+first render means taking it at hydration, and hydration is not a fixed point: on
+a cold dev compile it lands many seconds after the document was readable, so the
+decision would be made from whatever the viewport had become by then rather than
+from what the person opened. Parse time is also exactly when
+`components/switchover/switchover.css` decides the first paint from the same
+query, so the two halves of the gate can no longer disagree. The latch reads that
+record; the live query is only the fallback for a document that never parsed one
+of these pages (a soft navigation), and its answer is recorded too.
+
+The script is mounted by the root layout and must stay there. React never
+executes a `<script>` it creates during a client render and logs an error saying
+so, which the Next dev overlay counts as an issue (`tests/customer.spec.ts`
+asserts there are none). The gate re-renders (pending → decided) and a page
+segment is re-rendered by a client-side navigation into it, so both of those
+places produce that error under Turbopack — which is what CI runs, while a
+worktree with a symlinked `node_modules` runs `next dev --webpack` and does not
+show it. The root layout is the one place React renders exactly once per
+document. It has to: the second
+clause is a *height* on a touch phone, and that height moves while nobody
+rotates anything — a keyboard closing, browser chrome collapsing,
+`interactive-widget=resizes-content`, a dev overlay. Re-deciding is not
+re-styling here; it replaces the document, so a landscape phone that crossed
+500px mid-session was being redirected into the desktop workspace while
+somebody was using the phone surface (and, arriving late, it clobbered whatever
+navigation had happened since). A rotation that reloads the page decides
+freshly, because that is a new document; only a live media-query change inside
+one document is ignored. `/workspace`'s own shell choice
+(`MOBILE_QUERY`, `components/workspace/WorkspaceApp.tsx`) is deliberately NOT
+latched: it only chooses which shell to draw, and the shell must match the
+viewport it is drawn in, so it stays live.
+
 ## The escape hatch
 
 For **one release**:
