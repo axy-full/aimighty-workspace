@@ -5,6 +5,7 @@ import { currentTenant, requireTenant } from "../tenant";
 import { quotaVerdict, workspaceLimits } from "../limits";
 import { uploadReservationsReady } from "../uploadReservations";
 import { readOriginalBytesLimited, storeOriginalBytes, storeVideoBytes } from "../storage";
+import { inspectAudioBuffer } from "../mediaSource.server";
 import { astraTextureDimensions, validateAstraGlb } from "../astra-blender/glb";
 import { withRecoveryActivity } from "../recovery";
 import { workbenchReady, workbenchTransaction } from "../workbench/records";
@@ -294,6 +295,36 @@ function receipt(
   };
 }
 
+/**
+ * The length in seconds to persist on the collected generation, so a per-second
+ * tool (reframe, Shorts, dubbing) can price this original without re-uploading
+ * it. Video is already measured by `inspectConsumerVideoOriginal`; audio is
+ * measured here from the bytes in hand, under the shared audio inspection
+ * budget (100 MB, 20 s, no decoder).
+ *
+ * BEST EFFORT BY CONSTRUCTION: a length that cannot be read is null and the job
+ * still settles exactly as it did before this column existed.
+ * `resolveStoredDuration` measures and persists it on first read instead.
+ *
+ * Exported so the property can be asserted directly; the collector is its only
+ * caller.
+ */
+export async function collectedDurationSeconds(
+  kind: ConsumerOriginalKind,
+  metadata: Metadata,
+  bytes: Buffer,
+): Promise<number | null> {
+  const round = (seconds: number) =>
+    Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) / 1000 : null;
+  if (metadata.seconds !== undefined) return round(metadata.seconds);
+  if (kind !== "audio") return null;
+  try {
+    return round((await inspectAudioBuffer(bytes)).seconds);
+  } catch {
+    return null;
+  }
+}
+
 /** The service must match the provider status UUID before supplying its original
  * URL. This collector revalidates the immutable local job; it never polls, spends,
  * changes a draft, or frees ambiguous stored bytes on lease expiry. */
@@ -482,6 +513,8 @@ export async function collectConsumerVideoOriginal(
           stored.url !== result.asset.url
         )
           throw new ConsumerOriginalError("conflict");
+        // Measured outside the write transaction and never allowed to fail it.
+        const durationS = await collectedDurationSeconds(kind, metadata!, bytes);
         await workbenchTransaction(async (tx) => {
           await currentJob(tx, job);
           const row = await originalRow(tx, key);
@@ -530,7 +563,7 @@ export async function collectConsumerVideoOriginal(
             ...(job.workflow === "generation" || job.workflow === "marketing-template" || job.workflow === "voice-tool" || job.workflow === "shorts" ? { consumerOriginalMime: result.asset.mime } : {}),
           };
           await tx.execute({
-            sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,?,'higgsfield',?,'higgsfield')`,
+            sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,duration_s,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,?,'higgsfield',?,?,'higgsfield')`,
             args: [
               generationId,
               projectId,
@@ -543,6 +576,7 @@ export async function collectConsumerVideoOriginal(
               Date.now(),
               kind,
               size,
+              durationS,
             ],
           });
           await tx.execute({
