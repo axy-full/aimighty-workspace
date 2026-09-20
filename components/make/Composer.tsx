@@ -1467,18 +1467,18 @@ function ScopedComposer({
                   }}
                 >
                   <span>
-                    <strong>Motion 2.5 Edit</strong>
+                    <strong>Seedance 2.5 Edit</strong>
                     <small>Change an existing clip, including its audio.</small>
                   </span>
                   <span>Source clip</span>
                 </button>
               )}
               {kind === "image" && onUpscaleRequested && (
-                <button type="button" onClick={() => { setListOpen(false); onUpscaleRequested(); }}><span><strong>Image Upscale</strong><small>Enhance an original image with precision models.</small></span><span>Source image</span></button>
+                <button type="button" onClick={() => { setListOpen(false); onUpscaleRequested(); }}><span><strong>Topaz Image Upscale</strong><small>Enhance an original image with Topaz precision models.</small></span><span>Source image</span></button>
               )}
               {kind === "video" && onAstraRequested && (
                 <button type="button" onClick={() => { setListOpen(false); onAstraRequested(); }}>
-                  <span><strong>Upscale 2</strong><small>Creative upscale with frame rate and detail controls.</small></span><span>Source clip</span>
+                  <span><strong>Topaz Astra 2</strong><small>Creative upscale with frame rate and detail controls.</small></span><span>Source clip</span>
                 </button>
               )}
               {choices.map((m) => (

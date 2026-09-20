@@ -51,7 +51,7 @@ export const SPEECH_MODELS: SpeechModel[] = [
   },
   {
     id: "eleven_v3",
-    label: "Voice v3",
+    label: "Eleven v3",
     creditsPerChar: 1,
     alpha: true,
     note: "The most expressive. Direct it with tags in the text: [whispers], [laughs], [sighs].",

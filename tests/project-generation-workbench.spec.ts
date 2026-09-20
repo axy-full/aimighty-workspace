@@ -26,7 +26,7 @@ async function fixture(page:Page) {
    if(req.method()==='POST')return json({productionProjectId:'production-fixture',shotId:'shot-fixture'});
    return json({project,revision,projects:[{id:project.id,name:project.name}],productions:[]});
   }
-  if(path==='/api/workbench/engines')return url.searchParams.has('model')?json({credits:3}):json({models:[{id:'dreamina-seedance-2-5-260628',label:'Motion 2.5',kind:'video',family:'seedance-2',resolutions:['720p'],ratios:['16:9'],durations:[5],maxReferenceImages:9,maxReferenceVideos:3}]});
+  if(path==='/api/workbench/engines')return url.searchParams.has('model')?json({credits:3}):json({models:[{id:'dreamina-seedance-2-5-260628',label:'Seedance 2.5',kind:'video',family:'seedance-2',resolutions:['720p'],ratios:['16:9'],durations:[5],maxReferenceImages:9,maxReferenceVideos:3}]});
   if(path==='/api/audio'&&req.method()==='GET')return json({configured:true,voices:[{id:'voice123456',name:'Fixture voice',labels:{},description:'Fixture voice'}],speechModels:[{id:'eleven_multilingual_v2',label:'Speech'}],defaultSpeechModel:'eleven_multilingual_v2',voicesError:null,terms:{sfxCredits:3,musicCreditsPerMinute:20},account:null});
   if(path==='/api/audio'&&req.method()==='POST'&&req.postDataJSON().quoteOnly)return json({estimatedCredits:3,price:3,unit:'cr'});
   if((path==='/api/generate'||path==='/api/audio')&&req.method()==='POST'){

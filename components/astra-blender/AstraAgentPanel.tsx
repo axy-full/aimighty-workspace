@@ -76,7 +76,7 @@ export function AstraAgentPanel({ project, scope, enabled, onSave, onApply }: { 
     <button className={`${styles.button} ${styles.primary}`} disabled={!!recovery || !active || !model || running || busy || request.trim().length < 3} onClick={() => void review()}>{running ? 'Astra is working…' : busy ? 'Preparing scene…' : 'Review Astra quote'}</button>
     {recovery && <button className={styles.button} disabled={!enabled || busy} onClick={() => setTarget(recovery)}>Recover saved Astra request</button>}
     <p className={styles.notice}>Astra · choose effort with the quote. Scene proposals and 3D runtime rendering are separate actions.</p>
-    {state && !model && <p className={styles.error}>Astra is not available for this workspace. Check model access and the language account in Workspace → Engines.</p>}
+    {state && !model && <p className={styles.error}>GPT-6 Astra is not available for this workspace. Check model access and the language account in Workspace → Engines.</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {jobs.slice(0, 8).map(job => {
       const plan = job.plan, proposal = plan?.astraBlender, native = plan?.astraNative;

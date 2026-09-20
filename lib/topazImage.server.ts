@@ -21,12 +21,12 @@ export async function inspectTopazImage(
       "The source image is no longer available in this workspace.",
     );
   if (!(Number(row.bytes) > 0) || Number(row.bytes) > 30 * 1024 * 1024)
-    throw new Error("Use an original image up to 30 MB for upscaling.");
+    throw new Error("Use an original image up to 30 MB for Topaz.");
   const bytes = source.fromGeneration
     ? await readImageBytes(source.id)
     : await readUploadBytes(source.id, source.ext, source.storedUrl);
   if (bytes.length > 30 * 1024 * 1024)
-    throw new Error("Use an original image up to 30 MB for upscaling.");
+    throw new Error("Use an original image up to 30 MB for Topaz.");
   const sharp = (await import("sharp")).default;
   const meta = await sharp(bytes, { limitInputPixels: 48_000_000 }).metadata();
   if (
@@ -36,11 +36,11 @@ export async function inspectTopazImage(
     (meta.pages ?? 1) !== 1
   )
     throw new Error(
-      "Upscaling accepts one PNG, JPEG or WebP image. Export an individual frame from animated media.",
+      "Topaz accepts one PNG, JPEG or WebP image. Export an individual frame from animated media.",
     );
   if (meta.hasAlpha)
     throw new Error(
-      "Flatten transparency before using the precision upscale models.",
+      "Flatten transparency before using Topaz's precision image models.",
     );
   // EXIF orientation exchanges axes but does not change the quoted pixel count.
   const rotated = [5, 6, 7, 8].includes(meta.orientation ?? 1);

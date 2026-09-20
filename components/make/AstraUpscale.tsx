@@ -213,7 +213,7 @@ export default function AstraUpscale({
     ? String(paid.pending.context?.sourceUrl || "")
     : source?.url;
   return (
-    <section className={styles.composer} aria-label="Upscale 2">
+    <section className={styles.composer} aria-label="Topaz Astra 2">
       <div className={styles.composerScroll}>
         <fieldset className={styles.fields} disabled={blocked}>
           <button
@@ -224,7 +224,7 @@ export default function AstraUpscale({
           >
             <Film size={20} />
             <span>
-              <strong>Upscale 2</strong>
+              <strong>Topaz Astra 2</strong>
               <small>Creative video upscale</small>
             </span>
           </button>

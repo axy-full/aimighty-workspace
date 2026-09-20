@@ -5,7 +5,7 @@ import { engineSuggestion, parentOf, lineageOf, editDepth, freshPrompt, typedWor
 test("water, cloth and physics suggest Kling in one tap, and nothing else does", () => {
   const s = engineSuggestion({ prompt: "a red silk dress in the rain", kind: "video", family: "seedance-2", task: null });
   expect(s?.modelId).toBe("fal-ai/kling-video/v3/standard");
-  expect(s?.label).toBe("Kinetic 3.0 for silk — switch");
+  expect(s?.label).toBe("Kling 3.0 for silk — switch");
   expect(engineSuggestion({ prompt: "a red silk dress in the rain", kind: "video", family: "kling-3", task: null })).toBeNull();
   expect(engineSuggestion({ prompt: "a red silk dress in the rain", kind: "image", family: "nano-banana", task: null })).toBeNull();
   expect(engineSuggestion({ prompt: "a red silk dress in the rain", kind: "video", family: "seedance-2", task: "edit" })).toBeNull();

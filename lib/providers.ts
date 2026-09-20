@@ -134,7 +134,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "fal",
     label: "Connected render account",
-    serves: "Kinetic 3.0 · Upscale 2 · Characters",
+    serves: "Kling 3.0 · Topaz Astra · Characters",
     envKey: "FAL_KEY",
     baseUrlEnv: "FAL_BASE_URL",
     defaultBaseUrl: "https://queue.fal.run",

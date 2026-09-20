@@ -1,4 +1,3 @@
-import { MODELS } from "../models";
 import type { MediaJob } from "../workbench/job-recovery";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
 import { NODE_DEFS, createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
@@ -6,7 +5,6 @@ import type { Asset, CanvasNode, Project } from "../workbench/studio";
 import { engineLabel, type ShotSettings } from "./engines";
 import { isShotNode, jobUnbilled, liveJob, ShotPatchError } from "./shots";
 import { vendorNameIn } from "./vendor-names";
-import { neutralModelText } from "../vendorNames";
 
 /**
  * Pure helpers behind the workspace Rig: adding a shot, what feeds it, its
@@ -182,17 +180,13 @@ export function dispatchGate(shown: number | null, fresh: number): DispatchGate 
 
 /* ── Copy ─────────────────────────────────────────────────────────────── */
 
-const LABELS = MODELS.map((m) => [m.label, engineLabel(m.id).long] as const).sort((a, b) => b[0].length - a[0].length);
-
 /**
- * Server and validation messages can name an engine by its vendor label.
- * Engine labels are swapped for their neutral names; anything still naming a
- * vendor falls back to a neutral sentence (workspace brief, decision 5).
+ * Server and validation messages can name the engine they came from. A DIRECT
+ * model's real name is correct copy (owner decision, 20 September 2026), so a
+ * message naming Seedance 2.5 or Kling 3.0 Pro passes through untouched. Only
+ * the vocabulary that is never printed — the connected account, its brands and
+ * the provider companies — forces the neutral fallback.
  */
 export function neutralCopy(message: string, fallback = "The engine could not take this request. Nothing was charged."): string {
-  let text = message;
-  for (const [label, neutral] of LABELS) text = text.split(label).join(neutral);
-  /* Catalogue labels are already neutral (#231); vendor family names in server copy take the product's one renamer. */
-  text = neutralModelText(text);
-  return vendorNameIn(text) ? fallback : text;
+  return vendorNameIn(message) ? fallback : message;
 }

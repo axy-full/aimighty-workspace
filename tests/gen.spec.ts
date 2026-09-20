@@ -113,10 +113,10 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a model" })
-    .getByRole("button", { name: /Motion 2.5 Edit/ })
+    .getByRole("button", { name: /Seedance 2.5 Edit/ })
     .click();
   const editor = page.getByRole("region", {
-    name: "Motion 2.5 Edit",
+    name: "Seedance 2.5 Edit",
     exact: true,
   });
   await expect(editor).toBeVisible();
@@ -435,7 +435,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   const models = page.getByRole("dialog", { name: "Choose a model" });
   await expect(models).toBeVisible();
-  await models.getByRole("button", { name: /Motion 2.0/ }).click();
+  await models.getByRole("button", { name: /Seedance 2.0/ }).click();
   await expect(models).not.toBeVisible();
   await page.getByRole("button", { name: /^Aspect:/ }).click();
   await page.getByRole("menuitem", { name: "9:16", exact: true }).click();
@@ -457,7 +457,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   );
   await expect(
     page.getByRole("button", { name: "Engine", exact: true }),
-  ).toContainText("Motion 2.0");
+  ).toContainText("Seedance 2.0");
   await expect(
     page.getByRole("button", { name: "Remove frame-1.png" }),
   ).toBeVisible();

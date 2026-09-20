@@ -186,8 +186,8 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
   return <section className={styles.panel} aria-label={kindLabel(kind)}>
     <div className={styles.heading}><span className={styles.icon}><Sparkles size={17}/></span><div><h3>{kind === 'idea' ? 'Develop with an agent' : 'Agentic script breakdown'}</h3><p>{kind === 'idea' ? 'Explore creative routes, challenge them, then refine the strongest direction.' : 'Read the full source, draft the breakdown, critique it, then refine beats and coverage.'}</p></div></div>
     <div className={styles.providers} role="group" aria-label={`${kindLabel(kind)} provider`}>
-      <button type="button" aria-pressed={provider === 'anthropic'} disabled={!!busy || !!pending} onClick={() => { setProvider('anthropic'); setPickedModel(''); setEffort('auto'); }}>Sage <small>Thinking models</small></button>
-      <button type="button" aria-pressed={provider === 'openai'} disabled={!!busy || !!pending} onClick={() => { setProvider('openai'); setPickedModel(''); setEffort('auto'); }}>Forge <small>Thinking models</small></button>
+      <button type="button" aria-pressed={provider === 'anthropic'} disabled={!!busy || !!pending} onClick={() => { setProvider('anthropic'); setPickedModel(''); setEffort('auto'); }}>Claude <small>Thinking models</small></button>
+      <button type="button" aria-pressed={provider === 'openai'} disabled={!!busy || !!pending} onClick={() => { setProvider('openai'); setPickedModel(''); setEffort('auto'); }}>GPT <small>Thinking models</small></button>
     </div>
     <div className={styles.controls}>
       <div><label>Model</label><ModelPicker label={`${kindLabel(kind)} model`} value={model} models={models} allowAuto={false} disabled={!enabled || !models.length || !!busy || !!pending} onPick={value => { setPickedModel(value); setEffort('auto'); }} /></div>

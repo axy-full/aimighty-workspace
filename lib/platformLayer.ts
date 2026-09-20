@@ -62,7 +62,7 @@ export const STARTER_PRODUCTION: StarterProduction = {
 export type RuleScope = "all" | "video" | "image" | "seedance-2" | "kling-3" | "nano-banana";
 export const RULE_SCOPES: RuleScope[] = ["all", "video", "image", "seedance-2", "kling-3", "nano-banana"];
 export const RULE_SCOPE_LABELS: Record<RuleScope, string> = {
-  all: "video + stills", video: "video", image: "stills", "seedance-2": "Motion only", "kling-3": "Kinetic only", "nano-banana": "Image only",
+  all: "video + stills", video: "video", image: "stills", "seedance-2": "Seedance only", "kling-3": "Kling only", "nano-banana": "Nano Banana only",
 };
 export type RuleApply = "writer" | "prompt";
 export type PlatformRule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean };
@@ -76,10 +76,10 @@ export const DEFAULT_RULES: PlatformRule[] = [
   { id: "plain-sentences", scope: "image", apply: "writer", on: true, text: "Write camera and subject direction as plain sentences, never as headers or labels: all-caps headers leak into a still as burned-in captions." },
   { id: "no-lettering", scope: "image", apply: "prompt", on: true, text: "No lettering, captions, logos or text of any kind appears in the frame." },
   // Each engine's dialect (brief 1.1): the Setup rows are engine-neutral; these turn them into what each engine reads.
-  { id: "kling-shape", scope: "kling-3", apply: "writer", on: true, text: "Kinetic 3.0 reads one plain paragraph: the subject, what it does, where, then the camera and the light, in that order. Under 120 words. No timestamps, no shot numbers, no headers." },
-  { id: "kling-physics", scope: "kling-3", apply: "writer", on: true, text: "Kinetic 3.0's strength is physics: name the material and the force — water, cloth, hair, smoke, weight, wind — and what it does to the subject." },
-  { id: "kling-negative", scope: "kling-3", apply: "writer", on: true, text: "Anything to avoid goes to Kinetic 3.0's negative field, never into the prompt." },
-  { id: "nb-whole-scene", scope: "nano-banana", apply: "writer", on: true, text: "Image 2 wants the one scene described whole — subject, setting, light, lens — as plain sentences. A still is not a shot list: no beats, no camera moves." },
+  { id: "kling-shape", scope: "kling-3", apply: "writer", on: true, text: "Kling 3.0 reads one plain paragraph: the subject, what it does, where, then the camera and the light, in that order. Under 120 words. No timestamps, no shot numbers, no headers." },
+  { id: "kling-physics", scope: "kling-3", apply: "writer", on: true, text: "Kling 3.0's strength is physics: name the material and the force — water, cloth, hair, smoke, weight, wind — and what it does to the subject." },
+  { id: "kling-negative", scope: "kling-3", apply: "writer", on: true, text: "Anything to avoid goes to Kling 3.0's negative field, never into the prompt." },
+  { id: "nb-whole-scene", scope: "nano-banana", apply: "writer", on: true, text: "Nano Banana wants the one scene described whole — subject, setting, light, lens — as plain sentences. A still is not a shot list: no beats, no camera moves." },
   { id: "nb-photographic", scope: "nano-banana", apply: "writer", on: true, text: "Frame and light in photographic terms — 35mm, eye level, shallow depth, soft window light — rather than film-set jargon." },
 ];
 

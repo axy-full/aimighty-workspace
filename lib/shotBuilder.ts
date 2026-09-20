@@ -9,13 +9,13 @@ import { DEFAULT_MODEL_ID } from "./models";
  */
 export type ShotEngine = "seedance" | "kling" | "nano-banana";
 export const ENGINE_MODEL: Record<ShotEngine, string> = { seedance: DEFAULT_MODEL_ID, kling: "fal-ai/kling-video/v3/standard", "nano-banana": "gemini-3-pro-image" };
-export const ENGINE_LABEL: Record<ShotEngine, string> = { seedance: "Motion", kling: "Kinetic", "nano-banana": "Image" };
+export const ENGINE_LABEL: Record<ShotEngine, string> = { seedance: "Seedance", kling: "Kling", "nano-banana": "Nano Banana" };
 
 /** The platform's rule (brief 2.5): Kling for water, cloth and physics; Seedance for everything else; a still goes to Nano Banana. */
 export function suggestEngine(text: string, kind: "video" | "image" = "video"): { engine: ShotEngine; why: string } {
   if (kind === "image") return { engine: "nano-banana", why: "a still" };
   const m = /\b(water|rain|wave|waves|sea|ocean|river|splash|pour(?:s|ing)?|flood|wet|cloth|fabric|silk|dress|curtain|flag|hair|smoke|steam|dust|sand|physics|collide|collision|shatter|crumble|fall(?:s|ing)?|bounce|ripple|swirl)\b/i.exec(text);
-  return m ? { engine: "kling", why: `${m[1].toLowerCase()}: water, cloth and physics go to Kinetic 3.0` } : { engine: "seedance", why: "standard video" };
+  return m ? { engine: "kling", why: `${m[1].toLowerCase()}: water, cloth and physics go to Kling 3.0` } : { engine: "seedance", why: "standard video" };
 }
 
 export type ShotProposal = { title: string; description: string; planned: number; setup: Record<string, string>; cast: string[]; engine: ShotEngine; why: string };

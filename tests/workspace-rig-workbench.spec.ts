@@ -116,8 +116,11 @@ test("shot list, selection, edits that persist and a live estimate", async ({ pa
   await expect(page.locator('.pxw-rig-row[data-status="ready"]')).toHaveCount(3);
   await expect(page.getByTestId("page-sub")).toHaveText("3 shots · 0 approved");
   await expect(page.locator(".pxw-crumb")).toHaveText("Main composition");
-  /* No vendor names anywhere a person reads. */
-  await expect(page.locator(".pxw")).not.toContainText(/Seedance|Kling|Gemini|Nano Banana/);
+  /* The connected account's vocabulary appears nowhere a person reads; the
+     engines we integrate directly appear under their real names (owner
+     decision, 20 September 2026). */
+  await expect(page.locator(".pxw")).not.toContainText(/Higgsfield|Supercomputer|Genjutsu|Soul ID|BytePlus|ModelArk/);
+  await expect(page.getByLabel("Engine", { exact: true }).locator("option").first()).toHaveText("Seedance 2.5");
 
   /* Selecting a shot drives the Inspector and the URL. */
   await row(page, /The encounter/).click();
@@ -208,7 +211,7 @@ test("Generate re-quotes, dispatches a mocked render, files a take, and still wo
   await header.click();
   const strip = page.locator(".pxw-gen");
   await expect(strip).toBeVisible();
-  await expect(strip).toContainText("Opening wide · Motion 2.5");
+  await expect(strip).toContainText("Opening wide · Seedance 2.5");
   await expect.poll(() => sent.map((s) => s.path)).toEqual(["/api/generate/quote", "/api/generate"]);
   /* Same body quoted and sent; the approved ceiling and fingerprint ride along. */
   const [quoted, dispatched] = sent.map((s) => s.body);

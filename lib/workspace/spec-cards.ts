@@ -188,7 +188,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
       ["Boards", n(f.project?.shots.length ?? 0)],
       ["Scenes", n(scenesOf(f.project))],
       ["Look refs", n(lookRefs(f.project))],
-      ["Engine", "Image 2"],
+      ["Engine", "Nano Banana 2"],
       ["Cost", price(f)],
     ],
     groups: [
@@ -376,8 +376,8 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
     tools: [{ id: "models", label: "Models" }],
     facts: () => [
       ["Thinking", "Low · medium · high"],
-      ["Video", "Motion 2.5 / 2.0"],
-      ["Stills", "Image 2"],
+      ["Video", "Seedance 2.5 / 2.0"],
+      ["Stills", "Nano Banana 2"],
       ["Audio", "Speech · SFX · Music"],
       ["Clamping", "Automatic"],
     ],
@@ -387,8 +387,8 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
         { name: "Effort", desc: "Low, medium or high. Higher effort costs more and plans deeper.", chips: ["low", "medium", "high"], owner: "Admin", tool: "models" },
       ] },
       { title: "GENERATION", note: "", cards: [
-        { name: "Motion 2.5", desc: "1080p with audio. Billed on the returned token count.", chips: ["audio"], owner: "Admin", tool: "models" },
-        { name: "Motion 2.0", desc: "Cheaper tier, 4K available, no generated audio.", chips: ["no audio"], owner: "Admin", tool: "models" },
+        { name: "Seedance 2.5", desc: "1080p with audio. Billed on the returned token count.", chips: ["audio"], owner: "Admin", tool: "models" },
+        { name: "Seedance 2.0", desc: "Cheaper tier, 4K available, no generated audio.", chips: ["no audio"], owner: "Admin", tool: "models" },
         { name: "Stills", desc: "Gateway, direct and third-party routes for images.", chips: ["routes"], owner: "Admin", tool: "models" },
         { name: "Audio", desc: "Speech, sound effects and music.", chips: ["3 kinds"], owner: "Admin", tool: "models" },
       ] },

@@ -581,7 +581,7 @@ function SettingsContent() {
                             {select(
                               "promptWriter",
                               [
-                                ["claude", "Sage"],
+                                ["claude", "Claude"],
                                 ["byteplus", "Engine writer"],
                                 ["none", "None"],
                               ],

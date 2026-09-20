@@ -218,7 +218,7 @@ test('ordinary generation keeps a regular image engine as default when Soul is a
   await page.route('**/api/workbench/engines*',route=>{
     if(new URL(route.request().url()).searchParams.has('model'))return route.fulfill({json:{credits:3}});
     const base={kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceVideos:0};
-    return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Identity render',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Image Pro',maxReferenceImages:8}]}});
+    return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Identity render',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Nano Banana Pro',maxReferenceImages:8}]}});
   });
   await page.goto(await legacyShell(page, '/workbench'));await goWorkbenchStage(page,'canvas');
   const node=page.getByRole('article',{name:'Generate node: Ordinary image shot',exact:true});await node.focus();await node.press('Enter');

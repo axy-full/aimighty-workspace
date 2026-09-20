@@ -12,13 +12,15 @@ export type ThinkingModel = {
   description?: string; owner?: string; band?: string; released?: number;
 };
 
-const PROVIDERS = ["Sage", "Forge", "Prism"] as const;
+const PROVIDERS = ["Claude", "OpenAI", "Gemini"] as const;
 const DEFAULT_EFFORT: EffortOption = { value: "auto", label: "Provider default", description: "Use this model’s standard reasoning settings." };
 
+/** The model line a thinking model belongs to, which is also its group
+ *  heading. Directly integrated, so named for real (lib/vendorNames.ts rule 1). */
 function providerOf(model: ThinkingModel) {
-  if (model.id.startsWith("anthropic/")) return "Sage";
-  if (model.id.startsWith("openai/")) return "Forge";
-  if (model.id.startsWith("google/")) return "Prism";
+  if (model.id.startsWith("anthropic/")) return "Claude";
+  if (model.id.startsWith("openai/")) return "OpenAI";
+  if (model.id.startsWith("google/")) return "Gemini";
   return "Other models";
 }
 

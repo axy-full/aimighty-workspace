@@ -27,7 +27,7 @@ async function fixture(page: Page, loseResponse = false, nativeAssets = false, f
   const proposed = createAstraScene('product');
   proposed.name = 'Astra material study';
   proposed.objects.find((object) => object.id === 'product')!.material.color = '#4466aa';
-  const models = [{ id: ASTRA_BLENDER_MODEL, name: 'Astra', efforts: EFFORTS }, { id: 'anthropic/claude-fixture', name: 'Sage fixture', efforts: EFFORTS }];
+  const models = [{ id: ASTRA_BLENDER_MODEL, name: 'Astra', efforts: EFFORTS }, { id: 'anthropic/claude-fixture', name: 'Claude fixture', efforts: EFFORTS }];
   await page.route('**/api/**', async (route) => {
     const request = route.request(), url = new URL(request.url());
     const json = (value: unknown) => route.fulfill({ json: value });
