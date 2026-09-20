@@ -208,19 +208,46 @@ export function parseConsumerVideoCredits(
 ): number {
   return parseConsumerCreditsForParams(value, consumerVideoParams(input, true));
 }
+/** Float noise in the account's own arithmetic (12.12 arrives as
+ * 12.120000000000001), never a tolerance on the price itself. */
+const CREDITS_EPSILON = 1e-9;
+/**
+ * The charged figure out of a `{cost:{credits, credits_exact}}` reply.
+ *
+ * Both recorded live shapes (`tests/fixtures/connected-shorts-studio.json`,
+ * recorded from production 2026-09-20) are accepted and nothing else:
+ * - `{credits: 12, credits_exact: 12}` — a whole-unit price; the two agree.
+ * - `{credits: 12, credits_exact: 12.120000000000001}` — the same price with a
+ *   fractional part, where `credits` is the integer the account charges and
+ *   `credits_exact` is that price unrounded. The account's own rounding is
+ *   truncation, so `credits` must be an integer and `credits_exact` must sit in
+ *   `[credits, credits + 1)`.
+ *
+ * Everything else is ambiguous and refused: a missing, non-numeric or
+ * non-finite figure, a zero or negative price, a range (min/max, or `credits`
+ * as anything but a number), an exact figure BELOW the charged one, or a gap of
+ * a whole credit or more — which would mean a rounding we have not recorded and
+ * cannot bind an approval to. The returned figure is always the account's own
+ * `credits`, never a default, never a bound of a range, and never derived from
+ * `credits_exact` alone.
+ */
 export function parseConsumerCreditsForParams(value: QualificationValue, params: Record<string, unknown>): number {
   if (!record(value) || !record(value.cost))
     throw new ConsumerVideoError("invalid_quote");
   const { credits, credits_exact: exact } = value.cost;
-  // Do not silently choose between conflicting rounded/exact billing amounts.
   if (
     typeof credits !== "number" ||
     !Number.isFinite(credits) ||
     credits <= 0 ||
     credits > Number.MAX_SAFE_INTEGER ||
-    credits !== exact
+    typeof exact !== "number" ||
+    !Number.isFinite(exact)
   )
     throw new ConsumerVideoError("invalid_quote");
+  const agrees = Math.abs(exact - credits) <= CREDITS_EPSILON;
+  const truncated = Number.isInteger(credits) && exact > credits && exact < credits + 1;
+  // Do not silently choose between conflicting rounded/exact billing amounts.
+  if (!agrees && !truncated) throw new ConsumerVideoError("invalid_quote");
   if (value.adjustments !== undefined) {
     if (!record(value.adjustments))
       throw new ConsumerVideoError("unapproved_adjustment");

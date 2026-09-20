@@ -118,5 +118,80 @@
   "next_cursor": ":8",
   "has_more": true,
   "can_create_preset": true
- }
+ },
+ "costNote": "shorts_studio_create cost replies, recorded from production 2026-09-20 against the real connected account with get_cost:true and nothing else (the free, non-submitting form; no session was created). Verbatim, exactly as the tool returned them. The account prices 3 credits per second of source: for a whole number of seconds `credits` and `credits_exact` agree, and for a fractional duration \u2014 which is what a measured stored duration is \u2014 `credits` is `credits_exact` truncated to an integer. The 19 September capture recorded no create call at all, which is why the parser was written assuming the two are always equal.",
+ "costReplies": [
+  {
+   "arguments": {
+    "duration_seconds": 4,
+    "get_cost": true
+   },
+   "reply": {
+    "cost": {
+     "credits": 12,
+     "credits_exact": 12
+    }
+   }
+  },
+  {
+   "arguments": {
+    "duration_seconds": 4.04,
+    "get_cost": true
+   },
+   "reply": {
+    "cost": {
+     "credits": 12,
+     "credits_exact": 12.120000000000001
+    }
+   }
+  },
+  {
+   "arguments": {
+    "duration_seconds": 4.2,
+    "get_cost": true
+   },
+   "reply": {
+    "cost": {
+     "credits": 12,
+     "credits_exact": 12.600000000000001
+    }
+   }
+  },
+  {
+   "arguments": {
+    "duration_seconds": 4.9,
+    "get_cost": true
+   },
+   "reply": {
+    "cost": {
+     "credits": 14,
+     "credits_exact": 14.700000000000001
+    }
+   }
+  },
+  {
+   "arguments": {
+    "duration_seconds": 30,
+    "get_cost": true
+   },
+   "reply": {
+    "cost": {
+     "credits": 90,
+     "credits_exact": 90
+    }
+   }
+  },
+  {
+   "arguments": {
+    "duration_seconds": 30.5,
+    "get_cost": true
+   },
+   "reply": {
+    "cost": {
+     "credits": 91,
+     "credits_exact": 91.5
+    }
+   }
+  }
+ ]
 }

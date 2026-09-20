@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { getConsumerShortsQuote, submitConsumerShorts, readConsumerShortsSession, readConsumerShortsClips, readShortsPresets, CONSUMER_MCP_URL } from "../../lib/higgsfield-consumer/mcp";
+import { parseConsumerCreditsForParams } from "../../lib/higgsfield-consumer/video-contract";
+import type { QualificationValue } from "../../lib/higgsfield-consumer/qualification";
 import {
   consumerShortsAcknowledgement,
   consumerShortsInputSchema,
@@ -15,7 +17,12 @@ import {
   type ConsumerShortsInput,
 } from "../../lib/higgsfield-consumer/shorts-studio";
 
-const capture = JSON.parse(readFileSync("tests/fixtures/connected-shorts-studio.json", "utf8")) as { tools: { name: string; inputSchema: Record<string, unknown> }[]; presetsPage: Record<string, unknown> };
+const capture = JSON.parse(readFileSync("tests/fixtures/connected-shorts-studio.json", "utf8")) as {
+  tools: { name: string; inputSchema: Record<string, unknown> }[];
+  presetsPage: Record<string, unknown>;
+  costReplies: { arguments: { duration_seconds: number; get_cost: true }; reply: { cost: { credits: number; credits_exact: number } } }[];
+};
+const recorded = capture.costReplies;
 const schema = (name: string) => capture.tools.find((tool) => tool.name === name)!.inputSchema;
 const wallet = randomUUID(), sessionId = randomUUID(), media = randomUUID(), clipA = randomUUID(), clipB = randomUUID();
 const preset = "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f";
@@ -155,4 +162,58 @@ test("submission re-prices, admits once and sends exactly one paid create; sessi
   const wrong = fixture({ change: (p) => (p.params.name === "job_status" ? { generation: { id: randomUUID(), type: "video", status: "completed" } } : undefined) });
   await expect(readConsumerShortsClips("fixture-private-access", [clipA], wallet, { fetch: wrong.fetch })).rejects.toMatchObject({ code: "invalid_job" });
   expect([...r.tools(), ...c.tools()].filter((name) => name === "shorts_studio_create")).toEqual([]);
+});
+
+test("the production cost replies qualify and yield the charged integer; a range, a missing or ambiguous figure still refuses", async () => {
+  // Recorded from production 2026-09-20 (get_cost only, no session created).
+  expect(recorded.length).toBeGreaterThan(1);
+  expect(recorded.some((entry) => entry.reply.cost.credits !== entry.reply.cost.credits_exact)).toBe(true);
+  for (const { arguments: args, reply } of recorded)
+    expect(parseConsumerCreditsForParams(reply, args), JSON.stringify(reply)).toBe(reply.cost.credits);
+  // The whole path, on the reply a measured 4.04 s original really gets: 12 credits, and 12 is what is approved.
+  const live = recorded.find((entry) => entry.arguments.duration_seconds === 4.04)!;
+  const f = fixture({ change: (p) => (p.params.name === "shorts_studio_create" && p.params.arguments.get_cost === true ? live.reply : undefined) });
+  const quote = await getConsumerShortsQuote("fixture-private-access", shorts, { ...source, durationSeconds: 4.04 }, { fetch: f.fetch, resolveMedia: (_w, perform) => perform() });
+  expect(quote.credits).toBe(12);
+  expect(quote.params.duration_seconds).toBe(4.04);
+  expect(f.paid()).toEqual([]);
+  const submitted = fixture({ change: (p) => (p.params.name === "shorts_studio_create" && p.params.arguments.get_cost === true ? live.reply : undefined) });
+  expect((await submitConsumerShorts("fixture-private-access", shorts, quote.params, wallet, 12, { fetch: submitted.fetch, admit: async () => {} })).state).toBe("accepted");
+  expect(submitted.paid().map((p) => p.params.arguments)).toEqual([quote.params]);
+  // Nothing ambiguous is admitted: a range, an absent or non-numeric figure, an
+  // exact figure under the charged one, a gap of a whole credit or more, a
+  // fractional charged figure, and a free or negative price.
+  for (const cost of [
+    { credits_min: 12, credits_max: 20 },
+    { credits: 12 },
+    { credits_exact: 12.12 },
+    { credits: 12, credits_exact: "12.12" },
+    { credits: 12, credits_exact: null },
+    { credits: 12, credits_exact: 11.9 },
+    { credits: 12, credits_exact: 13.12 },
+    { credits: 12, credits_exact: 13 },
+    { credits: 12.5, credits_exact: 12.9 },
+    { credits: 0, credits_exact: 0 },
+    { credits: -12, credits_exact: -12 },
+    { credits: { min: 12, max: 20 }, credits_exact: 12 },
+    { credits: "12", credits_exact: "12" },
+    { credits: 12, credits_exact: Number.NaN },
+  ] as Record<string, unknown>[]) {
+    expect(() => parseConsumerCreditsForParams({ cost } as QualificationValue, { duration_seconds: 4.04, get_cost: true }), JSON.stringify(cost)).toThrow();
+    const refused = fixture({ change: (p) => (p.params.name === "shorts_studio_create" ? { cost } : undefined) });
+    await expect(getConsumerShortsQuote("fixture-private-access", shorts, { ...source, durationSeconds: 4.04 }, { fetch: refused.fetch, resolveMedia: (_w, perform) => perform() }), JSON.stringify(cost)).rejects.toMatchObject({ code: "invalid_quote" });
+    // Refused before the source is imported, so nothing was created or paid for.
+    expect(refused.tools()).toEqual(["list_workspaces", "shorts_studio_create"]);
+  }
+  // A cost object that is not an object at all, and a reply with no cost.
+  for (const reply of [{}, { cost: null }, { cost: 12 }, { cost: [12] }, { credits: 12 }] as unknown as QualificationValue[])
+    expect(() => parseConsumerCreditsForParams(reply, { duration_seconds: 4.04, get_cost: true })).toThrow();
+  // The schema check still refuses a create tool that does not declare an argument we send.
+  const params = consumerShortsParams(shorts, media, 4.04);
+  expect(shortsCreateSchemaMatches(schema("shorts_studio_create"), params)).toBe(true);
+  for (const key of ["duration_seconds", "resolution", "preset_source", "aspect_ratio"]) {
+    const undeclared = JSON.parse(JSON.stringify(schema("shorts_studio_create")));
+    delete undeclared.properties[key];
+    expect(shortsCreateSchemaMatches(undeclared, params), key).toBe(false);
+  }
 });
