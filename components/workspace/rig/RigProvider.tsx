@@ -9,6 +9,7 @@ import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/wor
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine } from "@/lib/workspace/engines";
+import { connectNodes } from "@/lib/workspace/rig-graph";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
 import { addShotNode, dispatchGate, dispatchQuoteQuery, generationPhase, neutralCopy, referenceRole, shotReferenceAssets } from "@/lib/workspace/rig";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
@@ -54,6 +55,8 @@ export type RigContext = {
   select: (id: string) => void;
   patchShot: (id: string, patch: ShotPatch) => string | null;
   addShot: () => void;
+  /** Link `source` into `target` under the Studio graph's rules; returns the refusal, or null. */
+  connect: (source: string, target: string) => string | null;
   /** The exact live quote for the selected shot, as shown on every Generate button. */
   quote: Quote | null;
   generate: () => void;
@@ -465,12 +468,21 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     }
   }, [update, select, setNotice]);
 
+  const connect = useCallback((source: string, target: string): string | null => {
+    const current = draftRef.current;
+    if (!current) return "Open a project first.";
+    const result = connectNodes(current.project, source, target);
+    if ("error" in result) return result.error;
+    update(() => result.project);
+    return null;
+  }, [update]);
+
   const planRequests = useMemo(() => (project ? rigPlanRequests(project, shots) : []), [project, shots]);
 
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode,
-    select, patchShot, addShot, quote, generate, blocked, notice, submitting, scope, planRequests,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, quote, generate, blocked, notice, submitting, scope, planRequests]);
+    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests,
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
