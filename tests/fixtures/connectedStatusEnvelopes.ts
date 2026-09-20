@@ -99,6 +99,32 @@
  * that walks past it — every reference we sent still matched by its exact uuid,
  * in the order we sent it.
  *
+ * 20 September 2026, FIFTH recording — the two readers behind
+ * `marketing_studio_v2_status` and `video_analysis_status`, probed with free
+ * read-only calls only (no submit, no quote, US$0.00):
+ *
+ *   - `show_marketing_studio_generations(size=5)` -> ONE completed job,
+ *     `model: "marketing_studio_video"`, `type: "video"`, in the SAME per-entry
+ *     shape as `job_display`'s elements, nested under a top-level **`items`**
+ *     array beside `next_cursor: null`.
+ *   - `job_display(id)` on that real marketing job -> the `results` ARRAY
+ *     again, entry keys `{id,type,status,model,params,results:{rawUrl},createdAt}`.
+ *     So a marketing job's envelope nests exactly like a seedance one.
+ *   - `video_analysis_jobs(size=5)` -> `{"items":[],"total_count":0,"cursor":null}`.
+ *     The account holds NO analysis, so `video_analysis_status` cannot be
+ *     observed without paying to create one; asked for a status by a non-analysis
+ *     id it answers with a provider error, so the tool exists and is reachable.
+ *   - `personal_clipper_jobs` -> `Tool personal_clipper_jobs not found`, though
+ *     the connection advertises it.
+ *   - The four `marketing_studio_v2_*` tools are NOT advertised by this
+ *     connection profile at all, so `marketing_studio_v2_status` is likewise
+ *     unobservable for free.
+ *
+ * What is therefore RECORDED for those two readers is the nesting — every job
+ * envelope this provider sends puts the job in a top-level array (`results`,
+ * `jobs`, `items`) — and NOT the entry fields of a status reply from either
+ * tool. The builders at the bottom of this file say which is which.
+ *
  * `show_generations` returns the same per-entry shape as `job_display`'s
  * `results` elements. The live `nano_banana_2` image entries carry NO nested
  * `params.model` at all and an extra `results.minUrl`, so a nested `model` is
@@ -232,3 +258,30 @@ export const waitInProgress = (job: EnvelopeJob, pollAfterSeconds = 5) => ({
   all_terminal: false,
   poll_after_seconds: pollAfterSeconds,
 });
+
+/**
+ * The live `show_marketing_studio_generations` listing: `job_display`'s
+ * per-entry shape, under `items`, beside `next_cursor`. Recorded 20 September
+ * 2026 from one real completed `marketing_studio_video` job.
+ */
+export const generationsListing = (job: EnvelopeJob) => ({
+  items: displayCompleted(job).results,
+  next_cursor: null,
+});
+
+/**
+ * A `video_analysis_status` reply in the list shape.
+ *
+ * ONLY THE NESTING IS RECORDED. `video_analysis_jobs` returned
+ * `{"items":[],"total_count":0,"cursor":null}` on 20 September 2026 — the
+ * account holds no analysis and creating one costs money — so no analysis entry
+ * has ever been observed. The entry below carries the fields the tool's own
+ * description names (`status`, `scenes`, `fail_reason`) and nothing invented
+ * beyond them, and `idKey` exists because it is unknown whether an analysis
+ * names itself `id` or `video_analyze_id`; the reader accepts either.
+ */
+export const analysisListing = (
+  jobId: string,
+  body: Record<string, unknown>,
+  idKey: "id" | "video_analyze_id" = "id",
+) => ({ items: [{ [idKey]: jobId, ...body }], total_count: 1, cursor: null });

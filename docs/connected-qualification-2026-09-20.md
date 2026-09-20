@@ -350,3 +350,96 @@ first, then spend.** The cheapest information here was free.
    Order unchanged, and now with a specific question for the reference-media item: does the
    provider accept the declared slot role, and does the collector qualify the job once the
    role and `data.type` checks are corrected. Budget unspent: the full US$5.00.
+
+---
+
+# Third run — 2026-09-20 (run 3): the two envelopes run 1 filed and did not fix
+
+## Outcome: STILL NO SPEND. Cumulative total US$0.00 / $5.00.
+
+Run 1 filed two readers as "different envelopes, behind dedicated tools, not proven
+broken": `marketing-templates.ts` `statusEvidence` and `voice-tools.ts` `reportEvidence`.
+Both share the assumption #251 disproved for `job_display` — read one single-object key,
+then fall through to the reply itself — and neither had ever been seen replying. This run
+probed them with free read-only calls. **Nothing was submitted, nothing was quoted,
+US$0.00.**
+
+Free reads performed, all read-only: `show_marketing_studio_generations(size=5)`,
+`job_display(id=<that job>)`, `video_analysis_jobs(size=5)`, `video_analysis_status(<a
+non-analysis id>)`, `personal_clipper_jobs(limit=3)`.
+
+## Finding 5 — neither reader's own status tool can be observed for free, and both shapes are now accepted
+
+1. **`marketing_studio_v2_status` is not advertised by this connection at all.** The profile
+   in use offers `show_marketing_studio_v2` (the gallery widget) and
+   `show_marketing_studio_generations` (the listing) and **none** of the four
+   `marketing_studio_v2_{presets,costs,create,status}` tools that
+   `MARKETING_TEMPLATE_TOOLS` names. The template path is therefore unreachable on this
+   connection — its status envelope cannot be recorded for free, and could not be recorded
+   by paying either, without a connection that advertises the create tool.
+2. **The account holds no video analysis.** `video_analysis_jobs` returns
+   `{"items":[],"total_count":0,"cursor":null}`. `video_analysis_status` asked for an id
+   that is not an analysis answers with a provider error, so the tool exists and is
+   reachable; there is simply nothing to read. Creating one costs money and needs consent.
+3. **What the provider's job envelopes really look like, recorded instead.** Every job
+   envelope this account does send nests the job in a **top-level array**, with the same
+   per-entry shape and only the list key differing:
+
+   | Read | Nesting |
+   |---|---|
+   | `job_display(id)` | `{"results":[entry]}` |
+   | `jobs_wait` | `{"jobs":[entry]}` |
+   | `show_marketing_studio_generations` | `{"items":[entry],"next_cursor":null}` |
+   | `video_analysis_jobs` | `{"items":[],"total_count":0,"cursor":null}` |
+
+   The marketing evidence is direct, not by analogy: `job_display` on a REAL completed
+   `marketing_studio_video` job (`768032a1-…`, model `marketing_studio_video`, type
+   `video`) returns `{"results":[{id,type,status,model,params,results:{rawUrl},createdAt}]}`
+   — a marketing job nests exactly like a seedance one.
+
+   Against `main`, a reply of that shape makes both readers fall through to the reply
+   itself, find no `status`, and return `null` forever: no crash, the job simply never
+   settles and a paid result is never collected.
+
+**Fixed accordingly.** Both readers now also search the reply's top-level job list, through
+one shared helper (`connectedListEntry`, `video-contract.ts`) that applies exactly the rule
+`normalizeFallbackStatus` and `consumerVideoAcknowledgement` already apply: only the first
+list key present is searched, the entry must name the acknowledged job id, every id key it
+carries must be a uuid and they must agree, and two entries naming that id — or none —
+leave the reply inert. The single-object keys each module was written with (`raw_data`,
+`generation`, `analysis`, `result`) are untouched, so both shapes are accepted and nothing
+that qualified before stops qualifying.
+
+**Say it plainly: the reader-side fix is UNTESTED AGAINST LIFE for both tools.** The
+nesting is recorded from this provider, on four reads including a real marketing job; the
+status replies of `marketing_studio_v2_status` and `video_analysis_status` are not, because
+neither can be produced for free. That is why both shapes are tolerated rather than one
+being chosen. The unit tests assert the recorded nesting and the recorded emptiness, and
+the fixture builders state field by field which parts are recorded and which are the tool's
+documented-but-unobserved contract.
+
+## Finding 6 (minor) — two advertised tools with no caller, one of which does not exist
+
+`personal_clipper_status` and `video_analysis_jobs` are advertised by the connection and
+have **no callers anywhere** in `lib/` or `app/` (they appear only in the advertised-tool
+fixtures). Nothing depends on them, so nothing is broken; they are surface we do not use.
+Separately, `personal_clipper_jobs` — also advertised — answers `Tool personal_clipper_jobs
+not found` when called. The connection's advertised list and its implemented list differ,
+which is worth remembering before writing a caller against an advertised tool: verify it
+answers first. Filed, not fixed.
+
+## Status after run 3
+
+PROVEN: everything runs 1 and 2 proved, unchanged.
+
+NEWLY PROVEN, READ-ONLY, AT NO COST: this provider nests a job in a top-level array on
+every job read it offers, including for a real marketing job; the two filed readers refuse
+that shape on `main`, and accept it now.
+
+UNPROVEN, AND NOT PROVABLE FOR FREE: the actual reply of `marketing_studio_v2_status` (tool
+not advertised on this connection) and of `video_analysis_status` (no analysis exists).
+Both readers are deliberately tolerant of both shapes as a result.
+
+STILL UNPROVEN, UNCHANGED: batch submit and per-item settlement (#234), the preset path
+(#234), reframe (#227), Shorts Studio (#230), Marketing v2 (#214/#246). Owner consent in
+chat is still outstanding; the relayed US$5.00 ceiling is still not consent.

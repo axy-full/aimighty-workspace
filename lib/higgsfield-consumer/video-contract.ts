@@ -265,6 +265,56 @@ export function parseConsumerCreditsForParams(value: QualificationValue, params:
   return credits;
 }
 
+/**
+ * Keys under which this provider nests a job list at the TOP LEVEL of a reply.
+ *
+ * Recorded read-only from the live connected account on 20 September 2026 — no
+ * job was submitted and nothing was billed:
+ *
+ *     job_display(id)                        -> {"results":[{id,type,status,model,params,results,createdAt}]}
+ *     jobs_wait(jobs:[…])                    -> {"jobs":[{index,job_id,status,type,model,result_url,…}]}
+ *     show_marketing_studio_generations      -> {"items":[{id,type,status,model,params,results,createdAt}],"next_cursor":null}
+ *     video_analysis_jobs                    -> {"items":[],"total_count":0,"cursor":null}
+ *
+ * The per-entry shape is identical across all four; only the list key differs.
+ * `data` is carried over from `normalizeFallbackStatus`, which searched it
+ * before this helper existed. A reader that looks only for the job under a
+ * single-object key (`generation`, `raw_data`, `analysis`, `result`) and then
+ * falls through to the reply itself finds no `status` in any of these, returns
+ * null forever, and never collects a finished, PAID job — the defect #251
+ * fixed for `job_display`.
+ */
+export const CONNECTED_LIST_KEYS = ["results", "jobs", "items", "data"] as const;
+const DEFAULT_ENTRY_ID_KEYS = ["id", "job_id", "jobId"] as const;
+/** The one id a list entry names: every id key it carries must be a uuid, and
+ * they must agree. Conflicting or malformed ids name nothing. */
+function entryId(entry: Record<string, unknown>, idKeys: readonly string[]): string | null {
+  const ids = idKeys.filter((key) => key in entry).map((key) => entry[key]);
+  if (!ids.length || ids.some((id) => !uuid(id))) return null;
+  const unique = new Set((ids as string[]).map((id) => id.toLowerCase()));
+  return unique.size === 1 ? [...unique][0] : null;
+}
+/**
+ * Exactly one entry of the reply's top-level job list naming the acknowledged
+ * job, or null. Only the FIRST list key present is searched, so a reply cannot
+ * be made to yield an entry from a second list. Two entries naming that id, or
+ * none, leave the reply inert — the same rule `normalizeFallbackStatus` and
+ * `consumerVideoAcknowledgement` apply. The entry is bound to the id we
+ * received from our own acknowledged submission and to nothing else.
+ */
+export function connectedListEntry(
+  value: Record<string, unknown>,
+  jobId: string,
+  idKeys: readonly string[] = DEFAULT_ENTRY_ID_KEYS,
+): Record<string, unknown> | null {
+  const key = CONNECTED_LIST_KEYS.find((name) => Array.isArray(value[name]));
+  if (key === undefined) return null;
+  const wanted = jobId.toLowerCase();
+  const matching = (value[key] as unknown[]).filter(
+    (item): item is Record<string, unknown> => record(item) && entryId(item, idKeys) === wanted,
+  );
+  return matching.length === 1 ? matching[0] : null;
+}
 /** Only explicit structured identifiers are evidence of acceptance. Prose and
  * arbitrary nested IDs are not searched; conflicting or malformed IDs fail closed. */
 export function consumerVideoAcknowledgement(
