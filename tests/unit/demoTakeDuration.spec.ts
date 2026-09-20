@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 /**
@@ -19,7 +20,7 @@ import path from "node:path";
  *
  * No paid call: nothing here reaches a vendor, and no render path runs.
  */
-const dir = mkdtempSync("/private/tmp/demo-duration-");
+const dir = mkdtempSync(path.join(tmpdir(), "demo-duration-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "demo-duration-unit-keyring-not-real-secret";
