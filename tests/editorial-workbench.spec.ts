@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 test("asset bins and named cuts persist, recover a lost save, restore clip audio and timing, and export an intact version", async ({
   page,
@@ -30,7 +31,7 @@ test("asset bins and named cuts persist, recover a lost save, restore clip audio
     page.request
       .get("/api/workbench/edit-versions?draftId=" + p.id, { headers })
       .then((r) => r.json());
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await stage(page, "assets");
   await openWorkbenchBins(page);
   await page.getByLabel("Bin name", { exact: true }).fill("Director selects");

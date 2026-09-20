@@ -5,6 +5,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { saveSchema } from "../lib/workbench/studio-schema";
 import { parseConnectedCatalogue } from "../lib/higgsfield-consumer/catalogue";
 import { CONNECTED_TOOLS, requireConnectedTool } from "../lib/higgsfield-consumer/tools";
+import { legacyShell } from "./helpers/legacyShell";
 
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=", "base64");
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -147,7 +148,7 @@ async function runTool(page: Page, state: Awaited<ReturnType<typeof fixture>>, e
 
 test("Upscale image runs as a tool preset: one image source, declared settings only, filed as “<source> · upscaled”", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   const tools = panel.getByRole("group", { name: "Tools", exact: true });
   await expect(tools.getByRole("button")).toHaveText(["Upscale image", "Upscale video", "Remove background (image)", "Remove background (video)", "Extend canvas", "Deflicker", "Lip-sync"]);
@@ -197,7 +198,7 @@ test("Upscale image runs as a tool preset: one image source, declared settings o
 
 test("Remove background (video) runs on one project video and files the result as “<source> · background removed”", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
   await panel.getByRole("group", { name: "Tools", exact: true }).getByRole("button", { name: "Remove background (video)", exact: true }).click();
   const model = panel.getByRole("combobox", { name: "Generate model", exact: true });

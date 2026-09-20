@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createClient } from "@libsql/client";
 import { randomBytes } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { askForLegacyShell } from "./helpers/legacyShell";
 
 test("paid writing recovers the same body after reload and is isolated from another account", async ({
   page,
@@ -354,6 +355,8 @@ test("ordinary drafts belong to each account even inside the same workspace", as
   );
   const first = await signInLocally(page.request),
     owner = await page.request.get("/api/me").then((r) => r.json());
+  /* This spec drives the OLD shell; ask for it (docs/workspace-switchover.md). */
+  await askForLegacyShell(page);
   await page.route("**/api/atomik/ideas", (route) =>
     route.fulfill({
       contentType: "application/json",

@@ -4,6 +4,7 @@ test.beforeEach(({page}) => { page.setDefaultTimeout(12_000); });
 import { signInLocally } from './helpers/workbenchLocal';
 import { newProject, type Project } from '../lib/workbench/studio';
 import { goWorkbenchStage } from './helpers/workbenchNavigation';
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page:Page) {
  await signInLocally(page.request);
@@ -56,7 +57,7 @@ async function openNode(page:Page) {
 }
 test('node audio keeps quote, project mapping and exact paid recovery across reload',async({page},info)=>{
  test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded phone and desktop');
- const f=await fixture(page);await page.goto('/workbench?project=generation-fixture&stage=canvas');
+ const f=await fixture(page);await page.goto(await legacyShell(page, '/workbench?project=generation-fixture&stage=canvas'));
  let dialog=await openNode(page);
  await expect(dialog.getByRole('combobox',{name:'Generation type'})).toHaveValue('audio');
  await expect(dialog.getByRole('button',{name:'Generate · 3 cr estimated',exact:true})).toBeEnabled();

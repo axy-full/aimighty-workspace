@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPlanBridge } from "@/lib/workspace/atomik-host";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
+import { PHONE_QUERY } from "@/lib/workspace/switchover";
 import { RigProvider, RigSeams } from "./rig/RigProvider";
 import { WorkspaceShell } from "./WorkspaceShell";
 
@@ -10,8 +11,11 @@ import { WorkspaceShell } from "./WorkspaceShell";
  * Phones keep the existing phone surface: below 760px, and on a touch phone
  * held landscape (short and coarse-pointed), /workspace hands over to
  * /workbench with the same project instead of rendering the desktop shell.
+ *
+ * One definition, shared with the switch-over gate that guards the old entry
+ * points — the two must agree on what "not a desktop" means.
  */
-export const PHONE_QUERY = "(max-width: 759px), (hover: none) and (pointer: coarse) and (max-height: 500px)";
+export { PHONE_QUERY };
 
 const subscribe = (update: () => void) => {
   const query = window.matchMedia(PHONE_QUERY);

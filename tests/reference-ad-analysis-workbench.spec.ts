@@ -5,6 +5,7 @@ import { seedProject, type Project } from "../lib/workbench/studio";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { saveSchema } from "../lib/workbench/studio-schema";
 import { referenceAdAnalysisSchema } from "../lib/workbench/reference-ad-analysis";
+import { legacyShell } from "./helpers/legacyShell";
 
 test("reference analysis samples the original, quotes the selected thinking controls, and requires reviewed apply", async ({
   page,
@@ -236,7 +237,7 @@ test("reference analysis samples the original, quotes the selected thinking cont
     return json({});
   });
   await page.goto(
-    "/workbench?project=reference-analysis&suite=moleculr&page=variants",
+    await legacyShell(page, "/workbench?project=reference-analysis&suite=moleculr&page=variants"),
   );
   const panel = page.getByRole("region", { name: "Reference ad", exact: true });
   await expect(

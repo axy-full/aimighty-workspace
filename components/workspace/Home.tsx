@@ -42,7 +42,10 @@ export function Home({
             <div className="pxw-home-sub">Every suite reads and writes the same project. Choose one before you open a room.</div>
           </div>
           <div className="pxw-home-actions">
-            <ButtonLink href="/">Open saved…</ButtonLink>
+            {/* New project still opens the old shell's dialog: the workspace
+                has no create flow of its own yet (docs/workspace-switchover.md),
+                and `?new=1` is a legacy-only param, so it renders there. The
+                old "Open saved…" link pointed at `/`, which IS this page now. */}
             <ButtonLink variant="primary" href="/workbench?new=1">New project</ButtonLink>
           </div>
         </div>

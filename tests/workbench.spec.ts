@@ -4,6 +4,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { readFile } from "node:fs/promises";
 import { seedProject, STAGES, type Plan, type Project } from "../lib/workbench/studio";
 import { RING_DOTS } from "../lib/ring";
+import { legacyShell } from "./helpers/legacyShell";
 
 
 
@@ -65,7 +66,7 @@ async function fixture(page: Page) {
 test("studio context actions edit the right node, respect locks, support keyboard and reuse assets", async ({ page }, testInfo) => {
   await signInLocally(page.request);
   const state = await fixture(page);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await goStage(page, "canvas");
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await page.locator(".mobile-node-viewbar").getByRole("tab", {name:"List",exact:true}).click();
@@ -147,7 +148,7 @@ test("studio context actions edit the right node, respect locks, support keyboar
 test("studio exposes Gen, collective Library and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
   await signInLocally(page.request);
   await fixture(page);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   const sections = page.getByRole("navigation", { name: "Rooms", exact: true });
   await expect(sections.getByRole("link", { name: "Make", exact: true })).toBeVisible();
   await expect(sections.getByRole("link", { name: "Library", exact: true })).toBeVisible();
@@ -180,7 +181,7 @@ test("navigation waits for hydration and initial load, then accepts the first wo
     if(route.request().method()==="GET"){projectRequested=true;await project;}
     await route.fallback();
   });
-  await page.goto("/workbench",{waitUntil:"commit"});
+  await page.goto(await legacyShell(page, "/workbench"),{waitUntil:"commit"});
   const workflow=page.getByRole("navigation",{name:"Particl Production Studio pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
   await expect(workflow).toBeVisible();
   await expect(workflow).toBeDisabled();
@@ -213,7 +214,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   const state = await fixture(page);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await expect(page.locator(".project-bar")).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await openWorkbenchProject(page);
@@ -350,7 +351,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
     reads.push(id);
     return json({ project: documents.get(id), revision: revisions.get(id), projects: [...documents.values()].map(project => ({ id: project.id, name: project.name })), productions: [] });
   });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await expect(page.locator(".project-switch")).toContainText("First production");
   await expect(page.locator(".save-label")).toContainText("Saved");
   delayNext = true;
@@ -411,7 +412,7 @@ test("a shared publication conflict preserves private edits and requires saving 
     reads++;
     return json({ project: draft, revision, shared, projects: [{ id: draft.id, name: draft.name }], productions: [] });
   });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await expect(page.locator(".save-label")).toHaveText("Saved");
   latest = 2; // A second collaborator publishes while this tab is editing v1.
   await goStage(page, "assets");
@@ -473,7 +474,7 @@ test("thinking model library groups and searches every provider, and effort surv
     }
     return reply({ models, jobs: [] });
   });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   if (!(await page.getByRole("tab", {name:"Genie",exact:true}).isVisible()))
     await page.getByRole("button", {name:"Toggle Atomik creative engine",exact:true}).click();
   await page.getByRole("tab", {name:"Genie",exact:true}).click();
@@ -554,7 +555,7 @@ test("node original downloads preserve source bytes independently of rendered ad
   const node = state.current().nodes.find(item => item.id === 'generate-browser')!;
   node.assetId = source.id;
   node.operations = [{ id: 'bright-preview', kind: 'grade', enabled: true, values: { brightness: 150, contrast: 120, saturation: 30 } }];
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goStage(page, 'canvas');
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await page.locator('.mobile-node-viewbar').getByRole('tab', { name: 'List', exact: true }).click();

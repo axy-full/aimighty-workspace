@@ -8,6 +8,7 @@ import { astraSceneDigest } from '../lib/astra-blender/proposal';
 import { astraNativeDigest } from '../lib/astra-blender/native';
 import type { AstraRenderJob, AstraRenderRequest, AstraRenderRuntime } from '../lib/astra-blender/render-contract';
 import { astraRenderPendingKey } from '../components/astra-blender/astra-render-recovery';
+import { legacyShell } from "./helpers/legacyShell";
 
 const ENDPOINT = '/api/workbench/astra-blender/render';
 const READY: AstraRenderRuntime = { configured: true, reason: null, blenderVersion: '5.0', timeoutMs: 180000, vcpus: 2, memoryMb: 4096 };
@@ -71,7 +72,7 @@ async function fixture(page: Page, options: { unavailable?: boolean; loseRespons
     if (request.method() !== 'GET') { forbidden.push(url.pathname); return route.fulfill({ status: 409, json: { error: 'Unexpected paid request in native render browser fixture.' } }); }
     return json({});
   });
-  await page.goto(`/workbench?project=${project.id}&stage=astra-blender`);
+  await page.goto(await legacyShell(page, `/workbench?project=${project.id}&stage=astra-blender`));
   const workspace = page.getByRole('region', { name: 'Astra', exact: true });
   const panel = await outputPanel(workspace);
   await expect(panel.getByText(options.unavailable ? 'Runtime setup required' : '3D runtime 5.0 · Ready', { exact: true })).toBeVisible();

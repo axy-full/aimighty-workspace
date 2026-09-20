@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
 import { projectSchema } from "../lib/workbench/studio-schema";
 import { generationReferenceIds } from "../lib/workbench/node-graph";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page: Page, failSave = false) {
   await signInLocally(page.request);
@@ -144,7 +145,7 @@ test("Moleculr reviews website branding, imports the original logo and preserves
   await page.route("**/api/uploads/chunk", route => route.fulfill({json:{ok:true}}));
   await page.route("**/api/uploads/finish", route => route.fulfill({json:{id:"north-logo",filename:"brand-reference.png",mime:"image/png",kind:"image",bytes:bytes.length,width:1,height:1,durationS:null,sha256:"a".repeat(64),url:"/api/uploads/north-logo"}}));
   await page.route("**/api/uploads/north-logo", route => route.fulfill({contentType:"image/png",body:bytes}));
-  await page.goto("/workbench?project=suite-test&suite=moleculr&page=brand");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=brand"));
   const kit = page.getByRole("region",{name:"Brand kit",exact:true});
   const review = page.getByRole("region",{name:"Import brand from website"});
   await kit.getByLabel("Brand voice",{exact:true}).fill("Quiet confidence.");
@@ -179,7 +180,7 @@ test("Moleculr saves product and cast, configures video, preserves original refe
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const state = await fixture(page);
-  await page.goto("/workbench?project=suite-test&suite=moleculr&page=product");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=product"));
   await expect(
     page.getByRole("heading", { name: "The product, precisely." }),
   ).toBeVisible();
@@ -261,7 +262,7 @@ test("Moleculr saves product and cast, configures video, preserves original refe
     page.getByRole("dialog").getByLabel("Node first frame"),
   ).toHaveValue("");
   await page.keyboard.press("Escape");
-  await page.goto("/workbench?project=suite-test&suite=moleculr&page=publish");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=publish"));
   await page
     .getByRole("button", { name: "Open delivery", exact: true })
     .click();
@@ -301,7 +302,7 @@ test("suite navigation waits for hydration and project initialization, then foll
     if (route.request().method() === "GET") { projectRequested = true; await project; }
     await route.fallback();
   });
-  await page.goto("/workbench?project=suite-test&stage=export", { waitUntil: "commit" });
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=export"), { waitUntil: "commit" });
   const suite = page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Moleculr Business Suite", exact: true });
   const room = page.getByRole("navigation", { name: "Rooms", exact: true }).getByRole("link", { name: "Make", exact: true });
   await expect(suite).toBeDisabled();
@@ -326,7 +327,7 @@ test("suite navigation includes Astra in order, retains every prior stage and bl
   page,
 }, info) => {
   await fixture(page, true);
-  await page.goto("/workbench?project=suite-test&stage=brief");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=brief"));
   await expect(
     page.getByRole("navigation", { name: "Particl Production Studio pages" }),
   ).toBeVisible();
@@ -377,7 +378,7 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const dock = page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true });
-  await page.goto("/workbench?project=suite-test&stage=brief");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=brief"));
   await expect(dock.getByRole("link")).toHaveText([
     /Brief & Script$/,
     /Boards$/,
@@ -393,32 +394,32 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
     ["moodboard", "storyboard", "Boards"],
     ["elements", "characters", "Cast & Elements"],
   ] as const) {
-    await page.goto(`/workbench?project=suite-test&stage=${alias}`);
+    await page.goto(await legacyShell(page, `/workbench?project=suite-test&stage=${alias}`));
     await expect(dock.getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
     await expect(page).toHaveURL(new RegExp(`[?&]stage=${target}(&|$)`));
     await expect(dock.getByRole("link", { name: alias, exact: true })).toHaveCount(0);
   }
-  await page.goto("/workbench?project=suite-test&stage=script");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=script"));
   await expect(page.getByLabel("Project title", { exact: true })).toBeVisible();
   await expect(page.getByRole("group", { name: "Script format", exact: true })).toBeVisible();
   await expect(page.locator(".stage-scroll").filter({ visible: true })).toHaveCount(1);
-  await page.goto("/workbench?project=suite-test&stage=moodboard");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=moodboard"));
   const look = page.locator("details.look-section");
   await expect(look).toBeVisible();
   await expect(page.getByText("LOOK DEVELOPMENT", { exact: true })).toBeHidden();
   await look.locator("summary").click();
   await expect(page.getByText("LOOK DEVELOPMENT", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Find the frame. Feel the rhythm." })).toBeVisible();
-  await page.goto("/workbench?project=suite-test&stage=elements");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=elements"));
   await expect(page.getByRole("region", { name: "Cast", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Elements", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Identity", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Element identity", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Soul ID", exact: true })).toHaveCount(0);
-  await page.goto("/workbench?project=suite-test&stage=assets");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=assets"));
   await expect(page.getByRole("region", { name: "Project generations", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "All workspace assets" })).toBeVisible();
-  await page.goto("/");
+  await page.goto(await legacyShell(page, "/"));
   await expect(page.getByRole("heading", { name: "What are we making?" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open a saved project", exact: true })).toBeVisible();
   expect(
@@ -430,7 +431,7 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
       return [before(projects, cards), before(cards, brief)];
     }),
   ).toEqual([true, true]);
-  await page.goto("/workbench?project=suite-test&suite=moleculr&page=brand");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=brand"));
   await expect(page).toHaveURL(/suite=moleculr&page=marketing#brand$/);
   const moleculrDock = page.getByRole("navigation", { name: "Moleculr Business Suite pages", exact: true });
   await expect(moleculrDock.getByRole("link")).toHaveCount(1);
@@ -467,7 +468,7 @@ test("four-suite home and legacy Subatomic redirect preserve project without inf
   page,
 }, info) => {
   const state = await fixture(page);
-  await page.goto("/");
+  await page.goto(await legacyShell(page, "/"));
   await expect(
     page.getByRole("heading", { name: "What are we making?" }),
   ).toBeVisible();
@@ -492,7 +493,7 @@ test("four-suite home and legacy Subatomic redirect preserve project without inf
   await expect(
     page.getByRole("navigation", { name: "Particl Production Studio pages" }),
   ).toBeInViewport();
-  await page.goto("/subatomic?project=suite-test&page=trends");
+  await page.goto(await legacyShell(page, "/subatomic?project=suite-test&page=trends"));
   await expect(page).toHaveURL(/\/subatomik\?project=suite-test&page=motion-transfer/);
   await expect(
     page
@@ -598,7 +599,7 @@ test("Moleculr keeps reviewed product profiles and brand kit, selects native bri
       });
     },
   );
-  await page.goto("/workbench?project=suite-test&suite=moleculr&page=brand");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=brand"));
   const kit = page.getByRole("region", { name: "Brand kit" });
   await kit.getByLabel("Brand name", { exact: true }).fill("North Studio");
   await kit
@@ -782,7 +783,7 @@ test("Moleculr prepares quoted-later hook and cast drafts while single video can
   const state = await fixture(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/workbench?project=suite-test&suite=moleculr&page=variants");
+  await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=variants"));
   await expect(
     page.getByRole("button", { name: "Prepare hook × cast variants" }),
   ).toBeDisabled();

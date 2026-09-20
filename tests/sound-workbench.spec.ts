@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 function sine() {
   const frames = 96000,
     b = Buffer.alloc(44 + frames * 2);
@@ -149,7 +150,7 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
       return original.apply(this, args);
     };
   });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
     id: p.id,

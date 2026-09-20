@@ -4,6 +4,7 @@ import { signInLocally } from './helpers/workbenchLocal';
 import { goWorkbenchStage } from './helpers/workbenchNavigation';
 import { newProject, type Project } from '../lib/workbench/studio';
 import type { SoulIdentity } from '../lib/workbench/soul-identity';
+import { legacyShell } from "./helpers/legacyShell";
 
 /** Cast & Elements (four-suites PR F): identity-first cards over a mocked
  * identity list, with identity rendering gated off. Nothing here submits a
@@ -64,7 +65,7 @@ async function noOverflow(page: Page) {
 test('Cast & Elements cards show identity state and open the Identity panel from cast and element cards', async ({ page }, info) => {
   const f = await fixture(page);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goWorkbenchStage(page, 'characters');
   const cast = page.getByRole('region', { name: 'Cast', exact: true });
   const elements = page.getByRole('region', { name: 'Elements', exact: true });
@@ -108,7 +109,7 @@ test('Cast & Elements cards show identity state and open the Identity panel from
 test('a ready identity is the pre-selected reference for its take while identity rendering stays gated', async ({ page }, info) => {
   const f = await fixture(page);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goWorkbenchStage(page, 'canvas');
   if (page.viewportSize()!.width < 760) {
     await page.locator('.mobile-node-viewbar').getByRole('tab', { name: 'List', exact: true }).click();

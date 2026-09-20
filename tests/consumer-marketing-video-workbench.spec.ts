@@ -3,6 +3,7 @@ import { signInLocally } from './helpers/workbenchLocal';
 import { seedProject, type Project } from '../lib/workbench/studio';
 import { EMPTY_MOLECULR } from '../lib/workbench/moleculr';
 import { saveSchema } from '../lib/workbench/studio-schema';
+import { legacyShell } from "./helpers/legacyShell";
 
 const wallet = '22222222-2222-4222-8222-222222222222';
 const providerId = '33333333-3333-4333-8333-333333333333';
@@ -89,7 +90,7 @@ async function fixture(page: Page, options: { owner?: boolean; connected?: boole
   });
   return { scope, posts, jobs, consumerReads, unexpected, external, errors, get project() { return project; } };
 }
-const open = (page: Page) => page.goto('/workbench?project=consumer-campaign&suite=moleculr&page=variants');
+const open = async (page: Page) => page.goto(await legacyShell(page, '/workbench?project=consumer-campaign&suite=moleculr&page=variants'));
 function historyJob(index: number, status = 'quoted'): FakeJob {
   return { id: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`, draftId: 'consumer-campaign', status,
     input: { prompt: `Saved campaign ${index}.`, duration: 15, resolution: '720p', aspectRatio: '16:9', generateAudio: true, mode: 'product_showcase' },

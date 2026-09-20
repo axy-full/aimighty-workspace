@@ -7,6 +7,7 @@ import { screenplayPdf } from './helpers/screenplayPdf';
 import { newProject, type Project } from '../lib/workbench/studio';
 import { sourceCanonical, type DevelopmentJob, type DevelopmentRequest, type DevelopmentResult } from '../lib/workbench/development-types';
 import { developmentPendingKey } from '../lib/workbench/development-client';
+import { legacyShell } from "./helpers/legacyShell";
 
 const efforts = [{ value: 'low', label: 'Low', description: 'Faster planning' }, { value: 'high', label: 'High', description: 'More time for complex planning' }];
 const models = [
@@ -119,7 +120,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   const f = await fixture(page);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goStage(page, 'brief');
   await page.locator('.stage-scroll').filter({ visible: true }).evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: info.outputPath('script-import-options.png'), fullPage: true });
@@ -193,7 +194,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
 test('idea development recovers the exact request after a lost response and reload, then saves the selected direction once', async ({ page }, info) => {
   test.skip(!['workbench-360x640', 'workbench-1440x900'].includes(info.project.name), 'bounded recovery browser coverage');
   const f = await fixture(page, { loseFirst: true });
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goStage(page, 'brief');
   let panel = scopePanel(page, 'idea');
   await choose(page, panel, 'Forge', 'Forge 5.5');
@@ -249,7 +250,7 @@ test('idea development recovers the exact request after a lost response and relo
 test('notifications remain interactive and model options stay above a live import toast', async ({ page }, info) => {
   test.skip(info.project.name !== 'workbench-360x640', 'phone popup and notification overlap regression');
   const f = await fixture(page);
-  await page.goto('/workbench');
+  await page.goto(await legacyShell(page, '/workbench'));
   await goStage(page, 'brief');
   await page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Ad-film script/ }).click();
   const panel = scopePanel(page, 'adfilm');

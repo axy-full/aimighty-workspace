@@ -3,6 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Edit & Sound: quote → generate → clip on the right lane at the playhead.
@@ -114,7 +115,7 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   });
 
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await stage(page, "edit");
   await openWorkbenchInspector(page, "sound");
   const panel = page.getByRole("region", { name: "Generate sound" });

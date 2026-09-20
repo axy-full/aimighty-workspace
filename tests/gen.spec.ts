@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { newProject } from "../lib/workbench/studio";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { askForLegacyShell } from "./helpers/legacyShell";
 
 test("Gen Seedance Edit recovers a lost submission after returning to Studio without buying a second edit", async ({
   page,
@@ -12,6 +13,8 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const draft = { ...newProject("Gen fixture"), id: "gen-draft", productionProjectId: "project-fixture" };
+  /* This spec drives the OLD shell; ask for it (docs/workspace-switchover.md). */
+  await askForLegacyShell(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const submissions: { body: string | null; key: string }[] = [];

@@ -6,6 +6,7 @@ import sharp from "sharp";
 import ts from "typescript";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 test("GPU color interpolation matches the CPU reference with domains, partial mix and image orientation", async ({
   page,
@@ -31,7 +32,7 @@ test("GPU color interpolation matches the CPU reference with domains, partial mi
       route.fulfill({ body: js, contentType: "text/javascript" }),
     );
   }
-  await page.goto("/");
+  await page.goto(await legacyShell(page, "/"));
   const samples = await page.evaluate(async () => {
     const rendererUrl = "/__color-test__/color-render.js",
       cubeUrl = "/__color-test__/color-lut.js";
@@ -199,7 +200,7 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
     data: { project, revision },
   });
   expect(save.ok(), await save.text()).toBe(true);
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
     id: project.id,

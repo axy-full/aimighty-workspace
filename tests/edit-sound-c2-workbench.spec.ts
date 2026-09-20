@@ -3,6 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Edit & Sound, PR C2: Change voice and Dub.
@@ -119,7 +120,7 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
   });
 
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
-  await page.goto("/workbench");
+  await page.goto(await legacyShell(page, "/workbench"));
   await stage(page, "edit");
   await openWorkbenchInspector(page, "sound");
   const panel = page.getByRole("region", { name: "Generate sound" });

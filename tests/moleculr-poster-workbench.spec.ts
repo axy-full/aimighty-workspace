@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { signInLocally } from './helpers/workbenchLocal';
 import { seedProject, type Project } from '../lib/workbench/studio';
 import { saveSchema } from '../lib/workbench/studio-schema';
+import { legacyShell } from "./helpers/legacyShell";
 
 test.use({ actionTimeout: 12000 });
 
@@ -30,7 +31,7 @@ test('poster layers persist, export a full-size PNG and save a reusable original
     if (url.pathname === '/api/generate' || url.pathname === '/api/audio') { providerCalls.push(url.pathname); return route.abort(); }
     return route.continue();
   });
-  await page.goto('/workbench?project=poster-workflow&suite=moleculr&page=design');
+  await page.goto(await legacyShell(page, '/workbench?project=poster-workflow&suite=moleculr&page=design'));
   await page.getByRole('button', { name: 'Create a poster', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Poster designer', exact: true })).toBeVisible();
   await page.getByLabel('Design name', { exact: true }).fill('Launch poster');

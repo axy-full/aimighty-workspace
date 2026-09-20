@@ -1,0 +1,57 @@
+/* The switch-over gate. Scoped to its own two classes so it changes nothing
+   else on either surface. The media queries here are the CSS half of
+   PHONE_QUERY in lib/workspace/switchover.ts — keep the two in step. */
+
+.pxw-switch-note {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #000;
+  color: #7c7c84;
+  font: 400 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.pxw-switch-note-line {
+  margin: 0;
+}
+
+.pxw-switch-note-link {
+  color: #d7d9de;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Undecided: the desktop shows the note and holds the old shell back; a phone
+   shows the old shell and hides the note. `display: contents` keeps the old
+   shell's own full-screen layout unwrapped. */
+[data-pxw-switch="pending"] > .pxw-switch-note {
+  display: none;
+}
+[data-pxw-switch="pending"] > .pxw-switch-legacy {
+  display: contents;
+}
+
+@media (min-width: 760px) {
+  [data-pxw-switch="pending"] > .pxw-switch-note {
+    display: flex;
+  }
+  [data-pxw-switch="pending"] > .pxw-switch-legacy {
+    display: none;
+  }
+}
+
+/* A touch phone held landscape is still a phone. */
+@media (hover: none) and (pointer: coarse) and (max-height: 500px) {
+  [data-pxw-switch="pending"] > .pxw-switch-note {
+    display: none;
+  }
+  [data-pxw-switch="pending"] > .pxw-switch-legacy {
+    display: contents;
+  }
+}

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import type { PublicPipelineRun } from "../lib/pipeline/public";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page: Page) {
   await signInLocally(page.request);
@@ -219,7 +220,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   const f = await fixture(page),
     errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/atomik?project=${f.project.id}&page=runs`);
+  await page.goto(await legacyShell(page, `/atomik?project=${f.project.id}&page=runs`));
   const suite = page.getByRole("region", { name: "Atomik Super Agent suite", exact: true });
   await expect(
     suite.getByRole("heading", { name: "Runs", exact: true }),
@@ -246,7 +247,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
     path: info.outputPath("atomik-runs.png"),
     animations: "disabled",
   });
-  await page.goto(`/atomik?project=${f.project.id}&page=recipes`);
+  await page.goto(await legacyShell(page, `/atomik?project=${f.project.id}&page=recipes`));
   await suite
     .getByRole("button", { name: "Create new run · 0 cr", exact: true })
     .click();
@@ -256,14 +257,14 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await expect(
     suite.getByRole("button", { name: "Quote stage", exact: true }),
   ).toBeVisible();
-  await page.goto(`/atomik?project=${f.project.id}&page=budget`);
+  await page.goto(await legacyShell(page, `/atomik?project=${f.project.id}&page=budget`));
   await expect(suite.getByText("12 cr", { exact: true })).toBeVisible();
   await expect(suite.getByText("100 cr", { exact: true })).toBeVisible();
   await suite.getByLabel("Project cap (credits)", { exact: true }).fill("125");
   await suite.getByRole("button", { name: "Save cap", exact: true }).click();
   await expect(suite.getByText("125 cr", { exact: true })).toBeVisible();
   expect(f.requests.at(-1)?.body).toEqual({ capCredits: 125 });
-  await page.goto(`/atomik?project=${f.project.id}&page=models`);
+  await page.goto(await legacyShell(page, `/atomik?project=${f.project.id}&page=models`));
   await expect(
     suite.getByRole("heading", { name: "Effective routing", exact: true }),
   ).toBeVisible();
@@ -279,9 +280,9 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await expect(
     suite.getByRole("combobox", { name: "Reasoning effort", exact: true }),
   ).toBeEnabled();
-  await page.goto(`/atomik?project=${f.project.id}&page=runs`);
+  await page.goto(await legacyShell(page, `/atomik?project=${f.project.id}&page=runs`));
   await expect(suite.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
-  await page.goto("/atomik?project=unavailable&page=runs");
+  await page.goto(await legacyShell(page, "/atomik?project=unavailable&page=runs"));
   await expect(suite.getByRole("heading", { name: "Choose a saved project", exact: true })).toBeVisible();
   await page.goto(`/?project=${f.project.id}`);
   await expect(
@@ -297,7 +298,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await expect(
     page.getByLabel("Your next production brief", { exact: true }),
   ).toBeDisabled();
-  await page.goto("/atomik?project=unavailable&page=runs");
+  await page.goto(await legacyShell(page, "/atomik?project=unavailable&page=runs"));
   await expect(
     suite.getByRole("heading", { name: "Choose a saved project", exact: true }),
   ).toBeVisible();

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project, type Plan } from "../lib/workbench/studio";
 import { projectSchema } from "../lib/workbench/studio-schema";
+import { legacyShell } from "./helpers/legacyShell";
 
 async function fixture(page: Page, rejectSave = false) {
   await signInLocally(page.request);
@@ -145,7 +146,7 @@ async function fixture(page: Page, rejectSave = false) {
     return json({});
   });
   await page.goto(
-    "/workbench?project=marketing-flow&atomik=marketing&stage=brief",
+    await legacyShell(page, "/workbench?project=marketing-flow&atomik=marketing&stage=brief"),
   );
   const panel = page.getByRole("region", {
     name: "Marketing Studio",

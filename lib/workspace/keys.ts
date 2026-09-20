@@ -124,6 +124,21 @@ export const WORKSPACE_BINDINGS: KeyBinding<ShellAction>[] = [
     hint: (ctx) => ctx.state.view === "studio" ? { key: "A", label: "atomik" } : null,
   },
   {
+    /* ⌘J as well: both old shells bound the Atomik panel to it
+       (components/shell/Shell.tsx, components/workbench/Studio.tsx), and the
+       new shell is now the surface people arrive on. Not advertised — `A` is
+       the legend entry. */
+    id: "atomik-cmd",
+    modified: true,
+    match: (e, ctx) =>
+      ctx.state.view === "studio" &&
+      !ctx.state.palette &&
+      (e.metaKey === true || e.ctrlKey === true) &&
+      !e.altKey &&
+      e.key.toLowerCase() === "j",
+    action: () => ({ type: "toggleAtomik" }),
+  },
+  {
     id: "generate",
     match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key.toLowerCase() === "g",
     action: () => ({ type: "generate" }),

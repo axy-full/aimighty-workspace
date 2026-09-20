@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Atomik proposes a step on the connected account (A2): the rail and the
@@ -64,7 +65,7 @@ async function fixture(page: Page, options: { batch?: boolean } = {}) {
 
 test("a connected step shows its connected-credit quote and Continue approves exactly that price once", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const phone = page.viewportSize()!.width < 760;
   const surface = phone ? page.getByRole("group", { name: "Checkpoint", exact: true }) : page.getByRole("complementary", { name: "Atomik" }).or(page.getByLabel("Atomik", { exact: true })).first();
   const cont = surface.getByRole("button", { name: /^Continue/ }).first();
@@ -84,7 +85,7 @@ test("a connected step shows its connected-credit quote and Continue approves ex
 
 test("a connected batch is one approval for its exact summed credits", async ({ page }) => {
   const state = await fixture(page, { batch: true });
-  await page.goto("/atomik?project=atomik-draft&page=generate");
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
   const phone = page.viewportSize()!.width < 760;
   const surface = phone ? page.getByRole("group", { name: "Checkpoint", exact: true }) : page.getByRole("complementary", { name: "Atomik" }).or(page.getByLabel("Atomik", { exact: true })).first();
   const cont = surface.getByRole("button", { name: /^Continue/ }).first();
