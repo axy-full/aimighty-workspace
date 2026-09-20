@@ -44,6 +44,18 @@ export async function seedStarterProduction(createdBy: string): Promise<{ projec
  * numbers, one Approved. Their pictures are the platform's neutral previews
  * when published, else the fixture clip; nothing was rendered, so nothing
  * is metered.
+ *
+ * `duration_s` and `bytes` stay NULL on every one of these rows, deliberately.
+ * These takes were never sealed by a render path, and the media they point at is
+ * not a stored original of this workspace — it is the shared platform preview or
+ * `public/fixtures/clip.mp4` (see `isDemoMediaUrl`), which the bounded inspectors
+ * in lib/videoMetadata.server.ts cannot open, because they resolve a
+ * generation's bytes under the workspace's own Blob prefix. `params.duration`
+ * below is a DEMO_TAKES fixture, for display and for the demo's own credit
+ * numbers; copying it into `duration_s` would make a demo take quotable at a
+ * guessed length, which is the wrong bill the pricing rules forbid. A demo take
+ * is therefore non-quotable: lib/mediaSource.server.ts refuses it with a reason
+ * instead of measuring or persisting anything.
  */
 async function seedDemoTakes(projectId: string, createdBy: string, ts: number): Promise<void> {
   const published = new Set((await listPlatformAssets("previews/").catch(() => [])).map((a) => a.key.replace(/^previews\//, "")));
