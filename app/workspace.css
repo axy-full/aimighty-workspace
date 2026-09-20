@@ -343,6 +343,10 @@
 .pxw .pxw-atomik-badge { font-family: var(--pxw-mono); font-size: 10px; }
 .pxw .pxw-atomik-caret { font-size: 8px; color: var(--pxw-faintest); }
 .pxw .pxw-credits { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-dimmer); flex: none; white-space: nowrap; }
+/* An unknown balance, or a workspace billed in dollars: the slot stays,
+   the figure does not pretend. */
+.pxw .pxw-credits--unknown { color: var(--pxw-label-floor); }
+
 /* The account menu. A <details> popover: the destinations the new shell has
    no page of its own for, the workspace switch, sign out, and the
    switch-over escape hatch (docs/workspace-switchover.md). */
