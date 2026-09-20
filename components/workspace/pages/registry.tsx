@@ -5,11 +5,14 @@ import { pageDef } from "@/lib/workspace/pages";
 import type { PageId } from "@/lib/workspace/types";
 import { RigPage } from "../rig/RigPage";
 import { Kicker } from "../ui";
+import { TakesPage } from "./TakesPage";
 
 /** Everything a page body receives from the shell. */
 export type PageBodyProps = {
   page: PageId;
   project: Project | null;
+  /** The request scope (X-Workbench-Scope) every workbench route checks. */
+  scope: string;
 };
 
 /** One line on what the page will hold. No sample data. */
@@ -53,8 +56,13 @@ function placeholder(id: PageId): ComponentType<PageBodyProps> {
   return Placeholder;
 }
 
-/** Page id → body. Later PRs replace an entry with the real page. */
-export const PAGE_BODIES: Record<PageId, ComponentType<PageBodyProps>> = {
-  ...(Object.fromEntries((Object.keys(COMING) as PageId[]).map((id) => [id, placeholder(id)])) as Record<PageId, ComponentType<PageBodyProps>>),
+/** Built pages; every other id keeps its placeholder. */
+const BUILT: Partial<Record<PageId, ComponentType<PageBodyProps>>> = {
   rig: RigPage,
+  takes: TakesPage,
 };
+
+/** Page id → body. Later PRs replace an entry with the real page. */
+export const PAGE_BODIES: Record<PageId, ComponentType<PageBodyProps>> = Object.fromEntries(
+  (Object.keys(COMING) as PageId[]).map((id) => [id, BUILT[id] ?? placeholder(id)]),
+) as Record<PageId, ComponentType<PageBodyProps>>;

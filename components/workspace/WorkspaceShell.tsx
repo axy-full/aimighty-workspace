@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { projectUploads, useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
+import { useProjectLibrary } from "@/lib/workspace/library";
 import { keyContextFor, legendBindings, resolveKey, stepSelection, WORKSPACE_BINDINGS, type KeyBinding, type ShellAction } from "@/lib/workspace/keys";
 import { generateAvailability, listFor } from "@/lib/workspace/navigation";
 import { PAGES } from "@/lib/workspace/pages";
@@ -11,7 +12,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { GenerationStrip } from "./GenerationStrip";
 import { Home } from "./Home";
 import { Inspector } from "./Inspector";
-import { Library } from "./Library";
+import { Library, type MediaItem } from "./Library";
 import { PageHeader, primaryAvailability, type GenerateStatus } from "./PageHeader";
 import { Palette } from "./Palette";
 import { ProjectHeader } from "./ProjectHeader";
@@ -116,7 +117,11 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
     ws.openProject(id, state.suite, PAGES[state.suite][0].id);
   };
 
-  const uploads = projectUploads(project);
+  /* Media: the project library's uploads once read, the draft's filed uploads until then. */
+  const library = useProjectLibrary(scope, project?.id ?? null);
+  const uploads: MediaItem[] = library.state.status === "ready"
+    ? library.items.filter((item) => item.take.kind === "UPLOAD").map((item) => ({ id: item.take.id, name: item.take.name, url: item.url, media: item.media, takeId: item.take.id }))
+    : projectUploads(project).map((asset) => ({ id: asset.id, name: asset.name, url: asset.url || null, media: asset.kind === "image" || asset.kind === "video" ? asset.kind : null, takeId: null }));
   const Body = PAGE_BODIES[state.page];
   const availability = primaryAvailability(state, seams.onGenerate, seams.generate);
   const reason = availability.reason ?? (state.page === "rig" ? seams.generate?.notice ?? null : null);
@@ -135,11 +140,11 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
               <PageHeader project={project} onGenerate={seams.onGenerate} generate={seams.generate} />
               <Breadcrumb projectName={projectName || "Project"} reason={reason} />
               <div className="pxw-content" data-testid="content">
-                <Body page={state.page} project={project} />
+                <Body page={state.page} project={project} scope={scope} />
               </div>
               <GenerationStrip />
             </main>
-            {state.inspector ? <Inspector /> : null}
+            {state.inspector ? <Inspector scope={scope} project={project} /> : null}
           </div>
           <StatusBar
             projectName={projectName}

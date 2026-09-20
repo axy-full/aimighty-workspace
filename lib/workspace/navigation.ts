@@ -118,6 +118,8 @@ export function withLibFilter(state: AppState, libFilter: LibFilter): AppState {
   return { ...next, ...repairSelection(next, next.page) };
 }
 
+/* ← → item navigation lives in lib/workspace/keys.ts (stepSelection over the visible list). */
+
 /* ── URL ──────────────────────────────────────────────────────────────── */
 
 export const WORKSPACE_PATH = "/workspace";

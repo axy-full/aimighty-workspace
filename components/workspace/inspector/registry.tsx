@@ -1,11 +1,13 @@
 "use client";
 import type { ComponentType } from "react";
+import type { Project } from "@/lib/workbench/studio";
 import { getSuite, pageDef } from "@/lib/workspace/pages";
 import type { AppState, SelKind } from "@/lib/workspace/types";
 import { RigInspector } from "../rig/RigInspector";
 import { Kicker } from "../ui";
+import { TakeInspector } from "./TakeInspector";
 
-export type InspectorBodyProps = { state: AppState };
+export type InspectorBodyProps = { state: AppState; scope: string; project: Project | null };
 
 export const KIND_LABEL: Record<SelKind, string> = { shot: "Scene", take: "Asset", cast: "Identity", page: "Stage" };
 
@@ -32,7 +34,7 @@ function Placeholder({ state }: InspectorBodyProps) {
 /** Selection kind → Inspector body. Later PRs replace an entry. */
 export const INSPECTOR_BODIES: Record<SelKind, ComponentType<InspectorBodyProps>> = {
   shot: RigInspector,
-  take: Placeholder,
+  take: TakeInspector,
   cast: Placeholder,
   page: Placeholder,
 };

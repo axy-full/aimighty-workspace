@@ -8,7 +8,8 @@ import { agentDot } from "@/lib/workspace/next";
 import { pageDef, pageViews, primaryAction, subtitle } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { LibFilter, RigView } from "@/lib/workspace/types";
-import { Button, ButtonLink, Segmented } from "./ui";
+import { runPageAction } from "@/lib/workspace/page-actions";
+import { Button, Segmented } from "./ui";
 
 /** Live state of Generate from the page that owns it: the quote on the button and anything blocking it. */
 export type GenerateStatus = {
@@ -86,10 +87,17 @@ export function PageHeader({ project, onGenerate, generate }: { project: Project
           <span>{action.label}</span>
         </Button>
       ) : (
-        /* Upload and Add cast open the existing, working flows for this project. */
-        <ButtonLink variant="primary" href={suiteHref("particl", projectId, action.kind === "upload" ? "assets" : "characters")}>
+        /* Upload and Add cast run on the page (its picker, its identity panel);
+           before the page has mounted they open the existing workbench flow. */
+        <Button
+          variant="primary"
+          data-testid="primary-action"
+          onClick={() => {
+            if (!runPageAction(state.page)) window.location.assign(suiteHref("particl", projectId, action.kind === "upload" ? "assets" : "characters"));
+          }}
+        >
           <span>{action.label}</span>
-        </ButtonLink>
+        </Button>
       )}
       <button type="button" className="pxw-insp-toggle" aria-pressed={state.inspector} aria-keyshortcuts="I" onClick={() => dispatch({ type: "toggleInspector" })}>
         Inspector
