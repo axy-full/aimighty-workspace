@@ -84,6 +84,21 @@ Before the browser has answered, `components/switchover/switchover.css` decides
 from the same query, so a desktop never flashes the old studio and a phone
 never flashes the hand-off note.
 
+**The answer is latched to the document** (`lib/workspace/device.ts`). The gate
+asks the query once, on the load, and never re-asks. It has to: the second
+clause is a *height* on a touch phone, and that height moves while nobody
+rotates anything — a keyboard closing, browser chrome collapsing,
+`interactive-widget=resizes-content`, a dev overlay. Re-deciding is not
+re-styling here; it replaces the document, so a landscape phone that crossed
+500px mid-session was being redirected into the desktop workspace while
+somebody was using the phone surface (and, arriving late, it clobbered whatever
+navigation had happened since). A rotation that reloads the page decides
+freshly, because that is a new document; only a live media-query change inside
+one document is ignored. `/workspace`'s own shell choice
+(`MOBILE_QUERY`, `components/workspace/WorkspaceApp.tsx`) is deliberately NOT
+latched: it only chooses which shell to draw, and the shell must match the
+viewport it is drawn in, so it stays live.
+
 ## The escape hatch
 
 For **one release**:

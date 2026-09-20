@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
-import { LEGACY_SHELL, SHELL_COOKIE, SHELL_PARAM } from "../lib/workspace/switchover";
+import { LEGACY_SHELL, PHONE_QUERY, SHELL_COOKIE, SHELL_PARAM } from "../lib/workspace/switchover";
 
 /**
  * The switch-over: the redesigned workspace is the default surface on
@@ -152,6 +152,40 @@ test("phones keep today's surfaces at today's URLs", async ({ page }, info) => {
   await page.goto(`/workspace?project=${PROJECT}&suite=particl&page=rig`);
   await expect(page).toHaveURL(/\/workspace\?/);
   await expect(page.getByTestId("phone-shell")).toBeVisible();
+});
+
+test("a late viewport change never redirects a phone", async ({ page }, info) => {
+  test.skip(!PHONE.includes(info.project.name), "phone viewports");
+  await signedIn(page);
+
+  const from = `/workbench?project=${PROJECT}&stage=canvas`;
+  const stayed = new RegExp(from.replace(/[?]/g, "\\?") + "$");
+  await page.goto(from);
+  await expect(page).toHaveURL(stayed);
+  await expect(legacyShell(page).first()).toBeVisible();
+
+  /* The viewport grows past every clause of PHONE_QUERY inside this one
+     document — what a landscape phone does when a keyboard closes, browser
+     chrome collapses or a dev overlay appears. The media query is asserted to
+     have actually flipped, so this is a decision the gate could have re-taken
+     rather than a race that might not have run. */
+  await page.setViewportSize({ width: 1440, height: 900 });
+  /* Long enough for the redirect this used to do: it replaced the document as
+     soon as the query changed. */
+  await page.waitForTimeout(1_000);
+  await expect(page).toHaveURL(stayed);
+  await expect(page.locator(".pxw")).toHaveCount(0);
+  await expect(page.getByTestId("switchover-note")).toHaveCount(0);
+  await expect(legacyShell(page).first()).toBeVisible();
+  /* And the query really did flip under the gate, so what was proved above is
+     a decision the gate declined to re-take, not a change it never saw. */
+  expect(await page.evaluate((query) => window.matchMedia(query).matches, PHONE_QUERY)).toBe(false);
+
+  /* Latched per document, not per device: reloading at the new size is a fresh
+     decision, and at 1440×900 that decision is the workspace. */
+  await page.reload();
+  await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
 });
 
 /* ── The escape hatch ──────────────────────────────────────────────────── */

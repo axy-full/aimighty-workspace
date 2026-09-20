@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
+import { createDeviceLatch } from "@/lib/workspace/device";
 import {
   LEGACY_SHELL,
   NEW_SHELL,
@@ -23,15 +24,16 @@ import "./switchover.css";
    Until the browser answers, the attribute is `pending` and switchover.css
    decides from the same media query — so a desktop never flashes the old
    studio and a phone never flashes the hand-off note.
+
+   The answer is LATCHED (lib/workspace/device.ts): asked once per document and
+   never re-asked. The phone half of PHONE_QUERY matches a touch phone held
+   landscape on `max-height: 500px`, and that height moves within one document
+   — a keyboard closing, browser chrome collapsing, a dev overlay — so a live
+   re-decide would redirect somebody out of the phone surface they were using.
+   A rotation that reloads the document still decides freshly.
    ────────────────────────────────────────────────────────────────────────── */
 
-const subscribe = (update: () => void) => {
-  const query = window.matchMedia(PHONE_QUERY);
-  query.addEventListener("change", update);
-  return () => query.removeEventListener("change", update);
-};
-const snapshot = () => (window.matchMedia(PHONE_QUERY).matches ? "phone" : "desktop");
-const serverSnapshot = () => "pending" as const;
+const latch = createDeviceLatch(() => window.matchMedia(PHONE_QUERY));
 
 /**
  * The same write as shellCookieScript, for a navigation that never re-parsed
@@ -73,7 +75,7 @@ export default function SwitchoverGate({
   children: React.ReactNode;
 }) {
   const session = useSession();
-  const device = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  const device = useSyncExternalStore(latch.subscribe, latch.snapshot, latch.serverSnapshot);
   const scoped = hasWorkspace ?? Boolean(session.workspace);
   const switching = Boolean(target) && scoped;
 
