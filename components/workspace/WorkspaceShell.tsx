@@ -5,11 +5,12 @@ import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { projectUploads, useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
 import { useProjectLibrary } from "@/lib/workspace/library";
 import { keyContextFor, legendBindings, resolveKey, stepSelection, WORKSPACE_BINDINGS, type KeyBinding, type ShellAction } from "@/lib/workspace/keys";
-import { generateAvailability, listFor } from "@/lib/workspace/navigation";
+import { generateTarget, listFor } from "@/lib/workspace/navigation";
 import { PAGES } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import { AtomikPanel } from "./AtomikPanel";
 import { Breadcrumb } from "./Breadcrumb";
+import { GenerateComposer } from "./GenerateComposer";
 import { GenerationStrip } from "./GenerationStrip";
 import { Home } from "./Home";
 import { Inspector } from "./Inspector";
@@ -51,7 +52,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const current = ws.state;
-      const ctx = keyContextFor(current, { canGenerate: Boolean(onGenerate), canPlay: Boolean(onTogglePlay) });
+      const ctx = keyContextFor(current, { canGenerate: Boolean(onGenerate), canPlay: Boolean(onTogglePlay), canCompose: true });
       const shell = resolveKey(WORKSPACE_BINDINGS, event, ctx);
       if (shell) {
         const action = shell.action(event, ctx) as ShellAction;
@@ -61,7 +62,8 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
             dispatch({ type: "patch", patch: { palette: !current.palette, query: "" } });
             return;
           case "escape":
-            if (current.palette) dispatch({ type: "patch", patch: { palette: false, query: "" } });
+            if (current.composer) dispatch({ type: "patch", patch: { composer: false } });
+            else if (current.palette) dispatch({ type: "patch", patch: { palette: false, query: "" } });
             else if (current.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
             return;
           case "enterStudio":
@@ -85,9 +87,12 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
           }
           case "generate": {
             event.preventDefault();
-            const availability = generateAvailability(current, Boolean(onGenerate));
-            if (availability.enabled) onGenerate?.();
-            else ws.toast(availability.reason);
+            /* Already open: G neither re-opens it nor dispatches past it. */
+            if (current.composer) return;
+            /* A selected, ready shot keeps the Rig's Generate; everything else
+               — another page, no shot, Home — opens the global composer. */
+            if (generateTarget(current, Boolean(onGenerate)) === "rig") onGenerate?.();
+            else dispatch({ type: "patch", patch: { composer: true } });
             return;
           }
           case "toggleAtomik":
@@ -104,7 +109,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
             return;
         }
       }
-      if (current.palette) return;
+      if (current.palette || current.composer) return;
       const extra = seams.bindings && resolveKey(seams.bindings, event, ctx);
       if (extra) extra.action(event, ctx);
     };
@@ -155,10 +160,21 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
           />
         </>
       ) : (
-        <Home projects={data.projects} project={project} status={data.status} error={data.error} onOpenProject={openProject} />
+        <>
+          <Home projects={data.projects} project={project} status={data.status} error={data.error} onOpenProject={openProject} />
+          {/* The composer generates from Home too, so the strip reports from here
+              as well. It renders nothing unless a real job is running. */}
+          <GenerationStrip />
+        </>
       )}
       <AtomikPanel />
       <Palette onGenerate={onGenerate} />
+      <GenerateComposer
+        scope={scope}
+        project={project}
+        onProject={(id) => selectProject(id, { replace: true })}
+        workspaceName={account?.workspace?.name ?? null}
+      />
       <ToastHost />
     </div>
     </AtomikHost>

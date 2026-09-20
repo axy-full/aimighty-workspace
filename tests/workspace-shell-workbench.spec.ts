@@ -103,7 +103,10 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
   await expect(page).toHaveURL(/[?&]project=ws-shell-a(&|$)/);
   /* No shots are loaded in this view yet: Generate is disabled and says why. */
-  await expect(page.getByRole("button", { name: "Generate" })).toBeDisabled();
+  /* The top bar's Generate (the global composer) is always live; the page's own
+     Generate needs a shot, so it is disabled and says why. */
+  await expect(page.getByTestId("topbar-generate")).toBeEnabled();
+  await expect(page.getByTestId("studio-row").getByRole("button", { name: "Generate" })).toBeDisabled();
   await expect(page.locator("#pxw-action-reason")).toBeVisible();
   await tabs.getByRole("button", { name: /Takes/ }).click();
   await expect(page).toHaveURL(/[?&]page=takes(&|$)/);

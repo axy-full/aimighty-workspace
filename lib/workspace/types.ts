@@ -79,6 +79,8 @@ export interface AppState {
   palette: boolean;
   query: string;
   agentOpen: boolean;
+  /** The global Generate composer is open over the current view. */
+  composer: boolean;
 
   run: Run | null;
   completed: Partial<Record<PageId, true>>;

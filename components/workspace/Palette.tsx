@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useAtomik } from "@/lib/workspace/atomik-host";
-import { generateAvailability } from "@/lib/workspace/navigation";
+import { generateAvailability, generateTarget } from "@/lib/workspace/navigation";
 import { filterPalette, moveHighlight, paletteCommands, type PaletteAction } from "@/lib/workspace/palette";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Keycap } from "./ui";
@@ -39,10 +39,16 @@ export function Palette({ onGenerate }: { onGenerate?: () => void }) {
         setTimeout(() => atomik.start(page), 40);
         return;
       }
+      case "composer":
+        dispatch({ type: "patch", patch: { composer: true } });
+        return;
       case "generate": {
-        const availability = generateAvailability(state, Boolean(onGenerate));
-        if (availability.enabled) onGenerate?.();
-        else ws.toast(availability.reason);
+        /* The palette's shot row keeps the Rig's Generate; "Generate…" is the composer. */
+        if (generateTarget(state, Boolean(onGenerate)) === "rig") onGenerate?.();
+        else {
+          const availability = generateAvailability(state, Boolean(onGenerate));
+          ws.toast(availability.enabled ? "" : availability.reason);
+        }
         return;
       }
       case "toggleInspector":

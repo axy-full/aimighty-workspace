@@ -100,6 +100,16 @@ async function load(scope: string, projectId: string) {
   return e.busy;
 }
 
+/**
+ * Re-read a project's library outside a component — for anything that files a
+ * new take while the Takes page and the Library sidebar are already loaded
+ * (the global Generate composer does), so the card appears without a reload.
+ */
+export function refreshProjectLibrary(scope: string, projectId: string) {
+  if (entry(keyOf(scope, projectId)).state.status === "idle") return Promise.resolve();
+  return load(scope, projectId);
+}
+
 /** The next page of every source that has one (the existing library cursors). */
 async function more(scope: string, projectId: string) {
   const key = keyOf(scope, projectId);

@@ -24,6 +24,17 @@ import {
   type ConnectedUnlim,
 } from "@/lib/higgsfield-consumer/catalogue";
 import { consumerGenerationInputSchema, type ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
+import {
+  CONNECTED_GENERATION_ENDPOINT,
+  CONNECTED_PREFLIGHT_CODES,
+  connectedOriginal,
+  connectedQuoteRequest,
+  connectedRecoverable,
+  connectedStatusRequest,
+  connectedSubmitRequest,
+  parseConnectedJob,
+  type ConnectedJob,
+} from "@/lib/higgsfield-consumer/generation-client";
 import { CONNECTED_TOOLS, connectedToolModels, connectedToolResultName, connectedToolRoles, findConnectedTool, validateToolRequest, type ConnectedToolName } from "@/lib/higgsfield-consumer/tools";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { VOICE_TOOLS, findVoiceTool, type ConnectedVoices, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
@@ -31,7 +42,7 @@ import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities,
 import type { ExplainerPreset } from "@/lib/higgsfield-consumer/explainer-presets";
 import styles from "./atomik-generate.module.css";
 
-const endpoint = "/api/higgsfield/consumer/generation";
+const endpoint = CONNECTED_GENERATION_ENDPOINT;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 export const WORKFLOW_LABELS: Record<ConnectedOutputType, string> = { image: "Image", video: "Video", audio: "Sound", "3d": "3D" };
@@ -39,22 +50,14 @@ type ParameterValue = string | number | boolean | string[];
 type StoredAsset = { id: string; origin: "upload" | "generation"; kind: "image" | "video" | "audio"; name: string; url: string };
 type Creative = { type: ConnectedOutputType; tool: ConnectedToolName | ""; voice: VoiceToolName | ""; model: string; prompt: string; parameters: Record<string, ParameterValue>; medias: { role: string; asset: StoredAsset }[] };
 const empty: Creative = { type: "image", tool: "", voice: "", model: "", prompt: "", parameters: {}, medias: [] };
-type JobTool = { name: ConnectedToolName; label: string; model: string; suffix: string };
-type JobSource = { role: string; kind: string; name: string };
 type Catalogue = { models: ConnectedModel[]; unlim: ConnectedUnlim; complete: boolean; fetchedAt: number };
-type Job = {
-  id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
-  input: ConsumerGenerationInput; model: { id: string; name: string; outputType: ConnectedOutputType }; tool: JobTool | null; sources: JobSource[];
-  workspaceId: string; workspaceName: string; quoteCredits: number; creditUnit: "higgsfield_credits"; quoteExpiresAt: number;
-  quoteExpired?: boolean; providerJobId: string | null; result?: unknown; providerReceipt?: unknown;
-  originalAvailable?: boolean; originalAvailability?: string; createdAt: number;
-};
+type Job = ConnectedJob;
 type Capability = { owner: boolean; connected: boolean; suspended: boolean };
 class RequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
-const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "unapproved_adjustment", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy", "model_unknown", "parameter_invalid", "parameter_unknown"]);
-const recoverable = (job: Job) => ["dispatching", "accepted", "uncertain"].includes(job.status);
+const preflightCodes = CONNECTED_PREFLIGHT_CODES;
+const recoverable = connectedRecoverable;
 const retain = (jobs: Job[], attempted: string[]) => {
   const pin = (job: Job) => recoverable(job) || (job.status === "quoted" && attempted.includes(job.id));
   return [...jobs.filter(pin), ...jobs.filter((job) => !pin(job))].slice(0, 25);
@@ -84,32 +87,15 @@ function creative(value: unknown): Creative {
   };
 }
 const identity = (asset: StoredAsset) => (asset.origin === "upload" ? { uploadId: asset.id } : { genId: asset.id });
-function parseJob(value: unknown, draftId: string): Job {
-  if (!record(value) || typeof value.id !== "string" || !uuid.test(value.id) || value.draftId !== draftId ||
-      !["quoted", "dispatching", "accepted", "uncertain", "failed", "completed"].includes(String(value.status)) ||
-      typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" || value.workspaceName.length > 200 ||
-      value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !Number.isFinite(value.quoteCredits) || value.quoteCredits <= 0 || value.quoteCredits > 100000 ||
-      !(value.providerJobId === null || (typeof value.providerJobId === "string" && uuid.test(value.providerJobId))) ||
-      typeof value.quoteExpiresAt !== "number" || typeof value.createdAt !== "number" ||
-      !record(value.model) || typeof value.model.id !== "string" || typeof value.model.name !== "string" || !CONNECTED_OUTPUT_TYPES.includes(value.model.outputType as ConnectedOutputType))
-    throw new Error("The saved generation job could not be verified. Refresh before continuing.");
-  const tool = record(value.tool) && findConnectedTool(String(value.tool.name)) && typeof value.tool.model === "string" ? { name: value.tool.name as ConnectedToolName, label: findConnectedTool(String(value.tool.name))!.label, model: value.tool.model.slice(0, 80), suffix: findConnectedTool(String(value.tool.name))!.suffix } : null;
-  const sources: JobSource[] = Array.isArray(value.sources) ? value.sources.flatMap((item) => record(item) && typeof item.role === "string" && typeof item.name === "string" ? [{ role: item.role, kind: String(item.kind), name: item.name.slice(0, 160) }] : []).slice(0, 30) : [];
-  return { ...value, tool, sources, input: consumerGenerationInputSchema.parse(value.input) } as Job;
-}
+const parseJob = parseConnectedJob;
 const ASSET_KIND: Record<ConnectedOutputType, Asset["kind"]> = { image: "image", video: "video", audio: "audio", "3d": "document" };
 /** Only the service's collected local original can become a project asset. */
 function originalAsset(job: Job): (Asset & { mime: string }) | null {
-  if (job.status !== "completed" || job.originalAvailable !== true || job.originalAvailability !== "available" || !record(job.result) || !record(job.result.original)) return null;
-  const original = job.result.original, asset = original.asset;
-  if (!record(asset) || typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) || !job.providerJobId ||
-      original.providerJobId !== job.providerJobId || original.creditUnit !== "higgsfield_credits" || original.credits !== job.quoteCredits ||
-      typeof original.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(original.sha256) || typeof original.bytes !== "number" || original.bytes <= 0 ||
-      asset.generationId !== original.generationId || typeof asset.mime !== "string" || asset.url !== `/api/media/${original.generationId}` ||
-      asset.kind !== { image: "image", video: "video", audio: "audio", "3d": "model" }[job.model.outputType]) return null;
+  const original = connectedOriginal(job);
+  if (!original) return null;
   const tool = job.tool ? findConnectedTool(job.tool.name) : null;
   const sourceName = tool ? job.sources.find((source) => source.kind === tool.sourceKind)?.name ?? "Source" : "";
-  return { id: original.generationId, generationId: original.generationId, url: asset.url, kind: ASSET_KIND[job.model.outputType], mime: asset.mime,
+  return { id: original.generationId, generationId: original.generationId, url: original.url, kind: ASSET_KIND[job.model.outputType], mime: original.mime,
     name: tool ? connectedToolResultName(tool, sourceName) : `${job.model.name} · ${job.input.prompt.slice(0, 80) || WORKFLOW_LABELS[job.model.outputType]}`, category: tool ? "Tools" : "Generate",
     description: `${jobLabel(job)} · ${job.model.name} · ${job.quoteCredits} connected credits`, prompt: job.input.prompt,
     status: "Draft", version: 1, locked: false, refs: [] };
@@ -330,8 +316,9 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
         try { localStorage.setItem(attemptKey, JSON.stringify(next)); } catch { throw new Error("Submission recovery could not be saved in this browser. Enable local storage before generating."); }
         attemptIds.current = next; setAttempts(next); setApproved(false);
       }
-      const body = action === "quote" ? { action, draftId, input: consumerGenerationInputSchema.parse(normalized), idempotencyKey: crypto.randomUUID() }
-        : { action, draftId, id: job?.id ?? missingId!, ...(action === "submit" ? { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
+      const body: Record<string, unknown> = action === "quote" ? connectedQuoteRequest(draftId, normalized)
+        : action === "submit" ? connectedSubmitRequest(draftId, job!)
+        : connectedStatusRequest(draftId, job?.id ?? missingId!);
       const result = await post(body);
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
