@@ -121,6 +121,39 @@ test("the wall groups by the day each take was made", () => {
   expect(dayLabel(NOW - DAY, NOW)).toBe("YESTERDAY");
 });
 
+test("the day boundary is the viewer's own local midnight, to the minute", () => {
+  /* Local midnight on both sides of it, written as local wall-clock times so
+     the assertion holds in any timezone: one minute after midnight is TODAY,
+     one minute before it is YESTERDAY, and no rounding puts either in the
+     other's group. */
+  const justAfterMidnight = new Date(2026, 8, 20, 0, 1, 0).getTime();
+  const justBeforeMidnight = new Date(2026, 8, 19, 23, 59, 0).getTime();
+  expect(dayLabel(justAfterMidnight, NOW)).toBe("TODAY");
+  expect(dayLabel(justBeforeMidnight, NOW)).toBe("YESTERDAY");
+
+  const days = makeDays(
+    [
+      gen({ id: "after", createdAt: justAfterMidnight }),
+      gen({ id: "before", createdAt: justBeforeMidnight }),
+    ],
+    NOW,
+  );
+  expect(days.map((day) => [day.day, day.count, day.items.map((item) => item.id)])).toEqual([
+    ["TODAY", "1 take", ["after"]],
+    ["YESTERDAY", "1 take", ["before"]],
+  ]);
+
+  /* And the label is read against the VIEWER's clock, not the fixture's: seen
+     one minute after midnight, a take made a minute earlier is yesterday's,
+     and the take made a minute later is today's. */
+  const seenAtMidnight = new Date(2026, 8, 20, 0, 1, 30).getTime();
+  expect(dayLabel(justBeforeMidnight, seenAtMidnight)).toBe("YESTERDAY");
+  expect(dayLabel(justAfterMidnight, seenAtMidnight)).toBe("TODAY");
+  /* The month and year boundaries are the same boundary, one carry further. */
+  expect(dayLabel(new Date(2025, 11, 31, 23, 59, 0).getTime(), new Date(2026, 0, 1, 0, 1, 0).getTime())).toBe("YESTERDAY");
+  expect(dayLabel(new Date(2026, 7, 31, 12, 0, 0).getTime(), new Date(2026, 8, 1, 9, 0, 0).getTime())).toBe("YESTERDAY");
+});
+
 test("a card carries the spec chip, the prompt, the author and the settled cost", () => {
   const card = makeCard(gen({ id: "a" }), NOW);
   expect(card.spec).toBe("SEEDANCE 2.5 · 16:9 · 5S");

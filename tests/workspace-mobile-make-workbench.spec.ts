@@ -122,7 +122,22 @@ test("the Make wall groups the unfiled takes by day and derives every count", as
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const { project } = await seeded(page);
-  const now = Date.now();
+  /* The wall's day groups are the VIEWER's own local days (lib/workspace/make
+     dayKey/dayLabel), so a fixture written against the wall-clock instant the
+     run happens to start drifts across local midnight: at 00:20 a take "12 min
+     ago" is today and one "26 min ago" is yesterday. The clock is pinned
+     instead — local noon of the run's own day, read in the page so it is the
+     browser's timezone and nobody's assumption — and every timestamp below is
+     written against that same instant, which the page then reads as its `now`.
+     Times only, never the timers: the ring, the polling and the composer's
+     quote all keep running. The test therefore means the same thing at 00:01
+     as at 23:59, anywhere on earth. */
+  const now = await page.evaluate(() => {
+    const noon = new Date();
+    noon.setHours(12, 0, 0, 0);
+    return noon.getTime();
+  });
+  await page.clock.setFixedTime(now);
   await mockLibrary(page, [
     generation({ id: "g-today-1", createdAt: now - 12 * 60_000, creditsBilled: 19, prompt: "Mira enters. The landscape becomes a reflection." }),
     /* Still rendering: the ring goes over its well, and it carries no price. */
