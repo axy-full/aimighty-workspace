@@ -32,14 +32,14 @@ import "./switchover.css";
    re-decide would redirect somebody out of the phone surface they were using.
    A rotation that reloads the document still decides freshly.
 
-   It is taken while the document PARSES, by `DeviceProbe` — a SERVER component
-   the four entry points render beside this gate, because React never executes a
-   <script> created during a client render and this component re-renders. The
-   reason for parse time is that hydration is not a fixed point: a cold dev
-   compile lands it seconds after the document was readable, so a decision taken
-   then is taken from whatever the viewport has become rather than from what the
-   person opened. Parse time is also exactly when switchover.css decides the
-   first paint from the same query, so the two halves cannot disagree.
+   It is taken while the document PARSES, by `DeviceProbe`, which the ROOT LAYOUT
+   mounts — not this component, because React never executes a <script> it
+   creates during a client render and this component re-renders. The reason for
+   parse time is that hydration is not a fixed point: a cold dev compile lands it
+   seconds after the document was readable, so a decision taken then is taken
+   from whatever the viewport has become rather than from what the person opened.
+   Parse time is also exactly when switchover.css decides the first paint from
+   the same query, so the two halves cannot disagree.
    ────────────────────────────────────────────────────────────────────────── */
 
 const latch = createDeviceLatch(() => window.matchMedia(PHONE_QUERY), windowDeviceRecord());
