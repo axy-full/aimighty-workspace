@@ -35,7 +35,10 @@ export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount |
   /* Same source and same unit rule as the phone header (lib/price.ts): the
      rate table's unit decides, never the balance's own shape. */
   const { rates } = useSession();
-  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit);
+  /* The rate rides on the same table as the unit — the server built both from
+     creditUsd() — so the tooltip states this deployment's rate rather than a
+     literal, and says nothing about one before the table has arrived. */
+  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
   return (
     <header className="pxw-topbar" data-row="topbar">
       <button type="button" className="pxw-wordmark" onClick={() => home()} aria-label={`particl ${suite.short} home`}>

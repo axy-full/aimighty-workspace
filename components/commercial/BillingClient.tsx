@@ -10,12 +10,15 @@ import ManagementPage, {
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { creditRateLine } from "@/lib/creditTerms";
 
 type Topups = {
   applies: boolean;
   canRequest: boolean;
   provider: string;
-  credits: { balance: number } | null;
+  credits: { balance: number; creditUsd?: number | null } | null;
+  /** What one credit costs, from the server's creditUsd() — the packs' own unit. */
+  creditUsd?: number | null;
   packs: {
     id: string;
     label: string;
@@ -265,6 +268,8 @@ export default function BillingClient({
     }
   }
   const creditBalance = topups?.credits?.balance ?? data?.credits?.balance;
+  /* One sentence, derived: see the top-up block below. */
+  const creditRate = creditRateLine(topups?.creditUsd ?? topups?.credits?.creditUsd);
   const direct = topups?.applies === false;
   return (
     <ManagementPage
@@ -648,9 +653,13 @@ export default function BillingClient({
                 <h2 className="management-section-title">
                   More credits, when you need them.
                 </h2>
+                {/* The rate comes from the same creditUsd() the packs were
+                    priced at, so this line and the prices beside it can never
+                    disagree — and a deployment on another CREDIT_USD is stated
+                    correctly instead of being contradicted by a literal. */}
                 <p className="management-muted">
-                  1 credit = US$0.10. Packs add to your workspace balance after
-                  payment is confirmed.
+                  {creditRate ? `${creditRate}. ` : ""}Packs add to your
+                  workspace balance after payment is confirmed.
                 </p>
               </div>
               <div className="management-grid four">

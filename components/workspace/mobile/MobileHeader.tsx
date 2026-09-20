@@ -35,7 +35,9 @@ export function MobileHeader({
      workspace on its own keys pays its vendors in dollars and holds no
      credits at all, and the slot says that rather than inventing a figure. */
   const { rates } = useSession();
-  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit);
+  /* The rate comes off the same table as the unit — the server built both from
+     creditUsd(), so the tooltip states the deployment's rate, not a literal. */
+  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
   const suite = getSuite(state.suite);
   const level = state.mobile;
   const onProjects = level === "projects";
