@@ -41,7 +41,12 @@ export default function WorkspaceApp({ scope, initialAccount }: { scope: string;
   return (
     <WorkspaceProvider initialSearch={window.location.search} plans={bridge.source}>
       {device === "phone" ? (
-        <MobileShell scope={scope} initialAccount={initialAccount} planBridge={bridge} />
+        /* The Rig's live state sits above BOTH shells: the phone's shot list,
+           its flow and its pinned Generate read the same draft, the same jobs
+           and the same live quote the desktop does, through the same seams. */
+        <RigProvider scope={scope}>
+          <RigSeams>{(seams) => <MobileShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
+        </RigProvider>
       ) : (
         <RigProvider scope={scope}>
           <RigSeams>{(seams) => <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>

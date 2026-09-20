@@ -628,3 +628,550 @@
   .pxw-phone .pxm-sheet,
   .pxw-phone .pxm-menu { animation: none; }
 }
+
+/* ══ Page templates (wave M-B) ══════════════════════════════════════════════
+ *
+ * The six templates of 05-mobile plus Edit & Sound's own layout. Values are
+ * measured from design/Particl Mobile.dc.html. Two rules govern every number
+ * here: no text under 12px, and no target under 44×44 — which is why every row
+ * carries a min-height of 44px or more and the smallest label is 12px.
+ */
+
+/* ── Shared: groups, 2-up grids, flat media, dashed footers ─────────────── */
+
+.pxw-phone .pxm-group { margin-bottom: 20px; }
+.pxw-phone .pxm-group-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px; }
+.pxw-phone .pxm-group-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.pxw-phone .pxm-flat { position: absolute; inset: 0; display: block; }
+.pxw-phone .pxm-card-band-a { position: absolute; inset: 0; display: block; }
+.pxw-phone .pxm-card-band-b { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; display: block; }
+.pxw-phone .pxm-dashed {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 15px;
+  margin-top: 2px;
+  text-align: center;
+  border: 1px dashed var(--pxw-control-border);
+  border-radius: 14px;
+  font-size: 13px;
+  color: var(--pxw-dimmer);
+}
+.pxw-phone .pxm-dashed:active { border-color: var(--pxw-blue); color: var(--pxw-blue-ink); }
+.pxw-phone .pxm-dashed:disabled { opacity: 0.6; }
+
+/* The page-level segmented row (Rig's List / Canvas, Takes' filters). */
+.pxw-phone .pxm-segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--pxw-panel);
+  border: 1px solid var(--pxw-control-border);
+  border-radius: 12px;
+}
+.pxw-phone .pxm-page-views { margin: 14px 14px 0; }
+/* 40px inside a 44px control is the one target exception 05-mobile allows. */
+.pxw-phone .pxm-seg {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 530;
+  color: var(--pxw-dimmer);
+  white-space: nowrap;
+}
+.pxw-phone .pxm-seg[aria-pressed="true"] { background: var(--pxw-selected-chip); color: var(--pxw-primary); }
+
+/* ── 1. Shot list ──────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-shot-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 11px 12px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  text-align: left;
+}
+.pxw-phone .pxm-shot-row[aria-pressed="true"] { background: #0d1016; border-color: var(--pxw-selected); }
+.pxw-phone .pxm-shot-row:active { background: #131316; }
+.pxw-phone .pxm-shot-thumb {
+  width: 62px;
+  height: 40px;
+  flex: none;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.pxw-phone .pxm-shot-band-a { position: absolute; left: 0; right: 0; top: 0; height: 52%; display: block; }
+.pxw-phone .pxm-shot-band-b { position: absolute; left: 0; right: 0; bottom: 0; height: 48%; display: block; }
+.pxw-phone .pxm-shot-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.pxw-phone .pxm-shot-num {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.76);
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: #121210;
+}
+.pxw-phone .pxm-shot-name {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 550;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-shot-note {
+  display: block;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-shot-foot { gap: 8px; margin-top: 7px; }
+.pxw-phone .pxm-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 7px;
+}
+.pxw-phone .pxm-status-chip-label { font-size: 12px; font-weight: 520; white-space: nowrap; }
+.pxw-phone .pxm-shot-meta {
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: var(--pxw-label-floor);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 2. Flow ───────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-flow-lede { margin: 0 0 14px; }
+.pxw-phone .pxm-flow-step { position: relative; padding-left: 26px; padding-bottom: 10px; }
+.pxw-phone .pxm-flow-wire { position: absolute; left: 7px; top: 22px; bottom: 0; width: 1.5px; display: block; }
+.pxw-phone .pxm-flow-wire[data-wire="blue"] { background: var(--pxw-blue); opacity: 0.85; }
+.pxw-phone .pxm-flow-wire[data-wire="grey"] { background: #2e2e34; }
+.pxw-phone .pxm-flow-pin {
+  position: absolute;
+  left: 0;
+  top: 14px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: block;
+  background: var(--pxw-panel);
+  border: 1.5px solid #2e2e34;
+}
+.pxw-phone .pxm-flow-pin[data-scene] { background: rgba(10, 132, 255, 0.18); border-color: var(--pxw-blue); }
+.pxw-phone .pxm-flow-card {
+  background: var(--pxw-card);
+  border: 1px solid #202024;
+  border-radius: 14px;
+  padding: 13px 14px;
+}
+.pxw-phone .pxm-flow-step[data-scene] .pxm-flow-card {
+  background: #0d1016;
+  border: 1.5px solid var(--pxw-blue);
+}
+.pxw-phone .pxm-flow-kicker {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  letter-spacing: 0.11em;
+  color: var(--pxw-label-floor);
+}
+.pxw-phone .pxm-flow-step[data-scene] .pxm-flow-kicker { color: var(--pxw-blue-soft-ink); }
+.pxw-phone .pxm-flow-body { display: flex; align-items: flex-start; gap: 12px; margin-top: 10px; }
+.pxw-phone .pxm-flow-media {
+  width: 74px;
+  height: 50px;
+  flex: none;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.pxw-phone .pxm-flow-band-a { position: absolute; left: 0; right: 0; top: 0; height: 52%; display: block; }
+.pxw-phone .pxm-flow-band-b { position: absolute; left: 0; right: 0; bottom: 0; height: 48%; display: block; }
+.pxw-phone .pxm-flow-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.pxw-phone .pxm-flow-title { display: block; font-size: 13.5px; font-weight: 560; letter-spacing: -0.012em; }
+.pxw-phone .pxm-flow-desc { display: block; font-size: 12px; color: var(--pxw-dimmer); line-height: 1.45; margin-top: 4px; text-wrap: pretty; }
+.pxw-phone .pxm-flow-foot { gap: 7px; margin-top: 11px; }
+.pxw-phone .pxm-flow-role { font-size: 12px; color: var(--pxw-dimmer); }
+
+/* ── 3. Cards ──────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-tile {
+  display: block;
+  width: 100%;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  border-radius: 14px;
+  overflow: hidden;
+  text-align: left;
+}
+.pxw-phone .pxm-tile[aria-pressed="true"] { border-color: var(--pxw-selected); }
+.pxw-phone .pxm-tile:active { background: #131316; }
+.pxw-phone .pxm-tile-media { display: block; position: relative; }
+.pxw-phone .pxm-tile-media[data-ratio="4/3"] { aspect-ratio: 4 / 3; }
+.pxw-phone .pxm-tile-media[data-ratio="16/9"] { aspect-ratio: 16 / 9; }
+.pxw-phone .pxm-tile-badge,
+.pxw-phone .pxm-tile-version,
+.pxw-phone .pxm-tile-kind {
+  position: absolute;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.pxw-phone .pxm-tile-badge { left: 7px; bottom: 7px; letter-spacing: 0.09em; color: #e8e8ec; background: rgba(0, 0, 0, 0.6); }
+.pxw-phone .pxm-tile-version { left: 7px; top: 7px; color: #121210; background: rgba(255, 255, 255, 0.78); }
+.pxw-phone .pxm-tile-kind { right: 7px; top: 7px; letter-spacing: 0.09em; background: rgba(0, 0, 0, 0.6); color: var(--pxw-dimmer); }
+.pxw-phone .pxm-tile-kind[data-kind="GEN"] { color: var(--pxw-blue-soft-ink); }
+.pxw-phone .pxm-tile-body { display: block; padding: 10px 11px 12px; }
+.pxw-phone .pxm-tile-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-tile-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: var(--pxw-label-floor);
+}
+.pxw-phone .pxm-tile-meta > span:first-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw-phone .pxm-tile-meta > span:last-child { flex: none; }
+.pxw-phone .pxm-tile-tag { gap: 6px; margin-top: 7px; }
+.pxw-phone .pxm-tile-tag-label {
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-tile-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 132px;
+  padding: 12px;
+  border: 1px dashed var(--pxw-control-border);
+  border-radius: 14px;
+  font-size: 12.5px;
+  color: var(--pxw-dimmer);
+  text-align: center;
+}
+.pxw-phone .pxm-tile-add:active { border-color: var(--pxw-blue); color: var(--pxw-blue-ink); }
+.pxw-phone .pxm-tile-add-sub { font-size: 12px; color: var(--pxw-label-floor); }
+
+/* ── 4. Rows ───────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-rows-intro { margin: 0 0 18px; font-size: 13.5px; line-height: 1.6; }
+.pxw-phone .pxm-spec-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 13px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  text-align: left;
+}
+.pxw-phone .pxm-spec-row:active { background: #131316; }
+.pxw-phone .pxm-lead {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--pxw-panel);
+  border: 1px solid var(--pxw-control-border);
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: var(--pxw-label-floor);
+}
+.pxw-phone .pxm-spec-row[data-state="COMPLETE"] .pxm-lead { background: var(--pxw-green-tint); border-color: rgba(52, 199, 89, 0.28); color: var(--pxw-green-ink); }
+.pxw-phone .pxm-spec-row[data-state="ACTIVE"] .pxm-lead { background: var(--pxw-blue-tint); border-color: var(--pxw-blue-tint-border); color: var(--pxw-blue-soft-ink); }
+.pxw-phone .pxm-spec-row[data-state="WAITING"] .pxm-lead { background: var(--pxw-amber-tint-strong); border-color: rgba(255, 159, 10, 0.3); color: var(--pxw-amber-ink); }
+.pxw-phone .pxm-spec-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-spec-sub { display: block; font-size: 12px; color: var(--pxw-dimmer); line-height: 1.4; margin-top: 3px; text-wrap: pretty; }
+.pxw-phone .pxm-spec-value {
+  flex: none;
+  max-width: 40%;
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: var(--pxw-label-floor);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 5. Accordion ──────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-acc {
+  border-radius: 14px;
+  margin-bottom: 9px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  overflow: hidden;
+}
+.pxw-phone .pxm-acc[data-open] { border-color: var(--pxw-selected); }
+.pxw-phone .pxm-acc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 13px 14px;
+  text-align: left;
+}
+.pxw-phone .pxm-acc-head:active { background: #131316; }
+.pxw-phone .pxm-acc-title { display: block; font-size: 14.5px; font-weight: 565; letter-spacing: -0.012em; }
+.pxw-phone .pxm-acc-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--pxw-dimmer);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-acc-state { font-size: 12px; color: var(--pxw-dimmer); flex: none; white-space: nowrap; }
+.pxw-phone .pxm-acc-caret { font-size: 12px; color: var(--pxw-label-floor); flex: none; }
+.pxw-phone .pxm-acc-body { padding: 0 14px 6px; }
+.pxw-phone .pxm-acc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 11px 0;
+  border-top: 1px solid var(--pxw-hairline);
+}
+.pxw-phone .pxm-acc-row-name { display: block; font-size: 13px; font-weight: 530; }
+.pxw-phone .pxm-acc-row-sub { display: block; font-size: 12px; color: var(--pxw-dimmer); margin-top: 2px; text-wrap: pretty; }
+.pxw-phone .pxm-acc-row-value { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); flex: none; white-space: nowrap; }
+
+/* ── 6. Form ───────────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-form-kicker { margin: 20px 0 9px; }
+.pxw-phone .pxm-form-kicker:first-child { margin-top: 0; }
+.pxw-phone .pxm-form-head { margin: 20px 0 9px; }
+.pxw-phone .pxm-form-note { font-size: 12px; color: var(--pxw-dimmer); line-height: 1.5; margin: 9px 0 0; text-wrap: pretty; }
+.pxw-phone .pxm-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 68px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  text-align: left;
+}
+.pxw-phone .pxm-source:active { background: #131316; }
+.pxw-phone .pxm-source-media { width: 72px; height: 46px; flex: none; position: relative; display: block; overflow: hidden; border-radius: 9px; }
+.pxw-phone .pxm-source-name { display: block; font-size: 14px; font-weight: 550; letter-spacing: -0.012em; }
+.pxw-phone .pxm-source-meta { display: block; font-size: 12px; color: var(--pxw-dimmer); margin-top: 3px; }
+.pxw-phone .pxm-ref-strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.pxw-phone .pxm-ref {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--pxw-panel);
+}
+.pxw-phone .pxm-ref-index {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  font-family: var(--pxw-mono);
+  font-size: 12px;
+  color: #e8e8ec;
+}
+.pxw-phone .pxm-ref-add { border: 1px dashed var(--pxw-control-border); font-size: 16px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-ref-add:active { border-color: var(--pxw-blue); color: var(--pxw-blue-ink); }
+.pxw-phone .pxm-textarea {
+  width: 100%;
+  display: block;
+  min-height: 92px;
+  padding: 13px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  color: var(--pxw-primary);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  outline: none;
+  resize: vertical;
+}
+.pxw-phone .pxm-textarea:focus { border-color: var(--pxw-selected); }
+.pxw-phone .pxm-quote {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #0a0e14;
+  border: 1px solid #16212e;
+}
+.pxw-phone .pxm-quote-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pxw-phone .pxm-quote-label { font-size: 12.5px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-quote-figure { font-family: var(--pxw-mono); font-size: 17px; font-weight: 620; color: var(--pxw-blue-soft-ink); }
+.pxw-phone .pxm-quote[data-quote="none"] .pxm-quote-figure,
+.pxw-phone .pxm-quote[data-quote="changed"] .pxm-quote-figure,
+.pxw-phone .pxm-quote[data-quote="expired"] .pxm-quote-figure,
+.pxw-phone .pxm-quote[data-quote="attempted"] .pxm-quote-figure { color: var(--pxw-dimmer); }
+.pxw-phone .pxm-quote-note { font-size: 12px; color: var(--pxw-dimmer); line-height: 1.5; margin: 8px 0 0; text-wrap: pretty; }
+.pxw-phone .pxm-picker {
+  margin-top: 9px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  overflow: hidden;
+}
+.pxw-phone .pxm-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pxw-hairline);
+  text-align: left;
+}
+.pxw-phone .pxm-picker-row:last-child { border-bottom: none; }
+.pxw-phone .pxm-picker-row:active { background: #131316; }
+.pxw-phone .pxm-picker-media { width: 52px; height: 34px; flex: none; position: relative; display: block; overflow: hidden; border-radius: 7px; }
+.pxw-phone .pxm-picker-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 530;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pxw-phone .pxm-picker-meta { display: block; font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); margin-top: 3px; }
+
+/* ── Edit & Sound ──────────────────────────────────────────────────────── */
+
+.pxw-phone .pxm-assembly { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 14px; }
+.pxw-phone .pxm-assembly-title { display: block; font-size: 13.5px; font-weight: 560; }
+.pxw-phone .pxm-assembly-sub { display: block; font-size: 12px; color: var(--pxw-dimmer); margin-top: 3px; text-wrap: pretty; }
+.pxw-phone .pxm-lane {
+  display: flex;
+  gap: 12px;
+  min-height: 62px;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+}
+.pxw-phone .pxm-lane-bar { width: 5px; border-radius: 3px; flex: none; display: block; }
+.pxw-phone .pxm-lane-name { font-size: 14px; font-weight: 550; letter-spacing: -0.012em; }
+.pxw-phone .pxm-lane-tag { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: 0.09em; color: var(--pxw-label-floor); flex: none; }
+.pxw-phone .pxm-lane-desc { display: block; font-size: 12.5px; color: var(--pxw-body); line-height: 1.45; margin-top: 6px; text-wrap: pretty; }
+.pxw-phone .pxm-lane-foot { gap: 8px; margin-top: 9px; }
+.pxw-phone .pxm-lane-state { font-size: 12px; color: var(--pxw-dimmer); }
+.pxw-phone .pxm-lane-clips { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; }
+.pxw-phone .pxm-door {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 12px 13px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+}
+.pxw-phone .pxm-door-name { display: block; font-size: 14px; font-weight: 550; letter-spacing: -0.012em; }
+.pxw-phone .pxm-door-desc { display: block; font-size: 12px; color: var(--pxw-dimmer); margin-top: 3px; text-wrap: pretty; }
+.pxw-phone .pxm-door-right { flex: none; text-align: right; max-width: 42%; }
+.pxw-phone .pxm-door-unit { display: block; font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); text-wrap: pretty; }
+.pxw-phone .pxm-door-lane { display: block; font-size: 12px; color: var(--pxw-label-floor); margin-top: 3px; white-space: nowrap; }
+.pxw-phone .pxm-versions {
+  border-radius: 14px;
+  background: var(--pxw-card);
+  border: 1px solid var(--pxw-card-border);
+  overflow: hidden;
+}
+.pxw-phone .pxm-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pxw-hairline);
+}
+.pxw-phone .pxm-version-row:last-child { border-bottom: none; }
+.pxw-phone .pxm-version-name { font-size: 13px; color: var(--pxw-body); }
+.pxw-phone .pxm-version-value { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; }
+
+/* A long live price ("Quote at gate", "1,296 cr") must be readable, not clipped:
+   the filled primary takes the larger share of the pinned bar. */
+.pxw-phone .pxm-primary { flex: 1.35; }
