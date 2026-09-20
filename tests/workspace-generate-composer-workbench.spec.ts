@@ -117,12 +117,13 @@ async function assertNoClipping(page: Page) {
   expect(problems).toEqual([]);
 }
 
-test("phones keep the existing phone surface", async ({ page }, info) => {
+test("phones get the phone shell, not the desktop composer", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const { project } = await seeded(page);
   await page.goto(url(project.id));
-  await expect(page).toHaveURL(new RegExp(`/workbench\\?project=${project.id}$`));
-  await expect(page.locator(".pxw")).toHaveCount(0);
+  /* The phone build renders here now; only the desktop composer stays away. */
+  await expect(page.locator(".pxw-phone")).toHaveCount(1);
+  await expect(page.getByTestId("topbar-generate")).toHaveCount(0);
   await expect(page.getByTestId("generate-composer")).toHaveCount(0);
 });
 

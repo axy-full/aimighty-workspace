@@ -12,7 +12,6 @@ import { newProject } from "../lib/workbench/studio";
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const SHOTS = "/private/tmp/mobile-shell-shots";
 
 /* Test fixtures only — the app reads these from the real projects route. */
 const primary = { ...newProject("Coastal light study"), id: "ws-phone-a", description: "Product film · Spot 02", aspect: "16:9", fps: 24 };
@@ -104,7 +103,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
   /* 2 — the floors: 44×44 targets and no text under 12px. */
   expect(await smallTargets(page, '[data-testid="mobile-header"] button')).toEqual([]);
   expect(await smallText(page)).toEqual([]);
-  if (shot) await page.screenshot({ path: `${SHOTS}/projects-390x844.png`, animations: "disabled" });
+  if (shot) await page.screenshot({ path: info.outputPath(`projects-390x844.png`), animations: "disabled" });
 
   /* 3 — the derived project line, from the same states the Stages screen reads. */
   await expect(page.getByTestId("mobile-project-progress")).toHaveText(/^0 of 8 stages$/);
@@ -116,7 +115,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
   await expect(page.getByTestId("mobile-atomik-card")).toBeVisible();
   await expect(page.locator('[data-screen="suite"] .pxm-stage-row')).toHaveCount(8);
   expect(await smallText(page)).toEqual([]);
-  if (shot) await page.screenshot({ path: `${SHOTS}/suite-390x844.png`, animations: "disabled" });
+  if (shot) await page.screenshot({ path: info.outputPath(`suite-390x844.png`), animations: "disabled" });
   expect(await lastRowClearsPinned(page)).toEqual([]);
 
   /* 5 — drill down again: a stage row opens its page, through go(). */
@@ -149,7 +148,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
   const viewport = page.viewportSize()!;
   expect(sheet!.height).toBeLessThanOrEqual(viewport.height * 0.88 + 1);
   expect(await smallText(page)).toEqual([]);
-  if (shot) await page.screenshot({ path: `${SHOTS}/search-sheet-390x844.png`, animations: "disabled" });
+  if (shot) await page.screenshot({ path: info.outputPath(`search-sheet-390x844.png`), animations: "disabled" });
   /* Tap the part of the scrim the sheet does not cover — what a thumb reaches. */
   await page.getByTestId("mobile-sheet-scrim").click({ position: { x: 24, y: 12 } });
   await expect(page.getByTestId("mobile-sheet")).toHaveCount(0);
