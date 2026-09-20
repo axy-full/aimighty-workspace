@@ -12,6 +12,14 @@ import {
 } from "../../lib/higgsfield-consumer/mcp";
 import { parseConnectedCatalogue, findCatalogueModel } from "../../lib/higgsfield-consumer/catalogue";
 import { consumerGenerationParams, consumerGenerationOriginalResult, type ConsumerGenerationInput } from "../../lib/higgsfield-consumer/generation-contract";
+import { CONNECTED_MODEL_VARIANTS } from "../../lib/higgsfield-consumer/video-contract";
+import {
+  displayCompleted,
+  displayInProgress,
+  waitCompleted,
+  waitInProgress,
+  type EnvelopeJob,
+} from "../fixtures/connectedStatusEnvelopes";
 import {
   checkTool,
   normalizeFallbackStatus,
@@ -36,6 +44,8 @@ const input: ConsumerGenerationInput = {
 const params = consumerGenerationParams(kling, input, [{ value: media, role: "start_image" }]);
 const sources = [{ url: "https://fixtures.particl.invalid/uploads/still.png", type: "image" as const, role: "start_image" }];
 const rawUrl = "https://fixtures.particl.invalid/outputs/take.mp4";
+/** The recorded live envelopes, re-keyed to this spec's job, model and media. */
+const live: EnvelopeJob = { jobId, model: "kling3_0", type: "video", prompt: input.prompt, media: { id: media, role: "start_image", url: sources[0].url }, rawUrl };
 const without = (tools: Tool[], ...names: string[]) => tools.filter((tool) => !names.includes(tool.name));
 const replacing = (tools: Tool[], name: string, inputSchema: Record<string, unknown>) => tools.map((tool) => (tool.name === name ? { name, inputSchema } : tool));
 
@@ -59,8 +69,8 @@ function session(options: { tools: Tool[] | (() => Tool[]); reply?: (p: Packet) 
       p.params.name === "list_workspaces" ? { workspaces: [{ id: wallet, is_selected: true, credits: 500, name: "Fixture wallet" }] }
       : p.params.name === "media_import_url" ? { media_id: media }
       : p.params.name === "job_status" ? { generation: { id: jobId, model: "kling3_0", type: "video", status: "completed", results: { rawUrl } } }
-      : p.params.name === "job_display" ? { generation: { id: jobId, model: "kling3_0", type: "video", status: "completed", results: { rawUrl } } }
-      : p.params.name === "jobs_wait" ? { all_terminal: true, jobs: [{ index: 0, job_id: jobId, status: "completed", result_url: rawUrl }] }
+      : p.params.name === "job_display" ? displayCompleted(live)
+      : p.params.name === "jobs_wait" ? waitCompleted(live)
       : (args.params as Record<string, unknown>).get_cost === true ? { cost: { credits: 42, credits_exact: 42 } }
       : { results: [{ id: jobId, model: "kling3_0", type: "video" }] });
     return Response.json({ jsonrpc: "2.0", id: p.id, result: { structuredContent: value } });
@@ -114,37 +124,103 @@ test("the schema check accepts exactly what we send and refuses what a tool does
   expect(schemaAccepts({ type: "object", properties: { a: { type: "number" } } }, { a: 2 })).toBe(true);
 });
 
-test("status resolution prefers job_status, falls back to job_display then jobs_wait, and needs job_status for raw envelopes", () => {
+test("status resolution prefers job_status, then jobs_wait, then job_display, and needs job_status for raw envelopes", () => {
   expect(resolveStatusTool(toolsetFrom(ninetyEight.tools), jobId)).toBe("job_status");
-  expect(resolveStatusTool(toolsetFrom(ninetyOne.tools), jobId)).toBe("job_display");
-  expect(resolveStatusTool(toolsetFrom(without(ninetyOne.tools, "job_display")), jobId)).toBe("jobs_wait");
+  // A connection advertising BOTH fallbacks takes jobs_wait: it is the one
+  // whose live envelope is verified end to end, and the smaller surface.
+  expect(resolveStatusTool(toolsetFrom(ninetyOne.tools), jobId)).toBe("jobs_wait");
+  expect(resolveStatusTool(toolsetFrom(without(ninetyOne.tools, "jobs_wait")), jobId)).toBe("job_display");
   expect(resolveStatusTool(toolsetFrom(without(ninetyOne.tools, "job_display", "jobs_wait")), jobId)).toBeNull();
   expect(resolveStatusTool(toolsetFrom(ninetyEight.tools), jobId, { rawData: true })).toBe("job_status");
   expect(resolveStatusTool(toolsetFrom(ninetyOne.tools), jobId, { rawData: true })).toBeNull();
   expect(statusArguments("jobs_wait", jobId)).toEqual({ jobs: [{ index: 0, job_id: jobId }], timeout_seconds: 0 });
+  expect(statusArguments("job_display", jobId)).toEqual({ id: jobId });
 });
 
-test("fallback envelopes are bound to the exact job and never invent a result", () => {
-  const expected = { model: "kling3_0", type: "video" };
-  const display = normalizeFallbackStatus("job_display", { id: jobId, status: "completed", model: "kling3_0", type: "video", results: { rawUrl } }, jobId, expected);
-  expect(consumerGenerationOriginalResult(display, jobId, params, "video")).toEqual({ url: rawUrl });
-  const waited = normalizeFallbackStatus("jobs_wait", { all_terminal: true, jobs: [{ index: 0, job_id: jobId, status: "completed", results: [rawUrl] }] }, jobId, expected);
-  expect(consumerGenerationOriginalResult(waited, jobId, params, "video")).toEqual({ url: rawUrl });
-  // Another job, another model, two URLs, an http URL or an unknown shape: nothing qualifies.
+const expected = { model: "kling3_0", type: "video" };
+const displayOf = (raw: unknown) => normalizeFallbackStatus("job_display", raw, jobId, expected);
+const waitOf = (raw: unknown) => normalizeFallbackStatus("jobs_wait", raw, jobId, expected);
+
+test("the REAL job_display envelope qualifies a finished job: the entry is one element of a top-level results array", () => {
+  // Recorded live on 20 September 2026. Against the previous code this whole
+  // test fails: `job_display` looked only at raw.generation / raw.job / raw,
+  // `idOf(raw)` was null, and the reply became the inert
+  // { status_source, recognised: false } — a finished, PAID job with a valid
+  // output URL was never collected.
+  const collected = displayOf(displayCompleted(live));
+  expect(collected).toMatchObject({ status_source: "job_display", generation: { id: jobId, status: "completed", model: "kling3_0", type: "video" } });
+  expect(collected).not.toHaveProperty("recognised");
+  expect(consumerGenerationOriginalResult(collected, jobId, params, "video")).toEqual({ url: rawUrl });
+  // The entry's own `results` object carries a thumbnail beside the output;
+  // only the output URL is a recognised result key, so it stays a single URL.
+  expect((collected.generation as Record<string, unknown>).results).toEqual({ rawUrl });
+  // In progress: recognised, bound to the job, and never a collected original.
+  const running = displayOf(displayInProgress(live));
+  expect(running).toMatchObject({ status_source: "job_display", generation: { id: jobId, status: "in_progress" } });
+  expect(consumerGenerationOriginalResult(running, jobId, params, "video")).toBeNull();
+  expect(running).not.toHaveProperty("poll_after_seconds");
+});
+
+test("the REAL jobs_wait envelope qualifies a finished job and carries the provider's poll hint", () => {
+  const collected = waitOf(waitCompleted(live));
+  expect(collected).toMatchObject({ status_source: "jobs_wait", generation: { id: jobId, status: "completed", model: "kling3_0", type: "video" } });
+  expect(consumerGenerationOriginalResult(collected, jobId, params, "video")).toEqual({ url: rawUrl });
+  // all_terminal suppresses the poll hint; thumbnail_url is not a result key.
+  expect(collected).not.toHaveProperty("poll_after_seconds");
+  const running = waitOf(waitInProgress(live, 5));
+  expect(running).toMatchObject({ generation: { id: jobId, status: "in_progress" }, poll_after_seconds: 5 });
+  expect(consumerGenerationOriginalResult(running, jobId, params, "video")).toBeNull();
+});
+
+test("every safety property of the fallbacks survives the real envelope: the exact job, one https URL, nothing invented", () => {
+  const other = randomUUID();
+  const entry = (patch: Record<string, unknown>) => ({ results: [{ ...displayCompleted(live).results[0], ...patch }] });
+  for (const [name, raw] of [
+    // The list names another job: bound to the acknowledged id alone.
+    ["another job in the array", entry({ id: other })],
+    // Two entries claiming our id: ambiguous, so inert (never "pick one").
+    ["our id twice", { results: [displayCompleted(live).results[0], displayCompleted(live).results[0]] }],
+    ["another model", entry({ model: "seedance_2_5" })],
+    ["another output type", entry({ type: "image" })],
+    ["two result URLs", entry({ results: { rawUrl, url: "https://fixtures.particl.invalid/outputs/other.mp4" } })],
+    ["a non-https URL", entry({ results: { rawUrl: "http://fixtures.particl.invalid/outputs/take.mp4" } })],
+    ["no status", entry({ status: 7 })],
+    ["an empty array", { results: [] }],
+    ["a list of strings", { results: [rawUrl] }],
+    ["an unknown shape", { message: "done" }],
+    ["not an object", "completed"],
+  ] as const)
+    expect(consumerGenerationOriginalResult(displayOf(raw), jobId, params, "video"), name).toBeNull();
+  // The single-object shapes some connections return still work unchanged.
   for (const raw of [
-    { id: randomUUID(), status: "completed", results: { rawUrl } },
-    { id: jobId, status: "completed", model: "seedance_2_5", results: { rawUrl } },
-    { id: jobId, status: "completed", results: [rawUrl, "https://fixtures.particl.invalid/other.mp4"] },
-    { id: jobId, status: "completed", results: { rawUrl: "http://fixtures.particl.invalid/take.mp4" } },
-    { message: "done" },
-    "completed",
+    { generation: { id: jobId, status: "completed", model: "kling3_0", type: "video", results: { rawUrl } } },
+    { job: { id: jobId, status: "completed", model: "kling3_0", type: "video", results: { rawUrl } } },
+    { id: jobId, status: "completed", model: "kling3_0", type: "video", results: { rawUrl } },
   ])
-    expect(consumerGenerationOriginalResult(normalizeFallbackStatus("job_display", raw, jobId, expected), jobId, params, "video")).toBeNull();
-  const pending = normalizeFallbackStatus("jobs_wait", { all_terminal: false, poll_after_seconds: 12, jobs: [{ index: 0, job_id: jobId, status: "in_progress" }] }, jobId, expected);
-  expect(pending).toMatchObject({ generation: { id: jobId, status: "in_progress" }, poll_after_seconds: 12 });
+    expect(consumerGenerationOriginalResult(displayOf(raw), jobId, params, "video")).toEqual({ url: rawUrl });
+  // jobs_wait keeps its own guards against another job and an ambiguous list.
+  expect(consumerGenerationOriginalResult(waitOf({ all_terminal: true, jobs: [{ index: 0, job_id: other, status: "completed", result_url: rawUrl }] }), jobId, params, "video")).toBeNull();
+  expect(consumerGenerationOriginalResult(waitOf({ all_terminal: true, jobs: [{ index: 0, job_id: jobId, status: "completed", result_url: rawUrl }, { index: 1, job_id: jobId, status: "completed", result_url: rawUrl }] }), jobId, params, "video")).toBeNull();
 });
 
-test("on the 91-tool surface a generation quotes, submits and polls through job_display without job_status", async () => {
+test("the echoed params.model is a family variant, not the model id — and a different real model id still refuses", () => {
+  // The live entry carries top-level model "seedance_2_5" with nested
+  // params.model "default". Against the previous contract this fails: the
+  // nested variant was compared against our model id and the job never
+  // qualified — on the job_status path too, not just the fallbacks.
+  expect(CONNECTED_MODEL_VARIANTS.has("default")).toBe(true);
+  const variant = (value: unknown) => {
+    const one = displayCompleted(live).results[0];
+    return displayOf({ results: [{ ...one, params: { ...one.params, model: value } }] });
+  };
+  for (const tolerated of ["default", "standard", "pro", "fast", "turbo", "lite", "quality", "std", "kling3_0"])
+    expect(consumerGenerationOriginalResult(variant(tolerated), jobId, params, "video"), String(tolerated)).toEqual({ url: rawUrl });
+  // A different real model id, or a non-string, is still a mismatch.
+  for (const refused of ["seedance_2_5", "nano_banana_2", "autosprite", "", 5, null, { id: "kling3_0" }])
+    expect(consumerGenerationOriginalResult(variant(refused), jobId, params, "video"), JSON.stringify(refused)).toBeNull();
+});
+
+test("on the 91-tool surface a generation quotes, submits and polls through jobs_wait without job_status", async () => {
   const f = session({ tools: ninetyOne.tools });
   const quote = await quoteWith(f);
   expect(quote.credits).toBe(42);
@@ -153,27 +229,31 @@ test("on the 91-tool surface a generation quotes, submits and polls through job_
   const status = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: f.fetch });
   expect(consumerGenerationOriginalResult(status.raw, jobId, params, "video")).toEqual({ url: rawUrl });
   expect(f.names()).not.toContain("job_status");
-  expect(f.toolCalls().at(-1)!.params).toEqual({ name: "job_display", arguments: { id: jobId } });
+  expect(f.toolCalls().at(-1)!.params).toEqual({ name: "jobs_wait", arguments: { jobs: [{ index: 0, job_id: jobId }], timeout_seconds: 0 } });
   expect(f.paid()).toHaveLength(1);
   // One list for the three sessions: the cache holds within its TTL.
   expect(f.lists()).toBe(1);
 });
 
-test("on the 98-tool surface the poll uses job_status; with only jobs_wait it long-polls nothing and reads a snapshot", async () => {
+test("on the 98-tool surface the poll uses job_status; with only job_display it reads and collects the real gallery envelope", async () => {
   const ours = session({ tools: ninetyEight.tools });
   const status = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: ours.fetch });
   expect(ours.toolCalls().at(-1)!.params).toEqual({ name: "job_status", arguments: { jobId, sync: false, raw_data: false } });
   expect(consumerGenerationOriginalResult(status.raw, jobId, params, "video")).toEqual({ url: rawUrl });
+  // The last-resort fallback, answering with the LIVE envelope. This whole
+  // branch fails against the previous code: the reply was inert and the paid
+  // original was never collected.
   resetConnectedToolsetCache();
-  const waitOnly = session({ tools: without(ninetyOne.tools, "job_display") });
-  const waited = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: waitOnly.fetch });
-  expect(waitOnly.toolCalls().at(-1)!.params).toEqual({ name: "jobs_wait", arguments: { jobs: [{ index: 0, job_id: jobId }], timeout_seconds: 0 } });
-  expect(consumerGenerationOriginalResult(waited.raw, jobId, params, "video")).toEqual({ url: rawUrl });
-  // Genjutsu and voice-tool polls share the same fallback.
+  const displayOnly = session({ tools: without(ninetyOne.tools, "jobs_wait") });
+  const shown = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: displayOnly.fetch });
+  expect(displayOnly.toolCalls().at(-1)!.params).toEqual({ name: "job_display", arguments: { id: jobId } });
+  expect(consumerGenerationOriginalResult(shown.raw, jobId, params, "video")).toEqual({ url: rawUrl });
+  // Genjutsu and voice-tool polls share the same fallback, on the same envelope.
   resetConnectedToolsetCache();
-  const genjutsu = session({ tools: ninetyOne.tools, reply: (p) => (p.params.name === "job_display" ? { generation: { id: jobId, model: "hf_mult_motion_control", type: "video", status: "in_progress" } } : undefined) });
+  const motion: EnvelopeJob = { ...live, model: "hf_mult_motion_control" };
+  const genjutsu = session({ tools: without(ninetyOne.tools, "jobs_wait"), reply: (p) => (p.params.name === "job_display" ? displayInProgress(motion) : undefined) });
   const moving = await readConsumerGenjutsuJob("fixture-private-access", jobId, wallet, "hf_mult_motion_control", { fetch: genjutsu.fetch });
-  expect(moving.raw).toMatchObject({ generation: { id: jobId, status: "in_progress" } });
+  expect(moving.raw).toMatchObject({ status_source: "job_display", generation: { id: jobId, status: "in_progress" } });
   const voice = await readConsumerVoiceToolJob("fixture-private-access", jobId, wallet, "dubbing", { fetch: genjutsu.fetch });
   expect(voice.raw).toMatchObject({ generation: { id: jobId, type: "video" } });
 });
@@ -228,7 +308,7 @@ test("the cache re-reads the list on a miss, and a failed status read drops a st
   await expect(readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: f.fetch })).rejects.toBeTruthy();
   const recovered = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: f.fetch });
   expect(consumerGenerationOriginalResult(recovered.raw, jobId, params, "video")).toEqual({ url: rawUrl });
-  expect(f.toolCalls().at(-1)!.params.name).toBe("job_display");
+  expect(f.toolCalls().at(-1)!.params.name).toBe("jobs_wait");
   expect(f.lists()).toBe(3);
   expect(TOOLSET_TTL_MS).toBeLessThanOrEqual(60_000);
 });

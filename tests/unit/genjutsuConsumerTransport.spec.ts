@@ -312,6 +312,9 @@ test("collection requires exact model/source settings and original HTTPS result,
       },
     },
     { params: { ...accepted.params, resolution: "480p" } },
+    // A different REAL model id under params.model is still a mismatch.
+    { params: { ...accepted.params, model: "seedance_2_5" } },
+    { params: { ...accepted.params, model: 5 } },
   ])
     expect(
       consumerGenjutsuOriginalResult(
@@ -323,6 +326,19 @@ test("collection requires exact model/source settings and original HTTPS result,
   expect(
     consumerGenjutsuOriginalResult({ raw_data: accepted }, jobId, params),
   ).toBeNull();
+  // The provider echoes a per-family VARIANT under params.model, not a model
+  // id (live: `params.model: "default"` beside `model: "seedance_2_5"`).
+  // Against the previous code each of these returns null and the job — already
+  // paid for — never qualifies.
+  for (const variant of ["default", "standard", "pro", "fast", "turbo", "lite", "quality", "std"])
+    expect(
+      consumerGenjutsuOriginalResult(
+        { generation: { ...accepted, params: { ...accepted.params, model: variant } } },
+        jobId,
+        params,
+      ),
+      variant,
+    ).toEqual({ url: "https://media.example/original.mp4" });
   for (const status of ["failed", "canceled", "nsfw", "ip_detected"])
     expect(
       consumerGenjutsuFailureResult(

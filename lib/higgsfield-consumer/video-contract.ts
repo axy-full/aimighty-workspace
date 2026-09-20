@@ -1,6 +1,40 @@
 import { z } from "zod";
 import type { QualificationValue } from "./qualification";
 
+/**
+ * Family variant selectors the provider echoes back under `params.model`.
+ *
+ * `params.model` is NOT a model id on every family. The live connected account
+ * returns, for one completed seedance_2_5 video, a top-level
+ * `model: "seedance_2_5"` (the model id) with a nested
+ * `params.model: "default"` — a per-family variant selector — while the live
+ * nano_banana_2 image entries carry no nested `model` at all. `model` is a
+ * RESERVED_PARAMETER we always send as the model id, so the value coming back
+ * is the provider's own canonical params, not ours.
+ *
+ * The model identity is therefore taken from the ENTRY's top-level `model`,
+ * which is compared strictly against the model we paid for above and re-checked
+ * through the acknowledgement aliases. The nested value is tolerated only when
+ * it is one of these variant words; any other value that is not our model id is
+ * still a mismatch and still refuses the job, so a provider that echoed a
+ * different real model id under `params.model` is rejected exactly as before.
+ *
+ * Deliberately an allow-set rather than "anything that does not look like a
+ * model id": three ids in the live catalogue (`autosprite`, `outpaint`,
+ * `clipify`) are bare lower-case words, so a structural test would read a real
+ * model substitution as a variant. None of these words is a catalogue id.
+ */
+export const CONNECTED_MODEL_VARIANTS: ReadonlySet<string> = new Set([
+  "default",
+  "standard",
+  "std",
+  "pro",
+  "fast",
+  "turbo",
+  "lite",
+  "quality",
+]);
+
 export const CONSUMER_VIDEO_RATIOS = [
   "auto",
   "21:9",

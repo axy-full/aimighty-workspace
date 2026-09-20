@@ -19,7 +19,7 @@ import {
 } from "./catalogue";
 import { CONNECTED_TOOL_NAMES, requireConnectedTool, validateToolRequest } from "./tools";
 import { consumerMediaIdentitySchema, consumerMediaKey } from "./genjutsu-contract";
-import { ConsumerVideoError, consumerVideoAcknowledgement } from "./video-contract";
+import { CONNECTED_MODEL_VARIANTS, ConsumerVideoError, consumerVideoAcknowledgement } from "./video-contract";
 
 const parameterValue = z.union([
   z.string().max(2000),
@@ -140,7 +140,15 @@ function evidence(value: unknown, jobId: string, params: ConsumerGenerationParam
   if (g.params !== undefined) {
     if (!record(g.params)) return null;
     const p = g.params;
-    if ("model" in p && p.model !== params.model) return null;
+    // `params.model` is a per-family VARIANT selector on some families, not a
+    // model id (CONNECTED_MODEL_VARIANTS): the live connected account echoes
+    // `params.model: "default"` beside a top-level `model: "seedance_2_5"`, and
+    // echoes no nested `model` at all for nano_banana_2. The model identity is
+    // `g.model`, compared strictly above and re-checked through the
+    // acknowledgement; only a variant word is tolerated here, so any other
+    // differing value — including a different real model id — still refuses.
+    if ("model" in p && p.model !== params.model && !(typeof p.model === "string" && CONNECTED_MODEL_VARIANTS.has(p.model)))
+      return null;
     if ("prompt" in p && "prompt" in params && p.prompt !== params.prompt) return null;
     if ("count" in p && p.count !== 1) return null;
     if ("use_unlim" in p && p.use_unlim !== false) return null;
