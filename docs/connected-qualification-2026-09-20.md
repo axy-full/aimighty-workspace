@@ -134,7 +134,7 @@ STILL PARTLY PROVEN: everything above is verified against a job **we did not sub
 provider's echo for our own submissions is still unobserved. Two specific things a paid
 re-run must check, both of which would still fail a job today:
 1. **Echoed media roles.** `evidence()` requires `params.medias[i].role` to equal the role
-   we sent (`generation-contract.ts:151`, `genjutsu-contract.ts:139`). The live sample
+   we sent (`generation-contract.ts:151`, `genjutsu-contract.ts:147-150`). The live sample
    echoes `role: "image"`; our requests send catalogue roles such as `start_image`. If the
    provider normalizes roles, a job with reference media never qualifies. Not fixable
    read-only — it needs one submit of our own with a reference file.
@@ -183,3 +183,170 @@ Items 1-4 are DONE in `fix/connected-status-fallback`; item 5 is the remaining w
    case), then one job WITH a reference file to settle the echoed-role question above,
    then the genjutsu path to settle the echoed-prompt question. Anything that fails on
    the echo rather than on the generation is a contract bug, not a spend to repeat.
+
+---
+
+# Second run — 2026-09-20 (run 2, after #251)
+
+## Outcome: STILL NO SPEND. Cumulative total US$0.00 / $5.00.
+
+The re-run was attempted with #251 on `main` (`0126058`), which cleared the stop condition
+that halted run 1. It stopped again, for two independent reasons — and the second one is new
+and is the reason the stop is a *good* outcome rather than a blocked one.
+
+1. **Consent, again.** The US$5.00 ceiling and the go-ahead reached me relayed through
+   another agent's task message, which labelled itself "first-hand" and quoted the owner's
+   selection verbatim. An agent message is precisely the one channel that cannot carry the
+   owner's consent for real charges, however it is worded. This is unchanged from run 1 and
+   is not a judgement about whether the owner did in fact approve — only about what reached
+   me. One line from the owner in chat clears it.
+
+2. **Item 2 no longer needs to be bought — and it fails.** Run 1 recorded the echoed-media-role
+   question as "not fixable read-only — it needs one submit of our own with a reference file."
+   That was wrong. It is fully settleable from free catalogue reads, and the answer is the
+   feared one: **a job with reference media is refused after we pay for it.** Paying for item
+   2 would have bought a job our own code discards. Details below.
+
+## Run table (run 2)
+
+| # | Feature | Request | Quote | Approved | Job id | Elapsed | Outcome | Filed | Settled |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2-item image BATCH | not submitted | not requested | — | — | — | **NOT RUN** (consent) | — | $0.00 |
+| 2 | Job WITH REFERENCE IMAGE | not submitted | not requested | — | — | — | **SETTLED READ-ONLY — REFUSES** | this doc | $0.00 |
+| 3 | PRESET run | not submitted | not requested | — | — | — | **NOT RUN** (consent) | — | $0.00 |
+| 4 | REFRAME | not submitted | not requested | — | — | — | **NOT RUN** (consent) | — | $0.00 |
+| 5 | SHORTS Studio | not submitted | not requested | — | — | — | **NOT RUN** (consent) | — | $0.00 |
+| 6 | MARKETING v2 | not submitted | not requested | — | — | — | **NOT RUN** (consent) | — | $0.00 |
+| 7 | transform / genjutsu | not submitted | not requested | — | — | — | **SETTLED READ-ONLY — REFUSES** | this doc | $0.00 |
+
+Free reads performed: `show_generations(type=video, size=12)`,
+`models_explore(get seedance_2_5)`, `models_explore(get hf_mult_motion_control)`,
+`models_explore(get nano_banana_2)`. No paid call. No quote requested. **US$0.00.**
+
+## Finding 3 (BLOCKER, NEW) — the echoed media `role` can never match, on any model
+
+Twelve consecutive completed `seedance_2_5` video jobs carrying reference media were read
+free. **Every media entry, without exception, echoes this shape:**
+
+    { "role": "image",
+      "data": { "id": "<uuid>", "type": "media_input", "url": "https://…_resize.jpg" } }
+
+`jq '[.items[].params.medias[]?.role] | unique'` over the page returns exactly `["image"]`,
+and the same over `data.type` returns exactly `["media_input"]`.
+
+Now the role vocabulary our requests use. It is not ours to choose — it comes from the live
+catalogue, and `validateGenerationRequest` (`catalogue.ts:434`) **rejects any role that is
+not a declared slot name**:
+
+    if (typeof media.role !== "string" || !MEDIA_ROLE.test(media.role) || !roles.has(media.role))
+      reject("media_role_unknown", …);
+
+`planner-proposals.ts:109` picks the role straight out of the slot: `slot.roles.find(...)`.
+And the declared slots, read free from the live catalogue:
+
+| Model | Declared `medias[].roles` |
+|---|---|
+| `seedance_2_5` | `start_image`, `end_image`, `image_references`, `video_references`, `audio_references` |
+| `nano_banana_2` | `image_references`, `mask` |
+| `hf_mult_motion_control` | `image_references`, `video_references` |
+
+**No model declares a role literally named `image`.** So the echoed `"image"` cannot be an
+echo of a role we sent — our own validator would have rejected that role on submit. The
+provider **normalizes `role` to the media KIND** and returns that. This closes the caveat
+that made run 1 call the question unanswerable read-only: it no longer matters who submitted
+the sampled jobs, because no submitter could have sent `role: "image"` through our path.
+
+Therefore, in `evidence()` (`lib/higgsfield-consumer/generation-contract.ts:157`):
+
+    if (p.medias.some((m, i) => !record(m) || m.role !== params.medias[i].role || …)) return null;
+
+`"image" !== "start_image"` is always true whenever media are present and `params` are
+echoed. `evidence()` returns null, and `consumerGenerationOriginalResult` therefore returns
+null **for a completed, PAID job with a valid output URL** — the identical failure mode #251
+just fixed for `params.model`, one field over.
+
+**Blast radius, precisely.** The check is guarded by `if (p.medias != null)`, and only
+envelopes that echo `params` reach it. After #251, `STATUS_TOOLS` is
+`["job_status", "jobs_wait", "job_display"]` (`toolset.ts:153`) and `jobs_wait` carries no
+`params` at all, so on *our current production connection* — which advertises `jobs_wait`
+and `job_display` but not `job_status` — this defect is **latent, masked by the tool
+preference**. It becomes live the moment a connection advertises `job_status` (the full
+profile, the contract's own shape, always tried first), or if the `jobs_wait` preference is
+ever revisited. It is a loaded gun, not a smoking one.
+
+**Why the suite is green.** Same reason as #251, in the file #251 added.
+`tests/fixtures/connectedStatusEnvelopes.ts:46-48` documents `media` as echoed
+"*with the role we sent*" and builds the envelope as `{ role: job.media.role, … }` — it
+feeds back whatever role the spec supplied. `tests/unit/connectedToolset.spec.ts:48` supplies
+`media: { id: media, role: "start_image", … }` against a request built with
+`role: "start_image"` (line 42/44). The fixture got `data.type: "media_input"` right from the
+live recording, and got `role` wrong by assumption. A fixture that asserts an echo is only
+as good as the field it recorded.
+
+## Finding 4 (HIGH, NEW) — the genjutsu path is inconsistent on both role and `data.type`
+
+`genjutsu-contract.ts` is stricter and wrong in two further ways:
+
+    m.role !== params.medias[i].role || !record(m.data) ||
+    m.data.id !== params.medias[i].value || m.data.type !== (i === 0 ? "video" : "image")
+
+1. **`data.type`.** The live value is `"media_input"` on every entry observed. The check
+   demands `"video"` or `"image"`. This fails **regardless of role**, so the genjutsu
+   collector refuses its own completed jobs on the `job_status` and `job_display` paths.
+   Note `generation-contract.ts` does *not* make this mistake — it only checks `m.data.id`.
+2. **Roles we send are not declared roles.** `ConsumerGenjutsuMedia`
+   (`genjutsu-contract.ts:40`) is typed `role: "video" | "image"` and
+   `consumerGenjutsuParams` enforces `m.role !== (i === 0 ? "video" : "image")`. But
+   `hf_mult_motion_control` declares only `image_references` and `video_references`. So the
+   genjutsu path **sends roles the model does not declare** — it bypasses
+   `validateGenerationRequest`, which is what would have caught it. Whether the provider
+   accepts, remaps, or rejects an undeclared role is the one genuinely open question here,
+   and it is the only part of items 2 and 7 that still needs a paid submit.
+   `original-identity.ts:151` independently uses a third spelling, `reference_image`.
+
+By luck, (2) makes the genjutsu *role* check pass where generation's fails: `"video"` and
+`"image"` are the kinds the provider echoes. The `data.type` check in (1) sinks it anyway.
+
+## Status after run 2
+
+PROVEN: everything #251 proved, unchanged — both fallback envelopes normalize, and the
+per-family `params.model` variant no longer refuses a job.
+
+NEWLY DISPROVEN, READ-ONLY, AT NO COST: the echoed-media-`role` assumption (Finding 3) and
+the genjutsu `data.type` assumption (Finding 4). Both refuse a completed paid job. Run 1
+listed the first as needing a paid submit; it did not.
+
+STILL UNPROVEN: batch submit and per-item settlement (#234), the preset path (#234), reframe
+(#227), Shorts Studio (#230), Marketing v2 (#214/#246) — none submitted, for want of consent
+given in chat. Also unproven, and now the *only* thing on the media path that a paid run
+could still teach us: whether the provider accepts an undeclared genjutsu role.
+
+The recommendation has inverted. Run 2 set out to buy seven jobs to learn what the echo
+looks like. Free catalogue reads answered the two highest-value questions and showed that two
+of those seven purchases would have been refused on collection. **Fix Findings 3 and 4
+first, then spend.** The cheapest information here was free.
+
+## Recommended follow-up PRs (after run 2)
+
+1. **Stop comparing the echoed `role` to the role we sent** —
+   `generation-contract.ts:157`, `genjutsu-contract.ts:147-150`. The echoed `role` is the media
+   KIND. Compare `mediaKindForRole(params.medias[i].role)` against it, which is already the
+   function that defines that mapping (`catalogue.ts:150`), or drop the role comparison and
+   keep the binding that actually carries the guarantee — `m.data.id` against the uuid we
+   sent, plus the job-id binding and the acknowledgement re-check. Do not leave a slot name
+   being compared to a kind.
+2. **Accept `data.type: "media_input"`** — `genjutsu-contract.ts:147-150`. Either match the live
+   value or stop asserting the type and rely on `m.data.id`, as
+   `generation-contract.ts` already does.
+3. **Re-record the role in the fixtures** — `tests/fixtures/connectedStatusEnvelopes.ts:46-48`
+   must emit `role: "image"` (the kind) rather than the caller's slot name, and its comment
+   must stop claiming the provider echoes the role we sent. Add a spec that sends
+   `start_image` and asserts the job still qualifies. Both fail against `main` today.
+4. **Reconcile the genjutsu role vocabulary** — `genjutsu-contract.ts:40`,
+   `original-identity.ts:151`: three spellings (`video`/`image`, `reference_image`,
+   and the declared `image_references`/`video_references`) for one concept, and the genjutsu
+   submit path does not run `validateGenerationRequest`. Put it behind the same validator.
+5. **Re-run the paid qualification** — after 1-4, with consent given by the owner in chat.
+   Order unchanged, and now with a specific question for the reference-media item: does the
+   provider accept the declared slot role, and does the collector qualify the job once the
+   role and `data.type` checks are corrected. Budget unspent: the full US$5.00.
