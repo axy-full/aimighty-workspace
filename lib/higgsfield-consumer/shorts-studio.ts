@@ -7,7 +7,11 @@
  * - `shorts_studio_list_presets {cursor?}` → `{items:[{id, name, preset_source}], next_cursor, has_more}` (free read).
  * - `shorts_studio_create {duration_seconds, get_cost:true}` → the exact credit
  *   price for a source of that length; no preset or source is needed, so the
- *   price is read BEFORE the source is imported.
+ *   price is read BEFORE the source is imported. Recorded from production
+ *   2026-09-20 (`costReplies` in the fixture): `{cost:{credits, credits_exact}}`
+ *   at 3 credits per second, where a measured — so fractional — duration makes
+ *   `credits` the truncated integer the account charges and `credits_exact` the
+ *   same price unrounded (4.04 s → `{credits:12, credits_exact:12.12…}`).
  * - `shorts_studio_create {preset_id, preset_source, source_video_id,
  *   aspect_ratio, resolution:"720p", duration_seconds}` → a session
  *   `{id, status, job_ids:[]}` (PAID, one call).

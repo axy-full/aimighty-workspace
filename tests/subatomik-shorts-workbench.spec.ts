@@ -52,7 +52,7 @@ async function fixture(page: Page, options: { connected?: boolean } = {}) {
       if (body.action === "quote") {
         expect(body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
         const job: Job = { id: `11111111-1111-4111-8111-${String(jobs.length + 1).padStart(12, "0")}`, draftId: project.id, status: "quoted", input: body.input, source: { kind: "video", name: "Launch cut.mp4" },
-          pricedSeconds: 31, priceSource: "get_cost", workspaceId: wallet, workspaceName: "Studio wallet", quoteCredits: 40, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300000,
+          pricedSeconds: 31.01, priceSource: "get_cost", workspaceId: wallet, workspaceName: "Studio wallet", quoteCredits: 40, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300000,
           providerJobId: null, clips: [], settlement: null, createdAt: Date.now() };
         jobs.push(job);
         return json({ job });
@@ -134,7 +134,7 @@ test("Shorts picks a style and one project video, quotes the whole set once, run
   await quoteButton.click();
   const quote = panel.getByLabel("Connected-credit quote", { exact: true });
   await expect(quote.getByText("40 connected credits · Studio wallet", { exact: true })).toBeVisible();
-  await expect(quote).toContainText("Shorts · Launch cut.mp4 · Bold Urban · 16:9 · priced for 31 s");
+  await expect(quote).toContainText("Shorts · Launch cut.mp4 · Bold Urban · 16:9 · priced for 31.01 s");
   await expect(quote).toContainText("One price for the whole set of clips");
   expect(state.posts.find((body) => body.action === "quote")!.input).toEqual({ source: { uploadId: "launch-original" }, preset: { id: presetId, source: "cms", name: "Bold Urban" }, aspectRatio: "16:9" });
   const run = quote.getByRole("button", { name: "Make shorts · 40 connected credits", exact: true });
