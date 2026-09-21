@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { popUndo, pushUndo, type UndoEntry } from "./undo";
-import type { CtxTarget } from "./context-menu";
+import type { CtxCommand, CtxTarget } from "./context-menu";
 
 /**
  * The Suites shell's own state (README › State), layered over the workspace
@@ -21,7 +21,7 @@ export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room"] as const;
 export const WIDE_FROM = 1280;
 
 export type LibTab = "tools" | "assets";
-export type Clip = { mode: "copy" | "cut"; target: Exclude<CtxTarget, { kind: "empty" }>; name: string };
+export type Clip = { mode: "copy" | "cut"; target: Exclude<CtxTarget, { kind: "empty" }>; name: string; /** What the paste needs to know about it (lib/shell/use-asset-actions). */ payload?: unknown };
 export type CtxState = { x: number; y: number; target: CtxTarget; title: string };
 
 type Shell = {
@@ -56,6 +56,9 @@ type Shell = {
   closeCtx: () => void;
   setClip: (clip: Clip | null) => void;
   pushUndo: (entry: UndoEntry) => void;
+  /** The shell's command path (SuitesShell registers it), so panels never grow a second one. */
+  runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
+  setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
   undo: () => Promise<void>;
 };
 
@@ -102,6 +105,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const [ctx, setCtx] = useState<CtxState | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
   const undoRef = useRef(undoStack);
   useEffect(() => { undoRef.current = undoStack; }, [undoStack]);
 
@@ -172,6 +176,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     closeCtx: () => setCtx(null),
     setClip,
     pushUndo: (entry) => setUndoStack((stack) => pushUndo(stack, entry)),
+    runCommand: (command, target) => runRef.current?.(command, target),
+    setRunCommand: (run) => { runRef.current = run; },
     undo: async () => {
       const popped = popUndo(undoRef.current);
       if (!popped) { ws.toast("Nothing to undo."); return; }

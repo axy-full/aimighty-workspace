@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import type { Asset } from "@/lib/workbench/studio";
 import { engineLabel } from "@/lib/workspace/engines";
 import { mediaBands } from "@/lib/workspace/format";
@@ -6,6 +7,7 @@ import { shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot, RigShotStatus } from "@/lib/workspace/shots";
 import { StatusPill, type Status } from "../ui";
 import { useRig } from "./RigProvider";
+import { shotDropHandler } from "@/lib/shell/drop-targets";
 
 const PILL: Record<RigShotStatus, Status> = { approved: "approved", ready: "ready", queued: "queued", draft: "draft", failed: "failed" };
 
@@ -40,9 +42,10 @@ function annotation(shot: RigShot) {
   return shot.issues.join(" ");
 }
 
-function Row({ shot, selected, onSelect, asset }: { shot: RigShot; selected: boolean; onSelect: () => void; asset: Asset | null }) {
+function Row({ shot, selected, onSelect, asset, onDropAsset }: { shot: RigShot; selected: boolean; onSelect: () => void; asset: Asset | null; onDropAsset?: (assetId: string, shot: { nodeId: string; name: string }) => void }) {
   const tone = roleTone(shot.status);
   const note = shot.note || shot.issues[0] || "";
+  const [over, setOver] = useState(false);
   return (
     <button
       type="button"
@@ -50,7 +53,12 @@ function Row({ shot, selected, onSelect, asset }: { shot: RigShot; selected: boo
       aria-pressed={selected}
       data-shot-id={shot.id}
       data-status={shot.status}
+      data-drop={over || undefined}
       onClick={onSelect}
+      /* A Library asset dropped on the row is filed on this shot (text/plain = asset id). */
+      onDragOver={onDropAsset ? (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setOver(true); } } : undefined}
+      onDragLeave={onDropAsset ? () => setOver(false) : undefined}
+      onDrop={onDropAsset ? (e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) onDropAsset(id, { nodeId: shot.id, name: shot.name }); } : undefined}
     >
       <span className="pxw-rig-num">{String(shot.index).padStart(2, "0")}</span>
       <ShotThumb id={shot.id} asset={asset} />
@@ -98,7 +106,7 @@ export function RigList() {
           <div role="list" aria-label="Shots">
             {shots.map((shot) => (
               <div role="listitem" key={shot.id}>
-                <Row shot={shot} selected={selected?.id === shot.id} onSelect={() => rig.select(shot.id)} asset={shotPreviewAsset(project, shot.id)} />
+                <Row shot={shot} selected={selected?.id === shot.id} onSelect={() => rig.select(shot.id)} asset={shotPreviewAsset(project, shot.id)} onDropAsset={shotDropHandler() ?? undefined} />
               </div>
             ))}
           </div>

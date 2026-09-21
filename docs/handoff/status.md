@@ -247,3 +247,21 @@ Run from the owner's signed-in Browser-pane session on www.particl.app (deployme
 | Settled | **$0.0308** (`crew_sessions.spend_usd`; one `xai` meter event), 31 % of the ceiling |
 | Transcript shape vs prototype | Proposals 32–45 words, first person, all grounded in the Dune Studies brief (chrome sphere, Mira, ivory suit). Every challenge parsed `@Name —` into `↳ to` (Editor→Director, Producer→Editor, Designer→Editor, Director→Producer, DOP→Editor). Converge produced exactly three `n. Title — what we do` lines, parsed into three solutions. Same shape as the prototype's canned room. |
 | Defect found | The SSE stream died mid-round (`ERR_HTTP2_PING_FAILED`) because the #280 production deploy cut over at that moment. The server finished and settled the round; the client said "network error" and did not re-read the room. Fixed on `fix/crew-stream-reread`: on a dropped stream the client re-reads the room and says so. |
+
+## 22 September — FINAL_SPEC step 1: assets on every page (branch `feat/suites-01-assets`)
+
+The owner's v3 brief (`design/particl-suites/FINAL_SPEC.md` — wins every disagreement; `CLAUDE_CODE_PROMPT_FINAL.md`; the updated `Particl Suites.dc.html` with the flair layer; `Particl Mobile.dc.html`). Order of work: 1 assets · 2 Business · 3 Viral · 4 Gen catalogue · 5 Skills + Workspace · 6 flair, then mobile. `MOBILE_ADDENDUM.md` is referenced by the brief but was not in the folder or the zip.
+
+| What | Where |
+| --- | --- |
+| Library `+` sends the asset into the composer as a reference; the toast names the role (`harbour-plate.webp added as Image`) | `Library.tsx`, `lib/shell/reference-inbox.ts` (the letterbox between any page and the Gen composer), `GenView.tsx` |
+| Every asset tile draggable (`text/plain` = asset id); drop targets: the Gen well, and a Rig row (a render dropped on a shot is filed on it through `PATCH /api/jobs/:id { shotId }`, mapped first if need be) | `Library.tsx`, `RigList.tsx`, `lib/shell/drop-targets.ts` |
+| Right-click commands, all real: copy · cut · paste · move to… · delete · use as reference · retry generation · open in Inspector · undo (20 deep). Duplicate is offered and says why it cannot (an original has one copy; a render's copy is a new render) | `lib/shell/assets.ts` (pure: capabilities, reasons, the prototype's toasts), `lib/shell/use-asset-actions.ts`, `SuitesShell.tsx` |
+| Delete is soft for 30 days: `PATCH /api/jobs/:id { trashed: true|false }` hides a render and dates its cleanup row a month out (the existing sweeper honours `lease_until`); an upload is unfiled from the project and its original stays in All assets. ⌘Z restores either | `app/api/jobs/[id]/route.ts` |
+| Cut here → paste in another project moves it (uploads: file + unfile; renders: `PATCH { projectId }` to the target's production). Move to… is the same through a picker | `use-asset-actions.ts` |
+| Retry generation opens Gen with the render's own prompt (`params.rawPrompt`), model and type, and a note *Retry · name · same inputs · new seed*; it is quoted again before anything runs | `lib/shell/assets.ts › retryPreset`, `GenView.tsx` |
+| Inspector: a fixed 180px preview card, provenance (engine, prompt, made, settled / file, type, size, pixels, integrity) and the actions as buttons on the shell's own command path; hides via `×`, the page-head toggle (every width, lit when open) and ⌘J | `components/graphite/AssetInspector.tsx`, `Inspector.tsx`, `PageHead.tsx`, `lib/shell/state.tsx › runCommand` |
+
+Not in step 1: Business/Viral media wells (those composers are steps 2–3), per-model reference roles (step 4 — today the role is Image/Video by kind).
+
+Tests: `tests/unit/suitesAssets.spec.ts`, `tests/assets-trash-workbench-api.spec.ts` (real route, real tables: hidden, bytes kept, cleanup dated 30 days, restore), `tests/suites-assets-workbench.spec.ts` (five viewports).
