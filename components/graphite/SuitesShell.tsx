@@ -13,6 +13,7 @@ import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxComma
 import { useShell } from "@/lib/shell/state";
 import { ContextMenu } from "./ContextMenu";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
+import { GenView } from "./GenView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -52,7 +53,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   const command = (cmd: CtxCommand, target: CtxTarget) => {
     switch (cmd) {
-      case "generate-here": shell.goGen(); dispatch({ type: "patch", patch: { composer: true } }); return;
+      case "generate-here": shell.goGen(); return;
       case "open-library": shell.openLibrary("assets"); return;
       case "toggle-inspector": shell.toggleInspector(); return;
       case "undo": void shell.undo(); return;
@@ -67,7 +68,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         shell.openInspector();
         return;
       case "retry":
-        shell.goGen(); dispatch({ type: "patch", patch: { composer: true } });
+        shell.goGen();
         return;
       default:
         toast(WHY[cmd] ?? LATER);
@@ -146,9 +147,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button>
                       <button type="button" className="gx-hbtn" aria-pressed={shell.inspOpen} onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
                     </>) : null}
-                    <button type="button" className="gx-primary" data-testid="open-composer" onClick={() => dispatch({ type: "patch", patch: { composer: true } })}>Generate</button>
                   </div>
-                  <div className="gx-stage gx-scroll"><p className="gx-empty gx-enter" style={{ padding: 20 }}>Results land in Takes and in Library › Assets, on every page.</p></div>
+                  <div className="gx-stage gx-scroll" data-testid="content">
+                    <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                  </div>
                 </>
               ) : (
                 <>
