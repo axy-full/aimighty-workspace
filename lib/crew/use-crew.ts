@@ -157,7 +157,15 @@ export function useCrew(projectId: string | null) {
       await openRoom(room.id);
       void refreshSessions();
     } catch (error) {
-      outcome = error instanceof Error ? error.message : "The round stopped. Nothing was charged.";
+      /* The stream can drop while the server finishes the round (a deploy
+         cut-over did exactly that on 21 September). The room is the record,
+         so re-read it before saying anything about the round. */
+      const reread = live.current.session ? await openRoom(live.current.session.id).then(() => true).catch(() => false) : false;
+      const message = error instanceof Error ? error.message : "";
+      outcome = reread
+        ? "The connection dropped while the room was talking; the room has been re-read."
+        : /failed to fetch|network|load failed/i.test(message) ? "The connection dropped and the room could not be re-read. Reload to see what the round did." : message || "The round stopped. Nothing was charged.";
+      void refreshSessions();
     } finally {
       setRunning(false); setPhase(null); setThinking([]);
     }

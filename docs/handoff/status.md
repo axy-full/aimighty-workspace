@@ -234,3 +234,16 @@ What Higgsfield actually publishes (all nine repos under github.com/higgsfield-a
 | Gen view on the existing `useComposer` host: Video · Images · Audio (3D shown, disabled, with where 3D is made), model sheet (Studio engines · Higgsfield catalogue), reference well taking the Library's `text/plain` id, Results | `components/graphite/GenView.tsx` |
 
 Not in this branch, and not faked: the Takes stepper (the host dispatches one job), `enhance_prompt: true` on catalogue jobs, 3D, and the Workspace › General enhancer selector (step 6). Known cost edge: a rewrite refused for dropping a citation has already been paid for by the time it is refused.
+
+## 21 September — Crew live qualification (production, owner-approved ceiling US$2)
+
+Run from the owner's signed-in Browser-pane session on www.particl.app (deployment of `a99399d`, Crew #279), project **Dune Studies**, the prototype's goal ("Open the film without dialogue and still make the product unmistakable inside the first four seconds."), Room reads Brief · Script · Boards, the default five seated, Producer in the chair, model `grok-4.6` on the production `XAI_API_KEY`.
+
+| Fact | Value |
+| --- | --- |
+| Quote on the button | `Run round · up to $0.10` (legacy workspace: dollars, no credits) |
+| Requests | 11 (5 Propose ∥, 5 Challenge ∥, 1 Converge) — all answered |
+| Tokens | ≈13,450 in · 650 out |
+| Settled | **$0.0308** (`crew_sessions.spend_usd`; one `xai` meter event), 31 % of the ceiling |
+| Transcript shape vs prototype | Proposals 32–45 words, first person, all grounded in the Dune Studies brief (chrome sphere, Mira, ivory suit). Every challenge parsed `@Name —` into `↳ to` (Editor→Director, Producer→Editor, Designer→Editor, Director→Producer, DOP→Editor). Converge produced exactly three `n. Title — what we do` lines, parsed into three solutions. Same shape as the prototype's canned room. |
+| Defect found | The SSE stream died mid-round (`ERR_HTTP2_PING_FAILED`) because the #280 production deploy cut over at that moment. The server finished and settled the round; the client said "network error" and did not re-read the room. Fixed on `fix/crew-stream-reread`: on a dropped stream the client re-reads the room and says so. |
