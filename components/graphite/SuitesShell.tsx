@@ -12,6 +12,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { useShell } from "@/lib/shell/state";
 import { ContextMenu } from "./ContextMenu";
+import { BusinessView } from "./business/BusinessView";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
@@ -175,9 +176,13 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 <>
                   <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
-                      <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
-                    </div>
+                    {shell.page.own && shell.suite.id === "business" ? (
+                      <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
+                    ) : (
+                      <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
+                        <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
