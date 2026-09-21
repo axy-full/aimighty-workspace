@@ -279,3 +279,16 @@ What the connected account actually offers was checked against its advertised to
 | Business pages are the shell's own views (`own: true` in `lib/shell/ia.ts`); `marketing` stays the state page behind them | `lib/shell/ia.ts`, `SuitesShell.tsx` |
 
 Decisions to note (the brief says decide and note): DTC (§2.2 format/brand kit/batch) and creating setup items (§2.3) are not wired because the account offers no tool for them; the pages say exactly that and take an id from the CLI where one exists. Tests: `tests/unit/suitesBusiness.spec.ts`, `tests/suites-business-workbench.spec.ts` (five viewports), and the existing consumer-video guards updated for the widened contract.
+
+## 22 September — FINAL_SPEC step 3: Viral = Genjutsu (branch `feat/suites-03-viral`)
+
+The existing `genjutsu-service` (`hf_mult_motion_control`, `hf_mult_replace_object`; quote → approve → submit → poll on `/api/higgsfield/consumer/genjutsu`) surfaced in the shell's own views; nothing in the service or its route changed.
+
+| What | Where |
+| --- | --- |
+| Motion Transfer and Object Swap share one composer: exactly one source video 4–30 s at index 0 (a longer one is refused with its length), then up to 30 **ordered** reference images (↑ ↓ reorder; the order is the order sent), 480p/720p/1080p from the account's capabilities, an optional prompt with each page's own words | `components/graphite/viral/ViralView.tsx`, `lib/shell/viral.ts` (pure rules and the prototype's copy) |
+| **Live estimate required**: the primary reads the account's quote for exactly the current input and wears it (`Transfer motion · 22 cr`); a missing, failed or expired estimate blocks submit with the reason inline, and the estimate is re-read when the input changes or expires. Submit carries the estimated job's id, wallet and exact credits | `lib/shell/use-viral.ts` |
+| History = this project's Genjutsu results (from the route's GET): Recreate (the job's own inputs resolved against the Library and loaded into the composer, priced again), Compare (original and result on one clock, in a sheet), Send to Edit (selects the collected original and opens Studio › Edit) | `ViralView.tsx › HistoryView`, `CompareSheet` |
+| Viral pages are the shell's own views (`own: true`) | `lib/shell/ia.ts`, `SuitesShell.tsx` |
+
+Tests: `tests/unit/suitesViral.spec.ts`, `tests/suites-viral-workbench.spec.ts` (five viewports).

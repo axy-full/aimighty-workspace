@@ -25,7 +25,7 @@ export type ShellPage = {
   legacy: { suite: Suite; page: PageId };
   /** A hairline gap sits before this tab (the start of a group). */
   gapBefore: boolean;
-  /** The shell renders its own Graphite view for this page (Business, from step 2); the legacy mapping only feeds state. */
+  /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3); the legacy mapping only feeds state. */
   own?: boolean;
 };
 
@@ -75,11 +75,12 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["dtc", "Image ads", "Image ads", "Branded stills over your avatars and products", "marketing"],
     ["setup", "Setup", "Setup items", "Products · avatars · hooks · settings · references · brand kits", "marketing"],
   ])),
-  build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
+  /* Viral pages are the shell's own views (step 3) on the existing genjutsu-service. */
+  own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
     ["motion", "Motion Transfer", "Motion Transfer", "Recast the motion you own", "motion"],
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
-    ["history", "History", "History", "Every result, retained", "history"],
-  ]),
+    ["history", "History", "History", "Every result, retained as original bytes", "history"],
+  ])),
   build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],

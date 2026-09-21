@@ -7,6 +7,7 @@ import "../workspace.css";
 import "../graphite.css";
 import "../crew.css";
 import "../business.css";
+import "../viral.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };
