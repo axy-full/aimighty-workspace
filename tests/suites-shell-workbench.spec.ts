@@ -204,6 +204,9 @@ test("the chrome keeps the phone floors: 12px text, 44px targets, no label under
   expect(await smallTargets(page, chrome), "targets under 44×44").toEqual([]);
   expect(await dimLabels(page, ".gx"), "labels under #7C7C84").toEqual([]);
   await page.getByTestId("toggle-library").click();
+  /* Measure the settled panel: mid slide-in, a fractional translate makes a
+     44px control read as 43.99. */
+  await page.getByTestId("library").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   expect(await smallTargets(page, ".gx-library"), "Library targets under 44×44").toEqual([]);
   expect(await smallText(page, ".gx-legacy"), "Library text under 12px").toEqual([]);
 });
