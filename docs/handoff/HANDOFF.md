@@ -1,10 +1,13 @@
-# Particl — handoff, 20 September 2026
+# Particl — handoff (last updated 21 September 2026)
 
 You are taking over a live product. This is what it is, what changed in the last two days, the rules that are
 binding, what is proven and what only looks proven, and what to do next. Read this, then
 [`docs/handoff/status.md`](status.md) for the running record, then `CLAUDE.md` for the ground rules.
 
-`main` was `3325c5c` when this was written, deployed and verified on production.
+`main` was `e4c1610` when this was last updated, deployed, type-checking clean and green on CI. The
+write-up is kept current in place, so check the git log for anything newer than that commit.
+
+If you are a new Claude Code session, [`START-HERE.md`](START-HERE.md) is the opening prompt to follow.
 
 ---
 
@@ -90,7 +93,7 @@ These are owner decisions and repo law. Breaking one is a defect, not a preferen
 (`support.js`) must never be ported, and their fixture data stands in for API responses. The repo's own earlier
 mobile spec is `design/particl-v2-mobile/README.md`.
 
-## 5. What shipped 19–20 September
+## 5. What shipped 19–21 September
 
 Roughly fifty PRs. Grouped:
 
@@ -112,6 +115,20 @@ Roughly fifty PRs. Grouped:
 - **Connected account:** toolset guard (#226), planner reads + priced connected steps (#228), presets and
   batches (#234), workflows as recipes and slash commands (#240), audio policy + voice picker (#225), reframe
   (#227), Shorts (#230), explainer browsing (#235), plus the defect fixes in §6.
+
+### 21 September
+
+- **One credit is US$0.10, stated once and derived everywhere** (#270). The calculations already agreed; two
+  places that *said* the rate were typed by hand (the billing page, and the browser's fallback rate table) and
+  now derive. The rate is printed under the phone Settings balance, in both credit tooltips and on `/billing`.
+- **The credit slot is always mounted** on desktop and phone (#267, #269): the figure, `— cr` when unknown, or
+  `—` for a workspace billed in dollars, each with a title saying why.
+- **The switch-over gate decides once per page load** (#272). It used to re-decide on every viewport change,
+  so a landscape phone whose height crossed 500px (keyboard closing, browser chrome) could be redirected into the
+  desktop workspace mid-session. The decision is now taken while the document parses, by a probe in
+  `app/layout.tsx`'s `<head>`, and latched.
+- **The Make wall's day grouping is tested against a clock the test owns** (#273), proven one minute either side
+  of local midnight.
 
 ## 6. The connected account: what is proven, and the lesson
 
@@ -164,6 +181,15 @@ TURSO_DATABASE_URL=file:/private/tmp/<yours>/legacy.db PW_CHANNEL=chrome \
   Verify against a clean `origin/main` tree before calling anything a flake.
 - **One Playwright run at a time** per machine; give every worktree its own port and `/private/tmp` paths.
 - npm's audit endpoint had an outage on 19 September and failed the `core` job; that one is genuinely external.
+- **CI runs `npm run dev` — Turbopack, from cold.** A worktree with a symlinked `node_modules` is forced onto
+  `next dev --webpack`, and a warm local server hydrates faster than CI's first compile. Both differences hid a
+  real bug on 20 September. When a spec passes locally and fails on CI, reproduce CI's shape before re-running:
+  clone `node_modules` with `cp -Rc` (APFS, seconds, near-zero disk) and run the real `npm run dev`, or hold
+  `/_next/static/*.js` back a few seconds to simulate the cold compile.
+- **Do not re-run a red job twice and call it a flake.** Check whether main is green on the same spec first; if
+  it is, the branch is implicated. Two of 20 September's "flakes" were a stale merge base and a genuine race.
+- **A stale merge base looks like a flaky test.** If two PRs edit the same lines, CI tests a merge tree that
+  cannot be built cleanly. Rebase on current `origin/main` before diagnosing anything subtle.
 
 ## 8. Deploying and verifying
 
@@ -174,13 +200,17 @@ disproved an agent's conclusion that a bug was only a test artefact.
 
 ## 9. The queue, in order
 
-1. **#270 — "One credit is ten cents, stated once and derived everywhere."** In flight, red on
-   `workspace-switchover-workbench.spec.ts:133` at 844×390 (a landscape phone must *not* be switched). Main is
-   green on that spec. The received URL is the previous step's, so it smells like a first-paint timing change
-   caused by the fallback rate table becoming "unknown". Fix the cause, not the spec.
-2. **Flip the phone redirect.** The switch-over gate still sends phones from the old routes to `/workbench`.
-   The phone build is merged and live at `/workspace`; this is its own PR, and should be checked on a real
-   device, not a resized desktop window.
+Nothing of ours is open at `e4c1610`. The queue:
+
+1. **Flip the phone redirect — waiting on the owner.** The switch-over gate still sends phones from the old
+   routes to `/workbench`. The phone build is merged and live at `/workspace` and was checked on production at
+   phone size in an emulated window. The owner was asked whether to flip on that evidence plus the tests, or to
+   try `particl.app/workspace` on a real phone first. Do not flip until they answer. When they do, it is one
+   concern in `lib/workspace/switchover.ts` / `components/switchover/SwitchoverGate.tsx`, and the 52 specs that
+   call `legacyShell()` for phones will need their phone assertions reconsidered.
+2. **Unify the phone's shell choice on rotation, if it ever misbehaves.** `MOBILE_QUERY` is deliberately *live*
+   (it only picks which shell `/workspace` draws, with state preserved across a swap). A landscape phone whose
+   keyboard closes can briefly draw the desktop shell. Cosmetic; fix on evidence, with a narrower height clause.
 3. **Atomik parity backlog** (the owner's standard is full parity with the connected provider's agent):
    memory, schedules with an owner credit ceiling, Soul/Reference pickers, AI Employees, marketplace apps, the
    connected agent API (spends inside a turn with no prior quote — off by default), owner-only websites, and our
