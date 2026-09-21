@@ -63,17 +63,17 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["edit", "Edit", "Edit & Sound", "Shape the story", "edit"],
     ["deliver", "Deliver", "Deliver", "Ready for the next room", "deliver"],
   ]),
-  build("business", "Business", "BUSINESS", "Business · Marketing Studio", "moleculr", [2], [
+  build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
     ["ads", "Ads", "Ads", "Marketing Studio", "marketing"],
     ["dtc", "Image ads", "Image ads", "Direct-to-consumer stills", "marketing"],
     ["setup", "Setup", "Setup", "Products, avatars, hooks and brand kits", "marketing"],
   ]),
-  build("viral", "Viral", "VIRAL", "Viral Studio", "subatomik", [2], [
+  build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
     ["motion", "Motion Transfer", "Motion Transfer", "Recast the motion you own", "motion"],
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
     ["history", "History", "History", "Every result, retained", "history"],
   ]),
-  build("atomik", "Atomik", "AGENT", "Atomik agent", "atomik", [1, 4], [
+  build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
@@ -87,9 +87,9 @@ export const SHELL_SUITES: ShellSuite[] = [
 export const HEADER_SEGMENT: { id: ShellSuiteId | "gen"; label: string; title: string }[] = [
   { id: "studio", label: "Studio", title: "Particl Production Studio" },
   { id: "gen", label: "Gen", title: "Generate" },
-  { id: "business", label: "Business", title: "Business · Marketing Studio" },
-  { id: "viral", label: "Viral", title: "Viral Studio" },
-  { id: "atomik", label: "Atomik", title: "Atomik agent" },
+  { id: "business", label: "Business", title: "Moleculr Business Suite · Marketing Studio" },
+  { id: "viral", label: "Viral", title: "Subatomik Viral Studio · Genjutsu" },
+  { id: "atomik", label: "Atomik", title: "Atomik Supercomputer" },
 ];
 
 export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }[] = [

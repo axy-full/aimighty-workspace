@@ -194,3 +194,9 @@ Open questions for the owner, none of which block step 1:
 3. The README is desktop-only. Step 1 holds the phone floors on the chrome at 360/390/844 with the panels as overlays; hosted legacy bodies keep their own sizes until their step rebuilds them.
 
 Local verification note: Playwright's bundled browser is not installed on the owner's Mac; the workbench config's `PW_CHANNEL=chrome` runs the specs on the installed Chrome. In a fresh worktree `tests/unit/screenplayOcr.spec.ts` (needs the generated `public/vendor/tesseract-*`) and one `localDatabaseClient` case (`spawn EBADF` under the app's sandbox) fail locally for reasons unrelated to this branch.
+
+## 21 September (night) — owner decisions on the three open questions
+
+1. **Names: "follow the design and retire the rule."** The Suites surface (`lib/shell`, `components/graphite`, `app/suites`) prints the design's names verbatim — `SUPERCOMPUTER`, `Moleculr Business Suite · Marketing Studio`, `Subatomik Viral Studio · Genjutsu`, and from step 2 the model sheet's real model and provider names. `tests/unit/noVendorNamesInUi.spec.ts` exempts those three directories and now guards the legacy screens only; it is deleted with them at the switch-over. The connected catalogue's neutral renaming (`lib/higgsfield-consumer/catalogue.ts`) is untouched here because the legacy screens and their specs still read it; the Suites model sheet reads real names in step 2.
+2. **Price: "for now just keep 10 cents as 1 credit."** Connected-account jobs are quoted in cr at the same US$0.10 as everything else. This overrides binding rule 3 (connected credits are never converted) for now, by the owner's word; it is to be built behind one function so the rate can change.
+3. **Google refusals: dropped** by the owner. Not being pursued.

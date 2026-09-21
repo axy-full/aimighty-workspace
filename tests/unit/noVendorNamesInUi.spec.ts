@@ -50,6 +50,14 @@ const EXEMPT = [
   /^lib\/astra-blender\/(blender-export|sandbox|render-storage)\.ts$/,
   /^lib\/vendorNames\.ts$/,
   /^lib\/workspace\/vendor-names\.ts$/,
+  /* The Suites surface (design/particl-suites/README.md). Owner decision,
+     21 September 2026: "follow the design and retire the rule" — the design
+     names the connected account, its product lines and every provider. This
+     guard now covers the legacy screens only, and goes with them at the
+     switch-over. */
+  /^lib\/shell\//,
+  /^components\/graphite\//,
+  /^app\/suites\//,
 ];
 /** Visible copy that contains a banned word for a reason other than naming a vendor. */
 const ALLOWED_COPY = [

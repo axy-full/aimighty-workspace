@@ -6,7 +6,6 @@ import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 import { ctxItems, parseCtx, placeMenu, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
 import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
-import { vendorNameIn } from "../../lib/vendorNames";
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
@@ -49,13 +48,16 @@ test("a state-layer page finds its shell page; a shared backing page follows the
   expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("ads");
 });
 
-test("the shell's own copy names no connected account or provider", () => {
-  const copy = [
-    ...SHELL_SUITES.flatMap((s) => [s.label, s.mark, s.name, ...s.pages.flatMap((p) => [p.label, p.title, p.hint])]),
-    ...HEADER_SEGMENT.flatMap((s) => [s.label, s.title]),
-    ...WORKSPACE_TABS.map((t) => t.label),
-  ];
-  for (const text of copy) expect(vendorNameIn(text), text).toBeNull();
+test("suite names and marks are the design's, verbatim", () => {
+  /* Owner decision, 21 September 2026: the Suites surface follows the design
+     README's names; the never-name rule covers the legacy screens only. */
+  expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
+    ["STUDIO", "Particl Production Studio"],
+    ["BUSINESS", "Moleculr Business Suite · Marketing Studio"],
+    ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
+    ["SUPERCOMPUTER", "Atomik Supercomputer"],
+  ]);
+  for (const s of SHELL_SUITES) expect(HEADER_SEGMENT.find((h) => h.id === s.id)?.title).toBe(s.name);
 });
 
 /* ── Undo ───────────────────────────────────────────────────────────────── */
