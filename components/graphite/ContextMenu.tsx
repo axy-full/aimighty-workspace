@@ -4,7 +4,7 @@ import { ctxItems, placeMenu, type CtxCapabilities, type CtxCommand } from "@/li
 import { useShell } from "@/lib/shell/state";
 
 /** Drawn at the cursor, flipped and clamped to the viewport; closes on click-away and Esc (the shell handles both). */
-export function ContextMenu({ caps, onCommand }: { caps: CtxCapabilities; onCommand: (command: CtxCommand) => void }) {
+export function ContextMenu({ caps, onCommand, labels }: { caps: CtxCapabilities; onCommand: (command: CtxCommand) => void; labels?: Partial<Record<CtxCommand, string>> }) {
   const shell = useShell();
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -24,7 +24,7 @@ export function ContextMenu({ caps, onCommand }: { caps: CtxCapabilities; onComm
       {items.map((entry, i) => entry.sep ? <span key={i} className="gx-ctx-sep" role="separator" /> : (
         <button key={entry.command} type="button" role="menuitem" className="gx-ctx-item" data-danger={entry.danger ? "true" : undefined}
           disabled={entry.disabled} title={entry.reason} onClick={() => { shell.closeCtx(); onCommand(entry.command); }}>
-          <span>{entry.label}</span>
+          <span>{labels?.[entry.command] ?? entry.label}</span>
           {entry.key ? <span className="gx-ctx-key">{entry.key}</span> : null}
         </button>
       ))}

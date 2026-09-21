@@ -14,6 +14,8 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+/** How long a trashed render keeps its bytes before the sweeper takes them. */
+const TRASH_MS = 30 * 24 * 60 * 60_000;
 type Ctx = { params: Promise<{ id: string }> };
 
 export const GET = withTenant(async function GET(req: Request, { params }: Ctx) {
@@ -43,6 +45,35 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* Trash and restore (FINAL_SPEC §1 step 1: delete is soft, 30 days). A
+     trashed render is hidden like a deleted one — `deleted=1` — but its
+     cleanup row is dated TRASH_MS ahead, so the sweeper leaves its bytes
+     alone until then and `{ trashed: false }` can bring it back whole. A
+     render whose bytes are already gone cannot be restored, and says so. */
+  if (body.trashed !== undefined) {
+    await workbenchReady();
+    await mediaDeletionReady();
+    const problem = await workbenchTransaction(async (tx) => {
+      const row = (await tx.execute({ sql: "SELECT status, deleted, stored_url, bytes FROM generations WHERE id=?", args: [id] })).rows[0];
+      if (!row) return "No such render.";
+      if (body.trashed === true) {
+        if (["queued", "running", "held"].includes(String(row.status))) return "This generation is still active. Wait for it to finish before deleting it.";
+        const binding = await mediaBindingProblem(tx, "generation", id);
+        if (binding) return binding;
+        await markGenerationDeletion(tx, id, Date.now());
+        await tx.execute({ sql: "UPDATE generation_deletions SET lease_until=?, updated_at=? WHERE id=? AND lease IS NULL", args: [Date.now() + TRASH_MS, Date.now(), id] });
+        return null;
+      }
+      if (!Number(row.deleted)) return null;
+      const pending = (await tx.execute({ sql: "SELECT lease FROM generation_deletions WHERE id=?", args: [id] })).rows[0];
+      if ((pending && pending.lease != null) || (row.stored_url == null && !Number(row.bytes))) return "This render's original has already been removed; it cannot be restored.";
+      await tx.execute({ sql: "DELETE FROM generation_deletions WHERE id=?", args: [id] });
+      await tx.execute({ sql: "UPDATE generations SET deleted=0, updated_at=? WHERE id=?", args: [Date.now(), id] });
+      return null;
+    });
+    if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+    invalidate(PROJECTS_KEY);
+  }
   if (body.projectId !== undefined) {
     await db().execute({
       sql: `UPDATE generations SET project_id=?, updated_at=? WHERE id=?`,

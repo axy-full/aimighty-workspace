@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
+import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
+import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
@@ -41,16 +43,39 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     anchored, editing: state.type === "image" && state.references.length > 0,
   });
 
-  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen) arrives once, then is forgotten. */
   const dispatchComposer = composer.dispatch;
-  useEffect(() => {
+  const drop = useCallback(async (id: string) => {
+    setWellError(null);
     try {
-      const preset = sessionStorage.getItem("particl-gen-preset");
-      if (!preset) return;
-      sessionStorage.removeItem("particl-gen-preset");
-      dispatchComposer({ type: "prompt", value: preset });
-    } catch { /* no storage: the prompt simply starts empty */ }
-  }, [dispatchComposer]);
+      const asset = await resolveGenInput(id, scope);
+      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
+      dispatchComposer({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url } });
+    } catch (error) {
+      setWellError(error instanceof Error ? error.message : "This file cannot be used as a reference.");
+    }
+  }, [scope, dispatchComposer]);
+
+  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen, an
+     asset's Retry generation) arrives once, then is forgotten. Read at mount
+     (this view only renders in the browser) and applied to the composer. */
+  const [preset] = useState(() => {
+    try {
+      const found = readGenPreset(sessionStorage.getItem(GEN_PRESET_KEY));
+      if (found) sessionStorage.removeItem(GEN_PRESET_KEY);
+      return found;
+    } catch { return null; }
+  });
+  useEffect(() => {
+    if (!preset) return;
+    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
+    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
+    dispatchComposer({ type: "prompt", value: preset.prompt });
+  }, [preset, dispatchComposer]);
+  const presetNote = preset?.note ?? null;
+
+  /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
+  const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
+  useReferenceInbox(inbox);
 
   /* Auto: when an enhancement is on the card, it is what gets submitted. */
   const pending = useRef(false);
@@ -69,16 +94,6 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     composer.generate();
   };
 
-  const drop = async (id: string) => {
-    setWellError(null);
-    try {
-      const asset = await resolveGenInput(id, scope);
-      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
-      composer.dispatch({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url } });
-    } catch (error) {
-      setWellError(error instanceof Error ? error.message : "This file cannot be used as a reference.");
-    }
-  };
 
   const results = useMemo(() => {
     const media = FILTER_MEDIA[filter];
@@ -100,6 +115,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
 
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
+          {presetNote ? <p className="gx-gen-note" role="status" data-testid="gen-preset-note">{presetNote}</p> : null}
           <textarea className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
             onChange={(e) => composer.dispatch({ type: "prompt", value: e.target.value })} data-testid="gen-prompt" />
           <div className="gx-gen-enhance">

@@ -31,7 +31,7 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ items, ready, overlay, now }: { items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number }) {
+export function Library({ items, ready, overlay, now, onUseAsReference, cutId }: { items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
   const shell = useShell();
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
@@ -85,9 +85,9 @@ export function Library({ items, ready, overlay, now }: { items: LibraryEntry[];
             {shown.map((entry) => {
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
               return (
-                <div className="gx-asset" key={entry.take.id} data-selected={state.selKind === "take" && state.selId === entry.take.id}>
+                <div className="gx-asset" key={entry.take.id} data-selected={state.selKind === "take" && state.selId === entry.take.id} data-cut={cutId === entry.take.id || undefined} data-asset={entry.take.id}>
                   <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`}
-                    onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
+                    onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copyMove"; }}
                     onClick={() => open(entry)}>
                     {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" /> : null}
                     <span className="gx-badge">{entry.media === "video" ? "VIDEO" : entry.media === "audio" ? "AUDIO" : entry.media === "image" ? "IMAGE" : "FILE"}</span>
@@ -95,8 +95,9 @@ export function Library({ items, ready, overlay, now }: { items: LibraryEntry[];
                   </button>
                   <div className="gx-asset-row">
                     <span className="gx-asset-name">{entry.take.name}</span>
-                    {/* `+` sends the asset into Gen as a reference. The composer that accepts one is build step 2; until it lands the button says so rather than doing something else. */}
-                    <button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title="Use as reference — arrives with the new Gen composer" disabled>+</button>
+                    {/* `+` sends the asset into the composer as a reference; the toast names the role. */}
+                    <button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
+                      disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>
                   </div>
                 </div>
               );
