@@ -1,5 +1,6 @@
 "use client";
 import { TRAIL } from "@/components/ui/Mark";
+import { Glyph, SUITE_LOOK } from "./icons";
 import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
@@ -26,8 +27,10 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
   const who = account?.workspace?.name ?? name ?? "Workspace";
   return (
     <header className="gx-header" data-row="header">
+      <div className="gx-aurora" aria-hidden="true" data-testid="header-aurora" /><div className="gx-dots" aria-hidden="true" /><div className="gx-baseline" aria-hidden="true" />
       <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio")} aria-label="particl home">
         <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
+          <defs><linearGradient id="gx-mark-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F5F5F7" /><stop offset="1" stopColor="#6EB4FF" /></linearGradient></defs>
           {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
         </svg>
         <span className="gx-brand-name">particl</span>
@@ -35,13 +38,16 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
       </button>
       <div className="gx-seg" role="tablist" aria-label="Suites">
         {HEADER_SEGMENT.map((s) => (
-          <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title}
+          <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}
             onClick={() => (s.id === "gen" ? shell.goGen() : s.id === "crew" ? shell.goCrew() : shell.goSuite(s.id as ShellSuiteId))}>
-            <span>{s.label}</span>
+            <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
+            <span className="gx-seg-label">{s.label}</span>
+            <span className="gx-sig" aria-hidden="true" />
           </button>
         ))}
       </div>
       <button type="button" className="gx-search" onClick={() => shell.setPalette(true)} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
+        <Glyph name="search" size={14} className="gx-glyph" />
         <span className="gx-search-label">Search</span>
         <span className="gx-key">⌘K</span>
       </button>

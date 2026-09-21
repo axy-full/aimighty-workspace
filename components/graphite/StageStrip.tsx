@@ -12,6 +12,7 @@ export function StageStrip() {
         <Fragment key={p.id}>
           {p.gapBefore ? <span className="gx-strip-gap" aria-hidden="true" data-testid="strip-gap" /> : null}
           <button type="button" className="gx-tab" aria-current={p.id === shell.page.id ? "page" : undefined} title={p.title} onClick={() => shell.goSuite(shell.suite.id, p.id)}>
+            <span className="gx-tab-dot" aria-hidden="true" />
             <span className="gx-tab-n">{p.n}</span>
             <span>{p.label}</span>
           </button>
