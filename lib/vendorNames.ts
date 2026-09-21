@@ -1,6 +1,15 @@
 /**
  * The product's naming rule, in one place.
  *
+ * RETIRED FOR THE SUITES SURFACE — owner decision, 21 September 2026: "follow
+ * the design and retire the rule". design/particl-suites/README.md names the
+ * connected account (Higgsfield), its product lines (Marketing Studio,
+ * Genjutsu, Supercomputer) and every provider, and lib/shell, components/
+ * graphite and app/suites print them as designed. What follows still
+ * describes the LEGACY screens (/workspace, /workbench), which keep their
+ * neutral copy until the switch-over removes them; nothing new should be
+ * built on it.
+ *
  * Owner decision, 20 September 2026 — this REVERSES part of #231 for MODEL
  * names only. Three rules, keyed by which surface a name appears on:
  *
