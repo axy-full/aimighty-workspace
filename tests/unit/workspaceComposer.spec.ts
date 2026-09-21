@@ -281,3 +281,13 @@ test("the palette shows Generate… first on an empty query", () => {
   expect(hits.map((row) => row.id)).toEqual(["composer", "page:generate", "plan:generate", "generate"]);
   expect(hits.find((row) => row.id === "generate")?.hint).toBe("");
 });
+
+test("a pick is used only where the engine allows it; anything else falls back to the engine's default", () => {
+  const engine = { id: "e", label: "Engine", type: "video" as const, ratios: ["16:9", "9:16", "1:1"], resolutions: ["720p", "1080p"], durations: [4, 5, 6, 7, 8] };
+  expect(composerSettings(engine, "9:16")).toEqual({ ratio: "9:16", resolution: "720p", duration: 5 });
+  expect(composerSettings(engine, "9:16", { ratio: "1:1", resolution: "1080p", duration: 7 })).toEqual({ ratio: "1:1", resolution: "1080p", duration: 7 });
+  /* Picks left over from another engine are ignored, never sent. */
+  expect(composerSettings(engine, undefined, { ratio: "21:9", resolution: "4k", duration: 30 })).toEqual({ ratio: "16:9", resolution: "720p", duration: 5 });
+  const picked = composerReducer(INITIAL_COMPOSER, { type: "pick", value: { duration: 12 } });
+  expect(composerReducer(picked, { type: "pick", value: { ratio: "9:16" } }).picks).toEqual({ duration: 12, ratio: "9:16" });
+});
