@@ -9,8 +9,8 @@ import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palet
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
-test("the header segment reads Studio | Gen | Business | Viral | Atomik", () => {
-  expect(HEADER_SEGMENT.map((s) => s.label)).toEqual(["Studio", "Gen", "Business", "Viral", "Atomik"]);
+test("the header segment reads Studio | Gen | Business | Viral | Atomik | Crew", () => {
+  expect(HEADER_SEGMENT.map((s) => s.label)).toEqual(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
 });
 
 test("every suite has the README's pages, numbered in order, with its group gaps", () => {

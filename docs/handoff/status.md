@@ -200,3 +200,21 @@ Local verification note: Playwright's bundled browser is not installed on the ow
 1. **Names: "follow the design and retire the rule."** The Suites surface (`lib/shell`, `components/graphite`, `app/suites`) prints the design's names verbatim — `SUPERCOMPUTER`, `Moleculr Business Suite · Marketing Studio`, `Subatomik Viral Studio · Genjutsu`, and from step 2 the model sheet's real model and provider names. `tests/unit/noVendorNamesInUi.spec.ts` exempts those three directories and now guards the legacy screens only; it is deleted with them at the switch-over. The connected catalogue's neutral renaming (`lib/higgsfield-consumer/catalogue.ts`) is untouched here because the legacy screens and their specs still read it; the Suites model sheet reads real names in step 2.
 2. **Price: "for now just keep 10 cents as 1 credit."** Connected-account jobs are quoted in cr at the same US$0.10 as everything else. This overrides binding rule 3 (connected credits are never converted) for now, by the owner's word; it is to be built behind one function so the rate can change.
 3. **Google refusals: dropped** by the owner. Not being pursued.
+## 21–22 September — Crew (branch `feature/crew`, not released)
+
+Owner request, in chat: "build Crew from ~/Desktop/CREW_ADDENDUM.md, Grok test ceiling $2". The addendum and its prototype are filed at `design/particl-suites/CREW_ADDENDUM.md` and `Particl Crew.dc.html`. Crew is additive: a sixth header tab after Atomik (`/suites?view=crew&cp=room|members|sessions`), four new tables, `/api/crew/*`, and xAI as a vendor key. Studio, Gen, Business, Viral and Atomik are untouched apart from the tab and the three solution routes.
+
+| What | Where |
+| --- | --- |
+| Pure core: role cards, the role-card template and the three phase instructions word for word, the prototype's two regexes, temperatures, caps, the round ceiling, minutes | `lib/crew/room.ts`, `lib/crew/context.ts` |
+| Tables (workspace DB, created on first use) | `lib/crew/store.ts`: `crew_members`, `crew_sessions`, `crew_messages`, `crew_solutions` |
+| Grok | `lib/crew/xai.ts`: `POST https://api.x.ai/v1/chat/completions`, model from `XAI_MODEL`, 45 s, one retry, `max_tokens` 220. Key = workspace's own or `XAI_API_KEY` via `lib/vendorKeys` (`xai` added); never sent to the browser |
+| Orchestration and money | `lib/crew/round.ts`: Propose ∥ (cap 6) → Challenge ∥ → one Converge to the chair. **One metered event per round** (`engine: xai`), reserved at its ceiling, settled at the tokens reported; failed requests add nothing; a round that does not converge settles at zero and keeps its messages |
+| Price | Rate = the live catalogue's entry for the model (it lists `grok-4.6` at $2 / $6 per M tokens) or `XAI_RATE_USD_PER_MTOK`; no price → no round. `quoteOnly` → `maxCredits`, like every paid text job |
+| Routes | `sessions` (POST, GET, `quoteOnly`), `sessions/:id` (GET, PATCH), `sessions/:id/rounds` (SSE), `…/notes`, `…/minutes`, `solutions` (pin, remove), `solutions/:id/route` (brief, boards → revision-checked draft save; gen → text handed back), `members`, `status` (GET, Verify) |
+| UI | `components/graphite/crew/*`, `app/crew.css`, `lib/crew/use-crew.ts`; Workspace › Engines gets an **xAI · Grok** row (Connect → the existing sealed keys route, Verify → model list only) |
+| Tests | `tests/unit/crewRoom.spec.ts`, `tests/crew-workbench-api.spec.ts`, `tests/crew-workbench.spec.ts` (five viewports, phone floors) — all on the ENGINE_MOCK room, which speaks the prototype's canned lines |
+
+Deliberate deviations from the addendum: completions are requested unstreamed so `usage` is always present and billable (each message still streams to the room as it lands); minutes download as Markdown rather than being filed into Assets; "Open in Gen" copies the solution and stores it as `particl-gen-preset` until the new Gen composer (branch `feat/suites-gen`) reads it.
+
+Production facts checked 21 September: `XAI_API_KEY` and `XAI_MODEL` exist in Vercel **Production** only (not Preview, not local). The live Grok qualification therefore has to run on production after release, from the owner's signed-in session, inside the owner's stated $2 ceiling; one five-member round is expected to cost about $0.05.

@@ -6,6 +6,7 @@ import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import { XaiEngineRow } from "./crew/XaiEngineRow";
 
 /**
  * Workspace: General · People · Plans & credits · Usage · Engines · Security
@@ -65,6 +66,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
             <a key={row.href} className="gx-rowlink" href={row.href}><span>{row.label}</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></a>
           ))}
         </div>
+        {shell.wsTab === "engines" ? <XaiEngineRow /> : null}
         {shell.wsTab === "general" ? (
           <div className="gx-card">
             <span className="gx-eyebrow">{account?.workspace?.name ?? session.workspace?.name ?? "Workspace"}{session.role ? ` · ${session.role}` : ""}</span>

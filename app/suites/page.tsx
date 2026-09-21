@@ -5,6 +5,7 @@ import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SessionProvider } from "@/lib/session";
 import "../workspace.css";
 import "../graphite.css";
+import "../crew.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };

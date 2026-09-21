@@ -9,7 +9,7 @@ import type { PageId, Suite } from "@/lib/workspace/types";
  * give Business and Viral their own composers.
  */
 export type ShellSuiteId = "studio" | "business" | "viral" | "atomik";
-export type ShellView = "suite" | "gen" | "workspace";
+export type ShellView = "suite" | "gen" | "workspace" | "crew";
 export type WorkspaceTabId = "general" | "people" | "credits" | "usage" | "engines" | "security";
 
 export type ShellPage = {
@@ -83,13 +83,15 @@ export const SHELL_SUITES: ShellSuite[] = [
   ]),
 ];
 
-/** Header segment order: Studio | Gen | Business | Viral | Atomik. Gen is a view, not a suite. */
-export const HEADER_SEGMENT: { id: ShellSuiteId | "gen"; label: string; title: string }[] = [
+/** Header segment order: Studio | Gen | Business | Viral | Atomik | Crew. Gen and Crew are views, not suites. */
+export const HEADER_SEGMENT: { id: ShellSuiteId | "gen" | "crew"; label: string; title: string }[] = [
   { id: "studio", label: "Studio", title: "Particl Production Studio" },
   { id: "gen", label: "Gen", title: "Generate" },
   { id: "business", label: "Business", title: "Moleculr Business Suite · Marketing Studio" },
   { id: "viral", label: "Viral", title: "Subatomik Viral Studio · Genjutsu" },
   { id: "atomik", label: "Atomik", title: "Atomik Supercomputer" },
+  /* Crew is a module with its own tables and pages, not a production suite (CREW_ADDENDUM.md). */
+  { id: "crew", label: "Crew", title: "Crew" },
 ];
 
 export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }[] = [
@@ -132,3 +134,14 @@ export function pageOfLegacy(legacy: Suite, page: PageId, hint?: string | null):
   return matches.find((p) => p.id === hint) ?? matches[0] ?? null;
 }
 export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_SUITES.flatMap((suite) => suite.pages.map((page) => ({ suite, page })));
+
+/** Crew's own strip: 01 Room · 02 Members · 03 Sessions, with the prototype's titles and hints. */
+export type CrewPageId = "room" | "members" | "sessions";
+export const CREW_PAGES: { id: CrewPageId; n: string; label: string; title: string; hint: string }[] = [
+  { id: "room", n: "01", label: "Room", title: "Crew", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
+  { id: "members", n: "02", label: "Members", title: "Members", hint: "Role cards the room can seat. Each is one agent with its own stance and effort." },
+  { id: "sessions", n: "03", label: "Sessions", title: "Sessions", hint: "Every room this project has run, with its solutions and settled cost." },
+];
+export function isCrewPage(value: unknown): value is CrewPageId {
+  return CREW_PAGES.some((p) => p.id === value);
+}

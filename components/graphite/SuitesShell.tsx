@@ -12,6 +12,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { useShell } from "@/lib/shell/state";
 import { ContextMenu } from "./ContextMenu";
+import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -41,6 +42,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const project = data.project;
   const library = useProjectLibrary(scope, project?.id ?? null);
   const items = library.items;
+  /* Loaded only while Crew is on screen; the open room is remembered per project, so coming back reopens it. */
+  const crew = useCrew(shell.view === "crew" ? project?.id ?? null : null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
 
@@ -126,7 +129,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        {shell.view === "workspace" ? <WorkspaceView account={account} /> : (
+        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
             {showLibrary ? <Library items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} /> : null}

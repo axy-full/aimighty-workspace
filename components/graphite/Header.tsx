@@ -21,8 +21,8 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
   const { state } = useWorkspace();
   const { rates, name } = useSession();
   const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
-  const selected = shell.view === "gen" ? "gen" : shell.view === "suite" ? shell.suite.id : null;
-  const mark = shell.view === "workspace" ? "WORKSPACE" : shell.view === "gen" ? "GEN" : shell.suite.mark;
+  const selected = shell.view === "gen" ? "gen" : shell.view === "crew" ? "crew" : shell.view === "suite" ? shell.suite.id : null;
+  const mark = shell.view === "workspace" ? "WORKSPACE" : shell.view === "gen" ? "GEN" : shell.view === "crew" ? "CREW" : shell.suite.mark;
   const who = account?.workspace?.name ?? name ?? "Workspace";
   return (
     <header className="gx-header" data-row="header">
@@ -36,7 +36,7 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
       <div className="gx-seg" role="tablist" aria-label="Suites">
         {HEADER_SEGMENT.map((s) => (
           <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title}
-            onClick={() => (s.id === "gen" ? shell.goGen() : shell.goSuite(s.id as ShellSuiteId))}>
+            onClick={() => (s.id === "gen" ? shell.goGen() : s.id === "crew" ? shell.goCrew() : shell.goSuite(s.id as ShellSuiteId))}>
             <span>{s.label}</span>
           </button>
         ))}

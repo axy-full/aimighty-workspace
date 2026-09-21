@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { popUndo, pushUndo, type UndoEntry } from "./undo";
 import type { CtxTarget } from "./context-menu";
 
@@ -16,7 +16,7 @@ import type { CtxTarget } from "./context-menu";
  * the workspace provider carries them across its own URL writes.
  */
 export const SUITES_PATH = "/suites";
-export const SHELL_PARAMS = ["view", "tab", "sp"] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
@@ -29,6 +29,7 @@ type Shell = {
   suite: ShellSuite;
   page: ShellPage;
   wsTab: WorkspaceTabId;
+  crewPage: CrewPageId;
   wide: boolean;
   libTab: LibTab;
   /** Below 1280 the panels are overlays, one at a time. */
@@ -42,6 +43,7 @@ type Shell = {
   canUndo: boolean;
   goSuite: (suite: ShellSuiteId, page?: string) => void;
   goGen: () => void;
+  goCrew: (page?: CrewPageId) => void;
   goWorkspace: (tab?: WorkspaceTabId) => void;
   setLibTab: (tab: LibTab) => void;
   toggleLibrary: () => void;
@@ -64,15 +66,16 @@ export function useShell(): Shell {
   return value;
 }
 
-type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null };
+type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId };
 function readParams(search: string): Params {
   const q = new URLSearchParams(search);
   const view = q.get("view");
   const tab = q.get("tab");
   return {
-    view: view === "gen" || view === "workspace" ? view : "suite",
+    view: view === "gen" || view === "workspace" || view === "crew" ? view : "suite",
     tab: WORKSPACE_TABS.some((t) => t.id === tab) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
+    cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
   };
 }
 function writeParams(params: Params, mode: "push" | "replace") {
@@ -80,6 +83,7 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (params.view === "suite") q.delete("view"); else q.set("view", params.view);
   if (params.view === "workspace") q.set("tab", params.tab); else q.delete("tab");
   if (params.sp) q.set("sp", params.sp); else q.delete("sp");
+  if (params.view === "crew") q.set("cp", params.cp); else q.delete("cp");
   const text = q.toString();
   const url = window.location.pathname + (text ? "?" + text : "") + window.location.hash;
   if (url === window.location.pathname + window.location.search + window.location.hash) return;
@@ -125,7 +129,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     const pushed = before !== window.location.pathname + window.location.search;
     /* The state layer pushed the entry when its own page changed; when two shell
        pages share one backing page it did not, and the shell pushes instead. */
-    apply({ view: "suite", tab: "general", sp: target.id }, pushed ? "replace" : "push");
+    apply({ view: "suite", tab: "general", sp: target.id, cp: "room" }, pushed ? "replace" : "push");
   }, [ws, memory, apply]);
 
   /* A page the new IA has no tab for (an old deep link) opens its suite's first page. */
@@ -143,10 +147,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Shell>(() => ({
-    view: params.view, suite, page, wsTab: params.tab, wide, libTab, libOpen, inspOpen,
+    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab, libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: undoStack.length > 0,
     goSuite,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
+    goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp }, "push"); },
     goWorkspace: (tab) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "workspace", tab: tab ?? params.tab }, "push"); },
     setLibTab,
     toggleLibrary: () => { setLibOpen((v) => !v); setInspOpen(false); },
