@@ -1,0 +1,64 @@
+"use client";
+import { TRAIL } from "@/components/ui/Mark";
+import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
+import { useShell } from "@/lib/shell/state";
+import { useSession } from "@/lib/session";
+import { creditsLabel } from "@/lib/workspace/format";
+import { useWorkspace } from "@/lib/workspace/state";
+import type { WorkspaceAccount } from "@/lib/workspace/data";
+
+function initialsOf(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
+}
+
+/**
+ * 56px. particl trail mark + wordmark → Studio; Studio | Gen | Business | Viral |
+ * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
+ * job runs); the credits pill; the avatar, which opens Workspace.
+ */
+export function Header({ account }: { account: WorkspaceAccount | null }) {
+  const shell = useShell();
+  const { state } = useWorkspace();
+  const { rates, name } = useSession();
+  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
+  const selected = shell.view === "gen" ? "gen" : shell.view === "suite" ? shell.suite.id : null;
+  const mark = shell.view === "workspace" ? "WORKSPACE" : shell.view === "gen" ? "GEN" : shell.suite.mark;
+  const who = account?.workspace?.name ?? name ?? "Workspace";
+  return (
+    <header className="gx-header" data-row="header">
+      <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio")} aria-label="particl home">
+        <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
+          {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
+        </svg>
+        <span className="gx-brand-name">particl</span>
+        <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>
+      </button>
+      <div className="gx-seg" role="tablist" aria-label="Suites">
+        {HEADER_SEGMENT.map((s) => (
+          <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title}
+            onClick={() => (s.id === "gen" ? shell.goGen() : shell.goSuite(s.id as ShellSuiteId))}>
+            <span>{s.label}</span>
+          </button>
+        ))}
+      </div>
+      <button type="button" className="gx-search" onClick={() => shell.setPalette(true)} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
+        <span className="gx-search-label">Search</span>
+        <span className="gx-key">⌘K</span>
+      </button>
+      <span className="gx-spacer" />
+      {state.gen ? (
+        <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
+          <span className="gx-jobs-dot" aria-hidden="true" />
+          <span>{state.gen.name} · {Math.round(state.gen.pct)}%</span>
+        </button>
+      ) : null}
+      <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>
+        <span className="gx-credits-n">{credits.text.replace(/\s*cr$/i, "")}</span>
+        {/cr$/i.test(credits.text) ? <span className="gx-credits-u">cr</span> : null}
+      </button>
+      <button type="button" className="gx-avatar" onClick={() => shell.goWorkspace()} aria-label={`Workspace and account: ${who}`} title="Workspace" data-testid="workspace-avatar">
+        {initialsOf(who)}
+      </button>
+    </header>
+  );
+}
