@@ -167,3 +167,7 @@ Each needs an explicit, stated ceiling: the first live connected **batch**, **pr
 ### Atomik parity backlog (from the capability audit)
 
 Supercomputer parity is the owner's standard for Atomik. Landed: connected reads, priced connected steps, presets, batches, workflows-as-recipes and slash commands. Remaining, in order: memory (A7), schedules with an owner credit ceiling (A8), Soul/Reference pickers (A9), AI Employees (A10), marketplace apps (A11), the connected agent API (A12, spends inside a turn with no prior quote — off by default), owner-only websites (A13), our own connectors (A14). Tools with no price path (voice clone, video analysis, virality, personal clipper, sandbox, apps, 3D scene builder, websites) cannot pass the quote → approval → claim → poll → collect contract until one approved run establishes a price.
+
+## 21 September — handoff refreshed
+
+`main` is `e4c1610`, deployed and green. Landed since the redesign write-up above: one credit = US$0.10 stated once and derived everywhere (#270), the always-mounted credit slot on desktop and phone (#267, #269), the switch-over gate deciding once per page load so a landscape phone is never redirected mid-session (#272), and the Make wall's day grouping tested against a clock the test owns (#273). The full handover for a new session is [`HANDOFF.md`](HANDOFF.md), with a paste-ready opening prompt in [`START-HERE.md`](START-HERE.md). The one decision waiting on the owner: whether to flip phones from the old routes onto the new phone build.
