@@ -41,6 +41,17 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     anchored, editing: state.type === "image" && state.references.length > 0,
   });
 
+  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen) arrives once, then is forgotten. */
+  const dispatchComposer = composer.dispatch;
+  useEffect(() => {
+    try {
+      const preset = sessionStorage.getItem("particl-gen-preset");
+      if (!preset) return;
+      sessionStorage.removeItem("particl-gen-preset");
+      dispatchComposer({ type: "prompt", value: preset });
+    } catch { /* no storage: the prompt simply starts empty */ }
+  }, [dispatchComposer]);
+
   /* Auto: when an enhancement is on the card, it is what gets submitted. */
   const pending = useRef(false);
   useEffect(() => {

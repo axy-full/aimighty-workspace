@@ -218,3 +218,19 @@ Owner request, in chat: "build Crew from ~/Desktop/CREW_ADDENDUM.md, Grok test c
 Deliberate deviations from the addendum: completions are requested unstreamed so `usage` is always present and billable (each message still streams to the room as it lands); minutes download as Markdown rather than being filed into Assets; "Open in Gen" copies the solution and stores it as `particl-gen-preset` until the new Gen composer (branch `feat/suites-gen`) reads it.
 
 Production facts checked 21 September: `XAI_API_KEY` and `XAI_MODEL` exist in Vercel **Production** only (not Preview, not local). The live Grok qualification therefore has to run on production after release, from the owner's signed-in session, inside the owner's stated $2 ceiling; one five-member round is expected to cost about $0.05.
+
+## 21–22 September — Suites › Gen and the prompt enhancer (branch `feat/suites-gen`, not released)
+
+Build step 2 of `design/particl-suites/README.md`, plus the owner's instruction of 21 September: "use higgsfield prompt enhancer for the gen section. unless directed otherwise to use either claude or open AI".
+
+What Higgsfield actually publishes (all nine repos under github.com/higgsfield-ai were searched): no text-in / text-out enhancer. There is the `enhance_prompt` boolean a generation request carries (applied on their servers; the result carries `raw_data.params.enhanced_prompt`, which `lib/higgsfield-consumer/video-contract.ts` already reads), and the rule set their own agents write prompts by (`skills/higgsfield-generate/references/prompt-engineering.md`). So the **Higgsfield** provider is those published rules, run on the workspace's routed writer; it is the default (`promptEnhancer` setting). Claude and OpenAI write on their own model families and a chosen provider never silently becomes another.
+
+| What | Where |
+| --- | --- |
+| Rules, `raw:` bypass, citation preservation (a rewrite that drops `@Image1` is refused, not repaired), writer choice | `lib/shell/enhancer.ts` |
+| `POST /api/prompt/enhance { prompt, provider?, model?, mode, anchored?, editing? }` on the existing paid-text envelope: `quoteOnly` → `maxCredits`, one settled charge, Idempotency-Key replays | `app/api/prompt/enhance/route.ts` |
+| The button's life: live quote on the button, press = approve that figure, Use this / Keep mine, Auto | `lib/shell/use-enhancer.ts` |
+| Composer picks (ratio, resolution, per-second length), validated against the engine's own lists | `lib/workspace/composer.ts`, `use-composer.ts` |
+| Gen view on the existing `useComposer` host: Video · Images · Audio (3D shown, disabled, with where 3D is made), model sheet (Studio engines · Higgsfield catalogue), reference well taking the Library's `text/plain` id, Results | `components/graphite/GenView.tsx` |
+
+Not in this branch, and not faked: the Takes stepper (the host dispatches one job), `enhance_prompt: true` on catalogue jobs, 3D, and the Workspace › General enhancer selector (step 6). Known cost edge: a rewrite refused for dropping a citation has already been paid for by the time it is refused.
