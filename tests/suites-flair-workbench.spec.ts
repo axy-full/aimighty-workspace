@@ -31,9 +31,18 @@ async function open(page: Page, path: string) {
 test("desktop: aurora per view, glyph tabs with labels that clip below 1180px, framed tool groups, kind dots, poster tile", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
   const errors = await open(page, "/suites?suite=studio&page=rig");
-  const tint = () => page.locator(".gx").evaluate((el) => getComputedStyle(el).getPropertyValue("--om-a").trim());
+  /* Read the blob tint through a probe's computed colour: Chromium builds
+     differ on how they serialise the raw custom property. */
+  const tint = () => page.locator(".gx").evaluate((el) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--om-a)";
+    el.appendChild(probe);
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  });
   await expect(page.getByTestId("header-aurora")).toBeAttached();
-  expect(await tint()).toBe("rgba(10, 132, 255, .55)");
+  expect(await tint()).toBe("rgba(10, 132, 255, 0.55)");
   await expect(page.locator(".gx-header").first()).toHaveCSS("height", "60px");
 
   const suites = page.getByRole("tablist", { name: "Suites" });
@@ -60,10 +69,10 @@ test("desktop: aurora per view, glyph tabs with labels that clip below 1180px, f
 
   /* Gen and Crew re-tint the header. */
   await suites.getByRole("tab", { name: "Gen" }).click();
-  expect(await tint()).toBe("rgba(191, 90, 242, .5)");
+  expect(await tint()).toBe("rgba(191, 90, 242, 0.5)");
   await suites.getByRole("tab", { name: "Crew" }).click();
   await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
-  expect(await tint()).toBe("rgba(191, 90, 242, .5)");
+  expect(await tint()).toBe("rgba(191, 90, 242, 0.5)");
 
   /* Below 1180 the labels clip but the tab still answers to its name. */
   await page.setViewportSize({ width: 1100, height: 800 });
