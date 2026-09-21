@@ -10,11 +10,11 @@ import { currentTenant } from "./tenant";
  * sign-up, walled by lib/allowance.ts). A workspace on its own keys reaches
  * nothing it has not added: that vendor is simply unrouted for it.
  */
-export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "fal" | "elevenlabs" | "higgsfield";
+export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "fal" | "elevenlabs" | "higgsfield" | "xai";
 
 const ENV: Record<VendorKeyName, string> = {
   ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY", openai: "OPENAI_API_KEY",
-  fal: "FAL_KEY", elevenlabs: "ELEVENLABS_API_KEY", higgsfield: "HF_CREDENTIALS",
+  fal: "FAL_KEY", elevenlabs: "ELEVENLABS_API_KEY", higgsfield: "HF_CREDENTIALS", xai: "XAI_API_KEY",
 };
 
 export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[] = [
@@ -25,6 +25,7 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
   { name: "fal", label: "Connected render account", does: "Kling 3.0 video · motion control · Topaz upscale · identity training" },
   { name: "elevenlabs", label: "Connected audio account", does: "Voice · sound effects · music" },
   { name: "higgsfield", label: "Connected identity account", does: "Identity renders · enter API key ID:API key secret" },
+  { name: "xai", label: "xAI · Grok", does: "Crew · one Grok agent per seated member" },
 ];
 
 export function vendorKey(name: VendorKeyName): string | null {
