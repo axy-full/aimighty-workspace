@@ -77,6 +77,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
   useReferenceInbox(inbox);
 
+  /* Auto also asks a connected model whose schema declares enhance_prompt to enhance on the account (FINAL_SPEC §4). */
+  const enhanceAuto = enhancer.auto;
+  useEffect(() => { dispatchComposer({ type: "enhance", value: enhanceAuto }); }, [enhanceAuto, dispatchComposer]);
+
   /* Auto: when an enhancement is on the card, it is what gets submitted. */
   const pending = useRef(false);
   useEffect(() => {
@@ -153,6 +157,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           </button>
         </div>
 
+        {model?.promptOnly ? <p className="cw-dim" data-testid="gen-prompt-only">{model.label} takes a prompt only — no references.</p> : null}
         {takesReferences ? (
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">References</span>
@@ -162,6 +167,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               {state.references.length ? state.references.map((r, i) => (
                 <span className="gx-ref" key={r.key}>
                   <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" className="gx-lazy" /> : null}</span>
+                  {model?.connected && (model.referenceRoles?.length ?? 0) > 1 ? (
+                    <button type="button" className="bz-role" title="Click to cycle the role" data-testid="gen-ref-role" onClick={() => { const roles = model.referenceRoles!; const at = roles.indexOf(r.role ?? roles[0]); composer.dispatch({ type: "referenceRole", key: r.key, role: roles[(at + 1) % roles.length] }); }}>{r.role ?? model.referenceRoles![0]}</button>
+                  ) : null}
                   <span className="gx-ref-name">@{r.kind === "video" ? "Video" : "Image"}{i + 1} · {r.name}</span>
                   <button type="button" className="gx-ref-x" aria-label={`Remove ${r.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: r.key })}>×</button>
                 </span>
@@ -203,7 +211,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || submitting} aria-describedby={blocked ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
           {submitting ? "Submitting…" : buttonLabel}
         </button>
-        <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
+        <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}{model?.enhanceable && enhancer.auto && !isRawPrompt(state.prompt) ? " · enhanced on Higgsfield" : ""}</p>
         <p className="gx-gen-foot">{composer.wording}</p>
       </section>
 
@@ -253,7 +261,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
                   <span className="gx-tool-tag" aria-hidden="true">{m.label.slice(0, 2).toUpperCase()}</span>
                   <span style={{ minWidth: 0, flex: 1 }}>
                     <span className="gx-model-name">{m.label}</span>
-                    <span className="gx-model-sub">{[m.ratios?.length ? `${m.ratios.length} aspects` : null, m.durations?.length ? `${m.durations[0]}–${m.durations[m.durations.length - 1]} s` : null, m.referenceRoles?.length ? m.referenceRoles.join(" · ") : null].filter(Boolean).join(" · ") || TYPE_TAB[m.type]}</span>
+                    <span className="gx-model-sub">{m.description ? m.description.slice(0, 90) : TYPE_TAB[m.type]}</span>
+                    <span className="gx-model-sub" data-testid="gen-sheet-facts">{[m.ratios?.length ? `${m.ratios.length} aspects` : null, m.durations?.length ? (m.durations.length > 4 && m.durations[m.durations.length - 1] - m.durations[0] === m.durations.length - 1 ? `${m.durations[0]}–${m.durations[m.durations.length - 1]} s, every second` : m.durations.map((d) => `${d}`).join("/") + " s") : null, m.promptOnly ? "prompt only" : m.referenceRoles?.length ? m.referenceRoles.join(" · ") : null, m.enhanceable ? "enhances on the account" : null].filter(Boolean).join(" · ")}</span>
                   </span>
                   {m.id === model?.id ? <span aria-hidden="true" style={{ color: "var(--gx-accent-text)" }}>✓</span> : null}
                 </button>

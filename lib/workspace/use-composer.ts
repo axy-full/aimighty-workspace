@@ -24,6 +24,7 @@ import {
   composerButtonLabel,
   composerReducer,
   composerSettings,
+  type ConnectedRow,
   connectedModels,
   INITIAL_COMPOSER,
   liveCredits,
@@ -228,7 +229,7 @@ export function useComposer(options: {
   useEffect(() => {
     if (!canReadCatalogue) return;
     const controller = new AbortController();
-    studioRequest<{ catalogue?: { models?: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[] } }>(CONNECTED_GENERATION_ENDPOINT, {
+    studioRequest<{ catalogue?: { models?: ConnectedRow[] } }>(CONNECTED_GENERATION_ENDPOINT, {
       method: "POST", signal: controller.signal,
       headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
       body: JSON.stringify({ action: "catalogue" }),
@@ -272,13 +273,23 @@ export function useComposer(options: {
   const connectedInput = useMemo<ConsumerGenerationInput | null>(() => {
     if (state.billing !== "connected" || !model || !state.prompt.trim()) return null;
     const roles = model.referenceRoles ?? [];
+    /* FINAL_SPEC §3–4: the settings the live catalogue entry declares, never
+       invented; `enhance_prompt` only when the schema declares it — true on
+       Auto, false for a raw: prompt, which is never rewritten. */
+    const raw = /^\s*raw:/i.test(state.prompt);
+    const parameters: Record<string, string | number | boolean> = {
+      ...(model.ratios?.length ? { aspect_ratio: settings.ratio } : {}),
+      ...(model.durations?.length ? { duration: settings.duration } : {}),
+      ...(model.resolutions?.length ? { resolution: settings.resolution } : {}),
+      ...(model.enhanceable ? { enhance_prompt: state.enhance && !raw } : {}),
+    };
     return {
-      type: state.type, model: model.id, prompt: state.prompt.trim(), parameters: {},
+      type: state.type, model: model.id, prompt: raw ? state.prompt.replace(/^\s*raw:\s*/i, "").trim() : state.prompt.trim(), parameters,
       medias: roles.length
-        ? state.references.map((r) => ({ role: roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
+        ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
         : [],
     } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, state.references, model]);
+  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution]);
 
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
