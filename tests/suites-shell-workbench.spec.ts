@@ -47,7 +47,7 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   const errors = await open(page);
 
   const suites = page.getByRole("tablist", { name: "Suites" });
-  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik"]);
+  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
   await expect(suites.getByRole("tab", { name: "Studio" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 

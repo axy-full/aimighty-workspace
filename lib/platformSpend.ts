@@ -15,6 +15,8 @@ import { platformDb, platformReady } from './platform';
  */
 const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
   ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], openai: [], fal: ["fal"], elevenlabs: ["elevenlabs"], higgsfield: ["higgsfield"],
+  /* Crew rounds are metered events, not product records: nothing historical to sum. */
+  xai: [],
 };
 
 /** Does this vendor's bill land on the platform for the current workspace? */
@@ -108,6 +110,7 @@ export function vendorKeyNameFor(provider: string): VendorKeyName {
     case "fal": return "fal";
     case "elevenlabs": return "elevenlabs";
     case "higgsfield": return "higgsfield";
+    case "xai": return "xai";
     default: return "ark";
   }
 }

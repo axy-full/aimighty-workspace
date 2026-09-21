@@ -1,4 +1,4 @@
-import { ALL_SHELL_PAGES, HEADER_SEGMENT, WORKSPACE_TABS, type ShellSuiteId, type WorkspaceTabId } from "./ia";
+import { ALL_SHELL_PAGES, CREW_PAGES, HEADER_SEGMENT, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
 /**
  * ⌘K (README › Navigation): Generate, suites, every page, Workspace, models,
@@ -10,6 +10,7 @@ export type PaletteRun =
   | { type: "suite"; suite: ShellSuiteId }
   | { type: "page"; suite: ShellSuiteId; page: string }
   | { type: "workspace"; tab: WorkspaceTabId }
+  | { type: "crew"; page: CrewPageId }
   | { type: "model"; id: string }
   | { type: "asset"; id: string }
   | { type: "ask"; text: string };
@@ -21,8 +22,9 @@ export const PALETTE_ROWS = 9;
 export function paletteIndex(input: { models: { id: string; name: string; kind: string }[]; assets: { id: string; name: string; kind: string }[] }): PaletteRow[] {
   return [
     { group: "CREATE", label: "Generate", hint: "G", run: { type: "gen" } },
-    ...HEADER_SEGMENT.filter((s) => s.id !== "gen").map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.title, run: { type: "suite", suite: s.id as ShellSuiteId } })),
+    ...HEADER_SEGMENT.filter((s) => s.id !== "gen" && s.id !== "crew").map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.title, run: { type: "suite", suite: s.id as ShellSuiteId } })),
     ...ALL_SHELL_PAGES.map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
+    ...CREW_PAGES.map((p): PaletteRow => ({ group: "CREW", label: `${p.n} ${p.label === "Room" ? "Crew room" : p.label}`, hint: p.title === "Crew" ? "Brainstorm with the crew" : p.title, run: { type: "crew", page: p.id } })),
     ...WORKSPACE_TABS.map((t): PaletteRow => ({ group: "WORKSPACE", label: t.label, hint: "Workspace", run: { type: "workspace", tab: t.id } })),
     ...input.models.map((m): PaletteRow => ({ group: "MODEL", label: m.name, hint: m.kind, run: { type: "model", id: m.id } })),
     ...input.assets.map((a): PaletteRow => ({ group: "ASSET", label: a.name, hint: a.kind, run: { type: "asset", id: a.id } })),
