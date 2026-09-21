@@ -56,9 +56,17 @@ export type ComposerState = {
   seconds: number;
   instrumental: boolean;
   voiceId: string;
+  /**
+   * What the person chose where the engine offers a choice (the Suites Gen
+   * composer). A pick the current engine does not allow is ignored, never
+   * sent: composerSettings falls back to the engine's own default.
+   */
+  picks: ComposerPicks;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
+
+export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number };
 
 export const INITIAL_COMPOSER: ComposerState = {
   type: "image",
@@ -69,6 +77,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   seconds: 10,
   instrumental: true,
   voiceId: "",
+  picks: {},
   notice: null,
 };
 
@@ -82,6 +91,7 @@ export type ComposerAction =
   | { type: "seconds"; value: number }
   | { type: "instrumental"; value: boolean }
   | { type: "voice"; value: string }
+  | { type: "pick"; value: ComposerPicks }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -115,6 +125,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, instrumental: action.value, notice: null };
     case "voice":
       return { ...state, voiceId: action.value, notice: null };
+    case "pick":
+      return { ...state, picks: { ...state.picks, ...action.value }, notice: null };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -219,15 +231,19 @@ export function activeModel(
 export type ComposerSettings = { ratio: string; resolution: string; duration: number };
 
 /** The settings a workspace engine renders with: its own first allowed values, the project's aspect where it fits. */
-export function composerSettings(model: ComposerModel | null, projectAspect?: string): ComposerSettings {
+export function composerSettings(model: ComposerModel | null, projectAspect?: string, picks: ComposerPicks = {}): ComposerSettings {
   const ratios = model?.ratios ?? [];
-  const ratio = projectAspect && ratios.includes(projectAspect)
+  const ratio = picks.ratio && ratios.includes(picks.ratio)
+    ? picks.ratio
+    : projectAspect && ratios.includes(projectAspect)
     ? projectAspect
     : ratios.includes("16:9") ? "16:9" : ratios.find((r) => r !== "adaptive") ?? ratios[0] ?? "16:9";
   return {
     ratio,
-    resolution: model?.resolutions?.[0] ?? "720p",
-    duration: model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
+    resolution: picks.resolution && model?.resolutions?.includes(picks.resolution) ? picks.resolution : model?.resolutions?.[0] ?? "720p",
+    duration: picks.duration != null && model?.durations?.includes(picks.duration)
+      ? picks.duration
+      : model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
   };
 }
 

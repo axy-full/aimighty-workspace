@@ -1,0 +1,252 @@
+"use client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import LazyMedia from "@/components/LazyMedia";
+import { resolveGenInput } from "@/lib/genAssetInput";
+import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
+import { useShell } from "@/lib/shell/state";
+import { useEnhancer } from "@/lib/shell/use-enhancer";
+import type { Project } from "@/lib/workbench/studio";
+import { COMPOSER_TYPES, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
+import type { LibraryEntry } from "@/lib/workspace/library";
+import { useWorkspace } from "@/lib/workspace/state";
+import { useComposer } from "@/lib/workspace/use-composer";
+
+const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
+const ORDER: ComposerType[] = ["video", "image", "audio"];
+const PLACEHOLDER: Record<ComposerType, string> = {
+  video: "Describe the shot: subject, setting, camera move, light. @name cites a reference; raw: sends your words as written.",
+  image: "Describe the frame: subject, setting, lens, light, medium. @name cites a reference; raw: sends your words as written.",
+  audio: "Describe the sound, the voice or the music: source, setting, pace, texture.",
+};
+const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }, { id: "connected", label: "Higgsfield catalogue" }];
+const FILTERS = ["All", "Images", "Video", "Audio"] as const;
+type Filter = (typeof FILTERS)[number];
+const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
+
+/** Gen (README › Gen): one composer on the left, this project's results on the right. */
+export function GenView({ scope, project, items, workspaceName, onProject }: {
+  scope: string; project: Project | null; items: LibraryEntry[]; workspaceName: string | null; onProject: (id: string) => void;
+}) {
+  const shell = useShell();
+  const ws = useWorkspace();
+  const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
+  const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  const [sheet, setSheet] = useState(false);
+  const [wellError, setWellError] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+  const [filter, setFilter] = useState<Filter>("All");
+  const anchored = state.references.some((r) => r.kind === "video") || (state.type === "video" && state.references.length > 0);
+  const enhancer = useEnhancer({
+    prompt: state.prompt, mode: state.type as EnhanceMode, model: model?.id ?? null,
+    anchored, editing: state.type === "image" && state.references.length > 0,
+  });
+
+  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen) arrives once, then is forgotten. */
+  const dispatchComposer = composer.dispatch;
+  useEffect(() => {
+    try {
+      const preset = sessionStorage.getItem("particl-gen-preset");
+      if (!preset) return;
+      sessionStorage.removeItem("particl-gen-preset");
+      dispatchComposer({ type: "prompt", value: preset });
+    } catch { /* no storage: the prompt simply starts empty */ }
+  }, [dispatchComposer]);
+
+  /* Auto: when an enhancement is on the card, it is what gets submitted. */
+  const pending = useRef(false);
+  useEffect(() => {
+    if (!pending.current) return;
+    pending.current = false;
+    composer.generate();
+  }, [state.prompt, composer]);
+  const generate = () => {
+    if (enhancer.auto && enhancer.enhanced && enhancer.enhanced !== state.prompt && !isRawPrompt(state.prompt)) {
+      pending.current = true;
+      composer.dispatch({ type: "prompt", value: enhancer.enhanced });
+      enhancer.dismiss();
+      return;
+    }
+    composer.generate();
+  };
+
+  const drop = async (id: string) => {
+    setWellError(null);
+    try {
+      const asset = await resolveGenInput(id, scope);
+      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
+      composer.dispatch({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url } });
+    } catch (error) {
+      setWellError(error instanceof Error ? error.message : "This file cannot be used as a reference.");
+    }
+  };
+
+  const results = useMemo(() => {
+    const media = FILTER_MEDIA[filter];
+    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
+  }, [items, filter]);
+  const running = ws.state.gen;
+  const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
+  const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
+
+  return (
+    <div className="gx-gen gx-enter" data-testid="gen-view">
+      <section className="gx-gen-card" aria-label="Composer">
+        <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
+          {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
+            <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={state.type === t} onClick={() => composer.dispatch({ type: "type", value: t })}><span>{TYPE_TAB[t]}</span></button>
+          ))}
+          <button type="button" role="tab" className="gx-seg-btn" aria-selected={false} disabled title="3D is made in Studio › Astra. It joins Gen with the Studio build step."><span>3D</span></button>
+        </div>
+
+        <div className="gx-gen-row">
+          <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
+          <textarea className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
+            onChange={(e) => composer.dispatch({ type: "prompt", value: e.target.value })} data-testid="gen-prompt" />
+          <div className="gx-gen-enhance">
+            <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="When an enhancement is on the card, it is what gets generated.">
+              <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
+            </button>
+            <span className="gx-spacer" />
+            {enhancer.blocked ? <span className="gx-reason" data-testid="enhance-reason">{enhancer.blocked}</span> : null}
+            <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} onClick={enhancer.enhance} data-testid="enhance">
+              {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance" : `Enhance · ${enhancer.credits.toLocaleString("en-US")} cr`}
+            </button>
+          </div>
+          {enhancer.error ? <p className="gx-gen-error" role="alert">{enhancer.error}</p> : null}
+          {enhancer.enhanced ? (
+            <div className="gx-enhanced" data-testid="enhanced-card">
+              <span className="gx-eyebrow" data-functional-label="">Enhanced · {ENHANCER_LABEL[enhancer.provider ?? "higgsfield"]}{enhancer.charged != null ? ` · ${enhancer.charged.toLocaleString("en-US")} cr` : ""}</span>
+              <p>{enhancer.enhanced}</p>
+              <div className="gx-enhanced-actions">
+                <button type="button" className="gx-hbtn" onClick={() => { composer.dispatch({ type: "prompt", value: enhancer.enhanced! }); enhancer.dismiss(); }} data-testid="enhanced-use">Use this</button>
+                <button type="button" className="gx-hbtn" onClick={enhancer.dismiss} data-testid="enhanced-keep">Keep mine</button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="gx-gen-row">
+          <span className="gx-eyebrow" data-functional-label="">02 / Model</span>
+          <button type="button" className="gx-model" aria-haspopup="dialog" aria-expanded={sheet} onClick={() => setSheet(true)} data-testid="gen-model">
+            <span className="gx-tool-tag" aria-hidden="true">{(model?.label ?? "—").slice(0, 2).toUpperCase()}</span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span className="gx-model-name">{model?.label ?? "Choose a model"}</span>
+              <span className="gx-model-sub">{state.billing === "connected" ? "Higgsfield catalogue" : "Studio engine"}</span>
+            </span>
+            <span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>▾</span>
+          </button>
+        </div>
+
+        {takesReferences ? (
+          <div className="gx-gen-row">
+            <span className="gx-eyebrow" data-functional-label="">References</span>
+            <div className="gx-well" data-over={over} data-testid="gen-well"
+              onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+              onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) void drop(id); }}>
+              {state.references.length ? state.references.map((r, i) => (
+                <span className="gx-ref" key={r.key}>
+                  <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" className="gx-lazy" /> : null}</span>
+                  <span className="gx-ref-name">@{r.kind === "video" ? "Video" : "Image"}{i + 1} · {r.name}</span>
+                  <button type="button" className="gx-ref-x" aria-label={`Remove ${r.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: r.key })}>×</button>
+                </span>
+              )) : <span className="gx-well-hint">Drag an asset here from the Library.</span>}
+              {!shell.wide ? <button type="button" className="gx-hbtn" onClick={() => shell.openLibrary("assets")}>Open Library</button> : null}
+            </div>
+            {wellError ? <p className="gx-gen-error" role="alert">{wellError}</p> : null}
+          </div>
+        ) : null}
+
+        {model?.ratios?.length ? (
+          <div className="gx-gen-row">
+            <span className="gx-eyebrow" data-functional-label="">Aspect</span>
+            <div className="gx-chips" role="group" aria-label="Aspect">
+              {model.ratios.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.ratio === r} onClick={() => composer.dispatch({ type: "pick", value: { ratio: r } })}>{r}</button>)}
+            </div>
+          </div>
+        ) : null}
+        {model?.resolutions?.length ? (
+          <div className="gx-gen-row">
+            <span className="gx-eyebrow" data-functional-label="">Resolution</span>
+            <div className="gx-chips" role="group" aria-label="Resolution">
+              {model.resolutions.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.resolution === r} onClick={() => composer.dispatch({ type: "pick", value: { resolution: r } })}>{r}</button>)}
+            </div>
+          </div>
+        ) : null}
+        {model?.durations?.length ? (
+          <div className="gx-gen-row">
+            <label className="gx-eyebrow" htmlFor="gx-length" data-functional-label="">Length</label>
+            <select id="gx-length" className="gx-select" value={settings.duration} onChange={(e) => composer.dispatch({ type: "pick", value: { duration: Number(e.target.value) } })} data-testid="gen-length">
+              {model.durations.map((d) => <option key={d} value={d}>{d} s</option>)}
+            </select>
+          </div>
+        ) : null}
+
+        {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
+        {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
+        {blocked ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{blocked}</p> : null}
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || submitting} aria-describedby={blocked ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
+          {submitting ? "Submitting…" : buttonLabel}
+        </button>
+        <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
+        <p className="gx-gen-foot">{composer.wording}</p>
+      </section>
+
+      <section className="gx-gen-results" aria-label="Results">
+        <div className="gx-gen-results-head">
+          <span className="gx-panel-title">Results</span>
+          <div className="gx-chips" role="group" aria-label="Result kind">
+            {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
+          </div>
+        </div>
+        <div className="gx-gen-grid">
+          {running ? (
+            <div className="gx-asset" data-testid="gen-running">
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+              <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
+              <span className="gx-asset-meta">{running.label ?? "Running"}</span>
+            </div>
+          ) : null}
+          {results.map((entry) => (
+            <div className="gx-asset" key={entry.take.id} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
+              <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`}
+                onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
+                onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
+                {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" className="gx-lazy" /> : null}
+              </button>
+              <span className="gx-asset-name">{entry.take.name}</span>
+              <span className="gx-asset-meta">{entry.take.meta}</span>
+            </div>
+          ))}
+        </div>
+        {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+      </section>
+
+      {sheet ? (
+        <div className="gx-veil" onClick={() => setSheet(false)} data-testid="model-sheet-veil">
+          <div className="gx-sheet" role="dialog" aria-modal="true" aria-label="Choose a model" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSheet(false); } }}>
+            <div className="gx-sheet-head">
+              <span className="gx-panel-title">Model</span>
+              <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
+                {GROUPS.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={state.billing === g.id} onClick={() => composer.dispatch({ type: "billing", value: g.id })}><span>{g.label}</span></button>)}
+              </div>
+              <button type="button" className="gx-hbtn" onClick={() => setSheet(false)}>Close</button>
+            </div>
+            <div className="gx-sheet-list gx-scroll" role="listbox" aria-label={`${TYPE_TAB[state.type]} models`}>
+              {offered.map((m) => (
+                <button key={m.id} type="button" role="option" aria-selected={m.id === model?.id} className="gx-sheet-row" onClick={() => { composer.dispatch({ type: "model", value: m.id }); setSheet(false); }}>
+                  <span className="gx-tool-tag" aria-hidden="true">{m.label.slice(0, 2).toUpperCase()}</span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span className="gx-model-name">{m.label}</span>
+                    <span className="gx-model-sub">{[m.ratios?.length ? `${m.ratios.length} aspects` : null, m.durations?.length ? `${m.durations[0]}–${m.durations[m.durations.length - 1]} s` : null, m.referenceRoles?.length ? m.referenceRoles.join(" · ") : null].filter(Boolean).join(" · ") || TYPE_TAB[m.type]}</span>
+                  </span>
+                  {m.id === model?.id ? <span aria-hidden="true" style={{ color: "var(--gx-accent-text)" }}>✓</span> : null}
+                </button>
+              ))}
+              {!offered.length ? <p className="gx-empty">{state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

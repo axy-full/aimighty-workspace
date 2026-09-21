@@ -1,3 +1,4 @@
+import { isEnhancerProvider } from "@/lib/shell/enhancer";
 import { NextResponse } from "next/server";
 import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
 import { allSettings, setSetting, DEFAULTS } from "@/lib/settings";
@@ -24,6 +25,9 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
     if (!keys.includes(k)) continue;
     if (k === "promptWriter" && !["none", "byteplus", "claude"].includes(String(v))) {
       return NextResponse.json({ error: "Choose a supported prompt writer." }, { status: 400 });
+    }
+    if (k === "promptEnhancer" && !isEnhancerProvider(v)) {
+      return NextResponse.json({ error: "Choose a supported prompt enhancer." }, { status: 400 });
     }
     if ((k === "defaultVideoModel" || k === "defaultImageModel") && String(v) !== "" && !modelOfKind(String(v), k === "defaultVideoModel" ? "video" : "image")) {
       return NextResponse.json({ error: k === "defaultVideoModel" ? "Not a video engine." : "Not a still engine." }, { status: 400 });

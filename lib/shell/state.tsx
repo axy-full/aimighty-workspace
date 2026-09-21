@@ -147,7 +147,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Shell>(() => ({
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab, libOpen, inspOpen,
+    /* Gen is not a stage and has no tools of its own: there the Library is
+       what you can drag in, however you arrived (tab, palette or a link). */
+    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: params.view === "gen" ? "assets" : libTab, libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: undoStack.length > 0,
     goSuite,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },

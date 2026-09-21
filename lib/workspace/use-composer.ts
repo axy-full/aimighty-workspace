@@ -247,7 +247,7 @@ export function useComposer(options: {
   );
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
-  const settings = useMemo(() => composerSettings(model, target?.aspect), [model, target?.aspect]);
+  const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
 
   const quoteKey = quoteKeyFor({
     billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,

@@ -50,7 +50,8 @@ export function Library({ items, ready, overlay, now }: { items: LibraryEntry[];
         <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${items.length.toLocaleString("en-US")} ${items.length === 1 ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
-      <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Library view">
+{shell.view === "gen" ? null : (
+            <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Library view">
         {(["tools", "assets"] as const).map((tab) => (
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>
             <span>{tab === "tools" ? "Tools" : "Assets"}</span>
@@ -58,6 +59,7 @@ export function Library({ items, ready, overlay, now }: { items: LibraryEntry[];
           </button>
         ))}
       </div>
+      )}
       {shell.libTab === "tools" ? (
         <div className="gx-tools gx-scroll">
           {groups.length ? groups.map((group) => (
