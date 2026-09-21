@@ -288,6 +288,29 @@
 .gx .pxw-rig-row[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: -2px; background: var(--gx-tint); }
 .gx-hbtn:disabled { opacity: .4; cursor: default; }
 
+/* ── Skills · Workspace (FINAL_SPEC §5) ─────────────────────────────── */
+.sk, .wsx { display: flex; flex-direction: column; gap: 14px; padding: 20px; max-width: 1040px; }
+.sk-list { display: flex; flex-direction: column; gap: 8px; }
+.sk-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); flex-wrap: wrap; }
+.sk-name { display: block; font-weight: 600; font-family: var(--gx-mono); font-size: 13px; }
+.sk-cmd { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsx-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.wsx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.wsx-label { display: flex; flex-direction: column; gap: 6px; }
+.wsx-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--gx-hair); }
+.wsx-row:first-of-type { border-top: 0; }
+.wsx-initials { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: linear-gradient(160deg, #2B2F37, #1A1D23); border: 1px solid rgba(255, 255, 255, .12); }
+.wsx-name { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsx-balance { font-family: var(--gx-mono); font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+.wsx-packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.wsx-pack { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.wsx-bar { display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12.5px; min-height: 28px; }
+.wsx-bar > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsx-bar-track { height: 8px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }
+.wsx-bar-fill { height: 100%; border-radius: 999px; background: var(--gx-accent); }
+.wsx-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 767px) { .sk, .wsx { padding: 12px; } .sk-cmd { display: none; } }
+
 /* Narrow layout: the header wraps and the segment takes its own row. */
 @media (max-width: 767px) {
   .gx-header { height: auto; min-height: 56px; flex-wrap: wrap; padding: 6px 12px; row-gap: 6px; }

@@ -25,7 +25,7 @@ export type ShellPage = {
   legacy: { suite: Suite; page: PageId };
   /** A hairline gap sits before this tab (the start of a group). */
   gapBefore: boolean;
-  /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3); the legacy mapping only feeds state. */
+  /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3, Atomik › Skills from step 5); the legacy mapping only feeds state. */
   own?: boolean;
 };
 
@@ -53,8 +53,8 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
   };
 }
 
-function own(suite: ShellSuite): ShellSuite {
-  return { ...suite, pages: suite.pages.map((p) => ({ ...p, own: true })) };
+function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
+  return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
 /** Group starts: Studio after 02 and 05; Business after 02; Viral after 02; Atomik after 01 and 04. */
@@ -81,14 +81,15 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
-  build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
+  /* Skills is the shell's own view (step 5: the higgsfield-ai/skills packs); the rest stay legacy bodies for now. */
+  own(build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
     ["skills", "Skills", "Skills", "Tool packs the agent can reach", "skills"],
-  ]),
+  ]), ["skills"]),
 ];
 
 /** Header segment order: Studio | Gen | Business | Viral | Atomik | Crew. Gen and Crew are views, not suites. */
