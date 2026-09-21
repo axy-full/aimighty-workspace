@@ -77,6 +77,7 @@ type Workspace = {
   plans: PlanSource;
 };
 
+const NO_KEEP: readonly string[] = [];
 const WorkspaceContext = createContext<Workspace | null>(null);
 
 export function useWorkspace(): Workspace {
@@ -85,11 +86,26 @@ export function useWorkspace(): Workspace {
   return value;
 }
 
-function writeUrl(state: AppState, mode: "push" | "replace") {
+/**
+ * Where this provider writes the URL. The Suites shell mounts the same state
+ * layer at its own path and owns a few search params of its own (`keep`),
+ * which a navigation here must carry across rather than drop.
+ */
+type UrlTarget = { path: string; keep: readonly string[] };
+const DEFAULT_TARGET: UrlTarget = { path: WORKSPACE_PATH, keep: [] };
+
+function writeUrl(state: AppState, mode: "push" | "replace", target: UrlTarget = DEFAULT_TARGET) {
   if (typeof window === "undefined") return;
-  const search = toSearch(state);
-  if (window.location.pathname === WORKSPACE_PATH && window.location.search === search) return;
-  const url = WORKSPACE_PATH + search + window.location.hash;
+  let search = toSearch(state);
+  if (target.keep.length) {
+    const next = new URLSearchParams(search);
+    const current = new URLSearchParams(window.location.search);
+    for (const key of target.keep) { const v = current.get(key); if (v != null) next.set(key, v); }
+    const text = next.toString();
+    search = text ? "?" + text : "";
+  }
+  if (window.location.pathname === target.path && window.location.search === search) return;
+  const url = target.path + search + window.location.hash;
   if (mode === "push") window.history.pushState(null, "", url);
   else window.history.replaceState(null, "", url);
 }
@@ -98,12 +114,19 @@ export function WorkspaceProvider({
   children,
   initialSearch,
   plans = NO_PLANS,
+  path = WORKSPACE_PATH,
+  keep = NO_KEEP,
 }: {
   children: ReactNode;
   /** The search string the page was opened with. */
   initialSearch: string;
   plans?: PlanSource;
+  /** The route this provider lives at; /workspace unless the Suites shell says otherwise. */
+  path?: string;
+  /** Search params another layer owns at that route; carried across every URL write. */
+  keep?: readonly string[];
 }) {
+  const target = useMemo<UrlTarget>(() => ({ path, keep }), [path, keep]);
   const [state, rawDispatch] = useReducer(reducer, initialSearch, (search) => applyUrl(INITIAL_STATE, fromSearch(search)));
   const ref = useRef(state);
   useEffect(() => {
@@ -116,8 +139,8 @@ export function WorkspaceProvider({
   const commit = useCallback((next: AppState, mode: "push" | "replace") => {
     ref.current = next;
     rawDispatch({ type: "replace", state: next });
-    writeUrl(next, mode);
-  }, []);
+    writeUrl(next, mode, target);
+  }, [target]);
 
   const dispatch = useCallback((action: Action) => {
     const next = reducer(ref.current, action);
@@ -125,8 +148,8 @@ export function WorkspaceProvider({
     rawDispatch({ type: "replace", state: next });
     /* A list arriving or a filter changing can repair the selection; the
        URL follows without adding a history entry. */
-    if (action.type === "lists" || action.type === "libFilter") writeUrl(next, "replace");
-  }, []);
+    if (action.type === "lists" || action.type === "libFilter") writeUrl(next, "replace", target);
+  }, [target]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useCallback((text: string) => {
@@ -142,7 +165,7 @@ export function WorkspaceProvider({
   /* Canonicalise the opening URL (aliases, a page implying its suite), then
      follow the back and forward buttons. */
   useEffect(() => {
-    writeUrl(ref.current, "replace");
+    writeUrl(ref.current, "replace", target);
     const onPop = () => {
       const next = applyUrl(ref.current, fromSearch(window.location.search));
       ref.current = next;
@@ -150,7 +173,7 @@ export function WorkspaceProvider({
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [target]);
 
   const value = useMemo<Workspace>(() => ({
     state,
@@ -175,10 +198,10 @@ export function WorkspaceProvider({
     setLevel: (level) => commit(withLevel(ref.current, level), "push"),
     back: () => commit(mobileBack(ref.current), "push"),
     setSheet: (sheet) => dispatch({ type: "patch", patch: { sheet } }),
-    syncUrl: () => writeUrl(ref.current, "replace"),
+    syncUrl: () => writeUrl(ref.current, "replace", target),
     toast,
     plans,
-  }), [state, dispatch, commit, toast, plans]);
+  }), [state, dispatch, commit, toast, plans, target]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

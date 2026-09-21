@@ -40,8 +40,10 @@ import { expect, type Page } from "@playwright/test";
  * or more, and the 44px WIDTH floor still applies. Anything else that wants to
  * be under 44px is a defect, not a new entry in this list.
  */
-export const SEGMENTED_OPTION_CLASSES = ["pxm-seg", "pxm-segment"] as const;
-export const SEGMENTED_CONTROL = ".pxm-segmented";
+/* `.gx-seg-btn` inside `.gx-seg` is the same control in the Suites shell
+   (app/graphite.css): a 40px option inside a track that is 44px or more. */
+export const SEGMENTED_OPTION_CLASSES = ["pxm-seg", "pxm-segment", "gx-seg-btn"] as const;
+export const SEGMENTED_CONTROL = ".pxm-segmented, .gx-seg";
 export const SEGMENTED_OPTION_HEIGHT = 40;
 
 /** Everything a thumb can hit — not buttons alone. */
@@ -54,8 +56,8 @@ const ROWS = "button, p, a, div[data-door], div[data-stem], div[data-node-id], d
 /* ── The four floors ────────────────────────────────────────────────────── */
 
 /** Every visible text node with its computed size: the 12px floor. */
-export async function smallText(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
+export async function smallText(page: Page, outside?: string): Promise<string[]> {
+  return page.evaluate((outside) => {
     const out: string[] = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -63,11 +65,13 @@ export async function smallText(page: Page): Promise<string[]> {
       if (!text) continue;
       const el = node.parentElement;
       if (!el || !el.getClientRects().length) continue;
+      /* `outside` names a region measured by another spec (a hosted body). */
+      if (outside && el.closest(outside)) continue;
       const size = Number.parseFloat(getComputedStyle(el).fontSize);
       if (size < 12) out.push(`${size}px: “${text.slice(0, 40)}” (${el.className || el.tagName})`);
     }
     return out;
-  });
+  }, outside);
 }
 
 /**

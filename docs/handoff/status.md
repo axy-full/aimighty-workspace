@@ -171,3 +171,26 @@ Supercomputer parity is the owner's standard for Atomik. Landed: connected reads
 ## 21 September — handoff refreshed
 
 `main` is `e4c1610`, deployed and green. Landed since the redesign write-up above: one credit = US$0.10 stated once and derived everywhere (#270), the always-mounted credit slot on desktop and phone (#267, #269), the switch-over gate deciding once per page load so a landscape phone is never redirected mid-session (#272), and the Make wall's day grouping tested against a clock the test owns (#273). The full handover for a new session is [`HANDOFF.md`](HANDOFF.md), with a paste-ready opening prompt in [`START-HERE.md`](START-HERE.md). The one decision waiting on the owner: whether to flip phones from the old routes onto the new phone build.
+
+## 21 September — Suites shell, build step 1 (branch `feat/suites-shell`, not released)
+
+The owner supplied a new desktop design, **Particl Suites** (Graphite). It is filed at `design/particl-suites/` (README = the spec, `Particl Suites.dc.html` = reference only, never ported). The build order is the README's: shell → Gen → assets and drag-drop → Studio + Rig → Business/Viral → Atomik/Workspace → switch-over. Step 1 is this branch.
+
+| What | Where |
+| --- | --- |
+| New route, beside the old ones, nothing switched over | `/suites` (`app/suites/page.tsx`). `/workspace` and `/workbench` are untouched in behaviour; both now share `lib/shell/bootstrap.server.ts`, extracted verbatim from `app/workspace/page.tsx` |
+| Information architecture | `lib/shell/ia.ts`: Studio 8 stages, Business 3, Viral 3, Atomik 6, plus the Gen and Workspace views. Every shell page is backed by a page the existing state layer has, so `PAGE_BODIES`, `INSPECTOR_BODIES`, `AtomikHost`, `RigProvider` and `GenerateComposer` are reused, not rebuilt |
+| State | `lib/shell/state.tsx` sits on top of `WorkspaceProvider`, which gained two optional props (`path`, `keep`) so it can write its URL under `/suites` and preserve the shell's own params (`view`, `tab`, `sp`). Default behaviour is unchanged |
+| Chrome | `components/graphite/*` and `app/graphite.css` (tokens scoped under `.gx`; the reset is `:where(.gx)` so it never out-ranks a component or a hosted legacy body) |
+| Pure logic with unit specs | `lib/shell/undo.ts` (20 deep), `context-menu.ts` (README order, blocked items keep their reason, viewport clamp), `palette.ts` (ranking, always ends in Ask Atomik) — `tests/unit/suitesShell.spec.ts` |
+| Browser spec | `tests/suites-shell-workbench.spec.ts`, all five workbench viewports: header segment, strip gaps, 280/320 columns at ≥1280 and overlays below, per-suite page memory, Back/forward, pasted links, ⌘K, ⌘J, drag payload = asset id as `text/plain`, right-click menu inside the viewport, and the phone floors on the chrome |
+
+Deliberately not in step 1, and shown as such in the UI rather than faked: asset actions other than Copy / Open in Inspector / Retry (disabled with the reason), `+` use-as-reference (step 3), the new Gen composer (the Gen view opens the existing composer), and Business pages 02–03 (all three still show the existing Marketing Studio body until step 5).
+
+Open questions for the owner, none of which block step 1:
+
+1. The design README prints the connected account's brand names in Business and Viral. The repo rule and `tests/unit/noVendorNamesInUi.spec.ts` forbid them. Step 1 follows the repo rule — the Atomik mark reads `AGENT`, not the prototype's word. Steps 2 and 5 need the decision.
+2. "One balance, quotes in cr" for connected-account jobs needs a rate; connected credits are never converted at `creditUsd()`.
+3. The README is desktop-only. Step 1 holds the phone floors on the chrome at 360/390/844 with the panels as overlays; hosted legacy bodies keep their own sizes until their step rebuilds them.
+
+Local verification note: Playwright's bundled browser is not installed on the owner's Mac; the workbench config's `PW_CHANNEL=chrome` runs the specs on the installed Chrome. In a fresh worktree `tests/unit/screenplayOcr.spec.ts` (needs the generated `public/vendor/tesseract-*`) and one `localDatabaseClient` case (`spawn EBADF` under the app's sandbox) fail locally for reasons unrelated to this branch.
