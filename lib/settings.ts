@@ -62,6 +62,13 @@ export const DEFAULTS = {
    */
   promptWriter: "claude",
   /**
+   * Who rewrites a prompt when someone presses Enhance in Gen (Workspace ›
+   * General): "higgsfield" | "claude" | "openai" — lib/shell/enhancer.ts.
+   * Higgsfield is the owner's default (21 September 2026). Separate from
+   * promptWriter, which is the legacy inline refine inside a render.
+   */
+  promptEnhancer: "higgsfield",
+  /**
    * When this workspace's cast was mirrored into Rig's elements (brief 3).
    *
    * Blank means it has not happened, and the first read of the element
