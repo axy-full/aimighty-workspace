@@ -26,7 +26,9 @@ export type PlannerReadName =
   | "generations"
   | "medias"
   | "balance"
-  | "plan";
+  | "plan"
+  /** Marketing Studio setup items (`show_marketing_studio`, by type): FINAL_SPEC §2.3. */
+  | "setup";
 export type PlannerRead = { name: PlannerReadName; tool: string; args: Record<string, unknown> };
 
 export const PLANNER_GOAL_LIMIT = 300;
@@ -57,6 +59,7 @@ export const PLANNER_READ_TOOLS = Object.freeze([
   "show_medias",
   "balance",
   "show_plans_and_credits",
+  "show_marketing_studio",
 ]);
 
 export type PlannerReadResult = { name: PlannerReadName; value?: unknown; unavailable?: true };

@@ -57,6 +57,7 @@ async function fixture() {
     '@/lib/higgsfield-consumer/jobs': { ConsumerJobError },
     '@/lib/higgsfield-consumer/video-contract': contract,
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
+    '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
       ensureConsumerRehearsal: service('rehearsal', 'rehearsal-draft'),
@@ -147,8 +148,10 @@ test('strict action schemas reject caller identities, provider overrides and mal
   const f = await fixture();
   const malformed = [null, [], {}, { ...quote, action: 'generate' }, { ...quote, userId: 'other' }, { ...quote, workspaceId: wallet },
     { ...quote, draftId: '../foreign' }, { ...quote, draftId: 'x'.repeat(201) }, { ...quote, idempotencyKey: 'not-a-uuid' },
-    ...[{ model: 'other' }, { get_cost: false }, { use_unlim: true }, { medias: [] }, { prompt: ' ' }, { prompt: 'a'.repeat(5001) },
-      { duration: 11 }, { duration: 16 }, { duration: 12.5 }, { duration: '15' }, { resolution: '4k' }, { aspectRatio: 'bogus' }, { generateAudio: 'true' }]
+    /* FINAL_SPEC §2.1: medias and durations ≥ 4 are part of the contract now; a malformed media, a role the model lacks, and out-of-range durations are still refused here. */
+    ...[{ model: 'other' }, { get_cost: false }, { use_unlim: true }, { medias: [{ id: 'not-a-uuid', role: 'image' }] }, { medias: [{ id: '11111111-1111-4111-8111-111111111111', role: 'poster' }] },
+      { hookId: 'h1', adReferenceId: 'r1' }, { productIds: ['p1'], webProductIds: ['w1'] }, { prompt: ' ' }, { prompt: 'a'.repeat(5001) },
+      { duration: 3 }, { duration: 121 }, { duration: 12.5 }, { duration: '15' }, { resolution: '4k' }, { aspectRatio: 'bogus' }, { generateAudio: 'true' }]
       .map(patch => ({ ...quote, input: { ...input, ...patch } })),
     { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: '10' }, { ...submit, workspaceId: 'bad' },
     { ...submit, id: 'bad' }, { ...submit, input }, { ...status, tool: 'generate_video' },

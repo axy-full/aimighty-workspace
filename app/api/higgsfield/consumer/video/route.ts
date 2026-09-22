@@ -8,6 +8,7 @@ import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
 import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError, consumerVideoInputSchema } from "@/lib/higgsfield-consumer/video-contract";
+import { SETUP_TYPE_IDS, connectedMarketingSetup } from "@/lib/higgsfield-consumer/marketing-setup";
 import {
   MARKETING_VIDEO_REHEARSAL, ConsumerVideoServiceError, ensureConsumerRehearsal,
   consumerMarketingJobs, quoteConsumerMarketingVideo, submitConsumerMarketingVideo,
@@ -23,7 +24,9 @@ const quote = z.object({ action: z.literal("quote"), draftId: id, input: consume
 const rehearse = z.object({ action: z.literal("quote-rehearsal"), idempotencyKey: z.uuid() }).strict();
 const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) }).strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
-const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll]);
+/** FINAL_SPEC §2.3: the account's setup items, by type; read-only, never billed. */
+const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(6).optional() }).strict();
+const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll, setup]);
 function problem(error: unknown) {
   if (error instanceof ConsumerOriginalError)
     return Response.json({ code: `original_${error.code}`, error: error.message }, {
@@ -65,6 +68,7 @@ export const POST = withTenant(async (req: Request) => {
       return Response.json({ job: await submitConsumerMarketingVideo({ userId: owner.user.id, draftId: body.draftId, id: body.id }, body) }, { headers });
     }
     if (body.action === "status") return Response.json(await pollConsumerMarketingVideo({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
+    if (body.action === "setup") return Response.json(await connectedMarketingSetup(owner.user.id, body.types ?? undefined), { headers });
     const draftId = body.action === "quote-rehearsal" ? await ensureConsumerRehearsal(owner.user.id) : body.draftId;
     const input = body.action === "quote-rehearsal" ? MARKETING_VIDEO_REHEARSAL : body.input;
     return Response.json({ job: await quoteConsumerMarketingVideo(owner.user.id, draftId, input, body.idempotencyKey) }, { headers });

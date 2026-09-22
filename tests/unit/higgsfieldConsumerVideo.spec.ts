@@ -169,7 +169,8 @@ test("typed input rejects injected model, references, blank prompts and unsuppor
     { ...input, prompt: "x".repeat(5001) },
     { ...input, model: "other" },
     { ...input, image: jobId },
-    { ...input, duration: 11 },
+    /* FINAL_SPEC §2.1: durations are ≥ 4 and the account's range caps them; below 4 is still refused here. */
+    { ...input, duration: 3 },
     { ...input, duration: 15.5 },
     { ...input, resolution: "4k" },
     { ...input, aspectRatio: "2:3" },

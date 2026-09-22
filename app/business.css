@@ -1,0 +1,19 @@
+/* Business = Marketing Studio (FINAL_SPEC §2). Graphite tokens; scoped under .bz. */
+.bz .gx-gen-card { max-width: 560px; }
+.bz-intro { margin: 0; color: var(--gx-text-2); font-size: 13px; line-height: 1.5; }
+.bz-note { color: var(--gx-text-3); text-transform: none; letter-spacing: 0; font-family: var(--gx-font); font-size: 11.5px; }
+.bz .gx-chip[data-off="true"] { opacity: .4; cursor: not-allowed; }
+.bz [data-off="true"] > .gx-eyebrow { opacity: .6; }
+.bz-idrow { display: flex; flex-direction: column; gap: 6px; }
+.bz-idrow code, .bz code { font-family: var(--gx-mono); font-size: 11.5px; color: var(--gx-text); }
+.bz-role { height: 22px; padding: 0 6px; border-radius: 4px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .06em; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); flex: none; }
+.bz-setup { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; padding: 20px; align-items: start; }
+.bz-setup-list { display: flex; flex-direction: column; gap: 14px; max-width: 1040px; }
+.bz-group { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.bz-group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.bz-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; padding: 6px 10px; border-radius: 6px; text-align: left; }
+.bz-row:hover, .bz-row[aria-pressed="true"] { background: var(--gx-input); }
+.bz-row-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bz-detail { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); position: sticky; top: 0; }
+@media (max-width: 1023px) { .bz-setup { grid-template-columns: minmax(0, 1fr); padding: 12px; } .bz-detail { position: static; } }
+@media (max-width: 767px), (pointer: coarse) { .bz-role { height: 28px; min-width: 44px; } }

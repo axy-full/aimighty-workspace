@@ -49,6 +49,18 @@ export const CONSUMER_VIDEO_MODES = [
   "ugc", "ugc_how_to", "ugc_unboxing", "product_showcase", "product_review",
   "tv_spot", "wild_card", "ugc_virtual_try_on", "virtual_try_on",
 ] as const;
+/** The modes that take a hook and a setting (references/marketing-modes.md). */
+export const CONSUMER_VIDEO_SETUP_MODES = ["ugc", "ugc_how_to", "ugc_unboxing", "product_review", "ugc_virtual_try_on"] as const;
+export const CONSUMER_VIDEO_MEDIA_ROLES = ["image", "start_image", "end_image"] as const;
+const setupId = z.string().min(1).max(200).regex(/^[A-Za-z0-9_.:-]+$/);
+/**
+ * FINAL_SPEC §2.1: the whole Marketing Studio contract (cli/MODELS.md ›
+ * marketing_studio_video). Everything past the first six fields is optional
+ * and omitted from the params when absent, so quotes admitted before this
+ * widening still match. The two server rules are enforced here as well:
+ * "Ad_reference_id cannot be combined with hook_id or setting_id" and
+ * "Product_ids and web_product_ids cannot both be set".
+ */
 export const consumerVideoInputSchema = z
   .object({
     prompt: z
@@ -56,14 +68,33 @@ export const consumerVideoInputSchema = z
       .min(1)
       .max(5000)
       .refine((value) => value.trim().length > 0),
-    duration: z.number().int().min(12).max(15),
+    /* ≥ 4 per the schema; the account's own range caps it at quote time. */
+    duration: z.number().int().min(4).max(120),
     resolution: z.enum(CONSUMER_VIDEO_RESOLUTIONS),
     aspectRatio: z.enum(CONSUMER_VIDEO_RATIOS),
     generateAudio: z.boolean(),
     // Omission preserves previously admitted quotes and their provider UGC default.
     mode: z.enum(CONSUMER_VIDEO_MODES).optional(),
+    productIds: z.array(setupId).max(8).optional(),
+    webProductIds: z.array(setupId).max(8).optional(),
+    avatars: z.array(z.object({ id: setupId, type: z.enum(["preset", "custom"]) }).strict()).max(1).optional(),
+    hookId: setupId.optional(),
+    settingId: setupId.optional(),
+    adReferenceId: setupId.optional(),
+    /** Connected media ids (completed imports) with their roles. */
+    medias: z.array(z.object({ id: z.string().uuid(), role: z.enum(CONSUMER_VIDEO_MEDIA_ROLES) }).strict()).max(14).optional(),
+    /** Click-to-Ad: the account fetches the page and dedupes by URL. */
+    productUrl: z.string().url().max(2048).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.productIds?.length && value.webProductIds?.length)
+      ctx.addIssue({ code: "custom", message: "Product_ids and web_product_ids cannot both be set." });
+    if (value.adReferenceId && (value.hookId || value.settingId))
+      ctx.addIssue({ code: "custom", message: "Ad_reference_id cannot be combined with hook_id or setting_id." });
+    if ((value.hookId || value.settingId) && !(CONSUMER_VIDEO_SETUP_MODES as readonly string[]).includes(value.mode ?? "ugc"))
+      ctx.addIssue({ code: "custom", message: "Hooks and settings are valid only for the UGC family of modes." });
+  });
 export type ConsumerVideoInput = z.infer<typeof consumerVideoInputSchema>;
 export type ConsumerVideoErrorCode =
   | "invalid_input"
@@ -146,6 +177,14 @@ export function consumerVideoParams(
     aspect_ratio: input.aspectRatio,
     generate_audio: input.generateAudio,
     ...(input.mode === undefined ? {} : { mode: input.mode }),
+    ...(input.productIds?.length ? { product_ids: [...input.productIds] } : {}),
+    ...(input.webProductIds?.length ? { web_product_ids: [...input.webProductIds] } : {}),
+    ...(input.avatars?.length ? { avatars: input.avatars.map((a) => ({ id: a.id, type: a.type })) } : {}),
+    ...(input.hookId ? { hook_id: input.hookId } : {}),
+    ...(input.settingId ? { setting_id: input.settingId } : {}),
+    ...(input.adReferenceId ? { ad_reference_id: input.adReferenceId } : {}),
+    ...(input.medias?.length ? { medias: input.medias.map((m) => ({ value: m.id.toLowerCase(), role: m.role })) } : {}),
+    ...(input.productUrl ? { product: { url: input.productUrl } } : {}),
     count: 1,
     get_cost: getCost,
     use_unlim: false,
@@ -403,11 +442,33 @@ export function consumerVideoOriginalResult(
   if (params.prompt !== input.prompt || params.duration !== input.duration ||
       params.resolution !== input.resolution || params.aspect_ratio !== input.aspectRatio ||
       params.generate_audio !== input.generateAudio || params.mode !== (input.mode ?? "ugc")) return null;
-  for (const key of ["medias", "avatars", "products"])
-    if (key in params && (!Array.isArray(params[key]) || params[key].length !== 0)) return null;
-  for (const key of ["product_ids", "avatar_ids", "web_products", "web_product_ids", "reference_elements"])
+  /* FINAL_SPEC §2.1: a job carrying exactly the ids and medias we sent is ours;
+     one carrying anything we did not send is still refused. */
+  const sent = consumerVideoParams(input, false) as Record<string, unknown>;
+  const sameIds = (key: string, ours: unknown) => {
+    const theirs = params[key];
+    if (ours === undefined) return theirs == null || (Array.isArray(theirs) && theirs.length === 0);
+    return Array.isArray(theirs) && Array.isArray(ours) && theirs.length === ours.length && theirs.every((v, i) => String(v).toLowerCase() === String(ours[i]).toLowerCase());
+  };
+  if (!sameIds("product_ids", sent.product_ids) || !sameIds("web_product_ids", sent.web_product_ids)) return null;
+  if ("products" in params && !sameIds("products", sent.product_ids)) return null;
+  if ("avatars" in params) {
+    const theirs = params.avatars;
+    if (!Array.isArray(theirs)) return null;
+    const ours = (sent.avatars as { id: string }[] | undefined) ?? [];
+    if (theirs.length !== ours.length || theirs.some((a, i) => !record(a) || String(a.id).toLowerCase() !== ours[i].id.toLowerCase())) return null;
+  }
+  if ("avatar_ids" in params && params.avatar_ids != null && !sameIds("avatar_ids", (sent.avatars as { id: string }[] | undefined)?.map((a) => a.id))) return null;
+  if ("medias" in params) {
+    const theirs = params.medias, ours = (sent.medias as { value: string; role: string }[] | undefined) ?? [];
+    if (!Array.isArray(theirs) || theirs.length !== ours.length) return null;
+    if (theirs.some((m, i) => !record(m) || String(m.value ?? m.id).toLowerCase() !== ours[i].value || (m.role !== undefined && m.role !== ours[i].role))) return null;
+  }
+  for (const key of ["web_products", "reference_elements"])
     if (key in params && params[key] !== null && (!Array.isArray(params[key]) || params[key].length !== 0)) return null;
-  for (const key of ["ad_reference_id", "storyboard_id", "hook", "setting"])
+  for (const [key, ours] of [["ad_reference_id", sent.ad_reference_id], ["hook_id", sent.hook_id], ["setting_id", sent.setting_id]] as const)
+    if ((params[key] ?? null) !== (ours ?? null) && String(params[key] ?? "").toLowerCase() !== String(ours ?? "").toLowerCase()) return null;
+  for (const key of ["storyboard_id", "hook", "setting"])
     if (params[key] != null) return null;
   if (("count" in params && params.count !== 1) || ("use_unlim" in params && params.use_unlim !== false)) return null;
   if (typeof raw.result_url !== "string" || raw.result_url.length > 8192) return null;
