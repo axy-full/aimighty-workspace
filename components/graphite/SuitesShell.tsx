@@ -29,6 +29,7 @@ import { ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { DrawToEditCard, WorkflowHost } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
+import { StudioHome } from "./mobile/StudioHome";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -179,9 +180,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 </>
               ) : (
                 <>
-                  <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />
+                  {/* The phone's Studio home carries the project's name itself; the page head is the stage's. */}
+                  {shell.page.id === "home" && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    {shell.page.own && shell.suite.id === "business" ? (
+                    {shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
+                      <StudioHome key="home" project={project} items={items} />
+                    ) : shell.page.own && shell.suite.id === "business" ? (
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />

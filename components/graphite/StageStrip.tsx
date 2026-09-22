@@ -8,7 +8,7 @@ export function StageStrip() {
   if (shell.view !== "suite") return null;
   return (
     <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip">
-      {shell.suite.pages.map((p) => (
+      {shell.suite.pages.filter((p) => !p.phoneOnly).map((p) => (
         <Fragment key={p.id}>
           {p.gapBefore ? <span className="gx-strip-gap" aria-hidden="true" data-testid="strip-gap" /> : null}
           <button type="button" className="gx-tab" aria-current={p.id === shell.page.id ? "page" : undefined} title={p.title} onClick={() => shell.goSuite(shell.suite.id, p.id)}>

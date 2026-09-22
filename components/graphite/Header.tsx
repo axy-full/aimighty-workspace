@@ -28,6 +28,9 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
   return (
     <header className="gx-header" data-row="header">
       <div className="gx-aurora" aria-hidden="true" data-testid="header-aurora" /><div className="gx-dots" aria-hidden="true" /><div className="gx-baseline" aria-hidden="true" />
+      {shell.view === "suite" && shell.suite.id === "studio" && shell.page.id !== "home" ? (
+        <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", "home")} data-testid="phone-back"><span aria-hidden="true">‹</span> Studio</button>
+      ) : null}
       <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio")} aria-label="particl home">
         <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
           <defs><linearGradient id="gx-mark-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F5F5F7" /><stop offset="1" stopColor="#6EB4FF" /></linearGradient></defs>

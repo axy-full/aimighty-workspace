@@ -27,6 +27,8 @@ export type ShellPage = {
   gapBefore: boolean;
   /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3, Atomik › Skills from step 5); the legacy mapping only feeds state. */
   own?: boolean;
+  /** Reached from the phone's tab bar, never from the stage strip (Studio home). */
+  phoneOnly?: boolean;
 };
 
 export type ShellSuite = {
@@ -53,13 +55,18 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
   };
 }
 
+/** The phone's Studio home: the stages as cards. It shares Brief's backing page and sits outside the strip. */
+function withHome(suite: ShellSuite): ShellSuite {
+  return { ...suite, pages: [...suite.pages, { id: "home", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy: { suite: suite.legacy, page: suite.pages[0].legacy.page }, gapBefore: false, own: true, phoneOnly: true }] };
+}
+
 function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
 /** Group starts: Studio after 02 and 05; Business after 02; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
-  build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [2, 5], [
+  withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [2, 5], [
     ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
     ["boards", "Boards", "Boards", "Plan every frame", "boards"],
     ["cast", "Cast", "Cast & Elements", "Keep identity consistent", "cast"],
@@ -68,7 +75,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["takes", "Takes", "Takes", "Select the right take", "takes"],
     ["edit", "Edit", "Edit & Sound", "Shape the story", "edit"],
     ["deliver", "Deliver", "Deliver", "Ready for the next room", "deliver"],
-  ]),
+  ])),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them. */
   own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
     ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode", "marketing"],
