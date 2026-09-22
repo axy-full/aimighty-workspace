@@ -125,3 +125,21 @@ test("the Gen composer keeps the phone floors", async ({ page }, info) => {
   expect(await smallTargets(page, ".gx-gen"), "targets under 44×44").toEqual([]);
   expect(await dimLabels(page, ".gx-gen"), "labels under #7C7C84").toEqual([]);
 });
+
+test("Gen › Edit hosts Seedance Edit on this workspace's credits, 2.5 by default, 2.0 on the picker", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { errors } = await open(page);
+  await page.getByTestId("gen-tab-edit").click();
+  await expect(page.getByTestId("gen-edit")).toContainText("Change something inside an existing shot");
+  const panel = page.getByTestId("seedance-edit");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveAttribute("data-model", "dreamina-seedance-2-5-260628");
+  await expect(panel).toContainText("Seedance 2.5 Edit");
+  await page.getByTestId("gen-edit-model-20").click();
+  await expect(page.getByTestId("seedance-edit")).toHaveAttribute("data-model", "dreamina-seedance-2-0-260128");
+  await expect(page.getByTestId("seedance-edit")).toContainText("Seedance 2.0 Edit");
+  await expect(page.getByTestId("gen-edit")).toContainText("untested here");
+  await page.getByRole("tab", { name: "Video" }).click();
+  await expect(page.getByTestId("gen-prompt")).toBeVisible();
+  expect(errors).toEqual([]);
+});

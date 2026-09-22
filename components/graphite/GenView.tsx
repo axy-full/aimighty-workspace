@@ -11,6 +11,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { COMPOSER_TYPES, TAKES_MAX, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
+import { SeedanceEditHost } from "./tools/SeedanceEditHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -38,7 +39,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
-  const [mode, setMode] = useState<"compose" | "analysis">("compose");
+  const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);
   const [characters, setCharacters] = useState<{ list: ConnectedCharacter[] | null; note: string }>({ list: null, note: "Reading the account’s characters…" });
@@ -137,9 +138,20 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
         <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
       ))}
+      <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "edit"} onClick={() => setMode("edit")} data-testid="gen-tab-edit"><span>Edit</span></button>
       <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button>
     </div>
   );
+  if (mode === "edit") {
+    return (
+      <div className="gx-gen gx-enter" data-testid="gen-view">
+        <div className="gx-gen-col">
+          <section className="gx-gen-card" aria-label="Output">{tabs}</section>
+          <SeedanceEditHost scope={scope} project={project} onBack={() => setMode("compose")} />
+        </div>
+      </div>
+    );
+  }
   if (mode === "analysis") {
     return (
       <div className="gx-gen gx-enter" data-testid="gen-view">

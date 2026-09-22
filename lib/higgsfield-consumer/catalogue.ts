@@ -11,7 +11,6 @@
  * This module is pure (no database, no network) so the browser can reuse the
  * same constraint logic; the one-hour cache lives in catalogue-cache.ts.
  */
-import { neutralModelText } from "../vendorNames";
 
 export const CONNECTED_OUTPUT_TYPES = ["image", "video", "audio", "3d"] as const;
 export type ConnectedOutputType = (typeof CONNECTED_OUTPUT_TYPES)[number];
@@ -90,7 +89,6 @@ export const RESERVED_PARAMETERS = Object.freeze([
   "preset_id",
   "declined_preset_id",
 ]);
-const PROVIDER_NAME = /\bhiggsfield\b/gi;
 export const MODEL_ID = /^[A-Za-z0-9_.-]{1,80}$/;
 export const MEDIA_ROLE = /^[a-z][a-z0-9_]{0,39}$/;
 export const PROMPT_LIMIT = 5000;
@@ -137,9 +135,14 @@ function text(value: unknown, max: number): string {
   if (typeof value !== "string" || value.length > max) return invalid();
   return value.replace(/\p{Cc}/gu, "").trim();
 }
-/** Product copy never names the provider; catalogue names are shown without it. */
+/**
+ * A catalogue model reads under its own name — GPT Image 2, Higgsfield Soul
+ * 2.0, DTC Ads, Google Veo 3.1. The neutral renaming (Forge, Persona, Vista…)
+ * was the never-name rule the owner retired with the Suites design on
+ * 21 September 2026; it hid OpenAI's models behind aliases.
+ */
 export function displayName(value: string) {
-  return neutralModelText(value.replace(PROVIDER_NAME, "").replace(/\s{2,}/g, " ").trim());
+  return value.replace(/\s{2,}/g, " ").trim();
 }
 
 /** Workflows the catalogue names only by their provider's brand. */

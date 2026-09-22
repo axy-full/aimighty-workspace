@@ -16,7 +16,8 @@ import type { AdmissionQuote } from "@/lib/admissionTypes";
 import styles from "./gen.module.css";
 import edit from "./seedance-edit.module.css";
 
-const MODEL = "dreamina-seedance-2-5-260628";
+const DEFAULT_MODEL = "dreamina-seedance-2-5-260628";
+const EDIT_LABEL: Record<string, string> = { "dreamina-seedance-2-5-260628": "Seedance 2.5 Edit", "dreamina-seedance-2-0-260128": "Seedance 2.0 Edit" };
 type Asset = {
   key: string;
   id: string;
@@ -43,13 +44,17 @@ export default function SeedanceEdit({
   onMade,
   initialSource,
   controller,
+  model = DEFAULT_MODEL,
 }: {
   project?: import("@/lib/generationProject").GenerationProject;
   onBack: () => void;
   onMade: () => void;
   initialSource?: string | null;
   controller?: Ref<GenAssetInputHandle>;
+  /** The Seedance engine that takes the edit task (lib/models.ts › supportsTasks); 2.5 by default. */
+  model?: string;
 }) {
+  const editLabel = EDIT_LABEL[model] ?? "Seedance Edit";
   const { signedIn, requestScope, workspace, email } = useSession();
   const signIn = useSignInHref();
   const toast = useToast();
@@ -119,7 +124,7 @@ export default function SeedanceEdit({
       : references;
   const body = {
     projectId: project?.productionProjectId ?? null,
-    model: MODEL,
+    model,
     task: "edit",
     prompt: `Edit @Video1: ${prompt.trim()}`,
     rawPrompt: prompt.trim(),
@@ -250,7 +255,7 @@ export default function SeedanceEdit({
     ? String(savedContext.sourceUrl ?? "")
     : source?.url;
   return (
-    <section className={styles.composer} aria-label="Seedance 2.5 Edit">
+    <section className={styles.composer} aria-label={editLabel} data-testid="seedance-edit" data-model={model}>
       <div className={styles.composerScroll}>
         <fieldset className={styles.fields} disabled={blocked}>
           <button
@@ -261,7 +266,7 @@ export default function SeedanceEdit({
           >
             <Film size={20} />
             <span>
-              <strong>Seedance 2.5 Edit</strong>
+              <strong>{editLabel}</strong>
               <small>Edit an existing shot</small>
             </span>
           </button>

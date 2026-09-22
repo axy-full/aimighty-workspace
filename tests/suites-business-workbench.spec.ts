@@ -14,6 +14,7 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-biz", productionProjectId: "prod-ws", shotMappings: {} });
 const VIDEO_MODEL = { id: "marketing_studio_video", name: "Marketing Studio", outputType: "video", aspectRatios: ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], durationRange: { min: 4, max: 20 }, medias: [{ name: "medias", roles: ["image", "start_image", "end_image"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }, { name: "mode" }, { name: "hook_id" }, { name: "setting_id" }, { name: "ad_reference_id" }, { name: "product_ids" }, { name: "avatar_ids" }, { name: "generate_audio" }] };
 const IMAGE_MODEL = { id: "marketing_studio_image", name: "Marketing Studio Image", outputType: "image", aspectRatios: ["auto", "1:1", "3:2", "9:16"], medias: [{ name: "medias", roles: ["image"] }], parameters: [{ name: "resolution", options: ["1k", "2k", "4k"] }] };
+const DTC_MODEL = { id: "ms_image", name: "DTC Ads", outputType: "image", aspectRatios: ["1:1", "9:16", "auto"], medias: [{ name: "medias", roles: ["image"], max: 14 }], parameters: [{ name: "style_id", type: "string" }, { name: "brand_kit_id", type: "string" }, { name: "resolution", options: ["1k", "2k", "4k"] }, { name: "quality", options: ["low", "medium", "high"] }, { name: "batch_size", type: "number" }, { name: "product_ids", type: "string_array" }] };
 
 async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAvailable?: boolean } = {}) {
   await signInLocally(page.request);
@@ -29,7 +30,7 @@ async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAva
   await page.route("**/api/higgsfield/consumer/generation", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     requests.push(body);
-    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: body.type === "image" ? [IMAGE_MODEL] : [VIDEO_MODEL], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
+    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: body.type === "image" ? [IMAGE_MODEL, DTC_MODEL] : [VIDEO_MODEL], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
     const input = body.input as Record<string, unknown> | undefined;
     const job = (status: string, credits: number) => ({ id: "9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d", draftId: "ws-biz", workflow: "generation", status, model: input?.model === "marketing_studio_image" ? IMAGE_MODEL : VIDEO_MODEL, input: input ?? requests.find((r) => r.action === "quote")?.input, workspaceId: "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b", workspaceName: "Northline wallet", quoteCredits: credits, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, createdAt: Date.now(), providerJobId: status === "quoted" ? null : "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", tool: null, result: null, originalAvailable: false, sources: [] });
     if (body.action === "quote") { quoted++; return route.fulfill({ json: { job: job("quoted", 40) } }); }
@@ -59,7 +60,8 @@ async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAva
       hook: [{ id: "h1", name: "Stop scrolling", meta: "hook · prepended to the prompt", previewUrl: null }],
       setting: [{ id: "s1", name: "Sunlit kitchen", meta: "setting · scene context", previewUrl: null }],
       ad_reference: [{ id: "r1", name: "Founder unboxing.mp4", meta: "ad reference · 18 s", previewUrl: null }],
-      brand_kit: [],
+      brand_kit: [{ id: "bk1", name: "Skoda kit", meta: "brand kit · completed", previewUrl: null }],
+      image_style: [{ id: "st_bold", name: "Bold launch", meta: "image style", previewUrl: null }, { id: "st_clean", name: "Clean studio", meta: "image style", previewUrl: null }],
     };
     return route.fulfill({ json: { connected: true, reads: types.map((type) => ({ type, available: options.setupAvailable ?? true, items: options.setupAvailable === false ? [] : items[type].map((i) => ({ ...(i as object), type })) })) } });
   });
@@ -114,11 +116,11 @@ test("Ads: the rules are disabled chips with a reason, the button wears the acco
   expect(errors).toEqual([]);
 });
 
-test("Image ads runs on Marketing Studio Image and says the DTC engine is not offered; aspect auto needs a still", async ({ page }, info) => {
+test("Image ads runs on Marketing Studio Image by default; aspect auto needs a still", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { requests } = await open(page, "dtc");
   await expect(page.getByTestId("image-ads-view")).toBeVisible();
-  await expect(page.getByTestId("dtc-unavailable")).toContainText("does not offer the DTC Ads Engine");
+  await expect(page.getByTestId("dtc-engine")).toBeVisible();
   /* Ad formats: the account's template catalogue, through the existing template client. */
   await expect(page.getByTestId("ad-formats")).toContainText("Ad formats");
   await expect(page.getByTestId("ad-formats-client").getByRole("list", { name: "Templates" }).getByRole("listitem")).toHaveCount(2);
@@ -139,7 +141,7 @@ test("Setup lists what the account lists, says what it does not, and Use in Ads 
   await open(page, "setup");
   await expect(page.getByTestId("setup-view")).toBeVisible();
   await expect(page.getByTestId("setup-hook")).toContainText("Stop scrolling");
-  await expect(page.getByTestId("setup-brand_kit")).toContainText("None yet.");
+  await expect(page.getByTestId("setup-brand_kit")).toContainText("Skoda kit");
   await page.getByTestId("setup-hook").getByRole("button", { name: /Stop scrolling/ }).click();
   await expect(page.getByTestId("setup-detail")).toContainText("Stop scrolling");
   await page.getByTestId("setup-detail").getByRole("button", { name: "Use in Ads" }).click();
@@ -154,4 +156,25 @@ test("when the account does not list setup items, the pages say so and take an i
   await page.getByTestId("ads-hook").getByRole("textbox", { name: "Hook id" }).fill("c0ffee00-0000-4000-8000-000000000001");
   await page.getByTestId("ads-hook").getByRole("textbox", { name: "Hook id" }).blur();
   await expect(page.getByTestId("ads-hook").getByRole("button", { name: /^c0ffee00/ })).toBeVisible();
+});
+
+test("DTC Ads: the ms_image engine needs a style (the ad format); brand kit, products, quality and batch go into the quote", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { requests } = await open(page, "dtc");
+  await page.getByTestId("dtc-engine-ms_image").click();
+  await expect(page.getByTestId("dtc-copy")).toContainText("a style (the ad format) is required");
+  await page.getByTestId("dtc-prompt").fill("Bold hero shot on marble");
+  await expect(page.getByTestId("dtc-blocked")).toHaveText("Pick a style — the ad format. DTC Ads has no default.");
+  await page.getByTestId("dtc-style").getByRole("button", { name: "Bold launch" }).click();
+  await expect(page.getByTestId("dtc-blocked")).toHaveCount(0);
+  await page.getByTestId("dtc-brand-kit").getByRole("button", { name: "Skoda kit" }).click();
+  await page.getByTestId("dtc-products").getByRole("button", { name: "Sneaker Runner" }).click();
+  await page.getByTestId("dtc-quality").getByRole("button", { name: "high" }).click();
+  await page.getByTestId("dtc-batch").getByRole("button", { name: "More" }).click();
+  await expect(page.getByTestId("dtc-batch-count")).toHaveText("2");
+  await expect.poll(() => {
+    const quote = [...requests].reverse().find((r) => r.action === "quote") as { input?: { model: string; parameters: Record<string, unknown> } } | undefined;
+    return quote?.input?.model === "ms_image" ? quote.input.parameters : null;
+  }).toEqual({ aspect_ratio: "1:1", resolution: "1k", style_id: "st_bold", quality: "high", batch_size: 2, brand_kit_id: "bk1", product_ids: ["p1"] });
+  await expect(page.getByTestId("dtc-generate")).toContainText("40");
 });

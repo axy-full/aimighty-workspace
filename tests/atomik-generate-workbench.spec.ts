@@ -129,11 +129,11 @@ test("Generate picks a catalogue model, quotes in connected credits, approves th
   await expect(panel.getByText("17 3d models", { exact: false })).toBeVisible();
   await workflows.getByRole("button", { name: "Image", exact: true }).click();
   await expect(panel.getByText("34 image models", { exact: false })).toBeVisible();
-  expect((await panel.innerText()).toLowerCase()).not.toContain("higgsfield");
   const model = panel.getByRole("combobox", { name: "Generate model", exact: true });
   await model.selectOption("nano_banana_2");
   const selected = panel.getByLabel("Selected model", { exact: true });
-  await expect(selected.getByText("Image 2", { exact: true })).toBeVisible();
+  /* Catalogue models read under their own names since the never-name rule was retired (21 September). */
+  await expect(selected.getByText("Nano Banana 2", { exact: true })).toBeVisible();
   await expect(selected).toContainText("auto · 1:1 · 3:2");
   await expect(selected).toContainText("image_references, mask");
   // Settings are generated from the model's declared parameters.
@@ -154,7 +154,7 @@ test("Generate picks a catalogue model, quotes in connected credits, approves th
   await quoteButton.click();
   const quote = panel.getByLabel("Connected-credit quote", { exact: true });
   await expect(quote.getByText("9 connected credits · Studio wallet", { exact: true })).toBeVisible();
-  await expect(quote).toContainText("Image · Image 2 · resolution 2k · aspect ratio 1:1 · 1 reference file");
+  await expect(quote).toContainText("Image · Nano Banana 2 · resolution 2k · aspect ratio 1:1 · 1 reference file");
   await noOverflow(page);
   const quoted = state.posts.find((body) => body.action === "quote")!;
   expect(quoted.input).toEqual({ type: "image", model: "nano_banana_2", prompt: "A plain bottle on a clean studio background.", parameters: { resolution: "2k", aspect_ratio: "1:1" }, medias: [{ role: "image_references", source: { uploadId: "still-original" } }] });
@@ -255,7 +255,6 @@ test("explainer styles are browsable on request and clearly not runnable: nothin
   await expect(panel.getByRole("button", { name: /quote|generate/i })).toHaveCount(0);
   await expect(panel.locator("img, video")).toHaveCount(0);
   expect(state.posts.map((body) => body.action)).toEqual(["catalogue", "explainer-presets"]);
-  expect((await panel.innerText()).toLowerCase()).not.toMatch(/higgsfield|supercomputer/);
   await noOverflow(page);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

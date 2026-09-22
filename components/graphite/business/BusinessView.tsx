@@ -4,7 +4,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import {
-  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_UNAVAILABLE, IMAGE_AD_RESOLUTIONS, IMAGE_ADS_MODEL,
+  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, isDtc,
   INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_TYPES, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock, withAdReference, withMode, withSetup,
   type AdMediaRole, type AdMode, type AdsState, type ImageAdsState, type SetupItem, type SetupType,
 } from "@/lib/shell/business";
@@ -255,15 +255,23 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const ws = useWorkspace();
   const [s, set] = useState<ImageAdsState>(INITIAL_IMAGE_ADS);
   const job = useConnectedJob(project?.id ?? null);
-  const model: CatalogueModel | undefined = business.models[IMAGE_ADS_MODEL];
+  const dtc = isDtc(s);
+  const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
+  /* DTC needs the account's styles (the ad formats), brand kits and products; read once the engine is chosen. */
+  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading;
+  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading) void readSetup(["image_style", "brand_kit", "product"]); }, [dtc, connected, hasStyles, setupLoading, readSetup]);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
   const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
-    type: "image", model: IMAGE_ADS_MODEL, prompt: s.prompt.trim(), parameters: { aspect_ratio: s.aspect, resolution: s.resolution },
+    type: "image", model: s.engine, prompt: s.prompt.trim(),
+    parameters: {
+      aspect_ratio: s.aspect, resolution: s.resolution,
+      ...(isDtc(s) ? { style_id: s.styleId!, quality: s.quality, batch_size: s.batch, ...(s.brandKitId ? { brand_kit_id: s.brandKitId } : {}), ...(s.productIds.length ? { product_ids: s.productIds } : {}) } : {}),
+    },
     medias: s.medias.map((m) => ({ role: "image", source: m.id.startsWith("generation:") ? { genId: m.id.slice("generation:".length) } : { uploadId: m.id.slice("upload:".length) } })),
-  } : null, [project, blocked, s]);
+  } as ConsumerGenerationInput : null, [project, blocked, s]);
   const inputKey = JSON.stringify(input);
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
   useEffect(() => {
@@ -276,7 +284,38 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
         <p className="bz-intro">A branded ad image: the prompt, an optional product, avatar and up to 14 reference stills.</p>
-        <p className="gx-reason" data-testid="dtc-unavailable">{DTC_UNAVAILABLE}</p>
+        <div className="gx-gen-row" data-testid="dtc-engine">
+          <span className="gx-eyebrow" data-functional-label="">Engine</span>
+          <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Image ads engine">
+            {IMAGE_AD_ENGINES.map(([id, label]) => (
+              <button key={id} type="button" role="tab" className="gx-seg-btn" aria-selected={s.engine === id} onClick={() => set({ ...s, engine: id })} data-testid={`dtc-engine-${id}`}><span>{label}</span></button>
+            ))}
+          </div>
+          {dtc ? <p className="gx-hint" data-testid="dtc-copy">{DTC_COPY}</p> : null}
+        </div>
+        {dtc ? (<>
+          <SetupPicker label="Style" note="the ad format · required, no default" type="image_style" business={business} value={s.styleId} onPick={(id) => set({ ...s, styleId: id })} testId="dtc-style" />
+          <SetupPicker label="Brand kit" note="optional · a completed kit" type="brand_kit" business={business} value={s.brandKitId} onPick={(id) => set({ ...s, brandKitId: id })} testId="dtc-brand-kit" />
+          <div className="gx-gen-row" data-testid="dtc-products">
+            <span className="gx-eyebrow" data-functional-label="">Products<span className="bz-note"> · up to {DTC_PRODUCTS_MAX}</span></span>
+            <div className="gx-chips" role="group" aria-label="Products">
+              {(business.setup.reads.product?.items ?? []).map((p) => {
+                const on = s.productIds.includes(p.id);
+                return <button key={p.id} type="button" className="gx-chip" aria-pressed={on} title={p.meta} onClick={() => set({ ...s, productIds: on ? s.productIds.filter((id) => id !== p.id) : [...s.productIds, p.id].slice(0, DTC_PRODUCTS_MAX) })}>{p.name}</button>;
+              })}
+              {business.setup.reads.product && !business.setup.reads.product.items.length ? <span className="cw-dim">No products on the account yet.</span> : null}
+            </div>
+          </div>
+          <Chips label="Quality" note="affects cost" options={DTC_QUALITIES} value={s.quality} onPick={(v) => set({ ...s, quality: v })} testId="dtc-quality" />
+          <div className="gx-gen-row" data-testid="dtc-batch">
+            <span className="gx-eyebrow" data-functional-label="">Batch<span className="bz-note"> · {DTC_BATCH.min}–{DTC_BATCH.max} images per job · cost scales</span></span>
+            <div className="gx-stepper" role="group" aria-label="Images per job">
+              <button type="button" aria-label="Fewer" disabled={s.batch <= DTC_BATCH.min} onClick={() => set({ ...s, batch: s.batch - 1 })}>–</button>
+              <span data-testid="dtc-batch-count">{s.batch}</span>
+              <button type="button" aria-label="More" disabled={s.batch >= DTC_BATCH.max} onClick={() => set({ ...s, batch: s.batch + 1 })}>+</button>
+            </div>
+          </div>
+        </>) : null}
         {!connected && business.connection ? <p className="gx-reason">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
         <Chips label="Aspect" options={aspects} value={s.aspect} onPick={(v) => set({ ...s, aspect: v })} testId="dtc-aspect" />
         <Chips label="Resolution" options={resolutions} value={s.resolution} onPick={(v) => set({ ...s, resolution: v as ImageAdsState["resolution"] })} testId="dtc-resolution" />
@@ -308,8 +347,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         ) : <p className="gx-reason" role="status">Save your project first.</p>}
       </section>
       <section className="gx-gen-results" aria-label="About">
-        <div className="gx-gen-results-head"><span className="gx-panel-title">Marketing Studio Image</span></div>
-        <p className="cw-dim">Aspect auto needs a reference still; a prompt or at least one reference is required. Priced by the account before it runs.</p>
+        <div className="gx-gen-results-head"><span className="gx-panel-title">{dtc ? "DTC Ads" : "Marketing Studio Image"}</span></div>
+        <p className="cw-dim">{dtc ? "A style is required; a completed brand kit is optional; up to four products; 1–20 images per job. Priced by the account before it runs." : "Aspect auto needs a reference still; a prompt or at least one reference is required. Priced by the account before it runs."}</p>
       </section>
     </div>
   );

@@ -160,7 +160,7 @@ test("Upscale image runs as a tool preset: one image source, declared settings o
   await expect(panel.getByRole("textbox", { name: "Generate prompt", exact: true })).toHaveCount(0);
   const model = panel.getByRole("combobox", { name: "Generate model", exact: true });
   await expect(model).toHaveValue("bytedance_image_upscale");
-  await expect(model.locator("option")).toHaveText(["Choose a model for Upscale image", "Image Upscale", "Precision Upscale"]);
+  await expect(model.locator("option")).toHaveText(["Choose a model for Upscale image", "Bytedance Image Upscale", "Topaz"]);
   await expect(panel.getByText("2 models for Upscale image", { exact: false })).toBeVisible();
   expect((await panel.innerText()).toLowerCase()).not.toContain("higgsfield");
   const settings = panel.getByRole("group", { name: "Model settings", exact: true });
@@ -178,15 +178,15 @@ test("Upscale image runs as a tool preset: one image source, declared settings o
   await model.selectOption("topaz_image");
   await expect(panel.getByText("Upscale image needs one image from this project.", { exact: true })).toBeVisible();
   await useSource(page, "upload:still-original");
-  await expect(panel.getByText("Precision Upscale requires the setting “output_width”.", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Topaz requires the setting “output_width”.", { exact: true })).toBeVisible();
   await settings.getByRole("spinbutton", { name: "output width", exact: true }).fill("2048");
   await settings.getByRole("spinbutton", { name: "output height", exact: true }).fill("2048");
   const card = await runTool(page, state, "Bottle · upscaled");
-  await expect(card).toContainText("Upscale image · Precision Upscale");
+  await expect(card).toContainText("Upscale image · Topaz");
   await expect(card.getByRole("img")).toHaveAttribute("src", /\/api\/media\/gen_hfc_a{40}$/);
   const quoted = state.posts.find((body) => body.action === "quote")!;
   expect(quoted.input).toEqual({ type: "image", model: "topaz_image", prompt: "", parameters: { output_width: 2048, output_height: 2048 }, medias: [{ role: "image_references", source: { uploadId: "still-original" } }], tool: { name: "upscale_image", model: "topaz_image" } });
-  expect(state.project.assets.at(-1)).toMatchObject({ name: "Bottle · upscaled", kind: "image", mime: "image/png", category: "Tools", description: "Upscale image · Precision Upscale · 9 connected credits" });
+  expect(state.project.assets.at(-1)).toMatchObject({ name: "Bottle · upscaled", kind: "image", mime: "image/png", category: "Tools", description: "Upscale image · Topaz · 9 connected credits" });
   expect(state.posts.map((body) => body.action)).toEqual(["catalogue", "quote", "submit", "status", "save-project"]);
   // Back to a workflow: the prompt returns and the tool is cleared.
   await panel.getByRole("group", { name: "Generate workflow", exact: true }).getByRole("button", { name: "Image", exact: true }).click();

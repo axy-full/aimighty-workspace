@@ -25,7 +25,7 @@ const rehearse = z.object({ action: z.literal("quote-rehearsal"), idempotencyKey
 const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) }).strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 /** FINAL_SPEC §2.3: the account's setup items, by type; read-only, never billed. */
-const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(6).optional() }).strict();
+const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(SETUP_TYPE_IDS.length).optional() }).strict();
 const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll, setup]);
 function problem(error: unknown) {
   if (error instanceof ConsumerOriginalError)
