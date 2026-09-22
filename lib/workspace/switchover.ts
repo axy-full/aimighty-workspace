@@ -52,7 +52,12 @@ export const NEW_SHELL = "new";
  * carry no `shell` param — without a cookie, the second click would bounce
  * the person back out of the surface they just asked for.
  */
-export const SHELL_COOKIE = "particl_shell";
+/**
+ * The name carries the release: a "previous workspace" choice remembered
+ * before the Suites cut-over (`particl_shell`) must not keep anyone — a phone
+ * especially — on the old site now. A fresh `?shell=legacy` writes this one.
+ */
+export const SHELL_COOKIE = "particl_shell_suites";
 /** One release. Long enough to finish a job, short enough to expire itself. */
 export const SHELL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
