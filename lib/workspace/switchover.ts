@@ -4,17 +4,17 @@ import {
   suiteHref,
   type SuiteId,
 } from "@/lib/suites";
-import { WORKSPACE_PATH } from "./navigation";
 import { firstPage, PAGE_ALIASES, resolvePageId, resolveSuite } from "./pages";
 import type { PageId, Suite } from "./types";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The switch-over.
 
-   The redesigned workspace lives at /workspace. This module is the only
-   place that knows the old entry points map onto it: which legacy URL means
-   which suite and page, which way back a person has for one release, and the
-   single flag that puts the old shell in front again.
+   The Particl Suites shell lives at /suites (the redesigned workspace it
+   grew out of stays at /workspace). This module is the only place that knows
+   the old entry points map onto it: which legacy URL means which suite and
+   page, which way back a person has for one release, and the single flag
+   that puts the old shell in front again.
 
    Nothing here decides anything about a viewport. The mapping is pure so it
    can be unit-tested both ways; the device decision belongs to the client
@@ -31,6 +31,16 @@ import type { PageId, Suite } from "./types";
  * Documented in docs/workspace-switchover.md.
  */
 export const WORKSPACE_IS_DEFAULT = true;
+
+/**
+ * Where the old entry points land since 22 September 2026: the Particl Suites
+ * shell (`/suites`, FINAL_SPEC), on every device — its phone layer and Studio
+ * home replaced the 19 September "phones keep today's surfaces" decision. The
+ * redesigned workspace stays reachable at its own URL (/workspace); the old
+ * shell stays one `?shell=legacy` away.
+ */
+export const SHELL_PATH = "/suites";
+export const SHELL_ON_PHONES = true;
 
 /** `?shell=legacy` asks for the old shell; `?shell=new` cancels that. */
 export const SHELL_PARAM = "shell";
@@ -165,7 +175,7 @@ export function workspaceUrlFor(
   }
   for (const [key, value] of from) if (!CONSUMED.has(key)) to.append(key, value);
   /* The hash the old URL carried wins over a section derived from `page`. */
-  return `${WORKSPACE_PATH}?${to.toString()}${hash}`;
+  return `${SHELL_PATH}?${to.toString()}${hash}`;
 }
 
 /* ── Workspace state → legacy URL (the way back) ───────────────────────── */

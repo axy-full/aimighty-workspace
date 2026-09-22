@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
-import { LEGACY_SHELL, PHONE_QUERY, SHELL_COOKIE, SHELL_PARAM } from "../lib/workspace/switchover";
+import { LEGACY_SHELL, SHELL_COOKIE, SHELL_PARAM } from "../lib/workspace/switchover";
 
 /**
  * The switch-over: the redesigned workspace is the default surface on
@@ -62,7 +62,8 @@ test("every old deep link lands on the page that now holds its work", async ({ p
     { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "Deliver", suite: "particl" },
     /* Stage ids retired before this change still resolve. */
     { from: `/workbench?project=${PROJECT}&stage=script`, page: /[?&]page=brief(&|$)/, title: "Brief & Script", suite: "particl" },
-    { from: `/atomik?project=${PROJECT}&page=generate`, page: /[?&]page=generate(&|$)/, title: "Generate", suite: "atomik" },
+    /* The Suites shell folds the old Generate page into Agent (lib/shell/ia.ts). */
+    { from: `/atomik?project=${PROJECT}&page=generate`, page: /[?&]page=generate(&|$)/, title: "Agent", suite: "atomik" },
     { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Runs", suite: "atomik" },
     { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: "Motion Transfer", suite: "subatomik" },
     { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: "Object Swap", suite: "subatomik" },
@@ -71,7 +72,7 @@ test("every old deep link lands on the page that now holds its work", async ({ p
 
   for (const one of cases) {
     await page.goto(one.from);
-    await expect(page, one.from).toHaveURL(/^[^?]*\/workspace\?/);
+    await expect(page, one.from).toHaveURL(/^[^?]*\/suites\?/);
     await expect(page, one.from).toHaveURL(one.page);
     await expect(page, one.from).toHaveURL(new RegExp(`[?&]suite=${one.suite}(&|$)`));
     await expect(page, one.from).toHaveURL(new RegExp(`[?&]project=${PROJECT}(&|$)`));
@@ -86,9 +87,11 @@ test("a bare old URL opens the workspace home, and a Moleculr section arrives as
 
   for (const from of ["/", `/workbench?project=${PROJECT}`]) {
     await page.goto(from);
-    await expect(page, from).toHaveURL(/\/workspace\?/);
+    await expect(page, from).toHaveURL(/\/suites\?/);
     await expect(page, from).not.toHaveURL(/[?&]page=/);
-    await expect(page.getByRole("heading", { name: "Pick a project to work in" })).toBeVisible();
+    /* The Suites shell has no project-picker home: Studio opens on its first page. */
+    await expect(page.locator(".gx"), from).toBeVisible();
+    await expect(page.getByTestId("page-title"), from).toHaveText("Brief & Script");
   }
 
   await page.goto(`/workbench?project=${PROJECT}&suite=moleculr&page=brand`);
@@ -128,95 +131,24 @@ test("the back button leaves the redirect alone instead of bouncing", async ({ p
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
 });
 
-/* ── Phones: nothing changed ───────────────────────────────────────────── */
+/* ── Phones: they switch too (22 September) ────────────────────────────── */
 
-test("phones keep today's surfaces at today's URLs", async ({ page }, info) => {
+test("phones land on the Suites shell as well, at the same mapped URLs", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await signedIn(page);
 
-  for (const from of [
-    `/workbench?project=${PROJECT}&stage=canvas`,
-    `/atomik?project=${PROJECT}&page=runs`,
-    `/subatomik?project=${PROJECT}&page=motion-transfer`,
-    "/",
-  ]) {
+  for (const [from, title] of [
+    [`/workbench?project=${PROJECT}&stage=canvas`, "Rig"],
+    [`/subatomik?project=${PROJECT}&page=motion-transfer`, "Motion Transfer"],
+    ["/", "Brief & Script"],
+  ] as const) {
     await page.goto(from);
-    /* The URL is untouched: no redirect, no `shell` param, no /workspace. */
-    await expect(page, from).toHaveURL(new RegExp(from.replace(/[?]/g, "\\?") + "$"));
-    await expect(page.locator(".pxw"), from).toHaveCount(0);
-    await expect(page.getByTestId("switchover-note"), from).toHaveCount(0);
+    await expect(page, from).toHaveURL(/\/suites\?/);
+    await expect(page.getByTestId("page-title"), from).toHaveText(title);
+    /* The glass tab bar is the portrait phone's; a phone held landscape keeps the header's tabs. */
+    if (info.project.name !== "workbench-844x390") await expect(page.getByTestId("tabbar"), from).toBeVisible();
+    await expect(legacyShell(page), from).toHaveCount(0);
   }
-  /* /workspace itself now renders the phone shell (wave M-A) — the gate above
-     is what still keeps phones on today's surfaces at today's URLs, and that
-     redirect flips in its own PR. */
-  await page.goto(`/workspace?project=${PROJECT}&suite=particl&page=rig`);
-  await expect(page).toHaveURL(/\/workspace\?/);
-  await expect(page.getByTestId("phone-shell")).toBeVisible();
-});
-
-test("a late viewport change never redirects a phone", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  await signedIn(page);
-
-  const from = `/workbench?project=${PROJECT}&stage=canvas`;
-  const stayed = new RegExp(from.replace(/[?]/g, "\\?") + "$");
-  await page.goto(from);
-  await expect(page).toHaveURL(stayed);
-  await expect(legacyShell(page).first()).toBeVisible();
-
-  /* The viewport grows past every clause of PHONE_QUERY inside this one
-     document — what a landscape phone does when a keyboard closes, browser
-     chrome collapses or a dev overlay appears. The media query is asserted to
-     have actually flipped, so this is a decision the gate could have re-taken
-     rather than a race that might not have run. */
-  await page.setViewportSize({ width: 1440, height: 900 });
-  /* Long enough for the redirect this used to do: it replaced the document as
-     soon as the query changed. */
-  await page.waitForTimeout(1_000);
-  await expect(page).toHaveURL(stayed);
-  await expect(page.locator(".pxw")).toHaveCount(0);
-  await expect(page.getByTestId("switchover-note")).toHaveCount(0);
-  await expect(legacyShell(page).first()).toBeVisible();
-  /* And the query really did flip under the gate, so what was proved above is
-     a decision the gate declined to re-take, not a change it never saw. */
-  expect(await page.evaluate((query) => window.matchMedia(query).matches, PHONE_QUERY)).toBe(false);
-
-  /* Latched per document, not per device: reloading at the new size is a fresh
-     decision, and at 1440×900 that decision is the workspace. */
-  await page.reload();
-  await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
-});
-
-test("the decision is taken while the document parses, not whenever hydration lands", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  await signedIn(page);
-
-  /* CI's shape, made deterministic: a cold dev compile lands hydration many
-     seconds after the document is readable, so a decision taken at first
-     render is taken from whatever the viewport has become by then. Holding the
-     client bundle back reproduces that exactly. */
-  await page.route(/\/_next\/static\/.*\.js/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 4_000));
-    await route.continue();
-  });
-
-  const from = `/workbench?project=${PROJECT}&stage=canvas`;
-  const stayed = new RegExp(from.replace(/[?]/g, "\\?") + "$");
-  await page.goto(from, { waitUntil: "commit" });
-  /* The answer is already recorded, by the inline script in the HTML, before
-     any of this page's JavaScript has run. */
-  await expect
-    .poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>).__pxwDevice ?? null))
-    .toBe("phone");
-
-  await page.setViewportSize({ width: 1440, height: 900 });
-  /* Past the delay, so hydration happens here — at desktop size, with the
-     phone answer already taken. */
-  await page.waitForTimeout(8_000);
-  await expect(page).toHaveURL(stayed);
-  await expect(page.locator(".pxw")).toHaveCount(0);
-  await expect(legacyShell(page).first()).toBeVisible();
 });
 
 /* ── The escape hatch ──────────────────────────────────────────────────── */

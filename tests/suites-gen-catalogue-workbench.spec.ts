@@ -111,7 +111,8 @@ test("the quote carries the entry's settings and the reference role; Auto sends 
   await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour");
   await page.getByTestId("gen-ref-role").click();
   await expect(page.getByTestId("gen-ref-role")).toHaveText("end_image");
-  await expect.poll(() => (quotes.at(-1) as { input: { model: string } }).input.model).toBe("seedance_2_5");
+  /* Wait for the quote that carries the cycled role, not merely the first Seedance one. */
+  await expect.poll(() => { const last = quotes.at(-1) as { input: { model: string; medias: { role: string }[] } }; return `${last.input.model}:${last.input.medias[0]?.role}`; }).toBe("seedance_2_5:end_image");
   quote = quotes.at(-1) as typeof quote;
   /* The 6 s picked for Veo is inside Seedance's range, so it is kept; the resolution is the entry's first. */
   expect(quote.input.parameters).toEqual({ aspect_ratio: "16:9", duration: 6, resolution: "480p" });

@@ -15,10 +15,10 @@ export const viewport = { width: "device-width", initialScale: 1, viewportFit: "
 export const metadata = { title: "Particl" };
 
 /**
- * The Particl Suites shell (design/particl-suites/README.md). It lives at its
- * own route while it is built step by step; the switch-over gate makes it the
- * default once the last step lands. workspace.css rides along because the page
- * bodies it mounts today are the existing ones, inside the new chrome.
+ * The Particl Suites shell (design/particl-suites/README.md) — the surface
+ * every old entry point lands on since 22 September 2026
+ * (lib/workspace/switchover.ts › SHELL_PATH). workspace.css rides along because
+ * the page bodies it mounts today are the existing ones, inside the new chrome.
  */
 export default async function Suites({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);

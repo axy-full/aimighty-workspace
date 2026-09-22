@@ -8,6 +8,7 @@ import {
   PHONE_QUERY,
   SHELL_COOKIE,
   SHELL_COOKIE_MAX_AGE,
+  SHELL_ON_PHONES,
   SHELL_PARAM,
   shellCookieScript,
 } from "@/lib/workspace/switchover";
@@ -105,12 +106,14 @@ export default function SwitchoverGate({
        effects write the URL with history.replaceState (Studio.tsx). A soft
        navigation races that; a document replacement does not. It is also what
        /workspace already does when it hands a phone back. */
-    if (switching && device === "desktop") window.location.replace(target!);
+    /* Since 22 September the Suites shell has a phone layer of its own, so a
+       phone switches too and the device answer is not waited for. */
+    if (switching && (SHELL_ON_PHONES || device === "desktop")) window.location.replace(target!);
   }, [switching, target, device]);
 
   const cookie = <ShellCookie search={search} />;
   if (!switching) return <>{cookie}{children}</>;
-  if (device === "desktop") return <><SwitchNote target={target!} />{cookie}</>;
+  if (SHELL_ON_PHONES || device === "desktop") return <><SwitchNote target={target!} />{cookie}</>;
   if (device === "phone") return <>{cookie}{children}</>;
   return (
     <div data-pxw-switch="pending">
@@ -134,7 +137,7 @@ function ShellCookie({ search }: { search: string }) {
 function SwitchNote({ target }: { target: string }) {
   return (
     <div className="pxw-switch-note" role="status" data-testid="switchover-note">
-      <p className="pxw-switch-note-line">Opening the workspace…</p>
+      <p className="pxw-switch-note-line">Opening Particl…</p>
       <a className="pxw-switch-note-link" href={target}>
         Continue
       </a>

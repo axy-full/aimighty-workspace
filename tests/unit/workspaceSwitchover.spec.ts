@@ -42,7 +42,7 @@ test("every old Particl stage, including its retired aliases, opens the page tha
   };
   for (const stage of LEGACY_PAGES.particl) {
     const url = at("/workbench", `project=p1&stage=${stage.id}`);
-    expect(url.pathname).toBe("/workspace");
+    expect(url.pathname).toBe("/suites");
     expect(url.searchParams.get("project")).toBe("p1");
     expect(url.searchParams.get("suite")).toBe("particl");
     expect(url.searchParams.get("page")).toBe(expected[stage.id]);
@@ -92,7 +92,7 @@ test("every Moleculr section opens Marketing Studio with the section as the hash
 
 test("a Particl URL with no stage, and /, open the workspace home rather than a page", () => {
   for (const url of [at("/workbench"), at("/workbench", "project=p1"), at("/"), at("/", "project=p1")]) {
-    expect(url.pathname).toBe("/workspace");
+    expect(url.pathname).toBe("/suites");
     expect(url.searchParams.has("page")).toBe(false);
     expect(url.searchParams.get("suite")).toBe("particl");
   }
