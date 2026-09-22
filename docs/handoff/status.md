@@ -350,3 +350,15 @@ Files: `lib/higgsfield-consumer/{video-contract,generation-contract,generation-s
 ## 22 September — Enhance: a refused rewrite is not charged (branch `feat/enhance-refuse-unbilled`)
 
 `runPaidText` takes an `accept` verdict judged **before** the job settles. The enhance route passes `parseEnhanced`: a rewrite that dropped an `@name` citation, or an answer that is not a prompt, is saved (`paid_text_jobs.status='refused'`, the provider's real cost on the row and in `atomik_spend`) but the meter settles at zero — the workspace is not charged for text it cannot use, and the error says so (*… Nothing was charged.*). Nothing else reads `paid_text_jobs` statuses. Files: `lib/paidText.ts`, `app/api/prompt/enhance/route.ts`; test `tests/unit/paidEntryPoints.spec.ts` (+1).
+## 22 September — the connected workflows on the Studio pages (branch `feat/suites-workflows`)
+
+FINAL_SPEC §4 › Workflows, on the existing voice-tools route (`/api/higgsfield/consumer/audio-tools`: quote → the exact price → run → poll; a dubbed or reframed video is filed on the project, a report as a note) through the existing client (`components/suites/AtomikVoiceTools`) inside the shell's own frame:
+
+| Where | Tool |
+| --- | --- |
+| Studio › Edit | **Dub** (`dubbing`), **Change voice** (`voice_change`) |
+| Studio › Deliver | **Social cuts** (`reframe`, up to 60 s) |
+| Studio › Astra | **Draw to edit** — the account does not advertise `draw_to_video`, so the card is disabled with that reason inline |
+| Gen › Analysis tab | **Virality Predictor** (`video_analysis`, the account's report filed as a note; says *Video analysis is switched off for this platform* while `HF_CONSUMER_VIDEO_ANALYSIS_ENABLED` is unset) |
+
+Each host reads only this project's saved jobs and the account's tool flags, and shows the one reason a tool cannot run (project · owner · connection → *Open Engines* · suspension · the flag), in `lib/shell/workflows.ts › workflowReason`. Files: `lib/shell/workflows.ts`, `components/graphite/tools/WorkflowHost.tsx`, `SuitesShell.tsx` (the page extras slot), `GenView.tsx` (Analysis tab), `app/graphite.css`. Tests: `tests/unit/suitesWorkflows.spec.ts`, `tests/suites-workflows-workbench.spec.ts` (five viewports).
