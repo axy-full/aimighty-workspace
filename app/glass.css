@@ -1,0 +1,183 @@
+/* ── Glass (design/particl-suites/GLASS_SPEC.md §1–2) — the material, one layer
+   after app/graphite.css, app/flair.css and app/crew.css. Every `--gx-*` token
+   stays; this file adds `--gl-*` and swaps the surfaces. It writes only
+   background, border, box-shadow, border-radius and backdrop-filter — plus the
+   island geometry §4 names (the 10px gutters in place of the hairline grid,
+   the 64px toolbar, the 48px stage capsule, the 4px segment track) — and no
+   component logic. `backdrop-filter` is written unprefixed only: Turbopack's
+   CSS pipeline (Lightning CSS) turns a prefixed + unprefixed pair carrying a
+   var() into the -webkit- one alone, which Chromium ignores — the served CSS
+   in CI showed exactly that. The pipeline adds prefixes for its targets. Desktop rules sit above 768px; .gx the phone is GLASS_SPEC §3, .gx its own build step. tests/unit/glassCss.spec.ts holds the line. ────────── */
+.gx {
+  --gl-wallpaper: radial-gradient(1200px 700px at 12% -10%, #1D3A73 0%, rgba(29, 58, 115, 0) 60%),
+                  radial-gradient(1000px 600px at 95% 0%, #4A1E6B 0%, rgba(74, 30, 107, 0) 55%),
+                  radial-gradient(900px 700px at 50% 115%, #0E3F4F 0%, rgba(14, 63, 79, 0) 60%),
+                  linear-gradient(180deg, #07070C, #0B0B12);
+  --gl-panel: rgba(28, 28, 34, .55);
+  --gl-panel-2: rgba(28, 28, 34, .72);
+  --gl-sheet: rgba(28, 28, 34, .78);
+  --gl-overlay: rgba(24, 24, 30, .86);
+  --gl-capsule: rgba(28, 28, 34, .45);
+  --gl-blur: blur(40px) saturate(180%);
+  --gl-blur-sm: blur(12px);
+  --gl-blur-node: blur(24px) saturate(160%);
+  --gl-blur-port: blur(8px);
+  --gl-scrim: rgba(6, 6, 12, .45);
+  --gl-scrim-blur: blur(18px) saturate(140%);
+  --gl-edge: 1px solid rgba(255, 255, 255, .14);
+  --gl-edge-soft: 1px solid rgba(255, 255, 255, .12);
+  --gl-divider: rgba(255, 255, 255, .06);
+  --gl-spec: inset 0 1px 0 rgba(255, 255, 255, .20);
+  --gl-lift: 0 18px 50px rgba(0, 0, 0, .45);
+  --gl-lift-dialog: 0 24px 70px rgba(0, 0, 0, .55);
+  --gl-lift-overlay: 0 24px 70px rgba(0, 0, 0, .6);
+  --gl-fill-1: rgba(255, 255, 255, .06);
+  --gl-fill-2: rgba(255, 255, 255, .07);
+  --gl-fill-3: rgba(255, 255, 255, .03);
+  --gl-fill-border: rgba(255, 255, 255, .12);
+  --gl-fill-spec: inset 0 1px 0 rgba(255, 255, 255, .10);
+  --gl-hover: rgba(255, 255, 255, .13);
+  --gl-card-grad: linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .04));
+  --gl-thumb: linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .16));
+  --gl-thumb-shadow: 0 2px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12);
+  --gl-track-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 2px 6px rgba(0, 0, 0, .35);
+  --gl-dashed: 1px dashed rgba(255, 255, 255, .22);
+  --gl-dashed-fill: rgba(255, 255, 255, .04);
+  --gl-primary: linear-gradient(180deg, #5FAAFF, #0A84FF 60%, #0A6FE0);
+  --gl-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, .32), 0 8px 22px rgba(10, 132, 255, .35);
+  --gl-badge: rgba(20, 20, 26, .55);
+  --gl-new: linear-gradient(180deg, #5FAAFF, #0A84FF);
+  --gl-ring: 0 0 0 2px #0A84FF, 0 0 0 5px rgba(10, 132, 255, .22);
+  background: var(--gl-wallpaper);
+}
+/* No backdrop-filter: the panels go near-opaque and the layout stays. */
+@supports not (backdrop-filter: blur(1px)) {
+  .gx {
+    --gl-panel: rgba(28, 28, 34, .92);
+    --gl-panel-2: rgba(28, 28, 34, .92);
+    --gl-sheet: rgba(28, 28, 34, .92);
+    --gl-overlay: rgba(24, 24, 30, .92);
+    --gl-capsule: rgba(28, 28, 34, .92);
+    --gl-blur: none;
+    --gl-blur-sm: none;
+    --gl-blur-node: none;
+    --gl-blur-port: none;
+    --gl-scrim-blur: none;
+  }
+}
+
+/* ── Four islands on the wallpaper: toolbar, stage capsule, then Library ·
+   stage · Inspector with 10px gutters. The geometry needs a pointer and the
+   height to spend on it: a phone held sideways (coarse pointer, ~390px tall)
+   keeps the hairline grid under the glass until GLASS_SPEC §3 gives it its
+   own shell. ── */
+@media (min-width: 768px) and (pointer: fine) {
+  .gx .gx-header { height: 64px; margin: 10px 10px 0; border: var(--gl-edge); border-radius: 22px; }
+  .gx .gx-strip { height: 48px; margin: 10px 10px 0; border: var(--gl-edge-soft); border-radius: 999px; }
+  .gx .gx-body { gap: 10px; padding: 10px; background: transparent; }
+  .gx .gx-library, .gx .gx-main, .gx .gx-inspector { border: var(--gl-edge); border-radius: 22px; }
+  /* Narrow: Library and Inspector float over the stage, .gx inset 10px. */
+  .gx .gx-panel--overlay { top: 10px; bottom: 10px; border-radius: 22px; }
+  .gx .gx-panel--overlay.gx-library { left: 10px; }
+  .gx .gx-panel--overlay.gx-inspector { right: 10px; }
+}
+@media (min-width: 768px) {
+  /* Each island is panel + blur + edge + spec + lift. */
+  .gx .gx-header, .gx .gx-library, .gx .gx-main, .gx .gx-inspector { background: var(--gl-panel); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift); }
+  .gx .gx-strip { background: var(--gl-capsule); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift); }
+  .gx .gx-ws { background: transparent; }
+  /* The header aurora reads as a tint inside the glass (~35% / 28%). */
+  .gx .gx-aurora::before { background: color-mix(in srgb, var(--om-a) 47%, transparent); }
+  .gx .gx-aurora::after { background: color-mix(in srgb, var(--om-b) 47%, transparent); }
+  .gx .gx-panel--overlay { background: var(--gl-overlay); }
+  .gx .gx-panel--overlay.gx-library { box-shadow: var(--gl-spec), var(--gl-lift-overlay); }
+  .gx .gx-panel--overlay.gx-inspector { box-shadow: var(--gl-spec), var(--gl-lift-overlay); }
+  .gx .gx-scrim { background: var(--gl-scrim); backdrop-filter: var(--gl-scrim-blur); }
+  /* Hairlines are gone: the rows keep a .06 divider. */
+  .gx .gx-project, .gx .gx-pagehead, .gx .gx-palette-input-row, .gx .gx-sheet-head, .gx .gx-tool, .gx .wsx-row { border-color: var(--gl-divider); }
+  .gx .gx-facts { border-top-color: var(--gl-divider); border-bottom-color: var(--gl-divider); }
+  .gx .gx-ctx-sep, .gx .gx-strip-gap, .gx .gx-stage-group-head { background: var(--gl-divider); border-color: var(--gl-divider); }
+  .gx .gx-stage-group-head { background: transparent; }
+
+  /* ── Anything you press is a capsule. ── */
+  .gx .gx-hbtn, .gx .gx-primary, .gx .gx-chip, .gx .gx-tab, .gx .gx-pill, .gx .gx-search, .gx .gx-field, .gx .gx-toggle, .gx .gx-select, .gx .gx-model, .gx .gx-rowlink, .gx .gx-project-btn, .gx .gx-brand-mark, .gx .gx-seg, .gx .gx-seg-btn, .gx .gx-seg-btn::before, .gx .gx-ctx-item, .gx .gx-palette-row, .gx .gx-sheet-row, .gx .gx-popover-item, .gx .gx-badge, .gx .gx-play, .gx .gx-toast, .gx .gx-stepper, .gx .gx-ref, .gx .gx-back { border-radius: 999px; }
+  /* Icon buttons are 10px squares; .gx boxes with content keep 12–16. */
+  .gx .gx-asset-add, .gx .gx-ref-x, .gx .gx-insp-x { border-radius: 10px; }
+  .gx .gx-tool-tag, .gx .gx-ref-thumb, .gx .gx-project-tile { border-radius: 12px; }
+  .gx .gx-asset-thumb, .gx .gx-insp-card, .gx .gx-home-take-thumb, .gx .gx-home-take { border-radius: 12px; }
+  .gx .gx-asset, .gx .gx-well, .gx .gx-textarea, .gx .gx-enhanced, .gx .gx-stage-facts, .gx .gx-tool-group, .gx .gx-stage-group, .gx .gx-stage-work, .gx .wsx-pack, .gx .gx-popover { border-radius: 14px; }
+  .gx .gx-card, .gx .gx-gen-card, .gx .wsx-card, .gx .sk-row, .gx .bz-group, .gx .bz-detail, .gx .bz-rolecard, .gx .cw-goal, .gx .cw-msg, .gx .cw-member, .gx .cw-solution, .gx .vr-job, .gx .gx-home-card, .gx .gx-home-next { border-radius: 16px; }
+  .gx .gx-palette, .gx .gx-sheet, .gx .gx-ctx { border-radius: 18px; }
+
+  /* ── Fills: cards on the gradient, .gx inputs and tiles on fill-2, .gx wells dashed, .gx thumbnails on fill-3, .gx the selection ring at the thumbnail radius. ── */
+  .gx .gx-card, .gx .gx-gen-card, .gx .gx-asset, .gx .gx-insp-card, .gx .wsx-card, .gx .sk-row, .gx .bz-group, .gx .bz-detail, .gx .bz-rolecard, .gx .cw-goal, .gx .cw-msg, .gx .cw-member, .gx .cw-solution, .gx .vr-job, .gx .gx-popover, .gx .gx-stage-facts, .gx .gx-tool-group, .gx .gx-stage-group, .gx .gx-stage-work, .gx .gx-home-card, .gx .gx-home-take { background: var(--gl-card-grad); border: var(--gl-edge); box-shadow: var(--gl-spec); }
+  .gx .gx-insp-card { background: var(--gl-fill-3); box-shadow: none; }
+  .gx .gx-stage-grid { background: var(--gl-divider); }
+  .gx .gx-stage-card { background: var(--gl-fill-3); }
+  .gx button.gx-stage-card:hover { background: var(--gl-fill-1); }
+  .gx .gx-hbtn, .gx .gx-search, .gx .gx-field, .gx .gx-toggle, .gx .gx-model, .gx .gx-rowlink, .gx .gx-textarea, .gx .gx-ref, .gx .gx-stepper, .gx .wsx-pack, .gx .gx-project-tile, .gx .gx-avatar { background: var(--gl-fill-2); border: 1px solid var(--gl-fill-border); box-shadow: var(--gl-fill-spec); }
+  .gx .gx-select { background-color: var(--gl-fill-2); border: 1px solid var(--gl-fill-border); box-shadow: var(--gl-fill-spec); }
+  .gx .gx-chip { background: var(--gl-fill-1); border: 1px solid var(--gl-fill-border); }
+  .gx .gx-hbtn:hover, .gx .gx-search:hover, .gx .gx-model:hover, .gx .gx-rowlink:hover, .gx .gx-tool:hover, .gx .gx-popover-item:hover, .gx .gx-palette-row:hover, .gx .gx-palette-row[aria-selected="true"], .gx .gx-sheet-row:hover, .gx .gx-sheet-row[aria-selected="true"], .gx .gx-ctx-item:hover:not(:disabled), .gx .gx-ref-x:hover { background: var(--gl-hover); }
+  .gx .gx-hbtn[aria-pressed="true"], .gx .gx-toggle[aria-checked="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+  .gx .gx-asset-thumb, .gx .gx-ref-thumb, .gx .gx-home-take-thumb { background: var(--gl-fill-3); }
+  .gx .gx-asset-add { background: var(--gl-fill-2); }
+  .gx .gx-well { background: var(--gl-dashed-fill); border: var(--gl-dashed); }
+  .gx .gx-well[data-over="true"] { background: var(--gx-tint); border-color: var(--gx-accent); }
+  .gx .gx-asset[data-selected="true"] { border-color: var(--gx-accent); box-shadow: var(--gl-ring); }
+  .gx .gx-project-tile { background: linear-gradient(160deg, var(--poster-from, #3A3A40), var(--poster-to, #141416)); border: 1px solid rgba(255, 255, 255, .1); box-shadow: none; }
+  .gx .gx-avatar { backdrop-filter: var(--gl-blur-sm); box-shadow: 0 0 0 2px rgba(0, 0, 0, .55), 0 0 0 3px rgba(10, 132, 255, .45); }
+  .gx .gx-tool-tag { background: linear-gradient(180deg, color-mix(in srgb, var(--dept, #0A84FF) 33%, transparent), color-mix(in srgb, var(--dept, #0A84FF) 12%, transparent)); border: 1px solid color-mix(in srgb, var(--dept, #0A84FF) 40%, transparent); }
+
+  /* ── Badges on thumbnails: blurred capsules; .gx NEW on the blue. ── */
+  .gx .gx-badge { background: var(--gl-badge); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: var(--gl-blur-sm); }
+  .gx .gx-badge--new { background: var(--gl-new); border-color: transparent; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35); }
+  .gx .gx-play { background: var(--gl-badge); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: var(--gl-blur-sm); }
+
+  /* ── Primaries: the glass blue, .gx brighter on hover. ── */
+  .gx .gx-primary, .gx .gx-primary:hover { background: var(--gl-primary); box-shadow: var(--gl-primary-shadow); }
+  .gx .gx-gen-go.gx-primary { border-radius: 999px; }
+  .gx .gx-jobs { box-shadow: 0 0 16px rgba(10, 132, 255, .25); }
+
+  /* ── Segmented controls: the track capsule with the glass thumb. The suite
+     picker keeps its colour logic (glyph glow, .gx signature dot, .gx the coloured inset). ── */
+  .gx .gx-seg, .gx .gx-header .gx-seg { padding: 4px; background: var(--gl-fill-2); border: 1px solid var(--gl-fill-border); box-shadow: var(--gl-track-shadow); border-radius: 999px; }
+  .gx .gx-seg-btn::before, .gx .gx-seg:not(.gx-header .gx-seg) .gx-seg-btn::before { background: var(--gl-thumb); }
+  .gx .gx-seg:not(.gx-header .gx-seg) .gx-seg-btn[aria-selected="true"]::before { box-shadow: var(--gl-thumb-shadow); }
+  .gx .gx-tab[aria-current="page"] { background: var(--gx-tint); }
+
+  /* ── ⌘K palette, .gx model sheet, .gx context menu, .gx popover, .gx toast: panel-2 glass over the scrim. ── */
+  .gx .gx-veil { background: var(--gl-scrim); backdrop-filter: var(--gl-scrim-blur); }
+  .gx .gx-palette, .gx .gx-sheet, .gx .gx-ctx, .gx .gx-popover, .gx .gx-toast { background: var(--gl-panel-2); border: var(--gl-edge); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift-dialog); }
+
+  /* ── Rig (components/workspace/rig): glass node cards; .gx ports keep their ring
+     over a glass core. Edges, .gx lasso and wiring are untouched. ── */
+  .gx .pxw .pxw-graph-node { background: var(--gl-card-grad); border: var(--gl-edge); border-radius: 16px; backdrop-filter: var(--gl-blur-node); box-shadow: var(--gl-spec), 0 12px 32px rgba(0, 0, 0, .35); }
+  .gx .pxw .pxw-graph-node[data-selected] { background: linear-gradient(180deg, rgba(10, 132, 255, .22), rgba(10, 132, 255, .10)); border: 1.5px solid var(--gx-accent); border-radius: 16px; box-shadow: var(--gl-ring), 0 12px 32px rgba(0, 0, 0, .45); }
+  .gx .pxw .pxw-graph-node[data-wiring] { border-color: var(--pxw-atomik-gold); }
+  .gx .pxw .pxw-graph-port { background: var(--gl-panel-2); backdrop-filter: var(--gl-blur-port); box-shadow: 0 0 0 1px rgba(255, 255, 255, .14); }
+  .gx .pxw .pxw-graph-port[data-armed] { background: var(--gx-tint); border-color: var(--gx-accent); box-shadow: 0 0 0 4px rgba(10, 132, 255, .22); }
+}
+
+/* ── Phone (GLASS_SPEC §3): the top bar and the tab bar float as glass, the
+   sheets rise on --gl-sheet, and the scroll regions keep 110px clear of the
+   bar. Layout for the Home's tiles lives in flair.css; only the material and
+   the geometry the spec names are written here. ── */
+@media (max-width: 767px) {
+  .gx .gx-header { margin: max(10px, env(safe-area-inset-top)) 10px 0; border: var(--gl-edge); border-radius: 24px; background: var(--gl-panel); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift); }
+  .gx .gx-strip { margin: 8px 10px 0; border: var(--gl-edge-soft); border-radius: 999px; background: var(--gl-capsule); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec); }
+  .gx .gx-body { background: transparent; }
+  .gx .gx-main, .gx .gx-ws { background: transparent; }
+  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; height: 66px; padding: 6px; border: var(--gl-edge); border-radius: 999px; background: var(--gl-panel); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift); }
+  .gx .gx-tabbar-btn { border-radius: 999px; }
+  .gx .gx-tabbar-btn[aria-current="page"] { background: linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, .12)); box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .28); }
+  .gx .gx-tabbar-btn[aria-current="page"] .gx-tabbar-glow { background: transparent; box-shadow: none; }
+  .gx .gx-stage, .gx .gx-ws, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .gx-sheet-list, .gx .cw-room, .gx .cw-page { padding-bottom: 110px; }
+  .gx .gx-panel--overlay { background: var(--gl-overlay); }
+  .gx .gx-veil { background: var(--gl-scrim); backdrop-filter: var(--gl-scrim-blur); }
+  .gx .gx-sheet { background: var(--gl-sheet); backdrop-filter: var(--gl-blur); border-top: 1px solid rgba(255, 255, 255, .18); border-radius: 30px 30px 0 0; box-shadow: var(--gl-spec), var(--gl-lift-dialog); }
+  .gx .gx-sheet-row, .gx .gx-palette-row, .gx .gx-ctx-item, .gx .gx-popover-item, .gx .gx-hbtn, .gx .gx-primary, .gx .gx-chip, .gx .gx-tab, .gx .gx-pill, .gx .gx-search, .gx .gx-field, .gx .gx-toggle, .gx .gx-select, .gx .gx-model, .gx .gx-rowlink, .gx .gx-seg, .gx .gx-seg-btn, .gx .gx-seg-btn::before, .gx .gx-badge { border-radius: 999px; }
+  .gx .gx-ctx, .gx .gx-palette, .gx .gx-popover, .gx .gx-toast { background: var(--gl-panel-2); border: var(--gl-edge); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift-dialog); }
+  .gx .gx-primary, .gx .gx-primary:hover, .gx .gx-gen-go { background: var(--gl-primary); box-shadow: var(--gl-primary-shadow); }
+  .gx .gx-home-card, .gx .gx-home-next, .gx .gx-home-take, .gx .gx-gen-card, .gx .gx-asset, .gx .wsx-card, .gx .sk-row, .gx .bz-group, .gx .cw-goal, .gx .cw-msg, .gx .vr-job { background: var(--gl-card-grad); border: var(--gl-edge); box-shadow: var(--gl-spec); }
+}

@@ -29,6 +29,18 @@ export const AD_MEDIA_ROLES = ["image", "start_image", "end_image"] as const;
 export type AdMediaRole = (typeof AD_MEDIA_ROLES)[number];
 export const AD_MEDIA_MAX = 14;
 
+/**
+ * Not on this path: Click-to-Ad (`product: { url }`), `web_product_ids`,
+ * `specific_mode` / `storyboard_id` and `enhance_prompt` are the CLI's REST
+ * gateway parameters (FINAL_SPEC §2.1); the account's `generate` tool
+ * declares none of them for `marketing_studio_video`, and the server refuses
+ * a parameter the schema does not name. They return with the developer-API
+ * grant (`lib/higgsfield-consumer/developer-api.ts`), where products are
+ * fetched by URL as setup items first. `avatar_ids` (a plain UUID array) is
+ * this path's shape; `avatars: [{ id, type }]` is the gateway's.
+ */
+export const NOT_ON_THIS_PATH = ["product.url", "web_product_ids", "specific_mode", "storyboard_id", "enhance_prompt"] as const;
+
 export const WHY = {
   hookMode: "Hooks are valid only for UGC-family modes and never with an ad reference.",
   settingMode: "Settings are valid only for UGC-family modes and never with an ad reference.",
@@ -40,9 +52,6 @@ export type AdsState = {
   prompt: string;
   mode: AdMode;
   productId: string | null;
-  /** Click-to-Ad: a product page the account fetches and dedupes by URL. */
-  productUrl: string;
-  fromUrl: boolean;
   avatarId: string | null;
   hookId: string | null;
   settingId: string | null;
@@ -54,7 +63,7 @@ export type AdsState = {
   medias: { id: string; role: AdMediaRole; name: string; sourceId: string; origin: "upload" | "generation"; url: string }[];
 };
 export const INITIAL_ADS: AdsState = {
-  prompt: "", mode: "ugc", productId: null, productUrl: "", fromUrl: false, avatarId: null, hookId: null, settingId: null, adReferenceId: null,
+  prompt: "", mode: "ugc", productId: null, avatarId: null, hookId: null, settingId: null, adReferenceId: null,
   aspect: "9:16", duration: 15, resolution: "720p", audio: true, medias: [],
 };
 
@@ -86,8 +95,6 @@ export function adsBlock(state: AdsState, extra: { connected: boolean; hasProjec
   if (!extra.hasProject) return "Open a project first.";
   if (!extra.connected) return "Connect the account in Workspace › Engines.";
   if (!state.prompt.trim()) return "Write the prompt.";
-  if (state.fromUrl && !state.productUrl.trim()) return "Paste the product URL.";
-  if (state.fromUrl && !/^https?:\/\/\S+$/i.test(state.productUrl.trim())) return "That is not a product URL.";
   if ((state.hookId || state.settingId) && !takesSetup(state.mode)) return WHY.hookMode;
   if ((state.hookId || state.settingId) && state.adReferenceId) return WHY.adReference;
   if (state.medias.length > AD_MEDIA_MAX) return `Up to ${AD_MEDIA_MAX} reference stills.`;
@@ -107,7 +114,7 @@ export function adsParameters(state: AdsState, durationRange?: { min: number; ma
     duration,
     resolution: state.resolution,
     generate_audio: state.audio,
-    ...(state.productId && !state.fromUrl ? { product_ids: [state.productId] } : {}),
+    ...(state.productId ? { product_ids: [state.productId] } : {}),
     ...(state.avatarId ? { avatar_ids: [state.avatarId] } : {}),
     ...(state.hookId && takesSetup(state.mode) && !state.adReferenceId ? { hook_id: state.hookId } : {}),
     ...(state.settingId && takesSetup(state.mode) && !state.adReferenceId ? { setting_id: state.settingId } : {}),

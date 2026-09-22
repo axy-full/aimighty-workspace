@@ -43,7 +43,8 @@ test("desktop: aurora per view, glyph tabs with labels that clip below 1180px, f
   });
   await expect(page.getByTestId("header-aurora")).toBeAttached();
   expect(await tint()).toBe("rgba(10, 132, 255, 0.55)");
-  await expect(page.locator(".gx-header").first()).toHaveCSS("height", "60px");
+  /* 60px under the flair layer; the glass layer (GLASS_SPEC §2) makes the toolbar a 64px island. */
+  await expect(page.locator(".gx-header").first()).toHaveCSS("height", "64px");
 
   const suites = page.getByRole("tablist", { name: "Suites" });
   await expect(suites.getByRole("tab")).toHaveCount(6);
@@ -85,20 +86,20 @@ test("desktop: aurora per view, glyph tabs with labels that clip below 1180px, f
   expect(errors).toEqual([]);
 });
 
-test("phone: the glass tab bar routes Studio · Gen · Suites · Assets · More through the shell and keeps the floors", async ({ page }, info) => {
+test("phone: the glass tab bar routes Home · Gen · Suites · Assets · More through the shell and keeps the floors", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const errors = await open(page, "/suites?suite=studio&page=rig");
   const bar = page.getByTestId("tabbar");
   await expect(bar).toBeVisible();
-  await expect(bar.getByRole("button")).toHaveText(["Studio", "Gen", "Suites", "Assets", "More"]);
-  await expect(page.getByTestId("tabbar-studio")).toHaveAttribute("aria-current", "page");
+  await expect(bar.getByRole("button")).toHaveText(["Home", "Gen", "Suites", "Assets", "More"]);
+  await expect(page.getByTestId("tabbar-home")).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".gx-header").first()).not.toHaveCSS("overflow", "hidden");
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(6);
 
   await page.getByTestId("tabbar-gen").click();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(page.getByTestId("tabbar-gen")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("tabbar-studio")).not.toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("tabbar-home")).not.toHaveAttribute("aria-current", "page");
 
   await page.getByTestId("tabbar-suites").click();
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Business" })).toHaveAttribute("aria-selected", "true");
@@ -112,9 +113,10 @@ test("phone: the glass tab bar routes Studio · Gen · Suites · Assets · More 
   await expect(page.getByTestId("workspace-view")).toBeVisible();
   await expect(page.getByTestId("tabbar-more")).toHaveAttribute("aria-current", "page");
 
-  await page.getByTestId("tabbar-studio").click();
+  await page.getByTestId("tabbar-home").click();
   await expect(page.locator(".gx")).toHaveAttribute("data-suite", "studio");
-  await expect(page.getByTestId("tabbar-studio")).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("suite-home")).toBeVisible();
+  await expect(page.getByTestId("tabbar-home")).toHaveAttribute("aria-current", "page");
   expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
   expect(await smallTargets(page, ".gx-tabbar"), "targets under 44×44").toEqual([]);
   expect(errors).toEqual([]);

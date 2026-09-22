@@ -55,9 +55,18 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
   };
 }
 
-/** The phone's Studio home: the stages as cards. It shares Brief's backing page and sits outside the strip. */
+/**
+ * The phone's two screens outside the strip (GLASS_SPEC §3): `home` is the
+ * suite picker — "Where to?" — that the Home tab and the mark return to;
+ * `stages` is the Studio stage grid behind the Studio tile, with a Home back.
+ * Both share Brief's backing page.
+ */
 function withHome(suite: ShellSuite): ShellSuite {
-  return { ...suite, pages: [...suite.pages, { id: "home", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy: { suite: suite.legacy, page: suite.pages[0].legacy.page }, gapBefore: false, own: true, phoneOnly: true }] };
+  const legacy = { suite: suite.legacy, page: suite.pages[0].legacy.page };
+  return { ...suite, pages: [...suite.pages,
+    { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+    { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+  ] };
 }
 
 function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {

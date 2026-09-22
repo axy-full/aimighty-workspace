@@ -4,6 +4,7 @@ import { NODE_DEFS, operationsFor, resolveAsset } from "@/lib/workbench/node-gra
 import type { Asset, CanvasNode } from "@/lib/workbench/studio";
 import { mediaBands } from "@/lib/workspace/format";
 import { edgePath, graphEdges, graphLayout, GRAPH_PAD, type Box } from "@/lib/workspace/rig-graph";
+import { shotDropHandler } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
@@ -77,6 +78,7 @@ export function RigGraph() {
   const layout = useMemo(() => graphLayout(nodes), [nodes]);
   const edges = useMemo(() => graphEdges(nodes), [nodes]);
   const shotsById = useMemo(() => new Map(rig.shots.map((s) => [s.id, s])), [rig.shots]);
+  const [dropOver, setDropOver] = useState<string | null>(null);
   const assets = useMemo(() => (project ? [...project.assets, ...(project.sharedAssets ?? [])] : []), [project]);
   const selId = state.selKind === "shot" ? state.selId : null;
 
@@ -164,6 +166,8 @@ export function RigGraph() {
             const node = byId.get(card.id)!;
             const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
             const selected = !!shot && shot.id === selId;
+            /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
+            const dropAsset = shot ? shotDropHandler() : null;
             return (
               <div
                 key={card.id}
@@ -172,9 +176,13 @@ export function RigGraph() {
                 data-shape={NODE_DEFS[node.type].shape}
                 data-selected={selected || undefined}
                 data-wiring={wireFrom === card.id || undefined}
+                data-drop={dropOver === card.id || undefined}
                 role="group"
                 aria-label={`${NODE_DEFS[node.type].label}: ${node.title}`}
                 style={{ left: card.left, top: card.top, width: card.width }}
+                onDragOver={dropAsset ? (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(card.id); } } : undefined}
+                onDragLeave={dropAsset ? () => setDropOver((v) => (v === card.id ? null : v)) : undefined}
+                onDrop={dropAsset && shot ? (e) => { e.preventDefault(); setDropOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) dropAsset(id, { nodeId: shot.id, name: shot.name }); } : undefined}
               >
                 <Card
                   node={node}

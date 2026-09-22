@@ -2,7 +2,7 @@
  * The prototype's glyphs (Particl Suites.dc.html › ic), as React. Stroke
  * icons at 1.8, 24-unit box; the suite glyphs carry their suite's colour.
  */
-export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev";
+export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid";
 
 export function Glyph({ name, size = 16, color, className }: { name: GlyphName; size?: number; color?: string; className?: string }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color ?? "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, className, "aria-hidden": true, style: { display: "block" as const } };
@@ -19,6 +19,9 @@ export function Glyph({ name, size = 16, color, className }: { name: GlyphName; 
     case "wrench": return <svg {...p}><path d="M14.5 6.5a4 4 0 0 0 4.9 4.9L21 13l-8 8-3-3 8-8-1.6-1.6z" /><path d="M3 5l4 4M4 4l3 1" /></svg>;
     case "stack": return <svg {...p}><path d="M12 3l9 5-9 5-9-5z" /><path d="M3 13l9 5 9-5M3 17l9 5 9-5" /></svg>;
     case "chev": return <svg {...p}><path d="M9 6l6 6-6 6" /></svg>;
+    /* The phone's Home and Suites tabs (Particl Mobile iOS 27.dc.html › tab bar). */
+    case "home": return <svg {...p}><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" /></svg>;
+    case "grid": return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.8" /><rect x="14" y="3" width="7" height="7" rx="1.8" /><rect x="3" y="14" width="7" height="7" rx="1.8" /><rect x="14" y="14" width="7" height="7" rx="1.8" /></svg>;
   }
 }
 

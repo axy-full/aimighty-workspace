@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
@@ -271,21 +272,23 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
         {blocked ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{blocked}</p> : null}
-        <div className="gx-gen-cta">
-          <div className="gx-gen-takes" data-testid="gen-takes">
+        {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
+            sticky Generate (GLASS_SPEC §3) is the button and its one-line foot, nothing taller. */}
+        <div className="gx-gen-takes" data-testid="gen-takes">
             <span className="gx-hint">Takes</span>
             <div className="gx-stepper" role="group" aria-label="Takes per generate">
               <button type="button" aria-label="Fewer" disabled={state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
               <span data-testid="gen-takes-count">{state.count}</span>
               <button type="button" aria-label="More" disabled={state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
             </div>
-          </div>
+        </div>
+        <div className="gx-gen-cta">
           <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || submitting} aria-describedby={blocked ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
             {submitting ? "Submitting…" : buttonLabel}
           </button>
           <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}{model?.enhanceable && enhancer.auto && !isRawPrompt(state.prompt) ? " · enhanced on Higgsfield" : ""}</p>
-          <p className="gx-gen-foot">{composer.wording}</p>
         </div>
+        <p className="gx-gen-foot">{composer.wording}</p>
       </section>
 
       <section className="gx-gen-results" aria-label="Results">
@@ -321,7 +324,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
       </section>
 
-      {sheet ? (
+      {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`
+          (the sheet then rises inside the scroll region, under the phone's tab bar). It lands on the shell
+          root so the tokens still reach it. */}
+      {sheet ? createPortal(
         <div className="gx-veil" onClick={() => setSheet(false)} data-testid="model-sheet-veil">
           <div className="gx-sheet" role="dialog" aria-modal="true" aria-label="Choose a model" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSheet(false); } }}>
             <div className="gx-sheet-head">
@@ -346,7 +352,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               {!offered.length ? <p className="gx-empty">{state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}</p> : null}
             </div>
           </div>
-        </div>
+        </div>,
+        document.querySelector(".gx") ?? document.body,
       ) : null}
     </div>
   );

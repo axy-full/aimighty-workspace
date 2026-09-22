@@ -45,6 +45,38 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
   });
 }
 
+/** GLASS_SPEC §3 › Home: one tile per suite, its colour, its line (verbatim) and a live fact in mono. */
+export type SuiteTile = { id: "studio" | "gen" | "business" | "viral" | "atomik" | "crew"; label: string; color: string; line: string; fact: string };
+export type HomeFacts = {
+  /** Generations in flight (the running pill) and the default video engine's name. */
+  rendering: number; videoEngine: string;
+  /** Business › Ads defaults: the mode's label and the duration. */
+  adMode: string; adSeconds: number;
+  /** Viral defaults. */
+  viralResolution: string;
+  /** Plans waiting for the owner's word. */
+  awaiting: number;
+  /** Crew seats in this project; null until the roster answers. */
+  seats: number | null;
+};
+
+export function suiteTiles(cards: readonly StageCard[], facts: HomeFacts): SuiteTile[] {
+  const done = cards.filter((c) => c.status === "done").length;
+  return [
+    { id: "studio", label: "Studio", color: "#0A84FF", line: "Brief to delivery, eight stages.", fact: `${done} of ${cards.length} done` },
+    { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio, 3D — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} ready` },
+    { id: "business", label: "Business", color: "#FF9F0A", line: "Marketing Studio: product, presenter, ad.", fact: `${facts.adMode} · ${facts.adSeconds} s · quoted in Ads` },
+    { id: "viral", label: "Viral", color: "#FF453A", line: "Genjutsu: motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
+    { id: "atomik", label: "Atomik", color: "#30D158", line: "Plans, prices, waits for your word.", fact: `${facts.awaiting} awaiting approval` },
+    { id: "crew", label: "Crew", color: "#BF5AF2", line: "One Grok agent per department.", fact: facts.seats == null ? "seats loading" : `${facts.seats} ${facts.seats === 1 ? "seat" : "seats"}` },
+  ];
+}
+
+/** The Assets row under the tiles: `n in <project>`. */
+export function assetsRowLabel(items: readonly LibraryEntry[], projectName: string | null): string {
+  return `${items.length.toLocaleString("en-US")} in ${projectName ?? "this project"}`;
+}
+
 /** The first shot without a render, for the *Up next* card; null when every shot has one (or there are none). */
 export function upNext(project: Project | null): { id: string; index: number; name: string } | null {
   if (!project) return null;

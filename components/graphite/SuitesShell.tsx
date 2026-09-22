@@ -30,6 +30,7 @@ import { StageStrip } from "./StageStrip";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
+import { SuiteHome } from "./mobile/SuiteHome";
 import { STAGE_VIEW_PAGES, StageView } from "./StageView";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
@@ -181,11 +182,13 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 </>
               ) : (
                 <>
-                  {/* The phone's Studio home carries the project's name itself; the page head is the stage's. */}
-                  {shell.page.id === "home" && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
+                  {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
+                  {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
                     {shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
-                      <StudioHome key="home" project={project} items={items} />
+                      <SuiteHome key="home" project={project} items={items} />
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
+                      <StudioHome key="stages" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (

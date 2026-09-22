@@ -2,28 +2,28 @@
 import { useShell } from "@/lib/shell/state";
 import { Glyph, type GlyphName } from "./icons";
 
-type TabId = "studio" | "gen" | "suites" | "assets" | "more";
+type TabId = "home" | "gen" | "suites" | "assets" | "more";
 const TABS: { id: TabId; label: string; glyph: GlyphName }[] = [
-  { id: "studio", label: "Studio", glyph: "clap" },
+  { id: "home", label: "Home", glyph: "home" },
   { id: "gen", label: "Gen", glyph: "spark" },
-  { id: "suites", label: "Suites", glyph: "tag" },
+  { id: "suites", label: "Suites", glyph: "grid" },
   { id: "assets", label: "Assets", glyph: "stack" },
   { id: "more", label: "More", glyph: "panel" },
 ];
 
 /**
- * The phone's glass tab bar (Particl Mobile.dc.html › tab bar), shown below
- * 768px only. Every tab is a route the shell already has: Studio and Gen are
- * their views (Studio opens its phone home, the stages as cards), Suites is
- * the last non-Studio suite (Business until one is chosen), Assets opens the
- * Library's Assets tab, More is Workspace. The
- * header's suite tablist stays the one place a suite is picked.
+ * The phone's floating glass tab bar (GLASS_SPEC §3), shown below 768px
+ * only. Every tab is a route the shell already has: Home is the suite picker
+ * ("Where to?"), Gen its composer, Suites the last non-Studio suite
+ * (Business until one is chosen), Assets the Library's Assets tab, More the
+ * Workspace. Studio lives behind the Home tile, so the Studio pages keep
+ * Home lit. The header's suite tablist stays the one place a suite is picked.
  */
 export function TabBar() {
   const shell = useShell();
-  const active: TabId = shell.libOpen ? "assets" : shell.view === "gen" ? "gen" : shell.view === "workspace" ? "more" : shell.view === "crew" || shell.suite.id !== "studio" ? "suites" : "studio";
+  const active: TabId = shell.libOpen ? "assets" : shell.view === "gen" ? "gen" : shell.view === "workspace" ? "more" : shell.view === "crew" || shell.suite.id !== "studio" ? "suites" : "home";
   const go = (id: TabId) => {
-    if (id === "studio") shell.goSuite("studio", "home");
+    if (id === "home") shell.goSuite("studio", "home");
     else if (id === "gen") shell.goGen();
     else if (id === "suites") shell.goSuite(shell.view === "suite" && shell.suite.id !== "studio" ? shell.suite.id : "business");
     else if (id === "assets") shell.openLibrary("assets");

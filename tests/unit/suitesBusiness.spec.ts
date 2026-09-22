@@ -1,8 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   AD_DURATIONS, AD_MODES, INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_MODES, WHY, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock,
-  takesSetup, withAdReference, withMode, withSetup, type AdsState,
-} from "../../lib/shell/business";
+  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH } from "../../lib/shell/business";
 import { consumerVideoInputSchema, consumerVideoOriginalResult, consumerVideoParams } from "../../lib/higgsfield-consumer/video-contract";
 import { parseSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 
@@ -33,8 +32,6 @@ test("hooks and settings are off outside the UGC family and with an ad reference
 test("Generate ad says why it cannot run, in the prototype's words", () => {
   expect(adsBlock(ugc, ready)).toBeNull();
   expect(adsBlock({ ...ugc, prompt: " " }, ready)).toBe("Write the prompt.");
-  expect(adsBlock({ ...ugc, fromUrl: true, productUrl: "" }, ready)).toBe("Paste the product URL.");
-  expect(adsBlock({ ...ugc, fromUrl: true, productUrl: "not a url" }, ready)).toBe("That is not a product URL.");
   expect(adsBlock(ugc, { ...ready, connected: false })).toBe("Connect the account in Workspace › Engines.");
   expect(adsBlock(ugc, { ...ready, hasProject: false })).toBe("Open a project first.");
 });
@@ -45,8 +42,8 @@ test("the parameters are the catalogue's names, only what is set, clamped to the
   expect(full).toMatchObject({ avatar_ids: ["a1"], hook_id: "h1", setting_id: "s1", duration: 20 });
   expect(clampedDuration({ ...ugc, duration: 30 }, { min: 4, max: 20 })).toBe(20);
   expect(clampedDuration(ugc, { min: 4, max: 20 })).toBeNull();
-  /* From URL: the product id is not sent; the account fetches by page. */
-  expect(adsParameters({ ...ugc, fromUrl: true, productUrl: "https://shop.test/p" })).not.toHaveProperty("product_ids");
+  /* Click-to-Ad and the other gateway-only fields never ride on this path: the tool's schema does not name them. */
+  for (const name of NOT_ON_THIS_PATH) expect(Object.keys(adsParameters({ ...ugc, avatarId: "a1", hookId: "h1", settingId: "s1" }))).not.toContain(name.split(".")[0]);
   /* A hook never rides outside the family, whatever the state says. */
   expect(adsParameters({ ...ugc, mode: "tv_spot", hookId: "h1" })).not.toHaveProperty("hook_id");
   expect(adsParameters({ ...ugc, hookId: "h1", adReferenceId: "r1" })).not.toHaveProperty("hook_id");

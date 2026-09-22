@@ -194,12 +194,11 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         <div className="gx-gen-row" data-testid="ads-product">
           <span className="gx-eyebrow" data-functional-label="">Product<span className="bz-note"> · product_ids · hooks are weak without one</span></span>
           <div className="gx-chips" role="group" aria-label="Product">
-            <button type="button" className="gx-chip" aria-pressed={!s.productId && !s.fromUrl} onClick={() => set({ ...s, productId: null, fromUrl: false })}>None</button>
-            {(business.setup.reads.product?.items ?? []).map((p) => <button key={p.id} type="button" className="gx-chip" aria-pressed={s.productId === p.id && !s.fromUrl} title={p.meta} onClick={() => set({ ...s, productId: p.id, fromUrl: false })}>{p.name}</button>)}
-            <button type="button" className="gx-chip" aria-pressed={s.fromUrl} onClick={() => set({ ...s, fromUrl: true })}>From URL…</button>
+            <button type="button" className="gx-chip" aria-pressed={!s.productId} onClick={() => set({ ...s, productId: null })}>None</button>
+            {(business.setup.reads.product?.items ?? []).map((p) => <button key={p.id} type="button" className="gx-chip" aria-pressed={s.productId === p.id} title={p.meta} onClick={() => set({ ...s, productId: p.id })}>{p.name}</button>)}
           </div>
-          {s.fromUrl ? <input className="gx-field" aria-label="Product URL" placeholder="https://… the product page (Click-to-Ad)" value={s.productUrl} onChange={(e) => set({ ...s, productUrl: e.target.value })} data-testid="ads-url" /> : null}
-          {business.setup.reads.product && !business.setup.reads.product.available ? <span className="cw-dim">The connected account does not list products through its tools; From URL… fetches one by its page.</span> : null}
+          {/* Click-to-Ad (a product fetched by its page URL) is the gateway's flow, not this tool's: it returns with the developer-API grant, as a Setup item. */}
+          {business.setup.reads.product && !business.setup.reads.product.available ? <span className="cw-dim">The connected account does not list products through its tools. Products are made in Setup once the developer API is verified in Workspace › Engines.</span> : null}
         </div>
         <SetupPicker label="Avatar" note="optional for UGC · the backend can synthesise a Soul Character" type="avatar" business={business} value={s.avatarId} onPick={(id) => set({ ...s, avatarId: id })} testId="ads-avatar" />
         <SetupPicker label="Hook" note={chips.hook.disabled ? undefined : "prepended to your prompt"} type="hook" business={business} value={s.hookId} onPick={(id) => set(withSetup(s, { hookId: id }))} disabled={chips.hook.disabled} why={chips.hook.why} testId="ads-hook" />

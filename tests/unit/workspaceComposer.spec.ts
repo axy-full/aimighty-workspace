@@ -55,8 +55,20 @@ test("the composer opens on Image with a defaulted model, so it works untouched"
   expect(INITIAL_COMPOSER.billing).toBe("workspace");
   /* Identity and campaign engines cannot render from an untouched composer. */
   expect(models.filter((m) => m.type === "image").map((m) => m.id)).toEqual(["gemini-3.1-flash-image"]);
-  /* Catalogue order kept, so the first of each type is the default. */
+  /* The named default when the list carries it (Seedance 2.5, Seed Audio, GPT Image 2.5), else the first of the type. */
   expect(activeModel(INITIAL_COMPOSER, models)?.id).toBe("gemini-3.1-flash-image");
+  const catalogue: ComposerModel[] = [
+    { id: "seedance_2_0", label: "Seedance 2.0", type: "video" }, { id: "seedance_2_5", label: "Seedance 2.5", type: "video" },
+    { id: "nano_banana_2", label: "Nano Banana 2", type: "image" }, { id: "gpt_image_2_5", label: "GPT Image 2.5", type: "image" },
+    { id: "sonilo_music", label: "Sonilo Music", type: "audio" }, { id: "seed_audio", label: "Seed Audio 1.0", type: "audio" },
+  ];
+  const connected = { ...INITIAL_COMPOSER, billing: "connected" as const };
+  expect(activeModel({ ...connected, type: "video" }, catalogue)?.id).toBe("seedance_2_5");
+  expect(activeModel({ ...connected, type: "image" }, catalogue)?.id).toBe("gpt_image_2_5");
+  expect(activeModel({ ...connected, type: "audio" }, catalogue)?.id).toBe("seed_audio");
+  /* A pick still wins over the default; a list without the default falls back to its first. */
+  expect(activeModel({ ...connected, type: "video", chosen: { "connected:video": "seedance_2_0" } }, catalogue)?.id).toBe("seedance_2_0");
+  expect(activeModel({ ...connected, type: "video" }, catalogue.filter((m) => m.id !== "seedance_2_5"))?.id).toBe("seedance_2_0");
   expect(activeModel({ ...INITIAL_COMPOSER, type: "video" }, models)?.id).toBe("dreamina-seedance-2-5-260628");
   expect(activeModel({ ...INITIAL_COMPOSER, type: "audio" }, models)?.id).toBe("eleven_sfx");
   /* Every label is the product's own display name; the composer writes none of
