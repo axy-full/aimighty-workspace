@@ -138,3 +138,20 @@ export function minutesMarkdown(input: {
   input.solutions.forEach((s, i) => out.push(`${i + 1}. ${s.text} _(round ${s.round}, ${s.source === "pin" ? "pinned" : "chair"}${s.status === "open" ? "" : `, ${s.status.replace(/_/g, " ")}`})_`));
   return out.join("\n") + "\n";
 }
+
+/**
+ * How a round settles (the room's money rule, in one place). The round is one
+ * metered event: a chair that failed, or a room in which nobody proposed,
+ * settles at zero — the messages are kept, the workspace is not billed, and
+ * the note says so. Only a converged round bills the tokens reported.
+ */
+export function settleRound(input: { converged: boolean; proposals: number; spentUsd: number }): { billed: boolean; spendUsd: number; note: string | null } {
+  if (!input.converged) return { billed: false, spendUsd: 0, note: input.proposals ? "Converge failed — run again (not billed)" : "Nobody in the room could answer — run again (not billed)" };
+  return { billed: true, spendUsd: Math.max(0, input.spentUsd), note: null };
+}
+
+/** The minutes as a file the Library can keep: byte-identical markdown, named by the session. */
+export function minutesFile(markdown: string, sessionId: string, when = new Date()): File {
+  const stamp = when.toISOString().slice(0, 10);
+  return new File([markdown], `crew-minutes-${stamp}-${sessionId.slice(0, 8)}.md`, { type: "text/markdown" });
+}

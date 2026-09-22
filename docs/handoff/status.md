@@ -334,3 +334,11 @@ Tests: `tests/unit/suitesFlair.spec.ts` (fixed values, poster palette, no token 
 ## 22 September — the vendor-name guard retired (branch `chore/retire-vendor-name-guard`)
 
 `tests/unit/noVendorNamesInUi.spec.ts` is deleted. The owner retired the never-name rule on 21 September when they chose the Suites design, which prints Higgsfield, Genjutsu and Supercomputer as the prototype does; #278 had only exempted the Suites paths. Item 5 of the 20 September rules above is therefore history for the Suites surface; nothing else in the tree depended on the guard.
+## 22 September — Crew: minutes into Assets; the settlement rule in one place (branch `feat/crew-minutes-assets`)
+
+| What | Where |
+| --- | --- |
+| **File minutes in Assets · free** beside Export: the session's minutes markdown goes through the existing chunked upload (`uploadToProject`), stored byte-identical and filed on this project, so it sits in the Library and Takes like any original | `lib/crew/room.ts › minutesFile`, `lib/crew/use-crew.ts › minutesAsFile`, `CrewView.tsx` |
+| The round's money rule as a pure function: a chair that failed, or a room in which nobody proposed, settles at zero (messages kept, not billed, the note says so); only a converged round bills the tokens reported. The round used this rule already; it is now named and tested | `lib/crew/room.ts › settleRound`, `lib/crew/round.ts` |
+
+Tests: `tests/unit/crewRoom.spec.ts` (+2), `tests/crew-workbench.spec.ts` (+1, five viewports).

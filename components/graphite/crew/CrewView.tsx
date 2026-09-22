@@ -7,6 +7,7 @@ import { CREW_PAGES } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
+import { uploadToProject } from "@/lib/workspace/library";
 
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "—";
@@ -34,12 +35,12 @@ export function CrewStrip({ room }: { room: CrewRoom }) {
   );
 }
 
-export function CrewView({ project, room }: { project: Project | null; room: CrewRoom }) {
+export function CrewView({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
   const shell = useShell();
   const page = CREW_PAGES.find((p) => p.id === shell.crewPage)!;
   return (
     <div className="cw" data-testid="crew-view" data-page={page.id}>
-      {page.id === "room" ? <Room project={project} room={room} /> : null}
+      {page.id === "room" ? <Room project={project} room={room} scope={scope} /> : null}
       {page.id === "members" ? <Members room={room} title={page.title} hint={page.hint} /> : null}
       {page.id === "sessions" ? <Sessions room={room} title={page.title} hint={page.hint} /> : null}
     </div>
@@ -48,12 +49,14 @@ export function CrewView({ project, room }: { project: Project | null; room: Cre
 
 /* ── Room ─────────────────────────────────────────────────────────────── */
 
-function Room({ project, room }: { project: Project | null; room: CrewRoom }) {
+function Room({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
   const shell = useShell();
   const ws = useWorkspace();
   const [selected, setSelected] = useState<string | null>(null);
   const [pick, setPick] = useState("");
   const [say, setSay] = useState("");
+  const [filing, setFiling] = useState(false);
+  const toast = ws.toast;
   const end = useRef<HTMLDivElement>(null);
   const page = CREW_PAGES[0];
   const member = room.members.find((m) => m.id === selected) ?? null;
@@ -200,6 +203,10 @@ function Room({ project, room }: { project: Project | null; room: CrewRoom }) {
             <span className="gx-spacer" />
             {room.session ? <button type="button" className="gx-hbtn cw-wide" onClick={room.newRoom} disabled={room.running}>New session</button> : null}
             <button type="button" className="gx-hbtn cw-wide" disabled={!room.session || !room.messages.length} onClick={() => void room.minutes()}>Export minutes · free</button>
+            <button type="button" className="gx-hbtn cw-wide" disabled={!room.session || !room.messages.length || !project || filing} data-testid="crew-file-minutes"
+              onClick={() => { if (!project) return; setFiling(true); void room.minutesAsFile().then((file) => uploadToProject(scope, project.id, [file])).then(() => toast("Minutes filed in Assets · byte-identical, this project.")).catch((error: unknown) => toast(error instanceof Error ? error.message : "The minutes could not be filed.")).finally(() => setFiling(false)); }}>
+              File minutes in Assets · free
+            </button>
           </>
         )}
       </aside>

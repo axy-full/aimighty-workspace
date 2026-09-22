@@ -8,7 +8,7 @@ import type { Project } from "../workbench/studio";
 import { projectContext } from "./context";
 import { mockAnswer } from "./mock";
 import {
-  PARALLEL_CAP, callCostUsd, chairOf, memberNamed, parseChallenge, parseSolutions, roleCard, roundCeilingUsd, userMessage,
+  PARALLEL_CAP, callCostUsd, chairOf, memberNamed, parseChallenge, parseSolutions, roleCard, roundCeilingUsd, settleRound, userMessage,
   type CrewPhase, type Rate, type TranscriptLine,
 } from "./room";
 import { addMessage, addSolution, listMessages, type CrewMember, type CrewSession, type CrewSolution, type StoredMessage } from "./store";
@@ -113,13 +113,14 @@ export async function runRound(input: {
     throw error;
   }
 
-  if (!converged) {
+  const settled = settleRound({ converged, proposals, spentUsd });
+  if (!settled.billed) {
     await meter({ ...event, status: "failed", engineCostUsd: 0 });
-    emit({ event: "done", data: { round, billed: false, spendCr: null, note: proposals ? "Converge failed — run again (not billed)" : "Nobody in the room could answer — run again (not billed)" } });
+    emit({ event: "done", data: { round, billed: false, spendCr: null, note: settled.note } });
     return { billed: false, spendUsd: 0, spendCr: null };
   }
-  await meter({ ...event, status: "succeeded", engineCostUsd: spentUsd }, { critical: true });
-  const spendCr = paidByPlatform("xai") ? billCredits(spentUsd, "text") : null;
+  await meter({ ...event, status: "succeeded", engineCostUsd: settled.spendUsd }, { critical: true });
+  const spendCr = paidByPlatform("xai") ? billCredits(settled.spendUsd, "text") : null;
   emit({ event: "done", data: { round, billed: true, spendCr, note: null } });
-  return { billed: true, spendUsd: spentUsd, spendCr };
+  return { billed: true, spendUsd: settled.spendUsd, spendCr };
 }
