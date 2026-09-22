@@ -83,6 +83,13 @@ test("the quote carries the entry's settings and the reference role; Auto sends 
   await page.getByTestId("gen-length").selectOption("6");
   await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour");
   await expect(page.getByTestId("gen-generate")).toHaveText(/43/);
+  /* Takes: the stepper multiplies the take's price on the button; each take is its own quoted job. */
+  await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
+  await expect(page.getByTestId("gen-takes-count")).toHaveText("2");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 2 takes · 86 connected cr");
+  await page.getByTestId("gen-takes").getByRole("button", { name: "Fewer" }).click();
+  await expect(page.getByTestId("gen-takes").getByRole("button", { name: "Fewer" })).toBeDisabled();
+  await expect(page.getByTestId("gen-generate")).toHaveText(/^Generate · 43/);
   let quote = quotes.at(-1) as { input: { parameters: Record<string, unknown>; medias: { role: string }[] } };
   expect(quote.input.parameters).toEqual({ aspect_ratio: "16:9", duration: 6, enhance_prompt: false });
   expect(quote.input.medias.map((m) => m.role)).toEqual(["start_image"]);

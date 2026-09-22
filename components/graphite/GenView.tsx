@@ -8,7 +8,7 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { COMPOSER_TYPES, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
+import { COMPOSER_TYPES, TAKES_MAX, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -227,6 +227,14 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
         {blocked ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{blocked}</p> : null}
         <div className="gx-gen-cta">
+          <div className="gx-gen-takes" data-testid="gen-takes">
+            <span className="gx-hint">Takes</span>
+            <div className="gx-stepper" role="group" aria-label="Takes per generate">
+              <button type="button" aria-label="Fewer" disabled={state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
+              <span data-testid="gen-takes-count">{state.count}</span>
+              <button type="button" aria-label="More" disabled={state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
+            </div>
+          </div>
           <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || submitting} aria-describedby={blocked ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
             {submitting ? "Submitting…" : buttonLabel}
           </button>

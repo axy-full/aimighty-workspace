@@ -78,9 +78,12 @@ export type ComposerState = {
   picks: ComposerPicks;
   /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
   enhance: boolean;
+  /** Takes per Generate (the prototype's stepper, 1–4): each take is its own quoted job at the price shown. */
+  count: number;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
+export const TAKES_MAX = 4;
 
 export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number };
 
@@ -95,6 +98,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   voiceId: "",
   picks: {},
   enhance: false,
+  count: 1,
   notice: null,
 };
 
@@ -111,6 +115,7 @@ export type ComposerAction =
   | { type: "pick"; value: ComposerPicks }
   | { type: "referenceRole"; key: string; role: string }
   | { type: "enhance"; value: boolean }
+  | { type: "count"; value: number }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -150,6 +155,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, references: state.references.map((r) => (r.key === action.key ? { ...r, role: action.role } : r)), notice: null };
     case "enhance":
       return { ...state, enhance: action.value };
+    case "count":
+      return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -376,11 +383,17 @@ export function composerButtonLabel(input: {
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
+  /** Takes per Generate; the price shown is the take's price times the count. */
+  count?: number;
 }): string {
   if (input.submitting) return "Submitting…";
   const credits = liveCredits(input.quote, input.quoteKey);
-  if (credits === null) return "Generate";
-  return `Generate · ${credits.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}`;
+  const count = Math.max(1, input.count ?? 1);
+  if (credits === null) return count > 1 ? `Generate ${count} takes` : "Generate";
+  const unit = input.billing === "connected" ? "connected cr" : "cr";
+  return count > 1
+    ? `Generate ${count} takes · ${(credits * count).toLocaleString("en-US")} ${unit}`
+    : `Generate · ${credits.toLocaleString("en-US")} ${unit}`;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */

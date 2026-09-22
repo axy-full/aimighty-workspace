@@ -320,3 +320,16 @@ test("a connected model's chips come from its live catalogue entry: every second
   expect(withRole.references[0].role).toBe("end_image");
   expect(composerReducer(INITIAL_COMPOSER, { type: "enhance", value: true }).enhance).toBe(true);
 });
+
+test("takes per Generate: the stepper clamps to 1–4 and the button says the count times the take's price", async () => {
+  const { INITIAL_COMPOSER, TAKES_MAX, composerButtonLabel, composerReducer } = await import("../../lib/workspace/composer");
+  expect(TAKES_MAX).toBe(4);
+  expect(composerReducer(INITIAL_COMPOSER, { type: "count", value: 3 }).count).toBe(3);
+  expect(composerReducer(INITIAL_COMPOSER, { type: "count", value: 0 }).count).toBe(1);
+  expect(composerReducer(INITIAL_COMPOSER, { type: "count", value: 9 }).count).toBe(4);
+  const quote = { key: "k", credits: 43, state: "ready" as const, reason: null };
+  expect(composerButtonLabel({ billing: "connected", quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 43 connected cr");
+  expect(composerButtonLabel({ billing: "connected", quote, quoteKey: "k", submitting: false, count: 2 })).toBe("Generate 2 takes · 86 connected cr");
+  expect(composerButtonLabel({ billing: "workspace", quote: null, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes");
+  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: true, count: 3 })).toBe("Submitting…");
+});

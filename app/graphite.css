@@ -354,3 +354,10 @@
 .gx-workflow-title { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .gx-workflow .pxw { background: transparent; }
 @media (max-width: 767px) { .gx-extras { padding: 12px 12px 0; } }
+/* Takes per Generate: the prototype's stepper beside the primary. */
+.gx-gen-takes { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 13.5px; color: var(--gx-text-2); }
+.gx-stepper { display: flex; align-items: center; border-radius: 999px; background: rgba(255, 255, 255, .06); border: 1px solid var(--gx-hair); }
+.gx-stepper button { width: 30px; height: 30px; display: grid; place-items: center; color: var(--gx-text-2); border-radius: 999px; }
+.gx-stepper button:disabled { opacity: .4; cursor: default; }
+.gx-stepper span { min-width: 22px; text-align: center; font-family: var(--gx-mono); font-weight: 600; color: var(--gx-text); }
+@media (max-width: 767px), (pointer: coarse) { .gx-stepper button { width: 44px; height: 44px; } }

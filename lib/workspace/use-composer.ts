@@ -390,7 +390,11 @@ export function useComposer(options: {
       try {
         const project = await ensureProject();
         const settings = now.settings;
-        const name = composer.prompt.trim().slice(0, 60) || `${model.label} take`;
+        const base = composer.prompt.trim().slice(0, 60) || `${model.label} take`;
+        /* Takes: each is its own quoted job at the price shown; a price that moves stops the rest. */
+        const count = Math.max(1, composer.count);
+        for (let take = 0; take < count; take++) {
+        const name = count > 1 ? `${base} · take ${take + 1}` : base;
         if (composer.billing === "connected") {
           /* Re-quote on click; a moved price is shown and nothing is sent. */
           const input = now.connectedInput;
@@ -414,7 +418,7 @@ export function useComposer(options: {
           const accepted = parseConnectedJob(sent.job, project.id);
           setConnectedJob(accepted);
           setRun({ source: "connected", name, meta: [name, model.label, `${accepted.quoteCredits.toLocaleString("en-US")} connected cr`].join(" · "), jobId: accepted.id });
-          return;
+          continue;
         }
 
         /* This workspace's credits: the take needs a shot to live in, so the
@@ -473,6 +477,8 @@ export function useComposer(options: {
         }
         if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: outcome.reason }); return; }
         setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(outcome.credits)].join(" · "), jobId: outcome.jobId });
+        }
+        if (count > 1) dispatch({ type: "notice", value: `${count} takes submitted, each at the price shown. They file into Takes as they land.` });
       } catch (error) {
         setRun(null);
         dispatch({ type: "notice", value: neutralCopy(error instanceof Error ? error.message : "This generation could not be submitted.") });
@@ -577,7 +583,7 @@ export function useComposer(options: {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
     /** What the account says it rendered for the last connected take, once it completed. */
     connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
-    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting }),
+    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
     audio, capability, project: target, projectNotice, generate, scope,
