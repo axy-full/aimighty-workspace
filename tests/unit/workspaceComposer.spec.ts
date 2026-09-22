@@ -16,6 +16,7 @@ import {
   type ComposerQuote,
   type ComposerState,
   type EngineRow,
+  secondsIn,
 } from "../../lib/workspace/composer";
 import { INITIAL_STATE, generateTarget } from "../../lib/workspace/navigation";
 import { WORKSPACE_BINDINGS, inKeyboardOverlay, keyContextFor, resolveKey } from "../../lib/workspace/keys";
@@ -290,4 +291,32 @@ test("a pick is used only where the engine allows it; anything else falls back t
   expect(composerSettings(engine, undefined, { ratio: "21:9", resolution: "4k", duration: 30 })).toEqual({ ratio: "16:9", resolution: "720p", duration: 5 });
   const picked = composerReducer(INITIAL_COMPOSER, { type: "pick", value: { duration: 12 } });
   expect(composerReducer(picked, { type: "pick", value: { ratio: "9:16" } }).picks).toEqual({ duration: 12, ratio: "9:16" });
+});
+
+test("a connected model's chips come from its live catalogue entry: every second of a range, exactly a closed list, its roles, prompt-only, enhance", () => {
+  const rows = [
+    { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", description: "Omni-reference video", aspectRatios: ["auto", "16:9", "9:16"], durationRange: { min: 4, max: 30 }, medias: [{ name: "medias", roles: ["start_image", "end_image", "image_references", "video_references", "audio_references"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }, { name: "mode", options: ["t2v", "omni_reference"] }] },
+    { id: "veo_3_1", name: "Veo 3.1", outputType: "video", aspectRatios: ["16:9", "9:16"], durations: [4, 6, 8], medias: [{ name: "start_image", roles: ["start_image"], max: 1 }], parameters: [{ name: "enhance_prompt", type: "bool" }] },
+    { id: "z_image", name: "Z Image", outputType: "image", aspectRatios: ["1:1"], medias: [], parameters: [] },
+    { id: "brain_activity", name: "Virality Predictor", outputType: "text" },
+  ];
+  const models = connectedModels(rows);
+  expect(models.map((m) => m.id)).toEqual(["seedance_2_5", "veo_3_1", "z_image"]);
+  const [seedance, veo, z] = models;
+  expect(seedance.durations).toHaveLength(27);
+  expect(seedance.durations?.[0]).toBe(4); expect(seedance.durations?.at(-1)).toBe(30);
+  expect(seedance.resolutions).toEqual(["480p", "720p", "1080p"]);
+  expect(seedance.referenceRoles).toEqual(["start_image", "end_image", "image_references", "video_references", "audio_references"]);
+  expect(seedance).toMatchObject({ connected: true, promptOnly: false, enhanceable: false, description: "Omni-reference video" });
+  expect(veo.durations).toEqual([4, 6, 8]);
+  expect(veo).toMatchObject({ enhanceable: true, mediaMax: 1, referenceRoles: ["start_image"] });
+  expect(z).toMatchObject({ promptOnly: true, referenceRoles: [] });
+  expect(secondsIn({ min: 4, max: 30 })).toHaveLength(27);
+  expect(secondsIn({ min: 6, max: 5 })).toEqual([]);
+  /* The picks follow the entry: 12 s is fine for a range, not for Veo's closed list. */
+  expect(composerSettings(seedance, undefined, { duration: 12 }).duration).toBe(12);
+  expect(composerSettings(veo, undefined, { duration: 12 }).duration).toBe(4);
+  const withRole = composerReducer({ ...INITIAL_COMPOSER, references: [{ key: "k", id: "u1", origin: "upload", kind: "image", name: "a", url: "" }] }, { type: "referenceRole", key: "k", role: "end_image" });
+  expect(withRole.references[0].role).toBe("end_image");
+  expect(composerReducer(INITIAL_COMPOSER, { type: "enhance", value: true }).enhance).toBe(true);
 });

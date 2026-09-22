@@ -292,3 +292,14 @@ The existing `genjutsu-service` (`hf_mult_motion_control`, `hf_mult_replace_obje
 | Viral pages are the shell's own views (`own: true`) | `lib/shell/ia.ts`, `SuitesShell.tsx` |
 
 Tests: `tests/unit/suitesViral.spec.ts`, `tests/suites-viral-workbench.spec.ts` (five viewports).
+
+## 22 September — FINAL_SPEC step 4: Gen from the live catalogue (branch `feat/suites-04-gen`)
+
+| What | Where |
+| --- | --- |
+| The Higgsfield group's chips come from each model's own catalogue entry, never a hard-coded list: aspect from `aspect_ratios`, resolution from the `resolution` parameter's options, **Length** as every second of a `duration_range` (Seedance 2.5: 4–30) or exactly the closed list (`durations`: Veo 3.1 4/6/8, Hailuo 6/10, Kling 5/10/15), roles from the media slots, `promptOnly` when the entry declares no slot (the well is hidden and the page says so), `enhanceable` when the schema declares `enhance_prompt` | `lib/workspace/composer.ts › ConnectedRow, connectedModels, secondsIn`, `use-composer.ts` (catalogue read carries the whole entry) |
+| The quote carries the entry's settings as `parameters` (`aspect_ratio`, `duration`, `resolution` only where declared) and each reference's role (per-reference, cycled on the chip; the family's first role by default). The server already validates every parameter against the live schema and refuses out-of-range values; the account's `adjustments` still surface as `unapproved_adjustment` and are never auto-accepted | `use-composer.ts › connectedInput`, `GenView.tsx` |
+| Enhancer passthrough (§4): Auto sends `enhance_prompt: true` for models whose schema declares it; a `raw:` prompt sends `false`, is never rewritten locally, and its prefix is stripped before it is sent. The footer says "enhanced on Higgsfield" when that applies | `use-composer.ts`, `GenView.tsx` |
+| Model sheet rows: name · one line (the entry's description) · aspects · lengths · roles / prompt only · "enhances on the account" | `GenView.tsx` |
+
+Not in this branch, noted for the next: showing the account's returned `enhanced_prompt` on the result card (the generic generation view does not carry it yet), the workflows (`reframe` → Deliver › Social cuts, `draw_to_video` → Astra › Draw to edit, `dubbing`/`voice-change` → Edit), Soul ID from Cast › Build identity, `brain_activity`, and the Takes stepper. Tests: `tests/unit/workspaceComposer.spec.ts` (catalogue mapping), `tests/suites-gen-catalogue-workbench.spec.ts` (five viewports).

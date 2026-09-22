@@ -22,10 +22,14 @@ export const TYPE_LABELS: Record<ComposerType, string> = { image: "Image", video
 
 export type ComposerModel = {
   id: string;
-  /** Neutral display name, from the catalogue. */
+  /** Display name, from the catalogue. */
   label: string;
   type: ComposerType;
-  /** Workspace image/video engines: the engine's own allowed settings. */
+  /** One line of what it is for (the catalogue's description). */
+  description?: string;
+  /** Workspace image/video engines: the engine's own allowed settings.
+      Connected models: read from the live catalogue entry (FINAL_SPEC §3) —
+      `durations` is every second of a range, or exactly the closed list. */
   ratios?: string[];
   resolutions?: string[];
   durations?: number[];
@@ -33,6 +37,14 @@ export type ComposerModel = {
   audioTask?: NodeAudioTask;
   /** Connected models: the reference roles the model accepts, if any. */
   referenceRoles?: string[];
+  /** Connected models: served through the connected account. */
+  connected?: true;
+  /** Connected models: declares no media slot at all — the well is hidden. */
+  promptOnly?: boolean;
+  /** Connected models: the schema declares `enhance_prompt` (FINAL_SPEC §4). */
+  enhanceable?: boolean;
+  /** Connected models: the most references the smallest slot allows, when declared. */
+  mediaMax?: number;
 };
 
 /** A project file picked as a reference: already saved, so it is cited by id. */
@@ -43,6 +55,8 @@ export type ComposerReference = {
   kind: "image" | "video" | "audio";
   name: string;
   url: string;
+  /** Connected models: the role this reference takes (one of the model's). */
+  role?: string;
 };
 
 export type ComposerState = {
@@ -62,6 +76,8 @@ export type ComposerState = {
    * sent: composerSettings falls back to the engine's own default.
    */
   picks: ComposerPicks;
+  /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
+  enhance: boolean;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
@@ -78,6 +94,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   instrumental: true,
   voiceId: "",
   picks: {},
+  enhance: false,
   notice: null,
 };
 
@@ -92,6 +109,8 @@ export type ComposerAction =
   | { type: "instrumental"; value: boolean }
   | { type: "voice"; value: string }
   | { type: "pick"; value: ComposerPicks }
+  | { type: "referenceRole"; key: string; role: string }
+  | { type: "enhance"; value: boolean }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -127,6 +146,10 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, voiceId: action.value, notice: null };
     case "pick":
       return { ...state, picks: { ...state.picks, ...action.value }, notice: null };
+    case "referenceRole":
+      return { ...state, references: state.references.map((r) => (r.key === action.key ? { ...r, role: action.role } : r)), notice: null };
+    case "enhance":
+      return { ...state, enhance: action.value };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -153,8 +176,19 @@ export type EngineRow = {
   marketing?: boolean;
 };
 
-/** A row of the connected account's catalogue, as the composer reads it. */
-export type ConnectedRow = { id: string; name: string; outputType: string; medias?: { roles: string[] }[] };
+/** A row of the connected account's catalogue, as the composer reads it (the CLI's `model get` shape). */
+export type ConnectedRow = {
+  id: string; name: string; outputType: string; description?: string;
+  medias?: { name?: string; roles: string[]; max?: number }[];
+  aspectRatios?: string[]; durations?: number[]; durationRange?: { min: number; max: number };
+  parameters?: { name: string; type?: string; options?: (string | number)[]; min?: number; max?: number }[];
+};
+/** Every whole second of a range, for engines whose `durations` is min/max (Seedance 2.5: 4–30 s). */
+export function secondsIn(range: { min: number; max: number }): number[] {
+  const min = Math.ceil(range.min), max = Math.floor(range.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max < min || max - min > 600) return [];
+  return Array.from({ length: max - min + 1 }, (_, i) => min + i);
+}
 
 /**
  * The image and sound models the composer offers on the workspace's own
@@ -198,11 +232,22 @@ export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] 
   return rows.flatMap((row) => {
     const type = row.outputType === "image" || row.outputType === "video" || row.outputType === "audio" ? row.outputType : null;
     if (!type) return [];
+    const resolution = row.parameters?.find((p) => p.name === "resolution")?.options?.map(String);
+    const slots = row.medias ?? [];
+    const maxes = slots.map((slot) => slot.max).filter((m): m is number => typeof m === "number");
     return [{
       id: row.id,
       label: row.name,
       type,
-      referenceRoles: [...new Set((row.medias ?? []).flatMap((slot) => slot.roles))],
+      connected: true,
+      ...(row.description ? { description: row.description } : {}),
+      ...(row.aspectRatios?.length ? { ratios: [...row.aspectRatios] } : {}),
+      ...(resolution?.length ? { resolutions: resolution } : {}),
+      ...(row.durations?.length ? { durations: [...row.durations] } : row.durationRange ? { durations: secondsIn(row.durationRange) } : {}),
+      referenceRoles: [...new Set(slots.flatMap((slot) => slot.roles))],
+      promptOnly: slots.length === 0,
+      enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
+      ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
     }];
   });
 }
