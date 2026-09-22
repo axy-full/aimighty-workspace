@@ -215,17 +215,7 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
       <span className="cw-dim">{plan ? `${plan.label ?? plan.name ?? plan.id} plan` : data?.subscription?.plan ? `${data.subscription.plan} plan` : "No plan on record"}{data?.subscription?.status ? ` · ${data.subscription.status}` : ""}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
-      <span className="gx-eyebrow">Packs</span>
-      <div className="wsx-packs">
-        {(data?.packs ?? []).map((p) => (
-          <div className="wsx-pack" key={p.id} data-testid="ws-pack">
-            <span className="wsx-name">{p.label}</span>
-            <span className="cw-mono">${p.usd.toLocaleString("en-US")} · {p.credits.toLocaleString("en-US")} cr{p.bonus ? ` + ${p.bonus.toLocaleString("en-US")} bonus` : ""}</span>
-            <span className="cw-dim">{p.total.toLocaleString("en-US")} cr land in the balance</span>
-          </div>
-        ))}
-      </div>
-      <span className="cw-dim">{data?.canManage ? "Buying a pack is settled with the platform; the balance updates when the credits are granted." : "Packs are the owner’s to buy."}</span>
+      {/* Packs are not listed: the app has no purchase route, and a feature with no API workflow behind it is not shown (owner's rule, 22 September). */}
       <span className="gx-eyebrow">Statements</span>
       <div className="wsx-actions">
         {(statements?.months ?? []).slice(0, 12).map((m) => <a key={m} className="gx-hbtn" href={`/api/statements?month=${m}`}>{m}</a>)}

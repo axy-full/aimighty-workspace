@@ -2,9 +2,8 @@
  * The connected account's workflows on the Studio pages the brief names
  * (FINAL_SPEC §4 › Workflows): Deliver › Social cuts = `reframe`, Edit ›
  * Dub = `dubbing`, Edit › Change voice = `voice_change`, Gen › Analysis =
- * `video_analysis` (the Virality Predictor's report). Astra › Draw to edit
- * would be `draw_to_video`, which the account does not advertise — the card
- * says so. Pure: the surfaces and the one reason a tool cannot run.
+ * `video_analysis` (the Virality Predictor's report). Pure: the surfaces and
+ * the one reason a tool cannot run.
  */
 import { VOICE_TOOL_NAMES, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
 
@@ -22,12 +21,8 @@ export const WORKFLOW_SURFACES: Record<string, readonly WorkflowSurface[]> = {
   ],
 };
 
-/** Astra › Draw to edit: the one workflow the brief names that the account does not advertise. */
-export const DRAW_TO_EDIT = {
-  title: "Draw to edit",
-  line: "Sketch on a frame at a timestamp; the edit follows.",
-  reason: "The connected account does not advertise the draw_to_video workflow, so this card cannot run. Motion Transfer and Object Swap in Viral cover the nearest ground.",
-} as const;
+/* Astra › Draw to edit (`draw_to_video`) is not advertised by the account, so
+   it has no workflow behind it and is not shown (owner's rule, 22 September). */
 
 export type WorkflowCapability = { owner: boolean; connected: boolean; suspended: boolean };
 export type WorkflowCapabilities = { voice: boolean; dubbing: boolean; analysis: boolean; reframe: boolean };

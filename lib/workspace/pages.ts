@@ -212,12 +212,19 @@ export const LIBRARY: Partial<Record<PageId, LibraryGroup[]>> = {
   ],
 };
 
-/** The spec-card groups a page shows (lib/workspace/spec-cards.ts). */
+/**
+ * The spec-card groups a page shows (lib/workspace/spec-cards.ts). A card
+ * with neither a tool nor an Atomik plan behind it is not a tool (owner's
+ * rule, 22 September: nothing without an agentic or API workflow); a group
+ * left empty is dropped.
+ */
 export type SpecCardGroup = { title: string; cards: { name: string; chips: string[] }[] };
 export const SPEC_GROUPS: Partial<Record<PageId, SpecCardGroup[]>> = Object.fromEntries(
   Object.entries(SPEC_PAGES).map(([id, spec]) => [
     id,
-    spec!.groups.map((group) => ({ title: group.title, cards: group.cards.map((card) => ({ name: card.name, chips: card.chips.length ? card.chips : [card.owner] })) })),
+    spec!.groups
+      .map((group) => ({ title: group.title, cards: group.cards.filter((card) => card.tool || card.plan).map((card) => ({ name: card.name, chips: card.chips.length ? card.chips : [card.owner] })) }))
+      .filter((group) => group.cards.length > 0),
   ]),
 );
 

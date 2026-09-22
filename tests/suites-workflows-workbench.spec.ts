@@ -5,8 +5,8 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/
 
 /**
  * FINAL_SPEC §4 › Workflows on the Studio pages: Edit carries Dub and Change
- * voice, Deliver carries Social cuts (reframe), Astra carries Draw to edit
- * with the reason it cannot run, Gen carries an Analysis tab. Each host reads
+ * voice, Deliver carries Social cuts (reframe), Gen carries an Analysis tab;
+ * Astra carries nothing (draw_to_video is not advertised). Each host reads
  * the account's tool flags and either mounts the tool or says the one thing
  * in its way, inline. Nothing paid happens here.
  */
@@ -34,7 +34,7 @@ async function open(page: Page, path: string, account: { connected: boolean; fla
   return errors;
 }
 
-test("Edit carries Dub and Change voice; Deliver carries Social cuts; Astra says why Draw to edit cannot run", async ({ page }, info) => {
+test("Edit carries Dub and Change voice; Deliver carries Social cuts; Astra carries no Draw to edit", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites?suite=studio&page=edit", { connected: true });
   await expect(page.getByTestId("workflow-dubbing")).toBeVisible();
@@ -47,10 +47,10 @@ test("Edit carries Dub and Change voice; Deliver carries Social cuts; Astra says
   await expect(page.getByTestId("workflow-reframe")).toContainText("Social cuts");
   await expect(page.getByTestId("workflow-reframe-tool")).toBeVisible();
 
+  /* Astra carries no Draw to edit: the account does not advertise draw_to_video, and a card with no workflow behind it is not shown. */
   await page.goto("/suites?suite=studio&page=astra");
-  await expect(page.getByTestId("workflow-draw-to-edit")).toContainText("Draw to edit");
-  await expect(page.getByTestId("workflow-draw-to-edit").getByRole("button", { name: "Sketch on a frame" })).toBeDisabled();
-  await expect(page.getByTestId("workflow-draw-to-edit-reason")).toContainText("does not advertise the draw_to_video workflow");
+  await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "astra");
+  await expect(page.getByTestId("workflow-draw-to-edit")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

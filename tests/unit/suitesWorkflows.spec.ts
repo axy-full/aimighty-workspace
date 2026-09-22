@@ -1,14 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { DRAW_TO_EDIT, WORKFLOW_SURFACES, workflowReason } from "../../lib/shell/workflows";
+import { WORKFLOW_SURFACES, workflowReason } from "../../lib/shell/workflows";
 import { VOICE_TOOL_NAMES } from "../../lib/higgsfield-consumer/voice-tools";
 
 /** FINAL_SPEC §4 › Workflows: the surfaces the brief names, each on an advertised tool, and the one reason a tool cannot run. */
-test("the surfaces are the brief's: Deliver › Social cuts = reframe, Edit › Dub · Change voice, Gen › Analysis; Draw to edit is not offered", () => {
+test("the surfaces are the brief's: Deliver › Social cuts = reframe, Edit › Dub · Change voice, Gen › Analysis; nothing without a tool behind it", () => {
   expect(WORKFLOW_SURFACES["studio:deliver"].map((s) => s.tool)).toEqual(["reframe"]);
   expect(WORKFLOW_SURFACES["studio:edit"].map((s) => s.tool)).toEqual(["dubbing", "voice_change"]);
   expect(WORKFLOW_SURFACES["gen:analysis"].map((s) => s.tool)).toEqual(["video_analysis"]);
   for (const list of Object.values(WORKFLOW_SURFACES)) for (const s of list) expect(VOICE_TOOL_NAMES).toContain(s.tool);
-  expect(DRAW_TO_EDIT.reason).toContain("does not advertise the draw_to_video workflow");
+  expect(Object.keys(WORKFLOW_SURFACES)).not.toContain("studio:astra");
 });
 
 test("a tool says the one thing in its way, in order: project, owner, connection, suspension, the account's flags", () => {

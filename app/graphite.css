@@ -361,3 +361,39 @@
 .gx-stepper button:disabled { opacity: .4; cursor: default; }
 .gx-stepper span { min-width: 22px; text-align: center; font-family: var(--gx-mono); font-weight: 600; color: var(--gx-text); }
 @media (max-width: 767px), (pointer: coarse) { .gx-stepper button { width: 44px; height: 44px; } }
+
+/* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
+.gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }
+.gx-stage-view { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
+.gx-stage-intro { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-stage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; padding: 12px 14px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-stage-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gx-stage-facts dt { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-3); }
+.gx-stage-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-stage-group { border-radius: 10px; background: linear-gradient(180deg, #15151A, #101013); border: 1px solid rgba(255, 255, 255, .10); overflow: hidden; }
+.gx-stage-group-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.gx-stage-group-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dept, #0A84FF); box-shadow: 0 0 8px var(--dept, #0A84FF); flex: none; }
+.gx-stage-group-head > .gx-hint { flex: 1; min-width: 0; }
+.gx-stage-count { margin-left: auto; height: 18px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; background: rgba(255, 255, 255, .08); color: var(--gx-text-2); letter-spacing: 0; }
+.gx-stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1px; background: rgba(255, 255, 255, .06); }
+.gx-stage-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; text-align: left; background: #111114; min-height: 132px; }
+button.gx-stage-card:hover { background: #16161B; }
+button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx-accent); }
+.gx-stage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gx-stage-card-title { font-weight: 600; font-size: 14.5px; letter-spacing: -.01em; }
+.gx-stage-card-desc { font-size: 13px; line-height: 1.45; color: var(--gx-text-2); }
+.gx-stage-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-chip--static { height: 22px; padding: 0 8px; font-size: 11.5px; cursor: default; }
+.gx-stage-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); }
+.gx-stage-card-foot[data-state="COMPLETE"] { color: #30D158; }
+.gx-stage-card-foot[data-state="ACTIVE"] { color: var(--gx-accent-text); }
+.gx-stage-card-foot[data-state="WAITING"] { color: #FF9F0A; }
+.gx-home-dot[data-state="done"] { background: #30D158; box-shadow: 0 0 8px rgba(48, 209, 88, .7); }
+.gx-home-dot[data-state="progress"] { background: #0A84FF; box-shadow: 0 0 10px rgba(10, 132, 255, .9); }
+.gx-home-dot[data-state="waiting"] { background: #FF9F0A; }
+.gx-stage-work { border-radius: 10px; border: 1px solid rgba(255, 255, 255, .10); background: var(--gx-panel); overflow: hidden; }
+.gx-stage-work > .gx-stage-group-head { justify-content: space-between; }
+.gx-stage-work > .gx-stage-group-head::before { display: none; }
+.gx-stage-tool { padding: 12px 14px 18px; }
+@media (max-width: 767px) { .gx-stage-view { padding: 12px 12px 24px; } .gx-stage-grid { grid-template-columns: 1fr; } }
+@media (max-width: 767px), (pointer: coarse) { .gx-stage-facts dt { font-size: 12px; } .gx-chip--static { height: 24px; font-size: 12px; } }
