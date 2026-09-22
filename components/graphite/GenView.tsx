@@ -13,6 +13,9 @@ import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { useScopedFetch } from "@/lib/useScopedFetch";
+import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
+import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
@@ -36,6 +39,24 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
   const [mode, setMode] = useState<"compose" | "analysis">("compose");
+  /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
+  const scopedFetch = useScopedFetch(scope);
+  const [characters, setCharacters] = useState<{ list: ConnectedCharacter[] | null; note: string }>({ list: null, note: "Reading the account’s characters…" });
+  const wantsCharacters = Boolean(model?.soulId) && state.billing === "connected";
+  useEffect(() => {
+    if (!wantsCharacters || characters.list) return;
+    let live = true;
+    void scopedFetch(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "characters" }) })
+      .then(async (r) => { const json = await r.json().catch(() => null) as { connected?: boolean; available?: boolean; characters?: ConnectedCharacter[]; error?: string } | null; if (!r.ok) throw new Error(json?.error ?? "The account’s characters could not be read."); return json; })
+      .then((json) => {
+        if (!live) return;
+        const list = json?.characters ?? [];
+        const ready = list.filter((c) => c.status !== "training" && c.status !== "failed").length;
+        setCharacters({ list, note: json?.connected === false ? "Connect the owner’s account in Workspace › Engines." : json?.available === false ? "The connected account does not advertise its characters." : ready ? `${ready} trained ${ready === 1 ? "identity" : "identities"} on the account.` : "No trained identity on the account yet." });
+      })
+      .catch((error: unknown) => { if (live) setCharacters({ list: [], note: error instanceof Error ? error.message : "The account’s characters could not be read." }); });
+    return () => { live = false; };
+  }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
   const [wellError, setWellError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
@@ -198,6 +219,19 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           </div>
         ) : null}
 
+        {model?.soulId ? (
+          <div className="gx-gen-row" data-testid="gen-identity">
+            <label className="gx-eyebrow" htmlFor="gx-identity" data-functional-label="">Identity</label>
+            <select id="gx-identity" className="gx-select" value={settings.soulId ?? ""} onChange={(e) => composer.dispatch({ type: "pick", value: { soulId: e.target.value } })} data-testid="gen-identity-pick">
+              <option value="">No identity · prompt only</option>
+              {(characters.list ?? []).map((c) => <option key={c.soulId} value={c.soulId} disabled={c.status === "training" || c.status === "failed"}>{c.name}{c.status && c.status !== "ready" ? ` · ${c.status}` : ""}</option>)}
+            </select>
+            <p className="gx-hint" data-testid="gen-identity-note">
+              {characters.note}{" "}
+              <button type="button" className="cw-link" onClick={() => shell.goSuite("studio", "cast")}>Build identity in Cast</button>
+            </p>
+          </div>
+        ) : null}
         {model?.ratios?.length ? (
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">Aspect</span>

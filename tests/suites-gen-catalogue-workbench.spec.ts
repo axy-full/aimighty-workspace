@@ -16,6 +16,7 @@ const MODELS = [
   { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", description: "Text-to-video and omni-reference", aspectRatios: ["auto", "16:9", "9:16"], durationRange: { min: 4, max: 30 }, medias: [{ name: "medias", roles: ["start_image", "end_image", "image_references"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }] },
   { id: "veo_3_1", name: "Veo 3.1", outputType: "video", aspectRatios: ["16:9", "9:16"], durations: [4, 6, 8], medias: [{ name: "start_image", roles: ["start_image"], max: 1 }], parameters: [{ name: "enhance_prompt", type: "bool" }] },
   { id: "z_image", name: "Z Image", outputType: "image", aspectRatios: ["1:1", "16:9"], medias: [], parameters: [] },
+  { id: "soul_2", name: "Soul 2", outputType: "image", description: "A trained identity in any scene", aspectRatios: ["1:1", "3:4"], medias: [{ name: "image", roles: ["image_references"], max: 1 }], parameters: [{ name: "soul_id", type: "string" }] },
 ];
 
 async function open(page: Page) {
@@ -32,6 +33,10 @@ async function open(page: Page) {
   await page.route("**/api/higgsfield/consumer/generation", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: MODELS, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
+    if (body.action === "characters") return route.fulfill({ json: { connected: true, available: true, characters: [
+      { soulId: "soul_9f2a", name: "Mira / character study", type: "soul_2", status: "ready", previewUrl: null },
+      { soulId: "soul_44c1", name: "Jonah", type: "soul_2", status: "training", previewUrl: null },
+    ] } });
     if (body.action === "quote") {
       quotes.push(body);
       const input = body.input as { model: string };
@@ -111,4 +116,25 @@ test("the quote carries the entry's settings and the reference role; Auto sends 
   /* The 6 s picked for Veo is inside Seedance's range, so it is kept; the resolution is the entry's first. */
   expect(quote.input.parameters).toEqual({ aspect_ratio: "16:9", duration: 6, resolution: "480p" });
   expect(quote.input.medias.map((m) => m.role)).toEqual(["end_image"]);
+});
+
+test("a Soul model carries a trained character: the account's list is read, a pick goes into the quote as soul_id, training ones cannot be picked", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, quotes } = await open(page);
+  await page.getByRole("tab", { name: "Images" }).click();
+  await pickCatalogue(page, "Soul 2");
+  await expect(page.getByTestId("gen-identity")).toBeVisible();
+  await expect(page.getByTestId("gen-identity-note")).toContainText("1 trained identity on the account.");
+  await expect(page.getByTestId("gen-identity-pick").locator("option", { hasText: "Jonah · training" })).toBeDisabled();
+  await page.getByTestId("gen-prompt").fill("Mira on the mirrored dunes at dusk");
+  await expect.poll(() => quotes.length).toBeGreaterThan(0);
+  expect((quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters).not.toHaveProperty("soul_id");
+  await page.getByTestId("gen-identity-pick").selectOption("soul_9f2a");
+  await expect.poll(() => (quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters.soul_id).toBe("soul_9f2a");
+  /* Prompt only again: the identity leaves the request. */
+  await page.getByTestId("gen-identity-pick").selectOption("");
+  await expect.poll(() => (quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters.soul_id).toBeUndefined();
+  await page.getByTestId("gen-identity-note").getByRole("button", { name: "Build identity in Cast" }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Cast & Elements");
+  expect(errors).toEqual([]);
 });

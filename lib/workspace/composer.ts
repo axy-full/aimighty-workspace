@@ -43,6 +43,8 @@ export type ComposerModel = {
   promptOnly?: boolean;
   /** Connected models: the schema declares `enhance_prompt` (FINAL_SPEC §4). */
   enhanceable?: boolean;
+  /** Connected Soul models: the schema declares `soul_id` (FINAL_SPEC §4 › Soul ID); a trained character can be carried. */
+  soulId?: boolean;
   /** Connected models: the most references the smallest slot allows, when declared. */
   mediaMax?: number;
 };
@@ -85,7 +87,7 @@ export type ComposerState = {
 };
 export const TAKES_MAX = 4;
 
-export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number };
+export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string };
 
 export const INITIAL_COMPOSER: ComposerState = {
   type: "image",
@@ -254,6 +256,7 @@ export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] 
       referenceRoles: [...new Set(slots.flatMap((slot) => slot.roles))],
       promptOnly: slots.length === 0,
       enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
+      soulId: Boolean(row.parameters?.some((p) => p.name === "soul_id")),
       ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
     }];
   });
@@ -280,7 +283,7 @@ export function activeModel(
 
 /* ── Settings the engine allows ───────────────────────────────────────── */
 
-export type ComposerSettings = { ratio: string; resolution: string; duration: number };
+export type ComposerSettings = { ratio: string; resolution: string; duration: number; /** A trained character, only where the model declares `soul_id`. */ soulId?: string };
 
 /** The settings a workspace engine renders with: its own first allowed values, the project's aspect where it fits. */
 export function composerSettings(model: ComposerModel | null, projectAspect?: string, picks: ComposerPicks = {}): ComposerSettings {
@@ -296,6 +299,7 @@ export function composerSettings(model: ComposerModel | null, projectAspect?: st
     duration: picks.duration != null && model?.durations?.includes(picks.duration)
       ? picks.duration
       : model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
+    ...(model?.soulId && picks.soulId ? { soulId: picks.soulId } : {}),
   };
 }
 
@@ -332,7 +336,7 @@ export function quoteKeyFor(input: {
   const priced = input.billing === "connected" || input.type === "audio" ? input.prompt : "";
   return JSON.stringify([
     input.billing, input.type, input.modelId,
-    input.settings.ratio, input.settings.resolution, input.settings.duration,
+    input.settings.ratio, input.settings.resolution, input.settings.duration, input.settings.soulId ?? "",
     input.references.map((r) => `${r.origin}:${r.id}`),
     priced, input.seconds, input.instrumental, input.voiceId,
   ]);

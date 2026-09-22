@@ -284,6 +284,7 @@ export function useComposer(options: {
       ...(model.durations?.length ? { duration: settings.duration } : {}),
       ...(model.resolutions?.length ? { resolution: settings.resolution } : {}),
       ...(model.enhanceable ? { enhance_prompt: state.enhance && !raw } : {}),
+      ...(model.soulId && settings.soulId ? { soul_id: settings.soulId } : {}),
     };
     return {
       type: state.type, model: model.id, prompt: raw ? state.prompt.replace(/^\s*raw:\s*/i, "").trim() : state.prompt.trim(), parameters,
@@ -291,7 +292,7 @@ export function useComposer(options: {
         ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
         : [],
     } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution]);
+  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
