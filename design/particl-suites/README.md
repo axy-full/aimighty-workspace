@@ -52,7 +52,17 @@ Rules that simplify the old app — keep them:
 
 **Spacing** — page padding 20 · card padding 16–18 · gaps 6 (chips) / 8–12 (rows) / 14–18 (sections).
 
-**Motion** — easing `cubic-bezier(.2,.7,.2,1)`; page enter fade + 6px rise 400ms (`om-in`); popovers/menus scale .97→1 150–300ms (`om-pop`); segment thumb opacity 200ms; toggle knob 200ms; running-dot pulse 1.4s.
+**Motion** — easing `cubic-bezier(.2,.7,.2,1)`; page enter fade + 6px rise 400ms (`om-in`); popovers/menus scale .97→1 150–300ms (`om-pop`); segment thumb opacity 200ms; toggle knob 200ms; running-dot pulse 1.4s; header aurora drift 12s/14s (`om-drift`, `om-drift2`); mark glow breathe 3.2s (`om-breathe`).
+
+**Flair layer (applied Sep 21)** — on top of the flat Graphite base:
+- *Header*: 60px, `position:relative; overflow:hidden`. Two blurred radial "aurora" blobs (`filter: blur(36–40px)`, opacity .75/.6) drift behind the content; blob A is tinted per suite — Studio `rgba(10,132,255,.55)`, Business `rgba(255,159,10,.45)`, Viral `rgba(255,69,58,.4)`, Atomik `rgba(48,209,88,.4)`, Gen `rgba(191,90,242,.5)`, Workspace `rgba(100,210,255,.4)`; blob B is violet `rgba(191,90,242,.38)` (blue in Gen). Over them a 14px dot grid (`rgba(255,255,255,.06)`) masked to fade downward, and a 1px baseline gradient `transparent → rgba(10,132,255,.7) 25% → rgba(191,90,242,.6) 55% → transparent 85%`. Mark fill = horizontal gradient `#F5F5F7 → #6EB4FF` with a breathing blue glow behind it; suite badge is a mono pill (`#6EB4FF` on `rgba(10,132,255,0.14)`, border `rgba(10,132,255,0.35)`). Avatar gets a `0 0 0 2px #000, 0 0 0 3px rgba(10,132,255,.45)` ring.
+- *Primary buttons*: `linear-gradient(160deg,#4C9DFF,#0A84FF 55%,#0064D6)`, `box-shadow: 0 6px 18px rgba(10,132,255,.32), inset 0 1px 0 rgba(255,255,255,.28)`, hover `filter: brightness(1.08)`; Gen Generate 44px radius 10; page primary 34px radius 8.
+- *Cards*: `linear-gradient(180deg,#1B1B20,#141417)` + `inset 0 1px 0 rgba(255,255,255,.05), 0 8px 20px rgba(0,0,0,.3)`.
+- *Segment tracks*: `rgba(255,255,255,0.06)`, border `.10`, `inset 0 1px 2px rgba(0,0,0,.6)`; selected thumb `linear-gradient(180deg,#45454C,#2E2E34)` + `0 2px 8px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12)`.
+- *Display titles* (page h1, project head): 26–28/700/−0.035em with `background-clip:text` gradient `#FFFFFF → rgba(235,235,245,.72)`.
+- *Grounds*: stage strip `linear-gradient(180deg,rgba(255,255,255,.025),transparent)`; main panel `radial-gradient(90% 50% at 50% -10%, rgba(10,132,255,.10), transparent 60%)` over `#0D0D10`; Library/Inspector `linear-gradient(180deg,#111114,#0D0D10 120px)`.
+- *Running pill*: adds `0 0 16px rgba(10,132,255,.25)` and a glowing dot.
+- Mobile mirrors the same layer (glass tab bar with glowing active tab, glowing stage-status dots, glass sheets, gradient balance) — see `Particl Mobile.dc.html`; all tap targets ≥ 44px.
 
 **Controls** — header buttons 32px tall, radius 6; stage-strip tabs 30px, radius 6, selected = tint bg + `#6EB4FF` text, number in mono 11px; chips 28px; primary button `#0A84FF` white text 600, 40px in composers / 32px in headers; toggles 34×20 track `#1C1C20`, knob 14 (`#0A84FF` on, `rgba(235,235,245,0.4)` off).
 
