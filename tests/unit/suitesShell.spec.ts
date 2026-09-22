@@ -13,8 +13,10 @@ test("the header segment reads Studio | Gen | Business | Viral | Atomik | Crew",
   expect(HEADER_SEGMENT.map((s) => s.label)).toEqual(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
 });
 
-test("every suite has the README's pages, numbered in order, with its group gaps", () => {
-  const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
+test("every suite has the README's pages, numbered in order, with its group gaps; the phone's Studio home sits outside the strip", () => {
+  const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.filter((p) => !p.phoneOnly).map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
+  const home = SHELL_SUITES.find((s) => s.id === "studio")!.pages.find((p) => p.phoneOnly);
+  expect(home).toMatchObject({ id: "home", n: "", own: true });
   expect(shape).toEqual({
     studio: ["01 Brief", "02 Boards", "|03 Cast", "04 Astra", "05 Rig", "|06 Takes", "07 Edit", "08 Deliver"],
     business: ["01 Ads", "02 Image ads", "|03 Setup"],
