@@ -181,8 +181,8 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
       // authorize collection under a replacement connection.
       await connected(scope.userId, claim.job.connectionGeneration);
-      const original = await collectConsumerVideoOriginal(claim.job, terminal.url);
       const providerResult = consumerVideoProviderResult(response.raw, input);
+      const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt: providerResult.enhancedPrompt });
       const completed = await completeConsumerJob({ ...scope, leaseToken: claim.leaseToken, resultManifest: { original, providerResult } });
       // An expired/stolen lease cannot publish stale completion. The committed
       // original remains recoverable by the next admitted poll.

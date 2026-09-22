@@ -232,6 +232,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>
           ) : null}
+          {composer.connectedEnhanced ? (
+            <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
+          ) : null}
           {results.map((entry) => (
             <div className="gx-asset" key={entry.take.id} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
               <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`}

@@ -9,7 +9,7 @@ import { newProject, type Asset, type Project } from "../workbench/studio";
 import type { MediaJob } from "../workbench/job-recovery";
 import {
   CONNECTED_GENERATION_ENDPOINT,
-  connectedOriginal,
+  connectedEnhancedPrompt, connectedOriginal,
   connectedQuoteRequest,
   connectedStatusRequest,
   connectedSubmitRequest,
@@ -126,6 +126,8 @@ export type ComposerHost = {
   /** The exact settings the engine would render with (ratio, resolution, duration). */
   settings: ComposerSettings;
   credits: number | null;
+  /** What the account says it rendered for the last connected take (`enhance_prompt`), once it completed; null otherwise. */
+  connectedEnhanced: string | null;
   buttonLabel: string;
   blocked: string | null;
   submitting: boolean;
@@ -527,11 +529,12 @@ export function useComposer(options: {
       const latest = await draftRequest<{ project: Project | null; revision: number }>(`${API}/projects?id=${encodeURIComponent(target.id)}`, scope).catch(() => null);
       if (!latest?.project || latest.project.id !== target.id) return;
       if (latest.project.assets.some((asset) => asset.generationId === original.generationId)) return;
+      const enhanced = connectedEnhancedPrompt(connectedJob);
       const asset = {
         id: original.generationId, generationId: original.generationId, url: original.url,
         kind: original.kind === "model" ? "document" : original.kind, mime: original.mime,
         name: `${connectedJob.model.name} · ${connectedJob.input.prompt.slice(0, 80)}`, category: "Generate",
-        description: `${connectedJob.model.name} · ${original.credits} connected credits`, prompt: connectedJob.input.prompt,
+        description: `${connectedJob.model.name} · ${original.credits} connected credits${enhanced ? " · enhanced on the account" : ""}`, prompt: connectedJob.input.prompt,
         status: "Draft", version: 1, locked: false, refs: [],
       } as unknown as Asset;
       await writeDraft(API, scope, { project: { ...latest.project, assets: [...latest.project.assets, asset] }, revision: latest.revision }).catch(() => undefined);
@@ -572,6 +575,8 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
+    /** What the account says it rendered for the last connected take, once it completed. */
+    connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
     buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),

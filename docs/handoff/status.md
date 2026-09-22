@@ -342,3 +342,8 @@ Tests: `tests/unit/suitesFlair.spec.ts` (fixed values, poster palette, no token 
 | The round's money rule as a pure function: a chair that failed, or a room in which nobody proposed, settles at zero (messages kept, not billed, the note says so); only a converged round bills the tokens reported. The round used this rule already; it is now named and tested | `lib/crew/room.ts › settleRound`, `lib/crew/round.ts` |
 
 Tests: `tests/unit/crewRoom.spec.ts` (+2), `tests/crew-workbench.spec.ts` (+1, five viewports).
+## 22 September — Gen: the prompt the account rendered (branch `feat/gen-enhanced-prompt`)
+
+When a connected entry enhances on the account (`enhance_prompt`, step 4), the account's status carries `params.enhanced_prompt`. It is now read from the same qualified evidence as the original (`consumerGenerationEnhancedPrompt`: sanitised, links omitted, 8000 cap, never from another job), kept on the completed job (`resultManifest.providerResult.enhancedPrompt`) and on the collected generation (`params.enhancedPrompt`, via the collector's new `enhancedPrompt` option — the marketing-video path passes its own), and shown: on the Gen results head once the take completes (*Enhanced on the account: …*), on the filed asset's description, and in the Inspector's provenance as **Enhanced** beside the prompt that was sent. Provenance only; it is never re-sent as input.
+
+Files: `lib/higgsfield-consumer/{video-contract,generation-contract,generation-service,video-service,video-original,generation-client}.ts`, `lib/workspace/use-composer.ts`, `components/graphite/{GenView,AssetInspector}.tsx`. Tests: `tests/unit/connectedCatalogue.spec.ts` (+ evidence and client cases), `tests/suites-assets-workbench.spec.ts` (Inspector row).

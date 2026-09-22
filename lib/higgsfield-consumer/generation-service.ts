@@ -41,6 +41,7 @@ import {
   parseConsumerGenerationInput,
   consumerGenerationParams,
   consumerGenerationAcknowledgement,
+  consumerGenerationEnhancedPrompt,
   consumerGenerationOriginalResult,
   consumerGenerationFailureResult,
   type ConsumerGenerationInput,
@@ -293,11 +294,12 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
     }
     if (terminal) {
       await connected(scope.userId, claim.job.connectionGeneration);
-      const original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+      const enhancedPrompt = consumerGenerationEnhancedPrompt(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
+      const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt });
       const completed = await completeConsumerJob({
         ...scope,
         leaseToken: claim.leaseToken,
-        resultManifest: { original, providerResult: { model: snapshot.params.model, type: snapshot.input.type } },
+        resultManifest: { original, providerResult: { model: snapshot.params.model, type: snapshot.input.type, ...(enhancedPrompt ? { enhancedPrompt } : {}) } },
       });
       return { job: await consumerGenerationView(completed ?? (await ownedGeneration(scope))), pollAfterSeconds };
     }

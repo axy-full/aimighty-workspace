@@ -104,6 +104,12 @@ export type ConnectedOriginal = {
  * stored original whose receipt matches the approved job may become a project
  * asset; anything else is reported as unavailable rather than guessed at.
  */
+/** The prompt the account says it rendered, when the job enhanced on the account; shown as provenance, never re-sent. */
+export function connectedEnhancedPrompt(job: ConnectedJob): string | null {
+  if (job.status !== "completed" || !record(job.result) || !record(job.result.providerResult)) return null;
+  const text = job.result.providerResult.enhancedPrompt;
+  return typeof text === "string" && text.trim() && text.length <= 8000 ? text : null;
+}
 export function connectedOriginal(job: ConnectedJob): ConnectedOriginal | null {
   if (job.status !== "completed" || job.originalAvailable !== true || job.originalAvailability !== "available" ||
       !record(job.result) || !record(job.result.original)) return null;

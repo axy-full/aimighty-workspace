@@ -21,7 +21,7 @@ async function open(page: Page) {
   await mockProjects(page, { current: fixture(), list: [{ id: "ws-assets", name: "Coastal light study" }, { id: "ws-other", name: "Northline" }] });
   await mockLibrary(page, {
     uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" }), upload({ id: "up_tone", filename: "room-tone.mp3", mime: "audio/mpeg", kind: "audio", width: 0, height: 0 })],
-    generations: [generation({ id: "gen_wide", title: "Wide on the water", prompt: "Wide on the water", params: { rawPrompt: "wide on the water, raw" } })],
+    generations: [generation({ id: "gen_wide", title: "Wide on the water", prompt: "Wide on the water", params: { rawPrompt: "wide on the water, raw", enhancedPrompt: "Wide on the water at dusk, 35mm, low sun" } })],
   });
   /* Registered after mockLibrary so it runs first: writes are recorded, reads fall through. */
   const calls: { method: string; path: string; body: unknown }[] = [];
@@ -144,6 +144,8 @@ test("the Inspector shows provenance and hides three ways", async ({ page }, inf
   await expect(page.getByTestId("asset-facts")).toContainText("Generation");
   await expect(page.getByTestId("asset-facts")).toContainText("gemini-3.1-flash-image");
   await expect(page.getByTestId("asset-facts")).toContainText("Wide on the water");
+  /* The prompt the account rendered sits beside the prompt that was sent. */
+  await expect(page.getByTestId("asset-facts")).toContainText("Wide on the water at dusk, 35mm, low sun · on the account");
   await expect(page.getByTestId("asset-inspector").getByRole("button", { name: "Retry generation" })).toBeVisible();
 
   await page.getByTestId("close-inspector").click();

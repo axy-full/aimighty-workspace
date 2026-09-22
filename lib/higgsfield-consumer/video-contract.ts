@@ -479,22 +479,33 @@ export function consumerVideoOriginalResult(
   } catch { return null; }
 }
 
+export const ENHANCED_PROMPT_MAX = 8000;
+/**
+ * The prompt the account says it actually rendered (`params.enhanced_prompt`),
+ * as inert provenance: control characters dropped, links omitted, capped.
+ * Provider-authored text is shown, never used as an instruction.
+ */
+export function providerEnhancedPrompt(params: unknown): { text: string; truncated: boolean } | undefined {
+  if (!record(params) || typeof params.enhanced_prompt !== "string") return undefined;
+  const text = params.enhanced_prompt
+    .replace(/\p{Cc}/gu, character => character === "\n" || character === "\t" ? character : "")
+    .replace(/https?:\/\/[^\s<>"']+/giu, "[link omitted]")
+    .trim();
+  if (!text) return undefined;
+  return { text: text.slice(0, ENHANCED_PROMPT_MAX), truncated: text.length > ENHANCED_PROMPT_MAX };
+}
+
 /** Inert provenance only, called after the terminal identity/settings validation.
  * Do not use provider-authored text as an instruction or persist delivery URLs. */
 export function consumerVideoProviderResult(value: unknown, input: ConsumerVideoInput) {
   const raw = record(value) && record(value.raw_data) ? value.raw_data : null;
-  const params = raw && record(raw.params) ? raw.params : null;
-  const text = typeof params?.enhanced_prompt === "string"
-    ? params.enhanced_prompt
-      .replace(/\p{Cc}/gu, character => character === "\n" || character === "\t" ? character : "")
-      .replace(/https?:\/\/[^\s<>"']+/giu, "[link omitted]")
-    : undefined;
+  const enhanced = providerEnhancedPrompt(raw && record(raw.params) ? raw.params : null);
   return {
     model: "marketing_studio_video" as const,
     mode: input.mode ?? "ugc",
-    ...(text === undefined ? {} : {
-      enhancedPrompt: text.slice(0, 8000),
-      ...(text.length > 8000 ? { enhancedPromptTruncated: true as const } : {}),
+    ...(enhanced === undefined ? {} : {
+      enhancedPrompt: enhanced.text,
+      ...(enhanced.truncated ? { enhancedPromptTruncated: true as const } : {}),
     }),
   };
 }
