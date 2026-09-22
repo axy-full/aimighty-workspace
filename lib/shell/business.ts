@@ -133,7 +133,9 @@ export function imageAdsBlock(state: ImageAdsState, extra: { connected: boolean;
   return null;
 }
 /** The DTC Ads Engine (`dtc-ads generate`) is a CLI flow the connected account's tools do not carry (checked against its advertised toolset). */
-export const DTC_UNAVAILABLE = "The connected account does not offer the DTC Ads Engine through its tools yet. Image ads run on Marketing Studio Image; ad formats, brand kits and batch arrive when the account offers them.";
+export const DTC_UNAVAILABLE = "The connected account does not offer the DTC Ads Engine (marketing-studio dtc-ads generate) through its tools. Image ads run on Marketing Studio Image; the ad formats below are the account’s Marketing Studio templates, created at their exact price. Brand kits and batch stay on the CLI until the account offers them.";
+/** The ad-formats section (FINAL_SPEC §2.2 › ad formats), on the account's template catalogue. */
+export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Marketing Studio templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
 
 /* ── Setup ───────────────────────────────────────────────────────────── */
 export const SETUP_TYPES = [
