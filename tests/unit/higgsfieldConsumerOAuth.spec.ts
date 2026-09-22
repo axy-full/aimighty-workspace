@@ -797,6 +797,9 @@ async function routeFixture() {
         if (limit) throw new account.AccountError("Too many requests.", 429);
       },
     },
+    "@/lib/higgsfield-consumer/developer-api": {
+      probeDeveloperApi: async () => ({ reachable: false, status: null, reason: "stub" }),
+    },
     "@/lib/higgsfield-consumer/oauth": {
       ...(await modules()).oauth,
       beginConsumerAuthorization: async () => {

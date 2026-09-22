@@ -8,6 +8,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
+import { DeveloperApiRow } from "./DeveloperApiRow";
 
 /**
  * Workspace (FINAL_SPEC §5): General · People · Plans & credits · Usage ·
@@ -304,6 +305,7 @@ function Engines() {
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
       <XaiEngineRow />
+      <DeveloperApiRow />
     </>
   );
 }
