@@ -19,6 +19,7 @@ import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/s
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
 import { useAssetActions } from "@/lib/shell/use-asset-actions";
 import { ViralView } from "./viral/ViralView";
+import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -181,7 +182,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
-                    ) : (
+                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
