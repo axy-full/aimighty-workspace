@@ -268,9 +268,22 @@ export function offeredModels(state: Pick<ComposerState, "type">, models: readon
 }
 
 /**
+ * The named defaults (FINAL_SPEC §3, from higgsfield-ai/skills › SKILL.md):
+ * image → GPT Image 2.5, video → Seedance 2.5, audio → Seed Audio 1.0 — by
+ * the catalogue's ids, first match wins; the workspace engines carry the
+ * same families under the repo's ids. Never invented: a default that the
+ * list does not offer is simply not the default.
+ */
+export const DEFAULT_MODEL_PREFERENCE: Record<ComposerType, readonly string[]> = {
+  image: ["gpt_image_2_5", "gpt_image_2"],
+  video: ["seedance_2_5", "dreamina-seedance-2-5-260628"],
+  audio: ["seed_audio", "eleven_sfx"],
+};
+
+/**
  * The model the composer would send: the person's choice while the list still
- * offers it, else the list's first — which is why the composer works without
- * anybody touching the model row.
+ * offers it, else the named default when the list carries it, else the list's
+ * first — which is why the composer works without anybody touching the model row.
  */
 export function activeModel(
   state: Pick<ComposerState, "type" | "billing" | "chosen">,
@@ -278,7 +291,8 @@ export function activeModel(
 ): ComposerModel | null {
   const offered = offeredModels(state, models);
   const picked = state.chosen[chosenKey(state.billing, state.type)];
-  return offered.find((model) => model.id === picked) ?? offered[0] ?? null;
+  const preferred = DEFAULT_MODEL_PREFERENCE[state.type].map((id) => offered.find((model) => model.id === id)).find(Boolean);
+  return offered.find((model) => model.id === picked) ?? preferred ?? offered[0] ?? null;
 }
 
 /* ── Settings the engine allows ───────────────────────────────────────── */
