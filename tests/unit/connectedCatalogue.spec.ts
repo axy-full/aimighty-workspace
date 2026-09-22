@@ -47,13 +47,15 @@ test("the captured models_explore catalogue parses into 98 typed models with pro
   expect(listCatalogueModels(catalogue, { type: "audio" })).toHaveLength(3);
   expect(listCatalogueModels(catalogue)).toHaveLength(95);
   for (const entry of catalogue.models) {
-    expect(entry.name.toLowerCase()).not.toContain("higgsfield");
-    expect(entry.description.toLowerCase()).not.toContain("higgsfield");
+    /* Names and descriptions read as the account gives them (the never-name rule was retired on 21 September). */
+    expect(entry.name.trim()).toBe(entry.name);
     expect(entry).not.toHaveProperty("providerName");
   }
-  expect(model("soul_2").name).toBe("Persona 2.0");
-  expect(model("seedance_2_0_mini").name).toBe("Motion 2.0 Mini");
-  expect(model("veo3_1").name).toBe("Vista 3.1");
+  expect(model("soul_2").name).toBe("Higgsfield Soul 2.0");
+  expect(model("seedance_2_0_mini").name).toBe("Seedance 2.0 Mini");
+  expect(model("veo3_1").name).toBe("Google Veo 3.1");
+  expect(model("gpt_image_2").name).toBe("GPT Image 2");
+  expect(model("ms_image").name).toBe("DTC Ads");
   expect(model("soul_2").supportsUnlim).toBe(true);
   expect(model("kling3_0").aspectRatios).toEqual(["16:9", "9:16", "1:1"]);
   expect(model("sam_3_3d").medias).toEqual([{ name: "medias", roles: ["image"], max: 1, required: true, description: "Single image of the object to lift into 3D (role: image)." }]);
