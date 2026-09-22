@@ -19,11 +19,9 @@ async function open(page: Page, path: string, account: { connected: boolean; fla
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, { uploads: [], generations: [] });
-  await page.route("**/api/me", async (route) => {
-    const response = await route.fetch();
-    const json = await response.json();
-    return route.fulfill({ json: { ...json, owner: true } });
-  });
+  /* Read once, then answer synchronously: a route that fetches while the page navigates can outlive the test. */
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
   await page.route("**/api/higgsfield/consumer/audio-tools?**", (route) => route.fulfill({ json: {
     connection: { connected: account.connected, requiresReconnect: false },
     capabilities: { voice: true, dubbing: true, analysis: false, reframe: true, ...account.flags, languages: [{ code: "fra", name: "French" }, { code: "jpn", name: "Japanese" }] },
