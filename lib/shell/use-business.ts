@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType } from "./business";
+import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL } from "./business";
 
 /**
  * What the Business pages read before they can compose (FINAL_SPEC §2):
@@ -46,7 +46,7 @@ export function useBusiness(scopeReady: boolean) {
           const response = await scoped(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "catalogue", type }) });
           const json = await response.json().catch(() => null) as { catalogue?: { models?: CatalogueModel[] }; error?: string } | null;
           if (!response.ok) throw new Error(json?.error ?? "The connected catalogue could not be read.");
-          for (const m of json?.catalogue?.models ?? []) if (m.id === ADS_MODEL || m.id === IMAGE_ADS_MODEL) found[m.id] = m;
+          for (const m of json?.catalogue?.models ?? []) if (m.id === ADS_MODEL || m.id === IMAGE_ADS_MODEL || m.id === DTC_ADS_MODEL) found[m.id] = m;
         }
         if (live) { setModels(found); setCatalogueError(null); }
       } catch (error) { if (live) setCatalogueError(error instanceof Error ? error.message : "The connected catalogue could not be read."); }

@@ -122,18 +122,41 @@ export function clampedDuration(state: AdsState, durationRange?: { min: number; 
 
 /* ── Image ads ───────────────────────────────────────────────────────── */
 export const IMAGE_AD_RESOLUTIONS = ["1k", "2k", "4k"] as const;
-export type ImageAdsState = { prompt: string; aspect: string; resolution: (typeof IMAGE_AD_RESOLUTIONS)[number]; medias: { id: string; name: string }[] };
-export const INITIAL_IMAGE_ADS: ImageAdsState = { prompt: "", aspect: "1:1", resolution: "1k", medias: [] };
+/**
+ * The two image engines the account offers for ads (FINAL_SPEC §2.2): Marketing
+ * Studio Image, and the DTC Ads Engine (`ms_image`), whose entry requires a
+ * style — the ad format, picked from `show_marketing_studio type=image_style`
+ * — and takes a brand kit (must be completed), a quality tier, up to four
+ * products and a batch of 1–20 images per job.
+ */
+export const DTC_ADS_MODEL = "ms_image";
+export const IMAGE_AD_ENGINES = [[IMAGE_ADS_MODEL, "Marketing Studio Image"], [DTC_ADS_MODEL, "DTC Ads"]] as const;
+export const DTC_QUALITIES = ["low", "medium", "high"] as const;
+export const DTC_BATCH = { min: 1, max: 20 } as const;
+export const DTC_PRODUCTS_MAX = 4;
+export type ImageAdsState = {
+  engine: (typeof IMAGE_AD_ENGINES)[number][0];
+  prompt: string; aspect: string; resolution: (typeof IMAGE_AD_RESOLUTIONS)[number]; medias: { id: string; name: string }[];
+  /** DTC only. */
+  styleId: string | null; brandKitId: string | null; quality: (typeof DTC_QUALITIES)[number]; batch: number; productIds: string[];
+};
+export const INITIAL_IMAGE_ADS: ImageAdsState = { engine: IMAGE_ADS_MODEL, prompt: "", aspect: "1:1", resolution: "1k", medias: [], styleId: null, brandKitId: null, quality: "low", batch: 1, productIds: [] };
+export const isDtc = (state: Pick<ImageAdsState, "engine">) => state.engine === DTC_ADS_MODEL;
 export function imageAdsBlock(state: ImageAdsState, extra: { connected: boolean; hasProject: boolean }): string | null {
   if (!extra.hasProject) return "Open a project first.";
   if (!extra.connected) return "Connect the account in Workspace › Engines.";
   if (!state.prompt.trim() && !state.medias.length) return "Write the prompt or add a reference.";
   if (state.aspect === "auto" && !state.medias.length) return "Aspect auto needs a reference still.";
   if (state.medias.length > AD_MEDIA_MAX) return `Up to ${AD_MEDIA_MAX} reference stills.`;
+  if (isDtc(state)) {
+    if (!state.styleId) return "Pick a style — the ad format. DTC Ads has no default.";
+    if (!Number.isInteger(state.batch) || state.batch < DTC_BATCH.min || state.batch > DTC_BATCH.max) return `Batch is ${DTC_BATCH.min}–${DTC_BATCH.max} images per job.`;
+    if (state.productIds.length > DTC_PRODUCTS_MAX) return `Up to ${DTC_PRODUCTS_MAX} products.`;
+  }
   return null;
 }
 /** The DTC Ads Engine (`dtc-ads generate`) is a CLI flow the connected account's tools do not carry (checked against its advertised toolset). */
-export const DTC_UNAVAILABLE = "The connected account does not offer the DTC Ads Engine (marketing-studio dtc-ads generate) through its tools. Image ads run on Marketing Studio Image; the ad formats below are the account’s Marketing Studio templates, created at their exact price. Brand kits and batch stay on the CLI until the account offers them.";
+export const DTC_COPY = "DTC Ads runs on the account’s ms_image engine: a style (the ad format) is required and has no default; a completed brand kit folds its logo, colours, fonts and tone into the prompt; up to four products; 1–20 images per job, cost scaling with the batch and the quality tier.";
 /** The ad-formats section (FINAL_SPEC §2.2 › ad formats), on the account's template catalogue. */
 export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Marketing Studio templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
 
@@ -145,6 +168,7 @@ export const SETUP_TYPES = [
   ["setting", "Settings", "settings list"],
   ["ad_reference", "Ad references", "ad-references create --video-input"],
   ["brand_kit", "Brand kits", "brand-kits fetch --url"],
+  ["image_style", "Image styles", "ad-formats list"],
 ] as const;
 export type SetupType = (typeof SETUP_TYPES)[number][0];
 export type SetupItem = { id: string; type: SetupType; name: string; meta: string; previewUrl: string | null };

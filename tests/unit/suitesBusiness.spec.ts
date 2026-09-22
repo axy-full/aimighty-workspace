@@ -56,6 +56,12 @@ test("Image ads needs a prompt or a reference, and a reference for aspect auto",
   expect(imageAdsBlock(INITIAL_IMAGE_ADS, ready)).toBe("Write the prompt or add a reference.");
   expect(imageAdsBlock({ ...INITIAL_IMAGE_ADS, prompt: "Hero on marble", aspect: "auto" }, ready)).toBe("Aspect auto needs a reference still.");
   expect(imageAdsBlock({ ...INITIAL_IMAGE_ADS, prompt: "Hero on marble" }, ready)).toBeNull();
+  /* DTC Ads (ms_image): a style is required and has no default; batch 1–20; up to four products. */
+  const dtc = { ...INITIAL_IMAGE_ADS, engine: "ms_image" as const, prompt: "Hero on marble" };
+  expect(imageAdsBlock(dtc, ready)).toBe("Pick a style — the ad format. DTC Ads has no default.");
+  expect(imageAdsBlock({ ...dtc, styleId: "st1", batch: 21 }, ready)).toBe("Batch is 1–20 images per job.");
+  expect(imageAdsBlock({ ...dtc, styleId: "st1", productIds: ["a", "b", "c", "d", "e"] }, ready)).toBe("Up to 4 products.");
+  expect(imageAdsBlock({ ...dtc, styleId: "st1", batch: 4, productIds: ["a"] }, ready)).toBeNull();
 });
 
 test("the widened video contract carries the setup ids and enforces both server rules", () => {
