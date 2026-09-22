@@ -23,15 +23,19 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
   const { rates, name } = useSession();
   const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
   const selected = shell.view === "gen" ? "gen" : shell.view === "crew" ? "crew" : shell.view === "suite" ? shell.suite.id : null;
-  const mark = shell.view === "workspace" ? "WORKSPACE" : shell.view === "gen" ? "GEN" : shell.view === "crew" ? "CREW" : shell.suite.mark;
+  /* The context badge: the phone's Home and its Library read HOME and ASSETS; every other view names itself. */
+  const studioPage = shell.view === "suite" && shell.suite.id === "studio" ? shell.page.id : null;
+  const mark = shell.view === "workspace" ? "WORKSPACE" : shell.view === "gen" ? "GEN" : shell.view === "crew" ? "CREW" : !shell.wide && shell.libOpen ? "ASSETS" : studioPage === "home" ? "HOME" : shell.suite.mark;
   const who = account?.workspace?.name ?? name ?? "Workspace";
+  /* The phone's back button: a stage returns to the stage grid (‹ Studio); the grid returns to Home (‹ Home). */
+  const back = studioPage === "stages" ? { label: "Home", page: "home" } : studioPage && studioPage !== "home" ? { label: "Studio", page: "stages" } : null;
   return (
     <header className="gx-header" data-row="header">
       <div className="gx-aurora" aria-hidden="true" data-testid="header-aurora" /><div className="gx-dots" aria-hidden="true" /><div className="gx-baseline" aria-hidden="true" />
-      {shell.view === "suite" && shell.suite.id === "studio" && shell.page.id !== "home" ? (
-        <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", "home")} data-testid="phone-back"><span aria-hidden="true">‹</span> Studio</button>
+      {back ? (
+        <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", back.page)} data-testid="phone-back"><span aria-hidden="true">‹</span> {back.label}</button>
       ) : null}
-      <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio")} aria-label="particl home">
+      <button type="button" className="gx-brand" onClick={() => (shell.wide ? shell.goSuite("studio") : shell.goSuite("studio", "home"))} aria-label="particl home">
         <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
           <defs><linearGradient id="gx-mark-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F5F5F7" /><stop offset="1" stopColor="#6EB4FF" /></linearGradient></defs>
           {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}

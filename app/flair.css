@@ -213,3 +213,26 @@
   .gx-header:has(.gx-back) .gx-brand { display: none; }
   .gx-home-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── The phone's Home (GLASS_SPEC §3 › "Where to?"): the suite tiles and the Assets row. Layout here; the material is the glass layer's. ── */
+.gx-where { padding: 18px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+.gx-where-title { margin: -8px 0 0; font-size: 34px; font-weight: 700; letter-spacing: -.04em; white-space: normal; }
+.gx-where-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gx-where-tile { position: relative; overflow: hidden; min-height: 158px; padding: 14px; border-radius: 22px; display: flex; flex-direction: column; gap: 4px; text-align: left; background: linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .04)); border: 1px solid rgba(255, 255, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 14px 34px rgba(0, 0, 0, .4); }
+.gx-where-glow { position: absolute; right: -24px; top: -24px; width: 110px; height: 110px; border-radius: 50%; pointer-events: none; filter: blur(28px); background: color-mix(in srgb, var(--tile, #0A84FF) 40%, transparent); }
+.gx-where-ic { position: relative; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 8px; color: #fff; background: linear-gradient(160deg, color-mix(in srgb, var(--tile, #0A84FF) 80%, transparent), color-mix(in srgb, var(--tile, #0A84FF) 40%, transparent)); box-shadow: 0 8px 20px color-mix(in srgb, var(--tile, #0A84FF) 33%, transparent); }
+.gx-where-name { position: relative; font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+.gx-where-line { position: relative; font-size: 13px; line-height: 1.35; color: var(--gx-text-2); }
+.gx-where-fact { position: relative; margin-top: auto; padding-top: 8px; font-size: 12px; color: var(--tile, #6EB4FF); }
+.gx-where-assets { min-height: 56px; padding: 0 16px; border-radius: 999px; display: flex; align-items: center; gap: 12px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10); }
+.gx-where-assets-name { font-weight: 600; font-size: 15px; }
+.gx-where-assets-n { flex: 1; min-width: 0; font-size: 13px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-where-assets > .gx-glyph:last-child { color: var(--gx-text-3); }
+/* The context badge stays on the phone (HOME · STUDIO · GEN …); it leaves only between 768 and 1280. */
+@media (max-width: 767px) { .gx-brand-mark { display: inline-flex; font-size: 12px; } .gx-header:has(.gx-back) .gx-brand { display: none; } }
+/* Gen's sticky Generate sits above the floating tab bar (22px up + 66px tall + 4px), not under it. */
+@media (max-width: 767px) { .gx-gen-cta { bottom: 92px; } }
+/* The phone's top bar row (GLASS_SPEC §3): mark + badge, search, credits, avatar on one row at 360–390. The
+   prototype's row carries no search (its palette is desktop-only); the shell keeps the palette reachable as a
+   round 44px button, so the wordmark yields to the badge on the phone. */
+@media (max-width: 767px) { .gx-header { gap: 8px; } .gx-brand-name { display: none; } .gx-search { flex: 0 0 44px; min-width: 44px; padding: 0; justify-content: center; } .gx-search .gx-search-label { display: none; } }
