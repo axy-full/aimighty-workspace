@@ -153,7 +153,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
+        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
             {showLibrary ? <Library items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}

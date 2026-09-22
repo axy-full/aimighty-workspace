@@ -1,8 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   CREW_PRESETS, DEFAULT_SEATED, PHASE_INSTRUCTION, TEMPERATURE, callCostUsd, callsInRound, chairOf, memberNamed, parseChallenge, parseSolutions,
-  roleCard, roundBlock, roundCeilingUsd, userMessage, ROUNDS_MAX,
-} from "../../lib/crew/room";
+  roleCard, roundBlock, roundCeilingUsd, userMessage, ROUNDS_MAX, minutesFile, settleRound } from "../../lib/crew/room";
 import { projectContext, readsLabel } from "../../lib/crew/context";
 import { mockAnswer } from "../../lib/crew/mock";
 import { newProject } from "../../lib/workbench/studio";
@@ -84,4 +83,17 @@ test("the mock room never addresses someone who is not seated", () => {
   expect(mockAnswer("director", "challenge", ["DOP", "Editor"])).toMatch(/^@DOP — /);
   expect(mockAnswer("director", "challenge", ["Producer"])).toBe("@Producer — agreed, with a smaller frame.");
   expect(parseSolutions(mockAnswer("producer", "converge", []))).toHaveLength(3);
+});
+
+test("a round settles at zero when the chair fails or nobody proposed; a converged round bills the tokens reported", () => {
+  expect(settleRound({ converged: false, proposals: 0, spentUsd: 0.02 })).toEqual({ billed: false, spendUsd: 0, note: "Nobody in the room could answer — run again (not billed)" });
+  expect(settleRound({ converged: false, proposals: 4, spentUsd: 0.02 })).toEqual({ billed: false, spendUsd: 0, note: "Converge failed — run again (not billed)" });
+  expect(settleRound({ converged: true, proposals: 4, spentUsd: 0.0308 })).toEqual({ billed: true, spendUsd: 0.0308, note: null });
+});
+
+test("the minutes file is byte-identical markdown named by day and session", async () => {
+  const file = minutesFile("# Minutes\n\n- one\n", "0f9d2c1a-7b6e-4c3d-9a1b-2c3d4e5f6a7b", new Date("2026-09-22T10:00:00Z"));
+  expect(file.name).toBe("crew-minutes-2026-09-22-0f9d2c1a.md");
+  expect(file.type).toBe("text/markdown");
+  expect(await file.text()).toBe("# Minutes\n\n- one\n");
 });

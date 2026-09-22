@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { DEFAULT_CONTEXT, roundBlock, type CrewContext, type CrewPhase } from "./room";
+import { DEFAULT_CONTEXT, minutesFile, roundBlock, type CrewContext, type CrewPhase } from "./room";
 import type { CrewMember, CrewSession, CrewSolution, MemberPatch, SessionSummary, StoredMessage } from "./store";
 
 /**
@@ -205,6 +205,13 @@ export function useCrew(projectId: string | null) {
       a.href = url; a.download = `crew-minutes-${session.id}.md`; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }),
+    /** The minutes as a file, for the Library (`uploadToProject` stores it byte-identical and files it on the project). */
+    minutesAsFile: async () => {
+      if (!session) throw new Error("There is no session to file.");
+      const response = await scoped(`/api/crew/sessions/${session.id}/minutes`);
+      if (!response.ok) throw new Error("The minutes could not be exported.");
+      return minutesFile(await response.text(), session.id);
+    },
     verify: async () => call<{ ok: boolean; listed: boolean; model: string; models: string[]; reason?: string }>("/api/crew/status", { method: "POST" }),
   };
 }
