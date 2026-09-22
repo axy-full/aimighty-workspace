@@ -34,6 +34,9 @@ async function open(page: Page, path: string) {
   await page.route("**/api/usage", (route) => route.fulfill({ json: { unit: "credits", spentCredits: 312, models: [{ model: "seedance-2.5", engine: "byteplus", kind: "video", n: 6, credits: 240 }, { model: "nano-banana-2", engine: "google", kind: "image", n: 9, credits: 72 }] } }));
   await page.route("**/api/workspaces/keys", (route) => route.fulfill({ json: { keys: [{ name: "ark", label: "Connected video account", does: "Seedance video · prompt writer", set: true, masked: "ark_••••1234" }, { name: "openai", label: "Connected language account", does: "Thinking models", set: false, masked: null }, { name: "xai", label: "xAI · Grok", does: "Crew", set: true, masked: "xai_••••" }] } }));
   await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true, model: "grok-4.6" } }));
+  await page.route("**/api/higgsfield/consumer/connection", (route) => route.request().method() === "POST"
+    ? route.fulfill({ json: { probe: { reachable: true, balance: 1234, unit: "credits" } } })
+    : route.fulfill({ json: { connected: true, requiresReconnect: false } }));
   await page.route("**/api/account/security", (route) => route.fulfill({ json: { sessions: [{ id: "s1", current: true, lastSeen: Date.now(), agent: "Chrome" }], mfa: { enabled: false, required: false } } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -87,6 +90,10 @@ test("Workspace tabs are Graphite over the real routes; General saves the enhanc
   await tabs.getByRole("tab", { name: "Engines" }).click();
   await expect(page.getByTestId("ws-engine")).toHaveCount(2);
   await expect(page.getByTestId("engine-xai")).toContainText("Connected · grok-4.6");
+  /* The developer API: one free read with the account's grant, the answer said plainly. */
+  await expect(page.getByTestId("engine-developer-api")).toContainText("Same grant as the connected account");
+  await page.getByTestId("developer-api-verify").click();
+  await expect(page.getByTestId("developer-api-result")).toContainText("Reachable with this account's grant · balance 1,234 credits");
 
   await tabs.getByRole("tab", { name: "Security" }).click();
   await expect(page.getByTestId("ws-security")).toContainText("1 signed in");
