@@ -18,6 +18,7 @@ import { GenView } from "./GenView";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
 import { useAssetActions } from "@/lib/shell/use-asset-actions";
+import { ViralView } from "./viral/ViralView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -178,6 +179,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   <div className="gx-stage gx-scroll" data-testid="content">
                     {shell.page.own && shell.suite.id === "business" ? (
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
+                    ) : shell.page.own && shell.suite.id === "viral" ? (
+                      <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : (
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>

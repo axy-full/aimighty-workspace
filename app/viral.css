@@ -1,0 +1,14 @@
+/* Viral = Genjutsu (FINAL_SPEC §1 step 3). Graphite tokens; scoped under .vr. */
+.vr .gx-gen-card { max-width: 560px; }
+.vr-well { flex-direction: column; align-items: stretch; }
+.vr-well .gx-ref { max-width: 100%; }
+.vr-source { border-color: var(--gx-tint-border); background: var(--gx-tint); }
+.vr-job { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); font-size: 12.5px; }
+.vr-job-name { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vr-history { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.vr-others { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
+.vr-compare { width: min(1040px, 100%); }
+.vr-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; }
+.vr-compare-grid figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.vr-compare-grid video { width: 100%; border-radius: 6px; background: #000; }
+@media (max-width: 767px) { .vr-compare-grid { grid-template-columns: 1fr; } .vr-history { padding: 12px; } }
