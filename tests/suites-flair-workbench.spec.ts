@@ -43,7 +43,8 @@ test("desktop: aurora per view, glyph tabs with labels that clip below 1180px, f
   });
   await expect(page.getByTestId("header-aurora")).toBeAttached();
   expect(await tint()).toBe("rgba(10, 132, 255, 0.55)");
-  await expect(page.locator(".gx-header").first()).toHaveCSS("height", "60px");
+  /* 60px under the flair layer; the glass layer (GLASS_SPEC §2) makes the toolbar a 64px island. */
+  await expect(page.locator(".gx-header").first()).toHaveCSS("height", "64px");
 
   const suites = page.getByRole("tablist", { name: "Suites" });
   await expect(suites.getByRole("tab")).toHaveCount(6);
