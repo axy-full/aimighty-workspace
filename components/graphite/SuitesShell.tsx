@@ -27,6 +27,7 @@ import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
+import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
@@ -214,6 +215,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             </div>
           </div>
         ) : null}
+        <TabBar />
         {state.toast ? <div className="gx-toast" role="status" data-testid="toast">{state.toast}</div> : null}
       </div>
     </AtomikHost>

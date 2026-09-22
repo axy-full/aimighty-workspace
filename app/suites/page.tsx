@@ -5,6 +5,7 @@ import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SessionProvider } from "@/lib/session";
 import "../workspace.css";
 import "../graphite.css";
+import "../flair.css";
 import "../crew.css";
 import "../business.css";
 import "../viral.css";

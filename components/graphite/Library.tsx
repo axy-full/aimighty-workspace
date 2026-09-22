@@ -5,6 +5,7 @@ import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useShell } from "@/lib/shell/state";
+import { DEPT_COLORS, Glyph, KIND_DOT } from "./icons";
 
 export type AssetFilter = "All" | "Images" | "Video" | "Audio" | "Uploads";
 const FILTERS: AssetFilter[] = ["All", "Images", "Video", "Audio", "Uploads"];
@@ -54,6 +55,7 @@ export function Library({ items, ready, overlay, now, onUseAsReference, cutId }:
             <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Library view">
         {(["tools", "assets"] as const).map((tab) => (
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>
+            <Glyph name={tab === "tools" ? "wrench" : "stack"} size={13} className="gx-glyph" />
             <span>{tab === "tools" ? "Tools" : "Assets"}</span>
             <span className="gx-seg-count">{(tab === "tools" ? tools : items.length).toLocaleString("en-US")}</span>
           </button>
@@ -62,8 +64,8 @@ export function Library({ items, ready, overlay, now, onUseAsReference, cutId }:
       )}
       {shell.libTab === "tools" ? (
         <div className="gx-tools gx-scroll">
-          {groups.length ? groups.map((group) => (
-            <div className="gx-tool-group" key={group.title}>
+          {groups.length ? groups.map((group, gi) => (
+            <div className="gx-tool-group" key={group.title} style={{ "--dept": DEPT_COLORS[gi % DEPT_COLORS.length] } as React.CSSProperties} data-testid="tool-group">
               <div className="gx-tool-group-head"><span className="gx-eyebrow">{group.title}</span><span className="gx-eyebrow">{group.items.length}</span></div>
               {group.items.map((item) => (
                 <button key={item.name} type="button" className="gx-tool" data-tool={item.name}
@@ -79,7 +81,7 @@ export function Library({ items, ready, overlay, now, onUseAsReference, cutId }:
         <>
           <input className="gx-field" aria-label="Search assets" placeholder="Search this project" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="gx-chips" role="group" aria-label="Asset kind">
-            {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
+            {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
           <div className="gx-assets gx-scroll" data-testid="library-assets">
             {shown.map((entry) => {
