@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities } from "@/components/suites/AtomikVoiceTools";
-import { DRAW_TO_EDIT, workflowReason, type WorkflowCapability, type WorkflowSurface } from "@/lib/shell/workflows";
+import { workflowReason, type WorkflowCapability, type WorkflowSurface } from "@/lib/shell/workflows";
 import { useShell } from "@/lib/shell/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { Project } from "@/lib/workbench/studio";
@@ -67,21 +67,6 @@ export function WorkflowHost({ surface, scope, project }: { surface: WorkflowSur
           <AtomikVoiceTools project={project} scope={scope} tool={surface.tool} capability={capability} capabilities={capabilities} jobs={jobs} revision={revision} refreshProject={refreshProject} />
         </div>
       ) : null}
-    </section>
-  );
-}
-
-/** Astra › Draw to edit: the card, and why it cannot run. */
-export function DrawToEditCard() {
-  return (
-    <section className="gx-gen-card gx-workflow" aria-label={DRAW_TO_EDIT.title} data-testid="workflow-draw-to-edit">
-      <div className="gx-gen-row">
-        <span className="gx-eyebrow" data-functional-label="">Connected workflow · draw to video</span>
-        <h2 className="gx-workflow-title">{DRAW_TO_EDIT.title}</h2>
-        <p className="gx-hint">{DRAW_TO_EDIT.line}</p>
-      </div>
-      <button type="button" className="gx-primary" disabled aria-describedby="gx-draw-to-edit-reason">Sketch on a frame</button>
-      <p className="gx-reason" id="gx-draw-to-edit-reason" role="status" data-testid="workflow-draw-to-edit-reason">{DRAW_TO_EDIT.reason}</p>
     </section>
   );
 }

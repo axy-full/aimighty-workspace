@@ -78,8 +78,9 @@ test("Workspace tabs are Graphite over the real routes; General saves the enhanc
 
   await tabs.getByRole("tab", { name: "Plans & credits" }).click();
   await expect(page.getByTestId("workspace-balance")).toBeVisible();
-  await expect(page.getByTestId("ws-pack")).toHaveCount(2);
-  await expect(page.getByTestId("ws-pack").nth(1)).toContainText("$200 · 2,000 cr + 200 bonus");
+  /* No pack list: there is no purchase route behind one, so it is not shown. */
+  await expect(page.getByTestId("ws-pack")).toHaveCount(0);
+  await expect(page.getByTestId("ws-plans")).not.toContainText("$200");
   await expect(page.getByTestId("ws-plans")).toContainText("Studio plan · active");
 
   await tabs.getByRole("tab", { name: "Usage" }).click();

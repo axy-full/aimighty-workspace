@@ -137,7 +137,6 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
         <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
       ))}
-      <button type="button" role="tab" className="gx-seg-btn" aria-selected={false} disabled title="3D is made in Studio › Astra. It joins Gen with the Studio build step."><span>3D</span></button>
       <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button>
     </div>
   );
