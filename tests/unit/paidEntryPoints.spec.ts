@@ -112,6 +112,26 @@ test("legacy text reserves before its only provider call and charges even when t
     expect(Number((await metered("text_paid"))[0].billed_credits)).toBe(1);
   }));
 
+test("an answer the caller refuses is paid to the provider but settles at zero for the workspace", async () =>
+  scope("text_refused", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const { db } = await import("../../lib/db");
+    await expect(
+      runPaidText(call, {
+        model,
+        submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A rewrite without the citation." } }], usage: { cost: 0.01 } }) }),
+        accept: (text) => (text.includes("@Image1") ? { ok: true } : { ok: false, reason: "The rewrite dropped @Image1. Your prompt is unchanged; try once more." }),
+      }),
+    ).rejects.toThrow(/dropped @Image1.*Nothing was charged\./);
+    const event = (await metered("text_refused"))[0];
+    expect(event.status).toBe("failed");
+    expect(Number(event.billed_credits)).toBe(0);
+    const job = (await db().execute(`SELECT status,cost_usd,response_json FROM paid_text_jobs`)).rows[0];
+    expect(job.status).toBe("refused");
+    expect(Number(job.cost_usd)).toBeCloseTo(0.01, 6);
+    expect(String(job.response_json)).toContain("without the citation");
+  }));
+
 test("unknown text prices and empty balances fail before provider submission", async () =>
   scope(
     "text_empty",

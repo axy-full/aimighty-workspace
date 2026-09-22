@@ -59,8 +59,10 @@ export const POST = withTenant(async function POST(req: Request) {
       const messages = enhancerMessages(prompt, { mode: body.mode, anchored: body.anchored === true, editing: body.editing === true, engine });
       const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id };
       if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-      /* The price the person saw is required: there is no unquoted enhancement. */
-      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true) });
+      /* The price the person saw is required: there is no unquoted enhancement.
+         The answer is judged before the job settles: a rewrite that dropped a
+         citation, or that is not a prompt, is refused and the workspace is not charged. */
+      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true) }, { accept: (text) => parseEnhanced(text, prompt) });
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) return NextResponse.json({ error: parsed.reason }, { status: 502 });
       return NextResponse.json({ prompt: parsed.prompt, provider, writer }, { headers: { "Cache-Control": "no-store" } });
