@@ -116,7 +116,9 @@ test("home feature cards read the first sentence of the intro; Library derives f
   for (const id of Object.keys(SPEC_PAGES) as PageId[]) {
     const def = ALL_PAGES.find((p) => p.id === id)!;
     expect(def.description, id).toBe(firstSentence(SPEC_PAGES[id]!.intro));
-    expect(libraryFor(id).map((g) => g.items.length), id).toEqual(SPEC_PAGES[id]!.groups.map((g) => g.cards.length));
+    /* Library tools are the cards with a tool or an Atomik plan behind them (owner's rule, 22 September); an emptied group is dropped. */
+    const expected = SPEC_PAGES[id]!.groups.map((g) => g.cards.filter((c) => c.tool || c.plan).length).filter((n) => n > 0);
+    expect(libraryFor(id).map((g) => g.items.length), id).toEqual(expected);
   }
   expect(firstSentence("Describe the outcome; the agent plans it. It reaches every suite.")).toBe("Describe the outcome; the agent plans it.");
   expect(PAGES.particl.find((p) => p.id === "astra")!.title).toBe("Astra 3D");
