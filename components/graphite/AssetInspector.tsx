@@ -31,6 +31,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     ["Kind", generation ? "Generation" : "Upload"],
     ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "rendering" ? "Not settled" : take.failedUnbilled ? "Not billed" : take.credits != null ? `${take.credits.toLocaleString("en-US")} cr` : generation.costUsd != null ? `$${generation.costUsd.toFixed(3)}` : "—"] as [string, string]] : []),
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
+    ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
     ["Status", take.status],
   ];

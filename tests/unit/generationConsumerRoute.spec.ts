@@ -72,6 +72,9 @@ async function fixture() {
       submitConsumerGenerationJob: service("submit", { ...job, status: "accepted" }),
       pollConsumerGeneration: service("status", { job: { ...job, status: "accepted" } }),
     },
+    "@/lib/higgsfield-consumer/characters": {
+      connectedCharacters: service("characters", { connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] }),
+    },
     "@/lib/higgsfield-consumer/explainer-service": {
       connectedExplainerPresets: service("explainer", { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }], fetchedAt: 1, runnable: false, catalogueModels: [] }),
     },
@@ -236,4 +239,14 @@ test("the explainer style listing is an owner read with its own limit; it carrie
   expect((await f.request("POST", { action: "explainer-presets", refresh: true })).status).toBe(200);
   expect(f.calls.map((call) => [call.name, call.args])).toEqual([["explainer", ["owner", { refresh: false }]], ["explainer", ["owner", { refresh: true }]]]);
   expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:explainer-presets", 12], ["hf-consumer-generation:workspace:owner:explainer-presets", 12]]);
+});
+
+test("the characters listing is an owner read with the catalogue's limit; it carries nothing but the action", async () => {
+  const f = await fixture();
+  const response = await f.request("POST", { action: "characters" });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] });
+  expect((await f.request("POST", { action: "characters", refresh: true })).status).toBe(400);
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["characters", ["owner"]]]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:characters", 12]]);
 });

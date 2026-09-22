@@ -26,7 +26,9 @@ import {
   consumerGenerationParams,
   consumerGenerationOriginalResult,
   consumerGenerationFailureResult,
+  consumerGenerationEnhancedPrompt,
 } from "../../lib/higgsfield-consumer/generation-contract";
+import { connectedEnhancedPrompt, type ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 const raw = JSON.parse(readFileSync("tests/fixtures/connected-models.json", "utf8"));
 const catalogue = parseConnectedCatalogue(raw, 1_000);
@@ -152,6 +154,17 @@ test("normalized status envelopes qualify only the exact job, model, type and pr
     done({}, { rawUrl: "http://media.example.com/out.png" }), done({}, { rawUrl: "https://user:pw@media.example.com/out.png" }), done({}, { url: "https://media.example.com/out.png" }),
     done({ status: "processing" }), { generation: { ...done().generation }, results: [{ id: media, model: "nano_banana_2", type: "image" }] }, { raw_data: { id: job, result_url: "https://media.example.com/out.png" } }])
     expect(consumerGenerationOriginalResult(value, job, params, "image"), JSON.stringify(value).slice(0, 120)).toBeNull();
+  /* The prompt the account rendered is read from the same qualified evidence: sanitised, capped, never from another job. */
+  expect(consumerGenerationEnhancedPrompt(done({ params: { ...params, enhanced_prompt: "A bottle, \u0007rim-lit, see https://x.test/a.png\n" } }), job, params, "image"))
+    .toBe("A bottle, rim-lit, see [link omitted]");
+  expect(consumerGenerationEnhancedPrompt(done(), job, params, "image")).toBeUndefined();
+  expect(consumerGenerationEnhancedPrompt(done({ params: { ...params, enhanced_prompt: "   " } }), job, params, "image")).toBeUndefined();
+  expect(consumerGenerationEnhancedPrompt(done({ id: media, params: { ...params, enhanced_prompt: "Other job" } }), job, params, "image")).toBeUndefined();
+  expect(consumerGenerationEnhancedPrompt(done({ params: { ...params, enhanced_prompt: "x".repeat(9000) } }), job, params, "image")).toHaveLength(8000);
+  const saved = { status: "completed", result: { providerResult: { model: "nano_banana_2", type: "image", enhancedPrompt: "A bottle, rim-lit" } } } as unknown as ConnectedJob;
+  expect(connectedEnhancedPrompt(saved)).toBe("A bottle, rim-lit");
+  expect(connectedEnhancedPrompt({ ...saved, status: "accepted" } as ConnectedJob)).toBeNull();
+  expect(connectedEnhancedPrompt({ status: "completed", result: { providerResult: { model: "nano_banana_2", type: "image" } } } as unknown as ConnectedJob)).toBeNull();
   expect(consumerGenerationFailureResult(done({ status: "failed", results: null }), job, params, "image")).toBe("failed");
   expect(consumerGenerationFailureResult(done({ status: "nsfw", results: null }), job, params, "image")).toBe("nsfw");
   expect(consumerGenerationFailureResult(done({ status: "failed" }), job, params, "image")).toBeNull();

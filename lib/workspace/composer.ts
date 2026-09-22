@@ -43,6 +43,8 @@ export type ComposerModel = {
   promptOnly?: boolean;
   /** Connected models: the schema declares `enhance_prompt` (FINAL_SPEC §4). */
   enhanceable?: boolean;
+  /** Connected Soul models: the schema declares `soul_id` (FINAL_SPEC §4 › Soul ID); a trained character can be carried. */
+  soulId?: boolean;
   /** Connected models: the most references the smallest slot allows, when declared. */
   mediaMax?: number;
 };
@@ -78,11 +80,14 @@ export type ComposerState = {
   picks: ComposerPicks;
   /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
   enhance: boolean;
+  /** Takes per Generate (the prototype's stepper, 1–4): each take is its own quoted job at the price shown. */
+  count: number;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
+export const TAKES_MAX = 4;
 
-export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number };
+export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string };
 
 export const INITIAL_COMPOSER: ComposerState = {
   type: "image",
@@ -95,6 +100,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   voiceId: "",
   picks: {},
   enhance: false,
+  count: 1,
   notice: null,
 };
 
@@ -111,6 +117,7 @@ export type ComposerAction =
   | { type: "pick"; value: ComposerPicks }
   | { type: "referenceRole"; key: string; role: string }
   | { type: "enhance"; value: boolean }
+  | { type: "count"; value: number }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -150,6 +157,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, references: state.references.map((r) => (r.key === action.key ? { ...r, role: action.role } : r)), notice: null };
     case "enhance":
       return { ...state, enhance: action.value };
+    case "count":
+      return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -247,6 +256,7 @@ export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] 
       referenceRoles: [...new Set(slots.flatMap((slot) => slot.roles))],
       promptOnly: slots.length === 0,
       enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
+      soulId: Boolean(row.parameters?.some((p) => p.name === "soul_id")),
       ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
     }];
   });
@@ -273,7 +283,7 @@ export function activeModel(
 
 /* ── Settings the engine allows ───────────────────────────────────────── */
 
-export type ComposerSettings = { ratio: string; resolution: string; duration: number };
+export type ComposerSettings = { ratio: string; resolution: string; duration: number; /** A trained character, only where the model declares `soul_id`. */ soulId?: string };
 
 /** The settings a workspace engine renders with: its own first allowed values, the project's aspect where it fits. */
 export function composerSettings(model: ComposerModel | null, projectAspect?: string, picks: ComposerPicks = {}): ComposerSettings {
@@ -289,6 +299,7 @@ export function composerSettings(model: ComposerModel | null, projectAspect?: st
     duration: picks.duration != null && model?.durations?.includes(picks.duration)
       ? picks.duration
       : model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
+    ...(model?.soulId && picks.soulId ? { soulId: picks.soulId } : {}),
   };
 }
 
@@ -325,7 +336,7 @@ export function quoteKeyFor(input: {
   const priced = input.billing === "connected" || input.type === "audio" ? input.prompt : "";
   return JSON.stringify([
     input.billing, input.type, input.modelId,
-    input.settings.ratio, input.settings.resolution, input.settings.duration,
+    input.settings.ratio, input.settings.resolution, input.settings.duration, input.settings.soulId ?? "",
     input.references.map((r) => `${r.origin}:${r.id}`),
     priced, input.seconds, input.instrumental, input.voiceId,
   ]);
@@ -376,11 +387,17 @@ export function composerButtonLabel(input: {
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
+  /** Takes per Generate; the price shown is the take's price times the count. */
+  count?: number;
 }): string {
   if (input.submitting) return "Submitting…";
   const credits = liveCredits(input.quote, input.quoteKey);
-  if (credits === null) return "Generate";
-  return `Generate · ${credits.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}`;
+  const count = Math.max(1, input.count ?? 1);
+  if (credits === null) return count > 1 ? `Generate ${count} takes` : "Generate";
+  const unit = input.billing === "connected" ? "connected cr" : "cr";
+  return count > 1
+    ? `Generate ${count} takes · ${(credits * count).toLocaleString("en-US")} ${unit}`
+    : `Generate · ${credits.toLocaleString("en-US")} ${unit}`;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */

@@ -20,7 +20,7 @@ import {
 } from "./catalogue";
 import { CONNECTED_TOOL_NAMES, requireConnectedTool, validateToolRequest } from "./tools";
 import { consumerMediaIdentitySchema, consumerMediaKey } from "./genjutsu-contract";
-import { CONNECTED_MODEL_VARIANTS, ConsumerVideoError, consumerVideoAcknowledgement } from "./video-contract";
+import { CONNECTED_MODEL_VARIANTS, ConsumerVideoError, consumerVideoAcknowledgement, providerEnhancedPrompt } from "./video-contract";
 
 const parameterValue = z.union([
   z.string().max(2000),
@@ -183,6 +183,20 @@ export function consumerGenerationOriginalResult(
   if (!g || g.status !== "completed" || !record(g.results)) return null;
   const url = safeUrl(g.results.rawUrl);
   return url ? { url } : null;
+}
+/**
+ * The prompt the account says it rendered, when the entry enhanced on the
+ * account (`enhance_prompt`): read only from the same qualified evidence as
+ * the original, so it can never belong to another job. Provenance, not input.
+ */
+export function consumerGenerationEnhancedPrompt(
+  value: unknown,
+  jobId: string,
+  params: ConsumerGenerationParams,
+  type: ConnectedOutputType,
+): string | undefined {
+  const g = evidence(value, jobId, params, type);
+  return g ? providerEnhancedPrompt(g.params)?.text : undefined;
 }
 export function consumerGenerationFailureResult(
   value: unknown,

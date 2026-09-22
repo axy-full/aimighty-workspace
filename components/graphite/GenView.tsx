@@ -8,9 +8,14 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { COMPOSER_TYPES, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
+import { COMPOSER_TYPES, TAKES_MAX, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
+import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
+import { WorkflowHost } from "./tools/WorkflowHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { useScopedFetch } from "@/lib/useScopedFetch";
+import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
+import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
@@ -33,6 +38,25 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  const [mode, setMode] = useState<"compose" | "analysis">("compose");
+  /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
+  const scopedFetch = useScopedFetch(scope);
+  const [characters, setCharacters] = useState<{ list: ConnectedCharacter[] | null; note: string }>({ list: null, note: "Reading the account’s characters…" });
+  const wantsCharacters = Boolean(model?.soulId) && state.billing === "connected";
+  useEffect(() => {
+    if (!wantsCharacters || characters.list) return;
+    let live = true;
+    void scopedFetch(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "characters" }) })
+      .then(async (r) => { const json = await r.json().catch(() => null) as { connected?: boolean; available?: boolean; characters?: ConnectedCharacter[]; error?: string } | null; if (!r.ok) throw new Error(json?.error ?? "The account’s characters could not be read."); return json; })
+      .then((json) => {
+        if (!live) return;
+        const list = json?.characters ?? [];
+        const ready = list.filter((c) => c.status !== "training" && c.status !== "failed").length;
+        setCharacters({ list, note: json?.connected === false ? "Connect the owner’s account in Workspace › Engines." : json?.available === false ? "The connected account does not advertise its characters." : ready ? `${ready} trained ${ready === 1 ? "identity" : "identities"} on the account.` : "No trained identity on the account yet." });
+      })
+      .catch((error: unknown) => { if (live) setCharacters({ list: [], note: error instanceof Error ? error.message : "The account’s characters could not be read." }); });
+    return () => { live = false; };
+  }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
   const [wellError, setWellError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
@@ -107,15 +131,30 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
   const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
 
+  const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
+  const tabs = (
+    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
+      {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
+        <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
+      ))}
+      <button type="button" role="tab" className="gx-seg-btn" aria-selected={false} disabled title="3D is made in Studio › Astra. It joins Gen with the Studio build step."><span>3D</span></button>
+      <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button>
+    </div>
+  );
+  if (mode === "analysis") {
+    return (
+      <div className="gx-gen gx-enter" data-testid="gen-view">
+        <div className="gx-gen-col">
+          <section className="gx-gen-card" aria-label="Output">{tabs}</section>
+          <WorkflowHost surface={analysis} scope={scope} project={project} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="gx-gen gx-enter" data-testid="gen-view">
       <section className="gx-gen-card" aria-label="Composer">
-        <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
-          {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
-            <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={state.type === t} onClick={() => composer.dispatch({ type: "type", value: t })}><span>{TYPE_TAB[t]}</span></button>
-          ))}
-          <button type="button" role="tab" className="gx-seg-btn" aria-selected={false} disabled title="3D is made in Studio › Astra. It joins Gen with the Studio build step."><span>3D</span></button>
-        </div>
+        {tabs}
 
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
@@ -180,6 +219,19 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           </div>
         ) : null}
 
+        {model?.soulId ? (
+          <div className="gx-gen-row" data-testid="gen-identity">
+            <label className="gx-eyebrow" htmlFor="gx-identity" data-functional-label="">Identity</label>
+            <select id="gx-identity" className="gx-select" value={settings.soulId ?? ""} onChange={(e) => composer.dispatch({ type: "pick", value: { soulId: e.target.value } })} data-testid="gen-identity-pick">
+              <option value="">No identity · prompt only</option>
+              {(characters.list ?? []).map((c) => <option key={c.soulId} value={c.soulId} disabled={c.status === "training" || c.status === "failed"}>{c.name}{c.status && c.status !== "ready" ? ` · ${c.status}` : ""}</option>)}
+            </select>
+            <p className="gx-hint" data-testid="gen-identity-note">
+              {characters.note}{" "}
+              <button type="button" className="cw-link" onClick={() => shell.goSuite("studio", "cast")}>Build identity in Cast</button>
+            </p>
+          </div>
+        ) : null}
         {model?.ratios?.length ? (
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">Aspect</span>
@@ -209,6 +261,14 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
         {blocked ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{blocked}</p> : null}
         <div className="gx-gen-cta">
+          <div className="gx-gen-takes" data-testid="gen-takes">
+            <span className="gx-hint">Takes</span>
+            <div className="gx-stepper" role="group" aria-label="Takes per generate">
+              <button type="button" aria-label="Fewer" disabled={state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
+              <span data-testid="gen-takes-count">{state.count}</span>
+              <button type="button" aria-label="More" disabled={state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
+            </div>
+          </div>
           <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || submitting} aria-describedby={blocked ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
             {submitting ? "Submitting…" : buttonLabel}
           </button>
@@ -231,6 +291,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>
+          ) : null}
+          {composer.connectedEnhanced ? (
+            <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
           {results.map((entry) => (
             <div className="gx-asset" key={entry.take.id} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>

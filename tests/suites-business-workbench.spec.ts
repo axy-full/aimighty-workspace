@@ -40,6 +40,15 @@ async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAva
     if (body.action === "status") return route.fulfill({ json: { job: job("completed", 40) } });
     return route.fulfill({ status: 400, json: { error: "unexpected" } });
   });
+  await page.route("**/api/higgsfield/consumer/marketing-templates**", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: {}, jobs: [] } });
+    const body = route.request().postDataJSON() as { action: string };
+    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { templates: [
+      { id: "tpl_ugc_1", name: "Creator unboxing", category: "ugc", description: "A creator opens the product on camera.", previewUrl: null, outputKind: "video", inputs: ["product_image", "prompt"], credits: 24, priceSource: "cost_table" },
+      { id: "tpl_poster_1", name: "Launch poster", category: "posters", description: "A bold launch poster.", previewUrl: null, outputKind: "image", inputs: ["prompt"], credits: 6, priceSource: "cost_table" },
+    ], matched: 2, total: 2, loaded: 2, complete: true, fetchedAt: Date.now(), categories: ["posters", "ugc"], costsVersion: "v1" } } });
+    return route.fulfill({ status: 400, json: { error: "unexpected" } });
+  });
   await page.route("**/api/higgsfield/consumer/video", async (route) => {
     const body = route.request().postDataJSON() as { action: string; types?: string[] };
     if (body.action !== "setup") return route.fulfill({ status: 400, json: { error: "unexpected" } });
@@ -110,6 +119,10 @@ test("Image ads runs on Marketing Studio Image and says the DTC engine is not of
   const { requests } = await open(page, "dtc");
   await expect(page.getByTestId("image-ads-view")).toBeVisible();
   await expect(page.getByTestId("dtc-unavailable")).toContainText("does not offer the DTC Ads Engine");
+  /* Ad formats: the account's template catalogue, through the existing template client. */
+  await expect(page.getByTestId("ad-formats")).toContainText("Ad formats");
+  await expect(page.getByTestId("ad-formats-client").getByRole("list", { name: "Templates" }).getByRole("listitem")).toHaveCount(2);
+  await expect(page.getByTestId("ad-formats-client")).toContainText("Creator unboxing");
   await expect(page.getByTestId("dtc-blocked")).toHaveText("Write the prompt or add a reference.");
   await page.getByTestId("dtc-prompt").fill("Bold hero shot on marble");
   await page.getByTestId("dtc-aspect").getByRole("button", { name: "auto" }).click();

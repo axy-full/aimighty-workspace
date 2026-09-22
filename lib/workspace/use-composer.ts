@@ -9,7 +9,7 @@ import { newProject, type Asset, type Project } from "../workbench/studio";
 import type { MediaJob } from "../workbench/job-recovery";
 import {
   CONNECTED_GENERATION_ENDPOINT,
-  connectedOriginal,
+  connectedEnhancedPrompt, connectedOriginal,
   connectedQuoteRequest,
   connectedStatusRequest,
   connectedSubmitRequest,
@@ -126,6 +126,8 @@ export type ComposerHost = {
   /** The exact settings the engine would render with (ratio, resolution, duration). */
   settings: ComposerSettings;
   credits: number | null;
+  /** What the account says it rendered for the last connected take (`enhance_prompt`), once it completed; null otherwise. */
+  connectedEnhanced: string | null;
   buttonLabel: string;
   blocked: string | null;
   submitting: boolean;
@@ -282,6 +284,7 @@ export function useComposer(options: {
       ...(model.durations?.length ? { duration: settings.duration } : {}),
       ...(model.resolutions?.length ? { resolution: settings.resolution } : {}),
       ...(model.enhanceable ? { enhance_prompt: state.enhance && !raw } : {}),
+      ...(model.soulId && settings.soulId ? { soul_id: settings.soulId } : {}),
     };
     return {
       type: state.type, model: model.id, prompt: raw ? state.prompt.replace(/^\s*raw:\s*/i, "").trim() : state.prompt.trim(), parameters,
@@ -289,7 +292,7 @@ export function useComposer(options: {
         ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
         : [],
     } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution]);
+  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
@@ -388,7 +391,11 @@ export function useComposer(options: {
       try {
         const project = await ensureProject();
         const settings = now.settings;
-        const name = composer.prompt.trim().slice(0, 60) || `${model.label} take`;
+        const base = composer.prompt.trim().slice(0, 60) || `${model.label} take`;
+        /* Takes: each is its own quoted job at the price shown; a price that moves stops the rest. */
+        const count = Math.max(1, composer.count);
+        for (let take = 0; take < count; take++) {
+        const name = count > 1 ? `${base} · take ${take + 1}` : base;
         if (composer.billing === "connected") {
           /* Re-quote on click; a moved price is shown and nothing is sent. */
           const input = now.connectedInput;
@@ -412,7 +419,7 @@ export function useComposer(options: {
           const accepted = parseConnectedJob(sent.job, project.id);
           setConnectedJob(accepted);
           setRun({ source: "connected", name, meta: [name, model.label, `${accepted.quoteCredits.toLocaleString("en-US")} connected cr`].join(" · "), jobId: accepted.id });
-          return;
+          continue;
         }
 
         /* This workspace's credits: the take needs a shot to live in, so the
@@ -471,6 +478,8 @@ export function useComposer(options: {
         }
         if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: outcome.reason }); return; }
         setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(outcome.credits)].join(" · "), jobId: outcome.jobId });
+        }
+        if (count > 1) dispatch({ type: "notice", value: `${count} takes submitted, each at the price shown. They file into Takes as they land.` });
       } catch (error) {
         setRun(null);
         dispatch({ type: "notice", value: neutralCopy(error instanceof Error ? error.message : "This generation could not be submitted.") });
@@ -527,11 +536,12 @@ export function useComposer(options: {
       const latest = await draftRequest<{ project: Project | null; revision: number }>(`${API}/projects?id=${encodeURIComponent(target.id)}`, scope).catch(() => null);
       if (!latest?.project || latest.project.id !== target.id) return;
       if (latest.project.assets.some((asset) => asset.generationId === original.generationId)) return;
+      const enhanced = connectedEnhancedPrompt(connectedJob);
       const asset = {
         id: original.generationId, generationId: original.generationId, url: original.url,
         kind: original.kind === "model" ? "document" : original.kind, mime: original.mime,
         name: `${connectedJob.model.name} · ${connectedJob.input.prompt.slice(0, 80)}`, category: "Generate",
-        description: `${connectedJob.model.name} · ${original.credits} connected credits`, prompt: connectedJob.input.prompt,
+        description: `${connectedJob.model.name} · ${original.credits} connected credits${enhanced ? " · enhanced on the account" : ""}`, prompt: connectedJob.input.prompt,
         status: "Draft", version: 1, locked: false, refs: [],
       } as unknown as Asset;
       await writeDraft(API, scope, { project: { ...latest.project, assets: [...latest.project.assets, asset] }, revision: latest.revision }).catch(() => undefined);
@@ -572,7 +582,9 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
-    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting }),
+    /** What the account says it rendered for the last connected take, once it completed. */
+    connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
+    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
     audio, capability, project: target, projectNotice, generate, scope,

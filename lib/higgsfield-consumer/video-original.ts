@@ -337,6 +337,8 @@ export async function collectConsumerVideoOriginal(
     /** One clip of a multi-clip job: keyed and receipted by the clip's own
      * provider job, retained under the parent job's admission and quote. */
     clip?: ConsumerClip;
+    /** The prompt the account says it rendered (already sanitised), kept on the generation as provenance. */
+    enhancedPrompt?: string;
   } = {},
 ): Promise<ConsumerVideoOriginal> {
   const workspace = requireTenant();
@@ -558,6 +560,7 @@ export async function collectConsumerVideoOriginal(
             consumerCredits: job.quoteCredits,
             consumerCreditUnit: "higgsfield_credits",
             originalSha256: sha256,
+            ...(options.enhancedPrompt ? { enhancedPrompt: options.enhancedPrompt } : {}),
             ...(metadata!.width !== undefined ? { width: metadata!.width } : {}),
             ...(metadata!.height !== undefined ? { height: metadata!.height } : {}),
             ...(job.workflow === "generation" || job.workflow === "marketing-template" || job.workflow === "voice-tool" || job.workflow === "shorts" ? { consumerOriginalMime: result.asset.mime } : {}),

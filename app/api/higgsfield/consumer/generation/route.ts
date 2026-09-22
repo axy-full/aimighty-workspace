@@ -10,6 +10,7 @@ import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { ConsumerOAuthError } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
+import { connectedCharacters } from "@/lib/higgsfield-consumer/characters";
 import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
@@ -42,7 +43,9 @@ const submit = z
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 /** Read-only explainer style listing (slice F6); nothing is generated from it. */
 const explainer = z.object({ action: z.literal("explainer-presets"), refresh: z.boolean().optional() }).strict();
-const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer]);
+/** The account's trained characters (Soul IDs), for a Soul model's `soul_id`. */
+const characters = z.object({ action: z.literal("characters") }).strict();
+const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -116,7 +119,7 @@ export const POST = withTenant(async (req: Request) => {
     const body = parsed.data;
     await takeAccountLimit(
       `hf-consumer-generation:${requireTenant().id}:${owner.user.id}:${body.action}`,
-      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" ? 12 : 6,
+      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" ? 12 : 6,
       60_000,
     );
     if (body.action === "catalogue")
@@ -124,6 +127,8 @@ export const POST = withTenant(async (req: Request) => {
         { catalogue: presentCatalogue(await connectedGenerationCatalogue(owner.user.id, { refresh: body.refresh === true }), body.type) },
         { headers },
       );
+    if (body.action === "characters")
+      return Response.json(await connectedCharacters(owner.user.id), { headers });
     if (body.action === "explainer-presets")
       return Response.json({ explainer: await connectedExplainerPresets(owner.user.id, { refresh: body.refresh === true }) }, { headers });
     if (body.action === "submit") {

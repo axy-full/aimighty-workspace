@@ -4,11 +4,12 @@ import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import {
-  AD_ASPECTS, AD_DURATIONS, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_UNAVAILABLE, IMAGE_AD_RESOLUTIONS, IMAGE_ADS_MODEL,
+  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_UNAVAILABLE, IMAGE_AD_RESOLUTIONS, IMAGE_ADS_MODEL,
   INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_TYPES, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock, withAdReference, withMode, withSetup,
   type AdMediaRole, type AdMode, type AdsState, type ImageAdsState, type SetupItem, type SetupType,
 } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
+import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
 import { useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
@@ -291,6 +292,20 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
         {job.state.phase === "done" ? <p className="gx-gen-note" role="status">Rendered. It is in Takes and in Library › Assets. <button type="button" className="cw-link" onClick={() => { job.reset(); shell.goSuite("studio", "takes"); }}>Open Takes</button></p> : null}
+      </section>
+      {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
+      <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
+        <div className="gx-gen-row">
+          <span className="gx-eyebrow" data-functional-label="">Connected · Marketing Studio templates</span>
+          <h2 className="gx-workflow-title">{AD_FORMATS_COPY.title}</h2>
+          <p className="gx-hint">{AD_FORMATS_COPY.line}</p>
+        </div>
+        {project ? (
+          <div className="pxw gx-legacy" data-testid="ad-formats-client">
+            <MarketingTemplateBrowser key={`${scope}:${project.id}`} project={project} scope={scope} enabled={connected && business.connection?.owner !== false} />
+            <MarketingTemplateCreator key={`template:${scope}:${project.id}`} project={project} scope={scope} enabled={connected && business.connection?.owner !== false} />
+          </div>
+        ) : <p className="gx-reason" role="status">Save your project first.</p>}
       </section>
       <section className="gx-gen-results" aria-label="About">
         <div className="gx-gen-results-head"><span className="gx-panel-title">Marketing Studio Image</span></div>

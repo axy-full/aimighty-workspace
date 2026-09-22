@@ -1,6 +1,17 @@
 # The workspace switch-over
 
-**Status: prepared, not enabled in production. Awaiting the owner's go-ahead.**
+**Status (22 September 2026): the target is the Particl Suites shell at `/suites`, on every device.**
+
+Since 22 September the four old entry points (`/`, `/workbench`, `/atomik`,
+`/subatomik`) land on the Suites shell (`lib/workspace/switchover.ts ›
+SHELL_PATH`), and phones switch too (`SHELL_ON_PHONES`): the shell's phone
+layer and Studio home (#287, #295) replaced the 19 September decision that kept
+phones on the old surfaces. The mapping below is unchanged — only the path it
+builds is `/suites` instead of `/workspace`. `/workspace` stays reachable by its
+own URL; `?shell=legacy` still opens the old shell for one release. The rest of
+this document describes the mechanism as it was written for `/workspace`.
+
+**Original status: prepared, not enabled in production. Awaiting the owner's go-ahead.**
 
 The redesigned workspace has lived at `/workspace` since PR223 while `/`,
 `/workbench`, `/atomik` and `/subatomik` kept rendering the old shell. This

@@ -182,6 +182,13 @@ export async function runPaidText(
     submit?: (
       request: TextRun,
     ) => Promise<{ ok: boolean; status: number; text: string }>;
+    /**
+     * The caller's acceptance of the answer, judged BEFORE the job settles.
+     * A refused answer (a rewrite that dropped a citation, an answer that is
+     * not a prompt) is saved and paid to the provider, but settles the meter
+     * at zero: the workspace is not charged for text it cannot use.
+     */
+    accept?: (text: string) => { ok: true } | { ok: false; reason: string };
   } = {},
 ) {
 return await withRecoveryActivity('paid-text', async () => {
@@ -295,6 +302,17 @@ return await withRecoveryActivity('paid-text', async () => {
         outputTokens >= 0
           ? (textCostUsd(model, inputTokens, outputTokens) ?? estimate)
           : estimate;
+    }
+    const verdict = typeof content === "string" && content && overrides.accept ? overrides.accept(content) : null;
+    if (verdict && !verdict.ok) {
+      /* Paid to the provider, refused by the caller: saved, settled at zero for the workspace. */
+      await db().execute({
+        sql: `UPDATE paid_text_jobs SET status='refused',cost_usd=?,response_json=?,updated_at=? WHERE id=?`,
+        args: [cost, response.text, now(), id],
+      });
+      await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`, args: [cost, id] });
+      await meter({ ...event, status: "failed", engineCostUsd: 0 });
+      throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502);
     }
     await db().execute({
       sql: `UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`,

@@ -27,6 +27,9 @@ import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
+import { DrawToEditCard, WorkflowHost } from "./tools/WorkflowHost";
+import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
+import { StudioHome } from "./mobile/StudioHome";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -177,14 +180,23 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 </>
               ) : (
                 <>
-                  <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />
+                  {/* The phone's Studio home carries the project's name itself; the page head is the stage's. */}
+                  {shell.page.id === "home" && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    {shell.page.own && shell.suite.id === "business" ? (
+                    {shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
+                      <StudioHome key="home" project={project} items={items} />
+                    ) : shell.page.own && shell.suite.id === "business" ? (
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
+                        {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] || (shell.suite.id === "studio" && shell.page.id === "astra") ? (
+                          <div className="gx-extras" data-testid="page-workflows">
+                            {(WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ?? []).map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            {shell.suite.id === "studio" && shell.page.id === "astra" ? <DrawToEditCard /> : null}
+                          </div>
+                        ) : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
                     )}
