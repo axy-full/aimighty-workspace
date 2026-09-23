@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from '../../lib/workbench/project-limits';
 import {test,expect} from '@playwright/test';
 import {newProject,type Asset,type Project} from '../../lib/workbench/studio';
 import {recoverMediaAssets,type MediaJob} from '../../lib/workbench/job-recovery';
@@ -20,9 +21,9 @@ test('manual selections, selected takes and locked nodes survive background reco
  const locked=project();locked.nodes[0].locked=true;expect(recoverMediaAssets(locked,[job('v1',1)]).nodes[0].assetId).toBeUndefined();
 });
 test('recovery respects mappings and the persisted asset limit',()=>{
- const p=project();p.assets=Array.from({length:499},(_,i)=>asset('asset-'+i));
+ const p=project();p.assets=Array.from({length:PROJECT_LIMITS.assets-1},(_,i)=>asset('asset-'+i));
  const result=recoverMediaAssets(p,[{...job('foreign',1),shotId:'other-shot'},job('newest',2),job('older',1)]);
- expect(result.assets).toHaveLength(500);expect(result.assets.at(-1)?.id).toBe('newest');expect(result.assets.some(a=>a.id==='foreign')).toBe(false);
+ expect(result.assets).toHaveLength(PROJECT_LIMITS.assets);expect(result.assets.at(-1)?.id).toBe('newest');expect(result.assets.some(a=>a.id==='foreign')).toBe(false);
 });
 
 

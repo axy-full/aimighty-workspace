@@ -1,5 +1,6 @@
 "use client";
 
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { GenerationDialog, type GenerationTarget } from "@/components/workbench/GenerationDialog";
@@ -111,7 +112,7 @@ export default function MarketingStudioFlow({
   async function importRemoteImage(url: string, category: "Product" | "Brand" = "Product"): Promise<Asset> {
     if (!draft.live()) throw new Error("Open a saved project first.");
     const draftId = draft.latest().id;
-    if (draft.latest().assets.length >= 500) throw new Error("This project has reached its 500-asset limit.");
+    if (draft.latest().assets.length >= PROJECT_LIMITS.assets) throw new Error(`This project has reached its ${limitText(PROJECT_LIMITS.assets)}-asset limit.`);
     if (!(await draft.ensureSaved(draftId))) throw new Error("Save this project before importing a product image.");
     if (!draft.owns(draftId)) throw new Error("The workspace changed. Return to this project before importing.");
     draft.beginUpload();
@@ -162,7 +163,7 @@ export default function MarketingStudioFlow({
   async function savePoster(file: File, sourceIds: string[]) {
     if (!draft.live()) throw new Error("Open a saved project first.");
     const draftId = draft.latest().id;
-    if (draft.latest().assets.length >= 500) throw new Error("This project has reached its 500-asset limit.");
+    if (draft.latest().assets.length >= PROJECT_LIMITS.assets) throw new Error(`This project has reached its ${limitText(PROJECT_LIMITS.assets)}-asset limit.`);
     if (sourceIds.some((id) => !draft.latest().assets.some((asset) => asset.id === id && asset.kind === "image")))
       throw new Error("A poster original is missing. Review its layers.");
     draft.beginUpload();
@@ -213,7 +214,7 @@ export default function MarketingStudioFlow({
   async function fileOriginal(asset: Asset, draftId: string) {
     const existing = draft.latest().assets.find((item) => item.generationId === asset.generationId);
     if (!existing) {
-      if (draft.latest().assets.length >= 500) throw new Error("This project has reached its 500-asset limit.");
+      if (draft.latest().assets.length >= PROJECT_LIMITS.assets) throw new Error(`This project has reached its ${limitText(PROJECT_LIMITS.assets)}-asset limit.`);
       if (draft.latest().assets.some((item) => item.id === asset.id))
         throw new Error("This original conflicts with an existing project asset.");
       draft.change((old) => ({ ...old, assets: [...old.assets, asset] }));
@@ -278,7 +279,7 @@ export default function MarketingStudioFlow({
   function createAvatar(prompt: string) {
     if (!draft.live()) return;
     const current = draft.latest();
-    if (current.nodes.length >= 250) {
+    if (current.nodes.length >= PROJECT_LIMITS.nodes) {
       toast.error("This project has reached its node limit.");
       return;
     }
@@ -329,7 +330,7 @@ export default function MarketingStudioFlow({
       toast.error("This variant is locked in Rig. Unlock it before changing its generation.");
       return;
     }
-    if (!existing && (current.nodes.length >= 250 || brief.variants.length >= 100)) {
+    if (!existing && (current.nodes.length >= PROJECT_LIMITS.nodes || brief.variants.length >= 100)) {
       toast.error("This project has reached its variant or node limit. Start another project to continue.");
       return;
     }

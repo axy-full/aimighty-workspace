@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from '../../lib/workbench/project-limits';
 import { expect, test } from '@playwright/test';
 import { newProject, type Plan, type Project } from '../../lib/workbench/studio';
 import { applySuiteAgentPlan } from '../../lib/workbench/suite-agent-plan';
@@ -45,10 +46,10 @@ test('cross-project, deleted references and capacity failures leave the entire o
   const before = JSON.stringify(project);
   expect(() => applySuiteAgentPlan({ ...project, id: 'other' }, plan, createId)).toThrow('another project');
   expect(() => applySuiteAgentPlan({ ...project, assets: [] }, plan, createId)).toThrow('no longer available');
-  const full = { ...project, nodes: Array.from({ length: 248 }, (_, index) => ({ id: `existing-${index}`, type: 'note' as const, title: 'Existing', x: 0, y: 0, width: 300, linked: [] })) };
-  expect(() => applySuiteAgentPlan(full, plan, createId)).toThrow('250-node');
+  const full = { ...project, nodes: Array.from({ length: PROJECT_LIMITS.nodes - 2 }, (_, index) => ({ id: `existing-${index}`, type: 'note' as const, title: 'Existing', x: 0, y: 0, width: 300, linked: [] })) };
+  expect(() => applySuiteAgentPlan(full, plan, createId)).toThrow(`${limitText(PROJECT_LIMITS.nodes)}-node`);
   expect(JSON.stringify(project)).toBe(before);
-  expect(full.nodes).toHaveLength(248);
+  expect(full.nodes).toHaveLength(PROJECT_LIMITS.nodes - 2);
 });
 
 test('invalid audio or video-to-still references are refused before any node is applied', () => {
@@ -132,15 +133,15 @@ test('referenced shared originals are bound once, with canonical draft records t
 test('shared reference binding respects the asset limit before any IDs or changes are made', () => {
   const { project, plan } = fixture();
   project.sharedAssets = [{ ...project.assets[0], id: 'shared' }];
-  project.assets.push(...Array.from({ length: 499 }, (_, index) => ({ ...project.assets[0], id: `existing-${index}` })));
+  project.assets.push(...Array.from({ length: PROJECT_LIMITS.assets - 1 }, (_, index) => ({ ...project.assets[0], id: `existing-${index}` })));
   plan.suiteAgent!.actions[0].referenceIds = ['shared'];
   let ids = 0;
   const before = JSON.stringify(project);
-  expect(() => applySuiteAgentPlan(project, plan, () => `node-${++ids}`)).toThrow('500-asset');
+  expect(() => applySuiteAgentPlan(project, plan, () => `node-${++ids}`)).toThrow(`${limitText(PROJECT_LIMITS.assets)}-asset`);
   expect(ids).toBe(0);
   expect(JSON.stringify(project)).toBe(before);
   project.assets.pop();
-  expect(applySuiteAgentPlan(project, plan, () => `node-${++ids}`).assets).toHaveLength(500);
+  expect(applySuiteAgentPlan(project, plan, () => `node-${++ids}`).assets).toHaveLength(PROJECT_LIMITS.assets);
 });
 
 test('the 100-variant limit is checked atomically before IDs or project changes are made', () => {

@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from "../workbench/project-limits";
 import { uid, type Asset, type Project, type Shot } from "../workbench/studio";
 import type { LibraryEntry } from "../workspace/library";
 
@@ -8,7 +9,7 @@ import type { LibraryEntry } from "../workspace/library";
  * appended at the end. The cut's order and lengths are then edited in place.
  */
 export const STILL_SECONDS = 3;
-export const MAX_SHOTS = 250;
+export const MAX_SHOTS = PROJECT_LIMITS.shots;
 
 export function entrySeconds(entry: LibraryEntry): number {
   const value = entry.asset.value as { durationS?: number | null; params?: Record<string, unknown> };
@@ -30,7 +31,7 @@ export function addTakeToCut(project: Project, entry: LibraryEntry): Project {
   if (entry.media !== "video" && entry.media !== "image") throw new Error("Only pictures and videos go on the picture track. Add sound in the lanes below.");
   if (project.shots.length >= MAX_SHOTS) throw new Error(`The cut holds ${MAX_SHOTS} shots.`);
   const known = project.assets.find((a) => a.id === entry.take.sourceId || a.generationId === entry.take.sourceId || a.uploadId === entry.take.sourceId);
-  if (!known && project.assets.length >= 500) throw new Error("The asset library is full.");
+  if (!known && project.assets.length >= PROJECT_LIMITS.assets) throw new Error("The asset library is full.");
   const asset = known ?? entryAsset(entry);
   const shot: Shot = { id: uid("shot"), name: `${String(project.shots.length + 1).padStart(2, "0")} — ${entry.take.name}`.slice(0, 200), assetId: asset.id, duration: Math.max(1, Math.round(entrySeconds(entry) * project.fps)), sourceIn: 0, note: "" };
   return { ...project, assets: known ? project.assets : [...project.assets, asset], shots: [...project.shots, shot] };

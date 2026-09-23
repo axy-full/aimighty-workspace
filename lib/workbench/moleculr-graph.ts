@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from "./project-limits";
 import type { Asset, CanvasNode, Project } from "./studio";
 import { resolveReferenceAd } from "./reference-ad";
 
@@ -74,9 +75,9 @@ export function bindMoleculrReferences(
   const newVariant = project.nodes.some((existing) => existing.id === node.id)
     ? 0
     : 1;
-  if (project.nodes.length + additions + newVariant > 250)
+  if (project.nodes.length + additions + newVariant > PROJECT_LIMITS.nodes)
     throw new Error(
-      "This variant and its reference nodes exceed the 250-node project limit. Remove unused nodes or start another project.",
+      `This variant and its reference nodes exceed the ${limitText(PROJECT_LIMITS.nodes)}-node project limit. Remove unused nodes or start another project.`,
     );
 
   const usedIds = new Set([...project.nodes.map((item) => item.id), node.id]);

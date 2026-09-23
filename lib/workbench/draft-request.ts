@@ -1,3 +1,4 @@
+import { PROJECT_ENCODING_HEADER, PROJECT_GZIP_FROM } from "./project-limits";
 import type { Project } from "./studio";
 import { projectSchema } from "./studio-schema";
 
@@ -181,6 +182,16 @@ export async function reconcileDraftWrite(
     "This project changed in another window. Your edits are preserved. Download your current work before reloading.",
   );
 }
+/**
+ * A feature film's project runs to several megabytes, past what one request
+ * may carry, so a large save travels gzipped (project JSON packs about 8:1).
+ */
+export async function draftBody(json: string): Promise<{ headers: Record<string, string>; body: BodyInit }> {
+  if (json.length < PROJECT_GZIP_FROM || typeof CompressionStream === "undefined")
+    return { headers: { "Content-Type": "application/json" }, body: json };
+  const packed = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+  return { headers: { "Content-Type": "application/json", [PROJECT_ENCODING_HEADER]: "gzip" }, body: packed };
+}
 export async function writeDraft(
   base: string,
   scope: string,
@@ -189,8 +200,7 @@ export async function writeDraft(
   try {
     const data = await draftRequest<unknown>(base + "/projects", scope, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(write),
+      ...(await draftBody(JSON.stringify(write))),
     });
     const result = receipt(data, write.revision + 1);
     if (!result) throw incompleteWrite();

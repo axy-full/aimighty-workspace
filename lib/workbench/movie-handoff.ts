@@ -9,11 +9,29 @@ export function movieHandoffKey(token: string, scope: string) {
     throw new Error("Open the movie renderer from Delivery.");
   return `particl-movie-${scope === visitor ? "visitor" : "private"}:${token}`;
 }
+/**
+ * The renderer reads the cut, its sound and grade, and only the assets those
+ * use; the rest of a feature film's project (script, beats, boards, the Rig)
+ * would overflow the browser's session storage, so it stays behind.
+ */
+export function movieSnapshot(project: Project): Project {
+  const used = new Set<string>([
+    ...project.shots.map((shot) => shot.assetId),
+    ...(project.audioClips ?? []).map((clip) => clip.assetId),
+    ...(project.audioAssetId ? [project.audioAssetId] : []),
+    ...(project.colorGrade?.lutAssetId ? [project.colorGrade.lutAssetId] : []),
+  ]);
+  return {
+    ...project, script: "", nodes: [], plans: [], assets: project.assets.filter((asset) => used.has(asset.id)),
+    bins: undefined, production: undefined, astraNative: undefined, astraBlender: undefined, moleculr: undefined,
+    sharedAssets: undefined, sharedNodes: undefined, sharedAssetIds: [], sharedNodeIds: [], scriptReviews: undefined,
+  };
+}
 export function createMovieHandoff(project: Project, scope: string) {
   const token = crypto.randomUUID();
-  const raw = JSON.stringify({ project, scope, createdAt: Date.now() });
+  const raw = JSON.stringify({ project: movieSnapshot(project), scope, createdAt: Date.now() });
   if (raw.length > limit)
-    throw new Error("The project exceeds the 3.5 MB export snapshot limit.");
+    throw new Error("The cut exceeds the 3.5 MB export snapshot limit.");
   for (let i = sessionStorage.length - 1; i >= 0; i--) {
     const key = sessionStorage.key(i);
     if (key?.startsWith("particl-movie-")) sessionStorage.removeItem(key);

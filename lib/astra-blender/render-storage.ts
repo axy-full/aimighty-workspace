@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from "../workbench/project-limits";
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -109,14 +110,14 @@ export async function registerAstraArtifacts(jobId: string, owner: string, proje
         const row = (await tx.execute({ sql: 'SELECT body,revision FROM workbench_projects WHERE owner=? AND project_id=?', args: [owner, projectId] })).rows[0];
         const project = row ? JSON.parse(String(row.body)) as Project : null;
         const missing=project?artifacts.filter(item=>!project.assets.some(asset=>asset.id===item.assetId)).length:artifacts.length;
-        const canAttach=!!project&&project.assets.length+missing<=500;
+        const canAttach=!!project&&project.assets.length+missing<=PROJECT_LIMITS.assets;
         for (const item of artifacts) {
             await tx.execute({ sql: 'INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,NULL,?) ON CONFLICT(id) DO NOTHING', args: [item.uploadId, item.filename, item.mime, item.ext, item.bytes, item.sha256, item.storedUrl, item.kind === 'preview' ? 'image' : 'file', Date.now()] });
             if (canAttach && project && !project.assets.some(asset => asset.id === item.assetId))
                 project.assets.push({ id: item.assetId, name: `Astra ${item.filename}`, kind: item.kind === 'preview' ? 'image' : 'document', category: 'Astra', url: item.url, mime: item.mime, uploadId: item.uploadId, description: 'Native 3D render output', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
         }
         if(canAttach)await tx.execute({ sql: 'UPDATE workbench_projects SET body=?,revision=revision+1,updated_at=? WHERE owner=? AND project_id=?', args: [JSON.stringify(project), Date.now(), owner, projectId] });
-        await tx.execute({ sql: 'UPDATE astra_render_jobs SET outputs_registered=1,assets_registered=?,error=?,updated_at=? WHERE id=?', args: [canAttach?1:0,canAttach?null:project?'Outputs are saved in the Library and available below. This project has no room for them (500 assets maximum).':'Outputs are saved in the Library. The original project is no longer available.',Date.now(), jobId] });
+        await tx.execute({ sql: 'UPDATE astra_render_jobs SET outputs_registered=1,assets_registered=?,error=?,updated_at=? WHERE id=?', args: [canAttach?1:0,canAttach?null:project?`Outputs are saved in the Library and available below. This project has no room for them (${limitText(PROJECT_LIMITS.assets)} assets maximum).`:'Outputs are saved in the Library. The original project is no longer available.',Date.now(), jobId] });
         await tx.execute({ sql: 'DELETE FROM astra_render_storage WHERE job_id=?', args: [jobId] });
     });
 }

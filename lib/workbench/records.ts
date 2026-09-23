@@ -63,8 +63,8 @@ export async function validateStoredMedia(tx:Transaction,value:unknown) {
   const refs=referencedMedia(value);
   for(const [kind,ids] of [['upload',refs.uploads],['generation',refs.generations]] as const){
     const all=[...ids];
-    for(let start=0;start<all.length;start+=100){
-      const batch=all.slice(start,start+100);
+    for(let start=0;start<all.length;start+=500){
+      const batch=all.slice(start,start+500);
       const table=kind==='upload'?'uploads':'generations';
       const rows=(await tx.execute({sql:`SELECT id FROM ${table} WHERE id IN (${batch.map(()=>'?').join(',')})${kind==='generation'?' AND deleted=0':''}`,args:batch})).rows;
       const found=new Set(rows.map(row=>String(row.id)));

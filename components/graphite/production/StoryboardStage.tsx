@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
@@ -140,7 +141,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
             const f = b.frames[shot.id] ?? emptyFrame();
             const frame: BoardFrame = { ...f, pending: (f.pending ?? []).filter((x) => x.jobId !== pend.jobId), ...(ok ? { takes: [{ genId: generation.id, style: pend.style, at: new Date().toISOString() }, ...f.takes].slice(0, 20), selected: generation.id } : {}) };
             const asset: Asset = { id: generation.id, generationId: generation.id, kind: "image", category: "Storyboard", name: `Frame ${shot.number}`, url: `/api/media/${generation.id}`, description: shot.scene, prompt: f.prompt, status: "Draft", locked: false, version: f.takes.length + 1, refs: [] };
-            const assets = ok && !old.assets.some((a) => a.id === asset.id) && old.assets.length < 500 ? [...old.assets, asset] : old.assets;
+            const assets = ok && !old.assets.some((a) => a.id === asset.id) && old.assets.length < PROJECT_LIMITS.assets ? [...old.assets, asset] : old.assets;
             return { ...old, assets, production: { ...old.production, boards: { ...b, frames: { ...b.frames, [shot.id]: frame } } } };
           });
           if (!ok) setErrors((e) => ({ ...e, [shot.id]: generation.error || "This frame did not render. Nothing was billed for a failed render." }));
@@ -215,7 +216,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         const uploaded = await uploadWorkbench(file, undefined, scope);
         made.push({ id: uploaded.id, uploadId: uploaded.id, kind: "image", category: "Line drawing", name: file.name.slice(0, 200), url: uploaded.url, mime: uploaded.mime || file.type, description: "A line drawing of a beat", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
       }
-      editor.change((old) => ({ ...old, assets: [...old.assets, ...made.filter((a) => !old.assets.some((x) => x.id === a.id))].slice(0, 500) }));
+      editor.change((old) => ({ ...old, assets: [...old.assets, ...made.filter((a) => !old.assets.some((x) => x.id === a.id))].slice(0, PROJECT_LIMITS.assets) }));
       if (!(await editor.ensureSaved())) throw new Error("The drawings uploaded, but the project is not saved yet.");
       toast(`${made.length} line ${made.length === 1 ? "drawing" : "drawings"} uploaded — put each on its beat`);
     } catch (error) { runs.setError(error instanceof Error ? error.message : "The drawings could not be uploaded."); }

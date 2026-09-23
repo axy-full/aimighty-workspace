@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 /* eslint-disable @next/next/no-img-element -- Private originals need the browser's authenticated same-origin request. */
 
 import { useEffect, useRef, useState } from "react";
@@ -843,10 +844,10 @@ function Studio({
           projectAssetFromLibrary({ origin: "generation", value: take });
         if (
           !latest.assets.some((item) => item.id === asset.id) &&
-          latest.assets.length >= 500
+          latest.assets.length >= PROJECT_LIMITS.assets
         )
           throw Error(
-            "This project already has 500 assets. Remove an unused asset before adding this take.",
+            `This project already has ${limitText(PROJECT_LIMITS.assets)} assets. Remove an unused asset before adding this take.`,
           );
         const shots = latest.shots.some((item) => item.assetId === asset.id)
           ? latest.shots
