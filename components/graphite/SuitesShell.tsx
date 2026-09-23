@@ -1,5 +1,6 @@
 "use client";
 import { rigDeleteHandler, setRigUndoSink } from "@/lib/shell/rig-commands";
+import { newProject } from "@/lib/workbench/studio";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
@@ -182,7 +183,16 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"}
-                onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }} />
+                onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
+                onCreate={async (name) => {
+                  const created = newProject(name.slice(0, 120));
+                  const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
+                  if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
+                  try { localStorage.setItem(scope, created.id); } catch { /* the URL still carries it */ }
+                  selectProject(created.id);
+                  toast(`${created.name} is open`);
+                  return null;
+                }} />
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">

@@ -146,6 +146,11 @@
 .gx-badge--new { left: auto; right: 6px; background: var(--gx-accent); color: #fff; font-weight: 600; }
 .gx-asset-row { display: flex; align-items: center; gap: 4px; padding: 6px 2px 2px; }
 .gx-asset-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* In a result grid the name and meta are lines of their own: one line each, clipped to the card (they overflowed into the next card). */
+.gx-asset > .gx-asset-name, .gx-asset > .gx-asset-meta { display: block; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-asset > .gx-asset-meta { font-size: 11px; color: var(--gx-text-3); margin-top: 2px; }
+.gx-project-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
+.gx-project-new .gx-reason { grid-column: 1 / -1; margin: 0; }
 .gx-asset-add { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; background: var(--gx-input); font-size: 15px; line-height: 1; position: relative; }
 .gx-asset-add:hover { color: var(--gx-accent-text); }
 .gx-lib-foot { flex: none; color: var(--gx-text-3); font-size: 12px; padding: 0 4px; }
