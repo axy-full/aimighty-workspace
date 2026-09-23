@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { studioRequest, StudioRequestError } from "./GenerationDialog";
+import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
 import { validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import {
   pendingGenerationKey,
@@ -193,6 +194,9 @@ export function SoundGenerate({
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voicesError, setVoicesError] = useState("");
   const [voicesBusy, setVoicesBusy] = useState(false);
+  /* Grok Voice (xAI) has its own voices; ElevenLabs' stay for everything else, Change voice included. */
+  const [grokVoices, setGrokVoices] = useState<Voice[]>([]);
+  const [grokVoiceId, setGrokVoiceId] = useState("");
   const [quote, setQuote] = useState<{ key: string; credits: number; minutes?: number; seconds?: number } | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -259,6 +263,19 @@ export function SoundGenerate({
       });
     return () => abort.abort();
   }, [enabled, scope, fetchVoices, applyVoices]);
+  const grokSpeech = modelId === GROK_TTS_MODEL;
+  const loadGrokVoices = useCallback((refresh: boolean, signal?: AbortSignal) =>
+    studioRequest<{ voices: Voice[]; error?: string }>(`/api/audio/voices?model=${GROK_TTS_MODEL}${refresh ? "&refresh=1" : ""}`, { signal, headers: { "X-Workbench-Scope": scope } })
+      .then((data) => { if (signal?.aborted) return; setGrokVoices(data.voices ?? []); setVoicesError(data.error ?? ""); setGrokVoiceId((v) => v || data.voices?.[0]?.id || ""); })
+      .catch((e) => { if (!signal?.aborted) setVoicesError(e instanceof Error ? e.message : "Grok voices could not be loaded."); }), [scope]);
+  useEffect(() => {
+    if (!enabled || !grokSpeech || grokVoices.length) return;
+    const abort = new AbortController();
+    void loadGrokVoices(false, abort.signal);
+    return () => abort.abort();
+  }, [enabled, grokSpeech, grokVoices.length, loadGrokVoices]);
+  const speechVoices = grokSpeech ? grokVoices : voices;
+  const speechVoiceId = grokSpeech ? grokVoiceId : voiceId;
   function refreshVoices() {
     setVoicesBusy(true);
     fetchVoices(true)
@@ -285,10 +302,10 @@ export function SoundGenerate({
               seconds: seconds[genTask],
               instrumental,
               promptInfluence,
-              voiceId,
+              voiceId: speechVoiceId,
               modelId,
             }),
-    [tool, source, voiceId, voiceName, removeNoise, sourceLang, targetLang, mode, genTask, text, seconds, instrumental, promptInfluence, modelId],
+    [tool, source, voiceId, voiceName, removeNoise, sourceLang, targetLang, mode, genTask, text, seconds, instrumental, promptInfluence, modelId, speechVoiceId],
   );
   const bodyKey = JSON.stringify(body);
   const ready = Boolean(
@@ -297,7 +314,7 @@ export function SoundGenerate({
         ? source && voiceId
         : tool?.id === "dub"
           ? source && targetLang && sourceLang !== targetLang
-          : text.trim() && (task !== "speech" || voiceId)),
+          : text.trim() && (task !== "speech" || speechVoiceId)),
   );
   const cost = pending?.credits ?? (quote?.key === bodyKey ? quote.credits : null);
   const requestRef = useRef(onRequest);
@@ -620,7 +637,7 @@ export function SoundGenerate({
         )}
         {task === "speech" && (
           <>
-            <VoicePicker voices={voices} voiceId={voiceId} disabled={disabled || voicesBusy} busy={voicesBusy} onChange={(id) => setVoiceId(id)} onRefresh={refreshVoices} />
+            <VoicePicker voices={speechVoices} voiceId={speechVoiceId} disabled={disabled || voicesBusy} busy={voicesBusy} onChange={(id) => (grokSpeech ? setGrokVoiceId(id) : setVoiceId(id))} onRefresh={() => (grokSpeech ? void loadGrokVoices(true) : refreshVoices())} />
             <label>
               Model
               <select aria-label="Speech model" value={modelId} disabled={disabled} onChange={(e) => setModelId(e.target.value)}>

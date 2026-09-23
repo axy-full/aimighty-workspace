@@ -214,3 +214,8 @@
 .gx .pd-frame-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gx-text-2); cursor: pointer; min-height: 44px; }
 .gx .pd-frame-pick input { width: 20px; height: 20px; accent-color: var(--gx-accent, #0A84FF); }
 .gx .pd-drawing-delete { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Grok transcription on a take: the lines by speaker, readable at a glance. */
+.gx .pd-transcript { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); border: 1px solid var(--gx-hair); }
+.gx .pd-transcript-line { margin: 0; font-size: 14px; line-height: 1.5; color: var(--gx-text); }
+.gx .pd-transcript-line .gx-eyebrow { margin-right: 6px; }

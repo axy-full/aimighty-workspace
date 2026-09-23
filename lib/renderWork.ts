@@ -1,3 +1,4 @@
+import { audioVendor } from "./xaiVoice";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
@@ -334,7 +335,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     await assertMeterFunding(
       job.genId,
       job.kind === "audio"
-        ? "elevenlabs"
+        ? audioVendor(job.modelId)
         : billedTo(getModel(job.modelId).provider),
     );
     const out =
@@ -587,7 +588,7 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
   const p = job.params;
   const queueMs = Math.max(0, now() - job.startedAt);
   const engineStart = now();
-  const res = await engineFor("elevenlabs").render({
+  const res = await engineFor(audioVendor(job.modelId)).render({
     kind: "audio",
     genId: job.genId,
     modelId: job.modelId,
@@ -719,7 +720,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
       {
         id: job.genId,
         kind: "audio",
-        engine: "elevenlabs",
+        engine: audioVendor(job.modelId),
         model: job.modelId,
         status: "succeeded",
         engineCostUsd: cost,

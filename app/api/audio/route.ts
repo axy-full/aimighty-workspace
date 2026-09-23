@@ -6,6 +6,7 @@ import { executeAudioAdmission } from "@/lib/audioAdmission";
 import { admissionResponse } from "@/lib/admissionSupport";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
+import { GROK_SPEECH_MODEL, grokVoiceConfigured } from "@/lib/xaiVoice";
 import {
   elevenConfigured,
   subscription,
@@ -58,7 +59,8 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     configured,
     envKey: "ELEVENLABS_API_KEY",
-    speechModels: SPEECH_MODELS,
+    /* Grok Voice joins the speech models when the xAI key is set; its voices come from /api/audio/voices?model=grok-tts. */
+    speechModels: grokVoiceConfigured() ? [...SPEECH_MODELS, GROK_SPEECH_MODEL] : SPEECH_MODELS,
     defaultSpeechModel: DEFAULT_SPEECH_MODEL,
     voices: Array.isArray(voices) ? voices : [],
     voicesError: Array.isArray(voices)

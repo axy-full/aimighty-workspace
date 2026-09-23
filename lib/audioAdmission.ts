@@ -22,6 +22,7 @@ import {
   VOICE_CHANGE_MODEL,
   type DialogueLine,
 } from "@/lib/elevenlabs";
+import { GROK_TTS_MODEL, GROK_VOICE_ID, audioVendor, grokSpeechUsd, grokVoiceConfigured } from "@/lib/xaiVoice";
 import { findStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "@/lib/mediaSource.server";
 import { getShot } from "@/lib/shots";
 import {
@@ -129,8 +130,12 @@ export async function executeAudioAdmission(
   const body: any = structuredClone(input);
   const quoteOnly = body.quoteOnly === true;
   const requestClaim = options.requestClaim;
+  /* Grok Voice (xAI's text to speech) is the one audio model another vendor
+     voices; everything else here is ElevenLabs'. The vendor is every engine
+     field below: allowance, cap, reservation, meter, provider, billed_to. */
+  const vendor = String(body.task) === "speech" ? audioVendor(String(body.modelId ?? "")) : "elevenlabs";
   await ready();
-  const allowance = await allowanceCheck("elevenlabs");
+  const allowance = await allowanceCheck(vendor);
   if (!allowance.ok && allowance.status !== 402)
     return admissionReply(
       { error: allowance.error },
@@ -144,7 +149,7 @@ export async function executeAudioAdmission(
       { status: 402 },
     );
   }
-  if (!elevenConfigured()) {
+  if (vendor === "xai" ? !grokVoiceConfigured() : !elevenConfigured()) {
     return admissionReply(
       {
         error:
@@ -236,6 +241,17 @@ export async function executeAudioAdmission(
     params.sourceSeconds = seconds;
     params.removeBackgroundNoise = body.removeBackgroundNoise === true;
     estUsd = voiceChangeUsd(seconds);
+  } else if (task === "speech" && vendor === "xai") {
+    modelId = GROK_TTS_MODEL;
+    const voiceId = String(body.voiceId ?? "").trim();
+    if (!GROK_VOICE_ID.test(voiceId))
+      return admissionReply({ error: "Pick a Grok voice." }, { status: 400 });
+    params.voiceId = voiceId;
+    params.voiceName = body.voiceName ? String(body.voiceName).slice(0, 80) : undefined;
+    const language = String(body.language ?? "").trim();
+    if (/^[A-Za-z]{2,3}(-[A-Za-z]{2})?$|^auto$/.test(language)) params.language = language;
+    if (body.speed != null && Number.isFinite(Number(body.speed))) params.speed = Math.max(0.7, Math.min(1.5, Number(body.speed)));
+    estUsd = grokSpeechUsd(text);
   } else if (task === "speech") {
     modelId = SPEECH_MODELS.some((m) => m.id === body.modelId)
       ? String(body.modelId)
@@ -292,7 +308,7 @@ export async function executeAudioAdmission(
 
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
-  const estimatedCredits = billCredits(vendorUsd, "elevenlabs");
+  const estimatedCredits = billCredits(vendorUsd, vendor);
   if (quoteOnly)
     return admissionReply({
       estimatedCredits,
@@ -315,9 +331,9 @@ export async function executeAudioAdmission(
     );
   }
   const wall = await allowanceCheck(
-    "elevenlabs",
+    vendor,
     vendorUsd,
-    "elevenlabs",
+    vendor,
   );
   if (!wall.ok && wall.status !== 402)
     return admissionReply({ error: wall.error }, { status: wall.status });
@@ -327,7 +343,7 @@ export async function executeAudioAdmission(
   const capV = await checkCap(
     projectId,
     vendorUsd,
-    "elevenlabs",
+    vendor,
   );
   if (!capV.allow)
     return admissionReply({ error: capV.error }, { status: 409 });
@@ -345,7 +361,7 @@ export async function executeAudioAdmission(
     got,
     "audio",
     vendorUsd,
-    "elevenlabs",
+    vendor,
     {
       task,
       text,
@@ -381,10 +397,10 @@ export async function executeAudioAdmission(
       ts,
       ts,
       got.token?.id ?? null,
-      "elevenlabs",
+      vendor,
       "generate",
       body.title ? String(body.title).slice(0, 80) : null,
-      "elevenlabs",
+      vendor,
       shotId,
     ],
   });
@@ -421,7 +437,7 @@ export async function executeAudioAdmission(
       {
         id: genId,
         kind: "audio",
-        engine: "elevenlabs",
+        engine: vendor,
         model: modelId,
         status: "running",
         engineCostUsd: vendorUsd,
