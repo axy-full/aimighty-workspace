@@ -52,6 +52,8 @@ const charactersCreate = z.object({
   name: z.string().trim().min(1).max(80),
   type: z.enum(SOUL_BUILD_TYPES),
   sources: z.array(z.union([z.object({ uploadId: z.string().min(1).max(64) }).strict(), z.object({ genId: z.string().min(1).max(64) }).strict()])).min(SOUL_BUILD_STILLS.min).max(SOUL_BUILD_STILLS.max),
+  /** The project the identity was built for; Particl's own record, never sent to the account. */
+  projectId: z.string().min(1).max(64).optional(),
 }).strict();
 const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters, charactersPlan, charactersCreate]);
 /** Shared consumer error classes predate the product vocabulary; this surface
@@ -142,7 +144,7 @@ export const POST = withTenant(async (req: Request) => {
     if (body.action === "characters-create") {
       const render = await requireRender();
       if (render.response) return render.response;
-      return Response.json({ build: await buildConnectedCharacter(owner.user.id, { name: body.name, type: body.type, sources: body.sources }) }, { headers });
+      return Response.json({ build: await buildConnectedCharacter(owner.user.id, { name: body.name, type: body.type, sources: body.sources, projectId: body.projectId ?? null }) }, { headers });
     }
     if (body.action === "explainer-presets")
       return Response.json({ explainer: await connectedExplainerPresets(owner.user.id, { refresh: body.refresh === true }) }, { headers });

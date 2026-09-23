@@ -18,11 +18,12 @@ const STATUS: Record<NonNullable<ConnectedCharacter["status"]>, string> = { read
  * Studio › Cast › Build identity on the connected account (FINAL_SPEC §3 ›
  * Soul ID): name it, choose Soul 2 or Soul Cinematic, pick 5–20 stills of the
  * same person from this project, pass the plan gate, and the account trains
- * one Soul ID that Gen's Soul models then carry as `soul_id`. Training is
+ * one Soul ID that Gen's Soul models then carry as `soul_id`. Only Soul IDs
+ * Particl built are listed — the account is the engine, not a library. Training is
  * billed by the account at its plan's rate — it offers no cost tool for it —
  * so the card says so before the button, and the button never spends twice.
  */
-export function SoulIdHost({ scope, items }: { scope: string; items: LibraryEntry[] }) {
+export function SoulIdHost({ scope, items, projectId }: { scope: string; items: LibraryEntry[]; projectId: string | null }) {
   const shell = useShell();
   const ws = useWorkspace();
   const scoped = useScopedFetch(scope);
@@ -56,7 +57,7 @@ export function SoulIdHost({ scope, items }: { scope: string; items: LibraryEntr
     setPhase("building"); setOutcome(null);
     try {
       const sources = picked.map((id) => { const e = stills.find((s) => s.take.id === id)!; return e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }; });
-      const { build } = await call<{ build: SoulBuildOutcome }>({ action: "characters-create", name: name.trim(), type, sources });
+      const { build } = await call<{ build: SoulBuildOutcome }>({ action: "characters-create", name: name.trim(), type, sources, ...(projectId ? { projectId } : {}) });
       setOutcome(build);
       if (build.state !== "refused") { ws.toast(build.state === "training" ? `${build.character.name} is training on the account` : "The account accepted the training request"); refresh(); }
     } catch (error) {
@@ -124,11 +125,11 @@ export function SoulIdHost({ scope, items }: { scope: string; items: LibraryEntr
         </p>
       ) : null}
       <div className="gx-gen-row" data-testid="soul-list">
-        <span className="gx-eyebrow" data-functional-label="">On the account</span>
+        <span className="gx-eyebrow" data-functional-label="">Built in Particl</span>
         {characters == null ? <p className="gx-hint">Reading…</p>
           : !characters.connected ? <p className="gx-hint">Connect the account in Workspace › Engines.</p>
           : !characters.available ? <p className="gx-hint">The account does not list its characters through its tools.</p>
-          : !characters.characters.length ? <p className="gx-hint">No Soul ID on the account yet.</p>
+          : !characters.characters.length ? <p className="gx-hint">No Soul ID built in Particl yet. Identities trained on higgsfield.ai stay there; Particl lists only the ones it built.</p>
           : (
             <ul className="gx-soul-list">
               {characters.characters.map((c) => (

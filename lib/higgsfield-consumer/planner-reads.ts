@@ -2,7 +2,10 @@
  * Atomik's read-only view of the connected account (slice A1).
  *
  * The planner may see what the connected account holds — recommended models,
- * motion presets, voices, trained characters, reference elements, recent
+ * motion presets, voices, the balance and the plan — never the account's own
+ * library (its characters, elements, generations, uploads): Particl is a
+ * standalone platform and the owner keeps that library apart (23 September).
+ * Formerly also
  * generations and uploads, the credit balance and plan — before it proposes
  * anything. Every read here is FREE and read-only: the tool names and
  * argument shapes are fixed below (never chosen by a caller or the model),
@@ -40,10 +43,6 @@ export function plannerReads(goal: string): PlannerRead[] {
     ...(query ? [{ name: "recommend" as const, tool: "models_explore", args: { action: "recommend", query, limit: 5 } }] : []),
     { name: "presets", tool: "presets_show", args: {} },
     { name: "voices", tool: "list_voices", args: { size: 20 } },
-    { name: "characters", tool: "show_characters", args: { action: "list", status: "ready", size: 20 } },
-    { name: "elements", tool: "show_reference_elements", args: { action: "list", size: 27 } },
-    { name: "generations", tool: "show_generations", args: { size: 12 } },
-    { name: "medias", tool: "show_medias", args: { type: "image", size: 12 } },
     { name: "balance", tool: "balance", args: {} },
     { name: "plan", tool: "show_plans_and_credits", args: { intent: "general" } },
   ];
@@ -54,9 +53,6 @@ export const PLANNER_READ_TOOLS = Object.freeze([
   "presets_show",
   "list_voices",
   "show_characters",
-  "show_reference_elements",
-  "show_generations",
-  "show_medias",
   "balance",
   "show_plans_and_credits",
   "show_marketing_studio",
@@ -163,24 +159,6 @@ export function summarizePlannerReads(results: PlannerReadResult[]): PlannerCont
         .map((item) => ({ id: idOf(item, ["voice_id", "id"]), name: plannerText(item.name, 30), type: item.voice_type === "element" ? "element" : "preset" }))
         .filter((item) => item.id);
       if (voices.length) lines.push(`Voices: ${voices.map((v) => `${v.id} (${v.type}${v.name ? `, ${v.name}` : ""})`).join("; ")}`);
-    } else if (result.name === "characters") {
-      const souls = itemsOf(value, LIST_KEYS, 20)
-        .map((item) => ({ id: idOf(item, ["soul_id", "id"]), name: plannerText(item.name, 30) }))
-        .filter((item) => item.id);
-      if (souls.length) lines.push(`Trained characters: ${souls.map((s) => `${s.name || "unnamed"} (${s.id})`).join("; ")}`);
-    } else if (result.name === "elements") {
-      const elements = itemsOf(value, LIST_KEYS, 27)
-        .map((item) => ({ id: idOf(item, ["element_id", "id"]), name: plannerText(item.name, 32), category: plannerText(item.category, 16) }))
-        .filter((item) => item.id);
-      if (elements.length) lines.push(`Reference elements: ${elements.map((e) => `${e.name || "unnamed"}${e.category ? ` [${e.category}]` : ""} (${e.id})`).join("; ")}`);
-    } else if (result.name === "generations") {
-      const recent = itemsOf(value, LIST_KEYS, 12)
-        .map((item) => [plannerText(item.type, 8), plannerText(item.model, 30), plannerText(item.status, 12)].filter(Boolean).join(" "))
-        .filter(Boolean);
-      if (recent.length) lines.push(`Recent generations: ${recent.join("; ")}`);
-    } else if (result.name === "medias") {
-      const count = itemsOf(value, LIST_KEYS, 12).length;
-      if (count) lines.push(`Uploaded images on the account: ${count}${count === 12 ? "+" : ""}`);
     } else if (result.name === "balance") {
       context.balance = numberAt(value, ["credits", "balance", "available_credits", "total"]);
       const plan = textAt(value, ["plan", "subscription", "plan_name"]);

@@ -11,16 +11,23 @@ import { readConnectedPlannerReads, createConsumerCharacter, type ConsumerCharac
 import { ready } from "@/lib/db";
 import { resolveConsumerGenerationSources } from "./generation-sources";
 import { parseCharacters, parseCharacterCreate, type ConnectedCharacter, type ConnectedPlan, type SoulBuildOutcome, type SoulBuildSource, parsePlan } from "./soul-build";
+import { onlyParticlCharacters, particlCharacterIds, recordParticlCharacter } from "./character-records";
 export * from "./soul-build";
 
-/** The account's characters, or `available: false` when it does not advertise the read (never empty-as-if-true). */
+/**
+ * The Soul IDs Particl built, with the status the account gives them now; or
+ * `available: false` when the account does not advertise the read (never
+ * empty-as-if-true). Identities trained on higgsfield.ai are never listed:
+ * Particl is a standalone platform and the account is its engine, not its
+ * library (owner's rule, 23 September).
+ */
 export async function connectedCharacters(userId: string): Promise<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] }> {
   const access = await getConsumerAccess(requireTenant().id, userId);
   if (!access) return { connected: false, available: false, characters: [] };
   try {
     const [result] = await readConnectedPlannerReads(access.accessToken, [{ name: "characters", tool: "show_characters", args: { action: "list", size: 100 } }]);
     if (!result || result.unavailable) return { connected: true, available: false, characters: [] };
-    return { connected: true, available: true, characters: parseCharacters(result.value) };
+    return { connected: true, available: true, characters: onlyParticlCharacters(parseCharacters(result.value), await particlCharacterIds()) };
   } catch (error) {
     if (error instanceof ConsumerOAuthError) return { connected: false, available: false, characters: [] };
     throw error;
@@ -45,7 +52,7 @@ export async function connectedPlan(userId: string): Promise<ConnectedPlan> {
  * The caller has shown the plan gate; the owner's stated ceiling is the only
  * price control there is, because the account offers no cost tool for training.
  */
-export async function buildConnectedCharacter(userId: string, input: ConsumerCharacterCreate & { sources: SoulBuildSource[] }): Promise<SoulBuildOutcome> {
+export async function buildConnectedCharacter(userId: string, input: ConsumerCharacterCreate & { sources: SoulBuildSource[]; projectId?: string | null }): Promise<SoulBuildOutcome> {
   const access = await getConsumerAccess(requireTenant().id, userId);
   if (!access) throw new ConsumerOAuthError("reconnect_required");
   await ready();
@@ -57,5 +64,6 @@ export async function buildConnectedCharacter(userId: string, input: ConsumerCha
   const result = await createConsumerCharacter(access.accessToken, { name: input.name, type: input.type }, sources, { sending: () => {} });
   if (result.state === "refused") return { state: "refused", reason: result.reason };
   const character = parseCharacterCreate(result.value);
+  if (character) await recordParticlCharacter({ soulId: character.soulId, userId, projectId: input.projectId ?? null, name: input.name.trim(), type: input.type });
   return character ? { state: "training", character } : { state: "accepted", character: null };
 }

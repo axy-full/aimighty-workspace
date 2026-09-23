@@ -264,7 +264,7 @@ test("the Soul ID build: the plan gate is an owner read; the create needs render
   const create = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
   expect(create.status).toBe(200);
   expect(await create.json()).toEqual({ build: { state: "training", character: { soulId: "soul_new", name: "Mira", type: "soul_2", status: "training", previewUrl: null } } });
-  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["plan", ["owner"]], ["build", ["owner", { name: "Mira", type: "soul_cinematic", sources }]]]);
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["plan", ["owner"]], ["build", ["owner", { name: "Mira", type: "soul_cinematic", sources, projectId: null }]]]);
   expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:characters-plan", 12], ["hf-consumer-generation:workspace:owner:characters-create", 3]]);
   /* Four stills, a blank name, an unknown type or a stray field are refused before anything is read. */
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources: sources.slice(0, 4) })).status).toBe(400);
