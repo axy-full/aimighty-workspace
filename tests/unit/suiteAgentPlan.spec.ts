@@ -49,7 +49,7 @@ test('cross-project, deleted references and capacity failures leave the entire o
   const full = { ...project, nodes: Array.from({ length: PROJECT_LIMITS.nodes - 2 }, (_, index) => ({ id: `existing-${index}`, type: 'note' as const, title: 'Existing', x: 0, y: 0, width: 300, linked: [] })) };
   expect(() => applySuiteAgentPlan(full, plan, createId)).toThrow(`${limitText(PROJECT_LIMITS.nodes)}-node`);
   expect(JSON.stringify(project)).toBe(before);
-  expect(full.nodes).toHaveLength(248);
+  expect(full.nodes).toHaveLength(PROJECT_LIMITS.nodes - 2);
 });
 
 test('invalid audio or video-to-still references are refused before any node is applied', () => {
@@ -141,7 +141,7 @@ test('shared reference binding respects the asset limit before any IDs or change
   expect(ids).toBe(0);
   expect(JSON.stringify(project)).toBe(before);
   project.assets.pop();
-  expect(applySuiteAgentPlan(project, plan, () => `node-${++ids}`).assets).toHaveLength(500);
+  expect(applySuiteAgentPlan(project, plan, () => `node-${++ids}`).assets).toHaveLength(PROJECT_LIMITS.assets);
 });
 
 test('the 100-variant limit is checked atomically before IDs or project changes are made', () => {

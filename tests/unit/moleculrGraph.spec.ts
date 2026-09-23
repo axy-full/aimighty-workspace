@@ -237,7 +237,7 @@ test("node capacity includes the new variant and sources but does not count an e
     project.assets,
     ids(),
   );
-  expect(saved(project, replacement).nodes).toHaveLength(250);
+  expect(saved(project, replacement).nodes).toHaveLength(PROJECT_LIMITS.nodes);
 });
 
 test("reference nodes stay within schema bounds even at opposite canvas edges", () => {
