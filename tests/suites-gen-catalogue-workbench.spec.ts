@@ -125,7 +125,7 @@ test("a Soul model carries a trained character: the account's list is read, a pi
   await page.getByRole("tab", { name: "Images" }).click();
   await pickCatalogue(page, "Soul 2");
   await expect(page.getByTestId("gen-identity")).toBeVisible();
-  await expect(page.getByTestId("gen-identity-note")).toContainText("1 trained identity on the account.");
+  await expect(page.getByTestId("gen-identity-note")).toContainText("1 identity built in Particl.");
   await expect(page.getByTestId("gen-identity-pick").locator("option", { hasText: "Jonah · training" })).toBeDisabled();
   await page.getByTestId("gen-prompt").fill("Mira on the mirrored dunes at dusk");
   await expect.poll(() => quotes.length).toBeGreaterThan(0);
