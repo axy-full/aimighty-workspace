@@ -68,7 +68,7 @@ function Row({ shot, selected, onSelect, asset, onDropAsset }: { shot: RigShot; 
         <span className="pxw-rig-role-line" title={annotation(shot)}>
           <span className="pxw-rig-role">
             <span className="pxw-dot" style={{ width: 5, height: 5, background: tone.dot }} />
-            <span style={{ color: tone.color }}>{shot.role}</span>
+
           </span>
           <span className="pxw-rig-note">{note}</span>
         </span>

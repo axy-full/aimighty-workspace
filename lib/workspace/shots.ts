@@ -80,6 +80,11 @@ function directionOp(node: CanvasNode): NodeOperation | undefined {
 }
 
 /** The direction note: the node's direction operation, else its text. */
+/** The shot's notes alone (Production › Rig: the node's text is its prompt, shown beside the notes, never inside them). */
+export function shotNotesOnly(node: CanvasNode): string {
+  const note = directionOp(node)?.values.note;
+  return typeof note === "string" ? note : "";
+}
 export function shotNote(node: CanvasNode): string {
   const note = directionOp(node)?.values.note;
   if (typeof note === "string" && note.trim()) return note.trim();

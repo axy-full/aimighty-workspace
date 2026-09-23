@@ -4,7 +4,7 @@ import { formatCredits, formatTokens } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { mediaBands } from "@/lib/workspace/format";
 import { shotInputs, shotPreviewAsset, shotVersions, stepDuration } from "@/lib/workspace/rig";
-import type { RigShot } from "@/lib/workspace/shots";
+import { shotNotesOnly, type RigShot } from "@/lib/workspace/shots";
 import { useShotEstimate } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { InspTab } from "@/lib/workspace/types";
@@ -171,6 +171,8 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   const looks = project.nodes.filter((n) => n.type === "moodboard");
   const lookValue = shot.lookNodeId ?? shot.look;
   const edit = (patch: Parameters<typeof rig.patchShot>[1]) => setError(rig.patchShot(shot.id, patch));
+  /* Notes are the notes alone; the shot's prompt has its own box above. */
+  const notes = rig.selectedNode ? shotNotesOnly(rig.selectedNode) : shot.note;
   const quote = rig.quote?.state === "ready" && rig.quote.credits !== null ? formatCredits(rig.quote.credits) : null;
   const durations = model?.durations ?? [];
   const range = durations.length ? { min: Math.min(...durations), max: Math.max(...durations) } : null;
@@ -185,13 +187,13 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
       <div className="pxw-insp-fieldcard">
         <div className="pxw-insp-fieldcard-head">
           <span>Notes</span>
-          <span>{shot.note.length.toLocaleString()} / 5,000</span>
+          <span>{notes.length.toLocaleString()} / 5,000</span>
         </div>
         <textarea
           aria-label="Direction note"
           rows={3}
           maxLength={5000}
-          value={shot.note}
+          value={notes}
           disabled={locked}
           placeholder="Notes for this shot — they go with the prompt."
           onChange={(e) => edit({ note: e.target.value })}
