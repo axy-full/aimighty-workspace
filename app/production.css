@@ -44,3 +44,6 @@
   .gx .pd-prompt { min-height: 160px; }
   .gx .pd-screenplay { max-height: 55vh; padding: 12px; font-size: 12px; }
 }
+/* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
+.gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: 0 2px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12); }
+.gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
