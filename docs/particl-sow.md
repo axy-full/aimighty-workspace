@@ -41,7 +41,7 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 | Provider | Models | Notes |
 |---|---|---|
 | **ByteDance** (BytePlus ModelArk) | Seedance 2.5, Seedance 2.0 | Video. Seedance 2.5 is the default (`DEFAULT_MODEL_ID`). Not the only wired video engine — fal's four are wired too. |
-| **Google** | Nano Banana Pro, Nano Banana 2 | Stills (`gemini-3-pro-image`, `gemini-3.1-flash-image`). Runs through the **Vercel AI Gateway by default**, and bills gateway credit; goes direct to Google only when `STILLS_VIA=google` with a key set, or when the gateway is unreachable. See `stillsDoor()`. |
+| **Google** | Nano Banana Pro, Nano Banana 2 | Stills (`gemini-3-pro-image`, `gemini-3.1-flash-image`). Goes **direct to Google whenever a `GEMINI_API_KEY` is set** and bills as a Google AI charge (owner, 2026-09-23); through the Vercel AI Gateway (gateway credit) only when there is no key; `STILLS_VIA` no longer changes the door. See `stillsDoor()`. |
 | **fal** | Kling 3.0, Kling 3.0 Pro, Topaz Astra, Luma Ray 2 (reframe), Bria Expand + Cutout (hidden still tools), Flux · Identity | One adapter, several **media** models behind it. Built end to end (`lib/engines/fal.ts`, `lib/falVideo.ts`, `lib/falImage.ts`). `FAL_KEY` is unset in local dev, so fal renders only run against the mock — nothing about the wiring is outstanding. **No LLMs through fal.** |
 | **ElevenLabs** | Voice / audio | The Audio tab's engine. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |

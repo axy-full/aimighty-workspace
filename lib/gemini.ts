@@ -18,10 +18,11 @@ import { fixtureBytes } from "./mockFs";
  *             1K came back 1024×1024). The image arrives as a data URL in
  *             `message.images[0]`, and `usage.cost` is the exact charge.
  *             Reached with the deployment's own identity; bills to the
- *             same credit as the prompt writer. The default whenever it is
- *             reachable.
- *   google  — Google's Interactions API on a GEMINI_API_KEY, the original
- *             door; kept as the fallback, or forced with STILLS_VIA=google.
+ *             same credit as the prompt writer. Only the fallback, when
+ *             there is no Gemini key (STILLS_VIA no longer changes this).
+ *   google  — Google's Interactions API on a GEMINI_API_KEY: the default
+ *             whenever a key is set (owner, 23 September: Nano Banana bills
+ *             as a Google AI charge).
  *
  * Either way the call is synchronous and the model thinks before it draws,
  * so a render takes tens of seconds. References ride along as base64 — a
@@ -47,7 +48,7 @@ export type ImageResult = {
 export function stillsDoor(): "gateway" | "google" | null {
   if (engineMock()) return "gateway";
   const key = Boolean(vendorKey("gemini"));
-  if (process.env.STILLS_VIA === "google" && key) return "google";
+  if (key) return "google";
   if (gatewayReachable()) return "gateway";
   return key ? "google" : null;
 }

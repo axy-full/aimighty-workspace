@@ -208,10 +208,11 @@ export function providerConfigured(p: ProviderDef): boolean {
  * Whose balance actually pays for a render by this provider.
  *
  * `provider` records who MADE a render; this records who was charged, and
- * for stills the two differ. Nano Banana is a Google model, but when the
- * door is the Vercel AI Gateway — which it is on Vercel, where no
- * GEMINI_API_KEY is needed — the dollars come out of gateway credit. A
- * ledger that put them on Google could never agree with Google's console.
+ * for stills the two differ. Nano Banana is a Google model and, with a
+ * GEMINI_API_KEY, bills to Google; only when there is no key does it go
+ * through the Vercel AI Gateway, and then the
+ * dollars come out of gateway credit. A ledger that put those on Google could
+ * never agree with Google's console.
  *
  * The door logic mirrors stillsDoor() in lib/gemini.ts, which stays the
  * single authority on which door is actually opened; if that changes, this
@@ -225,7 +226,7 @@ export function billedTo(provider: string): ProviderId {
     return (PROVIDERS.some((p) => p.id === provider) ? provider : "byteplus") as ProviderId;
   }
   const key = Boolean(vendorKey("gemini"));
-  if (process.env.STILLS_VIA === "google" && key) return "google";
+  if (key) return "google";
   if (gatewayReachable()) return "vercel";
   return "google";
 }
@@ -238,7 +239,7 @@ export function providerVia(p: ProviderDef): "key" | "gateway" | null {
      not configured. */
   if (p.id === "vercel") return gatewayReachable() ? "gateway" : null;
   if (p.id === "google") {
-    if (process.env.STILLS_VIA === "google" && vendorKeyForEnv(p.envKey)) return "key";
+    if (vendorKeyForEnv(p.envKey)) return "key";
     if (gatewayReachable()) return "gateway";
     return vendorKeyForEnv(p.envKey) ? "key" : null;
   }
