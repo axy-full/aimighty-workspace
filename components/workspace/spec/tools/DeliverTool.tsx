@@ -1,18 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
 import { MovieExport } from "@/components/workbench/MovieExport";
-import { suiteHref } from "@/lib/suites";
 import { downloadFile, exportPackage } from "@/lib/workbench/studio-export";
 import { makeEDL, safeName, type Project } from "@/lib/workbench/studio";
+import { makeFCPXML, makeXMEML, retimeProject } from "@/lib/workbench/editorial-xml";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import "./studio-css";
 import { DraftGate } from "./DraftStatus";
 
 /**
  * Deliver: Studio's editorial package and EDL (lib/workbench/studio-export)
- * and the existing MovieExport, both against the saved draft. The delivery
- * spec itself (frame rate, aspect) is edited in Studio, which retimes the
- * sequence when the frame rate changes.
+ * and the existing MovieExport, both against the saved draft; the cut as
+ * EDL, FCPXML (Final Cut Pro, Resolve) or Final Cut Pro 7 XML (Premiere). The
+ * delivery spec is edited here: a new frame rate retimes the cut in real time.
  */
 export default function DeliverTool({ tool, projectId, scope, onProject }: { tool: string; projectId: string; scope: string; onProject: (project: Project) => void }) {
   const editor = useDraftEditor(scope, projectId);
@@ -36,11 +36,19 @@ export default function DeliverTool({ tool, projectId, scope, onProject }: { too
         <div className="pxw-package-facts">
           <div><span>Sequence events</span><strong>{p.shots.length.toLocaleString("en-US")}</strong></div>
           <div><span>Runtime</span><strong>{(p.fps ? frames / p.fps : 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} s</strong></div>
-          <div><span>Frame rate</span><strong>{p.fps} fps · non-drop</strong></div>
-          <div><span>Aspect</span><strong>{p.aspect}</strong></div>
+          <label><span>Frame rate</span>
+            <select aria-label="Frame rate" value={p.fps} onChange={(e) => { const fps = Number(e.target.value) as 24 | 25 | 30; editor.change((old) => retimeProject(old, fps)); }} data-testid="deliver-fps">
+              {[24, 25, 30].map((fps) => <option key={fps} value={fps}>{fps} fps · non-drop</option>)}
+            </select>
+          </label>
+          <label><span>Aspect</span>
+            <select aria-label="Aspect" value={p.aspect} onChange={(e) => { const aspect = e.target.value as Project["aspect"]; editor.change((old) => ({ ...old, aspect })); }} data-testid="deliver-aspect">
+              {(["16:9", "9:16", "1:1", "4:5"] as const).map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
         </div>
         <p className="pxw-package-note">
-          Editorial package: CMX3600 EDL, source media, shot list and provenance. Aspect ratio is a delivery note, not a reframe.
+          Editorial package: CMX3600 EDL, FCPXML and Final Cut Pro 7 XML, source media, shot list and provenance. Aspect ratio is a delivery note, not a reframe.
         </p>
         <div className="pxw-package-actions">
           <button
@@ -62,22 +70,23 @@ export default function DeliverTool({ tool, projectId, scope, onProject }: { too
           >
             {busy ? "Preparing package…" : "Download package"}
           </button>
-          <button
-            type="button"
-            className="pxw-btn pxw-btn--control"
-            disabled={!p.shots.length}
-            onClick={() => {
-              try {
-                downloadFile(new Blob([makeEDL(p)], { type: "text/plain" }), safeName(p.name) + ".edl");
-                setMessage(null);
-              } catch (error) {
-                setMessage({ kind: "error", text: error instanceof Error ? error.message : "Could not export EDL." });
-              }
-            }}
-          >
-            EDL only
-          </button>
-          <a className="pxw-btn pxw-btn--control" href={suiteHref("particl", p.id, "export")}>Change the spec in Studio</a>
+          {([
+            ["EDL", ".edl", "text/plain", makeEDL, "deliver-edl"],
+            ["FCPXML · Final Cut, Resolve", ".fcpxml", "application/xml", makeFCPXML, "deliver-fcpxml"],
+            ["XML · Premiere", ".xml", "application/xml", makeXMEML, "deliver-xml"],
+          ] as const).map(([label, ext, type, make, testid]) => (
+            <button key={ext} type="button" className="pxw-btn pxw-btn--control" disabled={!p.shots.length} data-testid={testid}
+              onClick={() => {
+                try {
+                  downloadFile(new Blob([make(p)], { type }), safeName(p.name) + ext);
+                  setMessage({ kind: "status", text: `${label.split(" ·")[0]} downloaded. Its clips point at media/ in the package.` });
+                } catch (error) {
+                  setMessage({ kind: "error", text: error instanceof Error ? error.message : "Could not export." });
+                }
+              }}>
+              {label}
+            </button>
+          ))}
         </div>
         {!p.shots.length ? <p className="pxw-package-note">Add a shot to the sequence before packaging.</p> : null}
         {message ? <p className={message.kind === "error" ? "pxw-package-error" : "pxw-package-note"} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p> : null}
