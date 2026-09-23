@@ -451,3 +451,16 @@ Tests: `tests/unit/generationAdmission.spec.ts` (+ a render with a length but no
 Owner's rule, in chat, 23 September: what is generated on higgsfield.ai (characters like Vanya and Aryan, trained on the site) is a separate library from Particl's; the two must not be cross-connected — Particl is a standalone generation platform and the connected account is its engine, not its library. #310 as landed listed the account's characters on the Cast card and in Gen's Soul-model picker, and Atomik's planner context read the account's characters, reference elements, recent generations and uploaded images. Now: `lib/higgsfield-consumer/character-records.ts` keeps Particl's own record of every Soul ID it asked the account to train (`higgsfield_consumer_characters`: soul_id, user, project, name, type); `connectedCharacters` intersects the account's list with that record, so the Cast card ("Built in Particl") and Gen's picker show only Particl-built identities, with the status the account gives them now. `lib/higgsfield-consumer/planner-reads.ts` no longer reads `show_characters`, `show_reference_elements`, `show_generations` or `show_medias` for Atomik's context — presets, voices, the balance and the plan remain (engine facts, not the owner's library). The build carries the project id into the record; nothing about the project is sent to the account.
 
 Tests: `tests/unit/connectedCharacters.spec.ts` (+ the narrowing), `tests/unit/atomikConnectedPlanner.spec.ts` (the reads list), `tests/suites-soul-id-workbench.spec.ts` (copy).
+## 23 September — Seedance 2.0 Edit live qualification (production, owner-approved ceiling US$5)
+
+Run from the owner's signed-in session in the browser pane on www.particl.app (deployment of 81de0ae, #311), project **Dune Studies**, Gen › Edit, engine **Seedance 2.0**, source the workspace render "A chrome sphere rests on pale sand; the camera pushes in slowly." (4.04 s), direction "Turn the sand a deep rust red; keep the sphere, the camera move and the audio exactly as they are."
+
+| Fact | Value |
+| --- | --- |
+| Before #311 | every project clip refused: "The source clip's dimensions or duration are unavailable" |
+| Quote on the button after #311 | **$0.74** (Review edit cost → Generate edit · $0.74) |
+| Submitted | 11:00 AM · Takes: "Edit queued. Its progress is in Your takes." · Inspector: engine `dreamina-seedance-2-0-260128`, status rendering, Not settled |
+| Finished | ≈15 minutes later · the take reads **$0.75 · Review**; the Inspector's Settled figure is **$0.747** (the tile rounds), status *review*, the output playable and downloadable — 15 % of the ceiling |
+| Copy retired | `SeedanceEditHost.tsx` no longer calls Edit on 2.0 untested; the Gen spec asserts the qualified note |
+
+What the run confirms: the Edit task on 2.0 quotes, admits and settles on the same path as 2.5; the measured-source fix (#311) is what made the quote possible on a render with no recorded ratio. The output's look is the owner's call to review in Takes.
