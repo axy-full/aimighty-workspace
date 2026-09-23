@@ -5,7 +5,8 @@ import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { BOARD_MODELS, BOARD_STYLES, DEFAULT_BOARDS, FRAME_PROMPT_LIMIT, boardShots, emptyFrame, renderPrompt, shotPrompt, type BoardFrame, type Boards, type NumberedShot } from "@/lib/production/boards";
+import { BOARD_MODELS, BOARD_STYLES, stillShape, DEFAULT_BOARDS, FRAME_PROMPT_LIMIT, boardShots, emptyFrame, renderPrompt, shotPrompt, type BoardFrame, type Boards, type NumberedShot } from "@/lib/production/boards";
+import { getModel } from "@/lib/models";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import type { Asset, Project } from "@/lib/workbench/studio";
@@ -30,7 +31,7 @@ export function frameRequest(project: Project, boards: Boards, frame: BoardFrame
   const sketch = frame.sketch ? project.assets.find((a) => a.id === frame.sketch!.assetId) : undefined;
   return {
     prompt: renderPrompt(frame.prompt, frame.style ?? boards.style, Boolean(sketch)), kind: "image", model: { id: boards.model },
-    mapping: { shotId: "", productionProjectId: project.productionProjectId }, ratio: project.aspect, resolution: "1K", duration: 5,
+    mapping: { shotId: "", productionProjectId: project.productionProjectId }, ...stillShape(getModel(boards.model), project.aspect), duration: 5,
     references: sketch?.uploadId ? [{ uploadId: sketch.uploadId, role: "reference_image" }] : [], firstFrameAssetId: "",
   };
 }
@@ -288,7 +289,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         </div>
         <div className="pd-row-head">
           <span className="gx-hint">Engine</span>
-          <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Frame engine">
+          <div className="gx-seg gx-seg--sm pd-engines" role="radiogroup" aria-label="Frame engine">
             {BOARD_MODELS.map((m) => <button key={m.id} type="button" role="radio" className="gx-seg-btn" aria-checked={boards.model === m.id} onClick={() => setBoards((b) => ({ ...b, model: m.id }))}><span>{m.label}</span></button>)}
           </div>
           <span className="gx-hint">{p.aspect} · each frame priced before it renders</span>

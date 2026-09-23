@@ -38,6 +38,9 @@
   .gx .pd-agent-row .gx-seg { width: 100%; }
   .gx .pd-agent-row .gx-seg .gx-seg-btn { flex: 1; }
   .gx .pd-stage .gx-seg .gx-seg-btn { height: 44px; min-height: 44px; }
+  /* Five frame engines wrap inside the card on a phone instead of pushing it sideways. */
+  .gx .gx-seg.pd-engines { display: flex; flex-wrap: wrap; width: 100%; box-sizing: border-box; border-radius: 22px; }
+  .gx .gx-seg.pd-engines .gx-seg-btn { flex: 1 1 auto; }
   .gx .pd-agent-model button, .gx .pd-agent-effort button { box-sizing: border-box; height: 46px; min-height: 46px; width: 100%; max-width: none; }
   .gx .pd-tabs { width: 100%; }
   .gx .pd-tabs .gx-seg-btn { flex: 1; }

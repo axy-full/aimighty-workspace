@@ -15,8 +15,22 @@ export const BOARD_STYLES: { id: BoardStyle; label: string; line: string; suffix
 export const BOARD_MODELS = [
   { id: "gemini-3.1-flash-image", label: "Nano Banana 2" },
   { id: "gemini-3-pro-image", label: "Nano Banana Pro" },
+  { id: "gpt-image-2", label: "GPT Image 2" },
+  { id: "gpt-image-2.5-flare", label: "GPT Image 2.5" },
+  { id: "grok-imagine-image-2.0", label: "Grok Imagine 2" },
 ] as const;
 export type BoardModel = (typeof BOARD_MODELS)[number]["id"];
+
+/**
+ * The ratio and size a still engine is asked for: the project's aspect, or
+ * the engine's nearest one (GPT Image 1.5 makes 3:2, not 16:9), and 1K where
+ * the engine has it (GPT Image's first quality, Medium, otherwise).
+ */
+export function stillShape(model: { ratios: string[]; resolutions: string[] }, aspect: string): { ratio: string; resolution: string } {
+  const value = (r: string) => { const [w, h] = r.split(":").map(Number); return Math.log(w / h); };
+  const ratio = model.ratios.includes(aspect) ? aspect : [...model.ratios].sort((a, b) => Math.abs(value(a) - value(aspect)) - Math.abs(value(b) - value(aspect)))[0] ?? aspect;
+  return { ratio, resolution: model.resolutions.includes("1K") ? "1K" : model.resolutions[0] ?? "1K" };
+}
 
 export type FrameTake = { genId: string; style: BoardStyle; at: string };
 export type FramePending = { jobId: string; style: BoardStyle; at: string };

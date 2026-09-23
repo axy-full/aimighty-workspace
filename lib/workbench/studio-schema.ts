@@ -186,7 +186,7 @@ export const productionSchema = z.object({
     }).strict()).max(1000),
   }).strict().optional(),
   boards: z.object({
-    style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image']),
+    style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
     frames: z.record(z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), z.object({
       prompt: z.string().max(8000),
       sketch: z.object({ assetId: z.string().max(100), name: z.string().max(200) }).strict().optional(),

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MODELS, type ModelDef } from '../../lib/models';
-import { estimateCostUsd } from '../../lib/vendorPricing';
+import { estimateCostUsd, estimateImageCostUsd } from '../../lib/vendorPricing';
 import { billCredits } from '../../lib/creditTerms';
 import { generatedReferenceSeconds, videoReferenceSeconds } from '../../lib/referenceDuration';
 import { quoteWorkbenchMedia, referencePrices, workbenchGenerationModels } from '../../lib/workbench/media-quote';
@@ -37,7 +37,11 @@ test('new-take engines exclude editing tools and put the economy still first', (
   expect(engines.some(item => item.id.includes('reframe'))).toBe(false);
   expect(engines.some(item => item.stillTask)).toBe(false);
   expect(engines.find(item => item.marketing)?.hidden).toBe(true);
-  expect(engines.filter(item => item.kind === 'image')[0].id).toBe('gemini-3.1-flash-image');
+  /* Stills are listed cheapest first by their first size: Grok Imagine ($0.02) leads. */
+  const stills = engines.filter(item => item.kind === 'image' && !item.marketing && !item.soulIdentity);
+  const prices = stills.map(item => estimateImageCostUsd(item.id, item.resolutions[0], 0)!.net);
+  expect(prices).toEqual([...prices].sort((a, b) => a - b));
+  expect(stills[0].id).toBe('grok-imagine-image');
 });
 
 test('reference-video quotes include upload and generated duration at the input-video rate', async () => {

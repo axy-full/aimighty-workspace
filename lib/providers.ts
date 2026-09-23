@@ -17,7 +17,7 @@
  * models.ts. Nothing else in the app should learn its name.
  */
 
-export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel" | "higgsfield";
+export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel" | "higgsfield" | "openai" | "xai";
 
 export type ProviderDef = {
   id: ProviderId;
@@ -180,7 +180,51 @@ export const PROVIDERS: ProviderDef[] = [
     rateLimit: "Per-account limits set by the gateway; a 429 is retried with backoff.",
     billsFailures: false,
   },
+  {
+    /* OpenAI's image models (GPT Image). Direct on the OpenAI key, billed as
+       an OpenAI charge; through the AI Gateway only when there is no key. */
+    id: "openai",
+    label: "OpenAI",
+    serves: "GPT Image stills",
+    envKey: "OPENAI_API_KEY",
+    baseUrlEnv: "OPENAI_BASE_URL",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    docs: "https://platform.openai.com/docs/guides/image-generation",
+    limits: {
+      maxImageBytes: 50 * 1024 * 1024, maxVideoBytes: 0, maxRequestBytes: 100 * 1024 * 1024,
+      minImagePx: 0, maxImagePx: 0, minAspect: 0, maxAspect: 0,
+      imageFormats: ["png", "jpeg", "jpg", "webp"],
+    },
+    rateLimit: "Per-organisation image limits; a 429 is retried with backoff.",
+    billsFailures: false,
+  },
+  {
+    /* xAI's Grok Imagine. Direct on the xAI key (the one Crew uses), billed as
+       an xAI charge; through the AI Gateway only when there is no key. */
+    id: "xai",
+    label: "xAI",
+    serves: "Grok Imagine stills",
+    envKey: "XAI_API_KEY",
+    baseUrlEnv: "XAI_BASE_URL",
+    defaultBaseUrl: "https://api.x.ai/v1",
+    docs: "https://docs.x.ai/docs/guides/image-generations",
+    limits: {
+      maxImageBytes: 10 * 1024 * 1024, maxVideoBytes: 0, maxRequestBytes: 50 * 1024 * 1024,
+      minImagePx: 0, maxImagePx: 0, minAspect: 0, maxAspect: 0,
+      imageFormats: ["png", "jpeg", "jpg", "webp"],
+    },
+    rateLimit: "Per-team limits; a 429 is retried with backoff.",
+    billsFailures: false,
+  },
 ];
+
+/**
+ * Vendors reached on their own key and billed as their own charge, with the
+ * AI Gateway as the fallback when the key is missing (owner, 23 September:
+ * Nano Banana bills as a Google AI charge; OpenAI and Grok images likewise).
+ */
+const GATEWAY_FALLBACK: Partial<Record<ProviderId, VendorKeyName>> = { google: "gemini", openai: "openai", xai: "xai" };
+export const gatewayFallbackKey = (provider: string): VendorKeyName | undefined => GATEWAY_FALLBACK[provider as ProviderId];
 
 export const DEFAULT_PROVIDER: ProviderId = "byteplus";
 
@@ -191,7 +235,7 @@ export function getProvider(pid: string): ProviderDef {
 }
 
 import { gatewayReachable } from "./gateway";
-import { vendorKey, vendorKeyForEnv } from "./vendorKeys";
+import { vendorKey, vendorKeyForEnv, type VendorKeyName } from "./vendorKeys";
 import { engineMock } from "./mock";
 
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
@@ -200,7 +244,7 @@ export function providerConfigured(p: ProviderDef): boolean {
   if (p.id === "vercel") return gatewayReachable();
   /* Through vendorKey, not the raw env: a workspace's own sealed key, or
      the platform's where it is lent — the same answer the render will get. */
-  return Boolean(vendorKeyForEnv(p.envKey)) || (p.id === "google" && gatewayReachable());
+  return Boolean(vendorKeyForEnv(p.envKey)) || (Boolean(GATEWAY_FALLBACK[p.id]) && gatewayReachable());
 }
 
 /** Which door a vendor's calls go through from this deployment. */
@@ -222,13 +266,13 @@ export function billedTo(provider: string): ProviderId {
   /* Widened to string because ModelDef.provider is one, and a model that
      names a vendor this build has never heard of must land somewhere
      nameable rather than throwing inside an INSERT. */
-  if (provider !== "google") {
+  const keyName = GATEWAY_FALLBACK[provider as ProviderId];
+  if (!keyName) {
     return (PROVIDERS.some((p) => p.id === provider) ? provider : "byteplus") as ProviderId;
   }
-  const key = Boolean(vendorKey("gemini"));
-  if (key) return "google";
+  if (vendorKey(keyName)) return provider as ProviderId;
   if (gatewayReachable()) return "vercel";
-  return "google";
+  return provider as ProviderId;
 }
 
 export function providerVia(p: ProviderDef): "key" | "gateway" | null {
@@ -238,10 +282,9 @@ export function providerVia(p: ProviderDef): "key" | "gateway" | null {
      key is set would report the one vendor that is always reachable as
      not configured. */
   if (p.id === "vercel") return gatewayReachable() ? "gateway" : null;
-  if (p.id === "google") {
+  if (GATEWAY_FALLBACK[p.id]) {
     if (vendorKeyForEnv(p.envKey)) return "key";
-    if (gatewayReachable()) return "gateway";
-    return vendorKeyForEnv(p.envKey) ? "key" : null;
+    return gatewayReachable() ? "gateway" : null;
   }
   return vendorKeyForEnv(p.envKey) ? "key" : null;
 }

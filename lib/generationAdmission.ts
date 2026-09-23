@@ -15,7 +15,7 @@ import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
-import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
+import { allowanceCheck, renderKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
 import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import {
@@ -307,7 +307,7 @@ export async function executeGenerationAdmission(
     }
     // On the platform's keys, a workspace has a monthly allowance — the wall
     // the platform's money sits behind. Checked before anything is spent.
-    const allowance = await allowanceCheck(vendorKeyNameFor(model.provider));
+    const allowance = await allowanceCheck(renderKeyNameFor(model.provider));
     /* Out of credits is not a refusal any more: the take is parked as held and
      released the moment credits arrive (lib/held.ts). A cap or a key problem
      still stops here. */
@@ -1085,7 +1085,7 @@ export async function executeGenerationAdmission(
           );
       }
       const wallStill = await allowanceCheck(
-        vendorKeyNameFor(model.provider),
+        renderKeyNameFor(model.provider),
         estStillUsd,
         modelId,
       );
@@ -1685,7 +1685,7 @@ export async function executeGenerationAdmission(
         );
     }
     const wall = await allowanceCheck(
-      vendorKeyNameFor(model.provider),
+      renderKeyNameFor(model.provider),
       estUsd,
       modelId,
     );

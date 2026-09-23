@@ -152,6 +152,21 @@ export const isHiggsfieldImageModel = (id: string) => id === SOUL_CHARACTER_MODE
 
 export const SOUL_CHARACTER_MODEL_ID = "hf-soul-character";
 
+/** GPT Image models: id, label, short, flexible sizes?, what it is for. */
+const OPENAI_IMAGE_MODELS: [string, string, string, boolean, string][] = [
+  ["gpt-image-2", "GPT Image 2", "GPT 2", true, "OpenAI's image model: exact text, faithful edits."],
+  ["gpt-image-2.5-flare", "GPT Image 2.5 Flare", "GPT 2.5F", true, "Fast, high-quality everyday stills."],
+  ["gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "GPT 2.5S", true, "OpenAI's newest still engine."],
+  ["gpt-image-1.5", "GPT Image 1.5", "GPT 1.5", false, "OpenAI stills at three fixed sizes."],
+  ["gpt-image-1", "GPT Image 1", "GPT 1", false, "The original GPT Image."],
+  ["gpt-image-1-mini", "GPT Image 1 Mini", "GPT Mini", false, "The cheapest GPT Image stills."],
+];
+/** Grok Imagine models: id, label, short, resolutions, what it is for. */
+const XAI_IMAGE_MODELS: [string, string, string, string[], string][] = [
+  ["grok-imagine-image-2.0", "Grok Imagine Image 2.0", "Grok 2.0", ["1K", "2K"], "xAI's newest stills, up to 2K."],
+  ["grok-imagine-image", "Grok Imagine Image", "Grok", ["1K"], "Quick, cheap Grok stills."],
+];
+
 export const MODELS: ModelDef[] = [
   {
     id: "dreamina-seedance-2-5-260628",
@@ -416,6 +431,25 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 0,
     note: "Nano Banana 2, the quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
   },
+  /* OpenAI's GPT Image (owner, 23 September: OpenAI image models in image
+     gens). Quality takes the resolution slot — Medium, High, Low — and the
+     ratio picks the size (lib/vendorImages.ts). Direct on the OpenAI key,
+     through the AI Gateway without one. */
+  ...OPENAI_IMAGE_MODELS.map(([id, label, short, flexible, use]): ModelDef => ({
+    id, label, short, family: "gpt-image", provider: "openai", kind: "image", billing: "image", gatewayId: `openai/${id}`,
+    paramStyle: "fields", resolutions: ["Medium", "High", "Low"],
+    ratios: flexible ? ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9"] : ["1:1", "3:2", "2:3"],
+    durations: [], supportsAudio: false, supportsCameraFixed: false,
+    maxReferenceImages: 10, maxReferenceVideos: 0, maxVideoSecondsTotal: 0, use,
+  })),
+  /* xAI's Grok Imagine (owner, 23 September: Grok APIs wherever possible).
+     Direct on the xAI key, through the AI Gateway without one. */
+  ...XAI_IMAGE_MODELS.map(([id, label, short, resolutions, use]): ModelDef => ({
+    id, label, short, family: "grok-imagine", provider: "xai", kind: "image", billing: "image", gatewayId: `spacexai/${id}`,
+    paramStyle: "fields", resolutions, ratios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+    durations: [], supportsAudio: false, supportsCameraFixed: false,
+    maxReferenceImages: 5, maxReferenceVideos: 0, maxVideoSecondsTotal: 0, use,
+  })),
   ...Object.entries(GENJUTSU_MODELS).map(([variant, id]): ModelDef => ({
     id, label: GENJUTSU_LABELS[variant as keyof typeof GENJUTSU_LABELS], short: "TRANSFORM", family: "genjutsu",
     provider: "higgsfield", kind: "video", billing: "second", genjutsu: true, hidden: true, paramStyle: "fields",

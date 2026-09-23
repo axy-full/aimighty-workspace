@@ -4,7 +4,7 @@ import { dependentsOf, type Dependent } from "./elements";
 import { plannedTakeUsd } from "./shotBudgetCost";
 import { DEFAULT_MODEL_ID, getModel } from "./models";
 import { ENGINE_MODEL, type ShotEngine } from "./shotBuilder";
-import { vendorKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth } from "./allowance";
+import { renderKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth } from "./allowance";
 import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
@@ -230,7 +230,7 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
     const usd = plannedTakeUsd(r.planned == null ? null : Number(r.planned), model);
     const d = dependents.find((x) => x.shotId === String(r.id))!;
     let platformPays = true;
-    try { platformPays = paidByPlatform(vendorKeyNameFor(getModel(model).provider)); } catch { platformPays = true; }
+    try { platformPays = paidByPlatform(renderKeyNameFor(getModel(model).provider)); } catch { platformPays = true; }
     byId.set(String(r.id), {
       usd, engine: model, platformPays,
       spent: spentBy.get(String(r.id)) ?? 0,

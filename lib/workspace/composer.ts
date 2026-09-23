@@ -275,7 +275,7 @@ export function offeredModels(state: Pick<ComposerState, "type">, models: readon
  * list does not offer is simply not the default.
  */
 export const DEFAULT_MODEL_PREFERENCE: Record<ComposerType, readonly string[]> = {
-  image: ["gpt_image_2_5", "gpt_image_2"],
+  image: ["gpt_image_2_5", "gpt_image_2", "gpt-image-2.5-flare", "gpt-image-2"],
   video: ["seedance_2_5", "dreamina-seedance-2-5-260628"],
   audio: ["seed_audio", "eleven_sfx"],
 };
