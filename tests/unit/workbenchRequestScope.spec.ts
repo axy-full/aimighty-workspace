@@ -1,3 +1,4 @@
+import * as zlib from "node:zlib";
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -28,6 +29,8 @@ function route() {
     "@/lib/db": { db: () => ({ execute: record("query", { rows: [] }) }) },
     "@/lib/workbench/studio-schema": { saveSchema },
     "@/lib/workbench/studio": { newProject },
+    /* Real: a large project answer leaves gzipped. */
+    "node:zlib": zlib,
     "@/lib/workbench/records": {
       workbenchReady: record("ready", undefined),
       readDraft: record("read", { project: draft, revision: 1 }),

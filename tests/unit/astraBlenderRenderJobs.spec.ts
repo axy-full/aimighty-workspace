@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from '../../lib/workbench/project-limits';
 import { test, expect } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -59,15 +60,15 @@ test('funding changes and lost source files fail before runtime creation and rel
 
 test('render admission reserves three project slots and concurrent project growth preserves saved originals',async()=>context('asset-cap',async m=>{
  const f=fake();const asset=(n:number)=>({id:`asset-${n}`,name:`Asset ${n}`,kind:'document' as const,category:'test',url:`https://example.test/${n}`,description:'',prompt:'',status:'Draft' as const,locked:false,version:1,refs:[]});
- const crowded={...m.project,assets:Array.from({length:498},(_,i)=>asset(i))};
+ const crowded={...m.project,assets:Array.from({length:PROJECT_LIMITS.assets-2},(_,i)=>asset(i))};
  await m.db().execute({sql:'UPDATE workbench_projects SET body=?',args:[JSON.stringify(crowded)]});
  await expect(m.quoteAstraRender(m.input,'u_test')).rejects.toMatchObject({status:422});
  await m.db().execute({sql:'UPDATE workbench_projects SET body=?',args:[JSON.stringify(m.project)]});
  const first=await m.prepareAstraRender(m.input,'u_test',undefined,f.deps);
- crowded.assets=Array.from({length:500},(_,i)=>asset(i));await m.db().execute({sql:'UPDATE workbench_projects SET body=?',args:[JSON.stringify(crowded)]});
+ crowded.assets=Array.from({length:PROJECT_LIMITS.assets},(_,i)=>asset(i));await m.db().execute({sql:'UPDATE workbench_projects SET body=?',args:[JSON.stringify(crowded)]});
  await m.runAstraRender(first.job.id,f.deps);
  const job=(await m.listAstraRenderJobs('u_test',m.project.id))[0];expect(job.status).toBe('succeeded');expect(job.assetsRegistered).toBe(false);expect(job.error).toContain('Library');expect(job.artifacts).toHaveLength(3);
- const project=JSON.parse(String((await m.db().execute('SELECT body FROM workbench_projects')).rows[0].body));expect(project.assets).toHaveLength(500);expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM uploads')).rows[0].n)).toBe(3);expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_storage')).rows[0].n)).toBe(0);
+ const project=JSON.parse(String((await m.db().execute('SELECT body FROM workbench_projects')).rows[0].body));expect(project.assets).toHaveLength(PROJECT_LIMITS.assets);expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM uploads')).rows[0].n)).toBe(3);expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_storage')).rows[0].n)).toBe(0);
 }));
 
 test('mock mode refuses real compute before the runtime claim and refunds a queued reservation',async()=>context('mock-real-refusal',async m=>{

@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 /* eslint-disable @next/next/no-img-element -- Private originals require same-origin authenticated requests. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -906,10 +907,10 @@ export function ConsumerGenjutsu({
         !latest.assets.some(
           (item) => item.generationId === asset.generationId,
         ) &&
-        latest.assets.length >= 500
+        latest.assets.length >= PROJECT_LIMITS.assets
       )
         throw Error(
-          "The project already contains 500 assets. Remove an unused filing first.",
+          `The project already contains ${limitText(PROJECT_LIMITS.assets)} assets. Remove an unused filing first.`,
         );
       const saved =
         latest.assets.find(

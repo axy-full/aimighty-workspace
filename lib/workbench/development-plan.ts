@@ -5,6 +5,13 @@ import type { DevelopmentKind, DevelopmentResult, DevelopmentStage } from './dev
 export const DEVELOPMENT_STAGES: DevelopmentStage[] = ['draft', 'critique', 'refine'];
 export const DEVELOPMENT_RESULT_BYTES = 48_000;
 export const DEVELOPMENT_CRITIQUE_BYTES = 12_000;
+/**
+ * The most one agent request may be quoted at (its worst case), unless
+ * WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD says otherwise (up to $1,000). Owner,
+ * 23 September: a feature-length breakdown with Claude Fable must fit —
+ * about $139 at worst for 130 pages; $250 covers about 230.
+ */
+export const DEVELOPMENT_REQUEST_CEILING_USD = 250;
 /** A writer's draft carries the whole script: room for a feature-length short (about 60 pages). */
 export const DEVELOPMENT_WRITE_BYTES = 160_000;
 /** Visible answer tokens a writer phase may use (the reasoning allowance comes on top). */

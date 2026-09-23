@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from "./project-limits";
 import { astraNativeSchema, astraNativeProposalSchema, validateAstraNativeBindings } from '../astra-blender/native';
 import { astraSceneSchema } from '../astra-blender/scene';
 import { astraProposalSchema, validateAstraBindings } from '../astra-blender/proposal';
@@ -227,16 +228,16 @@ export const projectSchema = z.object({
   direction: z.string().max(30000),
   fps: z.union([z.literal(24), z.literal(25), z.literal(30)]),
   aspect: z.enum(["16:9", "9:16", "1:1", "4:5"]),
-  bins: z.array(z.object({id:z.string().min(1).max(100),name:z.string().trim().min(1).max(80),assetIds:z.array(z.string().max(100)).max(500)})).max(50).optional(),
-  assets: z.array(asset).max(500),
-  nodes: z.array(node).max(250),
-  shots: z.array(shot).max(250),
+  bins: z.array(z.object({id:z.string().min(1).max(100),name:z.string().trim().min(1).max(80),assetIds:z.array(z.string().max(100)).max(PROJECT_LIMITS.assets)})).max(50).optional(),
+  assets: z.array(asset).max(PROJECT_LIMITS.assets),
+  nodes: z.array(node).max(PROJECT_LIMITS.nodes),
+  shots: z.array(shot).max(PROJECT_LIMITS.shots),
   plans: z.array(plan).max(100),
   briefPinned: z.boolean(),
   lookPinned: z.boolean(),
   createdAt: z.string().max(50),
-  sharedAssetIds: z.array(z.string()).max(500),
-  sharedNodeIds: z.array(z.string()).max(250),
+  sharedAssetIds: z.array(z.string()).max(PROJECT_LIMITS.assets),
+  sharedNodeIds: z.array(z.string()).max(PROJECT_LIMITS.nodes),
   colorGrade: z
     .object({
       lutAssetId: z.string().min(1).max(100).optional(),
@@ -314,8 +315,8 @@ export const projectSchema = z.object({
     )
     .refine((value) => Object.keys(value).length <= 500)
     .optional(),
-  sharedNodes: z.array(node).max(250).optional(),
-  sharedAssets: z.array(asset).max(500).optional(),
+  sharedNodes: z.array(node).max(PROJECT_LIMITS.nodes).optional(),
+  sharedAssets: z.array(asset).max(PROJECT_LIMITS.assets).optional(),
 });
 
 export const saveSchema = z

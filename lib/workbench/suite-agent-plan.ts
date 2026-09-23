@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from "./project-limits";
 import { z } from 'zod';
 import type { SuiteId } from '../suites';
 import type { Plan, Project, CanvasNode } from './studio';
@@ -57,7 +58,7 @@ export function applySuiteAgentPlan(project: Project, plan: Plan, createId: () =
       }
     }
   }
-  if (project.assets.length + importedAssets.length > 500) throw new Error('This plan would exceed the 500-asset library limit. Remove unused assets first.');
+  if (project.assets.length + importedAssets.length > PROJECT_LIMITS.assets) throw new Error(`This plan would exceed the ${limitText(PROJECT_LIMITS.assets)}-asset library limit. Remove unused assets first.`);
   // Campaign product/cast selections use canonical draft images only. Shared
   // references may still be linked to a node, but cannot invent product roles.
   const images = new Set(project.assets.filter(asset => asset.kind === 'image').map(asset => asset.id));
@@ -92,7 +93,7 @@ export function applySuiteAgentPlan(project: Project, plan: Plan, createId: () =
         ...(productId ? { productId } : {}), ...(castIds.length === 1 ? { castAssetId: castIds[0] } : {}), createdAt });
     }
   }
-  if (project.nodes.length + nodes.length > 250) throw new Error('This plan would exceed the 250-node canvas limit. Remove unused nodes first.');
+  if (project.nodes.length + nodes.length > PROJECT_LIMITS.nodes) throw new Error(`This plan would exceed the ${limitText(PROJECT_LIMITS.nodes)}-node canvas limit. Remove unused nodes first.`);
   return { ...project, assets: importedAssets.length ? [...project.assets, ...importedAssets] : project.assets, nodes: [...project.nodes, ...nodes],
     plans: project.plans.some(item => item.id === plan.id) ? project.plans.map(item => item.id === plan.id ? { ...item, applied: true } : item) : [...project.plans, { ...plan, applied: true }],
     ...(proposal.suite === 'moleculr' ? { moleculr: { ...brief, variants, hooks: [...new Set([...brief.hooks, ...proposal.hooks])].slice(0, 12) } } : {}),

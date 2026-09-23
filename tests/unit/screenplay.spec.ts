@@ -222,7 +222,8 @@ test("project JSON admission counts UTF-8 bytes and stops an oversized chunked b
   expect(result).toMatchObject({ ok: false, status: 413 });
   expect(cancelled).toBe(true);
   expect(reads).toBeLessThanOrEqual(5);
-  const unicode = JSON.stringify({ script: "漢".repeat(1_200_000) });
+  /* 1.4 million characters, 4.2 MB of UTF-8: over the 4 MB uncompressed limit by bytes, not characters. */
+  const unicode = JSON.stringify({ script: "漢".repeat(1_400_000) });
   expect(
     await readProjectBody(
       new Request("http://localhost", { method: "PUT", body: unicode }),

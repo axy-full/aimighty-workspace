@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useEffect, useRef } from "react";
 import { AstraStudio } from "@/components/astra-blender/AstraStudio";
 import { astraNativeDigest, serializeAstraNative, validateAstraNativeBindings } from "@/lib/astra-blender/native";
@@ -67,7 +68,7 @@ export default function AstraTool({ projectId, scope, onProject }: { projectId: 
           onAsset={(asset) =>
             change((old) => {
               if (old.id !== p.id) throw new Error("The project changed. Your upload is preserved in All assets.");
-              if (old.assets.length >= 500) throw new Error("The project asset limit was reached. Your upload is preserved in All assets.");
+              if (old.assets.length >= PROJECT_LIMITS.assets) throw new Error("The project asset limit was reached. Your upload is preserved in All assets.");
               return { ...old, assets: [...old.assets.filter((item) => item.id !== asset.id), asset] };
             })
           }

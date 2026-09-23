@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from "./project-limits";
 import type { Asset, Project } from './studio';
 
 export type MediaJob = {
@@ -22,7 +23,7 @@ export function recoverMediaAssets(project:Project,jobs:MediaJob[]):Project {
   const incoming=jobs.filter(j=>j.status==='succeeded'&&byShot.has(j.shotId??'')&&!have.has(j.id));
   const assets:Asset[]=[];
   for(const job of incoming){
-    if(have.has(job.id)||project.assets.length+assets.length>=500)continue;
+    if(have.has(job.id)||project.assets.length+assets.length>=PROJECT_LIMITS.assets)continue;
     have.add(job.id);
     const nodeId=byShot.get(job.shotId!);const node=project.nodes.find(n=>n.id===nodeId);
     const refs=(job.params?.references??[]).flatMap(ref=>project.assets.filter(a=>ref.genId?a.generationId===ref.genId:!!ref.uploadId&&a.uploadId===ref.uploadId).map(a=>a.id));

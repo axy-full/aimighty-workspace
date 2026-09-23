@@ -169,6 +169,19 @@ test('a breakdown phase has room for its whole result; a fenced answer with a tr
   });
 });
 
+test('the per-request ceiling is $250 by default: a $150 worst case is quoted, a $300 one is refused with its figures', async () => {
+  await runInTenant(workspace(), async () => {
+    const { request } = await fixture(), h = harness();
+    const base = Number((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd);
+    const { input, output } = model.pricing as { input: number; output: number };
+    const priced = (usd: number) => { const k = usd / base; h.deps.models = async () => [{ ...model, pricing: { input: input * k, output: output * k } }]; };
+    priced(150);
+    expect((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd).toBeCloseTo(150, 0);
+    priced(300);
+    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow(/at most \$300\.\d\d across \d+ agent steps with Claude, against \$250\.00 per request/);
+  });
+});
+
 test('invalid paid output is retained, charged once and blocks all future phases', async () => {
   await runInTenant(workspace(), async () => {
     const { request } = await fixture(), h = harness();

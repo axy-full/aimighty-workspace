@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
@@ -122,7 +123,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
             if (!e) return old;
             const asset: Asset = { id: original.generationId, generationId: original.generationId, kind: "image", mime: original.mime, category: CAST_CATEGORY[e.kind], name: e.name || CAST_CATEGORY[e.kind], url: original.url, description: e.description, prompt: e.prompt, status: "Draft", locked: false, version: e.takes.length + 1, refs: [], ...(e.soulId ? { soulIdentityId: e.soulId } : {}) };
             const next: CastEntry = { ...e, job: undefined, takes: [{ genId: original.generationId, at: new Date().toISOString() }, ...e.takes].slice(0, CAST_LIMITS.takes), selected: original.generationId };
-            return { ...old, assets: old.assets.some((a) => a.id === asset.id) || old.assets.length >= 500 ? old.assets : [...old.assets, asset], production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
+            return { ...old, assets: old.assets.some((a) => a.id === asset.id) || old.assets.length >= PROJECT_LIMITS.assets ? old.assets : [...old.assets, asset], production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
           });
           void editor.ensureSaved().then(() => { void refreshProjectLibrary(scope, latest.current.id); toast(`${entry.name || "The build"} is in the library as ${entry.kind === "character" ? "Cast" : "Elements"}`); });
         } catch { /* read again next tick */ }
