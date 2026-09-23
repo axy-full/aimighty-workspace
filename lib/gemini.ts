@@ -54,7 +54,7 @@ export function stillsDoor(): "gateway" | "google" | null {
 }
 
 /** A reference as the vendor should receive it: the delivery copy if there is one. */
-async function refPayload(ref: Reference): Promise<{ mime: string; b64: string }> {
+export async function refPayload(ref: Reference): Promise<{ mime: string; b64: string }> {
   // Our own render, kept under generations/ as a PNG, with no delivery copy.
   if (ref.fromGeneration) {
     const own = await readImageBytes(ref.id);

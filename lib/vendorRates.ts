@@ -162,6 +162,20 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
     },
     imageRefInUsd: 0.0003
   },
+  /* GPT Image bills by tokens. These are ceilings for the quote, per quality
+     at about 1.5 megapixels (OpenAI's image-token table, half again for the
+     2.x models, plus a cent of prompt); the settled charge is what OpenAI or
+     the gateway reports. A reference in costs at most two cents. */
+  "gpt-image-2": { tiers: [], imagePricing: { Low: 0.028, Medium: 0.078, High: 0.28 }, imageRefInUsd: 0.02 },
+  "gpt-image-2.5-flare": { tiers: [], imagePricing: { Low: 0.028, Medium: 0.078, High: 0.28 }, imageRefInUsd: 0.02 },
+  "gpt-image-2.5-sunburst": { tiers: [], imagePricing: { Low: 0.028, Medium: 0.078, High: 0.28 }, imageRefInUsd: 0.02 },
+  "gpt-image-1.5": { tiers: [], imagePricing: { Low: 0.023, Medium: 0.061, High: 0.21 }, imageRefInUsd: 0.02 },
+  "gpt-image-1": { tiers: [], imagePricing: { Low: 0.027, Medium: 0.074, High: 0.26 }, imageRefInUsd: 0.02 },
+  "gpt-image-1-mini": { tiers: [], imagePricing: { Low: 0.014, Medium: 0.023, High: 0.06 }, imageRefInUsd: 0.02 },
+  /* Grok Imagine bills per image (gateway catalogue, read 2026-09-23); an
+     edit also bills each image sent in, at most the price of one out. */
+  "grok-imagine-image-2.0": { tiers: [], imagePricing: { "1K": 0.06, "2K": 0.08 }, imageRefInUsd: 0.06 },
+  "grok-imagine-image": { tiers: [], imagePricing: { "1K": 0.02 }, imageRefInUsd: 0.02 },
   "fal-ai/flux-lora": {
     tiers: [],
     imagePricing: {

@@ -30,6 +30,14 @@ export function openAIFetch(fetcher: typeof fetch): typeof fetch {
     return fetcher(input, { ...init, redirect: 'error' });
   };
 }
+/** GPT Image on the OpenAI key: only the two image endpoints, never redirected. */
+export function openAIImageFetch(fetcher: typeof fetch): typeof fetch {
+  return (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin !== 'https://api.openai.com' || !['/v1/images/generations', '/v1/images/edits'].includes(url.pathname)) throw new Error('The image endpoint is not supported.');
+    return fetcher(input, { ...init, redirect: 'error' });
+  };
+}
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 /** Preserve the provider's original per-call details. The SDK normalizes an
  * absent cache-read count to zero, so its aggregate/defaulted fields alone do

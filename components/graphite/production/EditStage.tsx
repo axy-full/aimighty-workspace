@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
-import { BOARD_MODELS, type BoardModel } from "@/lib/production/boards";
+import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boards";
+import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
 import { useShell } from "@/lib/shell/state";
@@ -39,7 +40,7 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
   const source = entry.asset.origin === "generation" ? { genId: entry.take.sourceId } : { uploadId: entry.take.sourceId };
   return {
     prompt: `Edit the reference image: ${instruction.trim()}\n\nChange only what is asked. Keep the composition, framing, lighting, people and every other detail exactly as they are.`.slice(0, 10_000),
-    kind: "image", model: { id: model }, mapping: { shotId: "", productionProjectId }, ratio, resolution: "1K", duration: 5,
+    kind: "image", model: { id: model }, mapping: { shotId: "", productionProjectId }, ...stillShape(getModel(model), ratio), duration: 5,
     references: [{ ...source, role: "reference_image" }], firstFrameAssetId: "",
   };
 }

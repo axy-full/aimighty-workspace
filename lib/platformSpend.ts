@@ -14,9 +14,9 @@ import { platformDb, platformReady } from './platform';
  * product records with current meter reservations without counting twice.
  */
 const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
-  ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], openai: [], fal: ["fal"], elevenlabs: ["elevenlabs"], higgsfield: ["higgsfield"],
-  /* Crew rounds are metered events, not product records: nothing historical to sum. */
-  xai: [],
+  ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], openai: ["openai"], fal: ["fal"], elevenlabs: ["elevenlabs"], higgsfield: ["higgsfield"],
+  /* Crew rounds are metered events; Grok Imagine renders are product records. */
+  xai: ["xai"],
 };
 
 /** Does this vendor's bill land on the platform for the current workspace? */
@@ -100,7 +100,11 @@ export async function platformSpendSince(sinceMs: number): Promise<number> {
   return [...records.values()].reduce((sum,cost)=>sum+cost,0);
 }
 
-/** The vendor key a provider's renders draw on. */
+/**
+ * The vendor key an engine draws on. For a model's provider, pass it through
+ * billedTo first (renderKeyNameFor): GPT Image and Grok Imagine without their
+ * own key draw on the gateway's.
+ */
 export function vendorKeyNameFor(provider: string): VendorKeyName {
   switch (provider) {
     case "byteplus": return "ark";
@@ -113,4 +117,9 @@ export function vendorKeyNameFor(provider: string): VendorKeyName {
     case "xai": return "xai";
     default: return "ark";
   }
+}
+
+/** The vendor key a model's render draws on, by the door it will take (billedTo). */
+export function renderKeyNameFor(provider: string): VendorKeyName {
+  return vendorKeyNameFor(billedTo(provider));
 }

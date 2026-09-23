@@ -658,13 +658,9 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
           t.storeMs,
           produced.bytes,
           produced.via,
-          produced.via === "higgsfield"
-            ? "higgsfield"
-            : produced.via === "fal"
-            ? "fal"
-            : produced.via === "google"
-              ? "google"
-              : "vercel",
+          produced.via === "higgsfield" || produced.via === "fal" || produced.via === "google" || produced.via === "openai" || produced.via === "xai"
+            ? produced.via
+            : "vercel",
           now(),
           job.genId,
         ],
@@ -673,13 +669,9 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
         id: job.genId,
         kind: "image",
         engine:
-          produced.via === "higgsfield"
-            ? "higgsfield"
-            : produced.via === "fal"
-            ? "fal"
-            : produced.via === "google"
-              ? "google"
-              : "vercel",
+          produced.via === "higgsfield" || produced.via === "fal" || produced.via === "google" || produced.via === "openai" || produced.via === "xai"
+            ? produced.via
+            : "vercel",
         model: job.modelId,
         status: "succeeded",
         engineCostUsd: produced.cost,

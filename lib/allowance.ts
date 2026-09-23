@@ -24,7 +24,7 @@ export function defaultAllowanceUsd(): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-export { vendorKeyNameFor } from "./platformSpend";
+export { vendorKeyNameFor, renderKeyNameFor } from "./platformSpend";
 
 /** The workspace's monthly cap on the platform's keys, or null when none applies. */
 export function allowanceUsd(): number | null {
