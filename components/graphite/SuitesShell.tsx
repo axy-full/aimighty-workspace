@@ -38,6 +38,7 @@ import { StoryboardStage } from "./production/StoryboardStage";
 import { CastStage } from "./production/CastStage";
 import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
+import { RigLibrary } from "./production/RigExtras";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -226,6 +227,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
                           </div>
                         ) : null}
+                        {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
                     )}
