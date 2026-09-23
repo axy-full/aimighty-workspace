@@ -11,6 +11,7 @@ import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { ConsumerOAuthError } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
 import { buildConnectedCharacter, connectedCharacters, connectedPlan, SOUL_BUILD_STILLS, SOUL_BUILD_TYPES } from "@/lib/higgsfield-consumer/characters";
+import { buildConnectedElement, connectedElements } from "@/lib/higgsfield-consumer/elements";
 import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
@@ -55,7 +56,14 @@ const charactersCreate = z.object({
   /** The project the identity was built for; Particl's own record, never sent to the account. */
   projectId: z.string().min(1).max(64).optional(),
 }).strict();
-const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters, charactersPlan, charactersCreate]);
+/** Reference elements Particl created (Cast & Elements), and one create from Particl's own images. */
+const elements = z.object({ action: z.literal("elements") }).strict();
+const elementsCreate = z.object({
+  action: z.literal("elements-create"), name: z.string().trim().min(1).max(32), category: z.enum(["character", "environment", "prop"]), description: z.string().max(1000).default(""),
+  sources: z.array(z.union([z.object({ uploadId: z.string().max(100) }).strict(), z.object({ genId: z.string().max(100) }).strict()])).min(1).max(8),
+  projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
+}).strict();
+const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters, charactersPlan, charactersCreate, elements, elementsCreate]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -129,7 +137,7 @@ export const POST = withTenant(async (req: Request) => {
     const body = parsed.data;
     await takeAccountLimit(
       `hf-consumer-generation:${requireTenant().id}:${owner.user.id}:${body.action}`,
-      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" || body.action === "characters-plan" ? 12 : body.action === "characters-create" ? 3 : 6,
+      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" || body.action === "characters-plan" || body.action === "elements" ? 12 : body.action === "characters-create" || body.action === "elements-create" ? 3 : 6,
       60_000,
     );
     if (body.action === "catalogue")
@@ -141,6 +149,13 @@ export const POST = withTenant(async (req: Request) => {
       return Response.json(await connectedCharacters(owner.user.id), { headers });
     if (body.action === "characters-plan")
       return Response.json({ plan: await connectedPlan(owner.user.id) }, { headers });
+    if (body.action === "elements")
+      return Response.json(await connectedElements(owner.user.id), { headers });
+    if (body.action === "elements-create") {
+      const render = await requireRender();
+      if (render.response) return render.response;
+      return Response.json({ build: await buildConnectedElement(owner.user.id, { name: body.name, category: body.category, description: body.description, sources: body.sources, projectId: body.projectId ?? null }) }, { headers });
+    }
     if (body.action === "characters-create") {
       const render = await requireRender();
       if (render.response) return render.response;

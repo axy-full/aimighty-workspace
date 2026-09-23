@@ -40,7 +40,7 @@ export type DevelopmentResult = {
   /** `sketch`: what the drawing shows (the director's blocking) and the frame prompt that keeps it. */
   sketch?: { shotId: string; reading: string; prompt: string };
   /** `cast`: the characters and elements, each with its Soul Cinema prompt. */
-  cast?: { name: string; kind: 'character' | 'element'; description: string; prompt: string }[];
+  cast?: { name: string; kind: 'character' | 'element'; description: string; prompt: string; category?: 'character' | 'environment' | 'prop'; model?: 'soul_cinematic' | 'soul_2' | 'soul_location' | 'soul_cast' }[];
   /** `condense`: the shorter render prompt, pinned to the key of the prompt it came from. */
   condensed?: { nodeId: string; key: string; text: string };
   /** `rig`: the shot's prompt, notes, inputs (project asset ids) and first frame, as the agent wired it. */

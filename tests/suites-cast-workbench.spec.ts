@@ -48,6 +48,7 @@ async function setup(page: Page) {
   const pixel = await readFile("public/fixtures/still.png");
   const posts: Record<string, unknown>[] = [];
   const jobs = new Map<string, Record<string, unknown>>();
+  const elementsMade: { elementId: string; name: string; category: string; previewUrl: null }[] = [];
   let n = 0;
   await page.route(/\/api\/media\/gen_hfc_[a-f0-9]{40}$/, (route) => route.fulfill({ body: pixel, contentType: "image/png" }));
   await page.route("**/api/higgsfield/consumer/generation**", async (route) => {
@@ -55,11 +56,19 @@ async function setup(page: Page) {
     if (request.method() === "GET") return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: {}, jobs: [] } });
     const body = request.postDataJSON();
     posts.push(body);
-    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: [{ id: "soul_cinematic", name: "Soul Cinema", aspectRatios: ["1:1", "3:4", "16:9", "9:16"] }], complete: true } } });
+    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: [
+      { id: "soul_cinematic", name: "Soul Cinema", aspectRatios: ["1:1", "3:4", "16:9", "9:16"], parameters: [{ name: "quality", options: ["1.5k", "2k"], default: "2k" }, { name: "soul_id" }], medias: [{ roles: ["image"] }] },
+      { id: "soul_2", name: "Soul 2", aspectRatios: ["1:1", "3:4", "16:9"], parameters: [{ name: "quality", options: ["1.5k", "2k"], default: "2k" }, { name: "soul_id" }], medias: [{ roles: ["image"] }] },
+      { id: "soul_location", name: "Soul Location", aspectRatios: ["16:9", "9:16"], parameters: [], medias: [] },
+      { id: "soul_cast", name: "Soul Cast", aspectRatios: ["16:9"], parameters: [{ name: "budget", min: 10, max: 500, default: 50 }], medias: [] },
+      { id: "bytedance_image_upscale", name: "Image upscale", aspectRatios: [], parameters: [], medias: [{ roles: ["image"] }] },
+    ], complete: true } } });
+    if (body.action === "elements") return route.fulfill({ json: { connected: true, available: true, elements: elementsMade } });
+    if (body.action === "elements-create") { elementsMade.push({ elementId: "el_fox", name: body.name, category: body.category, previewUrl: null }); return route.fulfill({ json: { build: { state: "created", element: { elementId: "el_fox", name: body.name, category: body.category, previewUrl: null } } } }); }
     if (body.action === "characters") return route.fulfill({ json: { connected: true, available: true, characters: [{ soulId: "soul_fox", name: "Fox", type: "soul_cinematic", status: "ready", previewUrl: null }] } });
     if (body.action === "characters-plan") return route.fulfill({ json: { plan: { connected: true, available: true, plan: "Pro", paid: true } } });
     if (body.action === "quote") {
-      const job = { id: `11111111-1111-4111-8111-${String(++n).padStart(12, "0")}`, draftId: project.id, status: "quoted", input: body.input, model: { id: "soul_cinematic", name: "Soul Cinema", outputType: "image" }, workspaceId: WALLET, workspaceName: "Studio wallet", quoteCredits: 6, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300000, providerJobId: null, result: null, createdAt: Date.now() };
+      const job = { id: `11111111-1111-4111-8111-${String(++n).padStart(12, "0")}`, draftId: project.id, status: "quoted", input: body.input, model: { id: body.input.model, name: body.input.model, outputType: "image" }, workspaceId: WALLET, workspaceName: "Studio wallet", quoteCredits: 6, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300000, providerJobId: null, result: null, createdAt: Date.now() };
       jobs.set(job.id, job);
       return route.fulfill({ json: { job } });
     }
@@ -104,12 +113,31 @@ test("Cast & Elements: from the beat sheet and the agent, built with Soul Cinema
   const fox = entries.filter({ has: page.locator('input[value="Fox"]') });
   await fox.getByLabel("Fox Soul ID").selectOption("soul_fox");
   await fox.getByTestId("cast-price").click();
-  await expect(fox.getByTestId("cast-build")).toHaveText("Build · 6 Higgsfield credits");
+  await expect(fox.getByTestId("cast-build")).toHaveText("Build with Soul Cinema · 6 Higgsfield credits");
   const quote = posts.filter((b) => b.action === "quote").at(-1)!;
   expect(quote.input).toMatchObject({ type: "image", model: "soul_cinematic", parameters: { quality: "2k", aspect_ratio: "3:4", soul_id: "soul_fox" }, medias: [] });
   await fox.getByTestId("cast-build").click();
   expect(posts.find((b) => b.action === "submit")).toMatchObject({ workspaceId: WALLET, credits: 6 });
   await expect(fox.locator(".pd-frame-image img")).toBeVisible({ timeout: 30_000 });
+
+  /* Soul Studio: the harbour is an environment built with Soul Location (no reference, no Soul ID, the film's ratio). */
+  const harbour = entries.filter({ has: page.locator('input[value="Frozen harbour"]') });
+  await expect(harbour.getByTestId("cast-model-soul_location")).toHaveAttribute("aria-checked", "true");
+  await harbour.getByTestId("cast-price").click();
+  expect(posts.filter((b) => b.action === "quote").at(-1)!.input).toMatchObject({ model: "soul_location", parameters: { aspect_ratio: "16:9" }, medias: [] });
+  await expect(harbour.getByTestId("cast-build")).toHaveText("Build with Soul Location · 6 Higgsfield credits");
+
+  /* The fox's build: upscaled at its own price, then saved as a reference element (asked once more). */
+  await fox.getByTestId("cast-upscale_image").click();
+  await expect(fox.getByTestId("cast-upscale_image-run")).toHaveText("Upscale · 6 credits");
+  const upscale = posts.filter((b) => b.action === "quote").at(-1)!.input as { model: string; tool: { name: string }; medias: { source: { genId: string } }[] };
+  expect(upscale).toMatchObject({ model: "bytedance_image_upscale", tool: { name: "upscale_image", model: "bytedance_image_upscale" } });
+  expect(upscale.medias[0].source.genId).toMatch(/^gen_hfc_/);
+  await fox.getByTestId("cast-element-save").click();
+  await fox.getByTestId("cast-element-confirm").click();
+  await expect(fox.getByTestId("cast-element")).toHaveText("Reference element <<<el_fox>>>");
+  expect(posts.find((b) => b.action === "elements-create")).toMatchObject({ name: "Fox", category: "character", sources: [{ genId: upscale.medias[0].source.genId }] });
+  await expect(page.getByTestId("element-row-el_fox")).toContainText("<<<el_fox>>>");
 
   /* Saved in the library as Cast. */
   await expect.poll(async () => (await read()).assets.filter((a: { category: string }) => a.category === "Character").map((a: { name: string; soulIdentityId?: string }) => [a.name, a.soulIdentityId]), { timeout: 15_000 }).toEqual([["Fox", "soul_fox"]]);

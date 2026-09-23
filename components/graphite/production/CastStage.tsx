@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { CAST_CATEGORY, CAST_LIMITS, SOUL_CINEMA, castFromBeats, newEntry, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
+import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
+import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
+import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/soul-build";
 import { useShell } from "@/lib/shell/state";
@@ -21,12 +23,13 @@ import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 
 const EMPTY: Cast = { entries: [] };
-type Model = { id: string; name: string; aspectRatios: string[] };
-/** Soul Cinema's ratio for an entry: a character sheet stands 3:4; an element takes the film's ratio where the model offers it. */
-function ratioFor(kind: CastKind, project: Project, model: Model | null): string {
-  const want = kind === "character" ? "3:4" : project.aspect === "4:5" ? "3:4" : project.aspect;
-  return model?.aspectRatios.includes(want) ? want : model?.aspectRatios[0] ?? want;
+type Model = { id: string; name: string; aspectRatios: string[]; parameters: { name: string; options?: (string | number)[]; default?: unknown; min?: number; max?: number }[]; medias: { roles?: string[] }[] };
+/** An entry's ratio: a character sheet stands 3:4; everything else takes the film's ratio (the model's own list decides). */
+function ratioFor(kind: CastKind, project: Project): string {
+  return kind === "character" ? "3:4" : project.aspect === "4:5" ? "3:4" : project.aspect;
 }
+type Purpose = "build" | "upscale_image" | "remove_background_image";
+const FINISH: { tool: Exclude<Purpose, "build">; label: string }[] = [{ tool: "upscale_image", label: "Upscale" }, { tool: "remove_background_image", label: "Remove background" }];
 
 /**
  * Production › Cast & Elements (owner's brief, 23 September): Soul Cinema on
@@ -51,7 +54,9 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   useStageFacts("cast", p);
   const cast = p.production?.cast ?? EMPTY;
   const [connected, setConnected] = useState<boolean | null>(null);
-  const [model, setModel] = useState<Model | null>(null);
+  const [models, setModels] = useState<Record<string, Model> | null>(null);
+  const [elements, setElements] = useState<{ available: boolean; elements: ConnectedElement[] } | null>(null);
+  const [confirmElement, setConfirmElement] = useState<string | null>(null);
   const [souls, setSouls] = useState<ConnectedCharacter[]>([]);
   const [quotes, setQuotes] = useState<Record<string, ConnectedJob>>({});
   const [working, setWorking] = useState<Record<string, string>>({});
@@ -69,7 +74,8 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   useEffect(() => {
     let alive = true;
     void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then((r) => r.json()).then((j: { connection?: { connected?: boolean } }) => { if (alive) setConnected(Boolean(j.connection?.connected)); }).catch(() => { if (alive) setConnected(false); });
-    void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModel(j.catalogue.models.find((m) => m.id === SOUL_CINEMA) ?? null); }).catch(() => undefined);
+    void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModels(Object.fromEntries(j.catalogue.models.map((m) => [m.id, m]))); }).catch(() => { if (alive) setModels({}); });
+    void call<{ available: boolean; elements: ConnectedElement[] }>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
     void call<{ characters: ConnectedCharacter[] }>({ action: "characters" }).then((j) => { if (alive) setSouls(j.characters ?? []); }).catch(() => undefined);
     return () => { alive = false; };
   }, [call, scoped, p.id]);
@@ -88,7 +94,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     const proposals = done.result.cast;
     setCast((c) => {
       const names = new Set(c.entries.map((e) => e.name.trim().toLowerCase()));
-      const fresh = proposals.filter((e) => !names.has(e.name.trim().toLowerCase())).map((e) => newEntry(e.kind, e.name, e.description, e.prompt));
+      const fresh = proposals.filter((e) => !names.has(e.name.trim().toLowerCase())).map((e) => newEntry(e.kind, e.name, e.description, e.prompt, { model: e.model, category: e.category }));
       return { ...c, entries: [...c.entries, ...fresh].slice(0, CAST_LIMITS.entries), agentJobId: done.id };
     });
     void editor.ensureSaved().then(() => toast(`The agent cast ${proposals.length} characters and elements`));
@@ -128,38 +134,66 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followKey]);
 
-  const buildInput = (entry: CastEntry) => {
+  const toolModel = (tool: Exclude<Purpose, "build">) => findConnectedTool(tool)?.models.find((id) => models?.[id]) ?? null;
+  /** What the account is asked for: the entry's Soul model with only its declared settings, or a finishing tool on the build shown. */
+  const requestFor = (entry: CastEntry, purpose: Purpose) => {
+    if (purpose !== "build") {
+      const genId = entry.selected ?? entry.takes[0]?.genId;
+      const id = toolModel(purpose)!;
+      const role = models?.[id]?.medias[0]?.roles?.[0] ?? "image";
+      return { type: "image" as const, model: id, tool: { name: purpose, model: id }, prompt: "", parameters: {}, medias: [{ role, source: { genId: genId! } }] };
+    }
+    const id = entryModel(entry);
+    const model = models![id];
     const reference = entry.referenceAssetId ? latest.current.assets.find((a) => a.id === entry.referenceAssetId) : undefined;
     return {
-      type: "image" as const, model: SOUL_CINEMA, prompt: entry.prompt.trim(),
-      parameters: { quality: "2k", aspect_ratio: ratioFor(entry.kind, latest.current, model), ...(entry.kind === "character" && entry.soulId ? { soul_id: entry.soulId } : {}) },
-      medias: reference?.uploadId ? [{ role: "image", source: { uploadId: reference.uploadId } }] : [],
+      type: "image" as const, model: id, prompt: entry.prompt.trim(),
+      parameters: soulParameters(model, entry, ratioFor(entry.kind, latest.current)),
+      medias: reference?.uploadId && model.medias.length ? [{ role: model.medias[0]?.roles?.[0] ?? "image", source: { uploadId: reference.uploadId } }] : [],
     };
   };
-  const price = async (entry: CastEntry) => {
-    setWorking((w) => ({ ...w, [entry.id]: "Pricing on the account…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
+  const key = (entry: CastEntry, purpose: Purpose) => `${entry.id}:${purpose}`;
+  const price = async (entry: CastEntry, purpose: Purpose = "build") => {
+    const k = key(entry, purpose);
+    setWorking((w) => ({ ...w, [k]: "Pricing on the account…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
     try {
       if (!(await editor.ensureSaved())) throw new Error("Save the project before pricing.");
-      const reply = await call<{ job: unknown }>(connectedQuoteRequest(latest.current.id, buildInput(entry)));
+      const reply = await call<{ job: unknown }>(connectedQuoteRequest(latest.current.id, requestFor(entry, purpose) as never));
       const job = parseConnectedJob(reply.job, latest.current.id);
-      setQuotes((q) => ({ ...q, [entry.id]: job }));
-    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "Soul Cinema could not price this." })); }
-    finally { setWorking((w) => ({ ...w, [entry.id]: "" })); }
+      setQuotes((q) => ({ ...q, [k]: job }));
+    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The account could not price this." })); }
+    finally { setWorking((w) => ({ ...w, [k]: "" })); }
   };
-  const build = async (entry: CastEntry) => {
-    const quote = quotes[entry.id];
+  const build = async (entry: CastEntry, purpose: Purpose = "build") => {
+    const k = key(entry, purpose);
+    const quote = quotes[k];
     if (!quote) return;
-    setWorking((w) => ({ ...w, [entry.id]: "Sending to Soul Cinema…" }));
+    setWorking((w) => ({ ...w, [k]: "Sending to the account…" }));
     try {
       const reply = await call<{ job: unknown }>(connectedSubmitRequest(latest.current.id, quote));
       const job = parseConnectedJob(reply.job, latest.current.id);
-      setQuotes((q) => { const next = { ...q }; delete next[entry.id]; return next; });
+      setQuotes((q) => { const next = { ...q }; delete next[k]; return next; });
       setEntry(entry.id, (e) => ({ ...e, job: { id: job.id, status: "submitted" } }));
       void editor.ensureSaved();
     } catch (error) {
-      setQuotes((q) => { const next = { ...q }; delete next[entry.id]; return next; });
-      setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The build could not be sent." }));
-    } finally { setWorking((w) => ({ ...w, [entry.id]: "" })); }
+      setQuotes((q) => { const next = { ...q }; delete next[k]; return next; });
+      setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The request could not be sent." }));
+    } finally { setWorking((w) => ({ ...w, [k]: "" })); }
+  };
+  /* Save a build as a reference element on the account — asked once more: the account names no price for it. */
+  const saveElement = async (entry: CastEntry) => {
+    const genId = entry.selected ?? entry.takes[0]?.genId;
+    if (!genId) return;
+    const k = key(entry, "build") + ":element";
+    setConfirmElement(null); setWorking((w) => ({ ...w, [k]: "Saving on the account…" }));
+    try {
+      const { build: out } = await call<{ build: { state: string; element?: ConnectedElement | null; reason?: string } }>({ action: "elements-create", name: entry.name.trim().slice(0, 32), category: entryCategory(entry), description: entry.description.slice(0, 1000), sources: [{ genId }], projectId: latest.current.id });
+      if (out.state === "refused") throw new Error(`The account refused: ${out.reason}`);
+      if (out.element) { setEntry(entry.id, (e) => ({ ...e, elementId: out.element!.elementId })); void editor.ensureSaved(); }
+      toast(out.element ? `${entry.name} is a reference element: ${elementToken(out.element.elementId)}` : "The account accepted the element; it appears below once it lists it.");
+      void call<{ available: boolean; elements: ConnectedElement[] }>({ action: "elements" }).then(setElements).catch(() => undefined);
+    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The element could not be saved." })); }
+    finally { setWorking((w) => ({ ...w, [k]: "" })); }
   };
   const uploadReference = async (entry: CastEntry, file: File) => {
     setWorking((w) => ({ ...w, [entry.id]: "Uploading…" }));
@@ -178,7 +212,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activeCast ? "The agent is working." : !agentModel ? "Choose an agent above." : !p.production?.beats?.scenes.length && !(p.script ?? "").trim() ? "Write the script or break it into beats first." : null;
   const readySouls = souls.filter((s) => s.status === "ready");
-  const buildBlocked = connected === false ? "Connect the Higgsfield account in Workspace › Engines." : connected === null ? "Reading the connected account…" : !model ? "The connected account does not offer Soul Cinema." : null;
+  const accountBlocked = connected === false ? "Connect the Higgsfield account in Workspace › Engines." : connected === null || models === null ? "Reading the connected account…" : null;
   const characters = cast.entries.filter((e) => e.kind === "character").length;
 
   return (
@@ -223,13 +257,17 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         {cast.entries.map((entry) => {
           const shown = entry.selected ?? entry.takes[0]?.genId;
           const reference = entry.referenceAssetId ? p.assets.find((a) => a.id === entry.referenceAssetId) : undefined;
-          const quote = quotes[entry.id];
+          const quote = quotes[key(entry, "build")];
           const building = entry.job?.status === "submitted";
-          const reason = buildBlocked ?? (!entry.name.trim() ? "Name it first." : !entry.prompt.trim() ? "Write its prompt first." : null);
+          const soul = entryModel(entry);
+          const model = models?.[soul];
+          const label = SOUL_MODELS.find((m) => m.id === soul)!.label;
+          const declares = (name: string) => Boolean(model?.parameters.some((x) => x.name === name));
+          const reason = accountBlocked ?? (!model ? `The connected account does not offer ${label}.` : !entry.name.trim() ? "Name it first." : !entry.prompt.trim() ? "Write its prompt first." : null);
           return (
             <article key={entry.id} className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} aria-label={entry.name || "Unnamed"}>
               <div className="pd-frame-image" data-ratio={entry.kind === "character" ? "4:5" : p.aspect}>
-                {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{building ? "Building with Soul Cinema…" : "Not built yet"}</span>}
+                {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{building ? "Building on the account…" : "Not built yet"}</span>}
               </div>
               <div className="pd-row-head">
                 <input className="gx-field pd-cast-name" aria-label="Name" value={entry.name} maxLength={CAST_LIMITS.name} placeholder={entry.kind === "character" ? "Character name" : "Element name"} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, name: v })); }} />
@@ -238,9 +276,27 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                 </div>
               </div>
               <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} description`} value={entry.description} maxLength={CAST_LIMITS.description} placeholder="Who or what it is, where it appears" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, description: v })); }} />
+              <div className="gx-seg gx-seg--sm pd-soul-models" role="radiogroup" aria-label={`${entry.name || "Entry"} Soul model`}>
+                {SOUL_MODELS.map((m) => <button key={m.id} type="button" role="radio" className="gx-seg-btn" aria-checked={soul === m.id} disabled={models !== null && !models[m.id]} title={m.line} onClick={() => setEntry(entry.id, (x) => ({ ...x, model: m.id }))} data-testid={`cast-model-${m.id}`}><span>{m.label}</span></button>)}
+              </div>
+              {entry.kind === "element" ? (
+                <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Element"} category`}>
+                  {(["environment", "prop"] as const).map((c) => <button key={c} type="button" role="radio" className="gx-seg-btn" aria-checked={entryCategory(entry) === c} onClick={() => setEntry(entry.id, (x) => ({ ...x, category: c }))}><span>{c === "environment" ? "Environment" : "Prop"}</span></button>)}
+                </div>
+              ) : null}
               <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} maxLength={CAST_LIMITS.prompt} placeholder="What Soul Cinema should build" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="cast-prompt" />
               <div className="pd-row-head">
-                {entry.kind === "character" ? (
+                {declares("quality") ? (
+                  <label className="pd-soul"><span className="gx-hint">Quality</span>
+                    <select aria-label={`${entry.name || "Entry"} quality`} value={entry.quality ?? "2k"} onChange={(e) => { const v = e.target.value as "1.5k" | "2k"; setEntry(entry.id, (x) => ({ ...x, quality: v })); }}><option value="2k">2k</option><option value="1.5k">1.5k</option></select>
+                  </label>
+                ) : null}
+                {declares("budget") ? (
+                  <label className="pd-soul"><span className="gx-hint">Budget</span>
+                    <input className="gx-field pd-budget" type="number" min={10} max={500} step={10} aria-label={`${entry.name || "Entry"} Soul Cast budget`} value={entry.budget ?? 50} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setEntry(entry.id, (x) => ({ ...x, budget: Math.min(500, Math.max(10, Math.round(n))) })); }} />
+                  </label>
+                ) : null}
+                {entry.kind === "character" && declares("soul_id") ? (
                   <label className="pd-soul"><span className="gx-hint">Soul ID</span>
                     <select aria-label={`${entry.name || "Character"} Soul ID`} value={entry.soulId ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, soulId: v || undefined })); }}>
                       <option value="">None</option>
@@ -248,10 +304,10 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                     </select>
                   </label>
                 ) : null}
-                <label className="gx-hbtn pd-upload">
+                {model && !model.medias.length ? null : <label className="gx-hbtn pd-upload">
                   {reference ? "Replace reference" : "Reference image"}
                   <input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`Upload a reference image for ${entry.name || "this entry"}`} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadReference(entry, f); }} />
-                </label>
+                </label>}
                 {reference ? <span className="gx-hint">{reference.name}</span> : null}
               </div>
               {entry.takes.length > 1 ? (
@@ -262,21 +318,50 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               <div className="gx-gen-enhance">
                 {quote ? (
                   <>
-                    <button type="button" className="gx-primary" disabled={Boolean(working[entry.id])} onClick={() => void build(entry)} data-testid="cast-build">{working[entry.id] || `Build · ${quote.quoteCredits.toLocaleString()} Higgsfield credits`}</button>
-                    <button type="button" className="gx-hbtn" onClick={() => setQuotes((all) => { const next = { ...all }; delete next[entry.id]; return next; })}>Change</button>
+                    <button type="button" className="gx-primary" disabled={Boolean(working[key(entry, "build")])} onClick={() => void build(entry)} data-testid="cast-build">{working[key(entry, "build")] || `Build with ${label} · ${quote.quoteCredits.toLocaleString()} Higgsfield credits`}</button>
+                    <button type="button" className="gx-hbtn" onClick={() => setQuotes((all) => { const next = { ...all }; delete next[key(entry, "build")]; return next; })}>Change</button>
                   </>
                 ) : (
-                  <button type="button" className="gx-primary" disabled={Boolean(working[entry.id]) || Boolean(reason) || building} onClick={() => void price(entry)} data-testid="cast-price">{working[entry.id] || (building ? "Building…" : entry.takes.length ? "Price another build" : "Price with Soul Cinema")}</button>
+                  <button type="button" className="gx-primary" disabled={Boolean(working[key(entry, "build")]) || Boolean(reason) || building} onClick={() => void price(entry)} data-testid="cast-price">{working[key(entry, "build")] || (building ? "Building…" : entry.takes.length ? "Price another build" : `Price with ${label}`)}</button>
                 )}
                 <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this entry"}`} onClick={() => setCast((c) => ({ ...c, entries: c.entries.filter((x) => x.id !== entry.id) }))}>Remove</button>
               </div>
               {reason && !quote && !building ? <span className="gx-reason" data-testid="cast-blocked">{reason}</span> : null}
+              {shown && !building ? (
+                <div className="pd-finish" data-testid="cast-finish">
+                  {FINISH.map(({ tool, label: finishLabel }) => {
+                    const k = key(entry, tool), fq = quotes[k], available = Boolean(toolModel(tool));
+                    return fq ? (
+                      <button key={tool} type="button" className="gx-primary" disabled={Boolean(working[k])} onClick={() => void build(entry, tool)} data-testid={`cast-${tool}-run`}>{working[k] || `${finishLabel} · ${fq.quoteCredits.toLocaleString()} credits`}</button>
+                    ) : (
+                      <button key={tool} type="button" className="gx-hbtn" disabled={!available || Boolean(working[k]) || Boolean(accountBlocked)} title={!available ? "The connected account does not offer this tool." : undefined} onClick={() => void price(entry, tool)} data-testid={`cast-${tool}`}>{working[k] || `Price: ${finishLabel.toLowerCase()}`}</button>
+                    );
+                  })}
+                  {entry.elementId ? <span className="gx-hint" data-testid="cast-element">Reference element {elementToken(entry.elementId)}</span>
+                    : confirmElement === entry.id ? (
+                      <>
+                        <button type="button" className="gx-primary" onClick={() => void saveElement(entry)} data-testid="cast-element-confirm">Save {entry.name.slice(0, 32)} as a {entryCategory(entry)} element</button>
+                        <button type="button" className="gx-hbtn" onClick={() => setConfirmElement(null)}>Not now</button>
+                        <span className="gx-hint">The account keeps it as a reusable reference; it names no price, so this asks once more.</span>
+                      </>
+                    ) : <button type="button" className="gx-hbtn" disabled={Boolean(accountBlocked) || !entry.name.trim() || Boolean(working[key(entry, "build") + ":element"])} onClick={() => setConfirmElement(entry.id)} data-testid="cast-element-save">{working[key(entry, "build") + ":element"] || "Save as a reference element"}</button>}
+                </div>
+              ) : null}
               {quote ? <span className="gx-hint">Priced on {quote.workspaceName}: billed by the connected account; a failed render is not billed.</span> : null}
               {errors[entry.id] ? <p className="gx-gen-error" role="alert">{errors[entry.id]}</p> : null}
             </article>
           );
         })}
         {!cast.entries.length ? <p className="gx-empty">No cast yet. Add from the beat sheet, let the agent cast the film, or add one by hand.</p> : null}
+      </section>
+
+      <section className="gx-gen-card" aria-label="Reference elements" data-testid="cast-elements" data-section="elements">
+        <span className="gx-eyebrow" data-functional-label="">Reference elements · built in Particl</span>
+        {elements == null ? <p className="gx-hint">Reading…</p>
+          : !elements.available ? <p className="gx-hint">The account does not list its elements through its tools.</p>
+          : elements.elements.length ? (
+            <ul className="gx-soul-list">{elements.elements.map((el) => <li key={el.elementId} className="gx-soul-row" data-testid={`element-row-${el.elementId}`}><span className="gx-soul-name">{el.name}</span><span className="gx-hint">{el.category ?? "element"} · {elementToken(el.elementId)}</span></li>)}</ul>
+          ) : <p className="gx-hint">None yet. Save a build as a reference element; elements made on higgsfield.ai stay there.</p>}
       </section>
 
       <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>

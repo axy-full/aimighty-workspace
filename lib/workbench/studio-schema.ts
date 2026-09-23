@@ -203,6 +203,8 @@ export const productionSchema = z.object({
       description: z.string().max(2000), prompt: z.string().max(5000), soulId: z.string().max(200).optional(), referenceAssetId: z.string().max(100).optional(),
       takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20), selected: z.string().max(100).optional(),
       job: z.object({ id: z.string().uuid(), status: z.enum(['quoted', 'submitted']) }).strict().optional(),
+      model: z.enum(['soul_cinematic', 'soul_2', 'soul_location', 'soul_cast']).optional(), quality: z.enum(['1.5k', '2k']).optional(), budget: z.number().int().min(10).max(500).optional(),
+      category: z.enum(['character', 'environment', 'prop']).optional(), elementId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
     }).strict()).max(100),
     agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   }).strict().optional(),

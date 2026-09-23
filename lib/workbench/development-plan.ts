@@ -38,7 +38,8 @@ export const developmentSketchSchema = z.object({
   reading: text, prompt: z.string().trim().min(1).max(4000), critique: z.array(short).max(20), assumptions: z.array(short).max(20),
 }).strict();
 export const developmentCastSchema = z.object({
-  entries: z.array(z.object({ name: z.string().trim().min(1).max(120), kind: z.enum(['character', 'element']), description: z.string().trim().max(2000), prompt: z.string().trim().min(1).max(5000) }).strict()).min(1).max(40),
+  entries: z.array(z.object({ name: z.string().trim().min(1).max(120), kind: z.enum(['character', 'element']), description: z.string().trim().max(2000), prompt: z.string().trim().min(1).max(5000),
+    category: z.enum(['character', 'environment', 'prop']).optional(), model: z.enum(['soul_cinematic', 'soul_2', 'soul_location', 'soul_cast']).optional() }).strict()).min(1).max(40),
   critique: z.array(short).max(20), assumptions: z.array(short).max(20),
 }).strict();
 export const developmentCondenseSchema = z.object({
@@ -178,7 +179,7 @@ function castInstructions(stage: DevelopmentStage): string {
     'For each, write "description" (who or what it is, where it appears, one or two sentences) and "prompt": a reference-image prompt for an image model — for a character: age, build, face, hair, wardrobe and bearing, full body and three-quarter views on a neutral background with even light; for an element: shape, material, scale, period and condition, as a clean well-lit plate. Stay true to the script and direction; label invented detail in assumptions.',
     'Return a JSON object only, with no markdown fences.',
     stage === 'critique' ? 'Independently critique the saved draft: missing or duplicated characters and elements, looks that contradict the script, prompts too vague to hold a face or a place consistent. Return {"issues": [strings], "revisions": [specific actionable strings]}.' :
-      'Return {"entries":[{"name":string,"kind":"character"|"element","description":string,"prompt":string}],"critique":[strings],"assumptions":[strings]}.',
+      'Return {"entries":[{"name":string,"kind":"character"|"element","category":"character"|"environment"|"prop","model":"soul_cinematic"|"soul_2"|"soul_location"|"soul_cast","description":string,"prompt":string}],"critique":[strings],"assumptions":[strings]}. Pick the Soul Studio model for each: soul_cinematic for cinematic people and things, soul_2 for realistic editorial people, soul_location for places with no people, soul_cast for a character whose look the script leaves open (a persona from words).',
     stage === 'refine' ? 'Revise the saved draft using the independent critique. This is the list the director will build from.' : '',
   ].filter(Boolean).join('\n');
 }

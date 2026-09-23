@@ -11,7 +11,8 @@ import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 
 const TYPE_LABEL: Record<SoulBuildType, string> = { soul_2: "Soul 2", soul_cinematic: "Soul Cinematic" };
-const SOUL_MODEL: Record<SoulBuildType, string> = { soul_2: "text2image_soul_v2", soul_cinematic: "soul_cinematic" };
+/* The connected catalogue lists Soul 2 as `soul_2` (the CLI's text2image_soul_v2 is not a catalogue id). */
+const SOUL_MODEL: Record<SoulBuildType, string> = { soul_2: "soul_2", soul_cinematic: "soul_cinematic" };
 const STATUS: Record<NonNullable<ConnectedCharacter["status"]>, string> = { ready: "Ready", training: "Training", failed: "Failed" };
 
 /**
@@ -46,6 +47,13 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
     void call<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] }>({ action: "characters" }).then(setCharacters).catch(() => setCharacters({ connected: false, available: false, characters: [] }));
   }, [call]);
   useEffect(() => { refresh(); }, [refresh]);
+  /* Training takes minutes and the account has no wait tool: read the list again while any identity trains. */
+  const training = Boolean(characters?.characters.some((c) => c.status === "training"));
+  useEffect(() => {
+    if (!training) return;
+    const timer = setInterval(() => void call<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] }>({ action: "characters" }).then(setCharacters).catch(() => undefined), 30_000);
+    return () => clearInterval(timer);
+  }, [training, call]);
 
   /* Stills of this project: images only, uploads and finished renders alike. */
   const stills = useMemo(() => items.filter((e) => e.media === "image" && e.url), [items]);

@@ -443,8 +443,8 @@ function mockCastReply(input: DevelopmentCall): DevelopmentReply {
   const request = JSON.parse(input.prompt) as { beatSheet?: { heading: string }[]; existingCast?: string[] };
   const place = request.beatSheet?.[0]?.heading ?? 'The location';
   return { text: JSON.stringify({ entries: [
-    { name: 'Mara', kind: 'character', description: 'The harbour master; appears in every scene.', prompt: 'Mara, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
-    { name: place, kind: 'element', description: 'The main location.', prompt: `${place}, a clean wide plate — mock cast prompt.` },
+    { name: 'Mara', kind: 'character', category: 'character', model: 'soul_cinematic', description: 'The harbour master; appears in every scene.', prompt: 'Mara, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
+    { name: place, kind: 'element', category: 'environment', model: 'soul_location', description: 'The main location.', prompt: `${place}, a clean wide plate — mock cast prompt.` },
   ].filter((e) => !(request.existingCast ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
 /** The mock condenser: the prompt's first 8,000 characters, marked, so a render can follow. */

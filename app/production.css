@@ -200,3 +200,6 @@
 .gx .pxw-rig-library-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff; }
 @media (max-width: 759px) { .gx .pxw-rig-library-groups button { min-height: 44px; } .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; } }
+.gx .pd-soul-models { flex-wrap: wrap; }
+.gx .pd-budget { width: 80px; }
+.gx .pd-finish { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; border-top: 1px solid var(--gx-hair); }
