@@ -206,3 +206,11 @@
 .gx .pd-soul-models { flex-wrap: wrap; }
 .gx .pd-budget { width: 80px; }
 .gx .pd-finish { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; border-top: 1px solid var(--gx-hair); }
+
+/* Storyboards: pick frames to storyboard together; a picked frame is outlined. */
+.gx .pd-select-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.gx .pd-frame { position: relative; }
+.gx .pd-frame[data-picked] { outline: 2px solid var(--gx-accent, #0A84FF); outline-offset: -2px; }
+.gx .pd-frame-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gx-text-2); cursor: pointer; min-height: 44px; }
+.gx .pd-frame-pick input { width: 20px; height: 20px; accent-color: var(--gx-accent, #0A84FF); }
+.gx .pd-drawing-delete { display: flex; flex-wrap: wrap; gap: 8px; }

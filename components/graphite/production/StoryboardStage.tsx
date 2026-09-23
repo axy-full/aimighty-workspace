@@ -5,7 +5,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { BOARD_MODELS, BOARD_STYLES, stillShape, DEFAULT_BOARDS, FRAME_PROMPT_LIMIT, boardShots, emptyFrame, renderPrompt, shotPrompt, type BoardFrame, type Boards, type NumberedShot } from "@/lib/production/boards";
+import { BOARD_MODELS, BOARD_STYLES, deleteDrawing, stillShape, DEFAULT_BOARDS, FRAME_PROMPT_LIMIT, boardShots, emptyFrame, renderPrompt, shotPrompt, type BoardFrame, type Boards, type NumberedShot } from "@/lib/production/boards";
 import { getModel } from "@/lib/models";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
@@ -61,7 +61,11 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [working, setWorking] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [batch, setBatch] = useState<{ ids: string[]; credits: number; keys: Record<string, Quote> } | null>(null);
+  const [batch, setBatch] = useState<{ ids: string[]; credits: number; keys: Record<string, Quote>; from: "missing" | "picked" } | null>(null);
+  /* Frames picked to storyboard together; fresh prompts being written to revise a frame; a drawing about to be deleted. */
+  const [picked, setPicked] = useState<string[]>([]);
+  const [revising, setRevising] = useState<Record<string, string>>({});
+  const [dropping, setDropping] = useState<string | null>(null);
   const latest = useRef(p);
   useEffect(() => { latest.current = p; }, [p]);
 
@@ -158,9 +162,8 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
 
   /* ── Pricing and rendering one frame through the quoted /api/generate path. ── */
   const quoteKey = (frame: BoardFrame) => JSON.stringify([frame.prompt, frame.style ?? boards.style, boards.model, frame.sketch?.assetId ?? "", p.aspect]);
-  const price = async (shot: NumberedShot): Promise<Quote> => {
+  const price = async (shot: NumberedShot, frame: BoardFrame = frameOf(shot.id)): Promise<Quote> => {
     if (!(await editor.ensureSaved())) throw new Error("Save the project before pricing a frame.");
-    const frame = frameOf(shot.id);
     const input = frameRequest(latest.current, boards, frame);
     if (!input) throw new Error(frame.prompt.trim() ? "Save the project to link its production first." : "Write this frame’s prompt first.");
     const fresh = await studioRequest<{ estimatedCredits: number }>("/api/generate/quote", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify(generationRequestBody(input)) });
@@ -190,14 +193,44 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
 
   /* Every frame with a prompt and no picture yet: priced together, sent one by one at the prices shown. */
   const missing = shots.filter((s) => frameOf(s.id).prompt.trim() && !frameOf(s.id).takes.length && !(frameOf(s.id).pending ?? []).length);
-  const priceAll = async () => {
-    setWorking((w) => ({ ...w, all: "Pricing every frame…" }));
+  /* Several frames priced together — every frame without a picture, or the ones picked. A picked frame
+     with no prompt yet starts from its beat, as its own Prompt button would. */
+  const priceMany = async (list: NumberedShot[], from: "missing" | "picked") => {
+    setWorking((w) => ({ ...w, [from]: `Pricing ${list.length} frame${list.length === 1 ? "" : "s"}…` }));
     try {
       const keys: Record<string, Quote> = {};
-      for (const shot of missing) keys[shot.id] = await price(shot);
-      setBatch({ ids: missing.map((s) => s.id), credits: Object.values(keys).reduce((n, q) => n + q.credits, 0), keys });
+      for (const shot of list) {
+        const current = frameOf(shot.id);
+        const frame = current.prompt.trim() ? current : { ...current, prompt: shotPrompt(shot) };
+        if (frame !== current) setFrame(shot.id, (f) => ({ ...f, prompt: f.prompt.trim() ? f.prompt : frame.prompt }));
+        keys[shot.id] = await price(shot, frame);
+      }
+      setBatch({ ids: list.map((s) => s.id), credits: Object.values(keys).reduce((n, q) => n + q.credits, 0), keys, from });
     } catch (error) { runs.setError(error instanceof Error ? error.message : "The frames could not be priced."); }
-    finally { setWorking((w) => ({ ...w, all: "" })); }
+    finally { setWorking((w) => ({ ...w, [from]: "" })); }
+  };
+  const priceAll = () => priceMany(missing, "missing");
+  const pickedShots = shots.filter((s) => picked.includes(s.id));
+  const togglePick = (id: string) => { setBatch((b) => (b?.from === "picked" ? null : b)); setPicked((all) => (all.includes(id) ? all.filter((x) => x !== id) : [...all, id])); };
+  /* Revise: a fresh prompt replaces the frame's, priced first; the new frame joins its takes and the old ones stay. */
+  const revise = async (shot: NumberedShot) => {
+    const fresh = (revising[shot.id] ?? "").trim().slice(0, FRAME_PROMPT_LIMIT);
+    if (!fresh) { setErrors((e) => ({ ...e, [shot.id]: "Write the fresh prompt first." })); return; }
+    setWorking((w) => ({ ...w, [shot.id]: "Pricing the revision…" })); setErrors((e) => ({ ...e, [shot.id]: "" }));
+    try {
+      const frame = { ...frameOf(shot.id), prompt: fresh };
+      setFrame(shot.id, (f) => ({ ...f, prompt: fresh }));
+      const q2 = await price(shot, frame);
+      setQuotes((all) => ({ ...all, [shot.id]: q2 }));
+      setRevising((r) => { const next = { ...r }; delete next[shot.id]; return next; });
+    } catch (error) { setErrors((e) => ({ ...e, [shot.id]: error instanceof Error ? error.message : "The revision could not be priced." })); }
+    finally { setWorking((w) => ({ ...w, [shot.id]: "" })); }
+  };
+  const reviseAll = (list: NumberedShot[]) => setRevising((r) => ({ ...Object.fromEntries(list.filter((s) => frameOf(s.id).takes.length).map((s) => [s.id, r[s.id] ?? ""])), ...r }));
+  /* Deleting a line drawing takes it out of the project and off its beat; the Rig's inputs are protected. */
+  const removeDrawing = async (drawing: Asset) => {
+    try { deleteDrawing(latest.current, drawing.id); editor.change((old) => deleteDrawing(old, drawing.id)); setDropping(null); if (await editor.ensureSaved()) toast(`${drawing.name} deleted`); }
+    catch (error) { setDropping(null); runs.setError(error instanceof Error ? error.message : "The drawing could not be deleted."); }
   };
   const renderAll = async () => {
     if (!batch) return;
@@ -304,13 +337,13 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
           describe={(qq) => `${shots.length} shots · ${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
           onEstimate={() => void runs.estimate({ kind: "frames", model: model!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
         <div className="gx-gen-enhance">
-          {batch ? (
+          {batch?.from === "missing" ? (
             <>
               <button type="button" className="gx-primary" onClick={() => void renderAll()} data-testid="boards-render-all">Render {batch.ids.length} frames · {batch.credits.toLocaleString()} credits</button>
               <button type="button" className="gx-hbtn" onClick={() => setBatch(null)}>Change</button>
             </>
           ) : (
-            <button type="button" className="gx-hbtn" disabled={!missing.length || Boolean(working.all)} onClick={() => void priceAll()} data-testid="boards-price-all">{working.all || `Price every frame without a picture (${missing.length})`}</button>
+            <button type="button" className="gx-hbtn" disabled={!missing.length || Boolean(working.missing)} onClick={() => void priceAll()} data-testid="boards-price-all">{working.missing || `Price every frame without a picture (${missing.length})`}</button>
           )}
         </div>
       </section>
@@ -340,6 +373,14 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                   <div className="pd-drawing-pair">
                     <LazyMedia url={drawing.url} kind="image" alt={`Line drawing ${drawing.name}`} className="gx-lazy" />
                     <span className="pd-drawing-out">{done ? <LazyMedia url={`/api/media/${done}`} kind="image" alt="The frame" className="gx-lazy" /> : <span className="gx-hint">{frame?.pending?.length ? "Converting…" : "Frame appears here"}</span>}</span>
+                  </div>
+                  <div className="pd-drawing-delete">
+                    {dropping === drawing.id ? (
+                      <>
+                        <button type="button" className="gx-hbtn gx-hbtn--danger" onClick={() => void removeDrawing(drawing)} data-testid="drawing-delete-confirm">Delete this drawing{shot ? ` and take it off beat ${shot.number}` : ""}</button>
+                        <button type="button" className="gx-hbtn" onClick={() => setDropping(null)}>Keep it</button>
+                      </>
+                    ) : <button type="button" className="gx-hbtn gx-hbtn--danger" aria-label={`Delete ${drawing.name}`} onClick={() => setDropping(drawing.id)} data-testid="drawing-delete">Delete</button>}
                   </div>
                   <select aria-label={`Beat for ${drawing.name}`} value={shot?.id ?? ""} onChange={(e) => assignDrawing(drawing, e.target.value)} data-testid="drawing-shot">
                     <option value="">Put it on a beat…</option>
@@ -372,6 +413,21 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         ) : null}
       </section>
 
+      <div className="gx-gen-card pd-select-bar" role="region" aria-label="Selected frames" data-testid="boards-selection">
+        <span className="gx-eyebrow" data-functional-label="">{picked.length ? `${picked.length} selected` : "Select frames to storyboard together"}</span>
+        <span className="gx-spacer" />
+        <button type="button" className="gx-hbtn" onClick={() => { setBatch((b) => (b?.from === "picked" ? null : b)); setPicked(picked.length === shots.length ? [] : shots.map((s) => s.id)); }} data-testid="boards-select-all">{picked.length === shots.length ? "Clear" : "Select all"}</button>
+        {batch?.from === "picked" ? (
+          <>
+            <button type="button" className="gx-primary" onClick={() => { void renderAll(); setPicked([]); }} data-testid="boards-render-selected">Storyboard {batch.ids.length} frames · {batch.credits.toLocaleString()} credits</button>
+            <button type="button" className="gx-hbtn" onClick={() => setBatch(null)}>Change</button>
+          </>
+        ) : (
+          <button type="button" className="gx-primary" disabled={!picked.length || Boolean(working.picked)} onClick={() => void priceMany(pickedShots, "picked")} data-testid="boards-price-selected">{working.picked || `Storyboard selected (${picked.length})`}</button>
+        )}
+        <button type="button" className="gx-hbtn" disabled={!pickedShots.some((s) => frameOf(s.id).takes.length)} title="Write a fresh prompt for each selected frame that has a picture." onClick={() => reviseAll(pickedShots)} data-testid="boards-revise-selected">Revise selected</button>
+      </div>
+
       <section className="pd-frames" aria-label="Frames" data-testid="boards-frames" data-section="frames">
         {shots.map((shot) => {
           const frame = frameOf(shot.id);
@@ -382,7 +438,11 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
           const sketchQuote = q && q.input.kind === "sketch" && q.input.shotId === shot.id && q.input.sketchAssetId === frame.sketch?.assetId ? q : null;
           const canSee = Boolean(model?.vision);
           return (
-            <article key={shot.id} className="gx-gen-card pd-frame" data-testid="board-frame" aria-label={`Shot ${shot.number}`}>
+            <article key={shot.id} className="gx-gen-card pd-frame" data-testid="board-frame" data-picked={picked.includes(shot.id) || undefined} aria-label={`Shot ${shot.number}`}>
+              <label className="pd-frame-pick">
+                <input type="checkbox" checked={picked.includes(shot.id)} onChange={() => togglePick(shot.id)} aria-label={`Select shot ${shot.number}`} data-testid="frame-select" />
+                <span>Select</span>
+              </label>
               <div className="pd-frame-image" data-ratio={p.aspect}>
                 {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={`Frame ${shot.number}`} className="gx-lazy" /> : <span className="gx-hint">{inFlight ? "Rendering…" : "No frame yet"}</span>}
                 {inFlight && shown ? <span className="gx-badge gx-badge--new">Rendering</span> : null}
@@ -399,6 +459,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
               ) : null}
               <div className="gx-gen-enhance">
                 <button type="button" className="gx-hbtn" aria-expanded={open === shot.id} onClick={() => { setOpen(open === shot.id ? null : shot.id); if (!frame.prompt.trim()) setFrame(shot.id, (f) => ({ ...f, prompt: shotPrompt(shot) })); }} data-testid="frame-prompt-toggle">Prompt</button>
+                {frame.takes.length ? <button type="button" className="gx-hbtn" aria-expanded={shot.id in revising} onClick={() => setRevising((r) => { const next = { ...r }; if (shot.id in next) delete next[shot.id]; else next[shot.id] = ""; return next; })} data-testid="frame-revise">Revise</button> : null}
                 {quote ? (
                   <button type="button" className="gx-primary" disabled={Boolean(working[shot.id])} onClick={() => void render(shot, quote.credits)} data-testid="frame-render">{working[shot.id] || `Render · ${quote.credits.toLocaleString()} credits`}</button>
                 ) : (
@@ -410,6 +471,21 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                 describe={(qq) => `The agent reads beat ${shot.number} · ${qq.value.calls} steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
                 onEstimate={() => void runs.estimate({ kind: "frames", model: model!.id, effort: agent.effort, shotId: shot.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
               {!frame.prompt.trim() && open !== shot.id ? <span className="gx-reason">Write this frame’s prompt first.</span> : null}
+              {shot.id in revising ? (
+                <div className="pd-frame-edit" data-testid="frame-reviser">
+                  <label className="gx-gen-row">
+                    <span className="gx-eyebrow" data-functional-label="">Revise · a fresh prompt for shot {shot.number}</span>
+                    <textarea className="gx-textarea pd-small" aria-label={`Fresh prompt for shot ${shot.number}`} maxLength={FRAME_PROMPT_LIMIT} value={revising[shot.id]} placeholder="Describe this frame afresh — what you want to see instead."
+                      onChange={(e) => { const v = e.target.value; setRevising((r) => ({ ...r, [shot.id]: v })); }} data-testid="frame-revise-prompt" />
+                  </label>
+                  <div className="gx-gen-enhance">
+                    <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || !(revising[shot.id] ?? "").trim()} onClick={() => void revise(shot)} data-testid="frame-revise-price">{working[shot.id] || "Price the revision"}</button>
+                    <button type="button" className="gx-hbtn" onClick={() => setRevising((r) => ({ ...r, [shot.id]: frame.prompt }))}>Start from the current prompt</button>
+                    <button type="button" className="gx-hbtn" onClick={() => setRevising((r) => { const next = { ...r }; delete next[shot.id]; return next; })}>Cancel</button>
+                  </div>
+                  <span className="gx-hint">The revision is a new frame; the ones you have stay under the picture.</span>
+                </div>
+              ) : null}
               {open === shot.id ? (
                 <div className="pd-frame-edit" data-testid="frame-editor">
                   <label className="gx-gen-row">
