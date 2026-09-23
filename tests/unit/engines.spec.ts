@@ -19,7 +19,7 @@ test("every provider has an adapter, and the adapters estimate what the catalogu
     // Availability gates belong to individual models (Soul), not the shared provider.
     expect(e.configured()).toBe(true);
   }
-  expect(enginesFor("video").map((e) => e.id).sort()).toEqual(["byteplus", "fal", "higgsfield"]);
+  expect(enginesFor("video").map((e) => e.id).sort()).toEqual(["byteplus", "fal", "higgsfield", "xai"]);
   expect(enginesFor("text").map((e) => e.id)).toEqual(["vercel"]);
   expect(() => engineFor("nope")).toThrow();
 

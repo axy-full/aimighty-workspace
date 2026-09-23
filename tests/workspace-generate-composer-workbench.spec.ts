@@ -298,6 +298,25 @@ test("a mocked image generation shows its price, runs to completion and files a 
   await expect(page.locator(".pxw-take-card .pxw-take-status").first()).not.toContainText(/Approved/i);
 });
 
+test("a mocked Grok Imagine Video clip is priced per second, runs on the xAI engine and files a take", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop run");
+  test.setTimeout(180_000);
+  const { project, scope } = await seeded(page);
+  const sent = watchPaid(page);
+  await page.goto(url(project.id));
+  await page.getByTestId("topbar-generate").click();
+  await composer(page).getByRole("group", { name: "Output type" }).getByRole("button", { name: "Video" }).click();
+  await composer(page).getByTestId("composer-model").selectOption("grok-imagine-video-1.5");
+  await composer(page).getByTestId("composer-prompt").fill("A red fox crosses the frozen harbour at dusk.");
+  await expect(generateButton(page)).toHaveText(priced, { timeout: 30_000 });
+  await generateButton(page).click();
+  await expect.poll(() => sent.map((s) => s.path)).toEqual(["/api/generate/quote", "/api/generate"]);
+  expect(sent[1].body).toMatchObject({ model: "grok-imagine-video-1.5", prompt: "A red fox crosses the frozen harbour at dusk." });
+  await expect(page.getByRole("status").filter({ hasText: /rendered\. Filed in Takes/ })).toBeVisible({ timeout: 90_000 });
+  const library = await page.request.get(`/api/workbench/library?projectId=${project.id}&source=generations`, { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json());
+  expect((library.generations ?? []).filter((g: { status: string; model?: string }) => g.status === "succeeded")).toHaveLength(1);
+});
+
 test("a moved price blocks the send and spends nothing", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const { project } = await seeded(page);
