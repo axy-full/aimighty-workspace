@@ -544,6 +544,25 @@ export async function executeGenerationAdmission(
           sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
         } catch { return admissionReply({ error: "Transform needs a readable original video between 1 and 30 seconds, no larger than 200 MB." }, { status: 400 }); }
       }
+      // A stored render without a recorded ratio or length (a connected-account
+      // render, or one from before the columns) is measured once from the
+      // original, the way Astra and Transform already do — the refusal below
+      // is for a clip that cannot be read at all.
+      if (
+        task.forceRatio === "adaptive" &&
+        model.billing === "token" &&
+        sourceRef &&
+        (!sourceRatio || !sourceSeconds || !Number.isFinite(sourceSeconds))
+      ) {
+        try {
+          const measured = await inspectOriginalVideo(sourceRef, sourceBytes);
+          if (!sourceSeconds || !Number.isFinite(sourceSeconds)) sourceSeconds = measured.seconds;
+          if (!sourceRatio) sourceRatio = `${measured.width}:${measured.height}`;
+          if (!sourceResolution) sourceResolution = `${Math.min(measured.width, measured.height)}p`;
+        } catch {
+          /* unreadable original — the refusal below says so */
+        }
+      }
       if (
         task.forceRatio === "adaptive" &&
         model.billing === "token" &&

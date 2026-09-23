@@ -625,6 +625,27 @@ test("Seedance edits price the actual source shape and length and reject stale q
     });
   }));
 
+test("a Seedance edit on a stored render with no recorded shape measures the original once instead of refusing it", async () =>
+  scope("edit-source-measured", async (service) => {
+    const { db } = await import("../../lib/db");
+    const { storeOriginalBytes } = await import("../../lib/storage");
+    const bytes = readFileSync("tests/fixtures/astra-source.mp4"), stored = await storeOriginalBytes("video", "bare-gen", bytes, "video/mp4");
+    /* A connected-account render: the row carries a length but no ratio — the shape has to come from the file. */
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,stored_url,bytes,created_at,updated_at) VALUES('bare-gen','video','dreamina-seedance-2-5-260628','bare','{\"duration\":4}','succeeded',?,?,0,0)", args: [stored.url, bytes.length] });
+    const body = { model: "dreamina-seedance-2-5-260628", task: "edit", prompt: "Edit @Video1: turn the sand rust red", sourceGenId: "bare-gen", resolution: "720p", duration: 4, ratio: "1:1", refine: false };
+    const prepared = value(await service.gen.prepareGeneration(body, actor));
+    expect(prepared.compiled.params as Record<string, unknown>).toMatchObject({ ratio: "720:1280", duration: 4, sourceSeconds: 4 });
+    expect(prepared.quote.estimatedCredits).toBeGreaterThan(0);
+    /* The seeded render is the only row; nothing was admitted. */
+    expect((await rows()).map((row) => row.id)).toEqual(["bare-gen"]);
+    expect(dispatched).toHaveLength(0);
+    /* A render whose original cannot be read is still refused, in the same words. */
+    await db().execute("INSERT INTO generations(id,kind,model,prompt,params,status,stored_url,bytes,created_at,updated_at) VALUES('ghost-gen','video','dreamina-seedance-2-5-260628','ghost','{\"duration\":4}','succeeded','ghost',1000,0,0)");
+    const refused = await service.gen.prepareGeneration({ ...body, sourceGenId: "ghost-gen" }, actor);
+    expect(refused).toMatchObject({ ok: false, status: 400 });
+    expect(JSON.stringify(refused)).toContain("dimensions or duration are unavailable");
+  }));
+
 test("Topaz prices the original image, retains settings for its worker and rejects oversized or changed work before spending", async () => scope("topaz-originals", async service => {
   const { db } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
