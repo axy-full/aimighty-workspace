@@ -17,10 +17,14 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
     g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Break it down", "Scenes · Beats · Shots", "breakdown"]]),
     g("BEAT SHEET", [["Beat board", "Edit beats and shots", "board"], ["Redraft the script", "From these beats", "redraft"]]),
   ],
+  boards: [
+    g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Frame prompts", "One per shot", "prompts"]]),
+    g("FRAMES", [["Look", "Live action · Colour · B&W sketch", "look"], ["Frames", "Prompt · Drawing · Render", "frames"]]),
+  ],
 };
 
 /** Studio pages the Production agent runs itself: their own priced actions replace the page head's "Run stage". */
-export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats"]);
+export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats", "boards"]);
 
 export const SECTION_EVENT = "particl:production-section";
 /** Brings a stage's section into view; the stage listens for the event to switch tabs first. */

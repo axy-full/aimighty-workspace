@@ -80,7 +80,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
     /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
     ["beats", "Beats", "Beats & Shots", "Break it into beats and shots", "brief"],
-    ["boards", "Boards", "Boards", "Plan every frame", "boards"],
+    ["boards", "Storyboards", "Storyboards", "Every shot, framed", "boards"],
     ["cast", "Cast", "Cast & Elements", "Keep identity consistent", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
     ["rig", "Rig", "Rig", "Bring it all together", "rig"],

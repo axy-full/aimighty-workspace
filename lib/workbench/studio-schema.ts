@@ -181,6 +181,18 @@ export const productionSchema = z.object({
       characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
     }).strict()).max(200),
   }).strict().optional(),
+  boards: z.object({
+    style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image']),
+    frames: z.record(z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), z.object({
+      prompt: z.string().max(8000),
+      sketch: z.object({ assetId: z.string().max(100), name: z.string().max(200) }).strict().optional(),
+      reading: z.string().max(4000).optional(), readingJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+      takes: z.array(z.object({ genId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).max(20),
+      selected: z.string().max(100).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).max(5).optional(),
+    }).strict()).refine((value) => Object.keys(value).length <= 2000),
+    promptsJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+  }).strict().optional(),
 }).strict();
 export const projectSchema = z.object({
   production: productionSchema.optional(),

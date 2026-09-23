@@ -18,7 +18,7 @@ test("every suite has the README's pages, numbered in order, with its group gaps
   const home = SHELL_SUITES.find((s) => s.id === "studio")!.pages.find((p) => p.phoneOnly);
   expect(home).toMatchObject({ id: "home", n: "", own: true });
   expect(shape).toEqual({
-    studio: ["01 Brief", "02 Beats", "03 Boards", "|04 Cast", "05 Astra", "06 Rig", "|07 Takes", "08 Edit", "09 Deliver"],
+    studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Cast", "05 Astra", "06 Rig", "|07 Takes", "08 Edit", "09 Deliver"],
     business: ["01 Ads", "02 Image ads", "|03 Setup"],
     viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
     atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Skills"],

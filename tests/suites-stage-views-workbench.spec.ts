@@ -69,12 +69,13 @@ test("Brief & Script: the agent, the prompt from the project, the Library's tool
   expect(errors).toEqual([]);
 });
 
-test("Boards, Astra 3D and Deliver render their groups and keep their workflows above", async ({ page }, info) => {
+test("Storyboards sends an empty project to Beats; Astra 3D and Deliver render their groups and keep their workflows above", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const errors = await open(page, "boards");
-  await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "boards");
-  await expect(page.getByTestId("stage-group")).toHaveCount(2);
-  await expect(page.getByTestId("stage-facts")).toContainText("Nano Banana 2");
+  /* Storyboards is the Production agent's own stage: with no beat sheet yet it sends the director to Beats. */
+  await expect(page.getByTestId("boards-no-shots")).toContainText("Break the script into beats and shots first.");
+  await page.getByTestId("boards-no-shots").getByRole("button", { name: "Open Beats" }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Beats & Shots");
 
   await page.goto("/suites?suite=studio&page=astra");
   await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "astra");

@@ -52,7 +52,7 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Boards$/, /^04\s*Cast$/, /^05\s*Astra$/, /^06\s*Rig$/, /^07\s*Takes$/, /^08\s*Edit$/, /^09\s*Deliver$/]);
+  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Storyboards$/, /^04\s*Cast$/, /^05\s*Astra$/, /^06\s*Rig$/, /^07\s*Takes$/, /^08\s*Edit$/, /^09\s*Deliver$/]);
   await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
   await expect(strip.getByRole("button", { name: /Brief/ })).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
