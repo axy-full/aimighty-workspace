@@ -60,8 +60,8 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   const tiles = home.getByRole("listitem");
   await expect(tiles).toHaveCount(6);
   await expect(tiles).toContainText(["Brief to delivery, nine stages.", "Video, images, audio, 3D — one composer.", "Marketing Studio: product, presenter, ad.", "Genjutsu: motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department."]);
-  /* The brief has words and one take exists: Brief and Takes are done. */
-  await expect(page.getByTestId("home-fact-studio")).toHaveText("2 of 9 done");
+  /* The brief has words, one take exists and one shot is cut: Brief, Edit and Timeline are done. */
+  await expect(page.getByTestId("home-fact-studio")).toHaveText("3 of 9 done");
   await expect(page.getByTestId("home-fact-gen")).toHaveText("Seedance 2.5 ready");
   await expect(page.getByTestId("home-fact-business")).toHaveText("UGC · 15 s · quoted in Ads");
   await expect(page.getByTestId("home-fact-atomik")).toHaveText("0 awaiting approval");

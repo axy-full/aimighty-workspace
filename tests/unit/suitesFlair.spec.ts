@@ -13,7 +13,7 @@ test("every header tab has a suite colour and glyph from the prototype", () => {
   expect(SUITE_LOOK.atomik).toEqual({ color: "#30D158", glyph: "atom" });
   expect(SUITE_LOOK.crew).toEqual({ color: "#BF5AF2", glyph: "crew" });
   expect(DEPT_COLORS).toEqual(["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"]);
-  expect(KIND_DOT).toEqual({ Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A" });
+  expect(KIND_DOT).toEqual({ Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A", Cast: "#FF453A", Elements: "#64D2FF" });
 });
 
 test("project posters: the sample palette for the sample names, a stable tint otherwise", () => {
