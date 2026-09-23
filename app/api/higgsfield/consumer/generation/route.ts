@@ -10,7 +10,7 @@ import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { ConsumerOAuthError } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
-import { connectedCharacters } from "@/lib/higgsfield-consumer/characters";
+import { buildConnectedCharacter, connectedCharacters, connectedPlan, SOUL_BUILD_STILLS, SOUL_BUILD_TYPES } from "@/lib/higgsfield-consumer/characters";
 import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
@@ -45,7 +45,15 @@ const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }
 const explainer = z.object({ action: z.literal("explainer-presets"), refresh: z.boolean().optional() }).strict();
 /** The account's trained characters (Soul IDs), for a Soul model's `soul_id`. */
 const characters = z.object({ action: z.literal("characters") }).strict();
-const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters]);
+/** The plan gate before a Soul ID build (free read), and the build itself (Cast › Build identity; FINAL_SPEC §3 › Soul ID). */
+const charactersPlan = z.object({ action: z.literal("characters-plan") }).strict();
+const charactersCreate = z.object({
+  action: z.literal("characters-create"),
+  name: z.string().trim().min(1).max(80),
+  type: z.enum(SOUL_BUILD_TYPES),
+  sources: z.array(z.union([z.object({ uploadId: z.string().min(1).max(64) }).strict(), z.object({ genId: z.string().min(1).max(64) }).strict()])).min(SOUL_BUILD_STILLS.min).max(SOUL_BUILD_STILLS.max),
+}).strict();
+const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters, charactersPlan, charactersCreate]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -119,7 +127,7 @@ export const POST = withTenant(async (req: Request) => {
     const body = parsed.data;
     await takeAccountLimit(
       `hf-consumer-generation:${requireTenant().id}:${owner.user.id}:${body.action}`,
-      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" ? 12 : 6,
+      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" || body.action === "characters-plan" ? 12 : body.action === "characters-create" ? 3 : 6,
       60_000,
     );
     if (body.action === "catalogue")
@@ -129,6 +137,13 @@ export const POST = withTenant(async (req: Request) => {
       );
     if (body.action === "characters")
       return Response.json(await connectedCharacters(owner.user.id), { headers });
+    if (body.action === "characters-plan")
+      return Response.json({ plan: await connectedPlan(owner.user.id) }, { headers });
+    if (body.action === "characters-create") {
+      const render = await requireRender();
+      if (render.response) return render.response;
+      return Response.json({ build: await buildConnectedCharacter(owner.user.id, { name: body.name, type: body.type, sources: body.sources }) }, { headers });
+    }
     if (body.action === "explainer-presets")
       return Response.json({ explainer: await connectedExplainerPresets(owner.user.id, { refresh: body.refresh === true }) }, { headers });
     if (body.action === "submit") {

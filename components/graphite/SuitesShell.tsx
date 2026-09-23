@@ -28,6 +28,7 @@ import { Palette } from "./Palette";
 import { ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { WorkflowHost } from "./tools/WorkflowHost";
+import { SoulIdHost } from "./tools/SoulIdHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
@@ -204,6 +205,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
+                        {shell.suite.id === "studio" && shell.page.id === "cast" ? <div className="gx-extras" data-testid="page-soul"><SoulIdHost scope={scope} items={items} /></div> : null}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
