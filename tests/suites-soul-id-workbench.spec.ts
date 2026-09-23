@@ -56,7 +56,7 @@ test("Build identity: the reasons, the plan gate, the confirm with the exact req
   await expect(page.getByTestId("soul-blocked")).toHaveCount(0);
   await page.getByTestId("soul-type-soul_cinematic").click();
 
-  /* The account's list, with Use in Gen only on the ready one. */
+  /* Particl-built identities only (the route already narrowed them), with Use in Gen only on the ready one. */
   await expect(page.getByTestId("soul-row-soul_ready")).toContainText("Ada");
   await expect(page.getByTestId("soul-row-soul_ready").getByRole("button", { name: "Use in Gen" })).toBeEnabled();
   await expect(page.getByTestId("soul-row-soul_train").getByRole("button", { name: "Use in Gen" })).toBeDisabled();
@@ -67,7 +67,7 @@ test("Build identity: the reasons, the plan gate, the confirm with the exact req
   await page.getByTestId("soul-build-confirm").click();
   await expect(page.getByTestId("soul-outcome")).toHaveText("Mira · Soul 2 · Training · soul_id soul_new");
   const create = calls.find((c) => c.action === "characters-create")!;
-  expect(create).toEqual({ action: "characters-create", name: "Mira", type: "soul_cinematic", sources: [{ uploadId: "up_1" }, { uploadId: "up_2" }, { uploadId: "up_3" }, { genId: "gen_4" }, { genId: "gen_5" }] });
+  expect(create).toEqual({ action: "characters-create", name: "Mira", type: "soul_cinematic", sources: [{ uploadId: "up_1" }, { uploadId: "up_2" }, { uploadId: "up_3" }, { genId: "gen_4" }, { genId: "gen_5" }], projectId: "ws-soul" });
   await expect(page.getByTestId("toast")).toHaveText("Mira is training on the account");
   expect(errors).toEqual([]);
 });

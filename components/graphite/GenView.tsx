@@ -54,7 +54,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         if (!live) return;
         const list = json?.characters ?? [];
         const ready = list.filter((c) => c.status !== "training" && c.status !== "failed").length;
-        setCharacters({ list, note: json?.connected === false ? "Connect the owner’s account in Workspace › Engines." : json?.available === false ? "The connected account does not advertise its characters." : ready ? `${ready} trained ${ready === 1 ? "identity" : "identities"} on the account.` : "No trained identity on the account yet." });
+        setCharacters({ list, note: json?.connected === false ? "Connect the owner’s account in Workspace › Engines." : json?.available === false ? "The connected account does not advertise its characters." : ready ? `${ready} ${ready === 1 ? "identity" : "identities"} built in Particl.` : "No identity built in Particl yet — Cast › Build identity." });
       })
       .catch((error: unknown) => { if (live) setCharacters({ list: [], note: error instanceof Error ? error.message : "The account’s characters could not be read." }); });
     return () => { live = false; };

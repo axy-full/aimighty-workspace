@@ -53,23 +53,28 @@ test.beforeEach(() => resetConnectedToolsetCache());
 
 test("A1: the planner's account reads are fixed, free, checked against the surface, and reduced to link-free data", async () => {
   const reads = plannerReads("");
-  expect(reads.map((r) => r.tool)).toEqual(["presets_show", "list_voices", "show_characters", "show_reference_elements", "show_generations", "show_medias", "balance", "show_plans_and_credits"]);
+  expect(reads.map((r) => r.tool)).toEqual(["presets_show", "list_voices", "balance", "show_plans_and_credits"]);
+  /* The account's own library — characters, reference elements, generations, uploads — is never read: Particl is a standalone platform (owner's rule, 23 September). */
+  expect(reads.map((r) => r.tool).some((t) => /show_characters|show_reference_elements|show_generations|show_medias/.test(t))).toBe(false);
   expect(plannerReads("  a bottle\u0000 on a table ")[0]).toEqual({ name: "recommend", tool: "models_explore", args: { action: "recommend", query: "a bottle on a table", limit: 5 } });
   for (const read of plannerReads("x")) expect(PLANNER_READ_TOOLS).toContain(read.tool);
   // Presets are not advertised and one read fails: both are reported unavailable, the rest still run.
-  const f = session(ninetyOne.tools.filter((t) => t.name !== "presets_show"), "show_medias");
+  const f = session(ninetyOne.tools.filter((t) => t.name !== "presets_show"), "show_plans_and_credits");
   const results = await readConnectedPlannerReads("fixture-private-access", reads, { fetch: f.fetch });
-  expect(f.names()).toEqual(["list_voices", "show_characters", "show_reference_elements", "show_generations", "show_medias", "balance", "show_plans_and_credits"]);
+  expect(f.names()).toEqual(["list_voices", "balance", "show_plans_and_credits"]);
   expect(f.names().some((n) => /^generate_|media_import_url|select_workspace/.test(n))).toBe(false);
   const context = summarizePlannerReads(results);
-  expect(context.unavailable).toEqual(["presets", "medias"]);
+  expect(context.unavailable).toEqual(["presets", "plan"]);
   expect(context.balance).toBe(1468.53);
   const text = context.lines.join("\n");
   expect(text).toContain("Voices: voice-nova (preset, Nova)");
-  expect(text).toContain("Trained characters: Mara (soul-1)");
-  expect(text).toContain("Reference elements: red-bicycle [prop] (elem-1)");
+  expect(text).not.toContain("Trained characters");
+  expect(text).not.toContain("Reference elements");
+  expect(text).not.toContain("Recent generations");
+  expect(text).not.toContain("Uploaded images");
   expect(text).toContain("Connected credits: 1,468.53 · plan Team");
-  expect(text).toContain("Current plan: Team");
+  /* The plan read failed above; the balance read still names the plan. */
+  expect(text).not.toContain("Current plan:");
   expect(text).not.toMatch(/https?:|checkout|Ignore previous/i);
   // Presets parse when advertised.
   resetConnectedToolsetCache();

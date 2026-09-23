@@ -58,3 +58,18 @@ test("a create reply is parsed like the list: the new Soul ID and its status, wh
   /* Ids are bounded and shaped; a free-text id is not one. */
   expect(parseCharacters([{ id: "bad id with spaces", name: "x" }])).toEqual([]);
 });
+
+import { onlyParticlCharacters } from "../../lib/higgsfield-consumer/character-records";
+
+/** Particl is a standalone platform: only the Soul IDs it built are listed; the account's own characters stay on higgsfield.ai (owner's rule, 23 September). */
+test("the account's list is narrowed to the Soul IDs Particl built; the account still says their status", () => {
+  const account = parseCharacters({ characters: [
+    { soul_id: "soul_site_1", name: "Vanya", type: "soul_2", status: "ready" },
+    { soul_id: "soul_particl", name: "Mira", type: "soul_2", status: "training" },
+    { soul_id: "soul_site_2", name: "Aryan", type: "soul_2", status: "ready" },
+  ] });
+  expect(onlyParticlCharacters(account, new Set(["soul_particl"]))).toEqual([{ soulId: "soul_particl", name: "Mira", type: "soul_2", status: "training", previewUrl: null }]);
+  expect(onlyParticlCharacters(account, new Set())).toEqual([]);
+  /* One Particl built but the account no longer lists is gone too: the account owns the status. */
+  expect(onlyParticlCharacters(account, new Set(["soul_deleted"]))).toEqual([]);
+});
