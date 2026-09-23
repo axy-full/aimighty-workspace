@@ -193,6 +193,15 @@ export const productionSchema = z.object({
     }).strict()).refine((value) => Object.keys(value).length <= 2000),
     promptsJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   }).strict().optional(),
+  cast: z.object({
+    entries: z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), name: z.string().max(120), kind: z.enum(['character', 'element']),
+      description: z.string().max(2000), prompt: z.string().max(5000), soulId: z.string().max(200).optional(), referenceAssetId: z.string().max(100).optional(),
+      takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20), selected: z.string().max(100).optional(),
+      job: z.object({ id: z.string().uuid(), status: z.enum(['quoted', 'submitted']) }).strict().optional(),
+    }).strict()).max(100),
+    agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+  }).strict().optional(),
 }).strict();
 export const projectSchema = z.object({
   production: productionSchema.optional(),

@@ -113,3 +113,9 @@
   .gx .pd-frames { grid-template-columns: minmax(0, 1fr); }
   .gx .pd-takes button { height: 44px; min-width: 56px; }
 }
+
+/* Cast & Elements: one card per character or element, built with Soul Cinema. */
+.gx .pd-cast-name { flex: 1; min-width: 120px; width: auto; }
+.gx .pd-soul { display: flex; align-items: center; gap: 6px; }
+.gx .pd-soul select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 759px) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } .gx .pd-cast-name { flex-basis: 100%; } }

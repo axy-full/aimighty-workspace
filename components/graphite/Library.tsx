@@ -5,11 +5,13 @@ import LazyMedia from "@/components/LazyMedia";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { LibraryEntry } from "@/lib/workspace/library";
+import type { Project } from "@/lib/workbench/studio";
+import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
 import { DEPT_COLORS, Glyph, KIND_DOT } from "./icons";
 
-export type AssetFilter = "All" | "Images" | "Video" | "Audio" | "Uploads";
-const FILTERS: AssetFilter[] = ["All", "Images", "Video", "Audio", "Uploads"];
+export type AssetFilter = "All" | "Images" | "Video" | "Audio" | "Uploads" | "Cast" | "Elements";
+const FILTERS: AssetFilter[] = ["All", "Images", "Video", "Audio", "Uploads", "Cast", "Elements"];
 /** A render is NEW for ten minutes after it lands. */
 const FRESH_MS = 10 * 60_000;
 
@@ -17,9 +19,22 @@ export function tagOf(name: string) {
   return name.split(/[\s/]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "··";
 }
 
-export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: string): LibraryEntry[] {
+const ELEMENT_CATEGORIES = new Set(["Element", "Environment", "Prop", "Look"]);
+/** Which library entries the project files as Cast or Elements, by the asset category it gave them. */
+export function castCategories(project: Project | null): Map<string, "Cast" | "Elements"> {
+  const out = new Map<string, "Cast" | "Elements">();
+  for (const asset of project?.assets ?? []) {
+    const kind = asset.category === "Character" ? "Cast" : ELEMENT_CATEGORIES.has(asset.category) ? "Elements" : null;
+    if (!kind) continue;
+    for (const id of [asset.id, asset.generationId, asset.uploadId]) if (id) out.set(id, kind);
+  }
+  return out;
+}
+
+export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: string, filed: Map<string, "Cast" | "Elements"> = new Map()): LibraryEntry[] {
   const q = query.trim().toLowerCase();
   return items.filter((item) => {
+    if ((filter === "Cast" || filter === "Elements") && filed.get(item.take.sourceId) !== filter) return false;
     if (filter === "Images" && item.media !== "image") return false;
     if (filter === "Video" && item.media !== "video") return false;
     if (filter === "Audio" && item.media !== "audio") return false;
@@ -33,7 +48,7 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ items, ready, overlay, now, onUseAsReference, cutId }: { items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
+export function Library({ project = null, items, ready, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
   const shell = useShell();
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
@@ -41,7 +56,11 @@ export function Library({ items, ready, overlay, now, onUseAsReference, cutId }:
   const production = shell.view === "suite" && shell.suite.id === "studio" ? PRODUCTION_TOOLS[shell.page.id] : undefined;
   const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : libraryFor(shell.page.legacy.page);
   const tools = libraryCount(groups);
-  const shown = useMemo(() => filterAssets(items, filter, query), [items, filter, query]);
+  /* A Production stage's live draft files new Cast and Elements before the shell's copy is re-read. */
+  const live = usePublishedProject();
+  const source = live && project && live.id === project.id ? live : project;
+  const filed = useMemo(() => castCategories(source), [source]);
+  const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();

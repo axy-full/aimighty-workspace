@@ -11,6 +11,7 @@ import type { Asset, Project } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
 import { AgentAction } from "./AgentAction";
@@ -130,7 +131,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
             return { ...old, assets, production: { ...old.production, boards: { ...b, frames: { ...b.frames, [shot.id]: frame } } } };
           });
           if (!ok) setErrors((e) => ({ ...e, [shot.id]: generation.error || "This frame did not render. Nothing was billed for a failed render." }));
-          void editor.ensureSaved();
+          void editor.ensureSaved().then(() => { if (ok) void refreshProjectLibrary(scope, latest.current.id); });
         } catch { /* the next tick reads it again */ }
       }
     };

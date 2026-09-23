@@ -3,8 +3,9 @@ import type { AtomikEffortOption } from '../atomik-reasoning';
 /**
  * `write` is the Brief's script writer: the director's prompt (the brief) in, a full script out, redrafted from notes until approved.
  * `frames` writes a storyboard frame prompt for every shot of the beat sheet; `sketch` reads one shot's rough drawing (vision) and writes its frame prompt.
+ * `cast` writes the film's cast and elements, each with a Soul Cinema prompt.
  */
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch';
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
@@ -34,6 +35,8 @@ export type DevelopmentResult = {
   frames?: { shotId: string; prompt: string }[];
   /** `sketch`: what the drawing shows (the director's blocking) and the frame prompt that keeps it. */
   sketch?: { shotId: string; reading: string; prompt: string };
+  /** `cast`: the characters and elements, each with its Soul Cinema prompt. */
+  cast?: { name: string; kind: 'character' | 'element'; description: string; prompt: string }[];
 };
 export type DevelopmentQuote = {
   quoteOnly: true; model: string; effort: string; kind: DevelopmentKind;

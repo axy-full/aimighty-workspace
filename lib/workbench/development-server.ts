@@ -33,7 +33,7 @@ export class DevelopmentError extends Error {
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
@@ -153,6 +153,10 @@ async function writerDraft(owner: string, projectId: string, jobId: string): Pro
   return text;
 }
 function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
+  if (input.kind === 'cast') {
+    const { kind: _kind, ...source } = snapshot as Snapshot & { kind?: string };
+    return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
+  }
   if (input.kind === 'frames' || input.kind === 'sketch') {
     const { name, direction, aspect, style } = snapshot;
     const wanted = new Set(chunk.segments.map((segment) => segment.id));
@@ -210,6 +214,13 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     canonical = JSON.stringify({ kind: 'sketch', name: project.name, direction: project.direction, aspect: project.aspect, style, shot, sketch: { assetId: asset.id, name: asset.name, sha256: image.sha256, dataUrl: image.dataUrl } });
     boardChunks = [{ index: 0, start: 0, end: 1, segments: [{ id: shot.id, heading: shot.number, start: 0, end: 1 }] }];
     images = 1;
+  } else if (input.kind === 'cast') {
+    const sheet = project.production?.beats;
+    const script = (project.script ?? '').slice(0, 40_000);
+    if (!sheet?.scenes.length && !script.trim()) throw new DevelopmentError('Write the script or break it into beats first.');
+    canonical = JSON.stringify({ kind: 'cast', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect,
+      ...(sheet?.scenes.length ? { beatSheet: compactBeatSheet(sheet) } : { script }), existingCast: (project.production?.cast?.entries ?? []).map((e) => e.name) });
+    boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [] }];
   } else canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId, beatSheet) : sourceCanonical(project, input.kind);
   const snapshot = JSON.parse(canonical) as Snapshot;
   if (input.kind === 'idea' && ![project.brief, project.direction].some(value => value.trim())) throw new DevelopmentError('Add a brief or a creative direction before developing ideas.');
@@ -394,7 +405,17 @@ function mockBoardReply(input: DevelopmentCall): DevelopmentReply {
     : JSON.stringify({ reading: `Mock reading of the drawing (${input.images?.length ?? 0} image seen): two figures, camera low on the left, looking right.`, prompt: `Shot ${request.shot?.number}: ${request.shot?.description || 'the scene'}, blocked as drawn — mock sketch prompt.`, critique: ['Mock review only; no provider was called.'], assumptions: [] });
   return { text, inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
+/** The mock casting director: one character and one element from the beat sheet, so a build can follow. */
+function mockCastReply(input: DevelopmentCall): DevelopmentReply {
+  const request = JSON.parse(input.prompt) as { beatSheet?: { heading: string }[]; existingCast?: string[] };
+  const place = request.beatSheet?.[0]?.heading ?? 'The location';
+  return { text: JSON.stringify({ entries: [
+    { name: 'Mara', kind: 'character', description: 'The harbour master; appears in every scene.', prompt: 'Mara, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
+    { name: place, kind: 'element', description: 'The main location.', prompt: `${place}, a clean wide plate — mock cast prompt.` },
+  ].filter((e) => !(request.existingCast ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
+}
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
+  if (input.kind === 'cast' && input.stage !== 'critique') return mockCastReply(input);
   if ((input.kind === 'frames' || input.kind === 'sketch') && input.stage !== 'critique') return mockBoardReply(input);
   if (input.kind === 'write' && input.stage !== 'critique') return mockWriterReply(input);
   if (input.stage === 'critique') return { text: JSON.stringify({ issues: ['Mock review: verify continuity and production constraints.'], revisions: ['Keep the source action and label proposed visual choices.'] }), inputTokens: 100, outputTokens: 60, costUsd: 0 };
