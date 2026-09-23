@@ -1,3 +1,4 @@
+import { makeFCPXML, makeXMEML } from './editorial-xml';
 import {audioClips} from './audio';
 import {zipSync,strToU8} from 'fflate';
 import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
@@ -70,6 +71,8 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  }
  const project={...p,assets:[...exportAssets.values()]};
  files['sequence.edl']=strToU8(makeEDL(project));
+ files['sequence.fcpxml']=strToU8(makeFCPXML(project));
+ files['sequence.xml']=strToU8(makeXMEML(project));
  let at=p.fps*3600;
  const rows=p.shots.map((shot,index)=>{
   const asset=exportAssets.get(shot.assetId)!;
@@ -85,6 +88,8 @@ ${p.name}
 ${p.fps} fps, non-drop frame. Record starts at 01:00:00:00.
 
 sequence.edl: CMX3600, one video track, straight cuts only.
+sequence.fcpxml: FCPXML 1.10 for Final Cut Pro and DaVinci Resolve — the cut plus the Sound lanes (dialogue, music, effects) at their positions, gain and mute.
+sequence.xml: Final Cut Pro 7 XML (XMEML v4) for Premiere Pro — the same cut and lanes. Both point at media/ by relative path; relink to the unzipped folder if asked.
 shotlist.csv: inclusive in / exclusive out timecodes and creative notes.
 production.json: project snapshot, production record mappings, reference bindings, take lineage and crew plans.
 media/: original bytes of assets used in the sequence, scratch audio, saved product profiles, brand logo, poster image layers (including hidden layers), current and prepared campaign reference videos, and their bound source/reference lineage.
