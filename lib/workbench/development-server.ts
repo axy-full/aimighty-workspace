@@ -21,17 +21,18 @@ import { engineMock } from '../mock';
 import { requireTenant, type TenantToken } from '../tenant';
 import { recoveryFetch, resolveRecoveryJobTx, withRecoveryJob } from '../recovery';
 import { sourceCanonical, type DevelopmentJob, type DevelopmentQuote, type DevelopmentRequest, type DevelopmentResult, type DevelopmentStage } from './development-types';
-import { DEVELOPMENT_STAGES, DEVELOPMENT_RESULT_BYTES, DEVELOPMENT_CRITIQUE_BYTES, developmentChunks, developmentInstructions, developmentCritiqueSchema, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
+import { DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_WRITE_TOKENS, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
 export class DevelopmentError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'DevelopmentError'; }
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
+  fromJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
 }).strict();
 export type DevelopmentCall = {
   model: CatalogModel; effort: string; stage: DevelopmentStage; kind: DevelopmentRequest['kind'];
@@ -100,14 +101,37 @@ export async function developmentReady() {
   await initialized.get(key);
 }
 
+/**
+ * The agents a director can choose — Claude, Grok (the Gateway's `spacexai/`
+ * reasoning models) or OpenAI — each priced by the live catalogue. Grok runs
+ * at its provider's default reasoning: its effort controls are not verified
+ * through this path, so none is offered rather than one that might be ignored.
+ */
 export function developmentModels(models: CatalogModel[]) {
-  return atomikModels(models).filter(model => /^(anthropic\/claude-|openai\/)/.test(model.id));
+  return atomikModels(models).filter(model => /^(anthropic\/claude-|openai\/|spacexai\/grok-)/.test(model.id))
+    .map(model => (model.id.startsWith('spacexai/') ? { ...model, efforts: model.efforts.filter(option => option.value === 'auto') } : model));
 }
 export function developmentSourceHash(canonical: string) { return createHash('sha256').update(canonical).digest('hex'); }
 
-type Snapshot = { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; script?: string };
+type Snapshot = { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; script?: string; fromJobId?: string };
+/** The writer's source: the project, and the draft being redrafted (an earlier run's, or the script on the page). */
+function writerCanonical(project: { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; scriptFormat?: 'screenplay' | 'adfilm' }, base: string, fromJobId?: string) {
+  return JSON.stringify({ kind: 'write', name: project.name, brief: project.brief, audience: project.audience, deliverables: project.deliverables,
+    direction: project.direction, fps: project.fps, aspect: project.aspect, scriptFormat: project.scriptFormat ?? 'screenplay', script: base, ...(fromJobId ? { fromJobId } : {}) });
+}
+/** The script a finished writer run of this project produced, for its redraft. */
+async function writerDraft(owner: string, projectId: string, jobId: string): Promise<string> {
+  await developmentReady();
+  const row = (await db().execute({ sql: "SELECT j.request_body,s.result FROM workbench_development_jobs j JOIN workbench_development_steps s ON s.job_id=j.id AND s.stage='refine' AND s.status='succeeded' WHERE j.id=? AND j.owner=? AND j.project_id=? AND j.status='succeeded'", args: [jobId, owner, projectId] })).rows[0];
+  const kind = row ? (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind : null;
+  const text = row && kind === 'write' ? (JSON.parse(String(row.result)) as DevelopmentResult).script?.text : null;
+  if (!text) throw new DevelopmentError('That draft is not a finished script of this project. Choose a finished draft to redraft.', 404);
+  return text;
+}
 function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
-  const { script, ...context } = snapshot;
+  const { script, fromJobId: _from, ...context } = snapshot;
+  if (input.kind === 'write') return JSON.stringify({ directorRequest: input.instructions ?? '', project: context,
+    ...(script?.trim() ? { currentDraft: script } : {}), ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
   return JSON.stringify({ directorRequest: input.instructions ?? '', project: context,
     ...(input.kind === 'idea' ? {} : { assignedSourceSegments: chunk.segments.map(segment => ({
       id: segment.id, heading: segment.heading, sourceStart: segment.start, sourceEnd: segment.end,
@@ -117,18 +141,26 @@ function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: Develop
 async function compile(input: DevelopmentRequest, owner: string, deps: DevelopmentDependencies) {
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new DevelopmentError('Save the project to link its production budget.', 409);
-  const canonical = sourceCanonical(project, input.kind), snapshot = JSON.parse(canonical) as Snapshot;
+  let base = '';
+  if (input.kind !== 'write' && input.fromJobId) throw new DevelopmentError('Only the script writer redrafts an earlier result.');
+  if (input.kind === 'write') {
+    if (input.fromJobId) base = await writerDraft(owner, input.projectId, input.fromJobId);
+    if (!project.brief.trim() && !base.trim()) throw new DevelopmentError('Write the prompt for the script first.');
+    if (base && !input.instructions?.trim()) throw new DevelopmentError('Write the notes for this redraft.');
+  }
+  const canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId) : sourceCanonical(project, input.kind), snapshot = JSON.parse(canonical) as Snapshot;
   if (input.kind === 'idea' && ![project.brief, project.direction].some(value => value.trim())) throw new DevelopmentError('Add a brief or a creative direction before developing ideas.');
   let chunks: DevelopmentChunk[];
-  try { chunks = input.kind === 'idea' ? [{ index: 0, start: 0, end: canonical.length, segments: [] }] : developmentChunks(project.script ?? ''); }
+  try { chunks = input.kind === 'idea' || input.kind === 'write' ? [{ index: 0, start: 0, end: canonical.length, segments: [] }] : developmentChunks(project.script ?? ''); }
   catch (error) { throw new DevelopmentError((error as Error).message); }
   const models = await deps.models(), menu = developmentModels(models);
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
   if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
-  const reasoning = atomikReasoningRequest(model, input.effort, 4000);
+  const reasoning = input.kind === 'write' ? atomikReasoningRequest(model, input.effort, DEVELOPMENT_WRITE_TOKENS, DEVELOPMENT_WRITE_TOKENS) : atomikReasoningRequest(model, input.effort, 4000);
+  const resultBytes = developmentResultBytes(input.kind);
   const estimates = chunks.flatMap(chunk => DEVELOPMENT_STAGES.map(stage => {
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;
-    const prior = stage === 'draft' ? 0 : stage === 'critique' ? DEVELOPMENT_RESULT_BYTES : DEVELOPMENT_RESULT_BYTES + DEVELOPMENT_CRITIQUE_BYTES;
+    const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
     const inputTokens = base + prior;
     if (model.contextWindow && inputTokens + reasoning.maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
     const cost = textQuoteCostUsd(model, inputTokens, reasoning.maxTokens, textVendor(model.id) === 'openai');
@@ -147,17 +179,18 @@ export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: stri
   return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind,
     sourceHash: compiled.sourceHash, estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd,
     chunks: compiled.chunks.length, calls: compiled.estimates.length,
-    sourceCharacters: input.kind === 'idea' ? compiled.canonical.length : compiled.project.script?.length ?? 0 };
+    sourceCharacters: input.kind === 'idea' || input.kind === 'write' ? compiled.canonical.length : compiled.project.script?.length ?? 0 };
 }
 type Row = Record<string, unknown>;
-async function publicJob(row: Row, offset = 0): Promise<DevelopmentJob> {
+/** `withResult` false leaves an older writer draft's full script off a list poll; it is read by its id when opened. */
+async function publicJob(row: Row, offset = 0, withResult = true): Promise<DevelopmentJob> {
   const input = JSON.parse(String(row.request_body)) as DevelopmentRequest;
   const progress = await db().execute({ sql: 'SELECT status,stage,chunk_index FROM workbench_development_steps WHERE job_id=? ORDER BY step_index', args: [String(row.id)] });
   const completedSteps = progress.rows.filter(step => step.status === 'succeeded').length;
   const completedChunks = progress.rows.filter(step => step.stage === 'refine' && step.status === 'succeeded').length;
   const next = progress.rows.find(step => step.status !== 'succeeded');
   const totalChunks = JSON.parse(String(row.chunks)).length;
-  const result = row.status === 'succeeded' ? (await db().execute({ sql: "SELECT result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND stage='refine' AND status='succeeded'", args: [String(row.id), offset] })).rows[0] : null;
+  const result = row.status === 'succeeded' && withResult ? (await db().execute({ sql: "SELECT result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND stage='refine' AND status='succeeded'", args: [String(row.id), offset] })).rows[0] : null;
   return { id: String(row.id), requestId: input.requestId, projectId: input.projectId,
     productionProjectId: String(row.production_project_id), kind: input.kind, model: input.model, effort: input.effort,
     instructions: input.instructions ?? '', sourceHash: String(row.source_hash), status: String(row.status) as DevelopmentJob['status'],
@@ -267,7 +300,25 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
       ...(textVendor(input.model.id) === 'openai' ? { directUsage: result.steps.length === 1 ? sdkTextUsage(result.steps[0].usage, true) : null } : {}) };
   } catch (error) { throw Object.assign(error as Error, { providerSubmitted }); }
 }
+/** The mock writer: a short, well-formed script that says which draft it is, so a redraft visibly differs. */
+function mockWriterReply(input: DevelopmentCall): DevelopmentReply {
+  const request = JSON.parse(input.prompt) as { directorRequest?: string; project?: { name?: string; brief?: string }; currentDraft?: string };
+  const redraft = Boolean(request.currentDraft);
+  const note = request.directorRequest?.trim();
+  const screenplay = [
+    'EXT. FROZEN HARBOUR - DUSK', '',
+    'Ice groans under a violet sky. A red FOX picks its way across the frozen harbour, breath smoking.', '',
+    'INT. HARBOUR MASTER\'S HUT - CONTINUOUS', '',
+    'MARA (60s), wrapped in wool, watches through a frosted window.', '',
+    'MARA', '(to herself)', redraft ? 'You came back.' : 'Not tonight, little one.', '',
+    ...(redraft && note ? ['EXT. FROZEN HARBOUR - NIGHT', '', `The fox stops at the hut's lamp. ${note.slice(0, 200)}`, ''] : []),
+    'FADE OUT.',
+  ].join('\n');
+  return { text: JSON.stringify({ title: request.project?.name || 'Untitled', logline: `A fox crosses a frozen harbour as an old harbour master keeps watch${redraft ? ' — redrafted from the director\'s notes' : ''}.`,
+    screenplay, notes: [redraft ? 'Mock redraft: applied the director\'s notes.' : 'Mock draft: built from the prompt.'], critique: ['Mock review only; no provider was called.'], assumptions: ['The fox is a real animal, not a costume.'] }), inputTokens: 300, outputTokens: 400, costUsd: 0 };
+}
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
+  if (input.kind === 'write' && input.stage !== 'critique') return mockWriterReply(input);
   if (input.stage === 'critique') return { text: JSON.stringify({ issues: ['Mock review: verify continuity and production constraints.'], revisions: ['Keep the source action and label proposed visual choices.'] }), inputTokens: 100, outputTokens: 60, costUsd: 0 };
   const result: DevelopmentResult = { summary: 'Mock development proposal for review.', recommendation: 'Review the route and production requirements with your team.',
     ideas: input.kind === 'idea' ? ['Intimate character study', 'Expansive visual journey'].map(title => ({ title, logline: title + ' built around the project brief.', treatment: 'A specific opening, escalation and resolution grounded in the brief.', visualDirection: 'Motivated natural light and deliberate camera movement.', critique: 'Confirm audience and duration.' })) : [],
@@ -411,7 +462,8 @@ export async function listDevelopmentJobs(owner: string, projectId: string, requ
   const rows = (await db().execute({ sql: 'SELECT id,owner,project_id,production_project_id,request_id,request_body,source_hash,chunks,status,estimate_usd,estimate_credits,cost_usd,credits,error,funded_by_platform,settled,created_at,updated_at FROM workbench_development_jobs WHERE owner=? AND project_id=?' + (requestId ? ' AND request_id=?' : '') + (jobId ? ' AND id=?' : '') + ' ORDER BY created_at DESC LIMIT 10', args })).rows;
   for (const row of rows) if (['succeeded', 'failed', 'uncertain'].includes(String(row.status))) await settleDevelopment(row, deps);
   if (jobId && rows.length && offset >= JSON.parse(String(rows[0].chunks)).length) throw new DevelopmentError('This result section does not exist.', 404);
-  const jobs = await Promise.all(rows.map(row => publicJob(row, offset)));
+  const newestDraft = rows.find(row => (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'write')?.id;
+  const jobs = await Promise.all(rows.map(row => publicJob(row, offset, Boolean(jobId) || row.id === newestDraft || (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind !== 'write')));
   // Present reserved jobs waiting between calls as resumable. Admission rows
   // retain queued but have no runnable provider phases until reservation commits.
   for (let index = 0; index < jobs.length; index++) if (jobs[index].status === 'running') {

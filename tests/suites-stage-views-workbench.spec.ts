@@ -5,7 +5,8 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/
 import { smallTargets, smallText } from "./phoneFloors";
 
 /**
- * Brief & Script, Boards, Astra 3D and Deliver as the shell's own stage views:
+ * Brief & Script is the Production agent's own stage (production/BriefStage).
+ * Boards, Astra 3D and Deliver as the shell's own stage views:
  * the intro, the five facts, the groups as framed cards in the department
  * colours with a status dot each, and the stage's existing working tool
  * beneath. A card that belongs to a tool opens it; the Deliver and Astra
@@ -33,26 +34,37 @@ async function open(page: Page, stage: string) {
   return errors;
 }
 
-test("Brief & Script: facts and groups from the project; a card opens its tool; the floors hold", async ({ page }, info) => {
+const models = [
+  { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, released: 2, efforts: [{ value: "auto", label: "Auto" }, { value: "high", label: "High" }] },
+  { id: "spacexai/grok-4.7", name: "Grok 4.7", vision: true, released: 3, efforts: [{ value: "auto", label: "Auto" }] },
+  { id: "openai/gpt-5.5", name: "GPT-5.5", vision: true, released: 1, efforts: [{ value: "auto", label: "Auto" }] },
+];
+
+test("Brief & Script: the agent, the prompt from the project, the Library's tools land on their sections; the floors hold", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await page.route("**/api/workbench/development**", (route) => (route.request().method() === "GET" ? route.fulfill({ json: { configured: true, models, jobs: [] } }) : route.abort("blockedbyclient")));
   const errors = await open(page, "brief");
-  const view = page.getByTestId("stage-view");
-  await expect(view).toHaveAttribute("data-page", "brief");
-  await expect(page.getByTestId("stage-facts")).toContainText("13 words");
-  await expect(page.getByTestId("stage-facts")).toContainText("Screenplay");
-  await expect(page.getByTestId("stage-group")).toHaveCount(2);
-  await expect(page.getByTestId("stage-group").nth(0)).toContainText("DOCUMENT");
-  await expect(page.getByTestId("stage-group").nth(1)).toContainText("AGENTIC");
-  await expect(view.locator(".gx-stage-card")).toHaveCount(7);
-  await expect(view.locator(".gx-stage-card[data-card='Brief']")).toContainText("13 words");
-  await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "brief");
-  await view.locator("button.gx-stage-card[data-card='Script']").click();
-  await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "script");
-  await expect(page.getByTestId("stage-work").getByRole("tab", { name: "Script & development" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("brief-stage")).toBeVisible();
+  const bar = page.getByTestId("agent-bar");
+  for (const name of ["Claude", "Grok", "OpenAI"]) await expect(bar.getByRole("radio", { name })).toBeEnabled();
+  await expect(bar.getByRole("radio", { name: "Claude" })).toHaveAttribute("aria-checked", "true");
+  await expect(bar.getByRole("button", { name: "Agent model" })).toContainText("Claude Sonnet 4.6");
+  await expect(page.getByTestId("brief-prompt-input")).toHaveValue("A fox crosses a frozen harbour at dusk and meets a lighthouse keeper");
+  await expect(page.getByTestId("brief-estimate")).toBeEnabled();
   await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Brief/ })).toHaveAttribute("aria-current", "page");
+
+  /* The Library's tools are this page's sections, not an Inspector detour. */
+  if (!info.project.name.startsWith("workbench-3") && info.project.name !== "workbench-844x390") {
+    const library = page.getByTestId("library");
+    await expect(library.getByTestId("tool-group")).toHaveCount(2);
+    await library.getByRole("button", { name: /Script editor/ }).click();
+    await expect(page.getByTestId("brief-tab-script")).toHaveAttribute("aria-selected", "true");
+    await library.getByRole("button", { name: /Prompt/ }).click();
+    await expect(page.getByTestId("brief-tab-write")).toHaveAttribute("aria-selected", "true");
+  }
   if (info.project.name.startsWith("workbench-3")) {
-    expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
-    expect(await smallTargets(page, ".gx-stage-view"), "targets under 44×44").toEqual([]);
+    expect(await smallText(page, ".pd-stage"), "text under 12px").toEqual([]);
+    expect(await smallTargets(page, ".pd-stage"), "targets under 44×44").toEqual([]);
   }
   expect(errors).toEqual([]);
 });

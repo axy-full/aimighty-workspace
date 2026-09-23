@@ -164,7 +164,14 @@ export const moleculrSchema = z.object({
   hooks:z.array(z.string().max(500)).max(12),notes:z.string().max(6000),
   variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
 }).strict();
+export const productionSchema = z.object({
+  scriptApproval: z.object({
+    at: z.string().datetime(), source: z.enum(['agent', 'hand']),
+    jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict().optional(),
+}).strict();
 export const projectSchema = z.object({
+  production: productionSchema.optional(),
   astraNative: astraNativeSchema.optional(),
   astraBlender: astraSceneSchema.optional(),
   moleculr:moleculrSchema.optional(),

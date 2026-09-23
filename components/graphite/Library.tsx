@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { PRODUCTION_TOOLS, focusSection } from "@/lib/shell/production-tools";
 import LazyMedia from "@/components/LazyMedia";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -37,7 +38,8 @@ export function Library({ items, ready, overlay, now, onUseAsReference, cutId }:
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
   const [query, setQuery] = useState("");
-  const groups = libraryFor(shell.page.legacy.page);
+  const production = shell.view === "suite" && shell.suite.id === "studio" ? PRODUCTION_TOOLS[shell.page.id] : undefined;
+  const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : libraryFor(shell.page.legacy.page);
   const tools = libraryCount(groups);
   const shown = useMemo(() => filterAssets(items, filter, query), [items, filter, query]);
   const open = (entry: LibraryEntry) => {
@@ -69,7 +71,11 @@ export function Library({ items, ready, overlay, now, onUseAsReference, cutId }:
               <div className="gx-tool-group-head"><span className="gx-eyebrow">{group.title}</span><span className="gx-eyebrow">{group.items.length}</span></div>
               {group.items.map((item) => (
                 <button key={item.name} type="button" className="gx-tool" data-tool={item.name}
-                  onClick={() => { dispatch({ type: "patch", patch: { selKind: "page", selId: state.page } }); shell.openInspector(); }}>
+                  onClick={() => {
+                    const section = "section" in item ? (item as { section: string }).section : null;
+                    if (section) { if (overlay) shell.closePanels(); focusSection(section); return; }
+                    dispatch({ type: "patch", patch: { selKind: "page", selId: state.page } }); shell.openInspector();
+                  }}>
                   <span className="gx-tool-tag" aria-hidden="true">{tagOf(item.name)}</span>
                   <span className="gx-tool-text"><span className="gx-tool-name">{item.name}</span><span className="gx-tool-sub">{item.sub}</span></span>
                 </button>

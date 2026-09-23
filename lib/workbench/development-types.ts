@@ -1,11 +1,14 @@
 import type { AtomikEffortOption } from '../atomik-reasoning';
 
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm';
+/** `write` is the Brief's script writer: the director's prompt (the brief) in, a full script out, redrafted from notes until approved. */
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
   effort: string; instructions?: string; sourceHash?: string;
   maxCredits?: number; maxUsd?: number;
+  /** `write` only: redraft the script a finished writer run produced, with `instructions` as the director's notes. */
+  fromJobId?: string;
 };
 export type DevelopmentIdea = { title: string; logline: string; treatment: string; visualDirection: string; critique: string };
 export type DevelopmentShot = { description: string; framing: string; movement: string; lighting: string; sound: string };
@@ -14,9 +17,12 @@ export type DevelopmentScene = {
   summary: string; beats: string[]; shots: DevelopmentShot[];
   characters: string[]; props: string[]; locations: string[]; productionNotes: string[];
 };
+/** The writer's draft: a complete script in industry format, with the agent's notes for the review. */
+export type DevelopmentScript = { title: string; logline: string; text: string; notes: string[] };
 export type DevelopmentResult = {
   summary: string; recommendation: string; ideas: DevelopmentIdea[];
   scenes: DevelopmentScene[]; critique: string[]; assumptions: string[];
+  script?: DevelopmentScript;
 };
 export type DevelopmentQuote = {
   quoteOnly: true; model: string; effort: string; kind: DevelopmentKind;

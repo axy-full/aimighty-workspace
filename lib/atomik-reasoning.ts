@@ -107,12 +107,13 @@ function invalidEffort(model: CatalogModel): Error & { status: number } {
  * https://vercel.com/docs/ai-gateway/models-and-providers/reasoning
  * https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
  */
-export function atomikReasoningRequest(model: CatalogModel, effort: string | undefined, visibleTokens: number): AtomikReasoningRequest {
+/** `maxVisible` lifts the planner's answer ceiling for callers that must return long documents (the script writer). */
+export function atomikReasoningRequest(model: CatalogModel, effort: string | undefined, visibleTokens: number, maxVisible: number = MAX_VISIBLE_TOKENS): AtomikReasoningRequest {
   // Older clients did not send effort. Preserve their existing response ceiling.
   if (effort === undefined) return { maxTokens: Math.min(visibleTokens, model.maxTokens ?? Infinity), providerOptions: {} };
   if (!atomikEffortOptions(model).some(option => option.value === effort)) throw invalidEffort(model);
   if (!Number.isFinite(visibleTokens) || visibleTokens <= 0) throw invalidEffort(model);
-  const visible = Math.min(MAX_VISIBLE_TOKENS, Math.max(MIN_ANSWER_TOKENS, Math.floor(visibleTokens)));
+  const visible = Math.min(Math.max(MAX_VISIBLE_TOKENS, maxVisible), Math.max(MIN_ANSWER_TOKENS, Math.floor(visibleTokens)));
   const limit = outputLimit(model);
   const request: AtomikReasoningRequest = { maxTokens: Math.min(visible, limit), providerOptions: {} };
   if (effort === "auto") {

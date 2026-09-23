@@ -1,0 +1,45 @@
+/*
+ * Production suite (owner's brief, 23 September): the agent-driven Studio
+ * stages — Brief & Script first. Scoped under `.gx` like the glass layer, so
+ * bundler sheet order never decides it. No serif anywhere; the script reads in
+ * the shell's mono.
+ */
+.gx .pd-stage { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 24px; min-width: 0; }
+.gx .pd-agent { gap: 10px; }
+.gx .pd-agent-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 220px); gap: 16px; align-items: end; }
+.gx .pd-agent-row .gx-seg { width: max-content; }
+.gx .pd-agent-hint { margin: 0; font-size: 12px; }
+.gx .pd-tabs { width: max-content; }
+.gx .pd-row-head { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.gx .pd-prompt { min-height: 200px; }
+.gx .pd-small { min-height: 84px; }
+.gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 11px; margin-top: -8px; }
+.gx .pd-more > summary { cursor: pointer; color: var(--gx-text-2); font-size: 13px; padding: 4px 0; }
+.gx .pd-more[open] { display: flex; flex-direction: column; gap: 12px; }
+.gx .pd-recover { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.gx .pd-recover .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+.gx .pd-progress { gap: 10px; }
+.gx .pd-meter { height: 4px; border-radius: 2px; background: var(--gx-hair); overflow: hidden; }
+.gx .pd-meter > span { display: block; height: 100%; background: var(--gx-accent); transition: width .4s ease; }
+.gx .pd-review { gap: 12px; }
+.gx .pd-review .gx-workflow-title { margin: 0; }
+.gx .pd-review > .gx-hint { margin: 0; }
+.gx .pd-screenplay { margin: 0; max-height: 60vh; overflow: auto; padding: 16px 18px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); font-family: var(--gx-mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--gx-text); }
+.gx .pd-screenplay:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
+.gx .pd-notes ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gx-text-2); }
+.gx .pd-notes .pd-assume { color: var(--gx-text-3); }
+.gx .pd-redraft { margin-top: 4px; }
+.gx .pd-editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gx .pd-editor-head { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.gx .pd-editor-head .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+.gx .pd-save { margin: 0; font-size: 12px; }
+@media (max-width: 759px) {
+  .gx .pd-agent-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .gx .pd-agent-row .gx-seg { width: 100%; }
+  .gx .pd-agent-row .gx-seg .gx-seg-btn { flex: 1; }
+  .gx .pd-agent-model button, .gx .pd-agent-effort button { box-sizing: border-box; height: 46px; min-height: 46px; width: 100%; max-width: none; }
+  .gx .pd-tabs { width: 100%; }
+  .gx .pd-tabs .gx-seg-btn { flex: 1; }
+  .gx .pd-prompt { min-height: 160px; }
+  .gx .pd-screenplay { max-height: 55vh; padding: 12px; font-size: 12px; }
+}
