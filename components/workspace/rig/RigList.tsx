@@ -53,6 +53,7 @@ function Row({ shot, selected, onSelect, asset, onDropAsset }: { shot: RigShot; 
       className="pxw-rig-row"
       aria-pressed={selected}
       data-shot-id={shot.id}
+      data-ctx={`node:${shot.id}`}
       data-status={shot.status}
       data-drop={over || undefined}
       onClick={onSelect}

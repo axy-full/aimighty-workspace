@@ -173,6 +173,7 @@ export function RigGraph() {
                 key={card.id}
                 className="pxw-graph-node"
                 data-node-id={card.id}
+                data-ctx={`node:${card.id}`}
                 data-shape={NODE_DEFS[node.type].shape}
                 data-selected={selected || undefined}
                 data-wiring={wireFrom === card.id || undefined}

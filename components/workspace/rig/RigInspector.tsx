@@ -1,4 +1,5 @@
 "use client";
+import { rigUndoSink } from "@/lib/shell/rig-commands";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCredits, formatTokens } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
@@ -166,6 +167,12 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   const project = rig.project!;
   const [name, setName] = useState(shot.name);
   const [error, setError] = useState<string | null>(null);
+  /* Where there is no ⌘Z (the older shell), Delete asks once more. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const remove = () => {
+    if (!rigUndoSink() && !confirmDelete) { setConfirmDelete(true); return; }
+    setError(rig.removeShot(shot.id));
+  };
   const model = shotEngine(shot.engine);
   const estimate = useShotEstimate({ engine: shot.engine, durationS: shot.durationS, ratio: shot.ratio, resolution: shot.resolution });
   const looks = project.nodes.filter((n) => n.type === "moodboard");
@@ -274,6 +281,8 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
       </button>
       {error ? <p className="pxw-insp-error" role="alert">{error}</p> : null}
       {!error && (rig.notice || rig.blocked) ? <p className="pxw-insp-notice" role="status">{rig.notice ?? rig.blocked}</p> : null}
+      <button type="button" className="pxw-link-button pxw-insp-delete" disabled={locked} title={locked ? "Unlock this shot to delete it." : undefined}
+        onClick={remove} data-testid="rig-delete-shot">{confirmDelete ? "Delete this shot and the inputs only it uses?" : "Delete shot"}</button>
     </div>
   );
 }

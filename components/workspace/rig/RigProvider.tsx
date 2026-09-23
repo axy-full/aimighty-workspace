@@ -14,8 +14,9 @@ import { connectNodes } from "@/lib/workspace/rig-graph";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
 import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, shotReferenceAssets, shotReferenceRole } from "@/lib/workspace/rig";
 import { ENGINE_PROMPT_LIMIT, renderPromptFor } from "@/lib/production/rig-prompt";
-import { RigBuildError, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
+import { RigBuildError, removeShots, restoreShots, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
+import { rigUndoSink, setRigDeleteHandler } from "@/lib/shell/rig-commands";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Generation, SelectableItem } from "@/lib/workspace/types";
@@ -75,6 +76,8 @@ export type RigContext = {
   apply: (fn: (project: Project) => Project | { project: Project; id?: string }, select?: boolean) => string | null;
   /** Saves pending edits; true once saved (an agent step reads the saved project). */
   save: () => Promise<boolean>;
+  /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
+  removeShot: (id: string) => string | null;
 };
 
 const Context = createContext<RigContext | null>(null);
@@ -488,6 +491,22 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     }
   }, [update, select]);
   const save = useCallback(() => flush({ force: true }), [flush]);
+  const removeShot = useCallback((id: string): string | null => {
+    const current = draftRef.current;
+    if (!current) return "Open a project first.";
+    let out: ReturnType<typeof removeShots>;
+    try { out = removeShots(current.project, [id]); }
+    catch (err) { if (err instanceof RigBuildError) return err.message; throw err; }
+    const name = out.removed.removed.find((n) => n.id === id)?.title || "The shot";
+    update(() => out.project);
+    if (state.selKind === "shot" && state.selId === id) dispatch({ type: "patch", patch: { selKind: "page", selId: null } });
+    const sink = rigUndoSink();
+    sink?.({ label: `${name} is back in the Rig`, undo: () => update((p) => restoreShots(p, out.removed)) });
+    toast(`${name} deleted${sink ? " · ⌘Z brings it back" : ""}`);
+    return null;
+  }, [update, state.selKind, state.selId, dispatch, toast]);
+  /* The shell's Delete (menu, ⌫) reaches the Rig through this slot while it is on screen. */
+  useEffect(() => { setRigDeleteHandler(removeShot); return () => setRigDeleteHandler(null); }, [removeShot]);
   /* An asset sent from Astra or Edit becomes a shot here, once, when the Rig has the project. */
   const intentDone = useRef<string | null>(null);
   useEffect(() => {
@@ -501,8 +520,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode,
-    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save]);
+    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot,
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
