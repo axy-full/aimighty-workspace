@@ -76,3 +76,23 @@ export function renderPrompt(prompt: string, style: BoardStyle, sketch: boolean)
   const keep = sketch ? " The reference image is the director's rough storyboard drawing: keep its composition, camera angle and the position, pose and direction of every figure exactly; redraw it as a finished frame." : "";
   return `${prompt.trim()}\n\n${look}${keep}`.slice(0, 10_000);
 }
+
+/**
+ * Deletes a line drawing (owner, 23 September): the drawing leaves the
+ * project — its asset, any bin that lists it, and the beat it was on (with the
+ * agent's reading of it). A drawing the Rig uses as an input is refused, so no
+ * shot loses its reference. The upload itself stays in the workspace library.
+ */
+export function deleteDrawing<P extends { assets: { id: string }[]; nodes: { assetId?: string; title: string }[]; bins?: { assetIds: string[] }[]; production?: { boards?: Boards } }>(project: P, assetId: string): P {
+  if (!project.assets.some((a) => a.id === assetId)) throw new Error("That drawing is no longer in the project.");
+  const user = project.nodes.find((n) => n.assetId === assetId);
+  if (user) throw new Error(`This drawing is an input of “${user.title}” in the Rig. Remove it there first.`);
+  const boards = project.production?.boards;
+  const frames = boards ? Object.fromEntries(Object.entries(boards.frames).map(([id, f]) => [id, f.sketch?.assetId === assetId ? { ...f, sketch: undefined, reading: undefined, readingJobId: undefined } : f])) : undefined;
+  return {
+    ...project,
+    assets: project.assets.filter((a) => a.id !== assetId),
+    ...(project.bins ? { bins: project.bins.map((b) => ({ ...b, assetIds: b.assetIds.filter((id) => id !== assetId) })) } : {}),
+    ...(boards && frames ? { production: { ...project.production, boards: { ...boards, frames } } } : {}),
+  };
+}
