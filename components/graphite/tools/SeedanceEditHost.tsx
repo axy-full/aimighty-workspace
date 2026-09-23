@@ -8,7 +8,7 @@ import { refreshProjectLibrary } from "@/lib/workspace/library";
 /** The Seedance engines that take the edit task (lib/models.ts › supportsTasks). */
 export const SEEDANCE_EDIT_MODELS = [
   { id: "dreamina-seedance-2-5-260628", label: "Seedance 2.5", note: "Highest fidelity, native audio." },
-  { id: "dreamina-seedance-2-0-260128", label: "Seedance 2.0", note: "Cheaper per token. Edit on 2.0 follows the vendor guide and is untested here — verify before relying on it." },
+  { id: "dreamina-seedance-2-0-260128", label: "Seedance 2.0", note: "Cheaper per token. Edit on 2.0 follows the vendor guide; qualified on production 23 September — a 4 s edit quoted $0.74, settled $0.75." },
 ] as const;
 export type SeedanceEditModelId = (typeof SEEDANCE_EDIT_MODELS)[number]["id"];
 
