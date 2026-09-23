@@ -1,4 +1,5 @@
 "use client";
+import { rigDeleteHandler, setRigUndoSink } from "@/lib/shell/rig-commands";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
@@ -67,13 +68,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
 
-  const nameOf = (target: CtxTarget) => (target.kind === "asset" ? items.find((i) => i.take.id === target.id)?.take.name ?? "Asset" : target.kind === "node" ? "Node" : shell.view === "suite" ? shell.page.title : "Particl");
-  const selection = (): CtxTarget => (state.selKind === "take" && state.selId ? { kind: "asset", id: state.selId } : { kind: "empty" });
+  const nameOf = (target: CtxTarget) => (target.kind === "asset" ? items.find((i) => i.take.id === target.id)?.take.name ?? "Asset" : target.kind === "node" ? project?.nodes.find((n) => n.id === target.id)?.title || "Shot" : shell.view === "suite" ? shell.page.title : "Particl");
+  const selection = (): CtxTarget => (state.selKind === "take" && state.selId ? { kind: "asset", id: state.selId } : state.selKind === "shot" && state.selId ? { kind: "node", id: state.selId } : { kind: "empty" });
 
   const clipPayload = shell.clip?.payload as { asset: AssetRef; fromProjectId: string } | undefined;
   const selectedAsset = (() => { const s = selection(); const e = s.kind === "asset" ? items.find((i) => i.take.id === s.id) : null; return e ? assetRef(e) : null; })();
   const caps: CtxCapabilities = (() => {
     const target = shell.ctx?.target;
+    /* A Rig shot: Delete (with ⌘Z) while the Rig is on screen; the asset commands do not apply. */
+    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Rig to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
     const entry = target?.kind === "asset" ? items.find((i) => i.take.id === target.id) : null;
     return assetCapabilities({
       asset: entry ? assetRef(entry) : selectedAsset, clip: shell.clip && clipPayload ? { mode: shell.clip.mode, asset: clipPayload.asset } : null,
@@ -88,6 +91,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       case "toggle-inspector": shell.toggleInspector(); return;
       case "undo": void shell.undo(); return;
       case "paste": void actions.paste(); return;
+    }
+    if (target.kind === "node") {
+      const remove = rigDeleteHandler();
+      if (cmd !== "delete") { toast("Not available for a shot."); return; }
+      if (!remove) { toast("Open the Rig to delete a shot."); return; }
+      const why = remove(target.id);
+      if (why) toast(why);
+      return;
     }
     if (target.kind !== "asset") { toast(caps.why[cmd] ?? "Select an asset first."); return; }
     switch (cmd) {
@@ -109,7 +120,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     }
   };
   /* The Inspector's buttons and the Rig's drop use the same path. */
-  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); return () => { shell.setRunCommand(null); setShotDropHandler(null); }; });
+  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink((entry) => shell.pushUndo(entry)); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
   /* One keymap: ⌘K, ⌘J, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {

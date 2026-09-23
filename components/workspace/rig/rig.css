@@ -125,3 +125,7 @@
 .pxw .pxw-insp-version[data-state="failed"] .pxw-insp-version-label { color: var(--pxw-red-ink); }
 .pxw .pxw-insp-version-label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-insp-version-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faint); flex: none; }
+
+/* Delete shot: quiet until needed, red when it matters. */
+.pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: #FF6961; font-size: 13px; }
+.pxw-insp-delete:disabled { opacity: .45; }

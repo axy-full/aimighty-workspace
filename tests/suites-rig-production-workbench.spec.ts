@@ -111,3 +111,35 @@ test("Rig: shots from Storyboards, prompt and inputs, the first-frame rule, the 
   await expect.poll(() => store.current.nodes.find((n) => n.title === "Old shot · from Old take")?.firstFrameId ?? null, { timeout: 10_000 }).toBe("gen_take");
   expect(errors).toEqual([]);
 });
+
+test("Rig: a shot can be deleted — from its Inspector, the right-click menu or ⌫ — and ⌘Z brings it back", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "the Rig's list and inspector on a desktop");
+  const { errors, store } = await open(page);
+  const list = page.getByTestId("rig-list");
+  const row = () => list.getByText("Old shot", { exact: true });
+  const saved = () => store.current.nodes.some((n) => n.id === "n-old");
+  const undo = () => page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+
+  /* The Inspector's Delete shot. */
+  await row().click();
+  await page.getByTestId("rig-delete-shot").click();
+  await expect(row()).toHaveCount(0);
+  await expect.poll(saved, { timeout: 15_000 }).toBe(false);
+  await undo();
+  await expect(row()).toHaveCount(1);
+  await expect.poll(saved, { timeout: 15_000 }).toBe(true);
+
+  /* The right-click menu on the row. */
+  await row().click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Delete/ }).click();
+  await expect(row()).toHaveCount(0);
+  await undo();
+  await expect(row()).toHaveCount(1);
+
+  /* ⌫ on the selected shot. */
+  await row().click();
+  await page.keyboard.press("Backspace");
+  await expect(row()).toHaveCount(0);
+  await expect.poll(saved, { timeout: 15_000 }).toBe(false);
+  expect(errors).toEqual([]);
+});
