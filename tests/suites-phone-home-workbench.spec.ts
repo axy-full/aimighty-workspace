@@ -52,8 +52,8 @@ test("phone: Home › the Studio tile opens the stage grid; a card opens its pag
   expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
   expect(await smallTargets(page, ".gx-home"), "targets under 44×44").toEqual([]);
 
-  await page.getByTestId("home-stage-takes").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await page.getByTestId("home-stage-edit").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Edit");
   await page.getByTestId("phone-back").click();
   await expect(page.getByTestId("studio-home")).toBeVisible();
   await page.getByTestId("home-generate-next").click();

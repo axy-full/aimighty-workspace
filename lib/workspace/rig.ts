@@ -73,6 +73,9 @@ export function dispatchQuoteQuery(settings: ShotSettings, refs: Asset[]): strin
 
 /** Role of a bound reference when no first frame is chosen (GenerationDialog's default). */
 export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : "reference_image");
+/** A shot's role for one input: its marked first frame (an image), else a reference by kind. */
+export const shotReferenceRole = (node: Pick<CanvasNode, "firstFrameId"> | null | undefined) => (asset: Pick<Asset, "kind" | "id">) =>
+  node?.firstFrameId && asset.id === node.firstFrameId && asset.kind === "image" ? "first_frame" : referenceRole(asset);
 
 /* ── Takes and versions ──────────────────────────────────────────────── */
 

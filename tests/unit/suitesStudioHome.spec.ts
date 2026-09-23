@@ -13,7 +13,7 @@ test("the home is a Studio page outside the strip; the cards are the stages in o
   expect(home).toMatchObject({ own: true, phoneOnly: true, n: "" });
   expect(home?.legacy).toEqual({ suite: "particl", page: "brief" });
   expect(shellSuite("studio").pages[0].id).toBe("brief");
-  expect(studioStages().map((p) => p.id)).toEqual(["brief", "beats", "boards", "cast", "astra", "rig", "takes", "edit", "deliver"]);
+  expect(studioStages().map((p) => p.id)).toEqual(["brief", "beats", "boards", "cast", "astra", "rig", "edit", "timeline", "deliver"]);
 });
 
 test("every card's line and dot come from the project and the library", () => {
@@ -33,7 +33,8 @@ test("every card's line and dot come from the project and the library", () => {
   const live = stageCards(busy, [take("gen_1"), take("up_1", "UPLOAD")]);
   expect(live.find((c) => c.id === "brief")).toMatchObject({ meta: "8 words", status: "done" });
   expect(live.find((c) => c.id === "rig")).toMatchObject({ meta: "2 shots · 1 rendered", status: "progress" });
-  expect(live.find((c) => c.id === "takes")).toMatchObject({ meta: "1 take", status: "done" });
+  expect(live.find((c) => c.id === "edit")).toMatchObject({ meta: "1 take", status: "done" });
+  expect(live.find((c) => c.id === "timeline")).toMatchObject({ meta: "2 shots · 0 clips", status: "done" });
   expect(live.find((c) => c.id === "cast")).toMatchObject({ meta: "1 identity · 0 elements", status: "done" });
   expect(live.find((c) => c.id === "boards")).toMatchObject({ meta: "1 frame", status: "done" });
   expect(upNext(busy)).toEqual({ id: "s1", index: 1, name: "The crossing" });

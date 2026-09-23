@@ -23,6 +23,7 @@ import { recoveryFetch, resolveRecoveryJobTx, withRecoveryJob } from '../recover
 import { sourceCanonical, type DevelopmentJob, type DevelopmentQuote, type DevelopmentRequest, type DevelopmentResult, type DevelopmentStage } from './development-types';
 import { compactBeatSheet } from '../production/beats';
 import { boardShots } from '../production/boards';
+import { ENGINE_PROMPT_LIMIT, shotRenderPrompt, textKey } from '../production/rig-prompt';
 import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
@@ -33,13 +34,14 @@ export class DevelopmentError extends Error {
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'condense']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
   fromJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   fromBeats: z.literal(true).optional(),
   shotId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(), sketchAssetId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
+  nodeId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
 }).strict();
 export type DevelopmentCall = {
   model: CatalogModel; effort: string; stage: DevelopmentStage; kind: DevelopmentRequest['kind'];
@@ -153,6 +155,10 @@ async function writerDraft(owner: string, projectId: string, jobId: string): Pro
   return text;
 }
 function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
+  if (input.kind === 'condense') {
+    const { prompt } = snapshot as Snapshot & { prompt?: string };
+    return JSON.stringify({ shotPrompt: prompt, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
+  }
   if (input.kind === 'cast') {
     const { kind: _kind, ...source } = snapshot as Snapshot & { kind?: string };
     return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
@@ -192,6 +198,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     if (input.fromJobId && !input.instructions?.trim()) throw new DevelopmentError('Write the notes for this redraft.');
   }
   if (input.kind !== 'sketch' && (input.shotId || input.sketchAssetId)) throw new DevelopmentError('Only the sketch reader takes a shot and a drawing.');
+  if (input.kind !== 'condense' && input.nodeId) throw new DevelopmentError('Only the condenser takes a Rig shot.');
   const style = project.production?.boards?.style ?? 'live';
   let canonical: string, boardChunks: DevelopmentChunk[] | null = null, images = 0;
   if (input.kind === 'frames') {
@@ -214,6 +221,13 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     canonical = JSON.stringify({ kind: 'sketch', name: project.name, direction: project.direction, aspect: project.aspect, style, shot, sketch: { assetId: asset.id, name: asset.name, sha256: image.sha256, dataUrl: image.dataUrl } });
     boardChunks = [{ index: 0, start: 0, end: 1, segments: [{ id: shot.id, heading: shot.number, start: 0, end: 1 }] }];
     images = 1;
+  } else if (input.kind === 'condense') {
+    const node = project.nodes.find((value) => value.id === input.nodeId);
+    if (!node) throw new DevelopmentError('Choose a shot in the Rig.', 404);
+    const full = shotRenderPrompt(node, project).trim();
+    if (full.length <= ENGINE_PROMPT_LIMIT) throw new DevelopmentError('This shot\'s prompt already fits the engine; nothing to condense.');
+    canonical = JSON.stringify({ kind: 'condense', nodeId: node.id, key: textKey(full), prompt: full });
+    boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [{ id: node.id, heading: textKey(full), start: 0, end: 1 }] }];
   } else if (input.kind === 'cast') {
     const sheet = project.production?.beats;
     const script = (project.script ?? '').slice(0, 40_000);
@@ -270,6 +284,7 @@ async function publicJob(row: Row, offset = 0, withResult = true): Promise<Devel
     productionProjectId: String(row.production_project_id), kind: input.kind, model: input.model, effort: input.effort,
     ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
     ...(input.kind === 'sketch' ? { shotId: input.shotId, sketchAssetId: input.sketchAssetId } : {}),
+    ...(input.kind === 'condense' ? { nodeId: input.nodeId } : {}),
     instructions: input.instructions ?? '', sourceHash: String(row.source_hash), status: String(row.status) as DevelopmentJob['status'],
     completedChunks, totalChunks, completedSteps, totalSteps: progress.rows.length,
     currentStage: next ? String(next.stage) as DevelopmentStage : 'complete',
@@ -414,8 +429,14 @@ function mockCastReply(input: DevelopmentCall): DevelopmentReply {
     { name: place, kind: 'element', description: 'The main location.', prompt: `${place}, a clean wide plate — mock cast prompt.` },
   ].filter((e) => !(request.existingCast ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
+/** The mock condenser: the prompt's first 8,000 characters, marked, so a render can follow. */
+function mockCondenseReply(input: DevelopmentCall): DevelopmentReply {
+  const request = JSON.parse(input.prompt) as { shotPrompt?: string };
+  return { text: JSON.stringify({ prompt: `Condensed (mock): ${(request.shotPrompt ?? '').slice(0, 8000)}`, critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
+}
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
   if (input.kind === 'cast' && input.stage !== 'critique') return mockCastReply(input);
+  if (input.kind === 'condense' && input.stage !== 'critique') return mockCondenseReply(input);
   if ((input.kind === 'frames' || input.kind === 'sketch') && input.stage !== 'critique') return mockBoardReply(input);
   if (input.kind === 'write' && input.stage !== 'critique') return mockWriterReply(input);
   if (input.stage === 'critique') return { text: JSON.stringify({ issues: ['Mock review: verify continuity and production constraints.'], revisions: ['Keep the source action and label proposed visual choices.'] }), inputTokens: 100, outputTokens: 60, costUsd: 0 };

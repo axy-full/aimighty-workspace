@@ -106,6 +106,6 @@ test("Object Swap has its own words; History offers Recreate, Compare and Send t
   await expect(page.getByTestId("viral-generate")).toHaveText("Swap object · 22 cr");
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /History/ }).click();
   await page.getByTestId("history-result").getByRole("button", { name: "Send to Edit" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
+  await expect(page.getByTestId("page-title")).toHaveText("Edit");
   if (wide) await expect(page.getByTestId("inspector")).toBeVisible();
 });

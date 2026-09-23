@@ -36,6 +36,8 @@ import { BriefStage } from "./production/BriefStage";
 import { BeatsStage } from "./production/BeatsStage";
 import { StoryboardStage } from "./production/StoryboardStage";
 import { CastStage } from "./production/CastStage";
+import { EditStage } from "./production/EditStage";
+import { AstraOutputs } from "./production/AstraOutputs";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -197,6 +199,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
                       project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "edit" ? (
+                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "timeline")} /> : <p className="gx-empty">Open or create a project to edit its takes.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
                       project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to cast it.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (
@@ -208,6 +212,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
                           </div>
                         ) : null}
+                        {shell.page.id === "astra" ? <AstraOutputs /> : null}
                         <StageView page={shell.page.legacy.page} project={project} scope={scope} />
                       </div>
                     ) : shell.page.own && shell.suite.id === "business" ? (

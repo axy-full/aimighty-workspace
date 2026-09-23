@@ -4,8 +4,9 @@ import type { AtomikEffortOption } from '../atomik-reasoning';
  * `write` is the Brief's script writer: the director's prompt (the brief) in, a full script out, redrafted from notes until approved.
  * `frames` writes a storyboard frame prompt for every shot of the beat sheet; `sketch` reads one shot's rough drawing (vision) and writes its frame prompt.
  * `cast` writes the film's cast and elements, each with a Soul Cinema prompt.
+ * `condense` shortens one Rig shot's render prompt to fit the engine, keeping every visual instruction.
  */
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast';
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'condense';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
@@ -17,6 +18,8 @@ export type DevelopmentRequest = {
   fromBeats?: true;
   /** `sketch` only: the beat-sheet shot and the uploaded drawing (a project asset) the agent reads. */
   shotId?: string; sketchAssetId?: string;
+  /** `condense` only: the Rig shot whose render prompt is condensed. */
+  nodeId?: string;
 };
 export type DevelopmentIdea = { title: string; logline: string; treatment: string; visualDirection: string; critique: string };
 export type DevelopmentShot = { description: string; framing: string; movement: string; lighting: string; sound: string };
@@ -37,6 +40,8 @@ export type DevelopmentResult = {
   sketch?: { shotId: string; reading: string; prompt: string };
   /** `cast`: the characters and elements, each with its Soul Cinema prompt. */
   cast?: { name: string; kind: 'character' | 'element'; description: string; prompt: string }[];
+  /** `condense`: the shorter render prompt, pinned to the key of the prompt it came from. */
+  condensed?: { nodeId: string; key: string; text: string };
 };
 export type DevelopmentQuote = {
   quoteOnly: true; model: string; effort: string; kind: DevelopmentKind;
@@ -50,6 +55,7 @@ export type DevelopmentJob = {
   source?: 'prompt' | 'draft' | 'beats';
   /** `sketch` only: the shot and the drawing it read. */
   shotId?: string; sketchAssetId?: string;
+  nodeId?: string;
   sourceHash: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain';
   completedChunks: number; totalChunks: number; currentStage: DevelopmentStage | 'complete';
   completedSteps: number; totalSteps: number;

@@ -119,3 +119,38 @@
 .gx .pd-soul { display: flex; align-items: center; gap: 6px; }
 .gx .pd-soul select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } .gx .pd-cast-name { flex-basis: 100%; } }
+
+/* Edit: every take in a grid; Timeline: the picture track as a list, and the tray to add takes. */
+.gx .pd-take-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.gx .pd-take { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); text-align: left; min-width: 0; }
+.gx .pd-take[aria-checked="true"] { border-color: var(--gx-accent); box-shadow: inset 0 0 0 1px var(--gx-accent); }
+.gx .pd-take img, .gx .pd-take video, .gx .pd-take .gx-lazy { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: #0c0c0e; }
+.gx .pd-take .gx-badge { position: absolute; top: 12px; left: 12px; }
+.gx .pd-take-name { font-size: 12px; color: var(--gx-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx .pd-take-add { align-self: flex-start; }
+.gx .pd-cut { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; min-width: 0; }
+.gx .pd-cut-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gx .pd-cut-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pd-cut-thumb { width: 72px; height: 40px; border-radius: 4px; overflow: hidden; background: #0c0c0e; }
+.gx .pd-cut-thumb img, .gx .pd-cut-thumb video, .gx .pd-cut-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pd-cut-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 759px) {
+  .gx .pd-cut-row { grid-template-columns: 56px minmax(0, 1fr); }
+  .gx .pd-cut-row .pd-seconds, .gx .pd-cut-row .pd-order { grid-column: 1 / -1; }
+  .gx .pd-take-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Rig: the shot's inputs with pictures and actions; the ways to add one; condense; build from Storyboards. */
+.gx .pxw-insp-row--input { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; align-items: center; }
+.gx .pxw-insp-row-thumb--media { width: 48px; height: 36px; border-radius: 4px; overflow: hidden; background: #0c0c0e; display: block; }
+.gx .pxw-insp-row-thumb--media img, .gx .pxw-insp-row-thumb--media video, .gx .pxw-insp-row-thumb--media .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pxw-insp-row-actions { grid-column: 2; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.gx .pxw-rig-add-inputs { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.gx .pxw-rig-add-inputs select { min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+.gx .pxw-rig-upload { position: relative; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.gx .pxw-rig-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.gx .pxw-rig-condense { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.gx .pxw-rig-build { margin-top: 8px; }
+.gx .pxw-insp-version { flex-wrap: wrap; }
+.gx .pxw-insp-version .pxw-link-button { flex-basis: 100%; text-align: left; font-size: 12px; }
+@media (max-width: 759px) { .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; } .gx .pxw-insp-row-actions button { min-height: 44px; } }

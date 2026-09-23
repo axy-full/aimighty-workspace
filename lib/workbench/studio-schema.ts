@@ -76,6 +76,9 @@ const node = z.object({
   ]),
   assetId: z.string().optional(),
   text: z.string().max(30000).optional(),
+  firstFrameId: z.string().max(100).optional(),
+  condensed: z.object({ key: z.string().regex(/^[a-f0-9]{16}$/), text: z.string().max(10000) }).strict().optional(),
+  boardShotId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
   developmentSource: z.object({ jobId:z.string().max(100), sourceHash:z.string().regex(/^[a-f0-9]{64}$/), sceneId:z.string().max(100), sourceAssetId:z.string().max(100).optional(), sourceStart:z.number().int().min(0).max(MAX_SCRIPT_CHARS), sourceEnd:z.number().int().min(1).max(MAX_SCRIPT_CHARS) }).optional(),
   scriptScene: z
     .object({

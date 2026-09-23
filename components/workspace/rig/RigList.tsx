@@ -1,4 +1,5 @@
 "use client";
+import { BuildFromBoards } from "@/components/graphite/production/RigExtras";
 import { useState } from "react";
 import type { Asset } from "@/lib/workbench/studio";
 import { engineLabel } from "@/lib/workspace/engines";
@@ -85,7 +86,7 @@ export function RigList() {
   const rig = useRig();
   const { shots, project, selected } = rig;
   return (
-    <div className="pxw-rig-list" data-testid="rig-list" data-save-state={rig.saveState}>
+    <div className="pxw-rig-list" data-testid="rig-list" data-save-state={rig.saveState} data-section="rig-list">
       <div className="pxw-rig-head" role="presentation">
         <span className="pxw-rig-num" data-functional-label="">#</span>
         <span className="pxw-rig-thumb-col" />
@@ -112,6 +113,7 @@ export function RigList() {
           </div>
           {!shots.length ? <p className="pxw-rig-empty">No shots yet. Add one to start.</p> : null}
           <button type="button" className="pxw-rig-add" onClick={rig.addShot}>+ Add shot</button>
+          <BuildFromBoards />
           {rig.saveError ? <p className="pxw-rig-save-error" role="alert">{rig.saveError}</p> : null}
         </>
       )}

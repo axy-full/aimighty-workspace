@@ -84,10 +84,11 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["cast", "Cast", "Cast & Elements", "Built with Soul Cinema", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
     ["rig", "Rig", "Rig", "Bring it all together", "rig"],
-    ["takes", "Takes", "Takes", "Select the right take", "takes"],
-    ["edit", "Edit", "Edit & Sound", "Shape the story", "edit"],
-    ["deliver", "Deliver", "Deliver", "Ready for the next room", "deliver"],
-  ])), ["brief", "beats", "boards", "cast", "astra", "deliver"]),
+    /* Owner's Production brief (23 September): Takes leaves the strip — every take is in Edit; Edit edits takes; Timeline assembles them with sound. */
+    ["edit", "Edit", "Edit", "Re-edit takes and stills", "takes"],
+    ["timeline", "Timeline", "Timeline", "Cut the takes, add the sound", "edit"],
+    ["deliver", "Delivery", "Delivery", "EDL · XML · the final movie", "deliver"],
+  ])), ["brief", "beats", "boards", "cast", "astra", "edit", "deliver"]),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them. */
   own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
     ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode", "marketing"],

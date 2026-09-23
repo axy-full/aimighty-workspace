@@ -18,7 +18,8 @@ export type SeedanceEditModelId = (typeof SEEDANCE_EDIT_MODELS)[number]["id"];
  * credits) inside the shell's frame, with the engine picked above it. Nothing
  * here prices anything; the panel's own quote does.
  */
-export function SeedanceEditHost({ scope, project, onBack }: { scope: string; project: Project | null; onBack: () => void }) {
+/** `initialSource` (`generation:<id>` / `upload:<id>`) opens the panel on that clip — Studio › Edit's chosen take. */
+export function SeedanceEditHost({ scope, project, onBack, initialSource }: { scope: string; project: Project | null; onBack: () => void; initialSource?: string | null }) {
   const [model, setModel] = useState<SeedanceEditModelId>(SEEDANCE_EDIT_MODELS[0].id);
   const picked = SEEDANCE_EDIT_MODELS.find((m) => m.id === model)!;
   const target = project?.productionProjectId ? { id: project.id, name: project.name, productionProjectId: project.productionProjectId } : null;
@@ -41,7 +42,7 @@ export function SeedanceEditHost({ scope, project, onBack }: { scope: string; pr
       {target ? (
         <div className="pxw gx-legacy pxw-embed" data-testid="gen-edit-panel">
           <ToastHost>
-            <SeedanceEdit key={`${scope}:${target.id}:${model}`} project={target} model={model} onBack={onBack} onMade={() => void refreshProjectLibrary(scope, target.id)} />
+            <SeedanceEdit key={`${scope}:${target.id}:${model}:${initialSource ?? ""}`} project={target} model={model} initialSource={initialSource} onBack={onBack} onMade={() => void refreshProjectLibrary(scope, target.id)} />
           </ToastHost>
         </div>
       ) : (

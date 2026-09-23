@@ -25,10 +25,25 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
     g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Cast list", "From the beat sheet or the agent", "list"]]),
     g("SOUL CINEMA", [["Cast & elements", "Prompt · Reference · Build", "entries"], ["Soul ID", "Lock a character's identity", "soul"]]),
   ],
+  edit: [
+    g("TAKES", [["Takes", "Every take of the project", "takes"]]),
+    g("EDIT", [["Seedance Edit", "Video · 2.5 or 2.0", "video"], ["Re-edit a still", "Instruction · Nano Banana", "image"]]),
+  ],
+  astra: [
+    g("OUTPUTS", [["Renders & files", "Download · Send to Rig", "outputs"]]),
+  ],
+  rig: [
+    g("BUILD", [["Build from Storyboards", "One shot per frame", "rig-build"], ["Shots", "Select · Add a shot", "rig-list"]]),
+    g("SHOT", [["Prompt & notes", "20,000 characters", "prompt"], ["Inputs", "Upload · Library · Shots · Cast · First frame", "inputs"], ["Versions", "Takes · Build another rig", "versions"]]),
+  ],
+  timeline: [
+    g("PICTURE", [["The cut", "Order · Length · Add takes", "cut"], ["Assembly", "Play the cut", "assembly"]]),
+    g("SOUND", [["Sound lanes", "Dialogue · Effects · Music (ElevenLabs)", "sound"], ["Upload a track", "Your own music or audio", "sound"]]),
+  ],
 };
 
 /** Studio pages the Production agent runs itself: their own priced actions replace the page head's "Run stage". */
-export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats", "boards", "cast"]);
+export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats", "boards", "cast", "edit"]);
 
 export const SECTION_EVENT = "particl:production-section";
 /** Brings a stage's section into view; the stage listens for the event to switch tabs first. */

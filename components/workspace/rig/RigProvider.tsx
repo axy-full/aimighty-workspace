@@ -9,10 +9,12 @@ import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
-import { engineLabel, shotEngine } from "@/lib/workspace/engines";
+import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { connectNodes } from "@/lib/workspace/rig-graph";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
-import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, referenceRole, shotReferenceAssets } from "@/lib/workspace/rig";
+import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, shotReferenceAssets, shotReferenceRole } from "@/lib/workspace/rig";
+import { ENGINE_PROMPT_LIMIT, renderPromptFor } from "@/lib/production/rig-prompt";
+import { RigBuildError, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -69,6 +71,10 @@ export type RigContext = {
   scope: string;
   /** /api/generate bodies for every ready, mapped shot — what the Atomik Rig plan dispatches. */
   planRequests: NamedShotBody[];
+  /** Applies a pure Rig operation (lib/production/rig-build); returns its refusal, or null. `select` picks the shot it made. */
+  apply: (fn: (project: Project) => Project | { project: Project; id?: string }, select?: boolean) => string | null;
+  /** Saves pending edits; true once saved (an agent step reads the saved project). */
+  save: () => Promise<boolean>;
 };
 
 const Context = createContext<RigContext | null>(null);
@@ -299,9 +305,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const model = selected ? shotEngine(selected.engine) : null;
   const referenceProblem = model && model.kind === "video"
-    ? videoReferenceProblem({ ...model, label: engineLabel(model.id).long }, refs.map((a) => ({ kind: a.kind, role: referenceRole(a) })))
+    ? videoReferenceProblem({ ...model, label: engineLabel(model.id).long }, refs.map((a) => ({ kind: a.kind, role: shotReferenceRole(selectedNode)(a) })))
     : null;
 
+  /* The render prompt's length over the engine's limit, when no pinned condensation covers it. */
+  const promptOver = useMemo(() => { if (!project || !selectedNode) return null; const r = renderPromptFor(selectedNode, project); return r.prompt === null ? r.length : null; }, [project, selectedNode]);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const blocked = !project ? null
@@ -309,6 +317,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     : !selected ? null
     : !model ? "Choose an available engine for this shot."
     : referenceProblem ? neutralCopy(referenceProblem)
+    : promptOver ? `This shot sends ${promptOver.toLocaleString()} characters; engines take ${ENGINE_PROMPT_LIMIT.toLocaleString()}. Have the agent condense it, or shorten the prompt.`
     : !quote || quote.state === "loading" ? "Getting the live price…"
     : quote.state === "unavailable" || quote.credits === null ? neutralCopy(quote.reason ?? "This shot has no live price yet.", "This shot has no live price yet.")
     : run && run.shotId === selected.id && !run.jobId ? "Submitting this take…"
@@ -348,7 +357,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
           if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
           update((p) => ({ ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...(p.shotMappings ?? {}), [shot.id]: mapping.shotId } }));
           const current = draftRef.current!.project;
-          const references = await resolveGenerationReferences(now.refs, referenceRole, {
+          const references = await resolveGenerationReferences(now.refs, shotReferenceRole(now.selectedNode), {
             scope,
             onAsset: (id: string, fields: Partial<Asset>) => update((p) => ({ ...p, assets: p.assets.map((a) => (a.id === id ? { ...a, ...fields } : a)) })),
           });
@@ -464,10 +473,36 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const planRequests = useMemo(() => (project ? rigPlanRequests(project, shots) : []), [project, shots]);
 
+  const apply = useCallback((fn: (project: Project) => Project | { project: Project; id?: string }, pick?: boolean): string | null => {
+    const current = draftRef.current;
+    if (!current) return "Open a project first.";
+    try {
+      const out = fn(current.project);
+      const next = "nodes" in out ? out : out.project;
+      update(() => next);
+      if (pick && !("nodes" in out) && out.id) select(out.id);
+      return null;
+    } catch (err) {
+      if (err instanceof RigBuildError || err instanceof ShotPatchError) return err.message;
+      throw err;
+    }
+  }, [update, select]);
+  const save = useCallback(() => flush({ force: true }), [flush]);
+  /* An asset sent from Astra or Edit becomes a shot here, once, when the Rig has the project. */
+  const intentDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!project || intentDone.current === project.id) return;
+    intentDone.current = project.id;
+    const asset = takeRigIntent(project.id);
+    if (!asset) return;
+    const why = apply((p) => shotFromAsset(p, asset, shotEngines()[0].id), true);
+    toast(why ?? `${asset.name} is a new shot in the Rig`);
+  }, [project, apply, toast]);
+
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode,
-    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests]);
+    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save,
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

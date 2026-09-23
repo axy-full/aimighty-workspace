@@ -92,7 +92,7 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
                 <button key={item.name} type="button" className="gx-tool" data-tool={item.name}
                   onClick={() => {
                     const section = "section" in item ? (item as { section: string }).section : null;
-                    if (section) { if (overlay) shell.closePanels(); focusSection(section); return; }
+                    if (section) { if (overlay) shell.closePanels(); if (["prompt", "inputs", "versions"].includes(section) && shell.page.id === "rig") shell.openInspector(); focusSection(section); return; }
                     dispatch({ type: "patch", patch: { selKind: "page", selId: state.page } }); shell.openInspector();
                   }}>
                   <span className="gx-tool-tag" aria-hidden="true">{tagOf(item.name)}</span>
