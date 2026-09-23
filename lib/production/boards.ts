@@ -27,6 +27,10 @@ export type BoardFrame = {
   reading?: string;
   /** The agent run the reading came from, so it is taken once. */
   readingJobId?: string;
+  /** This frame's own look (a line drawing converted as live action, say); the board's look otherwise. */
+  style?: BoardStyle;
+  /** The single-frame agent prompt run this frame took its prompt from. */
+  promptJobId?: string;
   takes: FrameTake[];
   selected?: string;
   pending?: FramePending[];

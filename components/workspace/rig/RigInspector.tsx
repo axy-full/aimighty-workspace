@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NODE_DEFS } from "@/lib/workbench/node-graph";
 import { formatCredits, formatTokens } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { mediaBands } from "@/lib/workspace/format";
@@ -11,7 +10,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
-import { BranchFromTake, ShotInputs, ShotPrompt } from "@/components/graphite/production/RigExtras";
+import { BranchFromTake, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import "./rig.css";
 
@@ -179,9 +178,9 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   return (
     <div>
       <div className="pxw-insp-kicker-row">
-        <Kicker>Node settings</Kicker>
-        <span className="pxw-insp-owner">By {shot.role || NODE_DEFS[shot.nodeType].role}</span>
+        <Kicker>Shot</Kicker>
       </div>
+      <WireShot shot={shot} />
       <ShotPrompt shot={shot} locked={locked} />
       <div className="pxw-insp-fieldcard">
         <div className="pxw-insp-fieldcard-head">

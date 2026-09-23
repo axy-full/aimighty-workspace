@@ -58,8 +58,8 @@ test("every old deep link lands on the page that now holds its work", async ({ p
     { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "Storyboards", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=characters`, page: /[?&]page=cast(&|$)/, title: "Cast & Elements", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "Astra 3D", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "Edit", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "Delivery", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "Takes", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "Deliver", suite: "particl" },
     /* Stage ids retired before this change still resolve. */
     { from: `/workbench?project=${PROJECT}&stage=script`, page: /[?&]page=brief(&|$)/, title: "Brief & Script", suite: "particl" },
     /* The Suites shell folds the old Generate page into Agent (lib/shell/ia.ts). */
@@ -178,7 +178,7 @@ test("the escape hatch opens the old shell, is remembered, and can be cancelled"
      workspace back in front — and keeps it there on the next plain URL. */
   await page.goto(`/workbench?project=${PROJECT}&stage=assets&${SHELL_PARAM}=new`);
   await expect(page).toHaveURL(/[?&]page=takes(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Edit");
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
   await expect.poll(shellCookie).toBeUndefined();
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);

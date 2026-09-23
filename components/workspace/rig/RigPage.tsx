@@ -5,6 +5,7 @@ import { RigGraph } from "./RigGraph";
 import { RigList } from "./RigList";
 import { useRig } from "./RigProvider";
 import "./rig.css";
+import { RigLibrary } from "@/components/graphite/production/RigExtras";
 
 /** Rig: the shot list by default, the node graph as the advanced view. */
 export function RigPage() {
@@ -12,5 +13,10 @@ export function RigPage() {
   const rig = useRig();
   /* The Rig plan sends exactly these bodies; the plan never invents one. */
   usePlanRequest("shots", rig.planRequests);
-  return state.rigView === "graph" ? <RigGraph /> : <RigList />;
+  return (
+    <>
+      <RigLibrary />
+      {state.rigView === "graph" ? <RigGraph /> : <RigList />}
+    </>
+  );
 }

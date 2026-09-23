@@ -38,7 +38,10 @@ async function open(page: Page) {
     generation({ id: "gen_frame", title: "Frame 1.1", projectId: "prod-rig" }),
   ] });
   await page.route(/\/api\/workbench\/engines\?/, (route) => route.fulfill({ json: { models: [], credits: 12 } }));
-  await page.route(/\/api\/workbench\/development/, (route) => route.fulfill({ json: { configured: true, models: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "auto", label: "Auto" }] }], jobs: [] } }));
+  /* A finished wiring run for the old shot: the agent's prompt, notes and one input. */
+  const wired = { id: "wb_development_11111111-2222-3333-4444-555555555555", requestId: "req-wired-1", projectId: "ws-rig", kind: "rig", nodeId: "n-old", model: "anthropic/claude-sonnet-4.6", effort: "auto", instructions: "", status: "succeeded", completedChunks: 1, totalChunks: 1, currentStage: "complete", completedSteps: 3, totalSteps: 3, estimateCredits: 2, credits: 1, error: null, createdAt: 1, updatedAt: 1,
+    result: { summary: "", recommendation: "", ideas: [], scenes: [], critique: [], assumptions: [], rig: { nodeId: "n-old", prompt: "Wired: Mara watches the fox from the hut window.", notes: "Hold on her eyes.", inputs: ["gen_mara"], firstFrame: null } } };
+  await page.route(/\/api\/workbench\/development/, (route) => route.fulfill({ json: { configured: true, models: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "auto", label: "Auto" }] }], jobs: [wired] } }));
   const posts: { url: string; body: Record<string, unknown> }[] = [];
   await page.route(/\/api\/generate(\/quote)?$/, (route) => {
     const request = route.request();
@@ -93,8 +96,15 @@ test("Rig: shots from Storyboards, prompt and inputs, the first-frame rule, the 
   expect(String(sent.prompt)).toMatch(/^A red fox crosses the frozen harbour at dusk; hold wide, then push in on its eyes\.\n\nInputs:\nInput 1 — Frame 1\.1 \(storyboard\): reference image/);
   expect(sent.references).toEqual(expect.arrayContaining([{ genId: "gen_frame", role: "reference_image" }, { genId: "gen_clip", role: "reference_video" }, { genId: "gen_mara", role: "reference_image" }]));
 
-  /* Build another rig from a take of the old shot. */
+  /* The agent's wiring of the old shot lands on it: prompt, notes, an input from the cast. */
   await list.getByText("Old shot", { exact: true }).click();
+  await tabs.getByRole("button", { name: /Controls/ }).click();
+  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Mara watches the fox from the hut window.");
+  await expect(page.getByLabel("Direction note")).toHaveValue("Hold on her eyes.");
+  await tabs.getByRole("button", { name: /Inputs/ }).click();
+  await expect(page.getByTestId("rig-input")).toContainText("Mara");
+
+  /* Build another rig from a take of the old shot. */
   await tabs.getByRole("button", { name: /Versions/ }).click();
   await page.getByTestId("rig-branch").first().click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Old shot · from Old take");

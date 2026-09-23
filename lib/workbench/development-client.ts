@@ -15,10 +15,11 @@ export async function developmentSourceHash(project: Project, kind: DevelopmentK
 export function developmentInput(record: PendingDevelopment): DevelopmentRequest {
   const input = JSON.parse(record.body) as DevelopmentRequest & { quoteOnly?: unknown };
   if (!input || input.projectId !== record.projectId || !/^[\w-]{8,100}$/.test(input.requestId) ||
-      !['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'condense'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
+      !['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'condense', 'rig'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
       (input.fromJobId != null && (input.kind !== 'write' || !/^wb_development_[a-f0-9-]+$/.test(input.fromJobId))) ||
       (input.fromBeats != null && (input.kind !== 'write' || input.fromBeats !== true || input.fromJobId != null)) ||
-      ((input.shotId != null || input.sketchAssetId != null) && (input.kind !== 'sketch' || !/^[\w-]{1,100}$/.test(input.shotId ?? '') || !/^[\w-]{1,100}$/.test(input.sketchAssetId ?? ''))) ||
+      (input.sketchAssetId != null && (input.kind !== 'sketch' || !/^[\w-]{1,100}$/.test(input.sketchAssetId))) ||
+      (input.shotId != null && ((input.kind !== 'sketch' && input.kind !== 'frames') || !/^[\w-]{1,100}$/.test(input.shotId))) ||
       typeof input.effort !== 'string' || !/^[a-f0-9]{64}$/.test(input.sourceHash ?? '') ||
       !Number.isInteger(input.maxCredits) || input.maxCredits! < 0 || input.quoteOnly != null ||
       (input.maxUsd != null && (!Number.isFinite(input.maxUsd) || input.maxUsd < 0))) {

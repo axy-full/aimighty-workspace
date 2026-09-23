@@ -34,7 +34,7 @@ export class DevelopmentError extends Error {
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'condense']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'condense', 'rig']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
@@ -155,6 +155,10 @@ async function writerDraft(owner: string, projectId: string, jobId: string): Pro
   return text;
 }
 function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
+  if (input.kind === 'rig') {
+    const { kind: _kind, nodeId: _node, ...source } = snapshot as Snapshot & { kind?: string; nodeId?: string };
+    return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
+  }
   if (input.kind === 'condense') {
     const { prompt } = snapshot as Snapshot & { prompt?: string };
     return JSON.stringify({ shotPrompt: prompt, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
@@ -197,13 +201,14 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     if (!project.brief.trim() && !base.trim()) throw new DevelopmentError('Write the prompt for the script first.');
     if (input.fromJobId && !input.instructions?.trim()) throw new DevelopmentError('Write the notes for this redraft.');
   }
-  if (input.kind !== 'sketch' && (input.shotId || input.sketchAssetId)) throw new DevelopmentError('Only the sketch reader takes a shot and a drawing.');
-  if (input.kind !== 'condense' && input.nodeId) throw new DevelopmentError('Only the condenser takes a Rig shot.');
+  if (input.kind !== 'sketch' && input.sketchAssetId) throw new DevelopmentError('Only the sketch reader takes a drawing.');
+  if (input.kind !== 'sketch' && input.kind !== 'frames' && input.shotId) throw new DevelopmentError('Only the storyboard artist takes a shot.');
+  if (input.kind !== 'condense' && input.kind !== 'rig' && input.nodeId) throw new DevelopmentError('Only the Rig steps take a Rig shot.');
   const style = project.production?.boards?.style ?? 'live';
   let canonical: string, boardChunks: DevelopmentChunk[] | null = null, images = 0;
   if (input.kind === 'frames') {
-    const shots = boardSource(project);
-    if (!shots.length) throw new DevelopmentError('Break the script into beats and shots first.');
+    const shots = boardSource(project).filter((shot) => !input.shotId || shot.id === input.shotId);
+    if (!shots.length) throw new DevelopmentError(input.shotId ? 'Choose a shot of the beat sheet.' : 'Break the script into beats and shots first.');
     canonical = JSON.stringify({ kind: 'frames', name: project.name, direction: project.direction, aspect: project.aspect, style, shots });
     boardChunks = [];
     for (let i = 0; i < shots.length; i += FRAMES_PER_CHUNK) {
@@ -221,6 +226,18 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     canonical = JSON.stringify({ kind: 'sketch', name: project.name, direction: project.direction, aspect: project.aspect, style, shot, sketch: { assetId: asset.id, name: asset.name, sha256: image.sha256, dataUrl: image.dataUrl } });
     boardChunks = [{ index: 0, start: 0, end: 1, segments: [{ id: shot.id, heading: shot.number, start: 0, end: 1 }] }];
     images = 1;
+  } else if (input.kind === 'rig') {
+    const node = project.nodes.find((value) => value.id === input.nodeId);
+    if (!node) throw new DevelopmentError('Choose a shot in the Rig.', 404);
+    const assets = project.assets.filter((a) => a.kind === 'image' || a.kind === 'video').slice(0, 150)
+      .map((a) => ({ id: a.id, name: a.name, kind: a.kind, category: a.category, about: (a.description || a.prompt || '').slice(0, 300) }));
+    const beat = node.boardShotId ? boardSource(project).find((shot) => shot.id === node.boardShotId) : undefined;
+    const inputs = node.linked.flatMap((id) => { const n = project.nodes.find((x) => x.id === id); return n?.assetId ? [n.assetId] : []; });
+    canonical = JSON.stringify({ kind: 'rig', nodeId: node.id, name: project.name, direction: project.direction, aspect: project.aspect,
+      shot: { title: node.title, prompt: node.text ?? '', notes: String(node.operations?.find((op) => op.kind === 'direction')?.values.note ?? ''), inputs, engine: node.engine ?? '' },
+      ...(beat ? { beat, framePrompt: project.production?.boards?.frames[beat.id]?.prompt ?? '' } : {}),
+      cast: (project.production?.cast?.entries ?? []).map((e) => ({ name: e.name, kind: e.kind, description: e.description })), availableAssets: assets });
+    boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [{ id: node.id, heading: node.title.slice(0, 100), start: 0, end: 1 }, ...assets.map((a, i) => ({ id: a.id, heading: a.name.slice(0, 100), start: i + 1, end: i + 2 }))] }];
   } else if (input.kind === 'condense') {
     const node = project.nodes.find((value) => value.id === input.nodeId);
     if (!node) throw new DevelopmentError('Choose a shot in the Rig.', 404);
@@ -284,7 +301,8 @@ async function publicJob(row: Row, offset = 0, withResult = true): Promise<Devel
     productionProjectId: String(row.production_project_id), kind: input.kind, model: input.model, effort: input.effort,
     ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
     ...(input.kind === 'sketch' ? { shotId: input.shotId, sketchAssetId: input.sketchAssetId } : {}),
-    ...(input.kind === 'condense' ? { nodeId: input.nodeId } : {}),
+    ...(input.kind === 'frames' && input.shotId ? { shotId: input.shotId } : {}),
+    ...(input.kind === 'condense' || input.kind === 'rig' ? { nodeId: input.nodeId } : {}),
     instructions: input.instructions ?? '', sourceHash: String(row.source_hash), status: String(row.status) as DevelopmentJob['status'],
     completedChunks, totalChunks, completedSteps, totalSteps: progress.rows.length,
     currentStage: next ? String(next.stage) as DevelopmentStage : 'complete',
@@ -437,6 +455,11 @@ function mockCondenseReply(input: DevelopmentCall): DevelopmentReply {
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
   if (input.kind === 'cast' && input.stage !== 'critique') return mockCastReply(input);
   if (input.kind === 'condense' && input.stage !== 'critique') return mockCondenseReply(input);
+  if (input.kind === 'rig' && input.stage !== 'critique') {
+    const request = JSON.parse(input.prompt) as { shot?: { title?: string; prompt?: string }; framePrompt?: string; availableAssets?: { id: string; category: string }[] };
+    const picks = (request.availableAssets ?? []).filter((a) => a.category === 'Character' || a.category === 'Storyboard').slice(0, 3).map((a) => a.id);
+    return { text: JSON.stringify({ prompt: `Wired (mock): ${request.framePrompt || request.shot?.prompt || request.shot?.title || 'the shot'}`, notes: 'Mock notes: hold the frame.', inputs: picks, firstFrame: null, critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
+  }
   if ((input.kind === 'frames' || input.kind === 'sketch') && input.stage !== 'critique') return mockBoardReply(input);
   if (input.kind === 'write' && input.stage !== 'critique') return mockWriterReply(input);
   if (input.stage === 'critique') return { text: JSON.stringify({ issues: ['Mock review: verify continuity and production constraints.'], revisions: ['Keep the source action and label proposed visual choices.'] }), inputTokens: 100, outputTokens: 60, costUsd: 0 };

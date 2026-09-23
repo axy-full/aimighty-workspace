@@ -9,7 +9,7 @@ import { VOICE_TOOL_NAMES, type VoiceToolName } from "@/lib/higgsfield-consumer/
 
 export type WorkflowSurface = { tool: VoiceToolName; title: string; line: string; flag: "voice" | "dubbing" | "analysis" | "reframe" };
 export const WORKFLOW_SURFACES: Record<string, readonly WorkflowSurface[]> = {
-  "studio:timeline": [
+  "studio:edit": [
     { tool: "dubbing", title: "Dub", line: "Translate a project video’s speech into another language, re-voice it and lip-sync the result.", flag: "dubbing" },
     { tool: "voice_change", title: "Change voice", line: "Replace the spoken voice in a project video with a voice from the connected account, keeping the timing and picture.", flag: "voice" },
   ],

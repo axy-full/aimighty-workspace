@@ -4,8 +4,9 @@ import { newProject, type CanvasNode, type Project } from "../lib/workbench/stud
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Assets on every page (FINAL_SPEC §1 step 1, README › Drag & drop): a Library
- * render dropped on a Rig canvas node is filed on that shot, exactly as on the
+ * Assets on every page (FINAL_SPEC §1 step 1, README › Drag & drop) and the
+ * owner's Rig notes (23 September): a Library render or upload dropped on a Rig
+ * canvas node becomes that shot's input, and a brief joins its prompt — as on the
  * list's row — the node lights while the asset hovers, the job is re-filed,
  * the toast names the shot, ⌘Z unfiles it. An upload is refused with the reason.
  */
@@ -16,7 +17,7 @@ const shot = (id: string, title: string, note: string, y: number): CanvasNode =>
   engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
 });
 const fixture = (): Project => ({
-  ...newProject("Coastal light study"), id: "ws-rig-drop", productionProjectId: "prod-ws", shotMappings: { "rig-a": "shot_a" },
+  ...newProject("Coastal light study"), id: "ws-rig-drop", productionProjectId: "prod-ws", shotMappings: { "rig-a": "shot_a" }, brief: "A fox crosses the frozen harbour at dusk.",
   nodes: [shot("rig-a", "The encounter", "She enters.", 100), shot("rig-b", "Departure", "Wide again.", 500)],
 });
 
@@ -59,9 +60,14 @@ async function dropTile(page: Page, tileName: string, target: ReturnType<Page["l
   await expect(target).not.toHaveAttribute("data-drop", "true");
 }
 
-test("a render dropped on a Rig canvas node is filed on that shot; an upload is refused; ⌘Z unfiles", async ({ page }, info) => {
+test("a render or an upload dropped on a Rig node becomes that shot's input; a brief from the Rig library joins its prompt", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
   const { errors, calls } = await open(page);
+  /* The Rig's own library lists what the project holds, by group. */
+  const rigLibrary = page.getByTestId("rig-library");
+  await expect(rigLibrary.getByTestId("rig-library-Generations")).toHaveText("Generations · 1");
+  await expect(rigLibrary.getByTestId("rig-library-Uploads")).toHaveText("Uploads · 1");
+
   await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
   await expect(page.getByTestId("rig-graph")).toBeVisible();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
@@ -69,15 +75,18 @@ test("a render dropped on a Rig canvas node is filed on that shot; an upload is 
   await expect(node).toBeVisible();
 
   await dropTile(page, "Wide on the water", node);
-  await expect(page.getByTestId("toast")).toHaveText("Wide on the water filed on The encounter");
-  expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { shotId: "shot_a" } });
-
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect(page.getByTestId("toast")).toHaveText(/unfiled from The encounter/);
-  expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { shotId: null } });
-
+  await expect(page.getByTestId("toast")).toHaveText("Wide on the water is an input of The encounter");
   await dropTile(page, "harbour-plate.webp", node);
-  await expect(page.getByTestId("toast")).toHaveText("Only a render can be filed on a shot. Use it as a reference instead.");
-  expect(calls).toHaveLength(2);
+  await expect(page.getByTestId("toast")).toHaveText("harbour-plate.webp is an input of The encounter");
+  /* Nothing is re-filed as a take any more. */
+  expect(calls).toHaveLength(0);
+
+  /* A brief dragged from the Rig library onto a shot joins its prompt. */
+  await rigLibrary.getByTestId("rig-library-Briefs").click();
+  const brief = rigLibrary.getByTestId("rig-library-item").first();
+  const key = await brief.evaluate((el) => { const data = new DataTransfer(); el.dispatchEvent(new DragEvent("dragstart", { dataTransfer: data, bubbles: true })); return data.getData("text/plain"); });
+  expect(key).toMatch(/^brief:/);
+  await node.evaluate((el, k) => { const data = new DataTransfer(); data.setData("text/plain", k); el.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true })); el.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true })); }, key);
+  await expect(page.getByTestId("toast")).toHaveText(/is in The encounter’s prompt$/);
   expect(errors).toEqual([]);
 });

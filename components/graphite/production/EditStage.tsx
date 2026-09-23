@@ -14,8 +14,24 @@ import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/librar
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { useStageFacts } from "./use-stage-facts";
+import type { Project } from "@/lib/workbench/studio";
 
 const EDIT_LIMIT = 4000;
+const CATEGORY_GROUP: Record<string, string> = { Character: "Characters", Element: "Elements", Environment: "Elements", Prop: "Elements", Look: "Elements", Storyboard: "Storyboard frames", "Line drawing": "Line drawings", Sketch: "Line drawings", Astra: "3D (Astra)", Screenplay: "Scripts", "Ad-film script": "Scripts" };
+const MEDIA_GROUP: Record<string, string> = { video: "Videos", image: "Images", audio: "Audio" };
+const GROUP_ORDER = ["Videos", "Images", "Audio", "Characters", "Elements", "Storyboard frames", "Line drawings", "3D (Astra)", "Scripts", "Documents & other files"];
+
+/** Every library entry in one group: the category the project filed it under, else its kind. */
+export function assetGroups(items: readonly LibraryEntry[], project: Project | null): { label: string; items: LibraryEntry[] }[] {
+  const category = new Map<string, string>();
+  for (const a of project?.assets ?? []) for (const id of [a.id, a.generationId, a.uploadId]) if (id && CATEGORY_GROUP[a.category]) category.set(id, CATEGORY_GROUP[a.category]);
+  const out = new Map<string, LibraryEntry[]>();
+  for (const e of items) {
+    const label = category.get(e.take.sourceId) ?? (e.media ? MEDIA_GROUP[e.media] : undefined) ?? "Documents & other files";
+    out.set(label, [...(out.get(label) ?? []), e]);
+  }
+  return GROUP_ORDER.filter((g) => out.has(g)).map((label) => ({ label, items: out.get(label)! }));
+}
 type Generation = { id: string; status: string; error?: string | null };
 
 /** The re-edit request for a still: the take as the reference, the instruction, and the order to change nothing else. */
@@ -40,10 +56,18 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const shell = useShell();
   const project = draft.project;
   useStageFacts("takes", project);
-  const takes = useMemo(() => items.filter((e) => (e.media === "video" || e.media === "image") && e.url), [items]);
+  /* Every generation first; then every asset, each in one group — its production category, else its kind. */
+  const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
+  const groups = useMemo(() => assetGroups(items, project), [items, project]);
   /* A take sent here (Viral's Send to Edit, the Library) opens first. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
-  const entry = takes.find((e) => e.take.id === picked) ?? takes[0] ?? null;
+  const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
+  const entry = items.find((e) => e.take.id === picked && editable(e)) ?? generations.find(editable) ?? null;
+  const pick = (e: LibraryEntry) => {
+    if (!editable(e)) { toast(e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit."); return; }
+    setPicked(e.take.id); setQuote(null); setError("");
+    requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  };
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<BoardModel>(BOARD_MODELS[0].id);
   const [quote, setQuote] = useState<{ key: string; credits: number } | null>(null);
@@ -92,7 +116,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     finally { setBusy(""); }
   };
   const toTimeline = (e: LibraryEntry) => {
-    try { draft.onChange((p) => addTakeToCut(p, e)); void draft.ensureSaved(); toast(`${e.take.name} is on the timeline`); }
+    try { draft.onChange((p) => addTakeToCut(p, e)); void draft.ensureSaved(); toast(`${e.take.name} is in the cut`); }
     catch (cause) { toast(cause instanceof Error ? cause.message : "It could not go on the timeline."); }
   };
   const sourceKey = entry ? `${entry.asset.origin === "generation" ? "generation" : "upload"}:${entry.take.sourceId}` : null;
@@ -100,31 +124,32 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
 
   return (
     <div className="pd-stage gx-enter" data-testid="edit-stage">
-      <section className="gx-gen-card" aria-label="Takes" data-testid="edit-takes" data-section="takes">
+      <section className="gx-gen-card" aria-label="Generations" data-testid="edit-takes" data-section="takes">
         <div className="pd-row-head">
-          <span className="gx-eyebrow" data-functional-label="">Takes</span>
+          <span className="gx-eyebrow" data-functional-label="">Generations</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{takes.length} in this project · {project.shots.length} on the timeline</span>
+          <span className="gx-hint">{generations.length} made in this project · {project.shots.length} in the cut</span>
         </div>
-        {takes.length ? (
-          <div className="pd-take-grid" role="radiogroup" aria-label="Choose a take to edit">
-            {takes.map((e) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => { setPicked(e.take.id); setQuote(null); setError(""); }} data-testid="edit-take" data-media={e.media}>
-                <LazyMedia url={e.url!} kind={e.media === "video" ? "video" : "image"} alt="" className="gx-lazy" />
-                <span className="gx-badge">{e.media === "video" ? "VIDEO" : "IMAGE"}</span>
+        {generations.length ? (
+          <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
+            {generations.map((e: LibraryEntry) => (
+              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"}>
+                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
+                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
                 <span className="pd-take-name">{e.take.name}</span>
               </button>
             ))}
           </div>
-        ) : <p className="gx-empty">No takes yet. Generate frames in Storyboards, builds in Cast, or shots in Rig — they all land here.</p>}
+        ) : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
       </section>
 
       {entry ? (
         <>
+          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
           <div className="gx-gen-enhance">
-            <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add “{entry.take.name}” to the timeline</button>
+            <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
             <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
-            <button type="button" className="gx-hbtn" onClick={onTimeline}>Open the Timeline ›</button>
+            <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
           </div>
           {entry.media === "video" ? (
             <div data-section="video"><SeedanceEditHost scope={scope} project={project} initialSource={sourceKey} onBack={() => setPicked(null)} /></div>
@@ -164,6 +189,27 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
           )}
         </>
       ) : null}
+      <section className="gx-gen-card" aria-label="All assets" data-testid="takes-assets" data-section="assets">
+        <div className="pd-row-head">
+          <span className="gx-eyebrow" data-functional-label="">All assets</span>
+          <span className="gx-spacer" />
+          <span className="gx-hint">{items.length} in this project</span>
+        </div>
+        {groups.length ? groups.map((group) => (
+          <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
+            <div className="pd-row-head"><span className="pd-asset-group-name">{group.label}</span><span className="gx-hint">{group.items.length}</span></div>
+            <div className="pd-take-grid" role="radiogroup" aria-label={group.label}>
+              {group.items.map((e: LibraryEntry) => (
+              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"}>
+                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
+                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
+                <span className="pd-take-name">{e.take.name}</span>
+              </button>
+            ))}
+            </div>
+          </div>
+        )) : <p className="gx-empty">No assets yet.</p>}
+      </section>
     </div>
   );
 }

@@ -175,7 +175,7 @@ export const productionSchema = z.object({
   beats: z.object({
     jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), scriptSha256: z.string().regex(/^[a-f0-9]{64}$/), updatedAt: z.string().datetime(),
     scenes: z.array(z.object({
-      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), heading: z.string().max(300), summary: z.string().max(4000),
+      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), heading: z.string().max(300), summary: z.string().max(4000), act: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       beats: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), text: z.string().max(800) }).strict()).max(40),
       shots: z.array(z.object({
         id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), description: z.string().max(800), framing: z.string().max(200), movement: z.string().max(200),
@@ -190,6 +190,7 @@ export const productionSchema = z.object({
       prompt: z.string().max(8000),
       sketch: z.object({ assetId: z.string().max(100), name: z.string().max(200) }).strict().optional(),
       reading: z.string().max(4000).optional(), readingJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+      style: z.enum(['live', 'color-sketch', 'bw-sketch']).optional(), promptJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
       takes: z.array(z.object({ genId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).max(20),
       selected: z.string().max(100).optional(),
       pending: z.array(z.object({ jobId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).max(5).optional(),

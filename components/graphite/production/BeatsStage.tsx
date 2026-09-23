@@ -15,6 +15,8 @@ import { useStageFacts } from "./use-stage-facts";
 
 const STAGE: Record<string, string> = { draft: "breaking it down", critique: "checking the breakdown", refine: "refining the beats", complete: "finishing" };
 const BREAKDOWN = new Set(["screenplay", "adfilm"]);
+/** A beat board's acts, like a Final Draft beat board: the first quarter is Act One, the last quarter Act Three, unless a scene says otherwise. */
+const ACTS = [{ n: 1 as const, label: "Act One" }, { n: 2 as const, label: "Act Two" }, { n: 3 as const, label: "Act Three" }];
 
 /**
  * Production › Beats (owner's brief, 23 September): the chosen agent breaks
@@ -37,6 +39,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   const [scriptSha, setScriptSha] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [offered, setOffered] = useState<{ job: DevelopmentJob; scenes: DevelopmentScene[] } | null>(null);
+  const [openScene, setOpenScene] = useState<string | null>(null);
   const loading = useRef(new Set<string>());
   const script = p.script ?? "";
   const sheet = p.production?.beats ?? null;
@@ -72,6 +75,8 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
     })();
   }, [latest, sheet, offered, scriptSha, runs, editor, toast]);
 
+  const count = sheet?.scenes.length ?? 0;
+  const actOf = (scene: BeatScene, si: number): 1 | 2 | 3 => scene.act ?? (si < Math.ceil(count / 4) ? 1 : count >= 3 && si >= count - Math.floor(count / 4) ? 3 : 2);
   const setSheet = (fn: (sheet: BeatSheet) => BeatSheet) => editor.change((old) => (old.production?.beats ? { ...old, production: { ...old.production, beats: { ...fn(old.production.beats), updatedAt: new Date().toISOString() } } } : old));
   const setScene = (id: string, fn: (scene: BeatScene) => BeatScene) => setSheet((s) => ({ ...s, scenes: s.scenes.map((scene) => (scene.id === id ? fn(scene) : scene)) }));
   const setShot = (sceneId: string, shotId: string, patch: Partial<BeatShot>) => setScene(sceneId, (scene) => ({ ...scene, shots: scene.shots.map((shot) => (shot.id === shotId ? { ...shot, ...patch } : shot)) }));
@@ -146,11 +151,22 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
 
       {sheet ? (
         <section className="pd-board" aria-label="Beat board" data-testid="beat-board" data-section="board">
-          {sheet.scenes.map((scene, si) => (
-            <article key={scene.id} className="gx-gen-card pd-scene" data-testid="beat-scene" aria-label={scene.heading || `Scene ${si + 1}`}>
+          {ACTS.map((act) => {
+            const inAct = sheet.scenes.map((scene, si) => ({ scene, si })).filter(({ scene, si }) => actOf(scene, si) === act.n);
+            if (!inAct.length) return null;
+            return (
+              <div key={act.n} className="pd-act" data-act={act.n}>
+                <div className="pd-act-head" data-testid="beat-act"><span className="pd-act-name">{act.label}</span><span className="gx-hint">Scenes {inAct[0].si + 1}{inAct.length > 1 ? `–${inAct[inAct.length - 1].si + 1}` : ""} · {inAct.reduce((n, x) => n + x.scene.shots.length, 0)} shots</span></div>
+                <div className="pd-card-grid">
+                  {inAct.map(({ scene, si }) => openScene === scene.id ? (
+            <article key={scene.id} className="gx-gen-card pd-scene pd-scene--open" data-testid="beat-scene" data-act={actOf(scene, si)} aria-label={scene.heading || `Scene ${si + 1}`}>
               <div className="pd-row-head">
                 <span className="pd-scene-n" aria-hidden="true">{String(si + 1).padStart(2, "0")}</span>
                 <input className="gx-field pd-scene-heading" aria-label={`Scene ${si + 1} heading`} value={scene.heading} maxLength={BEAT_LIMITS.heading} placeholder="INT. LOCATION - TIME" onChange={(e) => { const v = e.target.value; setScene(scene.id, (s) => ({ ...s, heading: v })); }} />
+                <select className="pd-act-select" aria-label={`Scene ${si + 1} act`} value={actOf(scene, si)} onChange={(e) => { const act = Number(e.target.value) as 1 | 2 | 3; setScene(scene.id, (s) => ({ ...s, act })); }}>
+                  {ACTS.map((a) => <option key={a.n} value={a.n}>{a.label}</option>)}
+                </select>
+                <button type="button" className="gx-hbtn" onClick={() => setOpenScene(null)} data-testid="beat-close">Done</button>
                 <div className="pd-order">
                   <button type="button" className="gx-hbtn" aria-label={`Move scene ${si + 1} up`} disabled={si === 0} onClick={() => setSheet((s) => ({ ...s, scenes: move(s.scenes, si, -1) }))}>↑</button>
                   <button type="button" className="gx-hbtn" aria-label={`Move scene ${si + 1} down`} disabled={si === sheet.scenes.length - 1} onClick={() => setSheet((s) => ({ ...s, scenes: move(s.scenes, si, 1) }))}>↓</button>
@@ -201,7 +217,18 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
                 <button type="button" className="gx-hbtn pd-add" disabled={scene.shots.length >= BEAT_LIMITS.shots} onClick={() => setScene(scene.id, (s) => ({ ...s, shots: [...s.shots, newShot()] }))} data-testid="add-shot">+ Shot</button>
               </div>
             </article>
-          ))}
+                  ) : (
+                    <button key={scene.id} type="button" className="pd-beat-card" data-testid="beat-scene" data-act={act.n} onClick={() => setOpenScene(scene.id)} aria-label={`Open scene ${si + 1}: ${scene.heading || "untitled"}`}>
+                      <span className="pd-beat-card-head"><span className="pd-beat-card-title">{scene.heading || `Scene ${si + 1}`}</span><span className="pd-scene-n">{String(si + 1).padStart(2, "0")}</span></span>
+                      {scene.summary ? <span className="pd-beat-card-text">{scene.summary}</span> : null}
+                      {scene.beats.length ? <ul className="pd-beat-card-beats">{scene.beats.slice(0, 4).map((b) => <li key={b.id}>{b.text}</li>)}{scene.beats.length > 4 ? <li>+{scene.beats.length - 4} more</li> : null}</ul> : null}
+                      <span className="pd-beat-card-foot">{scene.shots.length} {scene.shots.length === 1 ? "shot" : "shots"}{scene.characters.length ? ` · ${scene.characters.slice(0, 3).join(", ")}` : ""}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
           <button type="button" className="gx-hbtn pd-add" disabled={sheet.scenes.length >= BEAT_LIMITS.scenes} onClick={() => setSheet((s) => ({ ...s, scenes: [...s.scenes, newScene()] }))} data-testid="add-scene">+ Scene</button>
         </section>
       ) : null}

@@ -40,8 +40,8 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
     cast: cast || elements ? [`${plural(cast, "identity", "identities")} · ${plural(elements, "element")}`, "done"] : ["no identity yet", "ready"],
     astra: project?.astraBlender ? ["scene set", "done"] : ["block on desktop", "ready"],
     rig: shots ? [`${plural(shots, "shot")} · ${rendered} rendered`, rendered >= shots ? "done" : "progress"] : ["no shots yet", "ready"],
-    edit: takes ? [plural(takes, "take"), "done"] : ["nothing rendered yet", "ready"],
-    timeline: shots || clips ? [`${plural(shots, "shot")} · ${plural(clips, "clip")}`, "done"] : ["empty cut", "ready"],
+    takes: takes ? [plural(takes, "take"), "done"] : ["nothing rendered yet", "ready"],
+    edit: shots || clips ? [`${plural(shots, "shot")} · ${plural(clips, "clip")}`, "done"] : ["empty cut", "ready"],
     deliver: [project ? `${project.aspect} · ${project.fps} fps` : "no spec", "ready"],
   };
   return studioStages().map((p) => {

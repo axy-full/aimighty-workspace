@@ -28,7 +28,7 @@ export function frameRequest(project: Project, boards: Boards, frame: BoardFrame
   if (!project.productionProjectId || !frame.prompt.trim()) return null;
   const sketch = frame.sketch ? project.assets.find((a) => a.id === frame.sketch!.assetId) : undefined;
   return {
-    prompt: renderPrompt(frame.prompt, boards.style, Boolean(sketch)), kind: "image", model: { id: boards.model },
+    prompt: renderPrompt(frame.prompt, frame.style ?? boards.style, Boolean(sketch)), kind: "image", model: { id: boards.model },
     mapping: { shotId: "", productionProjectId: project.productionProjectId }, ratio: project.aspect, resolution: "1K", duration: 5,
     references: sketch?.uploadId ? [{ uploadId: sketch.uploadId, role: "reference_image" }] : [], firstFrameAssetId: "",
   };
@@ -67,9 +67,11 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
   const setFrame = useCallback((id: string, fn: (f: BoardFrame) => BoardFrame) => setBoards((b) => ({ ...b, frames: { ...b.frames, [id]: fn(b.frames[id] ?? emptyFrame()) } })), [setBoards]);
 
   /* ── The agent's prompt run: fills every frame the director has not written, keeps the ones they did. ── */
-  const promptRuns = runs.jobs.filter((job) => job.kind === "frames");
+  const allPromptRuns = runs.jobs.filter((job) => job.kind === "frames");
+  const promptRuns = allPromptRuns.filter((job) => !job.shotId);
+  const framePromptRuns = allPromptRuns.filter((job) => job.shotId);
   const sketchRuns = runs.jobs.filter((job) => job.kind === "sketch");
-  const activePrompts = promptRuns.find((job) => job.status === "queued" || job.status === "running") ?? null;
+  const activePrompts = allPromptRuns.find((job) => job.status === "queued" || job.status === "running") ?? null;
   const activeSketch = sketchRuns.find((job) => job.status === "queued" || job.status === "running") ?? null;
   const taking = useRef(new Set<string>());
   useEffect(() => {
@@ -96,6 +98,17 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
       finally { taking.current.delete(done.id); }
     })();
   }, [promptRuns, boards.promptsJobId, runs, setBoards, shots, editor, toast]);
+  /* A frame's own "Prompt with the agent": the newest one for that shot replaces its prompt, once. */
+  useEffect(() => {
+    for (const job of framePromptRuns) {
+      const written = job.result?.frames?.[0];
+      if (job.status !== "succeeded" || !written || !job.shotId || taking.current.has(job.id)) continue;
+      if (framePromptRuns.find((j) => j.shotId === job.shotId && j.status === "succeeded") !== job || boards.frames[job.shotId]?.promptJobId === job.id) continue;
+      taking.current.add(job.id);
+      setFrame(job.shotId, (f) => ({ ...f, prompt: written.prompt.slice(0, FRAME_PROMPT_LIMIT), promptJobId: job.id }));
+      void editor.ensureSaved().then(() => toast("The agent wrote the frame’s prompt from its beat"));
+    }
+  }, [framePromptRuns, boards.frames, setFrame, editor, toast]);
   /* A finished sketch reading becomes that frame's reading and prompt. */
   useEffect(() => {
     for (const job of sketchRuns) {
@@ -142,7 +155,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
   }, [pendingKey, scope]);
 
   /* ── Pricing and rendering one frame through the quoted /api/generate path. ── */
-  const quoteKey = (frame: BoardFrame) => JSON.stringify([frame.prompt, boards.style, boards.model, frame.sketch?.assetId ?? "", p.aspect]);
+  const quoteKey = (frame: BoardFrame) => JSON.stringify([frame.prompt, frame.style ?? boards.style, boards.model, frame.sketch?.assetId ?? "", p.aspect]);
   const price = async (shot: NumberedShot): Promise<Quote> => {
     if (!(await editor.ensureSaved())) throw new Error("Save the project before pricing a frame.");
     const frame = frameOf(shot.id);
@@ -190,6 +203,33 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
     for (const id of todo.ids) { const shot = shots.find((s) => s.id === id); if (shot) await render(shot, todo.keys[id].credits); }
   };
 
+  /* Line drawings: uploaded together, each put on its beat (the frame's drawing), read by the agent, converted in its look. */
+  const drawings = p.assets.filter((a) => a.kind === "image" && (a.category === "Line drawing" || a.category === "Sketch"));
+  const drawingShot = (assetId: string) => shots.find((s2) => boards.frames[s2.id]?.sketch?.assetId === assetId) ?? null;
+  const uploadDrawings = async (files: File[]) => {
+    setWorking((w) => ({ ...w, drawings: `Uploading ${files.length}…` }));
+    try {
+      const made: Asset[] = [];
+      for (const file of files) {
+        if (!/^image\//.test(file.type)) throw new Error(`${file.name} is not an image.`);
+        const uploaded = await uploadWorkbench(file, undefined, scope);
+        made.push({ id: uploaded.id, uploadId: uploaded.id, kind: "image", category: "Line drawing", name: file.name.slice(0, 200), url: uploaded.url, mime: uploaded.mime || file.type, description: "A line drawing of a beat", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
+      }
+      editor.change((old) => ({ ...old, assets: [...old.assets, ...made.filter((a) => !old.assets.some((x) => x.id === a.id))].slice(0, 500) }));
+      if (!(await editor.ensureSaved())) throw new Error("The drawings uploaded, but the project is not saved yet.");
+      toast(`${made.length} line ${made.length === 1 ? "drawing" : "drawings"} uploaded — put each on its beat`);
+    } catch (error) { runs.setError(error instanceof Error ? error.message : "The drawings could not be uploaded."); }
+    finally { setWorking((w) => ({ ...w, drawings: "" })); }
+  };
+  const assignDrawing = (drawing: Asset, shotId: string) => {
+    setBoards((b) => {
+      const frames = { ...b.frames };
+      for (const [id, f] of Object.entries(frames)) if (f.sketch?.assetId === drawing.id) frames[id] = { ...f, sketch: undefined, reading: undefined, readingJobId: undefined };
+      if (shotId) { const f = frames[shotId] ?? emptyFrame(); frames[shotId] = { ...f, sketch: { assetId: drawing.id, name: drawing.name }, reading: undefined, readingJobId: undefined }; }
+      return { ...b, frames };
+    });
+    void editor.ensureSaved();
+  };
   const uploadSketch = async (shot: NumberedShot, file: File) => {
     setWorking((w) => ({ ...w, [shot.id]: "Uploading the drawing…" }));
     try {
@@ -205,7 +245,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
 
   const model = agent.model;
   const q = runs.quote && runs.quote.input.model === model?.id && runs.quote.input.effort === agent.effort ? runs.quote : null;
-  const promptsQuote = q && q.input.kind === "frames" ? q : null;
+  const promptsQuote = q && q.input.kind === "frames" && !q.input.shotId ? q : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activePrompts || activeSketch ? "The agent is working." : !model ? "Choose an agent above." : null;
 
   if (!shots.length) {
@@ -273,6 +313,63 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         </div>
       </section>
 
+      <section className="gx-gen-card" aria-label="Line drawings" data-testid="line-drawings" data-section="drawings">
+        <div className="pd-row-head">
+          <span className="gx-eyebrow" data-functional-label="">Line drawings</span>
+          <span className="gx-spacer" />
+          <span className="gx-hint">{drawings.length} uploaded · {drawings.filter((d) => drawingShot(d.id)).length} on a beat</span>
+        </div>
+        <p className="gx-hint">Upload your own line drawings of the beats. Put each on its beat, choose how it should come out — live action, a coloured sketch or black and white — and the agent reads your blocking and turns it into a proper storyboard frame.</p>
+        <label className="gx-hbtn pd-upload">
+          {working.drawings || "Upload line drawings"}
+          <input type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="Upload line drawings" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; if (files.length) void uploadDrawings(files); }} data-testid="drawings-upload" />
+        </label>
+        {drawings.length ? (
+          <div className="pd-drawings">
+            {drawings.map((drawing) => {
+              const shot = drawingShot(drawing.id);
+              const frame = shot ? frameOf(shot.id) : null;
+              const look = frame?.style ?? boards.style;
+              const readQuote = shot && q && q.input.kind === "sketch" && q.input.shotId === shot.id && q.input.sketchAssetId === drawing.id ? q : null;
+              const quote = shot && frame && quotes[shot.id] && quotes[shot.id].key === quoteKey(frame) ? quotes[shot.id] : null;
+              const done = shot && frame?.takes.length ? frame.selected ?? frame.takes[0].genId : null;
+              return (
+                <article key={drawing.id} className="pd-drawing" data-testid="line-drawing" aria-label={drawing.name}>
+                  <div className="pd-drawing-pair">
+                    <LazyMedia url={drawing.url} kind="image" alt={`Line drawing ${drawing.name}`} className="gx-lazy" />
+                    <span className="pd-drawing-out">{done ? <LazyMedia url={`/api/media/${done}`} kind="image" alt="The frame" className="gx-lazy" /> : <span className="gx-hint">{frame?.pending?.length ? "Converting…" : "Frame appears here"}</span>}</span>
+                  </div>
+                  <select aria-label={`Beat for ${drawing.name}`} value={shot?.id ?? ""} onChange={(e) => assignDrawing(drawing, e.target.value)} data-testid="drawing-shot">
+                    <option value="">Put it on a beat…</option>
+                    {shots.map((s2) => <option key={s2.id} value={s2.id}>{s2.number} — {(s2.shot.description || s2.scene).slice(0, 60)}</option>)}
+                  </select>
+                  {shot && frame ? (
+                    <>
+                      <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`Look for ${drawing.name}`}>
+                        {BOARD_STYLES.map((st) => <button key={st.id} type="button" role="radio" className="gx-seg-btn" aria-checked={look === st.id} onClick={() => setFrame(shot.id, (f) => ({ ...f, style: st.id }))} data-testid={`drawing-look-${st.id}`}><span>{st.label}</span></button>)}
+                      </div>
+                      {frame.reading ? <p className="gx-hint pd-reading" data-testid="drawing-reading"><strong>The agent read:</strong> {frame.reading}</p> : null}
+                      <AgentAction id={`drawing-read-${drawing.id}`} secondary estimateLabel={frame.reading ? "Read it again" : "1 · The agent reads the drawing"} startLabel={(c) => `Read it · up to ${c} credits`}
+                        quote={readQuote} busy={runs.busy} blocked={blocked ?? (!model?.vision ? `${model?.name ?? "This model"} cannot see images. Choose an agent model that can.` : null)}
+                        describe={(qq) => `${qq.value.calls} agent steps with the drawing · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+                        onEstimate={() => void runs.estimate({ kind: "sketch", model: model!.id, effort: agent.effort, shotId: shot.id, sketchAssetId: drawing.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
+                      <div className="gx-gen-enhance">
+                        {quote ? (
+                          <button type="button" className="gx-primary" disabled={Boolean(working[shot.id])} onClick={() => void render(shot, quote.credits)} data-testid="drawing-render">{working[shot.id] || `2 · Convert · ${quote.credits.toLocaleString()} credits`}</button>
+                        ) : (
+                          <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || !frame.reading} title={!frame.reading ? "Have the agent read the drawing first." : undefined} onClick={() => void quoteFrame(shot)} data-testid="drawing-price">{working[shot.id] || "2 · Price the conversion"}</button>
+                        )}
+                      </div>
+                      {errors[shot.id] ? <p className="gx-gen-error" role="alert">{errors[shot.id]}</p> : null}
+                    </>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
+
       <section className="pd-frames" aria-label="Frames" data-testid="boards-frames" data-section="frames">
         {shots.map((shot) => {
           const frame = frameOf(shot.id);
@@ -306,6 +403,10 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                   <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || !frame.prompt.trim()} title={!frame.prompt.trim() ? "Write this frame’s prompt first." : undefined} onClick={() => void quoteFrame(shot)} data-testid="frame-price">{working[shot.id] || (frame.takes.length ? "Price another frame" : "Price this frame")}</button>
                 )}
               </div>
+              <AgentAction id={`frame-agent-${shot.id}`} secondary estimateLabel="Prompt with the agent" startLabel={(c) => `Write it · up to ${c} credits`}
+                quote={q && q.input.kind === "frames" && q.input.shotId === shot.id ? q : null} busy={runs.busy} blocked={blocked}
+                describe={(qq) => `The agent reads beat ${shot.number} · ${qq.value.calls} steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+                onEstimate={() => void runs.estimate({ kind: "frames", model: model!.id, effort: agent.effort, shotId: shot.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
               {!frame.prompt.trim() && open !== shot.id ? <span className="gx-reason">Write this frame’s prompt first.</span> : null}
               {open === shot.id ? (
                 <div className="pd-frame-edit" data-testid="frame-editor">

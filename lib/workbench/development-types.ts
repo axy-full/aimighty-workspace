@@ -5,8 +5,9 @@ import type { AtomikEffortOption } from '../atomik-reasoning';
  * `frames` writes a storyboard frame prompt for every shot of the beat sheet; `sketch` reads one shot's rough drawing (vision) and writes its frame prompt.
  * `cast` writes the film's cast and elements, each with a Soul Cinema prompt.
  * `condense` shortens one Rig shot's render prompt to fit the engine, keeping every visual instruction.
+ * `rig` wires one Rig shot: its prompt and notes from the beat, and which of the project's pictures are its inputs.
  */
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'condense';
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'condense' | 'rig';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
@@ -42,6 +43,8 @@ export type DevelopmentResult = {
   cast?: { name: string; kind: 'character' | 'element'; description: string; prompt: string }[];
   /** `condense`: the shorter render prompt, pinned to the key of the prompt it came from. */
   condensed?: { nodeId: string; key: string; text: string };
+  /** `rig`: the shot's prompt, notes, inputs (project asset ids) and first frame, as the agent wired it. */
+  rig?: { nodeId: string; prompt: string; notes: string; inputs: string[]; firstFrame: string | null };
 };
 export type DevelopmentQuote = {
   quoteOnly: true; model: string; effort: string; kind: DevelopmentKind;

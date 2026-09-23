@@ -55,12 +55,19 @@ test("Beats: the agent breaks the script down, the director edits, the agent red
   await expect(scenes).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByTestId("beats-counts")).toHaveText("2 scenes · 4 beats · 2 shots");
 
-  /* Hand edits: a shot, a new shot, a deleted beat, a scene moved up. */
+  /* The beat board: acts as header tiles, scenes as cards. */
+  await expect(page.getByTestId("beat-act")).toHaveText([/Act One\s*Scenes 1 · 1 shots/, /Act Two\s*Scenes 2 · 1 shots/]);
+
+  /* Hand edits inside an opened card: a shot, a deleted beat; then a new shot in scene 2, and scene 2 moved up. */
+  await scenes.nth(0).click();
   await page.getByLabel("Shot 1.1 description").fill("Wide: the fox on the ice, the hut's lamp far off");
   await page.getByLabel("Shot 1.1 seconds").fill("6");
+  await page.getByLabel("Delete beat 2").click();
+  await page.getByTestId("beat-close").click();
+  await scenes.nth(1).click();
   await scenes.nth(1).getByTestId("add-shot").click();
   await page.getByLabel("Shot 2.2 description").fill("Close: Mara's breath fogs the glass");
-  await page.getByLabel("Delete beat 2").first().click();
+  await page.getByLabel("Scene 2 act").selectOption("1");
   await page.getByLabel("Move scene 2 up").click();
   await expect(page.getByTestId("beats-counts")).toHaveText("2 scenes · 3 beats · 3 shots");
   await expect.poll(async () => {
@@ -68,7 +75,8 @@ test("Beats: the agent breaks the script down, the director edits, the agent red
     return beats ? { first: beats.scenes[0].shots.length, second: beats.scenes[1].shots[0].description, seconds: beats.scenes[1].shots[0].duration } : null;
   }, { timeout: 15_000 }).toEqual({ first: 2, second: "Wide: the fox on the ice, the hut's lamp far off", seconds: 6 });
 
-  await scenes.nth(0).scrollIntoViewIfNeeded();
+  await page.getByTestId("beat-close").click();
+  await page.getByTestId("beat-board").scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("board.png") });
   /* The agent redrafts the script from these beats; the draft is reviewed in Brief & Script. */
   await page.getByTestId("beats-notes").fill("Keep it wordless.");

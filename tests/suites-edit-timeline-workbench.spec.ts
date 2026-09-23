@@ -37,14 +37,14 @@ async function open(page: Page) {
   return { errors, store, posts };
 }
 
-test("Edit re-edits a still at its price and sends takes to the Timeline; the Timeline orders, re-times and trims the cut", async ({ page }, info) => {
+test("Takes lists generations then assets by type, re-edits a still at its price and sends takes to the cut; Edit & Sound orders, re-times and trims the cut", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
   const { errors, store, posts } = await open(page);
-  /* An old Takes link lands on Edit; the strip has no Takes. */
-  await expect(page.getByTestId("page-title")).toHaveText("Edit");
-  await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Takes/ })).toHaveCount(0);
-  const takes = page.getByTestId("edit-take");
+  /* Takes: every generation first, then every asset grouped by type. */
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  const takes = page.getByTestId("edit-takes").getByTestId("edit-take");
   await expect(takes).toHaveCount(2);
+  await expect(page.getByTestId("asset-group")).toHaveText([/Videos\s*1/, /Images\s*1/]);
 
   /* The still: an instruction, a price, then the re-edit with the take as its reference. */
   await takes.filter({ hasText: "Mara at the window" }).click();
@@ -67,9 +67,9 @@ test("Edit re-edits a still at its price and sends takes to the Timeline; the Ti
   await page.getByTestId("edit-to-timeline").click();
   await expect.poll(() => store.current.shots.map((s) => [s.name, s.duration]), { timeout: 10_000 }).toEqual([["01 — Mara at the window", 72], ["02 — The crossing", 120]]);
 
-  /* Timeline: the cut, re-ordered, re-timed, trimmed, and one more take from the tray. */
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Timeline/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Timeline");
+  /* Edit & Sound: the cut, re-ordered, re-timed, trimmed, and one more take from the tray. */
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Edit & Sound/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
   const shots = page.getByTestId("timeline-shot");
   await expect(shots).toHaveCount(2);
   await page.getByLabel("Move 02 — The crossing earlier").click();

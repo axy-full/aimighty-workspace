@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScriptPanel } from "@/components/workbench/ScriptPanel";
+import { DevelopmentPanel } from "@/components/workbench/DevelopmentPanel";
+import { applyDevelopment } from "@/lib/workbench/development-apply";
+import { developmentSourceHash } from "@/lib/workbench/development-client";
+import { sourceCanonical } from "@/lib/workbench/development-types";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { sha256Hex } from "@/lib/production/hash";
@@ -83,7 +87,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
   const writeQuote = quoteFits && quote.input.kind === "write" && !quote.input.fromJobId ? quote : null;
   const redraftQuote = quoteFits && quote.input.kind === "write" && quote.input.fromJobId === shown?.id && quote.input.instructions === notes.trim() ? quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : active ? "The agent is writing." : !model ? "Choose an agent above." : null;
-  const writeBlocked = blocked ?? (!p.brief.trim() ? "Write the prompt first." : null);
+  const writeBlocked = blocked ?? (!p.brief.trim() ? "Write what we are making first." : null);
   const redraftBlocked = blocked ?? (!notes.trim() ? "Write your notes for the redraft." : null);
 
   const approve = async (text: string, source: "agent" | "hand", jobId?: string) => {
@@ -104,6 +108,16 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
       scriptSource: { assetId: asset.id, filename: asset.name, sha256: result.sha256, pages: result.pages, importedAt: new Date().toISOString(), edited: false, acknowledgedEmptyPages: result.emptyPages, ocr: result.ocr } }));
     if (!(await editor.ensureSaved())) throw new Error("The source uploaded, but the project is not saved yet. Retry this import to save it without uploading again.");
   }
+  /* The agentic script breakdown (the Studio's own panel): its scenes can go to the Rig; the same run becomes the beat sheet in Beats. */
+  async function applyBreakdown(job: DevelopmentJob, choice: { idea: number } | { scenes: string[] }) {
+    const current = latest.current;
+    if (job.projectId !== current.id) throw new Error("Return to the project that created this result.");
+    if ((await developmentSourceHash(current, job.kind)) !== job.sourceHash) throw new Error("The script changed after this breakdown. Review the saved result or break it down again.");
+    if (sourceCanonical(latest.current, job.kind) !== sourceCanonical(current, job.kind)) throw new Error("The project changed while checking the result. Try again.");
+    editor.change((old) => applyDevelopment(old, job, choice));
+    if (!(await editor.ensureSaved())) throw new Error("The result was added locally, but is not saved yet.");
+    toast("idea" in choice ? "Idea added to the creative direction" : "Scene breakdown added to the Rig");
+  }
   async function buildScenes(scenes: ScriptScene[]) {
     try {
       const nodes = buildScreenplayNodes(latest.current, scenes);
@@ -118,10 +132,8 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
 
   return (
     <div className="pd-stage gx-enter" data-testid="brief-stage">
-      <AgentBar models={runs.models} agent={agent} loaded={runs.loaded} disabled={Boolean(active) || Boolean(runs.busy)} />
-
       <div className="gx-seg gx-seg--sm pd-tabs" role="tablist" aria-label="Brief & Script">
-        <button type="button" role="tab" className="gx-seg-btn" aria-selected={tab === "write"} onClick={() => setTab("write")} data-testid="brief-tab-write"><span>Write with the agent</span></button>
+        <button type="button" role="tab" className="gx-seg-btn" aria-selected={tab === "write"} onClick={() => setTab("write")} data-testid="brief-tab-write"><span>Brief</span></button>
         <button type="button" role="tab" className="gx-seg-btn" aria-selected={tab === "script"} onClick={() => setTab("script")} data-testid="brief-tab-script"><span>Script editor</span></button>
       </div>
 
@@ -135,9 +147,9 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
 
       {tab === "write" ? (
         <>
-          <section className="gx-gen-card" aria-label="Prompt" data-testid="brief-prompt" data-section="prompt">
+          <section className="gx-gen-card" aria-label="The brief" data-testid="brief-prompt" data-section="prompt">
             <div className="pd-row-head">
-              <span className="gx-eyebrow" data-functional-label="">Prompt</span>
+              <span className="gx-eyebrow" data-functional-label="">The brief</span>
               <span className="gx-spacer" />
               <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Script format">
                 {(["screenplay", "adfilm"] as const).map((format) => (
@@ -145,17 +157,25 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                 ))}
               </div>
             </div>
-            <textarea className="gx-textarea pd-prompt" aria-label="Prompt for the script" maxLength={PROMPT_LIMIT} value={p.brief} placeholder="What is the film? Story, characters, tone, length — as much or as little as you have." onChange={(e) => { const value = e.target.value; editor.change((old) => ({ ...old, brief: value })); }} data-testid="brief-prompt-input" />
+            <label className="gx-gen-row">
+              <span className="gx-eyebrow" data-functional-label="">What are we making?</span>
+              <textarea className="gx-textarea pd-prompt" aria-label="What are we making?" maxLength={PROMPT_LIMIT} value={p.brief} placeholder="Start with a thought, a story, a client brief — as much or as little as you have." onChange={(e) => { const value = e.target.value; editor.change((old) => ({ ...old, brief: value })); }} data-testid="brief-prompt-input" />
+            </label>
             <span className="gx-hint pd-count">{p.brief.length.toLocaleString()} / {PROMPT_LIMIT.toLocaleString()}</span>
-            <details className="pd-more">
-              <summary>Audience, deliverables and direction</summary>
-              {(["audience", "deliverables", "direction"] as const).map((field) => (
-                <label key={field} className="gx-gen-row">
-                  <span className="gx-eyebrow" data-functional-label="">{field === "direction" ? "Creative direction" : field === "deliverables" ? "Deliverables" : "Audience"}</span>
-                  <textarea className="gx-textarea pd-small" value={p[field]} maxLength={field === "direction" ? 30000 : 10000} onChange={(e) => { const value = e.target.value; editor.change((old) => ({ ...old, [field]: value })); }} />
-                </label>
-              ))}
-            </details>
+            {(["audience", "deliverables", "direction"] as const).map((field) => (
+              <label key={field} className="gx-gen-row">
+                <span className="gx-eyebrow" data-functional-label="">{field === "direction" ? "Creative direction" : field === "deliverables" ? "Deliverables" : "Audience"}</span>
+                <textarea className="gx-textarea pd-small" aria-label={field === "direction" ? "Creative direction" : field === "deliverables" ? "Deliverables" : "Audience"} value={p[field]} maxLength={field === "direction" ? 30000 : 10000} onChange={(e) => { const value = e.target.value; editor.change((old) => ({ ...old, [field]: value })); }} data-testid={`brief-${field}`} />
+              </label>
+            ))}
+          </section>
+
+          <section className="gx-gen-card pd-develop" aria-label="Develop with an agent" data-testid="brief-develop" data-section="develop">
+            <div className="gx-gen-row">
+              <span className="gx-eyebrow" data-functional-label="">Develop with an agent</span>
+              <p className="gx-hint">The agent reads everything above — what we are making, the audience, the deliverables and the direction — and takes it to the next step: a full script, drafted, critiqued and refined, for your review.</p>
+            </div>
+            <AgentBar bare models={runs.models} agent={agent} loaded={runs.loaded} disabled={Boolean(active) || Boolean(runs.busy)} />
             <div className="gx-gen-enhance">
               {writeQuote ? (
                 <>
@@ -165,7 +185,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                 </>
               ) : (
                 <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} aria-describedby={writeBlocked ? "brief-write-blocked" : undefined}
-                  onClick={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort })} data-testid="brief-estimate">{runs.busy || (finished.length ? "Estimate a fresh script" : "Estimate the script")}</button>
+                  onClick={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort })} data-testid="brief-estimate">{runs.busy || (finished.length ? "Develop a fresh script with the agent" : "Develop with an agent")}</button>
               )}
               {writeBlocked && !writeQuote ? <span className="gx-reason" id="brief-write-blocked" data-testid="brief-write-blocked">{writeBlocked}</span> : null}
             </div>
@@ -242,7 +262,8 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             {approved && onBeats ? <button type="button" className="gx-primary" onClick={onBeats}>Break it into beats ›</button> : null}
           </div>
           <div className="pxw gx-legacy"><div className="ps">
-            <ScriptPanel embedded key={p.id} project={p} development={null}
+            <ScriptPanel embedded key={p.id} project={p}
+              development={<DevelopmentPanel key={p.id + "-" + (p.scriptFormat || "screenplay")} project={p} kind={p.scriptFormat || "screenplay"} scope={scope} enabled models={[]} onSave={editor.ensureSaved} onApply={applyBreakdown} />}
               onScript={(value) => editor.change((old) => ({ ...old, script: value, scriptSource: old.scriptSource ? { ...old.scriptSource, edited: true } : undefined }))}
               onFormat={(value) => editor.change((old) => ({ ...old, scriptFormat: value }))}
               onImport={importScreenplay}

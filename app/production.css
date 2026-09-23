@@ -154,3 +154,49 @@
 .gx .pxw-insp-version { flex-wrap: wrap; }
 .gx .pxw-insp-version .pxw-link-button { flex-basis: 100%; text-align: left; font-size: 12px; }
 @media (max-width: 759px) { .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; } .gx .pxw-insp-row-actions button { min-height: 44px; } }
+.gx .pd-agent--bare { padding: 0; }
+.gx .pd-drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.gx .pd-drawing { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); min-width: 0; }
+.gx .pd-drawing-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.gx .pd-drawing-pair img, .gx .pd-drawing-pair .gx-lazy, .gx .pd-drawing-out { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: #fff; }
+.gx .pd-drawing-out { display: grid; place-items: center; background: var(--gx-input); overflow: hidden; }
+.gx .pd-drawing select { min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 759px) { .gx .pd-drawing select { min-height: 44px; font-size: 16px; } .gx .pd-drawings { grid-template-columns: minmax(0, 1fr); } }
+
+/* Beat board, like a Final Draft beat board: an act header tile, then the act's scene cards in a grid, tinted by act. */
+.gx .pd-act { display: flex; flex-direction: column; gap: 10px; --act: #5fbfa6; --act-bg: rgba(95, 191, 166, .16); }
+.gx .pd-act[data-act="2"] { --act: #4f9cf0; --act-bg: rgba(79, 156, 240, .16); }
+.gx .pd-act[data-act="3"] { --act: #8c9ee6; --act-bg: rgba(140, 158, 230, .16); }
+.gx .pd-act-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px; border-radius: 8px; background: var(--act-bg); border: 1px solid var(--act); width: min(100%, 420px); }
+.gx .pd-act-name { font-size: 20px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.gx .pd-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: start; }
+.gx .pd-card-grid > .pd-scene--open { grid-column: 1 / -1; border-left-color: var(--act); }
+.gx .pd-beat-card { display: flex; flex-direction: column; gap: 8px; min-height: 150px; padding: 14px; border-radius: 8px; text-align: left; background: var(--act-bg); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); color: var(--gx-text); min-width: 0; cursor: pointer; }
+.gx .pd-beat-card:hover, .gx .pd-beat-card:focus-visible { border-color: var(--act); outline: none; }
+.gx .pd-beat-card-head { display: flex; align-items: baseline; gap: 8px; }
+.gx .pd-beat-card-title { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; }
+.gx .pd-beat-card-text { font-size: 13px; line-height: 1.45; color: var(--gx-text); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.gx .pd-beat-card-beats { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--gx-text-2); display: flex; flex-direction: column; gap: 2px; }
+.gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); font-family: var(--gx-mono); }
+.gx .pd-act-select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 759px) { .gx .pd-card-grid { grid-template-columns: minmax(0, 1fr); } .gx .pd-act-select { min-height: 44px; font-size: 16px; } }
+.gx .pd-asset-group { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
+.gx .pd-asset-group-name { font-weight: 600; font-size: 13px; flex: 1; }
+.gx .pd-take-file { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; background: #0c0c0e; font-size: 28px; color: var(--gx-text-3); }
+
+/* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */
+.gx .pxw-rig-library { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pxw-rig-library-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.gx .pxw-rig-library-head .pxw-link-button { font-weight: 600; }
+.gx .pxw-rig-library-hint { font-size: 12px; color: var(--gx-text-2); }
+.gx .pxw-rig-library-groups { display: flex; gap: 6px; flex-wrap: wrap; }
+.gx .pxw-rig-library-groups button { min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); color: var(--gx-text-2); font-size: 12px; }
+.gx .pxw-rig-library-groups button[aria-checked="true"] { color: var(--gx-text); border-color: var(--gx-accent); }
+.gx .pxw-rig-library-groups button:disabled { opacity: .45; }
+.gx .pxw-rig-library-items { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.gx .pxw-rig-library-item { flex: none; width: 128px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); cursor: grab; position: relative; }
+.gx .pxw-rig-library-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden; background: #0c0c0e; color: var(--gx-text-3); font-size: 20px; }
+.gx .pxw-rig-library-thumb img, .gx .pxw-rig-library-thumb video, .gx .pxw-rig-library-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pxw-rig-library-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff; }
+@media (max-width: 759px) { .gx .pxw-rig-library-groups button { min-height: 44px; } .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; } }

@@ -16,11 +16,12 @@ export function useAgentChoice(models: readonly ThinkingModel[]) {
  * Production › Agent: Claude, Grok or OpenAI, then the model and its effort.
  * Every agent step of the suite runs on this choice and is priced before it runs.
  */
-export function AgentBar({ models, agent, disabled, loaded }: { models: readonly ThinkingModel[]; agent: ReturnType<typeof useAgentChoice>; disabled?: boolean; loaded: boolean }) {
+/** `bare` renders the controls without their own card, inside another section (Brief's Develop with an agent). */
+export function AgentBar({ models, agent, disabled, loaded, bare = false }: { models: readonly ThinkingModel[]; agent: ReturnType<typeof useAgentChoice>; disabled?: boolean; loaded: boolean; bare?: boolean }) {
   const { choice, update, model, effort } = agent;
   const offered = familyModels(models, choice.family);
   return (
-    <section className="gx-gen-card pd-agent" aria-label="Agent" data-testid="agent-bar" data-section="agent">
+    <section className={bare ? "pd-agent pd-agent--bare" : "gx-gen-card pd-agent"} aria-label="Agent" data-testid="agent-bar" data-section="agent">
       <div className="pd-agent-row">
         <div className="gx-gen-row pd-agent-family">
           <span className="gx-eyebrow" data-functional-label="">Agent</span>
