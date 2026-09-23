@@ -10,6 +10,36 @@ export const DEVELOPMENT_WRITE_BYTES = 160_000;
 /** Visible answer tokens a writer phase may use (the reasoning allowance comes on top). */
 export const DEVELOPMENT_WRITE_TOKENS = 24_000;
 export const developmentResultBytes = (kind: DevelopmentKind) => (kind === 'write' ? DEVELOPMENT_WRITE_BYTES : DEVELOPMENT_RESULT_BYTES);
+/** Visible answer tokens a breakdown phase may use: room for the whole saved result (48,000 bytes), not a planner's 4,000. */
+export const DEVELOPMENT_BREAKDOWN_TOKENS = 16_000;
+/** The visible answer ceiling per kind; the reasoning allowance comes on top. */
+export function developmentAnswerTokens(kind: DevelopmentKind): number {
+  if (kind === 'write') return DEVELOPMENT_WRITE_TOKENS;
+  if (kind === 'screenplay' || kind === 'adfilm' || kind === 'frames') return DEVELOPMENT_BREAKDOWN_TOKENS;
+  return 4000;
+}
+/**
+ * Reads an agent's JSON answer. Models sometimes wrap it in a code fence or
+ * leave a trailing comma; both are repaired here, outside strings only. Any
+ * other damage still fails, so a cut-off answer is never half-accepted.
+ */
+export function parseAgentJson(text: string): unknown {
+  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```\s*$/i.exec(text);
+  const body = fenced ? fenced[1] : text.trim();
+  try { return JSON.parse(body); }
+  catch (error) {
+    let out = '', inString = false;
+    for (let i = 0; i < body.length; i++) {
+      const c = body[i];
+      if (inString) { out += c; if (c === '\\') { out += body[++i] ?? ''; } else if (c === '"') inString = false; continue; }
+      if (c === '"') { inString = true; out += c; continue; }
+      if (c === ',') { let j = i + 1; while (/\s/.test(body[j] ?? '')) j++; if (body[j] === '}' || body[j] === ']') continue; }
+      out += c;
+    }
+    if (out === body) throw error;
+    return JSON.parse(out);
+  }
+}
 export type DevelopmentSegment = { id: string; heading: string; start: number; end: number };
 export type DevelopmentChunk = { index: number; start: number; end: number; segments: DevelopmentSegment[] };
 const text = z.string().trim().min(1).max(4000);

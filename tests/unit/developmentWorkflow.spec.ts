@@ -145,6 +145,27 @@ test('ambiguous provider failure retains reservation and never advances or retri
   });
 });
 
+test('a breakdown phase has room for its whole result; a fenced answer with a trailing comma is read, a cut-off one is refused plainly', async () => {
+  await runInTenant(workspace(), async () => {
+    /* The 4,000-token planner ceiling cut real breakdowns off near character 16,000. */
+    const wide = { ...model, maxTokens: 64000 };
+    const { request } = await fixture(), h = harness();
+    h.deps.models = async () => [wide];
+    const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
+    const call = h.deps.call;
+    h.deps.call = async input => { const reply = await call(input); return { ...reply, text: '```json\n' + reply.text.replace(/}$/, ',}') + '\n```' }; };
+    await runDevelopmentStep(job.id, 'owner', h.deps);
+    expect(h.calls[0].maxTokens).toBe(16000);
+    let [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
+    expect(saved.completedSteps).toBe(1);
+    h.deps.call = async input => { h.calls.push(input); return { text: '{"summary":"cut off here",', finishReason: 'length', costUsd: .003 }; };
+    await runDevelopmentStep(job.id, 'owner', h.deps);
+    [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
+    expect(saved.status).toBe('failed');
+    expect(saved.error).toContain('ran out of room before it finished');
+  });
+});
+
 test('invalid paid output is retained, charged once and blocks all future phases', async () => {
   await runInTenant(workspace(), async () => {
     const { request } = await fixture(), h = harness();
@@ -206,7 +227,7 @@ test('installed SDK emits v4 Gateway protocol with correct OIDC/key authenticati
         usage: { inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 20, text: 20, reasoning: 0 } }, warnings: [] });
     };
     const result = await executeDevelopmentAgent(input, { method, token: 'test-token-not-real' }, fakeFetch);
-    expect(result).toEqual({ text: '{"ok":true}', inputTokens: 100, outputTokens: 20 });
+    expect(result).toEqual({ text: '{"ok":true}', inputTokens: 100, outputTokens: 20, finishReason: 'stop' });
     expect(calls).toHaveLength(1); expect(calls[0].url).toContain('/v4/ai/language-model');
     expect(calls[0].headers.get('authorization')).toBe('Bearer test-token-not-real');
     expect(calls[0].headers.get('ai-gateway-auth-method')).toBe(method);
