@@ -37,7 +37,9 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
       catch (cause) { storageFailure = cause instanceof Error ? cause.message : "Recovery storage is unavailable."; }
       const query = new URLSearchParams({ projectId });
       if (record) query.set("requestId", developmentInput(record).requestId);
-      const next = await studioRequest<DevelopmentState>(`${ENDPOINT}?${query}`, { headers: { "X-Workbench-Scope": scope } });
+      const raw = await studioRequest<Partial<DevelopmentState> | null>(`${ENDPOINT}?${query}`, { headers: { "X-Workbench-Scope": scope } });
+      /* A short or empty answer reads as "no agents, no runs", never a crash. */
+      const next: DevelopmentState = { ...raw, configured: raw?.configured ?? false, models: Array.isArray(raw?.models) ? raw.models : [], jobs: Array.isArray(raw?.jobs) ? raw.jobs : [] } as DevelopmentState;
       if (!active.current || at !== epoch.current) return;
       setState(next); setLoaded(!storageFailure); setPending(record);
       if (storageFailure) setError(`${storageFailure} Saved runs are shown; new paid requests stay paused.`);
@@ -72,7 +74,8 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
 
   const lookup = useCallback((record: PendingDevelopment) => {
     const query = new URLSearchParams({ projectId, requestId: developmentInput(record).requestId });
-    return studioRequest<DevelopmentState>(`${ENDPOINT}?${query}`, { headers: { "X-Workbench-Scope": scope } });
+    return studioRequest<Partial<DevelopmentState> | null>(`${ENDPOINT}?${query}`, { headers: { "X-Workbench-Scope": scope } })
+      .then((raw) => ({ jobs: Array.isArray(raw?.jobs) ? raw.jobs : [] }));
   }, [projectId, scope]);
   const accept = useCallback((record: PendingDevelopment, job: DevelopmentJob) => {
     if (job.requestId !== developmentInput(record).requestId) throw new Error("The server returned another request. The original recovery record is kept.");
