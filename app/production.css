@@ -13,7 +13,7 @@
 .gx .pd-row-head { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
 .gx .pd-prompt { min-height: 200px; }
 .gx .pd-small { min-height: 84px; }
-.gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 11px; margin-top: -8px; }
+.gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 12px; margin-top: -8px; }
 .gx .pd-more > summary { cursor: pointer; color: var(--gx-text-2); font-size: 13px; padding: 4px 0; }
 .gx .pd-more[open] { display: flex; flex-direction: column; gap: 12px; }
 .gx .pd-recover { flex-direction: row; align-items: center; flex-wrap: wrap; }
@@ -37,6 +37,7 @@
   .gx .pd-agent-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .gx .pd-agent-row .gx-seg { width: 100%; }
   .gx .pd-agent-row .gx-seg .gx-seg-btn { flex: 1; }
+  .gx .pd-stage .gx-seg .gx-seg-btn { height: 44px; min-height: 44px; }
   .gx .pd-agent-model button, .gx .pd-agent-effort button { box-sizing: border-box; height: 46px; min-height: 46px; width: 100%; max-width: none; }
   .gx .pd-tabs { width: 100%; }
   .gx .pd-tabs .gx-seg-btn { flex: 1; }

@@ -1,12 +1,12 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { EffortPicker, ModelPicker, type ThinkingModel } from "@/components/atomik/ModelPicker";
 import { AGENT_FAMILIES, DEFAULT_AGENT, familyModels, readAgent, resolveAgent, writeAgent, type AgentChoice } from "@/lib/production/agent";
 
 /** The viewer's agent choice, resolved against the models the workspace can reach today. */
 export function useAgentChoice(models: readonly ThinkingModel[]) {
-  const [choice, setChoice] = useState<AgentChoice>(DEFAULT_AGENT);
-  useEffect(() => { setChoice(readAgent()); }, []);
+  /* Read once on mount; on the server there is no storage and the default stands. */
+  const [choice, setChoice] = useState<AgentChoice>(() => (typeof window === "undefined" ? DEFAULT_AGENT : readAgent()));
   const update = (next: AgentChoice) => { setChoice(next); writeAgent(next); };
   const resolved = useMemo(() => resolveAgent(models, choice), [models, choice]);
   return { choice, update, model: resolved.model, effort: resolved.effort };

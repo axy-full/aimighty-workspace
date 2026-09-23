@@ -6,7 +6,7 @@ import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { ScreenplayImport, ScriptScene } from "@/lib/workbench/screenplay";
 import { buildScreenplayNodes } from "@/lib/workbench/screenplay-nodes";
-import type { Asset, Project } from "@/lib/workbench/studio";
+import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -49,7 +49,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
   const [full, setFull] = useState<Record<string, DevelopmentJob>>({});
   const [approvedHash, setApprovedHash] = useState<string | null>(null);
   const latest = useRef(p);
-  latest.current = p;
+  useEffect(() => { latest.current = p; }, [p]);
 
   /* The Library's tools land on a section; the editor's live on the other tab. */
   useEffect(() => {

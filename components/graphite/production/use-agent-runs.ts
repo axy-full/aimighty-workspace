@@ -53,9 +53,9 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
   const running = Boolean(state?.jobs.some((job) => job.status === "queued" || job.status === "running"));
   useEffect(() => {
     active.current = true;
-    void refresh();
+    const first = setTimeout(() => void refresh(), 0);
     const timer = setInterval(() => void refresh(), running ? 3000 : 15000);
-    return () => { active.current = false; clearInterval(timer); };
+    return () => { active.current = false; clearTimeout(first); clearInterval(timer); };
   }, [refresh, running]);
 
   /** Saves the draft, then asks the server for the price of exactly this request. */
