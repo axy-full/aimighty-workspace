@@ -160,8 +160,8 @@ export function EffortPicker({ value, model, onPick, disabled, label = "Reasonin
           <div className={styles.heading}>Reasoning effort</div>
           <Select.Viewport className={styles.effortList}>
             {options.map(option => <Select.Item key={option.value} value={option.value} className={styles.effortOption}>
-              <span className={styles.optionText}><Select.ItemText>{option.label}</Select.ItemText>{option.description && <span className={styles.capabilities}>{option.description}</span>}</span>
-              <Select.ItemIndicator><Check size={15} aria-hidden="true" /></Select.ItemIndicator>
+              <span className={styles.effortText}><span className={styles.effortLabel}><Select.ItemText>{option.label}</Select.ItemText></span>{option.description && <span className={styles.capabilities}>{option.description}</span>}</span>
+              <Select.ItemIndicator className={styles.check}><Check size={15} aria-hidden="true" /></Select.ItemIndicator>
             </Select.Item>)}
             {unavailable && <Select.Item value={value} disabled className={styles.effortOption}><Select.ItemText>{effortLabel(value, model)} · saved request</Select.ItemText></Select.Item>}
           </Select.Viewport>
