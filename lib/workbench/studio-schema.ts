@@ -182,7 +182,7 @@ export const productionSchema = z.object({
         lighting: z.string().max(200), sound: z.string().max(200), duration: z.number().min(0.5).max(600).optional(),
       }).strict()).max(40),
       characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
-    }).strict()).max(200),
+    }).strict()).max(1000),
   }).strict().optional(),
   boards: z.object({
     style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image']),

@@ -27,7 +27,7 @@ import { ENGINE_PROMPT_LIMIT, shotRenderPrompt, textKey } from '../production/ri
 import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
-import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_WRITE_TOKENS, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
+import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
 export class DevelopmentError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'DevelopmentError'; }
@@ -49,7 +49,7 @@ export type DevelopmentCall = {
   /** Bounded review images (data URLs) sent with the prompt — the sketch reader's drawing. */
   images?: string[];
 };
-export type DevelopmentReply = { text: string; inputTokens?: number; outputTokens?: number; costUsd?: number; directUsage?: unknown };
+export type DevelopmentReply = { text: string; inputTokens?: number; outputTokens?: number; costUsd?: number; directUsage?: unknown; finishReason?: string };
 export type DevelopmentDependencies = {
   models: typeof catalog; allowance: typeof allowanceCheck; reserve: typeof reserveGenerationSpend; meter: typeof meter;
   call: (input: DevelopmentCall) => Promise<DevelopmentReply>;
@@ -262,20 +262,24 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
   if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
   if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can read the drawing.`, 422);
-  const reasoning = input.kind === 'write' ? atomikReasoningRequest(model, input.effort, DEVELOPMENT_WRITE_TOKENS, DEVELOPMENT_WRITE_TOKENS) : atomikReasoningRequest(model, input.effort, 4000);
+  const answer = developmentAnswerTokens(input.kind);
+  const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
+  /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
+  const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
   const resultBytes = developmentResultBytes(input.kind);
   const estimates = chunks.flatMap(chunk => DEVELOPMENT_STAGES.map(stage => {
+    const maxTokens = stage === 'critique' ? Math.min(reasoning.maxTokens, critiqueReasoning.maxTokens) : reasoning.maxTokens;
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
     const inputTokens = base + prior + images * ATOMIK_IMAGE_TOKENS;
-    if (model.contextWindow && inputTokens + reasoning.maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
-    const cost = textQuoteCostUsd(model, inputTokens, reasoning.maxTokens, textVendor(model.id) === 'openai');
+    if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
+    const cost = textQuoteCostUsd(model, inputTokens, maxTokens, textVendor(model.id) === 'openai');
     if (cost == null || !Number.isFinite(cost) || cost < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
-    return { chunk: chunk.index, stage, cost, maxTokens: reasoning.maxTokens };
+    return { chunk: chunk.index, stage, cost, maxTokens };
   }));
   const estimateUsd = estimates.reduce((sum, step) => sum + step.cost, 0);
   const limit = Math.min(1000, Math.max(1, Number(process.env.WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD) || 100));
-  if (estimateUsd > limit) throw new DevelopmentError('The full development workflow exceeds the per-request spending ceiling. Choose a less expensive model or lower effort.', 409);
+  if (estimateUsd > limit) throw new DevelopmentError(`The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
   const sourceHash = developmentSourceHash(canonical);
   const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, model };
@@ -408,7 +412,7 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
     const result = input.images?.length
       ? await agent.generate({ messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }, ...input.images.map((image) => ({ type: 'image' as const, image }))] }], abortSignal: AbortSignal.timeout(240_000) })
       : await agent.generate({ prompt: input.prompt, abortSignal: AbortSignal.timeout(240_000) });
-    return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens,
+    return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens, finishReason: result.finishReason,
       ...(textVendor(input.model.id) === 'openai' ? { directUsage: result.steps.length === 1 ? sdkTextUsage(result.steps[0].usage, true) : null } : {}) };
   } catch (error) { throw Object.assign(error as Error, { providerSubmitted }); }
 }
@@ -522,7 +526,8 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
         returned = false; cost = Number(next.estimate_usd);
         throw new Error('Direct provider usage is missing, invalid, or outside the approved price snapshot; this step needs billing review.');
       }
-      const value: unknown = JSON.parse(reply.text);
+      if (reply.finishReason === 'length') throw new Error('The agent ran out of room before it finished its answer, so nothing was kept from this phase.');
+      const value: unknown = parseAgentJson(reply.text);
       const result = stage === 'critique' ? developmentCritiqueSchema.parse(value) : validateDevelopmentResult(value, input.kind, chunk);
       if (stage === 'critique' && Buffer.byteLength(JSON.stringify(result), 'utf8') > DEVELOPMENT_CRITIQUE_BYTES) throw new Error('The critique exceeded its saved review budget.');
       const finished = await db().execute({ sql: "UPDATE workbench_development_steps SET status='succeeded',result=?,updated_at=? WHERE job_id=? AND step_index=? AND status='running'", args: [JSON.stringify(result), now(), id, Number(next.step_index)] });
