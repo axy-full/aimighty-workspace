@@ -74,6 +74,10 @@ async function fixture() {
     },
     "@/lib/higgsfield-consumer/characters": {
       connectedCharacters: service("characters", { connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] }),
+      connectedPlan: service("plan", { connected: true, available: true, plan: "Pro", paid: true }),
+      buildConnectedCharacter: service("build", { state: "training", character: { soulId: "soul_new", name: "Mira", type: "soul_2", status: "training", previewUrl: null } }),
+      SOUL_BUILD_STILLS: { min: 5, max: 20 },
+      SOUL_BUILD_TYPES: ["soul_2", "soul_cinematic"],
     },
     "@/lib/higgsfield-consumer/explainer-service": {
       connectedExplainerPresets: service("explainer", { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }], fetchedAt: 1, runnable: false, catalogueModels: [] }),
@@ -249,4 +253,23 @@ test("the characters listing is an owner read with the catalogue's limit; it car
   expect((await f.request("POST", { action: "characters", refresh: true })).status).toBe(400);
   expect(f.calls.map((call) => [call.name, call.args])).toEqual([["characters", ["owner"]]]);
   expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:characters", 12]]);
+});
+
+test("the Soul ID build: the plan gate is an owner read; the create needs render, carries exactly name · type · 5–20 sources, and is rate-limited hardest", async () => {
+  const f = await fixture();
+  const plan = await f.request("POST", { action: "characters-plan" });
+  expect(plan.status).toBe(200);
+  expect(await plan.json()).toEqual({ plan: { connected: true, available: true, plan: "Pro", paid: true } });
+  const sources = [{ uploadId: "up_1" }, { uploadId: "up_2" }, { genId: "gen_3" }, { genId: "gen_4" }, { uploadId: "up_5" }];
+  const create = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
+  expect(create.status).toBe(200);
+  expect(await create.json()).toEqual({ build: { state: "training", character: { soulId: "soul_new", name: "Mira", type: "soul_2", status: "training", previewUrl: null } } });
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["plan", ["owner"]], ["build", ["owner", { name: "Mira", type: "soul_cinematic", sources }]]]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:characters-plan", 12], ["hf-consumer-generation:workspace:owner:characters-create", 3]]);
+  /* Four stills, a blank name, an unknown type or a stray field are refused before anything is read. */
+  expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources: sources.slice(0, 4) })).status).toBe(400);
+  expect((await f.request("POST", { action: "characters-create", name: "  ", type: "soul_2", sources })).status).toBe(400);
+  expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
+  expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
+  expect(f.calls).toHaveLength(2);
 });

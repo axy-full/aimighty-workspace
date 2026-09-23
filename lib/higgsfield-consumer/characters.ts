@@ -7,38 +7,11 @@
  */
 import { requireTenant } from "@/lib/tenant";
 import { getConsumerAccess, ConsumerOAuthError } from "./oauth";
-import { readConnectedPlannerReads } from "./mcp";
-import { CONNECTED_LIST_KEYS } from "./video-contract";
-
-export const CHARACTER_TYPES = ["soul", "soul_2", "soul_cinematic"] as const;
-export type CharacterType = (typeof CHARACTER_TYPES)[number];
-export type ConnectedCharacter = { soulId: string; name: string; type: CharacterType | null; status: "ready" | "training" | "failed" | null; previewUrl: string | null };
-
-const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-const text = (value: unknown, max = 120) => (typeof value === "string" ? value.replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, max) : "");
-const ID = /^[A-Za-z0-9_-]{1,200}$/;
-
-function listIn(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (!record(value)) return [];
-  for (const key of [...CONNECTED_LIST_KEYS, "characters", "souls"]) if (Array.isArray(value[key])) return value[key] as unknown[];
-  return [];
-}
-
-export function parseCharacters(value: unknown, limit = 100): ConnectedCharacter[] {
-  const out: ConnectedCharacter[] = [];
-  for (const entry of listIn(value).slice(0, limit)) {
-    if (!record(entry)) continue;
-    const rawId = entry.soul_id ?? entry.id;
-    const soulId = typeof rawId === "string" && ID.test(rawId) ? rawId : "";
-    if (!soulId) continue;
-    const type = CHARACTER_TYPES.find((t) => t === entry.type) ?? null;
-    const status = ["ready", "training", "failed"].find((s) => s === entry.status) as ConnectedCharacter["status"] ?? null;
-    const preview = [entry.preview_url, entry.image_url, entry.thumbnail_url].find((v) => typeof v === "string" && /^https:\/\//i.test(v));
-    out.push({ soulId, name: text(entry.name) || soulId, type, status, previewUrl: typeof preview === "string" ? preview.slice(0, 2048) : null });
-  }
-  return out;
-}
+import { readConnectedPlannerReads, createConsumerCharacter, type ConsumerCharacterCreate } from "./mcp";
+import { ready } from "@/lib/db";
+import { resolveConsumerGenerationSources } from "./generation-sources";
+import { parseCharacters, parseCharacterCreate, type ConnectedCharacter, type ConnectedPlan, type SoulBuildOutcome, type SoulBuildSource, parsePlan } from "./soul-build";
+export * from "./soul-build";
 
 /** The account's characters, or `available: false` when it does not advertise the read (never empty-as-if-true). */
 export async function connectedCharacters(userId: string): Promise<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] }> {
@@ -52,4 +25,37 @@ export async function connectedCharacters(userId: string): Promise<{ connected: 
     if (error instanceof ConsumerOAuthError) return { connected: false, available: false, characters: [] };
     throw error;
   }
+}
+
+export async function connectedPlan(userId: string): Promise<ConnectedPlan> {
+  const access = await getConsumerAccess(requireTenant().id, userId);
+  if (!access) return { connected: false, available: false, plan: null, paid: null };
+  try {
+    const [result] = await readConnectedPlannerReads(access.accessToken, [{ name: "plan", tool: "show_plans_and_credits", args: { intent: "general" } }]);
+    if (!result || result.unavailable) return { connected: true, available: false, plan: null, paid: null };
+    return { connected: true, available: true, ...parsePlan(result.value) };
+  } catch (error) {
+    if (error instanceof ConsumerOAuthError) return { connected: false, available: false, plan: null, paid: null };
+    throw error;
+  }
+}
+
+/**
+ * Import the project's stills into the account and ask it to train one Soul ID.
+ * The caller has shown the plan gate; the owner's stated ceiling is the only
+ * price control there is, because the account offers no cost tool for training.
+ */
+export async function buildConnectedCharacter(userId: string, input: ConsumerCharacterCreate & { sources: SoulBuildSource[] }): Promise<SoulBuildOutcome> {
+  const access = await getConsumerAccess(requireTenant().id, userId);
+  if (!access) throw new ConsumerOAuthError("reconnect_required");
+  await ready();
+  const resolved = await resolveConsumerGenerationSources({
+    type: "image", model: "text2image_soul_v2", prompt: "soul id build", parameters: {},
+    medias: input.sources.map((source) => ({ role: "image", source })),
+  } as never);
+  const sources = resolved.map((source) => ({ url: source.url, type: "image" as const }));
+  const result = await createConsumerCharacter(access.accessToken, { name: input.name, type: input.type }, sources, { sending: () => {} });
+  if (result.state === "refused") return { state: "refused", reason: result.reason };
+  const character = parseCharacterCreate(result.value);
+  return character ? { state: "training", character } : { state: "accepted", character: null };
 }

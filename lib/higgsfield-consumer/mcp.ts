@@ -308,6 +308,8 @@ type ConsumerSession = {
   shortsCall: (tool: keyof typeof SHORTS_TOOLS, args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
   /** Read-only explainer style listing; takes no arguments. */
   explainerPresets: () => Promise<Record<string, unknown>>;
+  /** Only `show_characters` (list, and the one create the Soul ID build sends). */
+  charactersCall: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -775,6 +777,7 @@ async function withConsumerSession<T>(
       },
       shortsCall: async (tool, args, sending) => (await post("tools/call", { name: SHORTS_TOOLS[tool], arguments: args }, sending))!,
       explainerPresets: async () => (await post("tools/call", { name: EXPLAINER_PRESETS_TOOL, arguments: {} }))!,
+      charactersCall: async (args, sending) => (await post("tools/call", { name: CHARACTERS_TOOL, arguments: args }, sending))!,
     });
   } catch (error) {
     if (
@@ -2157,6 +2160,64 @@ export async function readConnectedPlannerReads(accessToken: string, reads: Plan
   } catch (error) {
     return videoPreflightError(error);
   }
+}
+
+/* ── Soul ID build (FINAL_SPEC §3 › Soul ID) ─────────────────────────── */
+const CHARACTERS_TOOL = "show_characters";
+export type ConsumerCharacterCreate = { name: string; type: "soul_2" | "soul_cinematic" };
+export type ConsumerCharacterCreateResult =
+  | { state: "accepted"; value: unknown }
+  /** The account said no; its reason, bounded and scrubbed, is the only text kept. */
+  | { state: "refused"; reason: string };
+/**
+ * One training request on the connected account: every still is imported
+ * first (`media_import_url`, free), then `show_characters` is called once with
+ * `action: "create"`, the name, the type and the imported media. Never retried.
+ * There is no cost tool for training — the account bills it at its plan's rate
+ * — so the caller shows the plan gate and the owner's ceiling, not a quote.
+ */
+export async function createConsumerCharacter(
+  accessToken: string,
+  input: ConsumerCharacterCreate,
+  sources: { url: string; type: "image" }[],
+  options: Options & { sending: () => void },
+): Promise<ConsumerCharacterCreateResult> {
+  const name = input.name.trim();
+  if (!name || name.length > 80 || !["soul_2", "soul_cinematic"].includes(input.type)) throw new ConsumerVideoError("invalid_input");
+  if (sources.length < 5 || sources.length > 20 || sources.some((source) => !safeImportUrl(source.url) || source.type !== "image"))
+    throw new ConsumerVideoError("invalid_input");
+  const createArgs = (medias: { value: string; role: "image" }[]) => ({ action: "create", name, type: input.type, medias });
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      await requireConnectedTools(session, [...importCalls(sources), { name: CHARACTERS_TOOL, args: createArgs([{ value: "00000000-0000-4000-8000-000000000000", role: "image" }]) }]);
+      const medias: { value: string; role: "image" }[] = [];
+      for (const source of sources) {
+        const raw = videoReadResult(session, await session.genjutsuImport(source.url, "image"));
+        if (!object(raw) || typeof raw.media_id !== "string" || (raw.type !== undefined && raw.type !== "image") ||
+            (raw.error != null && raw.error !== "") || (raw.warning != null && raw.warning !== ""))
+          throw new ConsumerVideoError("provider_error");
+        medias.push({ value: consumerVideoJobId(raw.media_id), role: "image" });
+      }
+      const normalized = normalizeQualificationResult(await session.charactersCall(createArgs(medias), options.sending), session.secrets);
+      if (normalized.isError) return { state: "refused", reason: refusalText(normalized.result) };
+      return { state: "accepted", value: normalized.result };
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+/** The account's own words for a refusal, ≤ 240 characters, control characters out. */
+function refusalText(value: unknown): string {
+  const texts: string[] = [];
+  const walk = (v: unknown, depth: number) => {
+    if (depth > 4 || texts.length > 4) return;
+    if (typeof v === "string") texts.push(v);
+    else if (Array.isArray(v)) v.forEach((x) => walk(x, depth + 1));
+    else if (v && typeof v === "object") for (const k of ["error", "message", "text", "detail", "reason", "content"]) if (k in (v as Record<string, unknown>)) walk((v as Record<string, unknown>)[k], depth + 1);
+  };
+  walk(value, 0);
+  return texts.join(" · ").replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, 240) || "The account refused the training request.";
 }
 
 /* ── Batch generation (slice A4) ──────────────────────────────────────── */
