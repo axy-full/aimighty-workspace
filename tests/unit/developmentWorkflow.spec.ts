@@ -156,6 +156,9 @@ test('a breakdown phase has room for its whole result; a fenced answer with a tr
     h.deps.call = async input => { const reply = await call(input); return { ...reply, text: '```json\n' + reply.text.replace(/}$/, ',}') + '\n```' }; };
     await runDevelopmentStep(job.id, 'owner', h.deps);
     expect(h.calls[0].maxTokens).toBe(16000);
+    /* The critique is saved within 12,000 bytes, so its step keeps the short ceiling. */
+    const ceilings = (await db().execute({ sql: 'SELECT stage,max_tokens FROM workbench_development_steps WHERE job_id=? AND chunk_index=0 ORDER BY step_index', args: [job.id] })).rows.map(row => [row.stage, Number(row.max_tokens)]);
+    expect(ceilings).toEqual([['draft', 16000], ['critique', 4000], ['refine', 16000]]);
     let [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
     expect(saved.completedSteps).toBe(1);
     h.deps.call = async input => { h.calls.push(input); return { text: '{"summary":"cut off here",', finishReason: 'length', costUsd: .003 }; };

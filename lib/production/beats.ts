@@ -10,7 +10,7 @@ export type Beat = { id: string; text: string };
 export type BeatScene = { id: string; heading: string; summary: string; /** Act One, Two or Three on the beat board; by position when unset. */ act?: 1 | 2 | 3; beats: Beat[]; shots: BeatShot[]; characters: string[]; locations: string[]; props: string[] };
 export type BeatSheet = { jobId?: string; scriptSha256: string; updatedAt: string; scenes: BeatScene[] };
 
-export const BEAT_LIMITS = { scenes: 200, beats: 40, shots: 40, heading: 300, summary: 4000, beat: 800, description: 800, field: 200, names: 30 } as const;
+export const BEAT_LIMITS = { scenes: 1000, beats: 40, shots: 40, heading: 300, summary: 4000, beat: 800, description: 800, field: 200, names: 30 } as const;
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const cut = (value: string, max: number) => value.trim().slice(0, max);

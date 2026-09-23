@@ -264,19 +264,22 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can read the drawing.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
+  /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
+  const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
   const resultBytes = developmentResultBytes(input.kind);
   const estimates = chunks.flatMap(chunk => DEVELOPMENT_STAGES.map(stage => {
+    const maxTokens = stage === 'critique' ? Math.min(reasoning.maxTokens, critiqueReasoning.maxTokens) : reasoning.maxTokens;
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
     const inputTokens = base + prior + images * ATOMIK_IMAGE_TOKENS;
-    if (model.contextWindow && inputTokens + reasoning.maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
-    const cost = textQuoteCostUsd(model, inputTokens, reasoning.maxTokens, textVendor(model.id) === 'openai');
+    if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
+    const cost = textQuoteCostUsd(model, inputTokens, maxTokens, textVendor(model.id) === 'openai');
     if (cost == null || !Number.isFinite(cost) || cost < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
-    return { chunk: chunk.index, stage, cost, maxTokens: reasoning.maxTokens };
+    return { chunk: chunk.index, stage, cost, maxTokens };
   }));
   const estimateUsd = estimates.reduce((sum, step) => sum + step.cost, 0);
   const limit = Math.min(1000, Math.max(1, Number(process.env.WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD) || 100));
-  if (estimateUsd > limit) throw new DevelopmentError('The full development workflow exceeds the per-request spending ceiling. Choose a less expensive model or lower effort.', 409);
+  if (estimateUsd > limit) throw new DevelopmentError(`The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
   const sourceHash = developmentSourceHash(canonical);
   const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, model };
