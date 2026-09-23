@@ -1,4 +1,5 @@
 'use client';
+import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useMemo, useState } from 'react';
 import { Upload } from 'lucide-react';
 import type { Project, Plan, Asset } from '@/lib/workbench/studio';
@@ -22,7 +23,7 @@ export function AstraStudio({ project, scope, enabled, onChange, onSave, onApply
   async function upload(file: File) {
     setBusy(true); setError('');
     try {
-      if (project.assets.length >= 500) throw new Error('This project has reached its asset limit.');
+      if (project.assets.length >= PROJECT_LIMITS.assets) throw new Error('This project has reached its asset limit.');
       if (file.size > (/\.blend$/i.test(file.name) ? 50 : 32) * 1024 * 1024) throw new Error('Use an image or GLB below 32 MB, or an uncompressed .blend below 50 MB.');
       if (/\.glb$/i.test(file.name)) validateAstraGlb(new Uint8Array(await file.arrayBuffer()));
       else if (!/\.blend$/i.test(file.name) && !/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('Choose an uncompressed .blend, embedded GLB, PNG, JPEG or WebP image.');

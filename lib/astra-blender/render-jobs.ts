@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from "../workbench/project-limits";
 import { createHash, randomUUID } from 'node:crypto';
 import type { Client } from '@libsql/client';
 import { z } from 'zod';
@@ -92,7 +93,7 @@ async function snapshot(input: AstraRenderRequest, owner: string): Promise<Snaps
     if (!ws.legacy && !ws.usesPlatformKeys)
         throw new AstraRenderError('Enable platform compute funding before using native 3D.', 403);
     const project = await getAtomikProject(owner, input.projectId);
-    if(project.assets.length>497)throw new AstraRenderError('Make room for three native render outputs in this project (maximum 500 assets).',422);
+    if(project.assets.length>PROJECT_LIMITS.assets-3)throw new AstraRenderError(`Make room for three native render outputs in this project (maximum ${limitText(PROJECT_LIMITS.assets)} assets).`,422);
     if (!project.productionProjectId)
         throw new AstraRenderError('Save the project to link its budget first.', 409);
     const scene = project.astraBlender ?? createAstraScene('product'), native = input.source === 'native' ? project.astraNative : undefined;

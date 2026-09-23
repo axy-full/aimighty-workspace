@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -84,7 +85,7 @@ export default function BriefTool({
       if (!(await ensureSaved())) throw new Error("The import is still unsaved. Retry when the connection returns.");
       return;
     }
-    if (current.assets.length >= 500) throw new Error("The asset library is full. Make space for the original screenplay first.");
+    if (current.assets.length >= PROJECT_LIMITS.assets) throw new Error("The asset library is full. Make space for the original screenplay first.");
     const uploaded = await uploadWorkbench(file, undefined, scope);
     if (latest.current?.id !== draftId) throw new Error("The project changed. The uploaded original remains in your workspace.");
     const adfilm = latest.current.scriptFormat === "adfilm";

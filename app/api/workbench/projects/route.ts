@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
 import { withTenant, requireSession } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -30,8 +31,15 @@ export const GET=withTenant(async(req:Request)=>{
     const row=(await db().execute({sql:'SELECT body,version,owner FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[draft.project.productionProjectId]})).rows[0];
     if(row)shared={...JSON.parse(String(row.body)),version:Number(row.version)};
   }
-  return Response.json({projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared}, {headers:noStore});
+  return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared});
 });
+
+/** A feature film's project (and its shared copy) can pass Vercel's 4.5 MB response limit, so a large answer leaves gzipped; browsers unpack it. */
+function projectResponse(req:Request,value:unknown){
+  const json=JSON.stringify(value);
+  if(json.length<1_000_000||!/\bgzip\b/.test(req.headers.get('accept-encoding')||''))return new Response(json,{headers:{...noStore,'Content-Type':'application/json'}});
+  return new Response(new Uint8Array(gzipSync(json)),{headers:{...noStore,'Content-Type':'application/json','Content-Encoding':'gzip',Vary:'Accept-Encoding'}});
+}
 
 export const PUT=withTenant(async(req:Request)=>{
   const auth=await requireSession();if(auth.response)return auth.response;
@@ -62,7 +70,7 @@ export const POST=withTenant(async(req:Request)=>{
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
-    return Response.json({project:p,revision:0});
+    return projectResponse(req,{project:p,revision:0});
   }
   const draft=await readDraft(auth.user.id,body.projectId);
   if(!draft)return Response.json({error:'Save your project first.'},{status:404});
@@ -72,7 +80,7 @@ export const POST=withTenant(async(req:Request)=>{
   }
   if(body.action==='publish'){
     if(!Number.isInteger(body.expectedBibleVersion)||body.expectedBibleVersion<0)return Response.json({error:'Load the current shared context before publishing.'},{status:400});
-    try{return Response.json(await publishBible(auth.user.id,auth.user.name,body.projectId,body.expectedBibleVersion));}
+    try{return projectResponse(req,await publishBible(auth.user.id,auth.user.name,body.projectId,body.expectedBibleVersion));}
     catch(error){
       const problem=error as Error&{code?:string;currentVersion?:number};
       return Response.json({error:problem.message||'Unable to publish shared context.',...(problem.code==='bible_conflict'?{code:problem.code,currentVersion:problem.currentVersion}:{})},{status:problem.code==='bible_conflict'?409:400});

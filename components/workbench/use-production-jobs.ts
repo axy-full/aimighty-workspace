@@ -1,4 +1,5 @@
 'use client';
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {studioRequest} from './GenerationDialog';
 import type {ThinkingModel} from '@/components/atomik/ModelPicker';
@@ -63,7 +64,7 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
     setMedia({scope,jobs});
     change(old=>scopeOf(old,requestScope)===scope?recoverMediaAssets(old,jobs):old,false);
     const missing=jobs.filter(j=>j.status==='succeeded'&&!ref.current.assets.some(a=>a.generationId===j.id)).length;
-    report('media',ref.current.assets.length+missing>500?new Error('This working space has reached 500 assets. Additional completed takes remain in Activity and the project library.'):undefined);
+    report('media',ref.current.assets.length+missing>PROJECT_LIMITS.assets?new Error(`This working space has reached ${limitText(PROJECT_LIMITS.assets)} assets. Additional completed takes remain in Activity and the project library.`):undefined);
    }catch(error){report('media',error);}
   };
   const promise=Promise.allSettled([atomTask(),mediaTask()]).then(()=>{}).finally(()=>{if(inFlight.current?.abort===abort)inFlight.current=null;});

@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScriptPanel } from "@/components/workbench/ScriptPanel";
 import { DevelopmentPanel } from "@/components/workbench/DevelopmentPanel";
@@ -100,7 +101,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
 
   async function importScreenplay(file: File, result: ScreenplayImport) {
     const current = latest.current;
-    if (current.assets.length >= 500) throw new Error("The asset library is full. Make space for the original screenplay first.");
+    if (current.assets.length >= PROJECT_LIMITS.assets) throw new Error("The asset library is full. Make space for the original screenplay first.");
     const uploaded = await uploadWorkbench(file, undefined, scope);
     const adfilm = current.scriptFormat === "adfilm";
     const asset: Asset = { id: uploaded.id, uploadId: uploaded.id, name: file.name.slice(0, 200), kind: "document", category: adfilm ? "Ad-film script" : "Screenplay", url: uploaded.url, mime: uploaded.mime || file.type, description: adfilm ? "Original ad-film script source" : "Original screenplay source", prompt: "", status: "Draft", version: 1, locked: false, refs: [] };

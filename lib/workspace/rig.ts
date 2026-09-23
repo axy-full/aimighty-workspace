@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from "../workbench/project-limits";
 import type { MediaJob } from "../workbench/job-recovery";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
 import { NODE_DEFS, createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
@@ -15,7 +16,7 @@ import { vendorNameIn } from "./vendor-names";
 /* ── Adding a shot ────────────────────────────────────────────────────── */
 
 /** Same ceiling the graph's duplicate uses. */
-export const NODE_LIMIT = 250;
+export const NODE_LIMIT = PROJECT_LIMITS.nodes;
 const GAP = 40;
 
 /**

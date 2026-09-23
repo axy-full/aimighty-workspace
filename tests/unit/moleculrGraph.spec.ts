@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from "../../lib/workbench/project-limits";
 import { expect, test } from "@playwright/test";
 import { bindMoleculrReferences } from "../../lib/workbench/moleculr-graph";
 import { generationReferenceIds } from "../../lib/workbench/node-graph";
@@ -211,7 +212,7 @@ test("reconfiguring preserves variant fields, reuses plain sources and never lin
 test("node capacity includes the new variant and sources but does not count an existing variant twice", () => {
   const project = newProject("Full project");
   project.assets = [image("product")];
-  project.nodes = Array.from({ length: 248 }, (_, index) =>
+  project.nodes = Array.from({ length: PROJECT_LIMITS.nodes - 2 }, (_, index) =>
     node(`existing-${index}`),
   );
   const atLimit = bindMoleculrReferences(
@@ -220,15 +221,15 @@ test("node capacity includes the new variant and sources but does not count an e
     project.assets,
     ids(),
   );
-  expect(saved(project, atLimit).nodes).toHaveLength(250);
-  project.nodes.push(node("existing-248"));
+  expect(saved(project, atLimit).nodes).toHaveLength(PROJECT_LIMITS.nodes);
+  project.nodes.push(node(`existing-${PROJECT_LIMITS.nodes - 2}`));
   let allocated = 0;
   expect(() =>
     bindMoleculrReferences(project, node("variant"), project.assets, () => {
       allocated++;
       return "source";
     }),
-  ).toThrow("250-node project limit");
+  ).toThrow(`${limitText(PROJECT_LIMITS.nodes)}-node project limit`);
   expect(allocated).toBe(0);
   const replacement = bindMoleculrReferences(
     project,

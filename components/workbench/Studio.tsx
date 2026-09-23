@@ -1,5 +1,6 @@
 "use client";
 
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 import dynamic from 'next/dynamic';
 import { astraNativeDigest, serializeAstraNative, validateAstraNativeBindings } from '@/lib/astra-blender/native';
 import { mergeRegisteredAstraAssets } from '@/lib/astra-blender/merge-assets';
@@ -1089,7 +1090,7 @@ export default function Studio({
       catch(error){toast.error(error instanceof Error?error.message:'This proposal could not be applied.');}
       return;
     }
-    if(p.nodes.length+plan.steps.length>250){toast.error('The canvas supports 250 nodes. Remove some nodes before adding this plan.');return;}
+    if(p.nodes.length+plan.steps.length>PROJECT_LIMITS.nodes){toast.error(`The canvas supports ${limitText(PROJECT_LIMITS.nodes)} nodes. Remove some nodes before adding this plan.`);return;}
     const marketing=isMarketingPlan(plan);
     const nodes: CanvasNode[] = plan.steps.map((s, i) => ({
       id: uid("node"),
@@ -1167,7 +1168,7 @@ export default function Studio({
     if(transitioningRef.current || !signedIn || !readyRef.current)throw new Error('Create and save a project before importing.');
     const draftId=pRef.current.id;
     if(pRef.current.scriptSource?.sha256===result.sha256 && pRef.current.script===result.text && JSON.stringify(pRef.current.scriptSource.ocr)===JSON.stringify(result.ocr)){if(!(await ensureSaved(draftId)))throw new Error('The import is still unsaved. Retry when the connection returns.');return;}
-    if(pRef.current.assets.length>=500)throw new Error('The asset library is full. Make space for the original screenplay first.');
+    if(pRef.current.assets.length>=PROJECT_LIMITS.assets)throw new Error('The asset library is full. Make space for the original screenplay first.');
     uploadingRef.current++;setUploading(true);
     try {
       const uploaded=await uploadWorkbench(file,undefined,storageKey);
@@ -1904,7 +1905,7 @@ export default function Studio({
                     {stage === "astra-blender" && <AstraStudio key={storageKey + p.id} project={p} scope={storageKey} enabled={ready && signedIn && !transitioning}
                       onSave={() => ensureSaved(p.id)}
                       onRefreshProject={() => refreshAstraAssets(p.id)}
-                      onAsset={asset => change(old => { if (old.id !== p.id) throw new Error('The project changed. Your upload is preserved in All assets.'); if (old.assets.length >= 500) throw new Error('The project asset limit was reached. Your upload is preserved in All assets.'); return {...old, assets:[...old.assets.filter(item=>item.id!==asset.id),asset]}; })}
+                      onAsset={asset => change(old => { if (old.id !== p.id) throw new Error('The project changed. Your upload is preserved in All assets.'); if (old.assets.length >= PROJECT_LIMITS.assets) throw new Error('The project asset limit was reached. Your upload is preserved in All assets.'); return {...old, assets:[...old.assets.filter(item=>item.id!==asset.id),asset]}; })}
                       onChange={patch => change(old => { if (old.id !== p.id) throw new Error('The project changed. Return to the original project.'); return {...old,...patch}; })}
                       onApply={async plan => {
                         const proposal = plan.astraBlender, native = plan.astraNative;
@@ -2108,7 +2109,7 @@ export default function Studio({
                               change(old => {
                                 if (old.id !== p.id) throw new Error('The project changed. Return to the original project.');
                                 if (old.assets.some(item => item.id === next.id)) return old;
-                                if (old.assets.length >= 500) throw new Error('The project asset limit was reached.');
+                                if (old.assets.length >= PROJECT_LIMITS.assets) throw new Error('The project asset limit was reached.');
                                 return { ...old, assets: [...old.assets, next] };
                               });
                               toast.success('Take added to this project.');

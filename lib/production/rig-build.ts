@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from "../workbench/project-limits";
 import { createNode } from "../workbench/node-graph";
 import { uid, type Asset, type CanvasNode, type Project } from "../workbench/studio";
 import { boardShots } from "./boards";
@@ -9,13 +10,19 @@ import { boardShots } from "./boards";
  * storyboard frame.
  */
 export class RigBuildError extends Error {}
-const NODE_LIMIT = 250;
+const NODE_LIMIT = PROJECT_LIMITS.nodes;
 const MEDIA_WIDTH = 220;
 
+/* The canvas holds x and y within -10,000…20,000. Shots stack down a column;
+   a full column starts the next one to its right (inputs sit to each shot's left). */
+const COLUMN_WIDTH = 720, COLUMN_FLOOR = 19_000, CANVAS_RIGHT = 19_000;
 function place(project: Project, near?: CanvasNode) {
-  if (near) return { x: near.x - MEDIA_WIDTH - 60, y: near.y + near.linked.length * 90 };
-  const bottom = project.nodes.reduce((max, n) => Math.max(max, n.y + 260), 60);
-  return { x: 100, y: bottom };
+  if (near) return { x: near.x - MEDIA_WIDTH - 60, y: Math.min(COLUMN_FLOOR, near.y + near.linked.length * 90) };
+  const column = project.nodes.reduce((max, n) => (n.boardShotId || n.type === "scene" ? Math.max(max, n.x) : max), 100);
+  const bottom = project.nodes.reduce((max, n) => (n.x > column - COLUMN_WIDTH / 2 - MEDIA_WIDTH && n.x < column + COLUMN_WIDTH / 2 ? Math.max(max, n.y + 260) : max), 60);
+  if (bottom <= COLUMN_FLOOR) return { x: column, y: bottom };
+  if (column + COLUMN_WIDTH > CANVAS_RIGHT) throw new RigBuildError("The Rig canvas is full. Remove unused shots or start another project.");
+  return { x: column + COLUMN_WIDTH, y: 60 };
 }
 function roomFor(project: Project, n: number) { if (project.nodes.length + n > NODE_LIMIT) throw new RigBuildError(`This rig holds ${NODE_LIMIT} nodes; there is room for ${NODE_LIMIT - project.nodes.length} more.`); }
 const withAsset = (project: Project, asset: Asset) => (project.assets.some((a) => a.id === asset.id) ? project : { ...project, assets: [...project.assets, asset] });

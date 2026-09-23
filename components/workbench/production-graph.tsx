@@ -1,4 +1,5 @@
 'use client';
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 import {renderedNodeAsset} from '@/lib/workbench/node-render';
 import selectionStyles from './canvas-selection.module.css';
 import {clampCanvasZoom,describeRemoval,duplicateSelectedNodes,fitCanvasNodes,marqueeSelection,moveSelectedNodes,removableNodeIds,removeSelectedNodes,selectionRect,toggleNodeSelection,zoomAround} from '@/lib/workbench/canvas-selection';
@@ -134,7 +135,7 @@ export default function ProductionGraph({project:p,onChange,onSettle,selectedId,
  function fit(items=nodes){const next=fitCanvasNodes(items,{width:viewport.current?.clientWidth||900,height:viewport.current?.clientHeight||600},{top:mobile?88:shortLandscape?26:35,bottom:mobile?86:shortLandscape?48:76});setZoom(next.zoom);setPan(next.pan);}
  function zoomTo(next:number,anchor?:{x:number;y:number}){const result=zoomAround(anchor||{x:(viewport.current?.clientWidth||900)/2,y:(viewport.current?.clientHeight||600)/2},pan,zoom,clampCanvasZoom(next,zoom));setPan(result.pan);setZoom(result.zoom);}
  function zoomBy(step:number){zoomTo(zoom+step);}
- function add(type:NodeType,assetId?:string,position?:{x:number;y:number}){if(readonly){toast('Open My space to add a node.');return;}if(p.nodes.length>=250){toast.error('This canvas has reached its 250-node limit.');return;}const inView=(value:number)=>Math.max(-10000,Math.min(20000,value));const pos=position||{x:inView(((viewport.current?.clientWidth||900)/2-pan.x)/zoom-130),y:inView(((viewport.current?.clientHeight||500)/2-pan.y)/zoom-90)};const next=createNode(type,p.nodes.filter(n=>n.type===type).length,pos);if(assetId){next.assetId=assetId;next.title=assets.find(a=>a.id===assetId)?.name||next.title;}onChange(old=>({...old,nodes:[...old.nodes,next]}));onSelect(next.id);setInspector(true);setTab('tools');if(mobile){setLibrary(false);setView('canvas');requestAnimationFrame(()=>focusNode(next));}toast.success(NODE_DEFS[type].label+' added');}
+ function add(type:NodeType,assetId?:string,position?:{x:number;y:number}){if(readonly){toast('Open My space to add a node.');return;}if(p.nodes.length>=PROJECT_LIMITS.nodes){toast.error(`This canvas has reached its ${limitText(PROJECT_LIMITS.nodes)}-node limit.`);return;}const inView=(value:number)=>Math.max(-10000,Math.min(20000,value));const pos=position||{x:inView(((viewport.current?.clientWidth||900)/2-pan.x)/zoom-130),y:inView(((viewport.current?.clientHeight||500)/2-pan.y)/zoom-90)};const next=createNode(type,p.nodes.filter(n=>n.type===type).length,pos);if(assetId){next.assetId=assetId;next.title=assets.find(a=>a.id===assetId)?.name||next.title;}onChange(old=>({...old,nodes:[...old.nodes,next]}));onSelect(next.id);setInspector(true);setTab('tools');if(mobile){setLibrary(false);setView('canvas');requestAnimationFrame(()=>focusNode(next));}toast.success(NODE_DEFS[type].label+' added');}
  function addFromLibrary(event:React.MouseEvent<HTMLButtonElement>){const type=event.currentTarget.dataset.nodeType as NodeType;if(type in NODE_DEFS)add(type);}
  function connect(source:string,target:string){if(readonly)return;const err=canConnect(p.nodes,source,target);if(err){toast.error(err);return;}update(target,{linked:[...p.nodes.find(n=>n.id===target)!.linked,source]});setWire(null);toast.success('Nodes connected');}
  function duplicate(n:CanvasNode){duplicateSelection([n.id]);}
@@ -142,7 +143,7 @@ export default function ProductionGraph({project:p,onChange,onSettle,selectedId,
  function nodeActions(n:CanvasNode):StudioAction[]{if(selectedIds.includes(n.id)&&selectedIds.length>1)return selectionActions();const source=resolveAsset(n,nodes,assets);return [
   {label:'Open inspector',run:()=>{onSelect(n.id);setInspector(true)}},
   {label:'Download original',disabled:!source||!originalAssetDownload(source),run:()=>{if(source)downloadOriginalAsset(source)}},
-  {label:'Duplicate node',disabled:readonly||n.locked||p.nodes.length>=250,run:()=>duplicate(n)},
+  {label:'Duplicate node',disabled:readonly||n.locked||p.nodes.length>=PROJECT_LIMITS.nodes,run:()=>duplicate(n)},
   {label:n.bypassed?'Enable node':'Bypass node',disabled:readonly||n.locked,run:()=>update(n.id,{bypassed:!n.bypassed})},
   {label:n.collapsed?'Expand node':'Collapse node',disabled:readonly||n.locked,run:()=>update(n.id,{collapsed:!n.collapsed})},
   {label:n.locked?'Unlock node':'Lock node',disabled:readonly,run:()=>update(n.id,{locked:!n.locked})},

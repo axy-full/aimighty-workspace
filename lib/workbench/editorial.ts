@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS, limitText } from "./project-limits";
 import type { Asset, Project, Shot } from "./studio";
 import { validateSequence } from "./studio";
 import { audioClips, type AudioClip } from "./audio";
@@ -99,9 +100,9 @@ export function applyEdit(project: Project, edit: EditSnapshot): Project {
       );
     if (!current) assets.set(frozen.id, structuredClone(frozen));
   }
-  if (assets.size > 500)
+  if (assets.size > PROJECT_LIMITS.assets)
     throw Error(
-      "Restoring these sources would exceed the 500-asset limit. Make room before restoring.",
+      `Restoring these sources would exceed the ${limitText(PROJECT_LIMITS.assets)}-asset limit. Make room before restoring.`,
     );
   const next = {
     ...project,

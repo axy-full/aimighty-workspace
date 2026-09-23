@@ -1,3 +1,4 @@
+import { PROJECT_LIMITS } from "./project-limits";
 import type { Asset, CanvasNode, Project } from "./studio";
 
 /** Freeze the selected context together with every source needed to understand it. */
@@ -60,7 +61,7 @@ export function publishedContext(project: Project) {
   selectedAssets.forEach((asset) => includeAsset(asset.id));
   selectedNodes.forEach((node) => includeNode(node.id));
   if (project.scriptSource) includeAsset(project.scriptSource.assetId);
-  if (assets.length > 500 || nodes.length > 250)
+  if (assets.length > PROJECT_LIMITS.assets || nodes.length > PROJECT_LIMITS.nodes)
     throw new Error(
       "The shared context exceeds the project asset or node limit.",
     );
