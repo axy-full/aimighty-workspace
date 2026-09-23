@@ -52,7 +52,7 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Boards$/, /^03\s*Cast$/, /^04\s*Astra$/, /^05\s*Rig$/, /^06\s*Takes$/, /^07\s*Edit$/, /^08\s*Deliver$/]);
+  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Boards$/, /^04\s*Cast$/, /^05\s*Astra$/, /^06\s*Rig$/, /^07\s*Takes$/, /^08\s*Edit$/, /^09\s*Deliver$/]);
   await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
   await expect(strip.getByRole("button", { name: /Brief/ })).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
@@ -132,7 +132,7 @@ test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("deliver");
-  await expect(dialog.getByRole("option").first()).toContainText("08 Deliver");
+  await expect(dialog.getByRole("option").first()).toContainText("09 Deliver");
   await expect(dialog.getByRole("option").last()).toContainText("Ask Atomik: deliver");
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);

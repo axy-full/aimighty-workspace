@@ -17,6 +17,7 @@ export function developmentInput(record: PendingDevelopment): DevelopmentRequest
   if (!input || input.projectId !== record.projectId || !/^[\w-]{8,100}$/.test(input.requestId) ||
       !['idea', 'screenplay', 'adfilm', 'write'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
       (input.fromJobId != null && (input.kind !== 'write' || !/^wb_development_[a-f0-9-]+$/.test(input.fromJobId))) ||
+      (input.fromBeats != null && (input.kind !== 'write' || input.fromBeats !== true || input.fromJobId != null)) ||
       typeof input.effort !== 'string' || !/^[a-f0-9]{64}$/.test(input.sourceHash ?? '') ||
       !Number.isInteger(input.maxCredits) || input.maxCredits! < 0 || input.quoteOnly != null ||
       (input.maxUsd != null && (!Number.isFinite(input.maxUsd) || input.maxUsd < 0))) {

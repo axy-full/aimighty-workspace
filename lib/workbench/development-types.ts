@@ -9,6 +9,8 @@ export type DevelopmentRequest = {
   maxCredits?: number; maxUsd?: number;
   /** `write` only: redraft the script a finished writer run produced, with `instructions` as the director's notes. */
   fromJobId?: string;
+  /** `write` only: redraft the project's script so it plays the director's edited beat sheet. */
+  fromBeats?: true;
 };
 export type DevelopmentIdea = { title: string; logline: string; treatment: string; visualDirection: string; critique: string };
 export type DevelopmentShot = { description: string; framing: string; movement: string; lighting: string; sound: string };
@@ -32,6 +34,8 @@ export type DevelopmentQuote = {
 export type DevelopmentJob = {
   id: string; requestId: string; projectId: string; productionProjectId: string | null;
   kind: DevelopmentKind; model: string; effort: string; instructions: string;
+  /** `write` only: what the draft was written from. */
+  source?: 'prompt' | 'draft' | 'beats';
   sourceHash: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain';
   completedChunks: number; totalChunks: number; currentStage: DevelopmentStage | 'complete';
   completedSteps: number; totalSteps: number;

@@ -169,6 +169,18 @@ export const productionSchema = z.object({
     at: z.string().datetime(), source: z.enum(['agent', 'hand']),
     jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict().optional(),
+  beats: z.object({
+    jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), scriptSha256: z.string().regex(/^[a-f0-9]{64}$/), updatedAt: z.string().datetime(),
+    scenes: z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), heading: z.string().max(300), summary: z.string().max(4000),
+      beats: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), text: z.string().max(800) }).strict()).max(40),
+      shots: z.array(z.object({
+        id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), description: z.string().max(800), framing: z.string().max(200), movement: z.string().max(200),
+        lighting: z.string().max(200), sound: z.string().max(200), duration: z.number().min(0.5).max(600).optional(),
+      }).strict()).max(40),
+      characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
+    }).strict()).max(200),
+  }).strict().optional(),
 }).strict();
 export const projectSchema = z.object({
   production: productionSchema.optional(),

@@ -34,6 +34,7 @@ import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
 import { STAGE_VIEW_PAGES, StageView } from "./StageView";
 import { BriefStage } from "./production/BriefStage";
+import { BeatsStage } from "./production/BeatsStage";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -192,7 +193,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
                       <StudioHome key="stages" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "brief" ? (
-                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
+                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
+                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (

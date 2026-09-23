@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ScriptPanel } from "@/components/workbench/ScriptPanel";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
+import { sha256Hex } from "@/lib/production/hash";
 import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { ScreenplayImport, ScriptScene } from "@/lib/workbench/screenplay";
 import { buildScreenplayNodes } from "@/lib/workbench/screenplay-nodes";
@@ -12,19 +13,14 @@ import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { useWorkspace } from "@/lib/workspace/state";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
-import { useAtomik } from "@/lib/workspace/atomik-host";
-import { clearSpecFacts, publishSpecFacts } from "@/lib/workspace/spec-store";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
+import { useStageFacts } from "./use-stage-facts";
 
 export const PROMPT_LIMIT = 30_000;
 export const NOTES_LIMIT = 5_000;
 const STAGE: Record<string, string> = { draft: "drafting", critique: "critiquing the draft", refine: "refining", complete: "finishing" };
 
-export async function sha256Hex(text: string) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(hash), (n) => n.toString(16).padStart(2, "0")).join("");
-}
 
 /**
  * Production › Brief & Script (owner's brief, 23 September): a prompt box the
@@ -57,13 +53,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
     window.addEventListener(SECTION_EVENT, onSection);
     return () => window.removeEventListener(SECTION_EVENT, onSection);
   }, []);
-  /* The Inspector's facts read the draft on screen. */
-  const atomik = useAtomik();
-  const runStatus = atomik.runFor("brief")?.status ?? null;
-  const planCompleted = Boolean(atomik.state.completed.brief);
-  const planPrice = atomik.plan("brief")?.priceLabel ?? null;
-  useEffect(() => { publishSpecFacts("brief", { project: p, runs: null, budget: null, planRun: runStatus ? { status: runStatus } : null, planCompleted, planPrice }); }, [p, runStatus, planCompleted, planPrice]);
-  useEffect(() => () => clearSpecFacts("brief"), []);
+  useStageFacts("brief", p);
 
   const drafts = useMemo(() => runs.jobs.filter((job) => job.kind === "write"), [runs.jobs]);
   const finished = drafts.filter((job) => job.status === "succeeded");

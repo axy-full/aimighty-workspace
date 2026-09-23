@@ -47,3 +47,37 @@
 /* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
 .gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: 0 2px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12); }
 .gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+
+/* Beats: a beat board — one card per scene, its beats as numbered cards, its shots beneath. */
+.gx .pd-gate { gap: 10px; }
+.gx .pd-gate .gx-hint { margin: 0; }
+.gx .pd-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx .pd-offer .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+.gx .pd-board { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx .pd-scene { gap: 12px; border-left: 3px solid var(--gx-accent); }
+.gx .pd-scene:nth-child(4n+2) { border-left-color: #BF5AF2; }
+.gx .pd-scene:nth-child(4n+3) { border-left-color: #FF9F0A; }
+.gx .pd-scene:nth-child(4n+4) { border-left-color: #30D158; }
+.gx .pd-scene-n, .gx .pd-shot-n, .gx .pd-beat-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); flex: none; }
+.gx .pd-scene-heading { flex: 1; min-width: 160px; width: auto; font-family: var(--gx-mono); text-transform: uppercase; letter-spacing: .02em; }
+.gx .pd-order { display: flex; gap: 4px; flex: none; }
+.gx .pd-order .gx-hbtn { min-width: 32px; justify-content: center; }
+.gx .pd-cast-line { margin: 0; font-size: 12px; }
+.gx .pd-beats, .gx .pd-shots { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gx .pd-beat { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.gx .pd-beat-n { padding-top: 10px; text-align: right; }
+.gx .pd-beat-text { min-height: 44px; }
+.gx .pd-add { align-self: flex-start; }
+.gx .pd-shot { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pd-seconds { display: flex; align-items: center; gap: 6px; }
+.gx .pd-seconds .gx-field { width: 84px; }
+.gx .pd-shot-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.gx .pd-shot-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gx .pd-shot-fields .gx-hint, .gx .pd-seconds .gx-hint { font-size: 12px; }
+.gx .pd-next { display: flex; justify-content: flex-end; }
+@media (max-width: 759px) {
+  .gx .pd-shot-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gx .pd-order .gx-hbtn { min-width: 44px; }
+  .gx .pd-scene-heading { min-width: 0; flex-basis: 100%; order: 3; }
+  .gx .pd-next .gx-primary { width: 100%; justify-content: center; }
+}

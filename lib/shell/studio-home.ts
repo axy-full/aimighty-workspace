@@ -19,6 +19,8 @@ export function studioStages(): ShellPage[] {
   return shellSuite("studio").pages.filter((p) => !p.phoneOnly);
 }
 
+const COUNT_WORDS: Record<number, string> = { 8: "eight", 9: "nine", 10: "ten", 11: "eleven" };
+
 export function stageCards(project: Project | null, items: readonly LibraryEntry[]): StageCard[] {
   const takes = items.filter((e) => e.take.kind === "GEN").length;
   const shots = project?.shots.length ?? 0;
@@ -29,8 +31,11 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
   const elements = assets.filter((a) => a.category === "Element").length;
   const clips = project?.audioClips?.length ?? 0;
   const brief = words(project?.brief) + words(project?.script);
+  const beatScenes = project?.production?.beats?.scenes.length ?? 0;
+  const beatShots = project?.production?.beats?.scenes.reduce((n, s) => n + s.shots.length, 0) ?? 0;
   const line: Record<string, [string, StageStatus]> = {
     brief: brief ? [`${plural(brief, "word")}${project?.script ? " · script" : ""}`, "done"] : ["empty", "ready"],
+    beats: beatShots ? [`${plural(beatScenes, "scene")} · ${plural(beatShots, "shot")}`, "done"] : ["no beats yet", "ready"],
     boards: frames ? [plural(frames, "frame"), "done"] : ["no frames yet", "ready"],
     cast: cast || elements ? [`${plural(cast, "identity", "identities")} · ${plural(elements, "element")}`, "done"] : ["no identity yet", "ready"],
     astra: project?.astraBlender ? ["scene set", "done"] : ["block on desktop", "ready"],
@@ -63,7 +68,8 @@ export type HomeFacts = {
 export function suiteTiles(cards: readonly StageCard[], facts: HomeFacts): SuiteTile[] {
   const done = cards.filter((c) => c.status === "done").length;
   return [
-    { id: "studio", label: "Studio", color: "#0A84FF", line: "Brief to delivery, eight stages.", fact: `${done} of ${cards.length} done` },
+    /* The prototype said "eight stages"; the owner's Production brief (23 September) sets the count, so it is read from the strip. */
+    { id: "studio", label: "Studio", color: "#0A84FF", line: `Brief to delivery, ${COUNT_WORDS[cards.length] ?? cards.length} stages.`, fact: `${done} of ${cards.length} done` },
     { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio, 3D — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} ready` },
     { id: "business", label: "Business", color: "#FF9F0A", line: "Marketing Studio: product, presenter, ad.", fact: `${facts.adMode} · ${facts.adSeconds} s · quoted in Ads` },
     { id: "viral", label: "Viral", color: "#FF453A", line: "Genjutsu: motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },

@@ -21,6 +21,7 @@ import { engineMock } from '../mock';
 import { requireTenant, type TenantToken } from '../tenant';
 import { recoveryFetch, resolveRecoveryJobTx, withRecoveryJob } from '../recovery';
 import { sourceCanonical, type DevelopmentJob, type DevelopmentQuote, type DevelopmentRequest, type DevelopmentResult, type DevelopmentStage } from './development-types';
+import { compactBeatSheet } from '../production/beats';
 import { DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_WRITE_TOKENS, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
 export class DevelopmentError extends Error {
@@ -33,6 +34,7 @@ export const developmentRequestSchema = z.object({
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
   fromJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+  fromBeats: z.literal(true).optional(),
 }).strict();
 export type DevelopmentCall = {
   model: CatalogModel; effort: string; stage: DevelopmentStage; kind: DevelopmentRequest['kind'];
@@ -113,11 +115,11 @@ export function developmentModels(models: CatalogModel[]) {
 }
 export function developmentSourceHash(canonical: string) { return createHash('sha256').update(canonical).digest('hex'); }
 
-type Snapshot = { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; script?: string; fromJobId?: string };
+type Snapshot = { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; script?: string; fromJobId?: string; beatSheet?: unknown };
 /** The writer's source: the project, and the draft being redrafted (an earlier run's, or the script on the page). */
-function writerCanonical(project: { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; scriptFormat?: 'screenplay' | 'adfilm' }, base: string, fromJobId?: string) {
+function writerCanonical(project: { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; scriptFormat?: 'screenplay' | 'adfilm' }, base: string, fromJobId?: string, beatSheet?: unknown) {
   return JSON.stringify({ kind: 'write', name: project.name, brief: project.brief, audience: project.audience, deliverables: project.deliverables,
-    direction: project.direction, fps: project.fps, aspect: project.aspect, scriptFormat: project.scriptFormat ?? 'screenplay', script: base, ...(fromJobId ? { fromJobId } : {}) });
+    direction: project.direction, fps: project.fps, aspect: project.aspect, scriptFormat: project.scriptFormat ?? 'screenplay', script: base, ...(fromJobId ? { fromJobId } : {}), ...(beatSheet ? { beatSheet } : {}) });
 }
 /** The script a finished writer run of this project produced, for its redraft. */
 async function writerDraft(owner: string, projectId: string, jobId: string): Promise<string> {
@@ -129,9 +131,9 @@ async function writerDraft(owner: string, projectId: string, jobId: string): Pro
   return text;
 }
 function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
-  const { script, fromJobId: _from, ...context } = snapshot;
+  const { script, fromJobId: _from, beatSheet, ...context } = snapshot;
   if (input.kind === 'write') return JSON.stringify({ directorRequest: input.instructions ?? '', project: context,
-    ...(script?.trim() ? { currentDraft: script } : {}), ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
+    ...(script?.trim() ? { currentDraft: script } : {}), ...(beatSheet ? { beatSheet } : {}), ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
   return JSON.stringify({ directorRequest: input.instructions ?? '', project: context,
     ...(input.kind === 'idea' ? {} : { assignedSourceSegments: chunk.segments.map(segment => ({
       id: segment.id, heading: segment.heading, sourceStart: segment.start, sourceEnd: segment.end,
@@ -141,14 +143,22 @@ function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: Develop
 async function compile(input: DevelopmentRequest, owner: string, deps: DevelopmentDependencies) {
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new DevelopmentError('Save the project to link its production budget.', 409);
-  let base = '';
-  if (input.kind !== 'write' && input.fromJobId) throw new DevelopmentError('Only the script writer redrafts an earlier result.');
+  let base = '', beatSheet: unknown;
+  if (input.kind !== 'write' && (input.fromJobId || input.fromBeats)) throw new DevelopmentError('Only the script writer redrafts an earlier result.');
+  if (input.fromJobId && input.fromBeats) throw new DevelopmentError('Redraft one source at a time: a draft, or the beat sheet.');
   if (input.kind === 'write') {
     if (input.fromJobId) base = await writerDraft(owner, input.projectId, input.fromJobId);
+    if (input.fromBeats) {
+      base = project.script ?? '';
+      const sheet = project.production?.beats;
+      if (!base.trim()) throw new DevelopmentError('Approve a script in Brief & Script first.');
+      if (!sheet?.scenes.length) throw new DevelopmentError('Break the script into beats first.');
+      beatSheet = compactBeatSheet(sheet);
+    }
     if (!project.brief.trim() && !base.trim()) throw new DevelopmentError('Write the prompt for the script first.');
-    if (base && !input.instructions?.trim()) throw new DevelopmentError('Write the notes for this redraft.');
+    if (input.fromJobId && !input.instructions?.trim()) throw new DevelopmentError('Write the notes for this redraft.');
   }
-  const canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId) : sourceCanonical(project, input.kind), snapshot = JSON.parse(canonical) as Snapshot;
+  const canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId, beatSheet) : sourceCanonical(project, input.kind), snapshot = JSON.parse(canonical) as Snapshot;
   if (input.kind === 'idea' && ![project.brief, project.direction].some(value => value.trim())) throw new DevelopmentError('Add a brief or a creative direction before developing ideas.');
   let chunks: DevelopmentChunk[];
   try { chunks = input.kind === 'idea' || input.kind === 'write' ? [{ index: 0, start: 0, end: canonical.length, segments: [] }] : developmentChunks(project.script ?? ''); }
@@ -193,6 +203,7 @@ async function publicJob(row: Row, offset = 0, withResult = true): Promise<Devel
   const result = row.status === 'succeeded' && withResult ? (await db().execute({ sql: "SELECT result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND stage='refine' AND status='succeeded'", args: [String(row.id), offset] })).rows[0] : null;
   return { id: String(row.id), requestId: input.requestId, projectId: input.projectId,
     productionProjectId: String(row.production_project_id), kind: input.kind, model: input.model, effort: input.effort,
+    ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
     instructions: input.instructions ?? '', sourceHash: String(row.source_hash), status: String(row.status) as DevelopmentJob['status'],
     completedChunks, totalChunks, completedSteps, totalSteps: progress.rows.length,
     currentStage: next ? String(next.stage) as DevelopmentStage : 'complete',
@@ -302,7 +313,7 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
 }
 /** The mock writer: a short, well-formed script that says which draft it is, so a redraft visibly differs. */
 function mockWriterReply(input: DevelopmentCall): DevelopmentReply {
-  const request = JSON.parse(input.prompt) as { directorRequest?: string; project?: { name?: string; brief?: string }; currentDraft?: string };
+  const request = JSON.parse(input.prompt) as { directorRequest?: string; project?: { name?: string; brief?: string }; currentDraft?: string; beatSheet?: { heading: string; beats: string[] }[] };
   const redraft = Boolean(request.currentDraft);
   const note = request.directorRequest?.trim();
   const screenplay = [
@@ -312,10 +323,11 @@ function mockWriterReply(input: DevelopmentCall): DevelopmentReply {
     'MARA (60s), wrapped in wool, watches through a frosted window.', '',
     'MARA', '(to herself)', redraft ? 'You came back.' : 'Not tonight, little one.', '',
     ...(redraft && note ? ['EXT. FROZEN HARBOUR - NIGHT', '', `The fox stops at the hut's lamp. ${note.slice(0, 200)}`, ''] : []),
+    ...(request.beatSheet ? request.beatSheet.flatMap((scene) => [scene.heading.toUpperCase(), '', ...scene.beats.map((beat) => beat), '']) : []),
     'FADE OUT.',
   ].join('\n');
   return { text: JSON.stringify({ title: request.project?.name || 'Untitled', logline: `A fox crosses a frozen harbour as an old harbour master keeps watch${redraft ? ' — redrafted from the director\'s notes' : ''}.`,
-    screenplay, notes: [redraft ? 'Mock redraft: applied the director\'s notes.' : 'Mock draft: built from the prompt.'], critique: ['Mock review only; no provider was called.'], assumptions: ['The fox is a real animal, not a costume.'] }), inputTokens: 300, outputTokens: 400, costUsd: 0 };
+    screenplay, notes: [request.beatSheet ? `Mock redraft: plays the beat sheet's ${request.beatSheet.length} scenes.` : redraft ? 'Mock redraft: applied the director\'s notes.' : 'Mock draft: built from the prompt.'], critique: ['Mock review only; no provider was called.'], assumptions: ['The fox is a real animal, not a costume.'] }), inputTokens: 300, outputTokens: 400, costUsd: 0 };
 }
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
   if (input.kind === 'write' && input.stage !== 'critique') return mockWriterReply(input);

@@ -73,11 +73,13 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 02 and 05; Business after 02; Viral after 02; Atomik after 01 and 04. */
+/** Group starts: Studio after 03 and 06; Business after 02; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
-  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [2, 5], [
+  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 6], [
     ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
+    /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
+    ["beats", "Beats", "Beats & Shots", "Break it into beats and shots", "brief"],
     ["boards", "Boards", "Boards", "Plan every frame", "boards"],
     ["cast", "Cast", "Cast & Elements", "Keep identity consistent", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
@@ -85,7 +87,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["takes", "Takes", "Takes", "Select the right take", "takes"],
     ["edit", "Edit", "Edit & Sound", "Shape the story", "edit"],
     ["deliver", "Deliver", "Deliver", "Ready for the next room", "deliver"],
-  ])), ["brief", "boards", "astra", "deliver"]),
+  ])), ["brief", "beats", "boards", "astra", "deliver"]),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them. */
   own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
     ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode", "marketing"],

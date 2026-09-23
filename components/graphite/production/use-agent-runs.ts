@@ -119,8 +119,8 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
   }, [accept, headers, loaded, lookup, pending, projectId, quote, scope]);
 
   /** One finished run in full (an older writer draft is listed without its script). */
-  const load = useCallback(async (jobId: string) => {
-    const query = new URLSearchParams({ projectId, jobId, offset: "0" });
+  const load = useCallback(async (jobId: string, offset = 0) => {
+    const query = new URLSearchParams({ projectId, jobId, offset: String(offset) });
     return (await studioRequest<{ job: DevelopmentJob }>(`${ENDPOINT}?${query}`, { headers: { "X-Workbench-Scope": scope } })).job;
   }, [projectId, scope]);
 
