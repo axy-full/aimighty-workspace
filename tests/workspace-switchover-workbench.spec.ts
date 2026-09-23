@@ -55,7 +55,7 @@ test("every old deep link lands on the page that now holds its work", async ({ p
 
   const cases: { from: string; page: RegExp; title: string; suite: string }[] = [
     { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "Rig", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "Boards", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "Storyboards", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=characters`, page: /[?&]page=cast(&|$)/, title: "Cast & Elements", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "Astra 3D", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "Takes", suite: "particl" },

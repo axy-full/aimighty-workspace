@@ -1,9 +1,9 @@
 import { generationRequestBody, type GenerationBodyInput, type GenerationReference } from "../workbench/generation-request";
 import { mediaReferenceIdentity } from "../workbench/media-reference-input";
-import { generationBrief } from "../workbench/node-graph";
+import { renderPromptFor } from "../production/rig-prompt";
 import type { CanvasNode, Project } from "../workbench/studio";
 import { shotEngine } from "./engines";
-import { referenceRole, shotReferenceAssets } from "./rig";
+import { shotReferenceAssets, shotReferenceRole } from "./rig";
 import type { RigShot } from "./shots";
 
 /**
@@ -26,8 +26,11 @@ export function shotRequestInput(
 ): GenerationBodyInput | null {
   const model = shotEngine(shot.engine);
   if (!model) return null;
+  /* The shot's own prompt (or the Rig's earlier composition); over the engine's limit only the agent's pinned condensation goes. */
+  const render = renderPromptFor(node, project);
+  if (render.prompt === null) return null;
   return {
-    prompt: generationBrief(node, project),
+    prompt: render.prompt,
     kind: model.kind,
     model,
     mapping,
@@ -58,7 +61,7 @@ export function rigPlanRequests(project: Project, shots: readonly RigShot[]): Na
     const refs = shotReferenceAssets(project, node);
     const references = refs.flatMap((asset) => {
       const identity = mediaReferenceIdentity(asset);
-      return identity ? [{ ...identity, role: referenceRole(asset) }] : [];
+      return identity ? [{ ...identity, role: shotReferenceRole(node)(asset) }] : [];
     });
     if (references.length !== refs.length) continue;
     const input = shotRequestInput(project, node, shot, { shotId, productionProjectId: project.productionProjectId }, references);

@@ -55,7 +55,8 @@ test("desktop: aurora per view, glyph tabs with labels that clip below 1180px, f
 
   /* Library › Tools: framed groups in the department cycle; assets chips carry kind dots. */
   const groups = page.getByTestId("tool-group");
-  expect(await groups.count()).toBeGreaterThanOrEqual(3);
+  /* Brief & Script (the landing page) has its two Production groups: Agent and Script. */
+  expect(await groups.count()).toBeGreaterThanOrEqual(2);
   expect(await groups.nth(0).evaluate((el) => (el as HTMLElement).style.getPropertyValue("--dept"))).toBe("#0A84FF");
   expect(await groups.nth(1).evaluate((el) => (el as HTMLElement).style.getPropertyValue("--dept"))).toBe("#BF5AF2");
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();

@@ -1,17 +1,17 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { suiteHref } from "@/lib/suites";
-import { NODE_DEFS } from "@/lib/workbench/node-graph";
 import { formatCredits, formatTokens } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { mediaBands } from "@/lib/workspace/format";
 import { shotInputs, shotPreviewAsset, shotVersions, stepDuration } from "@/lib/workspace/rig";
-import type { RigShot } from "@/lib/workspace/shots";
+import { shotNotesOnly, type RigShot } from "@/lib/workspace/shots";
 import { useShotEstimate } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
+import { BranchFromTake, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
+import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import "./rig.css";
 
 /** The Inspector for a selected shot (03, "Inspector"). */
@@ -108,6 +108,16 @@ function ShotInspector({ shot }: { shot: RigShot }) {
   const inputs = useMemo(() => shotInputs(project, shot.id), [project, shot.id]);
   const versions = useMemo(() => shotVersions(project, shot.id, rig.jobs), [project, shot.id, rig.jobs]);
   const tab = state.inspTab;
+  /* The Library's Rig tools land on this shot's prompt, inputs or versions. */
+  useEffect(() => {
+    const onSection = (event: Event) => {
+      const section = (event as CustomEvent<string>).detail;
+      const inspTab = section === "inputs" ? "Inputs" : section === "versions" ? "Versions" : section === "prompt" ? "Controls" : null;
+      if (inspTab) dispatch({ type: "patch", patch: { inspTab } });
+    };
+    window.addEventListener(SECTION_EVENT, onSection);
+    return () => window.removeEventListener(SECTION_EVENT, onSection);
+  }, [dispatch]);
   const sub = [shot.look, shot.ratio, shot.durationS != null ? `${shot.durationS}s` : ""].filter(Boolean).join(" · ");
   return (
     <div data-inspector-body="shot" data-shot-id={shot.id}>
@@ -131,33 +141,18 @@ function ShotInspector({ shot }: { shot: RigShot }) {
       {tab === "Inputs" ? (
         <div>
           <Kicker className="pxw-insp-section">Inputs</Kicker>
-          {inputs.length ? inputs.map((row) => {
-            const [c1, c2] = mediaBands(row.id);
-            return (
-              <div className="pxw-insp-row" key={row.id}>
-                <span className="pxw-insp-row-thumb" aria-hidden="true"><span style={{ background: c1 }} /><span style={{ background: c2 }} /></span>
-                <span className="pxw-insp-row-text">
-                  <span className="pxw-insp-row-name">{row.name}</span>
-                  <span className="pxw-insp-row-kind">{row.kind}</span>
-                </span>
-                <span className="pxw-insp-row-v" data-functional-label="">{row.version}</span>
-              </div>
-            );
-          }) : <p className="pxw-inspector-note" style={{ marginTop: 0 }}>Nothing is connected to this shot yet.</p>}
-          <div className="pxw-insp-add">
-            <div>Add colour, transforms, masks or direction to this node.</div>
-            <a href={suiteHref("particl", project.id, "canvas")}>+ Add a tool</a>
-          </div>
+          <ShotInputs shot={shot} locked={!!node?.locked} />
         </div>
       ) : null}
       {tab === "Versions" ? (
         <div>
           <Kicker className="pxw-insp-section">Versions</Kicker>
           {versions.length ? versions.map((row) => (
-            <div className="pxw-insp-version" key={row.id} data-current={row.current || undefined} data-state={row.state}>
+            <div className="pxw-insp-version" key={row.id} data-current={row.current || undefined} data-state={row.state} data-section="versions">
               <span className="pxw-insp-version-v">{row.v}</span>
               <span className="pxw-insp-version-label">{row.label}</span>
               <span className="pxw-insp-version-meta">{row.meta}</span>
+              <BranchFromTake shot={shot} assetId={row.id} />
             </div>
           )) : <p className="pxw-inspector-note" style={{ marginTop: 0 }}>No takes yet. Generate one to start the version history.</p>}
         </div>
@@ -176,6 +171,8 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   const looks = project.nodes.filter((n) => n.type === "moodboard");
   const lookValue = shot.lookNodeId ?? shot.look;
   const edit = (patch: Parameters<typeof rig.patchShot>[1]) => setError(rig.patchShot(shot.id, patch));
+  /* Notes are the notes alone; the shot's prompt has its own box above. */
+  const notes = rig.selectedNode ? shotNotesOnly(rig.selectedNode) : shot.note;
   const quote = rig.quote?.state === "ready" && rig.quote.credits !== null ? formatCredits(rig.quote.credits) : null;
   const durations = model?.durations ?? [];
   const range = durations.length ? { min: Math.min(...durations), max: Math.max(...durations) } : null;
@@ -183,20 +180,22 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   return (
     <div>
       <div className="pxw-insp-kicker-row">
-        <Kicker>Node settings</Kicker>
-        <span className="pxw-insp-owner">By {shot.role || NODE_DEFS[shot.nodeType].role}</span>
+        <Kicker>Shot</Kicker>
       </div>
+      <WireShot shot={shot} />
+      <ShotPrompt shot={shot} locked={locked} />
       <div className="pxw-insp-fieldcard">
         <div className="pxw-insp-fieldcard-head">
-          <span>Department</span>
-          <span>Direction</span>
+          <span>Notes</span>
+          <span>{notes.length.toLocaleString()} / 5,000</span>
         </div>
         <textarea
           aria-label="Direction note"
           rows={3}
-          value={shot.note}
+          maxLength={5000}
+          value={notes}
           disabled={locked}
-          placeholder="What should this shot do?"
+          placeholder="Notes for this shot — they go with the prompt."
           onChange={(e) => edit({ note: e.target.value })}
         />
       </div>

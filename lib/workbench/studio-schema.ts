@@ -76,6 +76,9 @@ const node = z.object({
   ]),
   assetId: z.string().optional(),
   text: z.string().max(30000).optional(),
+  firstFrameId: z.string().max(100).optional(),
+  condensed: z.object({ key: z.string().regex(/^[a-f0-9]{16}$/), text: z.string().max(10000) }).strict().optional(),
+  boardShotId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
   developmentSource: z.object({ jobId:z.string().max(100), sourceHash:z.string().regex(/^[a-f0-9]{64}$/), sceneId:z.string().max(100), sourceAssetId:z.string().max(100).optional(), sourceStart:z.number().int().min(0).max(MAX_SCRIPT_CHARS), sourceEnd:z.number().int().min(1).max(MAX_SCRIPT_CHARS) }).optional(),
   scriptScene: z
     .object({
@@ -164,7 +167,50 @@ export const moleculrSchema = z.object({
   hooks:z.array(z.string().max(500)).max(12),notes:z.string().max(6000),
   variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
 }).strict();
+export const productionSchema = z.object({
+  scriptApproval: z.object({
+    at: z.string().datetime(), source: z.enum(['agent', 'hand']),
+    jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict().optional(),
+  beats: z.object({
+    jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), scriptSha256: z.string().regex(/^[a-f0-9]{64}$/), updatedAt: z.string().datetime(),
+    scenes: z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), heading: z.string().max(300), summary: z.string().max(4000), act: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      beats: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), text: z.string().max(800) }).strict()).max(40),
+      shots: z.array(z.object({
+        id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), description: z.string().max(800), framing: z.string().max(200), movement: z.string().max(200),
+        lighting: z.string().max(200), sound: z.string().max(200), duration: z.number().min(0.5).max(600).optional(),
+      }).strict()).max(40),
+      characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
+    }).strict()).max(200),
+  }).strict().optional(),
+  boards: z.object({
+    style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image']),
+    frames: z.record(z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), z.object({
+      prompt: z.string().max(8000),
+      sketch: z.object({ assetId: z.string().max(100), name: z.string().max(200) }).strict().optional(),
+      reading: z.string().max(4000).optional(), readingJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+      style: z.enum(['live', 'color-sketch', 'bw-sketch']).optional(), promptJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+      takes: z.array(z.object({ genId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).max(20),
+      selected: z.string().max(100).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).max(5).optional(),
+    }).strict()).refine((value) => Object.keys(value).length <= 2000),
+    promptsJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+  }).strict().optional(),
+  cast: z.object({
+    entries: z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), name: z.string().max(120), kind: z.enum(['character', 'element']),
+      description: z.string().max(2000), prompt: z.string().max(5000), soulId: z.string().max(200).optional(), referenceAssetId: z.string().max(100).optional(),
+      takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20), selected: z.string().max(100).optional(),
+      job: z.object({ id: z.string().uuid(), status: z.enum(['quoted', 'submitted']) }).strict().optional(),
+      model: z.enum(['soul_cinematic', 'soul_2', 'soul_location', 'soul_cast']).optional(), quality: z.enum(['1.5k', '2k']).optional(), budget: z.number().int().min(10).max(500).optional(),
+      category: z.enum(['character', 'environment', 'prop']).optional(), elementId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+    }).strict()).max(100),
+    agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+  }).strict().optional(),
+}).strict();
 export const projectSchema = z.object({
+  production: productionSchema.optional(),
   astraNative: astraNativeSchema.optional(),
   astraBlender: astraSceneSchema.optional(),
   moleculr:moleculrSchema.optional(),

@@ -80,6 +80,11 @@ function directionOp(node: CanvasNode): NodeOperation | undefined {
 }
 
 /** The direction note: the node's direction operation, else its text. */
+/** The shot's notes alone (Production › Rig: the node's text is its prompt, shown beside the notes, never inside them). */
+export function shotNotesOnly(node: CanvasNode): string {
+  const note = directionOp(node)?.values.note;
+  return typeof note === "string" ? note : "";
+}
 export function shotNote(node: CanvasNode): string {
   const note = directionOp(node)?.values.note;
   if (typeof note === "string" && note.trim()) return note.trim();
@@ -179,6 +184,10 @@ export type ShotPatch = {
   durationS?: number;
   ratio?: string;
   resolution?: string;
+  /** The shot's own prompt (Production › Rig): up to 20,000 characters, in the node's text. */
+  prompt?: string;
+  /** The agent's condensed render prompt, or null to drop it. */
+  condensed?: { key: string; text: string } | null;
 };
 
 export class ShotPatchError extends Error {
@@ -221,6 +230,14 @@ export function shotPatch(project: Project, id: string, patch: ShotPatch): Proje
       if (ops.length >= OPERATION_LIMIT) throw new ShotPatchError("This shot has reached its tool limit.");
       next.operations = [...ops, { id: uid("op"), kind: "direction", enabled: true, values: { note: patch.note } }];
     }
+  }
+  if (patch.prompt !== undefined) {
+    if (patch.prompt.length > 20_000) throw new ShotPatchError("Keep the shot prompt under 20,000 characters.");
+    if (patch.prompt.trim()) next.text = patch.prompt; else delete next.text;
+  }
+  if (patch.condensed !== undefined) {
+    if (patch.condensed && patch.condensed.text.length > 10_000) throw new ShotPatchError("The condensed prompt is over the engine's 10,000 characters.");
+    if (patch.condensed) next.condensed = patch.condensed; else delete next.condensed;
   }
   if (patch.look !== undefined) {
     const look = patch.look.trim();

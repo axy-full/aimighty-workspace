@@ -28,11 +28,17 @@ import { Palette } from "./Palette";
 import { ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { WorkflowHost } from "./tools/WorkflowHost";
-import { SoulIdHost } from "./tools/SoulIdHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
 import { STAGE_VIEW_PAGES, StageView } from "./StageView";
+import { BriefStage } from "./production/BriefStage";
+import { BeatsStage } from "./production/BeatsStage";
+import { StoryboardStage } from "./production/StoryboardStage";
+import { CastStage } from "./production/CastStage";
+import { EditStage } from "./production/EditStage";
+import { AstraOutputs } from "./production/AstraOutputs";
+import { RigLibrary } from "./production/RigExtras";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -162,7 +168,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? <Library items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
+            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"}
                 onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }} />
@@ -190,6 +196,16 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
                       <StudioHome key="stages" project={project} items={items} />
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "brief" ? (
+                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
+                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
+                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
+                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to cast it.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (
+                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : <p className="gx-empty">Open or create a project to storyboard it.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
@@ -197,6 +213,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
                           </div>
                         ) : null}
+                        {shell.page.id === "astra" ? <AstraOutputs /> : null}
                         <StageView page={shell.page.legacy.page} project={project} scope={scope} />
                       </div>
                     ) : shell.page.own && shell.suite.id === "business" ? (
@@ -205,12 +222,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
-                        {shell.suite.id === "studio" && shell.page.id === "cast" ? <div className="gx-extras" data-testid="page-soul"><SoulIdHost scope={scope} items={items} projectId={project?.id ?? null} /></div> : null}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
                           </div>
                         ) : null}
+                        {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
                     )}

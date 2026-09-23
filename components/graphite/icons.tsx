@@ -37,7 +37,7 @@ export const SUITE_LOOK: Record<string, { color: string; glyph: GlyphName }> = {
 /** Library › Tools department colours cycle in this order. */
 export const DEPT_COLORS = ["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"];
 /** Kind dots on the asset filter chips; All is the three-stop gradient. */
-export const KIND_DOT: Record<string, string> = { Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A" };
+export const KIND_DOT: Record<string, string> = { Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A", Cast: "#FF453A", Elements: "#64D2FF" };
 /** A project's poster tint: the sample palette for the sample names, a stable pick otherwise. */
 export function posterOf(name: string): { from: string; to: string; glow: string } {
   const sample: Record<string, [string, string, string]> = { "dune studies": ["#7A5A34", "#1A120B", "#F0B23E"], northline: ["#2E4A6A", "#0B1420", "#0A84FF"] };

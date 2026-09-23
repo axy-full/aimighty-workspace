@@ -310,6 +310,8 @@ type ConsumerSession = {
   explainerPresets: () => Promise<Record<string, unknown>>;
   /** Only `show_characters` (list, and the one create the Soul ID build sends). */
   charactersCall: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
+  /** Only `show_reference_elements` (list, and the one create Cast & Elements sends). */
+  elementsCall: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -778,6 +780,7 @@ async function withConsumerSession<T>(
       shortsCall: async (tool, args, sending) => (await post("tools/call", { name: SHORTS_TOOLS[tool], arguments: args }, sending))!,
       explainerPresets: async () => (await post("tools/call", { name: EXPLAINER_PRESETS_TOOL, arguments: {} }))!,
       charactersCall: async (args, sending) => (await post("tools/call", { name: CHARACTERS_TOOL, arguments: args }, sending))!,
+      elementsCall: async (args, sending) => (await post("tools/call", { name: ELEMENTS_TOOL, arguments: args }, sending))!,
     });
   } catch (error) {
     if (
@@ -2218,6 +2221,60 @@ function refusalText(value: unknown): string {
   };
   walk(value, 0);
   return texts.join(" · ").replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, 240) || "The account refused the training request.";
+}
+
+/* ── Reference elements (Cast & Elements = Soul Studio) ───────────────── */
+const ELEMENTS_TOOL = "show_reference_elements";
+export type ConsumerElementCategory = "character" | "environment" | "prop";
+export type ConsumerElementCreate = { name: string; category: ConsumerElementCategory; description: string };
+/**
+ * One reference element on the connected account, from Particl's own images:
+ * each is imported first (`media_import_url`, free), then
+ * `show_reference_elements` is called once with `action: "create"`. Never
+ * retried. The account names no price for it, so the caller asks once more.
+ */
+export async function createConsumerElement(
+  accessToken: string,
+  input: ConsumerElementCreate,
+  sources: { url: string; type: "image" }[],
+  options: Options & { sending: () => void },
+): Promise<ConsumerCharacterCreateResult> {
+  const name = input.name.trim();
+  if (!name || name.length > 32 || !["character", "environment", "prop"].includes(input.category) || input.description.length > 1000) throw new ConsumerVideoError("invalid_input");
+  if (!sources.length || sources.length > 8 || sources.some((source) => !safeImportUrl(source.url) || source.type !== "image")) throw new ConsumerVideoError("invalid_input");
+  const createArgs = (medias: { id: string; type: "media_input" }[]) => ({ action: "create", name, category: input.category, ...(input.description.trim() ? { description: input.description.trim() } : {}), medias });
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      await requireConnectedTools(session, [...importCalls(sources), { name: ELEMENTS_TOOL, args: createArgs([{ id: "00000000-0000-4000-8000-000000000000", type: "media_input" }]) }]);
+      const medias: { id: string; type: "media_input" }[] = [];
+      for (const source of sources) {
+        const raw = videoReadResult(session, await session.genjutsuImport(source.url, "image"));
+        if (!object(raw) || typeof raw.media_id !== "string" || (raw.error != null && raw.error !== "")) throw new ConsumerVideoError("provider_error");
+        medias.push({ id: consumerVideoJobId(raw.media_id), type: "media_input" });
+      }
+      const normalized = normalizeQualificationResult(await session.elementsCall(createArgs(medias), options.sending), session.secrets);
+      if (normalized.isError) return { state: "refused", reason: refusalText(normalized.result) };
+      return { state: "accepted", value: normalized.result };
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+/** The account's element list (free read) — narrowed by the caller to the ones Particl created. */
+export async function listConsumerElements(accessToken: string, options: Options = {}): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
+  try {
+    return await withConsumerSession(accessToken, options, 60_000, async (session) => {
+      if (!session.supportsTools) return { state: "unavailable" as const };
+      const { toolset } = await connectedToolset(session);
+      if (checkTool(toolset, ELEMENTS_TOOL, { action: "list", size: 100 }) !== "ok") return { state: "unavailable" as const };
+      const normalized = normalizeQualificationResult(await session.elementsCall({ action: "list", size: 100 }), session.secrets);
+      return normalized.isError ? { state: "unavailable" as const } : { state: "ok" as const, value: normalized.result };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerDiscoveryError && (error.code === "reconnect_required" || error.code === "rate_limited")) throw error;
+    return { state: "unavailable" };
+  }
 }
 
 /* ── Batch generation (slice A4) ──────────────────────────────────────── */

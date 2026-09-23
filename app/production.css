@@ -1,0 +1,205 @@
+/*
+ * Production suite (owner's brief, 23 September): the agent-driven Studio
+ * stages — Brief & Script first. Scoped under `.gx` like the glass layer, so
+ * bundler sheet order never decides it. No serif anywhere; the script reads in
+ * the shell's mono.
+ */
+.gx .pd-stage { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 24px; min-width: 0; }
+.gx .pd-agent { gap: 10px; }
+.gx .pd-agent-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 220px); gap: 16px; align-items: end; }
+.gx .pd-agent-row .gx-seg { width: max-content; }
+.gx .pd-agent-hint { margin: 0; font-size: 12px; }
+.gx .pd-tabs { width: max-content; }
+.gx .pd-row-head { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.gx .pd-prompt { min-height: 200px; }
+.gx .pd-small { min-height: 84px; }
+.gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 12px; margin-top: -8px; }
+.gx .pd-more > summary { cursor: pointer; color: var(--gx-text-2); font-size: 13px; padding: 4px 0; }
+.gx .pd-more[open] { display: flex; flex-direction: column; gap: 12px; }
+.gx .pd-recover { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.gx .pd-recover .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+.gx .pd-progress { gap: 10px; }
+.gx .pd-meter { height: 4px; border-radius: 2px; background: var(--gx-hair); overflow: hidden; }
+.gx .pd-meter > span { display: block; height: 100%; background: var(--gx-accent); transition: width .4s ease; }
+.gx .pd-review { gap: 12px; }
+.gx .pd-review .gx-workflow-title { margin: 0; }
+.gx .pd-review > .gx-hint { margin: 0; }
+.gx .pd-screenplay { margin: 0; max-height: 60vh; overflow: auto; padding: 16px 18px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); font-family: var(--gx-mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--gx-text); }
+.gx .pd-screenplay:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
+.gx .pd-notes ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gx-text-2); }
+.gx .pd-notes .pd-assume { color: var(--gx-text-3); }
+.gx .pd-redraft { margin-top: 4px; }
+.gx .pd-editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gx .pd-editor-head { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.gx .pd-editor-head .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+.gx .pd-save { margin: 0; font-size: 12px; }
+@media (max-width: 759px) {
+  .gx .pd-agent-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .gx .pd-agent-row .gx-seg { width: 100%; }
+  .gx .pd-agent-row .gx-seg .gx-seg-btn { flex: 1; }
+  .gx .pd-stage .gx-seg .gx-seg-btn { height: 44px; min-height: 44px; }
+  .gx .pd-agent-model button, .gx .pd-agent-effort button { box-sizing: border-box; height: 46px; min-height: 46px; width: 100%; max-width: none; }
+  .gx .pd-tabs { width: 100%; }
+  .gx .pd-tabs .gx-seg-btn { flex: 1; }
+  .gx .pd-prompt { min-height: 160px; }
+  .gx .pd-screenplay { max-height: 55vh; padding: 12px; font-size: 12px; }
+}
+/* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
+.gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: 0 2px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12); }
+.gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+
+/* Beats: a beat board — one card per scene, its beats as numbered cards, its shots beneath. */
+.gx .pd-gate { gap: 10px; }
+.gx .pd-gate .gx-hint { margin: 0; }
+.gx .pd-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx .pd-offer .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+.gx .pd-board { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx .pd-scene { gap: 12px; border-left: 3px solid var(--gx-accent); }
+.gx .pd-scene:nth-child(4n+2) { border-left-color: #BF5AF2; }
+.gx .pd-scene:nth-child(4n+3) { border-left-color: #FF9F0A; }
+.gx .pd-scene:nth-child(4n+4) { border-left-color: #30D158; }
+.gx .pd-scene-n, .gx .pd-shot-n, .gx .pd-beat-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); flex: none; }
+.gx .pd-scene-heading { flex: 1; min-width: 160px; width: auto; font-family: var(--gx-mono); text-transform: uppercase; letter-spacing: .02em; }
+.gx .pd-order { display: flex; gap: 4px; flex: none; }
+.gx .pd-order .gx-hbtn { min-width: 32px; justify-content: center; }
+.gx .pd-cast-line { margin: 0; font-size: 12px; }
+.gx .pd-beats, .gx .pd-shots { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gx .pd-beat { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.gx .pd-beat-n { padding-top: 10px; text-align: right; }
+.gx .pd-beat-text { min-height: 44px; }
+.gx .pd-add { align-self: flex-start; }
+.gx .pd-shot { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pd-seconds { display: flex; align-items: center; gap: 6px; }
+.gx .pd-seconds .gx-field { width: 84px; }
+.gx .pd-shot-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.gx .pd-shot-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gx .pd-shot-fields .gx-hint, .gx .pd-seconds .gx-hint { font-size: 12px; }
+.gx .pd-next { display: flex; justify-content: flex-end; }
+@media (max-width: 759px) {
+  .gx .pd-shot-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gx .pd-order .gx-hbtn { min-width: 44px; }
+  .gx .pd-scene-heading { min-width: 0; flex-basis: 100%; order: 3; }
+  .gx .pd-next .gx-primary { width: 100%; justify-content: center; }
+}
+
+/* Storyboards: the three looks, then one card per shot — its frame, its prompt, its drawing. */
+.gx .pd-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.gx .pd-style { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); text-align: left; min-height: 64px; }
+.gx .pd-style[aria-checked="true"] { border-color: var(--gx-accent); box-shadow: inset 0 0 0 1px var(--gx-accent); }
+.gx .pd-style .gx-hint { font-size: 12px; }
+.gx .pd-style-name { font-weight: 600; font-size: 13px; }
+.gx .pd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; min-width: 0; }
+.gx .pd-frame { gap: 10px; }
+.gx .pd-frame-image { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx .pd-frame-image[data-ratio="9:16"] { aspect-ratio: 9 / 16; }
+.gx .pd-frame-image[data-ratio="1:1"] { aspect-ratio: 1 / 1; }
+.gx .pd-frame-image[data-ratio="4:5"] { aspect-ratio: 4 / 5; }
+.gx .pd-frame-image img, .gx .pd-frame-image .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pd-frame-image .gx-badge { position: absolute; top: 8px; left: 8px; }
+.gx .pd-frame-scene { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--gx-mono); font-size: 12px; text-transform: uppercase; }
+.gx .pd-frame-desc { margin: 0; font-size: 12.5px; }
+.gx .pd-takes { display: flex; gap: 6px; overflow-x: auto; }
+.gx .pd-takes button { flex: none; width: 56px; height: 44px; border-radius: 6px; overflow: hidden; border: 1px solid var(--gx-hair); }
+.gx .pd-takes button[aria-checked="true"] { border-color: var(--gx-accent); }
+.gx .pd-takes img, .gx .pd-takes .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pd-frame-edit { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; border-top: 1px solid var(--gx-hair); }
+.gx .pd-sketch { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.gx .pd-sketch img, .gx .pd-sketch .gx-lazy { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; background: #fff; }
+.gx .pd-upload { position: relative; align-self: flex-start; cursor: pointer; display: inline-flex; align-items: center; }
+.gx .pd-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.gx .pd-reading { margin: 0; font-size: 12.5px; }
+@media (max-width: 759px) {
+  .gx .pd-styles { grid-template-columns: minmax(0, 1fr); }
+  .gx .pd-frames { grid-template-columns: minmax(0, 1fr); }
+  .gx .pd-takes button { height: 44px; min-width: 56px; }
+}
+
+/* Cast & Elements: one card per character or element, built with Soul Cinema. */
+.gx .pd-cast-name { flex: 1; min-width: 120px; width: auto; }
+.gx .pd-soul { display: flex; align-items: center; gap: 6px; }
+.gx .pd-soul select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 759px) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } .gx .pd-cast-name { flex-basis: 100%; } }
+
+/* Edit: every take in a grid; Timeline: the picture track as a list, and the tray to add takes. */
+.gx .pd-take-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.gx .pd-take { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); text-align: left; min-width: 0; }
+.gx .pd-take[aria-checked="true"] { border-color: var(--gx-accent); box-shadow: inset 0 0 0 1px var(--gx-accent); }
+.gx .pd-take img, .gx .pd-take video, .gx .pd-take .gx-lazy { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: #0c0c0e; }
+.gx .pd-take .gx-badge { position: absolute; top: 12px; left: 12px; }
+.gx .pd-take-name { font-size: 12px; color: var(--gx-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx .pd-take-add { align-self: flex-start; }
+.gx .pd-cut { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; min-width: 0; }
+.gx .pd-cut-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gx .pd-cut-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pd-cut-thumb { width: 72px; height: 40px; border-radius: 4px; overflow: hidden; background: #0c0c0e; }
+.gx .pd-cut-thumb img, .gx .pd-cut-thumb video, .gx .pd-cut-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pd-cut-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 759px) {
+  .gx .pd-cut-row { grid-template-columns: 56px minmax(0, 1fr); }
+  .gx .pd-cut-row .pd-seconds, .gx .pd-cut-row .pd-order { grid-column: 1 / -1; }
+  .gx .pd-take-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Rig: the shot's inputs with pictures and actions; the ways to add one; condense; build from Storyboards. */
+.gx .pxw-insp-row--input { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; align-items: center; }
+.gx .pxw-insp-row-thumb--media { width: 48px; height: 36px; border-radius: 4px; overflow: hidden; background: #0c0c0e; display: block; }
+.gx .pxw-insp-row-thumb--media img, .gx .pxw-insp-row-thumb--media video, .gx .pxw-insp-row-thumb--media .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pxw-insp-row-actions { grid-column: 2; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.gx .pxw-rig-add-inputs { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.gx .pxw-rig-add-inputs select { min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+.gx .pxw-rig-upload { position: relative; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.gx .pxw-rig-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.gx .pxw-rig-condense { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.gx .pxw-rig-build { margin-top: 8px; }
+.gx .pxw-insp-version { flex-wrap: wrap; }
+.gx .pxw-insp-version .pxw-link-button { flex-basis: 100%; text-align: left; font-size: 12px; }
+@media (max-width: 759px) { .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; } .gx .pxw-insp-row-actions button { min-height: 44px; } }
+.gx .pd-agent--bare { padding: 0; }
+.gx .pd-drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.gx .pd-drawing { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); min-width: 0; }
+.gx .pd-drawing-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.gx .pd-drawing-pair img, .gx .pd-drawing-pair .gx-lazy, .gx .pd-drawing-out { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: #fff; }
+.gx .pd-drawing-out { display: grid; place-items: center; background: var(--gx-input); overflow: hidden; }
+.gx .pd-drawing select { min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 759px) { .gx .pd-drawing select { min-height: 44px; font-size: 16px; } .gx .pd-drawings { grid-template-columns: minmax(0, 1fr); } }
+
+/* Beat board, like a Final Draft beat board: an act header tile, then the act's scene cards in a grid, tinted by act. */
+.gx .pd-act { display: flex; flex-direction: column; gap: 10px; --act: #5fbfa6; --act-bg: rgba(95, 191, 166, .16); }
+.gx .pd-act[data-act="2"] { --act: #4f9cf0; --act-bg: rgba(79, 156, 240, .16); }
+.gx .pd-act[data-act="3"] { --act: #8c9ee6; --act-bg: rgba(140, 158, 230, .16); }
+.gx .pd-act-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px; border-radius: 8px; background: var(--act-bg); border: 1px solid var(--act); width: min(100%, 420px); }
+.gx .pd-act-name { font-size: 20px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.gx .pd-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: start; }
+.gx .pd-card-grid > .pd-scene--open { grid-column: 1 / -1; border-left-color: var(--act); }
+.gx .pd-beat-card { display: flex; flex-direction: column; gap: 8px; min-height: 150px; padding: 14px; border-radius: 8px; text-align: left; background: var(--act-bg); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); color: var(--gx-text); min-width: 0; cursor: pointer; }
+.gx .pd-beat-card:hover, .gx .pd-beat-card:focus-visible { border-color: var(--act); outline: none; }
+.gx .pd-beat-card-head { display: flex; align-items: baseline; gap: 8px; }
+.gx .pd-beat-card-title { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; }
+.gx .pd-beat-card-text { font-size: 13px; line-height: 1.45; color: var(--gx-text); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.gx .pd-beat-card-beats { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--gx-text-2); display: flex; flex-direction: column; gap: 2px; }
+.gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); font-family: var(--gx-mono); }
+.gx .pd-act-select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 759px) { .gx .pd-card-grid { grid-template-columns: minmax(0, 1fr); } .gx .pd-act-select { min-height: 44px; font-size: 16px; } }
+.gx .pd-asset-group { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
+.gx .pd-asset-group-name { font-weight: 600; font-size: 13px; flex: 1; }
+.gx .pd-take-file { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; background: #0c0c0e; font-size: 28px; color: var(--gx-text-3); }
+
+/* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */
+.gx .pxw-rig-library { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pxw-rig-library-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.gx .pxw-rig-library-head .pxw-link-button { font-weight: 600; }
+.gx .pxw-rig-library-hint { font-size: 12px; color: var(--gx-text-2); }
+.gx .pxw-rig-library-groups { display: flex; gap: 6px; flex-wrap: wrap; }
+.gx .pxw-rig-library-groups button { min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); color: var(--gx-text-2); font-size: 12px; }
+.gx .pxw-rig-library-groups button[aria-checked="true"] { color: var(--gx-text); border-color: var(--gx-accent); }
+.gx .pxw-rig-library-groups button:disabled { opacity: .45; }
+.gx .pxw-rig-library-items { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.gx .pxw-rig-library-item { flex: none; width: 128px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); cursor: grab; position: relative; }
+.gx .pxw-rig-library-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden; background: #0c0c0e; color: var(--gx-text-3); font-size: 20px; }
+.gx .pxw-rig-library-thumb img, .gx .pxw-rig-library-thumb video, .gx .pxw-rig-library-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
+.gx .pxw-rig-library-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff; }
+@media (max-width: 759px) { .gx .pxw-rig-library-groups button { min-height: 44px; } .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; } }
+.gx .pd-soul-models { flex-wrap: wrap; }
+.gx .pd-budget { width: 80px; }
+.gx .pd-finish { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; border-top: 1px solid var(--gx-hair); }

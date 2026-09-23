@@ -14,6 +14,7 @@ import { assembly, mmss, shotAt, stemRequests, stemRows, type StemId, type StemR
 import { Button } from "../ui";
 import type { PageBodyProps } from "./registry";
 import "@/app/workspace-assets.css";
+import { TimelineCut } from "@/components/graphite/production/TimelineCut";
 
 const STATE: Record<StemRow["state"], { label: string; dot: string }> = {
   empty: { label: "Empty", dot: "var(--pxw-label-floor)" },
@@ -108,7 +109,7 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
   return (
     <div className="pxw-edit" data-page-body="edit" data-stem-requests={stems.length}>
       {problem || draft.state.error ? <p className="pxw-notice pxw-notice--error" role="alert">{problem ?? draft.state.error}</p> : null}
-      <div className="pxw-assembly" data-testid="assembly">
+      <div className="pxw-assembly" data-testid="assembly" data-section="assembly">
         <div className="pxw-assembly-screen" aria-hidden={!current}>
           {current ? (
             <TimelinePreview
@@ -126,7 +127,7 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
           <div className="pxw-assembly-sub">
             {cut.clips
               ? [`${cut.clips.toLocaleString("en-US")} ${cut.clips === 1 ? "clip" : "clips"}`, approved == null ? null : `${approved.toLocaleString("en-US")} approved ${approved === 1 ? "take" : "takes"}`, playing || frame ? mmss(frame / project.fps) : null].filter(Boolean).join(" · ")
-              : "No takes in the sequence yet. Add them from Takes or the workbench edit."}
+              : "No takes in the sequence yet. Add them from the tray below."}
           </div>
         </div>
         <div className="pxw-spacer" />
@@ -134,11 +135,13 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
         <Button onClick={() => setPlaying((p) => !p)} disabled={!cut.frames} aria-pressed={playing}>{playing ? "Pause" : "Play"}</Button>
       </div>
 
+      <TimelineCut project={project} items={library.items} onChange={draft.onChange} />
+
       {rows.map((row) => {
         const s = STATE[row.state];
         const expanded = open?.stem === row.id;
         return (
-          <div key={row.id} className="pxw-stem-wrap">
+          <div key={row.id} className="pxw-stem-wrap" data-section={row === rows[0] ? "sound" : undefined}>
             <div className="pxw-stem" data-stem={row.id} data-state={row.state}>
               <span className="pxw-stem-bar" style={{ background: row.state === "empty" ? "#2E2E34" : row.hue }} aria-hidden="true" />
               <span className="pxw-stem-name">

@@ -499,7 +499,7 @@ const WORKFLOW_LABELS: Record<string, { label: string; short: string }> = {
 
 /** Thinking-model lines, by the id's owner — the real product line each id
  *  belongs to. Directly integrated, so directly named (rule 1). */
-const THINKING_LINES: Record<string, string> = { anthropic: "Claude", openai: "GPT", google: "Gemini" };
+const THINKING_LINES: Record<string, string> = { anthropic: "Claude", openai: "GPT", google: "Gemini", spacexai: "Grok" };
 /** Tier words as each line actually prints them. Anything absent is
  *  Title-cased, which is what these lines do with a word like "Codex". */
 const THINKING_TIERS: Record<string, string> = {

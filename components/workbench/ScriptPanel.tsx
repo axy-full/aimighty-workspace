@@ -43,8 +43,10 @@ export function ScriptPanel({
   onImport: (file: File, result: ScreenplayImport) => Promise<void>;
   onReview: (id: string, review: SceneReview) => void;
   onBuild: (scenes: ScriptScene[]) => void;
-  onDevelop: (scene: ScriptScene) => void;
-  onCrew: () => void;
+  /** Absent where no coverage planner is reachable (the Suites Brief): the button is not shown. */
+  onDevelop?: (scene: ScriptScene) => void;
+  /** Absent where no crew run is reachable (the Suites Brief): the button is not shown. */
+  onCrew?: () => void;
   /** Rendered inside another scrolling stage (Brief & Script): no own scroll container. */
   embedded?: boolean;
 }) {
@@ -514,9 +516,11 @@ export function ScriptPanel({
                     : ""}
                   {scene.characters.join(", ") || "No dialogue cues"}
                 </small>
-                <button className="btn" onClick={() => onDevelop(scene)}>
-                  Plan shot coverage
-                </button>
+                {onDevelop ? (
+                  <button className="btn" onClick={() => onDevelop(scene)}>
+                    Plan shot coverage
+                  </button>
+                ) : null}
                 <details>
                   <summary>
                     Read scene · {scene.body.length.toLocaleString()} characters
@@ -645,9 +649,11 @@ export function ScriptPanel({
             <GitBranch size={15} />
             Build {chosen.length || ""} scene nodes
           </button>
-          <button className="btn full-width" onClick={onCrew}>
-            Develop with production crew
-          </button>
+          {onCrew ? (
+            <button className="btn full-width" onClick={onCrew}>
+              Develop with production crew
+            </button>
+          ) : null}
         </section>
       </div>
     </div>

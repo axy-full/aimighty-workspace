@@ -1,5 +1,6 @@
-/** Claude, OpenAI and Gemini text/planning models verified against Gateway on
- * 2026-09-15. Availability and prices still come from the live catalogue.
+/** Claude, OpenAI, Gemini and Grok text/planning models verified against
+ * Gateway on 2026-09-15 (Grok's reasoning models on 2026-09-23, listed there
+ * under `spacexai/`, priced by the live catalogue like every other). Availability and prices still come from the live catalogue.
  * Image, speech, embeddings, Gemma and safeguard classifiers are separate tools.
  */
 export const ATOMIK_MODEL_IDS = [
@@ -78,6 +79,12 @@ export const ATOMIK_MODEL_IDS = [
   "openai/gpt-6-astra",
   "openai/gpt-6-astra-fast",
   "openai/gpt-oss-120b",
+  "spacexai/grok-4.7",
+  "spacexai/grok-4.6",
+  "spacexai/grok-4.5",
+  "spacexai/grok-4.3",
+  "spacexai/grok-4.20-reasoning",
+  "spacexai/grok-4.1-fast-reasoning",
   "openai/gpt-oss-20b",
   "openai/o1",
   "openai/o3",

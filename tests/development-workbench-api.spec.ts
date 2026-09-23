@@ -34,7 +34,7 @@ test('real development HTTP persists every script section, resumes idempotently,
     expect(initial.configured).toBe(true);
     expect(initial.jobs).toEqual([]);
     expect(initial.models.length).toBeGreaterThan(0);
-    expect(initial.models.every(model => /^(anthropic\/claude-|openai\/)/.test(model.id))).toBe(true);
+    expect(initial.models.every(model => /^(anthropic\/claude-|openai\/|spacexai\/grok-)/.test(model.id))).toBe(true);
     const model = initial.models.find(value => value.id.includes('haiku')) ?? initial.models.find(value => value.id.startsWith('anthropic/')) ?? initial.models[0];
     const input: DevelopmentRequest = { projectId: project.id, requestId: randomUUID(), kind: 'screenplay', model: model.id, effort: 'auto', instructions: 'Preserve the entire source, including the final room.' };
     const quoted = await request.post('/api/workbench/development', { headers, data: { ...input, quoteOnly: true } });

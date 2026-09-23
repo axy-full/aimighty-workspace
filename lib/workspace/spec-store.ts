@@ -44,3 +44,9 @@ export function useSpecFacts(page: PageId): SpecFacts | null {
   const value = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
   return value?.page === page ? value.facts : null;
 }
+
+/** The draft project whichever page published last has on screen (a Production stage's live edits), or null. */
+export function usePublishedProject(): SpecFacts["project"] {
+  const value = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  return value?.facts.project ?? null;
+}

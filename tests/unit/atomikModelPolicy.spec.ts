@@ -18,9 +18,9 @@ test("an explicit retired or unapproved thinking model cannot silently become a 
 
 test("the full planner catalogue includes all three requested model families and excludes media and classifiers", async () => {
   const { ATOMIK_MODEL_IDS, isAtomikModel } = await import('../../lib/atomikModelPolicy');
-  expect(ATOMIK_MODEL_IDS.length).toBe(83);
-  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'google/gemini-3.8-flash', 'openai/gpt-4o-mini']) expect(isAtomikModel(id)).toBe(true);
-  for (const id of ['openai/gpt-image-2', 'openai/gpt-oss-safeguard-20b', 'google/gemma-3-27b-it', 'anthropic/not-a-real-model']) expect(isAtomikModel(id)).toBe(false);
+  expect(ATOMIK_MODEL_IDS.length).toBe(89);
+  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'google/gemini-3.8-flash', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
+  for (const id of ['openai/gpt-image-2', 'openai/gpt-oss-safeguard-20b', 'google/gemma-3-27b-it', 'anthropic/not-a-real-model', 'spacexai/grok-imagine-image-2.0', 'spacexai/grok-tts']) expect(isAtomikModel(id)).toBe(false);
 });
 
 test('Gateway reasoning metadata rejects malformed and unknown controls', async () => {
