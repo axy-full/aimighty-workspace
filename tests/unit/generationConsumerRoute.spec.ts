@@ -79,6 +79,10 @@ async function fixture() {
       SOUL_BUILD_STILLS: { min: 5, max: 20 },
       SOUL_BUILD_TYPES: ["soul_2", "soul_cinematic"],
     },
+    "@/lib/higgsfield-consumer/elements": {
+      connectedElements: service("elements", { connected: true, available: true, elements: [{ elementId: "el_1", name: "Fox", category: "character", previewUrl: null }] }),
+      buildConnectedElement: service("element-build", { state: "created", element: { elementId: "el_2", name: "Harbour", category: "environment", previewUrl: null } }),
+    },
     "@/lib/higgsfield-consumer/explainer-service": {
       connectedExplainerPresets: service("explainer", { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }], fetchedAt: 1, runnable: false, catalogueModels: [] }),
     },
@@ -271,5 +275,23 @@ test("the Soul ID build: the plan gate is an owner read; the create needs render
   expect((await f.request("POST", { action: "characters-create", name: "  ", type: "soul_2", sources })).status).toBe(400);
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
+  expect(f.calls).toHaveLength(2);
+});
+
+test("reference elements: the list is an owner read; the create needs render, carries name · category · 1–8 sources, and is rate-limited hardest", async () => {
+  const f = await fixture();
+  const list = await f.request("POST", { action: "elements" });
+  expect(list.status).toBe(200);
+  expect(await list.json()).toEqual({ connected: true, available: true, elements: [{ elementId: "el_1", name: "Fox", category: "character", previewUrl: null }] });
+  const create = await f.request("POST", { action: "elements-create", name: "Harbour", category: "environment", description: "The frozen harbour", sources: [{ genId: "gen_1" }], projectId: "ws-1" });
+  expect(create.status).toBe(200);
+  expect(await create.json()).toEqual({ build: { state: "created", element: { elementId: "el_2", name: "Harbour", category: "environment", previewUrl: null } } });
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["elements", ["owner"]], ["element-build", ["owner", { name: "Harbour", category: "environment", description: "The frozen harbour", sources: [{ genId: "gen_1" }], projectId: "ws-1" }]]]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:elements", 12], ["hf-consumer-generation:workspace:owner:elements-create", 3]]);
+  /* A name over the account's 32 characters, an unknown category, no source or a remote URL are refused before anything is read. */
+  expect((await f.request("POST", { action: "elements-create", name: "x".repeat(33), category: "prop", sources: [{ genId: "g" }] })).status).toBe(400);
+  expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "vehicle", sources: [{ genId: "g" }] })).status).toBe(400);
+  expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "prop", sources: [] })).status).toBe(400);
+  expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "prop", sources: [{ url: "https://x.example/a.png" }] })).status).toBe(400);
   expect(f.calls).toHaveLength(2);
 });
