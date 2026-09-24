@@ -8,7 +8,11 @@ import type { DevelopmentScene } from "../workbench/development-types";
 export type BeatShot = { id: string; description: string; framing: string; movement: string; lighting: string; sound: string; duration?: number };
 export type Beat = { id: string; text: string };
 export type BeatScene = { id: string; heading: string; summary: string; /** Act One, Two or Three on the beat board; by position when unset. */ act?: 1 | 2 | 3; beats: Beat[]; shots: BeatShot[]; characters: string[]; locations: string[]; props: string[] };
-export type BeatSheet = { jobId?: string; scriptSha256: string; updatedAt: string; scenes: BeatScene[] };
+/** `source` "upload": summarised by the agent from an uploaded beat sheet (`sourceName`), not broken down from the script — so a script edit never makes it stale. */
+export type BeatSheet = { jobId?: string; scriptSha256: string; updatedAt: string; source?: "script" | "upload"; sourceName?: string; scenes: BeatScene[] };
+/** An uploaded beat sheet (a Final Draft beat board exported as PDF), as the text the browser read from it. */
+export type BeatSource = { name: string; sha256: string; pages: number; text: string; at: string };
+export const BEAT_SOURCE_CHARS = 200_000;
 
 export const BEAT_LIMITS = { scenes: 1000, beats: 40, shots: 40, heading: 300, summary: 4000, beat: 800, description: 800, field: 200, names: 30 } as const;
 
@@ -21,11 +25,11 @@ export function newBeat(): Beat { return { id: id("beat"), text: "" }; }
 export function newScene(): BeatScene { return { id: id("scene"), heading: "", summary: "", beats: [newBeat()], shots: [newShot()], characters: [], locations: [], props: [] }; }
 
 /** The agent's breakdown, every section of it, as a beat sheet with its own ids. */
-export function beatSheetFrom(scenes: DevelopmentScene[], scriptSha256: string, jobId?: string): BeatSheet {
+export function beatSheetFrom(scenes: DevelopmentScene[], scriptSha256: string, jobId?: string, upload?: string): BeatSheet {
   return {
-    ...(jobId ? { jobId } : {}), scriptSha256, updatedAt: new Date().toISOString(),
+    ...(jobId ? { jobId } : {}), scriptSha256, updatedAt: new Date().toISOString(), ...(upload !== undefined ? { source: "upload" as const, sourceName: upload.slice(0, 300) } : {}),
     scenes: scenes.slice(0, BEAT_LIMITS.scenes).map((scene) => ({
-      id: id("scene"), heading: cut(scene.heading, BEAT_LIMITS.heading), summary: cut(scene.summary, BEAT_LIMITS.summary),
+      id: id("scene"), heading: cut(scene.heading, BEAT_LIMITS.heading), summary: cut(scene.summary, BEAT_LIMITS.summary), ...(scene.act ? { act: scene.act } : {}),
       beats: scene.beats.slice(0, BEAT_LIMITS.beats).map((text) => ({ id: id("beat"), text: cut(text, BEAT_LIMITS.beat) })),
       shots: scene.shots.slice(0, BEAT_LIMITS.shots).map((shot) => ({ id: id("shot"), description: cut(shot.description, BEAT_LIMITS.description), framing: cut(shot.framing, BEAT_LIMITS.field), movement: cut(shot.movement, BEAT_LIMITS.field), lighting: cut(shot.lighting, BEAT_LIMITS.field), sound: cut(shot.sound, BEAT_LIMITS.field) })),
       characters: names(scene.characters, BEAT_LIMITS.names), locations: names(scene.locations, 15), props: names(scene.props, BEAT_LIMITS.names),
