@@ -50,6 +50,15 @@ function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
   return { upsertNodes: [...nodes.values()], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
 }
 
+function isCanvasAnswer(value: unknown): value is { canvas: Canvas | null; room: string | null; revision: number } {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.revision !== "number" || !("canvas" in v) || (v.room !== null && typeof v.room !== "string")) return false;
+  if (v.canvas === null) return v.revision === 0;
+  const c = v.canvas as Record<string, unknown> | undefined;
+  return !!c && typeof c === "object" && typeof c.nodes === "object" && typeof c.assets === "object" && Array.isArray(c.order) && Array.isArray(c.removedIds);
+}
+
 function readStorage(root: { get: <K extends keyof Storage>(key: K) => Storage[K] }): Canvas {
   const nodes: Record<string, CanvasNode> = {}, assets: Record<string, Asset> = {};
   root.get("nodes").forEach((value, id) => { nodes[id] = value as unknown as CanvasNode; });
@@ -106,10 +115,12 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     let leave: (() => void) | null = null;
     const unsubs: (() => void)[] = [];
     void (async () => {
-      let saved: { canvas: Canvas | null; room: string | null };
+      let saved: { canvas: Canvas | null; room: string | null; revision: number };
       try { saved = await draftRequest(`${API}?productionId=${encodeURIComponent(productionId)}`, scope); }
       catch { return; }
       if (cancelled) return;
+      /* Only a real canvas answer joins: anything else (a proxy page, a stub) must never seed the team canvas. */
+      if (!isCanvasAnswer(saved)) return;
       const canvas: Canvas = saved.canvas ?? { nodes: {}, assets: {}, order: [], removedIds: [] };
       const draft = current();
       if (!draft) return;
