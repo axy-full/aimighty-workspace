@@ -61,6 +61,8 @@ test("WASM is restricted to the movie document and isolated OCR worker", async (
   )!.value;
   expect(policy).not.toContain("wasm-unsafe-eval");
   expect(policy).not.toContain("worker-src");
+  /* The team canvas's live room is the only websocket the app opens. */
+  expect(policy).toContain("connect-src 'self' https: wss://*.liveblocks.io;");
   const movie = entries.filter((entry) =>
     entry.headers.some((header) => header.value.includes("wasm-unsafe-eval")),
   );
@@ -70,4 +72,5 @@ test("WASM is restricted to the movie document and isolated OCR worker", async (
   )!.value;
   expect(moviePolicy).toContain("worker-src 'self' blob:");
   expect(moviePolicy).toContain("connect-src 'self';");
+  expect(moviePolicy).not.toContain("liveblocks");
 });

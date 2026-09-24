@@ -8,6 +8,10 @@ import type { NextConfig } from "next";
  * data boundary is the server (every route answers 401 before it answers
  * anything), not the browser.
  */
+/* Fetches go to this origin or any https host; the only websocket is the
+   team canvas's live room (Liveblocks, wss://api.liveblocks.io). */
+const APP_CONNECT_SRC = "connect-src 'self' https: wss://*.liveblocks.io";
+
 const headers = [
   {
     key: "Strict-Transport-Security",
@@ -40,7 +44,7 @@ const headers = [
       `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
       "img-src 'self' data: blob: https:",
       "media-src 'self' data: blob: https:",
-      "connect-src 'self' https:",
+      APP_CONNECT_SRC,
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       "frame-src 'none'",
@@ -69,7 +73,7 @@ const nextConfig: NextConfig = {
                   "script-src 'self'",
                   "script-src 'self' 'wasm-unsafe-eval'",
                 )
-                .replace("connect-src 'self' https:", "connect-src 'self'") +
+                .replace(APP_CONNECT_SRC, "connect-src 'self'") +
               "; worker-src 'self' blob:",
           }
         : header,
