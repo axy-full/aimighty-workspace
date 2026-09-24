@@ -124,3 +124,29 @@ test("an edit made just before the page reloads still reaches the team canvas, s
   await expect.poll(async () => (await canvas())?.nodes["rig-a"]?.durationS).toBe(6);
   await expect(page.getByTestId("shot-duration")).toHaveText("6s");
 });
+
+test("an edit made while the team canvas is still loading is kept, not overwritten by the older canvas", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const headers = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
+  const draft: Project = { ...newProject("Early edit study"), id: `team-early-${Date.now().toString(36)}`, nodes: [shot("rig-a", "The encounter", 100, 100)] };
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: draft, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const { productionProjectId } = await saved.json();
+  /* The canvas already holds this shot at 5 s, as a teammate left it. */
+  expect((await page.request.patch("/api/workbench/team-canvas", { headers, data: { productionId: productionProjectId, upsertNodes: [shot("rig-a", "The encounter", 100, 100)], removeNodes: [], upsertAssets: [], order: ["rig-a"] } })).ok()).toBe(true);
+  /* The canvas answer is slow; the edit lands before it does. */
+  await page.route(/\/api\/workbench\/team-canvas\?/, async (route) => { await new Promise((r) => setTimeout(r, 3000)); await route.continue(); });
+  await page.goto(`/workspace?project=${draft.id}&suite=particl&page=rig&sel=shot:rig-a`);
+  await expect(page.getByTestId("shot-duration")).toHaveText("5s");
+  await expect(page.getByTestId("rig-team")).toHaveCount(0);
+  await page.getByRole("button", { name: "Longer" }).click();
+  await expect(page.getByTestId("shot-duration")).toHaveText("6s");
+  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
+  await expect(page.getByTestId("shot-duration")).toHaveText("6s");
+  const canvas = async () => (await page.request.get(`/api/workbench/team-canvas?productionId=${productionProjectId}`, { headers }).then((r) => r.json())).canvas;
+  await expect.poll(async () => (await canvas())?.nodes["rig-a"]?.durationS).toBe(6);
+  await expect.poll(async () => (await page.request.get(`/api/workbench/projects?id=${draft.id}`, { headers }).then((r) => r.json())).project.nodes[0].durationS).toBe(6);
+});

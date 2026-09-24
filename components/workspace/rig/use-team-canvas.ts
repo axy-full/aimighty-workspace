@@ -54,6 +54,17 @@ function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
   return { upsertNodes: [...nodes.values()], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
 }
 
+/** The canvas with this window's not-yet-sent edits laid over it. */
+function overlay(canvas: Canvas, patch: TeamPatch | null): Canvas {
+  if (!patch) return canvas;
+  const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
+  const removedIds = new Set(canvas.removedIds);
+  for (const n of patch.upsertNodes) { nodes[n.id] = n; removedIds.delete(n.id); }
+  for (const id of patch.removeNodes) { delete nodes[id]; removedIds.add(id); }
+  for (const a of patch.upsertAssets) assets[a.id] = a;
+  return { nodes, assets, order: patch.order ?? canvas.order, removedIds: [...removedIds] };
+}
+
 function isCanvasAnswer(value: unknown): value is { canvas: Canvas | null; room: string | null; revision: number } {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -88,6 +99,8 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const joined = useRef<string | null>(null);
   const room = useRef<LiveRoom | null>(null);
   const writeLive = useRef<((patch: TeamPatch) => void) | null>(null);
+  /* Edits made before the canvas has loaded: kept, laid over it on arrival, then sent. */
+  const early = useRef<{ pid: string; patch: TeamPatch } | null>(null);
 
   const send = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -134,13 +147,17 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       if (cancelled) return;
       /* Only a real canvas answer joins: anything else (a proxy page, a stub) must never seed the team canvas. */
       if (!isCanvasAnswer(saved)) return;
-      const canvas: Canvas = saved.canvas ?? { nodes: {}, assets: {}, order: [], removedIds: [] };
       const draft = current();
       if (!draft) return;
+      /* What this window changed while the canvas was loading is newer than the canvas: it wins. */
+      const mine = early.current?.pid === productionId ? early.current.patch : null;
+      early.current = null;
+      const canvas: Canvas = overlay(saved.canvas ?? { nodes: {}, assets: {}, order: [], removedIds: [] }, mine);
       const joinedCanvas = joinTeamCanvas(draft, canvas, Date.now());
+      const outgoing = mine && joinedCanvas.patch ? mergePatches(mine, joinedCanvas.patch) : mine ?? joinedCanvas.patch;
       joined.current = productionId;
       fold((p) => joinTeamCanvas(p, canvas, Date.now()).project);
-      if (joinedCanvas.patch) queue(joinedCanvas.patch);
+      if (outgoing) queue(outgoing);
       setJoinedState({ pid: productionId, mode: "saved", peers: [] });
       if (!saved.room) return;
 
@@ -179,10 +196,10 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
       /* Alone in the room: the saved canvas is the truth, so the room starts from it.
          With teammates already editing: the room is ahead of the server; take it, then add what only this draft had. */
-      const truth = { ...canvas, ...(joinedCanvas.patch ? {
-        nodes: { ...canvas.nodes, ...Object.fromEntries(joinedCanvas.patch.upsertNodes.map((n) => [n.id, n])) },
-        assets: { ...canvas.assets, ...Object.fromEntries(joinedCanvas.patch.upsertAssets.map((a) => [a.id, a])) },
-        order: joinedCanvas.patch.order ?? canvas.order,
+      const truth = { ...canvas, ...(outgoing ? {
+        nodes: { ...canvas.nodes, ...Object.fromEntries(outgoing.upsertNodes.map((n) => [n.id, n])) },
+        assets: { ...canvas.assets, ...Object.fromEntries(outgoing.upsertAssets.map((a) => [a.id, a])) },
+        order: outgoing.order ?? canvas.order,
       } : {}) };
       if (live.getOthers().length === 0) {
         live.batch(() => {
@@ -194,7 +211,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
         });
       } else {
         fold((p) => withTeamCanvas(p, readStorage(root)));
-        if (joinedCanvas.patch) write(joinedCanvas.patch);
+        if (outgoing) write(outgoing);
       }
 
       unsubs.push(live.subscribe(root, () => fold((p) => withTeamCanvas(p, readStorage(root))), { isDeep: true }));
@@ -221,9 +238,14 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   }, [productionId, scope]);
 
   const publish = useCallback((before: Project, after: Project) => {
-    if (!joined.current || after.productionProjectId !== joined.current) return;
+    const pid = after.productionProjectId;
+    if (!pid) return;
     const patch = diffForTeam(before, after, Date.now());
     if (!patch) return;
+    if (joined.current !== pid) {
+      early.current = { pid, patch: mergePatches(early.current?.pid === pid ? early.current.patch : null, patch) };
+      return;
+    }
     writeLive.current?.(patch);
     queue(patch);
   }, [queue]);
