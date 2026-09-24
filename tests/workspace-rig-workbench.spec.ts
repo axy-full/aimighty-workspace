@@ -302,16 +302,16 @@ test("graph view: the real graph, edges from real boxes, selection shared with t
   });
   expect(mismatches).toEqual([]);
 
-  /* The canvas scrolls inside the content pane; the shell does not widen. */
+  /* The board fits the content pane and pans inside itself (zoom and pan); nothing widens or scrolls sideways. */
   const fit = await page.evaluate(() => {
     const content = document.querySelector<HTMLElement>('[data-testid="content"]')!, studio = document.querySelector<HTMLElement>(".pxw-studio")!;
-    return { wrap: document.querySelector<HTMLElement>(".pxw-graph-wrap")!.offsetWidth, studioScrolls: studio.scrollWidth > studio.clientWidth + 0.5, pageScrolls: document.documentElement.scrollWidth > innerWidth + 1, contentScroll: content.scrollWidth };
+    const board = document.querySelector<HTMLElement>('[data-testid="rig-graph-surface"]')!;
+    return { board: board.getBoundingClientRect().right, pane: content.getBoundingClientRect().right, studioScrolls: studio.scrollWidth > studio.clientWidth + 0.5, pageScrolls: document.documentElement.scrollWidth > innerWidth + 1, contentScrolls: content.scrollWidth > content.clientWidth + 1 };
   });
-  expect(fit.wrap).toBeGreaterThanOrEqual(1110);
+  expect(fit.board).toBeLessThanOrEqual(fit.pane + 0.5);
   expect(fit.studioScrolls).toBe(false);
   expect(fit.pageScrolls).toBe(false);
-  /* Whatever does not fit scrolls inside the content pane. */
-  expect(fit.contentScroll).toBeGreaterThanOrEqual(fit.wrap);
+  expect(fit.contentScrolls).toBe(false);
 
   /* Selecting a node selects the same shot in the Inspector, and in the list. */
   await graph.getByRole("button", { name: "Select Departure" }).click();
