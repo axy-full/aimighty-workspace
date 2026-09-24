@@ -225,3 +225,46 @@
 .gx .pd-ref-chip .gx-hbtn { position: absolute; top: 2px; right: 2px; min-width: 22px; height: 22px; padding: 0; font-size: 13px; line-height: 1; }
 @media (pointer: coarse) { .gx .pd-ref-chip { width: 72px; height: 54px; } .gx .pd-ref-chip .gx-hbtn { min-width: 44px; height: 44px; top: 0; right: 0; } }
 .gx .pd-frame[data-drop] { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+/* Beats as a graph: act lanes, scenes along the story spine, beats beneath; pinch / ⌘-wheel zooms, wheel or drag pans. */
+.gx .pd-view-toggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); }
+.gx .pd-view-toggle button { min-height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text-2); font: inherit; font-size: 13px; cursor: pointer; }
+.gx .pd-view-toggle button[aria-checked="true"] { background: rgba(255, 255, 255, .1); color: var(--gx-text); }
+@media (max-width: 759px) { .gx .pd-view-toggle button { min-height: 44px; } }
+.gx .pd-graph-layout { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx .pd-graph-frame { position: relative; }
+/* The open scene's editor floats over the graph's right side, like a properties panel; on a phone it covers the graph until Done. */
+.gx .pd-graph-panel { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 8; width: min(440px, 50%); overflow: auto; overscroll-behavior: contain; border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, .55); }
+.gx .pd-graph-panel { background: #121215; border: 1px solid var(--gx-hair); }
+.gx .pd-graph-panel > .pd-scene { margin: 0; min-height: 100%; background: #121215; border: 0; box-shadow: none; }
+@media (max-width: 759px) { .gx .pd-graph-panel { left: 8px; width: auto; } .gx .pd-graph-surface { height: clamp(320px, calc(100dvh - 400px), 560px); } .gx .pd-graph-zoom { position: static; margin-top: 8px; width: max-content; } }
+.gx .pd-graph { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gx .pd-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 300px), 1100px); border-radius: 12px; border: 1px solid var(--gx-hair); touch-action: none; cursor: grab; background-color: rgba(255, 255, 255, .015); background-image: radial-gradient(rgba(255, 255, 255, .07) 1px, transparent 1.2px); }
+.gx .pd-graph-surface:active { cursor: grabbing; }
+.gx .pd-graph-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.gx .pd-graph-lane { position: absolute; left: 0; --act: #5fbfa6; --act-bg: rgba(95, 191, 166, .06); background: var(--act-bg); border-top: 1px solid color-mix(in srgb, var(--act) 40%, transparent); }
+.gx .pd-graph-lane[data-act="2"] { --act: #4f9cf0; --act-bg: rgba(79, 156, 240, .06); }
+.gx .pd-graph-lane[data-act="3"] { --act: #8c9ee6; --act-bg: rgba(140, 158, 230, .06); }
+.gx .pd-graph-lane-name { position: absolute; left: 24px; top: 10px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--act); }
+.gx .pd-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.gx .pd-graph-spine { fill: none; stroke: #6c6c76; stroke-width: 2; }
+.gx .pd-graph-chain { fill: none; stroke: #3a3a42; stroke-width: 1.5; }
+.gx .pd-graph-scene { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; text-align: left; font: inherit; color: var(--gx-text); cursor: grab; touch-action: none; --act: #5fbfa6; background: color-mix(in srgb, var(--act) 16%, #141417); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); overflow: hidden; }
+.gx .pd-graph-scene[data-act="2"] { --act: #4f9cf0; }
+.gx .pd-graph-scene[data-act="3"] { --act: #8c9ee6; }
+.gx .pd-graph-scene:hover, .gx .pd-graph-scene:focus-visible { border-color: var(--act); outline: none; }
+.gx .pd-graph-scene[data-open] { border-color: var(--act); box-shadow: 0 0 0 2px var(--act); }
+.gx .pd-graph-scene[data-moving] { cursor: grabbing; z-index: 5; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); }
+.gx .pd-graph-scene-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.gx .pd-graph-scene-title { flex: 1; min-width: 0; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx .pd-graph-scene-text { font-size: 12.5px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gx .pd-graph-scene-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); font-family: var(--gx-mono); }
+.gx .pd-graph-beat { position: absolute; display: flex; align-items: center; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: #17171b; font-size: 12.5px; line-height: 1.35; color: var(--gx-text); overflow: hidden; cursor: pointer; }
+.gx .pd-graph-beat[data-more] { justify-content: center; color: var(--gx-text-3); border-style: dashed; }
+.gx .pd-graph-zoom { position: absolute; left: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #17171b; border: 1px solid var(--gx-hair); cursor: default; }
+.gx .pd-graph-zoom button { min-width: 36px; height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.gx .pd-graph-zoom button:hover { background: rgba(255, 255, 255, .08); }
+@media (pointer: coarse) { .gx .pd-graph-zoom button { min-width: 44px; height: 44px; } }
+.gx .pd-graph-note { margin: 0; }
+.gx .pd-import { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
+.gx .pd-import-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

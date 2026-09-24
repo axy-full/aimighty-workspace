@@ -5,10 +5,11 @@ import type { AtomikEffortOption } from '../atomik-reasoning';
  * `frames` writes a storyboard frame prompt for every shot of the beat sheet; `sketch` reads one shot's rough drawing (vision) and writes its frame prompt.
  * `cast` writes the film's cast and elements, each with a Soul Cinema prompt.
  * `environment` builds the film's world: the rules every place shares, and each place with a plate prompt.
+ * `beatsheet` summarises an uploaded beat sheet (a Final Draft beat board PDF, read in the browser) into the Beats stage's scenes and beats.
  * `condense` shortens one Rig shot's render prompt to fit the engine, keeping every visual instruction.
  * `rig` wires one Rig shot: its prompt and notes from the beat, and which of the project's pictures are its inputs.
  */
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'environment' | 'condense' | 'rig';
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'environment' | 'beatsheet' | 'condense' | 'rig';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
@@ -29,6 +30,8 @@ export type DevelopmentScene = {
   id: string; heading: string; sourceStart: number; sourceEnd: number;
   summary: string; beats: string[]; shots: DevelopmentShot[];
   characters: string[]; props: string[]; locations: string[]; productionNotes: string[];
+  /** `beatsheet`: the act the uploaded sheet puts the scene in. */
+  act?: 1 | 2 | 3;
 };
 /** The writer's draft: a complete script in industry format, with the agent's notes for the review. */
 export type DevelopmentScript = { title: string; logline: string; text: string; notes: string[] };

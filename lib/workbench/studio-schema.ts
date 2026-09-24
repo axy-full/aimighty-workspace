@@ -175,6 +175,7 @@ export const productionSchema = z.object({
   }).strict().optional(),
   beats: z.object({
     jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), scriptSha256: z.string().regex(/^[a-f0-9]{64}$/), updatedAt: z.string().datetime(),
+    source: z.enum(['script', 'upload']).optional(), sourceName: z.string().max(300).optional(),
     scenes: z.array(z.object({
       id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), heading: z.string().max(300), summary: z.string().max(4000), act: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       beats: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), text: z.string().max(800) }).strict()).max(40),
@@ -184,6 +185,10 @@ export const productionSchema = z.object({
       }).strict()).max(40),
       characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
     }).strict()).max(1000),
+  }).strict().optional(),
+  /** An uploaded beat sheet (a Final Draft beat board PDF), as the text the browser read from it; the agent summarises it into beats. */
+  beatSource: z.object({
+    name: z.string().max(300), sha256: z.string().regex(/^[a-f0-9]{64}$/), pages: z.number().int().min(1).max(400), text: z.string().max(200_000), at: z.string().datetime(),
   }).strict().optional(),
   boards: z.object({
     style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
