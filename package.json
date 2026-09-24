@@ -18,7 +18,7 @@
     "@ai-sdk/openai": "4.0.70",
     "@ai-sdk/xai": "5.0.6",
     "@anthropic-ai/sdk": "^0.123.0",
-    "@libsql/client": "^0.17.4",
+    "@libsql/client": "^0.18.0",
     "@liveblocks/client": "3.24.2",
     "@liveblocks/node": "3.24.2",
     "@mediabunny/aac-encoder": "file:public/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz",
