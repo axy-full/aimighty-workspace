@@ -34,7 +34,7 @@ export class DevelopmentError extends Error {
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'condense', 'rig']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
@@ -163,7 +163,7 @@ function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: Develop
     const { prompt } = snapshot as Snapshot & { prompt?: string };
     return JSON.stringify({ shotPrompt: prompt, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
   }
-  if (input.kind === 'cast' || input.kind === 'environment') {
+  if (input.kind === 'cast' || input.kind === 'environment' || input.kind === 'beatsheet') {
     const { kind: _kind, ...source } = snapshot as Snapshot & { kind?: string };
     return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
   }
@@ -252,6 +252,12 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     canonical = JSON.stringify({ kind: 'cast', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect,
       ...(sheet?.scenes.length ? { beatSheet: compactBeatSheet(sheet) } : { script }), existingCast: (project.production?.cast?.entries ?? []).map((e) => e.name) });
     boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [] }];
+  } else if (input.kind === 'beatsheet') {
+    const source = project.production?.beatSource;
+    if (!source?.text.trim()) throw new DevelopmentError('Upload the beat sheet PDF first.');
+    canonical = JSON.stringify({ kind: 'beatsheet', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect, scriptFormat: project.scriptFormat ?? 'screenplay',
+      uploadedBeatSheet: { fileName: source.name, pages: source.pages, sha256: source.sha256, text: source.text } });
+    boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [] }];
   } else if (input.kind === 'environment') {
     const sheet = project.production?.beats;
     const script = (project.script ?? '').slice(0, 40_000);
@@ -298,7 +304,7 @@ export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: stri
   return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind,
     sourceHash: compiled.sourceHash, estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd,
     chunks: compiled.chunks.length, calls: compiled.estimates.length,
-    sourceCharacters: input.kind === 'screenplay' || input.kind === 'adfilm' ? compiled.project.script?.length ?? 0 : compiled.canonical.length };
+    sourceCharacters: input.kind === 'screenplay' || input.kind === 'adfilm' ? compiled.project.script?.length ?? 0 : input.kind === 'beatsheet' ? compiled.project.production?.beatSource?.text.length ?? 0 : compiled.canonical.length };
 }
 type Row = Record<string, unknown>;
 /** `withResult` false leaves an older writer draft's full script off a list poll; it is read by its id when opened. */
@@ -467,6 +473,22 @@ function mockEnvironmentReply(input: DevelopmentCall): DevelopmentReply {
     { name: place, notes: 'The main location; every scene returns here.', prompt: `${place}, wide at dusk, frozen water, a lit hut far behind — mock plate prompt.` },
   ].filter((e) => !(request.existingPlaces ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
+/** The mock story editor: a scene per card — a line that starts a card (a slug line, or ACT / a numbered title) opens one; its other lines are beats. */
+function mockBeatsheetReply(input: DevelopmentCall): DevelopmentReply {
+  const request = JSON.parse(input.prompt) as { uploadedBeatSheet?: { text?: string } };
+  const lines = (request.uploadedBeatSheet?.text ?? '').split('\n').map((l) => l.trim()).filter((l) => l && !/^\d+\.?$/.test(l) && l !== '\f');
+  const scenes: { heading: string; summary: string; act: 1 | 2 | 3; beats: string[]; shots: never[]; characters: string[]; props: string[]; locations: string[] }[] = [];
+  let act: 1 | 2 | 3 = 1;
+  for (const line of lines) {
+    const acts = /^ACT\s+(ONE|TWO|THREE|1|2|3)\b/i.exec(line);
+    if (acts) { act = ({ ONE: 1, TWO: 2, THREE: 3, '1': 1, '2': 2, '3': 3 } as const)[acts[1].toUpperCase() as 'ONE'] ?? act; continue; }
+    if (/^(INT\.|EXT\.|INT\/EXT)/i.test(line)) scenes.push({ heading: line, summary: `Mock summary of ${line}.`, act, beats: [], shots: [], characters: [], props: [], locations: [line.replace(/^(INT\.|EXT\.|INT\/EXT\.?)\s*/i, '').split(' - ')[0]] });
+    else if (scenes.length) scenes[scenes.length - 1].beats.push(line.slice(0, 800));
+  }
+  for (const scene of scenes) if (!scene.beats.length) scene.beats.push('The scene plays.');
+  if (!scenes.length) scenes.push({ heading: 'The story', summary: 'Mock summary.', act: 1, beats: ['The story begins.'], shots: [], characters: [], props: [], locations: [] });
+  return { text: JSON.stringify({ scenes, critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
+}
 /** The mock condenser: the prompt's first 8,000 characters, marked, so a render can follow. */
 function mockCondenseReply(input: DevelopmentCall): DevelopmentReply {
   const request = JSON.parse(input.prompt) as { shotPrompt?: string };
@@ -475,6 +497,7 @@ function mockCondenseReply(input: DevelopmentCall): DevelopmentReply {
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
   if (input.kind === 'cast' && input.stage !== 'critique') return mockCastReply(input);
   if (input.kind === 'environment' && input.stage !== 'critique') return mockEnvironmentReply(input);
+  if (input.kind === 'beatsheet' && input.stage !== 'critique') return mockBeatsheetReply(input);
   if (input.kind === 'condense' && input.stage !== 'critique') return mockCondenseReply(input);
   if (input.kind === 'rig' && input.stage !== 'critique') {
     const request = JSON.parse(input.prompt) as { shot?: { title?: string; prompt?: string }; framePrompt?: string; availableAssets?: { id: string; category: string }[] };

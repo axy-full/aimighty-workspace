@@ -15,7 +15,7 @@ export async function developmentSourceHash(project: Project, kind: DevelopmentK
 export function developmentInput(record: PendingDevelopment): DevelopmentRequest {
   const input = JSON.parse(record.body) as DevelopmentRequest & { quoteOnly?: unknown };
   if (!input || input.projectId !== record.projectId || !/^[\w-]{8,100}$/.test(input.requestId) ||
-      !['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'condense', 'rig'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
+      !['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
       (input.fromJobId != null && (input.kind !== 'write' || !/^wb_development_[a-f0-9-]+$/.test(input.fromJobId))) ||
       (input.fromBeats != null && (input.kind !== 'write' || input.fromBeats !== true || input.fromJobId != null)) ||
       (input.sketchAssetId != null && (input.kind !== 'sketch' || !/^[\w-]{1,100}$/.test(input.sketchAssetId))) ||
