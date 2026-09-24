@@ -302,6 +302,22 @@
 .sk-name { display: block; font-weight: 600; font-family: var(--gx-mono); font-size: 13px; }
 .sk-cmd { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wsx-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+/* Workspace › Dashboard: tiles, then tables that scroll inside the card on a phone, never the page. */
+.mdx { gap: 18px; min-width: 0; }
+.mdx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mdx-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.mdx-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 10px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-width: 0; }
+.mdx-tile strong { font-family: var(--gx-mono); font-size: 22px; font-weight: 600; color: var(--gx-text); }
+.mdx-tile .cw-dim { font-size: 12px; }
+.mdx-table-wrap { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.mdx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mdx-table caption { text-align: left; padding: 0 0 8px; }
+.mdx-table th, .mdx-table td { padding: 8px 10px; border-bottom: 1px solid var(--gx-hair); text-align: left; white-space: nowrap; }
+.mdx-table th { color: var(--gx-text-3); font-weight: 600; font-size: 12px; }
+.mdx-table [data-numeric] { text-align: right; font-family: var(--gx-mono); }
+.mdx-table tr[data-clickable] { cursor: pointer; }
+.mdx-table tr[data-clickable]:hover td { background: rgba(255, 255, 255, .04); }
+.mdx-ledger { display: flex; flex-direction: column; gap: 12px; }
 .wsx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
 .wsx-label { display: flex; flex-direction: column; gap: 6px; }
 .wsx-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--gx-hair); }

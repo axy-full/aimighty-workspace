@@ -100,7 +100,10 @@ export async function smallTargets(page: Page, scope = ".pxm-shell"): Promise<st
         const wrap = segmented ? el.closest<HTMLElement>(control) : null;
         const floor = wrap && wrap.getBoundingClientRect().height >= 44 - 0.5 ? optionFloor : 44;
         if (segmented && !wrap) out.push(`${name} — segmented option outside ${control}`);
-        if (rect.width < 44 || rect.height < floor) out.push(name);
+        /* Half a pixel of layout rounding (a 44px button read as 43.99 on CI's
+           Linux fonts) is not a smaller target; the same tolerance the
+           segmented wrap already gets. The name prints the rounded size. */
+        if (rect.width < 44 - 0.5 || rect.height < floor - 0.5) out.push(name);
       }
       return out;
     },
