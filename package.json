@@ -22,6 +22,7 @@
     "@liveblocks/client": "3.24.2",
     "@liveblocks/node": "3.24.2",
     "@mediabunny/aac-encoder": "file:public/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz",
+    "@tanstack/react-virtual": "3.14.13",
     "@tesseract.js-data/eng": "1.0.0",
     "@vercel/blob": "^2.8.0",
     "@vercel/oidc": "^3.8.5",

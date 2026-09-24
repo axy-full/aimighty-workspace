@@ -10,6 +10,7 @@ import type { LibFilter } from "@/lib/workspace/types";
 import { Button } from "../ui";
 import type { PageBodyProps } from "./registry";
 import "@/app/workspace-assets.css";
+import { VirtualItems } from "../VirtualItems";
 
 /** Status dot + label under each card. Failed renders are not billed and say so. */
 export function takeStatus(take: Pick<Take, "status" | "failedUnbilled">): { label: string; dot: string } {
@@ -135,15 +136,18 @@ export function TakesPage({ project, scope }: PageBodyProps) {
       ) : !visible.length ? (
         <p className="pxw-empty">{state.libFilter === "Uploads" ? "No uploads in this project yet." : "No generations in this project yet."}</p>
       ) : (
-        <div className="pxw-take-grid" ref={grid} data-testid="take-grid">
-          {visible.map((entry) => {
+        <div ref={grid}>
+        <VirtualItems
+          className="pxw-take-grid" attrs={{ "data-testid": "take-grid" }}
+          items={visible} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 230 }} gap={14} estimateRowHeight={210} scroll="ancestor"
+          revealKey={state.selKind === "take" ? state.selId : null}
+          renderItem={(entry) => {
             const { take } = entry;
             const s = takeStatus(take);
             const selected = state.selKind === "take" && state.selId === take.id;
             return (
               <button
                 type="button"
-                key={take.id}
                 className="pxw-take-card"
                 aria-pressed={selected}
                 aria-label={`${take.name}, ${take.version}, ${take.kind === "GEN" ? "generation" : "upload"}`}
@@ -169,7 +173,8 @@ export function TakesPage({ project, scope }: PageBodyProps) {
                 </span>
               </button>
             );
-          })}
+          }}
+        />
         </div>
       )}
       {status === "ready" && more ? (
