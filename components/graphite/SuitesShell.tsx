@@ -38,6 +38,7 @@ import { BriefStage } from "./production/BriefStage";
 import { BeatsStage } from "./production/BeatsStage";
 import { StoryboardStage } from "./production/StoryboardStage";
 import { CastStage } from "./production/CastStage";
+import { EnvironmentStage } from "./production/EnvironmentStage";
 import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
@@ -223,6 +224,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
                       project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "environment" ? (
+                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to build its world.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
                       project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to cast it.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (

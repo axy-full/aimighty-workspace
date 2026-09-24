@@ -34,7 +34,7 @@ export class DevelopmentError extends Error {
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'condense', 'rig']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'condense', 'rig']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
@@ -163,7 +163,7 @@ function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: Develop
     const { prompt } = snapshot as Snapshot & { prompt?: string };
     return JSON.stringify({ shotPrompt: prompt, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
   }
-  if (input.kind === 'cast') {
+  if (input.kind === 'cast' || input.kind === 'environment') {
     const { kind: _kind, ...source } = snapshot as Snapshot & { kind?: string };
     return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
   }
@@ -251,6 +251,15 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     if (!sheet?.scenes.length && !script.trim()) throw new DevelopmentError('Write the script or break it into beats first.');
     canonical = JSON.stringify({ kind: 'cast', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect,
       ...(sheet?.scenes.length ? { beatSheet: compactBeatSheet(sheet) } : { script }), existingCast: (project.production?.cast?.entries ?? []).map((e) => e.name) });
+    boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [] }];
+  } else if (input.kind === 'environment') {
+    const sheet = project.production?.beats;
+    const script = (project.script ?? '').slice(0, 40_000);
+    if (!sheet?.scenes.length && !script.trim() && !project.brief.trim()) throw new DevelopmentError('Write the brief or the script, or break it into beats, first.');
+    const env = project.production?.environment;
+    canonical = JSON.stringify({ kind: 'environment', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect,
+      ...(sheet?.scenes.length ? { beatSheet: compactBeatSheet(sheet) } : script.trim() ? { script } : {}),
+      world: env?.world ?? '', existingPlaces: (env?.entries ?? []).map((e) => e.name) });
     boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [] }];
   } else canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId, beatSheet) : sourceCanonical(project, input.kind);
   const snapshot = JSON.parse(canonical) as Snapshot;
@@ -442,14 +451,21 @@ function mockBoardReply(input: DevelopmentCall): DevelopmentReply {
     : JSON.stringify({ reading: `Mock reading of the drawing (${input.images?.length ?? 0} image seen): two figures, camera low on the left, looking right.`, prompt: `Shot ${request.shot?.number}: ${request.shot?.description || 'the scene'}, blocked as drawn — mock sketch prompt.`, critique: ['Mock review only; no provider was called.'], assumptions: [] });
   return { text, inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
-/** The mock casting director: one character and one element from the beat sheet, so a build can follow. */
+/** The mock casting director: one character and one prop, so a build can follow (places are built in Environment). */
 function mockCastReply(input: DevelopmentCall): DevelopmentReply {
-  const request = JSON.parse(input.prompt) as { beatSheet?: { heading: string }[]; existingCast?: string[] };
-  const place = request.beatSheet?.[0]?.heading ?? 'The location';
+  const request = JSON.parse(input.prompt) as { existingCast?: string[] };
   return { text: JSON.stringify({ entries: [
     { name: 'Mara', kind: 'character', category: 'character', model: 'soul_cinematic', description: 'The harbour master; appears in every scene.', prompt: 'Mara, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
-    { name: place, kind: 'element', category: 'environment', model: 'soul_location', description: 'The main location.', prompt: `${place}, a clean wide plate — mock cast prompt.` },
+    { name: 'Mooring rope', kind: 'element', category: 'prop', model: 'soul_cinematic', description: 'The rope the fox steps over.', prompt: 'A frayed mooring rope, iced over, a clean plate — mock cast prompt.' },
   ].filter((e) => !(request.existingCast ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
+}
+/** The mock production designer: the world's rules and one place from the beat sheet, so a plate can follow. */
+function mockEnvironmentReply(input: DevelopmentCall): DevelopmentReply {
+  const request = JSON.parse(input.prompt) as { beatSheet?: { heading: string }[]; existingPlaces?: string[] };
+  const place = request.beatSheet?.[0]?.heading ?? 'The harbour';
+  return { text: JSON.stringify({ world: 'Late winter on a northern coast: low sun, salt haze, weathered timber and iron — mock world.', entries: [
+    { name: place, notes: 'The main location; every scene returns here.', prompt: `${place}, wide at dusk, frozen water, a lit hut far behind — mock plate prompt.` },
+  ].filter((e) => !(request.existingPlaces ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
 /** The mock condenser: the prompt's first 8,000 characters, marked, so a render can follow. */
 function mockCondenseReply(input: DevelopmentCall): DevelopmentReply {
@@ -458,6 +474,7 @@ function mockCondenseReply(input: DevelopmentCall): DevelopmentReply {
 }
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
   if (input.kind === 'cast' && input.stage !== 'critique') return mockCastReply(input);
+  if (input.kind === 'environment' && input.stage !== 'critique') return mockEnvironmentReply(input);
   if (input.kind === 'condense' && input.stage !== 'critique') return mockCondenseReply(input);
   if (input.kind === 'rig' && input.stage !== 'critique') {
     const request = JSON.parse(input.prompt) as { shot?: { title?: string; prompt?: string }; framePrompt?: string; availableAssets?: { id: string; category: string }[] };

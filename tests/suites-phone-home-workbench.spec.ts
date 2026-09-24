@@ -44,7 +44,7 @@ test("phone: Home › the Studio tile opens the stage grid; a card opens its pag
   await expect(page.getByTestId("phone-back")).toHaveText(/Home/);
   await expect(page.getByTestId("page-title")).toHaveText("Coastal light study");
   await expect(page.getByTestId("home-up-next")).toContainText("Up next · Shot 01");
-  await expect(home.getByRole("listitem")).toHaveCount(9);
+  await expect(home.getByRole("listitem")).toHaveCount(10);
   await expect(page.getByTestId("home-stage-brief")).toContainText("8 words");
   await expect(page.getByTestId("home-stage-rig")).toContainText("1 shot · 0 rendered");
   await expect(page.getByTestId("home-recent").locator(".gx-home-take")).toHaveCount(1);
@@ -68,7 +68,7 @@ test("phone: Home › the Studio tile opens the stage grid; a card opens its pag
 test("desktop: the strip has neither the Home nor the Studio grid tab and the header no back button", async ({ page }, info) => {
   test.skip(!["workbench-1440x900"].includes(info.project.name), "one desktop width");
   const errors = await open(page, "/suites?suite=studio&page=rig");
-  await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button")).toHaveCount(9);
+  await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button")).toHaveCount(10);
   await expect(page.getByTestId("phone-back")).toBeHidden();
   await expect(page.getByTestId("tabbar")).toBeHidden();
   expect(errors).toEqual([]);

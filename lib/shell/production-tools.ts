@@ -21,6 +21,10 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
     g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Frame prompts", "One per shot", "prompts"]]),
     g("FRAMES", [["Look", "Live action · Colour · B&W sketch", "look"], ["Line drawings", "Upload · Read · Convert", "drawings"], ["Frames", "Prompt · Agent prompt · Render", "frames"]]),
   ],
+  environment: [
+    g("WORLD", [["The world", "Rules every place shares · Engine", "world"], ["Agent", "Claude · Grok · OpenAI · optional", "agent"]]),
+    g("PLACES", [["Places", "Plates · References · Render or upload", "places"]]),
+  ],
   cast: [
     g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Cast list", "From the beat sheet or the agent", "list"]]),
     g("SOUL CINEMA", [["Cast & elements", "Prompt · Reference · Build", "entries"], ["Soul ID", "Lock a character's identity", "soul"]]),
@@ -43,7 +47,7 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
 };
 
 /** Studio pages the Production agent runs itself: their own priced actions replace the page head's "Run stage". */
-export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats", "boards", "cast", "takes"]);
+export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats", "boards", "environment", "cast", "takes"]);
 
 export const SECTION_EVENT = "particl:production-section";
 /** Brings a stage's section into view; the stage listens for the event to switch tabs first. */

@@ -14,12 +14,12 @@ test("an entry's Soul model follows its kind and category; settings are only the
   expect(soulParameters({ parameters: [], aspectRatios: [], medias: [] }, newEntry("element"), "16:9")).toEqual({});
 });
 
-test("the beat sheet's names become entries with a category; nothing already cast is added twice", () => {
+test("the beat sheet's characters and props become entries; locations go to Environment; nothing already cast is added twice", () => {
   const sheet = { scriptSha256: "a".repeat(64), updatedAt: new Date().toISOString(), scenes: [
     { id: "s", heading: "H", summary: "", beats: [], shots: [], characters: ["Mara"], locations: ["Harbour"], props: ["Lantern"] },
   ] };
   const entries = castFromBeats(sheet, [newEntry("character", "mara")]);
-  expect(entries.map((e) => [e.name, e.kind, e.category, entryModel(e)])).toEqual([["Harbour", "element", "environment", "soul_location"], ["Lantern", "element", "prop", "soul_cinematic"]]);
+  expect(entries.map((e) => [e.name, e.kind, e.category, entryModel(e)])).toEqual([["Lantern", "element", "prop", "soul_cinematic"]]);
 });
 
 test("element replies are read by element_id or id, whatever the envelope; junk is not an element", () => {
