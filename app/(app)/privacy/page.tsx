@@ -46,11 +46,11 @@ export default function PrivacyPage() {
       </P>
       <P title="How long">
         <p>
-          Masters are kept as long as the workspace keeps them. A take you
-          delete is pruned after the workspace&rsquo;s retention setting, or
-          kept if that is set to keep everything. Deleting a workspace
-          immediately disables access. Cleanup then removes its files and
-          database; failed stages are retried. Platform account and billing
+          Nothing is erased. Masters stay on the server indefinitely. A take,
+          upload or project you delete is hidden from every screen and kept,
+          so it can be restored. Deleting a workspace immediately disables
+          access and retires its key; its files and database are kept.
+          Platform account and billing
           records remain. The owner can export shared workspace records and
           their own private drafts from Settings › Account. Collaborators&rsquo;
           private drafts are excluded. Media files are available through a

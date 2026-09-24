@@ -82,7 +82,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
           const fresh = JSON.parse(String(current.params));
           if (fresh.higgsfieldVideoPollToken !== token || fresh.higgsfieldVideoPollUntil <= now() || fresh.higgsfieldVideoHandle?.ref !== handle.ref) throw new Error("Collection lease changed");
           if (fresh.genjutsuOriginal && (fresh.genjutsuOriginal.sha256 !== original!.sha256 || fresh.genjutsuOriginal.bytes !== original!.bytes)) throw new Error("Original changed");
-          const used = Number((await tx.execute(`SELECT (SELECT COALESCE(SUM(bytes),0) FROM generations) +
+          const used = Number((await tx.execute(`SELECT (SELECT COALESCE(SUM(bytes),0) FROM generations WHERE deleted=0) +
             (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) +
             (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) +
             (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS n`)).rows[0].n);

@@ -28,6 +28,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
   const dependencies: Record<string, unknown> = {
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/archive": await import("../../lib/archive"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/workbench/request-scope":
       await import("../../lib/workbench/request-scope"),
@@ -174,18 +175,19 @@ test("generation DELETE preserves active provider jobs and media referenced by p
     ).toBe(4);
     await db().execute("DELETE FROM workbench_bibles");
     expect((await route.remove("succeeded")).status).toBe(200);
-    expect(route.deleted).toEqual(["succeeded"]);
+    // Hidden, never erased: no storage call, the original stays.
+    expect(route.deleted).toEqual([]);
     expect(
       (
         await db().execute(
-          "SELECT deleted FROM generations WHERE id='succeeded'",
+          "SELECT deleted,stored_url FROM generations WHERE id='succeeded'",
         )
-      ).rows[0].deleted,
-    ).toBe(1);
+      ).rows[0],
+    ).toMatchObject({ deleted: 1, stored_url: "original" });
   });
 });
 
-test("upload DELETE checks every owner's context then transfers master and derivative bytes to durable cleanup", async () => {
+test("upload DELETE checks every owner's context then archives the row and keeps master and derivative bytes", async () => {
   const route = await load("uploads"),
     { runInTenant } = await import("../../lib/tenant"),
     { db } = await import("../../lib/db"),
@@ -211,20 +213,21 @@ test("upload DELETE checks every owner's context then transfers master and deriv
     await db().execute("DELETE FROM workbench_projects");
     const removed = await route.remove("up_id");
     expect(removed.status).toBe(200);
-    expect(await removed.json()).toEqual({ ok: true, cleanupPending: true });
+    expect(await removed.json()).toEqual({ ok: true, cleanupPending: false });
     expect(
       (await db().execute("SELECT COUNT(*) n FROM uploads")).rows[0].n,
     ).toBe(0);
-    expect(await reservedUploadBytes()).toBe(6);
-    const row = (await db().execute("SELECT * FROM upload_sessions")).rows[0];
-    expect(JSON.parse(String(row.objects))).toEqual([
-      {
-        id: "up_id",
-        ext: "png",
-        url: "https://private.blob.fixture/master-random.png",
-      },
-      { id: "up_id-api", ext: "jpg", url: "/api/uploads/up_id-api" },
-    ]);
+    // Nothing is queued for removal; the archive keeps both locations.
+    expect(route.deleted).toEqual([]);
+    expect(await reservedUploadBytes()).toBe(0);
+    expect((await db().execute("SELECT COUNT(*) n FROM upload_sessions")).rows[0].n).toBe(0);
+    const archived = (await db().execute("SELECT body FROM archived_rows WHERE table_name='uploads' AND row_id='up_id'")).rows[0];
+    expect(JSON.parse(String(archived.body))).toMatchObject({
+      stored_url: "https://private.blob.fixture/master-random.png",
+      derivative_url: "/api/uploads/up_id-api",
+      bytes: 4,
+      derivative_bytes: 2,
+    });
   });
   await runInTenant(workspace("other-upload-delete"), async () => {
     expect(await reservedUploadBytes()).toBe(0);
@@ -307,8 +310,8 @@ test("catalog, identity, cast, chat and render input records protect referenced 
   });
 });
 
-test("generation DELETE returns accepted cleanup-pending without releasing retained bytes on storage failure", async () => {
-  const route = await load("jobs", true);
+test("generation DELETE hides the render and keeps its bytes, source and cost", async () => {
+  const route = await load("jobs");
   const { runInTenant } = await import("../../lib/tenant"),
     { db } = await import("../../lib/db"),
     { workbenchReady } = await import("../../lib/workbench/records");
@@ -318,8 +321,9 @@ test("generation DELETE returns accepted cleanup-pending without releasing retai
       "INSERT INTO generations(id,model,prompt,params,status,stored_url,source_url,bytes,cost_usd,created_at,updated_at) VALUES('take','fixture','','{}','succeeded','original-stored','original-source',7,2.5,0,1)",
     );
     const response = await route.remove("take");
-    expect(response.status).toBe(202);
-    expect(await response.json()).toEqual({ ok: true, cleanupPending: true });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, cleanupPending: false });
+    expect(route.deleted).toEqual([]);
     const row = (
       await db().execute("SELECT * FROM generations WHERE id='take'")
     ).rows[0];

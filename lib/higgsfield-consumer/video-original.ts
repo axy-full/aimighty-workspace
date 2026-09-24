@@ -483,7 +483,7 @@ export async function collectConsumerVideoOriginal(
             throw new ConsumerOriginalError("conflict");
           const total = (
             await tx.execute(
-              `SELECT (SELECT COALESCE(SUM(bytes),0) FROM generations) + (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) + (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) + (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS n`,
+              `SELECT (SELECT COALESCE(SUM(bytes),0) FROM generations WHERE deleted=0) + (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) + (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) + (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS n`,
             )
           ).rows[0].n;
           if (

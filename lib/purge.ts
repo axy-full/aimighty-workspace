@@ -24,7 +24,8 @@ async function purgeReady() {
   )`);
 }
 
-/** Access ends atomically. Cleanup is a separate, durable, retryable operation. */
+/** Access ends atomically. The database and every file stay for good (owner,
+ * 2026-09-24); retireDeletedWorkspaces only takes the gateway key away. */
 export async function markWorkspaceDeleted(id: string): Promise<void> {
 return await withRecoveryActivity('purge', async () => {
 
@@ -50,10 +51,6 @@ return await withRecoveryActivity('purge', async () => {
       {
         sql: `UPDATE p_sessions SET workspace_id=NULL WHERE workspace_id=?`,
         args: [id],
-      },
-      {
-        sql: `INSERT INTO workspace_purges(workspace_id,next_attempt_at,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id) DO NOTHING`,
-        args: [id, ts + PURGE_GRACE_MS, ts],
       },
     ],
     "write",
@@ -179,7 +176,11 @@ async function disposeCollectedConsumerOriginals(tx: Transaction, ws: TenantWork
   }
 }
 
-/** Each stage is recorded before the next; failures retain every recovery identifier. */
+/**
+ * Each stage is recorded before the next; failures retain every recovery identifier.
+ * Not wired to any route or cron: nothing a team makes is ever erased (owner,
+ * 2026-09-24). tests/unit/neverDelete.spec.ts holds that line.
+ */
 export async function purgeWorkspace(
   workspace: TenantWorkspace,
   dependencies: PurgeDependencies = {
@@ -368,6 +369,36 @@ return await withRecoveryActivity('purge', async () => {
     }
   }
   return { attempted: rows.rows.length, completed, failed };
+
+});
+}
+
+/** A deleted workspace keeps its database and files; after the grace period for
+ * running functions, its gateway key is revoked so it can no longer spend. */
+export async function retireDeletedWorkspaces(limit = 5, revoke: (id: string) => Promise<void> = revokeGatewayKey) {
+return await withRecoveryActivity('purge', async () => {
+
+  await platformReady();
+  const p = platformDb();
+  const rows = await p.execute({
+    sql: `SELECT id,gateway_key_id FROM workspaces WHERE legacy=0 AND deleted_at IS NOT NULL
+          AND purged_at IS NULL AND gateway_key_id IS NOT NULL AND deleted_at<=? ORDER BY deleted_at LIMIT ?`,
+    args: [now() - PURGE_GRACE_MS, limit],
+  });
+  let failed = 0;
+  for (const row of rows.rows) {
+    try {
+      await revoke(String(row.gateway_key_id));
+      await p.execute({
+        sql: `UPDATE workspaces SET gateway_key_id=NULL,updated_at=? WHERE id=? AND gateway_key_id=?`,
+        args: [now(), row.id, row.gateway_key_id],
+      });
+    } catch {
+      failed++;
+      console.error(JSON.stringify({ level: "error", event: "workspace_retire.key_failed" }));
+    }
+  }
+  return { attempted: rows.rows.length, failed };
 
 });
 }

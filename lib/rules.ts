@@ -2,6 +2,7 @@ import { db, ready, now, id } from "./db";
 import { getSetting, setSetting, invalidateSettings } from "./settings";
 import { getPlatformLayer } from "./platform";
 import { mergeRules, RULE_SCOPES, type PlatformRule, type EffectiveRule, type RuleScope, type RuleApply } from "./platformLayer";
+import { archiveAndDelete } from "./archive";
 
 /**
  * The rule library, per workspace (brief 2.5): the platform's rules, which
@@ -69,8 +70,7 @@ export async function patchRule(rid: string, patch: { text?: string; scope?: str
 
 export async function deleteRule(rid: string): Promise<boolean> {
   await ready();
-  const rs = await db().execute({ sql: `DELETE FROM workspace_rules WHERE id = ?`, args: [rid] });
-  return rs.rowsAffected > 0;
+  return (await archiveAndDelete(db(), "workspace_rules", `id = ?`, [rid])) > 0;
 }
 
 /** Switch a platform rule off (or back on) for this workspace only. */

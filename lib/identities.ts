@@ -17,6 +17,7 @@ import {
   writeGenerationOutcome,
   deliverGenerationSettlement,
 } from "./generationSettlement";
+import { archiveAndDelete } from "./archive";
 
 /**
  * LEGACY — the older LoRA identity trainer (four-suites PR F, 19 Sep 2026).
@@ -306,7 +307,7 @@ export async function updateIdentity(
 
 export async function deleteIdentity(id: string): Promise<void> {
   await ready();
-  await db().execute({ sql: `DELETE FROM identities WHERE id=?`, args: [id] });
+  await archiveAndDelete(db(), "identities", `id=?`, [id]);
 }
 
 /* ── Training ──────────────────────────────────────────────────────── */

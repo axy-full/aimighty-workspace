@@ -213,12 +213,13 @@ export default function PlatformPage() {
               in this application.
             </QA>
             <QA q="Retention, deletion and backups">
-              Deleting a render is a soft delete — the media goes, the cost
-              stays in the ledger, because a ledger that forgets binned takes
-              flatters the project. <b>Honest gap:</b> there is no automated
-              backup schedule or hard-delete job in this build. The managed
-              database provider keeps its own backups; a documented restore
-              drill has not been run.
+              Nothing is erased. Deleting a render, an upload or a project
+              hides it and keeps it — the media, the record and the cost —
+              so it can be restored, and a ledger that forgets binned takes
+              would flatter the project. A deleted workspace loses access and
+              its key; its database and files stay. The managed database
+              provider keeps its own backups; a documented restore drill has
+              not been run.
             </QA>
           </div>
         </section>

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { db } from '../db';
-import { openUploadStream, openMediaStream, storeUpload, deleteUpload } from '../storage';
+import { openUploadStream, openMediaStream, storeUpload } from '../storage';
 import { findWorkbenchMedia } from '../workbench/media-records';
 import { originalAssetDownload } from '../workbench/original-asset';
 import { workbenchTransaction } from '../workbench/records';
@@ -121,6 +121,3 @@ export async function registerAstraArtifacts(jobId: string, owner: string, proje
         await tx.execute({ sql: 'DELETE FROM astra_render_storage WHERE job_id=?', args: [jobId] });
     });
 }
-/** Deterministic object names also cover a storage PUT whose response was lost. */
-export async function cleanupAstraArtifacts(jobId: string) { for (const artifact of astraArtifactPlan(jobId))
-    await deleteUpload(artifact.uploadId, artifact.ext, artifact.url, true); }

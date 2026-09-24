@@ -10,9 +10,9 @@ import type { CtxCapabilities, CtxCommand } from "./context-menu";
  * - an UPLOAD is a workspace original *filed* into this project. Deleting it
  *   from a project unfiles it; the original stays in the workspace's All
  *   assets. Pasting it into another project files it there too.
- * - a GENERATION belongs to one project. Deleting it trashes it for 30 days
- *   (`/api/jobs/:id` PATCH `{ trashed }`), restorable from the undo stack
- *   until then. It can be moved, never copied — a copy would be a new render.
+ * - a GENERATION belongs to one project. Deleting it trashes it
+ *   (`/api/jobs/:id` PATCH `{ trashed }`): hidden, never erased, restorable
+ *   from the undo stack. It can be moved, never copied — a copy would be a new render.
  */
 export type AssetRef = { id: string; sourceId: string; origin: "upload" | "generation"; name: string; media: "image" | "video" | "audio" | null };
 
@@ -24,8 +24,6 @@ export function assetRef(entry: LibraryEntry): AssetRef {
 export function referenceRole(media: AssetRef["media"]): "Image" | "Video" | null {
   return media === "image" ? "Image" : media === "video" ? "Video" : null;
 }
-
-export const TRASH_DAYS = 30;
 
 /** What the commands are called for an asset — the prototype's labels. */
 export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Retry generation" };
@@ -70,7 +68,7 @@ export const SAY = {
   pasted: (name: string, project: string) => `Pasted ${name} into ${project}`,
   moved: (name: string, project: string) => `Moved ${name} to ${project}`,
   deleted: (asset: AssetRef) => asset.origin === "generation"
-    ? `Deleted ${asset.name} · ⌘Z to undo. Originals stay retained server-side for ${TRASH_DAYS} days.`
+    ? `Deleted ${asset.name} · ⌘Z to undo. The original stays on the server indefinitely.`
     : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,

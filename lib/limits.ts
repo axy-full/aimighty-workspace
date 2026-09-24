@@ -64,7 +64,7 @@ export async function standing(): Promise<Standing> {
   const [live, hour, gens, ups, reserved] = await Promise.all([
     db().execute(`SELECT COUNT(*) AS n FROM generations WHERE status IN ('queued','running') AND deleted = 0`),
     db().execute({ sql: `SELECT COUNT(*) AS n FROM generations WHERE created_at >= ? AND status <> 'held'`, args: [now() - 3_600_000] }),
-    db().execute(`SELECT COALESCE(SUM(bytes), 0) AS b FROM generations`),
+    db().execute(`SELECT COALESCE(SUM(bytes), 0) AS b FROM generations WHERE deleted=0`),
     db().execute(`SELECT COALESCE(SUM(COALESCE(bytes, 0) + COALESCE(derivative_bytes, 0)), 0) AS b FROM uploads`),
     import("./uploadReservations").then(module => module.reservedUploadBytes()),
   ]);

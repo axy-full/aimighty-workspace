@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { archiveAndDelete, archiveReady } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -49,8 +50,9 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
 /**
  * Deleting a project keeps its renders: they fall back to Unfiled, and their
  * cost stays on the ledger. What was filed UNDER the project — its shots,
- * cast, notes and the like — goes with it, deleted here explicitly rather
- * than left to the database's cascade rules.
+ * cast, notes and the like — leaves every screen with it, explicitly rather
+ * than by the database's cascade rules. Nothing is erased: each row is copied
+ * to the archive first, and so is the list of renders that were unfiled.
  */
 export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
@@ -59,9 +61,16 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const { id } = await params;
   const found = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [id] });
   if (!found.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  await archiveReady();
+  await db().execute({
+    sql: `INSERT INTO archived_rows(id,table_name,row_id,body,reason,archived_by,archived_at)
+          SELECT lower(hex(randomblob(16))), 'generations.project_id', ?, json_group_array(id), 'unfiled', ?, ?
+          FROM generations WHERE project_id = ? HAVING COUNT(*) > 0`,
+    args: [id, got.user.id, Date.now(), id],
+  });
   await db().execute({ sql: `UPDATE generations SET project_id = NULL WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `UPDATE identities SET project_id = NULL WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `DELETE FROM cast_members WHERE project_id = ?`, args: [id] });
+  await archiveAndDelete(db(), "cast_members", `project_id = ?`, [id]);
   /* Rig's rows go with it. Foreign keys are declared but not enforced here,
      so a binding left behind would keep being counted by the impact query —
      a production nobody can open, still adding shots to what a change costs.
@@ -71,16 +80,16 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
   if (elementIds.length) {
     const holes = elementIds.map(() => "?").join(",");
-    await db().execute({ sql: `DELETE FROM attribute_versions WHERE element_id IN (${holes})`, args: elementIds });
-    await db().execute({ sql: `DELETE FROM element_attributes WHERE element_id IN (${holes})`, args: elementIds });
-    await db().execute({ sql: `DELETE FROM bindings WHERE element_id IN (${holes})`, args: elementIds });
+    await archiveAndDelete(db(), "attribute_versions", `element_id IN (${holes})`, elementIds);
+    await archiveAndDelete(db(), "element_attributes", `element_id IN (${holes})`, elementIds);
+    await archiveAndDelete(db(), "bindings", `element_id IN (${holes})`, elementIds);
   }
-  await db().execute({ sql: `DELETE FROM bindings WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `DELETE FROM elements WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `DELETE FROM shots WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `DELETE FROM canvas_items WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `DELETE FROM shot_presets WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `DELETE FROM projects WHERE id = ?`, args: [id] });
+  await archiveAndDelete(db(), "bindings", `project_id = ?`, [id]);
+  await archiveAndDelete(db(), "elements", `project_id = ?`, [id]);
+  await archiveAndDelete(db(), "shots", `project_id = ?`, [id]);
+  await archiveAndDelete(db(), "canvas_items", `project_id = ?`, [id]);
+  await archiveAndDelete(db(), "shot_presets", `project_id = ?`, [id]);
+  await archiveAndDelete(db(), "projects", `id = ?`, [id]);
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
 });
