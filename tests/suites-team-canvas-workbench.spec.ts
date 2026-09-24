@@ -100,3 +100,27 @@ test("the Rig opens onto the team canvas: a teammate's shot appears, mine joins 
   await expect(card).not.toHaveAttribute("data-selected", "true");
   expect(errors).toEqual([]);
 });
+
+test("an edit made just before the page reloads still reaches the team canvas, so the next open does not undo it", async ({ page }, info) => {
+  /* Real server throughout: a request sent while a page unloads bypasses route mocks. */
+  test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const headers = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
+  const draft: Project = { ...newProject("Reload study"), id: `team-reload-${Date.now().toString(36)}`, nodes: [shot("rig-a", "The encounter", 100, 100)] };
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: draft, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const { productionProjectId } = await saved.json();
+  const canvas = async () => (await page.request.get(`/api/workbench/team-canvas?productionId=${productionProjectId}`, { headers }).then((r) => r.json())).canvas;
+
+  await page.goto(`/workspace?project=${draft.id}&suite=particl&page=rig&sel=shot:rig-a`);
+  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
+  await expect.poll(async () => (await canvas())?.order ?? []).toEqual(["rig-a"]);
+  await expect(page.getByTestId("shot-duration")).toHaveText("5s");
+  await page.getByRole("button", { name: "Longer" }).click();
+  await expect(page.getByTestId("shot-duration")).toHaveText("6s");
+  await page.reload();
+  await expect.poll(async () => (await canvas())?.nodes["rig-a"]?.durationS).toBe(6);
+  await expect(page.getByTestId("shot-duration")).toHaveText("6s");
+});

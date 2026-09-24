@@ -31,11 +31,15 @@ export type TeamCanvasApi = {
   peers: Peer[];
   publish: (before: Project, after: Project) => void;
   presence: (patch: Partial<Presence>) => void;
+  /** Sends any waiting canvas edit now. The draft save awaits it, so the canvas is never older than the saved draft. */
+  flush: () => Promise<void>;
 };
 
 const API = "/api/workbench/team-canvas";
 const SAVE_MS = 500;
 const RETRY_MS = 5000;
+/** Browsers cap the bodies of keepalive requests in flight at 64 KB. */
+const KEEPALIVE_MAX = 60_000;
 const plain = <T,>(value: T): Json => JSON.parse(JSON.stringify(value)) as Json;
 
 /** Several edits between saves travel as one patch: the last write of each node wins. */
@@ -91,9 +95,11 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     if (!patch || !pid) return;
     pending.current = null;
     try {
-      const body = { productionId: pid, upsertNodes: patch.upsertNodes, removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order };
-      const request = await draftBody(JSON.stringify(body));
-      await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body });
+      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order });
+      /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
+         (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
+      const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
+      await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
     } catch {
       /* Keep it and try again; a later edit rides along. */
       pending.current = mergePatches(patch, pending.current ?? { ...patch, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null });
@@ -101,6 +107,13 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     }
   }, [scope]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
+
+  /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
+  useEffect(() => {
+    const onHide = () => { if (pending.current) void send(); };
+    window.addEventListener("pagehide", onHide);
+    return () => window.removeEventListener("pagehide", onHide);
+  }, [send]);
 
   const queue = useCallback((patch: TeamPatch) => {
     pending.current = mergePatches(pending.current, patch);
@@ -217,5 +230,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
   const presence = useCallback((patch: Partial<Presence>) => { room.current?.updatePresence(patch); }, []);
 
-  return { mode, peers, publish, presence };
+  return { mode, peers, publish, presence, flush: send };
 }

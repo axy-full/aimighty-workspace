@@ -163,12 +163,15 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     }
   }, [load, setDraft]);
 
+  /* Set once the team canvas hook exists below: its waiting edit goes out before the draft save. */
+  const teamFlushRef = useRef<(() => Promise<void>) | null>(null);
   const flush = useCallback((options: { force?: boolean } = {}): Promise<boolean> => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     chain.current = chain.current.then(async () => {
       const current = draftRef.current;
       if (!current) return false;
       if (!dirty.current && !options.force) return true;
+      await teamFlushRef.current?.();
       dirty.current = false;
       setSaveState("saving");
       try {
@@ -257,7 +260,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* ── The production's team canvas (shared Rig nodes, live when Liveblocks is set up) ── */
   const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
   const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold });
-  useEffect(() => { publishRef.current = team.publish; }, [team.publish]);
+  useEffect(() => { publishRef.current = team.publish; teamFlushRef.current = team.flush; }, [team.publish, team.flush]);
 
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
   const [run, setRun] = useState<Run | null>(null);
