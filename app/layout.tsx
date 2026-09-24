@@ -1,18 +1,12 @@
 import type { Metadata } from "next";
 import DeviceProbe from "@/components/switchover/DeviceProbe";
-import { Outfit, Kode_Mono } from "next/font/google";
+import "./fonts.css";
 import "./globals.css";
 import "./four-suites.css";
 
-/* Keep the approved wordmark fonts. Graphite interface typography is defined
-   by the shared system-font tokens in globals.css. */
-const outfit = Outfit({
-  subsets: ["latin", "latin-ext"], weight: ["400", "500", "600"],
-  variable: "--font-outfit", display: "swap",
-});
-const kode = Kode_Mono({
-  subsets: ["latin"], weight: ["400", "500"], variable: "--font-kode-mono", display: "swap",
-});
+/* Keep the approved wordmark fonts (Outfit, Kode Mono), bundled in public/fonts
+   and declared in app/fonts.css. Graphite interface typography is defined by the
+   shared system-font tokens in globals.css. */
 
 export const metadata: Metadata = {
   title: "Particl Production Studio",
@@ -49,8 +43,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
        first frame and nothing for the server and the browser to disagree
        about. The flash this used to prevent cannot happen — the page has
        been dark since the stylesheet loaded. */
-    <html lang="en" className={`${outfit.variable} ${kode.variable}`}>
+    <html lang="en">
       <head>
+        {/* The wordmark's Latin files, fetched with the page so it does not swap in late. */}
+        <link rel="preload" href="/fonts/outfit-latin-wght-normal.woff2" as="font" type="font/woff2" crossOrigin="" />
+        <link rel="preload" href="/fonts/kode-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossOrigin="" />
         {/* The switch-over gate's one decision, taken while the document parses.
             It belongs to the root layout because this is the only place React
             renders exactly once per document: a page segment is re-rendered by a
