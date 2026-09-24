@@ -10,7 +10,7 @@ import type { PageId, Suite } from "@/lib/workspace/types";
  */
 export type ShellSuiteId = "studio" | "business" | "viral" | "atomik";
 export type ShellView = "suite" | "gen" | "workspace" | "crew";
-export type WorkspaceTabId = "general" | "people" | "credits" | "usage" | "engines" | "security";
+export type WorkspaceTabId = "general" | "people" | "credits" | "usage" | "dashboard" | "engines" | "security";
 
 export type ShellPage = {
   id: string;
@@ -128,6 +128,7 @@ export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }
   { id: "people", label: "People", href: "/team" },
   { id: "credits", label: "Plans & credits", href: "/billing" },
   { id: "usage", label: "Usage", href: "/usage" },
+  { id: "dashboard", label: "Dashboard", href: "/usage" },
   { id: "engines", label: "Engines", href: "/management/engines" },
   { id: "security", label: "Security", href: "/account/security" },
 ];
