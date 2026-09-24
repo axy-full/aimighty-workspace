@@ -36,8 +36,15 @@
 /* ── Node graph (the advanced view) ───────────────────────────────────── */
 /* min-width keeps the canvas at its design width; the content pane scrolls. */
 .pxw .pxw-graph-scroll { contain: inline-size; }
-.pxw .pxw-graph-wrap { padding: 24px; min-width: 1110px; width: max-content; }
-.pxw .pxw-graph-canvas { position: relative; }
+.pxw .pxw-graph-wrap { padding: 24px; }
+.pxw .pxw-graph-canvas { position: relative; transform-origin: 0 0; }
+/* The board: a bounded surface the canvas pans and zooms inside (pinch or ⌘-wheel zooms, wheel or drag pans). */
+.pxw .pxw-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 260px), 1200px); border-radius: 16px; border: 1px solid var(--pxw-control-border); touch-action: none; cursor: grab; background-color: rgba(255, 255, 255, .015); background-image: radial-gradient(rgba(255, 255, 255, .07) 1px, transparent 1.2px); }
+.pxw .pxw-graph-surface:active { cursor: grabbing; }
+.pxw .pxw-graph-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); cursor: default; }
+.pxw .pxw-graph-zoom button { min-width: 36px; height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.pxw .pxw-graph-zoom button:hover { background: rgba(255, 255, 255, .08); }
+@media (pointer: coarse) { .pxw .pxw-graph-zoom button { min-width: 44px; height: 44px; } }
 .pxw .pxw-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .pxw .pxw-graph-node { position: absolute; display: flex; flex-direction: column; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); border-radius: 13px; padding: 12px; }
 .pxw .pxw-graph-node[data-shape="text"],

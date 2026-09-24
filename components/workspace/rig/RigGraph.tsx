@@ -9,6 +9,7 @@ import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
 import type { Drag, Peer } from "./use-team-canvas";
+import { DEFAULT_VIEW, distance, fitView, loadView, midpoint, panBy, pinchView, resetZoom, saveView, stepZoom, viewKey, wheelFactor, zoomAround, type View } from "@/lib/viewport";
 
 /** A take's or reference's preview, else the flat bands that stand in for media. */
 function Media({ id, asset, height, badge }: { id: string; asset: Asset | undefined; height: number; badge?: boolean }) {
@@ -70,6 +71,9 @@ function Card({ node, shot, asset, selected, wiring, onSelect, onWireFrom, onWir
   );
 }
 
+/** The height of the zoom cluster's strip at the bottom of the board (cluster 44 + inset 12). */
+const ZOOM_STRIP = 56;
+
 /** Rig — node graph (the advanced view of the same shots). */
 export function RigGraph() {
   const rig = useRig();
@@ -88,15 +92,141 @@ export function RigGraph() {
   const canvas = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
 
+  /* ── The viewport: zoom about the cursor and pan, remembered per project on this device ── */
+  const surface = useRef<HTMLDivElement | null>(null);
+  const storeKey = project ? viewKey(rig.scope, project.id) : null;
+  const [viewState, setViewState] = useState<{ key: string | null; view: View }>({ key: null, view: DEFAULT_VIEW });
+  if (storeKey !== viewState.key) setViewState({ key: storeKey, view: (storeKey && loadView(storeKey)) || DEFAULT_VIEW });
+  const view = viewState.key === storeKey ? viewState.view : DEFAULT_VIEW;
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
+  const setView = useCallback((next: View | ((v: View) => View)) => {
+    setViewState((cur) => {
+      const v = typeof next === "function" ? next(cur.view) : next;
+      return v === cur.view ? cur : { ...cur, view: v };
+    });
+  }, [setViewState]);
+  useEffect(() => { if (storeKey) saveView(storeKey, view); }, [storeKey, view]);
+  /* Positions are drawn relative to the top-left node; when that corner moves (a node dragged
+     past it, one added beyond it) the pan absorbs the shift, so nothing jumps on screen. */
+  const origin = useMemo(() => (nodes.length ? { x: Math.min(...nodes.map((n) => n.x)), y: Math.min(...nodes.map((n) => n.y)) } : null), [nodes]);
+  const lastOrigin = useRef(origin);
+  useEffect(() => {
+    const before = lastOrigin.current;
+    lastOrigin.current = origin;
+    if (!before || !origin || (before.x === origin.x && before.y === origin.y)) return;
+    setView((v) => ({ ...v, pan: { x: v.pan.x + (origin.x - before.x) * v.zoom, y: v.pan.y + (origin.y - before.y) * v.zoom } }));
+  }, [origin, setView]);
+  const surfacePoint = (e: { clientX: number; clientY: number }) => {
+    const box = surface.current?.getBoundingClientRect();
+    return box ? { x: e.clientX - box.left, y: e.clientY - box.top } : { x: 0, y: 0 };
+  };
+  const centre = () => {
+    const box = surface.current?.getBoundingClientRect();
+    return box ? { x: box.width / 2, y: box.height / 2 } : { x: 0, y: 0 };
+  };
+  const fit = useCallback(() => {
+    const root = canvas.current, box = surface.current?.getBoundingClientRect();
+    if (!root || !box) return;
+    const boxes = Array.from(root.querySelectorAll<HTMLElement>("[data-node-id]")).map((el) => ({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }));
+    /* Fit into the board above the zoom cluster's strip, so no fitted node sits under it. */
+    setView(fitView(boxes, { w: box.width, h: box.height - ZOOM_STRIP }));
+  }, [setView]);
+  /* A native wheel listener (React's is passive, so it could not stop the page zooming):
+     pinch or ⌘/ctrl-wheel zooms about the cursor, a plain wheel pans. */
+  const attachSurface = useCallback((el: HTMLDivElement | null) => {
+    const prev = surface.current as (HTMLDivElement & { __wheel?: (e: WheelEvent) => void }) | null;
+    if (prev?.__wheel) prev.removeEventListener("wheel", prev.__wheel);
+    surface.current = el;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const box = el.getBoundingClientRect();
+      const at = { x: e.clientX - box.left, y: e.clientY - box.top };
+      if (e.ctrlKey || e.metaKey) { setView((v) => zoomAround(v, at, wheelFactor(e.deltaY, e.deltaMode))); return; }
+      const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? box.height : 1;
+      const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * scale, dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * scale;
+      setView((v) => panBy(v, dx, dy));
+    };
+    (el as HTMLDivElement & { __wheel?: (e: WheelEvent) => void }).__wheel = onWheel;
+    el.addEventListener("wheel", onWheel, { passive: false });
+  }, [setView]);
+  /* Drag the empty board to pan; two fingers pinch. A press on a card is the card's own. */
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ kind: "pan"; from: { x: number; y: number }; view: View } | { kind: "pinch"; view: View; dist: number; mid: { x: number; y: number } } | null>(null);
+  const onSurfaceDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const onCard = !!target.closest(".pxw-graph-node, .pxw-graph-zoom");
+    pointers.current.set(e.pointerId, surfacePoint(e));
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      press.current = null;
+      gesture.current = { kind: "pinch", view: viewRef.current, dist: distance(a, b), mid: midpoint(a, b) };
+      return;
+    }
+    if (onCard || (e.button !== 0 && e.button !== 1)) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    gesture.current = { kind: "pan", from: surfacePoint(e), view: viewRef.current };
+  };
+  const onSurfaceMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, surfacePoint(e));
+    const g = gesture.current;
+    if (!g) return;
+    if (g.kind === "pinch" && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      setView(pinchView(g, distance(a, b), midpoint(a, b)));
+    } else if (g.kind === "pan") {
+      const at = surfacePoint(e);
+      setView({ ...g.view, pan: { x: g.view.pan.x + at.x - g.from.x, y: g.view.pan.y + at.y - g.from.y } });
+    }
+  };
+  const onSurfaceUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2 && gesture.current?.kind === "pinch") gesture.current = null;
+    if (!pointers.current.size) gesture.current = null;
+  };
+  /* The board fills what is left of the window below it (never under 420px), so its bottom edge
+     and the zoom cluster are on screen without scrolling the page first. */
+  const [boardHeight, setBoardHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const size = () => {
+      const el = surface.current;
+      if (!el) return;
+      let scroller: HTMLElement | null = el.parentElement;
+      while (scroller && !(["auto", "scroll"].includes(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight + 1)) scroller = scroller.parentElement;
+      const top = el.getBoundingClientRect().top + (scroller ? scroller.scrollTop : window.scrollY);
+      const next = Math.max(420, Math.round(window.innerHeight - top - 24));
+      setBoardHeight((h) => (h === next ? h : next));
+    };
+    size();
+    window.addEventListener("resize", size);
+    return () => window.removeEventListener("resize", size);
+  }, [project?.id]);
+  /* ⌘0 fits every node, ⌘= / ⌘- step; typing in a field keeps the browser's own keys. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !surface.current) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.key === "0") { e.preventDefault(); fit(); }
+      else if (e.key === "=" || e.key === "+") { e.preventDefault(); setView((v) => stepZoom(v, 1, centre())); }
+      else if (e.key === "-") { e.preventDefault(); setView((v) => stepZoom(v, -1, centre())); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fit, setView]);
+
   /* ── The team on the canvas: cursors, selections and drags (live rooms only) ── */
   const { presence, peers } = rig.team;
   useEffect(() => { presence({ selected: selId }); }, [presence, selId]);
   const [drag, setDrag] = useState<Drag | null>(null);
   const press = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
   const justDragged = useRef(false);
+  /* A pointer in canvas units: the canvas box already carries the pan, so only the zoom is divided out. */
   const point = (e: { clientX: number; clientY: number }) => {
     const box = canvas.current?.getBoundingClientRect();
-    return box ? { x: Math.round(e.clientX - box.left), y: Math.round(e.clientY - box.top) } : null;
+    const z = viewRef.current.zoom;
+    return box ? { x: Math.round((e.clientX - box.left) / z), y: Math.round((e.clientY - box.top) / z) } : null;
   };
   /* Move a node by dragging its card; a press that does not travel stays a click. */
   const startDrag = (id: string, e: React.PointerEvent) => {
@@ -107,8 +237,9 @@ export function RigGraph() {
     const move = (e: PointerEvent) => {
       const p = press.current;
       if (!p) return;
-      const dx = Math.round(e.clientX - p.x), dy = Math.round(e.clientY - p.y);
-      if (!p.moved && Math.hypot(dx, dy) < 5) return;
+      const z = viewRef.current.zoom;
+      if (!p.moved && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5) return;
+      const dx = Math.round((e.clientX - p.x) / z), dy = Math.round((e.clientY - p.y) / z);
       p.moved = true;
       const next = { id: p.id, dx, dy };
       setDrag(next);
@@ -118,7 +249,8 @@ export function RigGraph() {
       const p = press.current;
       press.current = null;
       if (!p?.moved) return;
-      const dx = Math.round(e.clientX - p.x), dy = Math.round(e.clientY - p.y);
+      const z = viewRef.current.zoom;
+      const dx = Math.round((e.clientX - p.x) / z), dy = Math.round((e.clientY - p.y) / z);
       justDragged.current = true;
       setDrag(null);
       presence({ drag: null });
@@ -196,9 +328,20 @@ export function RigGraph() {
           </p>
         ) : null}
         <div
+          className="pxw-graph-surface"
+          ref={attachSurface}
+          data-testid="rig-graph-surface"
+          data-zoom={Math.round(view.zoom * 100)}
+          style={{ height: boardHeight ?? undefined, backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px`, backgroundPosition: `${view.pan.x}px ${view.pan.y}px` }}
+          onPointerDown={onSurfaceDown}
+          onPointerMove={onSurfaceMove}
+          onPointerUp={onSurfaceUp}
+          onPointerCancel={onSurfaceUp}
+        >
+        <div
           className="pxw-graph-canvas"
           ref={canvas}
-          style={{ width: layout.width, height: layout.height }}
+          style={{ width: layout.width, height: layout.height, transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
           onPointerMove={peers.length ? (e) => presence({ cursor: point(e) }) : undefined}
           onPointerLeave={peers.length ? () => presence({ cursor: null }) : undefined}
         >
@@ -265,11 +408,18 @@ export function RigGraph() {
             );
           })}
           {peers.filter((p) => p.cursor).map((p) => (
-            <span key={p.id} className="pxw-graph-cursor" style={{ left: p.cursor!.x, top: p.cursor!.y, color: p.color }} aria-hidden="true">
+            <span key={p.id} className="pxw-graph-cursor" style={{ left: p.cursor!.x, top: p.cursor!.y, color: p.color, transform: `scale(${1 / view.zoom})`, transformOrigin: "0 0" }} aria-hidden="true">
               <svg width="14" height="18" viewBox="0 0 14 18"><path d="M1 1l12 9-5.5 1L5 17z" fill="currentColor" stroke="#fff" strokeWidth="1" /></svg>
               <span style={{ background: p.color }}>{p.name}</span>
             </span>
           ))}
+        </div>
+        <div className="pxw-graph-zoom" role="group" aria-label="Zoom">
+          <button type="button" aria-label="Zoom out" data-testid="rig-zoom-out" onClick={() => setView((v) => stepZoom(v, -1, centre()))}>−</button>
+          <button type="button" aria-label="Reset zoom to 100%" data-testid="rig-zoom-level" onClick={() => setView((v) => resetZoom(v, centre()))}>{Math.round(view.zoom * 100)}%</button>
+          <button type="button" aria-label="Zoom in" data-testid="rig-zoom-in" onClick={() => setView((v) => stepZoom(v, 1, centre()))}>+</button>
+          <button type="button" aria-label="Fit every node" data-testid="rig-zoom-fit" onClick={fit}>Fit</button>
+        </div>
         </div>
         <p className="pxw-graph-note">
           The graph is the advanced view of the same {shotCount.toLocaleString("en-US")} {shotCount === 1 ? "shot" : "shots"}. Everything here can be done from the shot list.
