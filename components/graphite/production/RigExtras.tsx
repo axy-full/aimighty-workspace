@@ -80,7 +80,8 @@ export function ShotInputs({ shot, locked }: { shot: RigShot; locked: boolean })
   const add = (asset: Asset, title?: string) => { const why = rig.apply((p) => addInput(p, shot.id, asset, title)); setProblem(why); if (!why) toast(`${title ?? asset.name} is an input of ${shot.name}`); };
 
   const others = project.nodes.filter((n) => n.id !== shot.id && (n.type === "scene" || n.type === "generate")).flatMap((n) => { const a = shotPreviewAsset(project, n.id); return a ? [{ node: n, asset: a }] : []; });
-  const castAssets = project.assets.filter((a) => a.category === "Character" || a.category === "Element");
+  /* Cast, elements and the world's environment plates (the Environment stage files them as "Environment"). */
+  const castAssets = project.assets.filter((a) => a.category === "Character" || a.category === "Element" || a.category === "Environment");
   const takes = library.items.filter((e) => (e.media === "image" || e.media === "video") && e.url);
   const upload = async (file: File) => {
     setBusy("Uploading…"); setProblem(null);
@@ -125,8 +126,8 @@ export function ShotInputs({ shot, locked }: { shot: RigShot; locked: boolean })
           {others.map((o) => <option key={o.node.id} value={o.node.id}>{o.node.title}</option>)}
         </select>
         <select aria-label="Attach cast or an element" value="" disabled={locked || !castAssets.length} onChange={(e) => { const a = castAssets.find((x) => x.id === e.target.value); if (a) add(a, `${a.category} · ${a.name}`); }} data-testid="rig-add-cast">
-          <option value="">{castAssets.length ? "Cast & elements…" : "No cast built yet"}</option>
-          {castAssets.map((a) => <option key={a.id} value={a.id}>{a.category === "Character" ? "Cast" : "Element"} · {a.name}</option>)}
+          <option value="">{castAssets.length ? "Cast, elements & environments…" : "No cast built yet"}</option>
+          {castAssets.map((a) => <option key={a.id} value={a.id}>{a.category === "Character" ? "Cast" : a.category === "Environment" ? "Environment" : "Element"} · {a.name}</option>)}
         </select>
       </div>
       {problem ? <p className="pxw-insp-error" role="alert">{problem}</p> : null}

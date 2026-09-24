@@ -59,7 +59,8 @@ export function soulParameters(model: ModelShape, entry: CastEntry, ratio: strin
   return out;
 }
 
-/** The beat sheet's characters, locations and props, each once, with the scenes it appears in — free, no agent. */
+/** The beat sheet's characters and props, each once, with the scenes it appears in — free, no agent.
+ *  Locations are built in the Environment stage (owner, 24 September). */
 export function castFromBeats(sheet: BeatSheet | null | undefined, existing: readonly CastEntry[] = []): CastEntry[] {
   const seen = new Set(existing.map((e) => e.name.trim().toLowerCase()));
   const found = new Map<string, { kind: CastKind; scenes: number[]; label: string }>();
@@ -72,7 +73,6 @@ export function castFromBeats(sheet: BeatSheet | null | undefined, existing: rea
       found.set(key, entry);
     };
     scene.characters.forEach((n) => add(n, "character", "Character"));
-    scene.locations.forEach((n) => add(n, "element", "Location"));
     scene.props.forEach((n) => add(n, "element", "Prop"));
   });
   const names = new Map<string, string>();

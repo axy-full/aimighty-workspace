@@ -4,10 +4,11 @@ import type { AtomikEffortOption } from '../atomik-reasoning';
  * `write` is the Brief's script writer: the director's prompt (the brief) in, a full script out, redrafted from notes until approved.
  * `frames` writes a storyboard frame prompt for every shot of the beat sheet; `sketch` reads one shot's rough drawing (vision) and writes its frame prompt.
  * `cast` writes the film's cast and elements, each with a Soul Cinema prompt.
+ * `environment` builds the film's world: the rules every place shares, and each place with a plate prompt.
  * `condense` shortens one Rig shot's render prompt to fit the engine, keeping every visual instruction.
  * `rig` wires one Rig shot: its prompt and notes from the beat, and which of the project's pictures are its inputs.
  */
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'condense' | 'rig';
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'environment' | 'condense' | 'rig';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
@@ -41,6 +42,8 @@ export type DevelopmentResult = {
   sketch?: { shotId: string; reading: string; prompt: string };
   /** `cast`: the characters and elements, each with its Soul Cinema prompt. */
   cast?: { name: string; kind: 'character' | 'element'; description: string; prompt: string; category?: 'character' | 'environment' | 'prop'; model?: 'soul_cinematic' | 'soul_2' | 'soul_location' | 'soul_cast' }[];
+  /** `environment`: the world's shared rules, and each place with notes and a plate prompt. */
+  environment?: { world: string; entries: { name: string; notes: string; prompt: string }[] };
   /** `condense`: the shorter render prompt, pinned to the key of the prompt it came from. */
   condensed?: { nodeId: string; key: string; text: string };
   /** `rig`: the shot's prompt, notes, inputs (project asset ids) and first frame, as the agent wired it. */

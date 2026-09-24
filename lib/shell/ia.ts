@@ -73,14 +73,17 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 03 and 06; Business after 02; Viral after 02; Atomik after 01 and 04. */
+/** Group starts: Studio after 03 and 07; Business after 02; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
-  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 6], [
+  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
     ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
     /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
     ["beats", "Beats", "Beats & Shots", "Break it into beats and shots", "brief"],
     ["boards", "Storyboards", "Storyboards", "Every shot, framed", "boards"],
+    /* Owner, 24 September: where the world is built, before Cast & Elements. The shell renders its own
+       view (production/EnvironmentStage) and shares Storyboards' backing page, as Beats shares Brief's. */
+    ["environment", "Environment", "Environment", "Build the world", "boards"],
     ["cast", "Cast", "Cast & Elements", "Built with Soul Cinema", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
     ["rig", "Rig", "Rig", "Bring it all together", "rig"],
@@ -88,7 +91,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["takes", "Takes", "Takes", "Every generation, then every asset", "takes"],
     ["edit", "Edit & Sound", "Edit & Sound", "Cut the takes, add the sound", "edit"],
     ["deliver", "Deliver", "Deliver", "EDL · XML · the final movie", "deliver"],
-  ])), ["brief", "beats", "boards", "cast", "astra", "takes", "deliver"]),
+  ])), ["brief", "beats", "boards", "environment", "cast", "astra", "takes", "deliver"]),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them. */
   own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
     ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode", "marketing"],
@@ -161,7 +164,8 @@ export function suiteOfLegacy(legacy: Suite): ShellSuiteId {
 export function pageOfLegacy(legacy: Suite, page: PageId, hint?: string | null): ShellPage | null {
   const suite = shellSuite(suiteOfLegacy(legacy));
   const matches = suite.pages.filter((p) => p.legacy.page === page);
-  return matches.find((p) => p.id === hint) ?? matches[0] ?? null;
+  /* With no hint, the stage named like its backing page wins (Storyboards over Environment, Brief over Beats). */
+  return matches.find((p) => p.id === hint) ?? matches.find((p) => p.id === page) ?? matches[0] ?? null;
 }
 export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_SUITES.flatMap((suite) => suite.pages.map((page) => ({ suite, page })));
 

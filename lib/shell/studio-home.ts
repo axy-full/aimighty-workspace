@@ -29,6 +29,8 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
   const frames = assets.filter((a) => /board|frame/i.test(String(a.category ?? ""))).length;
   const cast = assets.filter((a) => a.category === "Character").length;
   const elements = assets.filter((a) => a.category === "Element").length;
+  const places = project?.production?.environment?.entries ?? [];
+  const plated = places.filter((e) => e.selected).length;
   const clips = project?.audioClips?.length ?? 0;
   const brief = words(project?.brief) + words(project?.script);
   const beatScenes = project?.production?.beats?.scenes.length ?? 0;
@@ -37,6 +39,7 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
     brief: brief ? [`${plural(brief, "word")}${project?.script ? " · script" : ""}`, "done"] : ["empty", "ready"],
     beats: beatShots ? [`${plural(beatScenes, "scene")} · ${plural(beatShots, "shot")}`, "done"] : ["no beats yet", "ready"],
     boards: frames ? [plural(frames, "frame"), "done"] : ["no frames yet", "ready"],
+    environment: places.length ? [`${plural(places.length, "place")} · ${plated} with a plate`, plated >= places.length ? "done" : "progress"] : ["no world yet", "ready"],
     cast: cast || elements ? [`${plural(cast, "identity", "identities")} · ${plural(elements, "element")}`, "done"] : ["no identity yet", "ready"],
     astra: project?.astraBlender ? ["scene set", "done"] : ["block on desktop", "ready"],
     rig: shots ? [`${plural(shots, "shot")} · ${rendered} rendered`, rendered >= shots ? "done" : "progress"] : ["no shots yet", "ready"],

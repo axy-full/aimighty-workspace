@@ -97,17 +97,17 @@ test("Cast & Elements: from the beat sheet and the agent, built with Soul Cinema
   const { errors, posts, read } = await setup(page);
   await expect(page.getByTestId("page-title")).toHaveText("Cast & Elements");
 
-  /* Free: the beat sheet's character, location and prop. */
+  /* Free: the beat sheet's character and prop (its locations are built in Environment). */
   await page.getByTestId("cast-from-beats").click();
   const entries = page.getByTestId("cast-entry");
-  await expect(entries).toHaveCount(3);
-  await expect(page.getByTestId("cast-counts")).toHaveText("1 characters · 2 elements");
+  await expect(entries).toHaveCount(2);
+  await expect(page.getByTestId("cast-counts")).toHaveText("1 characters · 1 elements");
 
-  /* The agent adds what the beat sheet did not name (Mara, and the location by its heading), keeping the names already here. */
+  /* The agent adds what the beat sheet did not name (Mara, and a prop), keeping the names already here. */
   await page.getByTestId("cast-agent-estimate").click();
   await expect(page.getByTestId("cast-agent-quote")).toContainText("3 agent steps");
   await page.getByTestId("cast-agent-start").click();
-  await expect(entries).toHaveCount(5, { timeout: 60_000 });
+  await expect(entries).toHaveCount(4, { timeout: 60_000 });
   await expect(entries.filter({ has: page.locator('input[value="Mara"]') })).toHaveCount(1);
 
   /* The fox renders with its Soul ID: priced on the account, then built at that price. */
@@ -121,10 +121,16 @@ test("Cast & Elements: from the beat sheet and the agent, built with Soul Cinema
   expect(posts.find((b) => b.action === "submit")).toMatchObject({ workspaceId: WALLET, credits: 6 });
   await expect(fox.locator(".pd-frame-image img")).toBeVisible({ timeout: 30_000 });
 
-  /* Soul Studio: the harbour is an environment built with Soul Location (no reference, no Soul ID, the film's ratio). */
+  /* Soul Studio: an element set to Environment builds with Soul Location (no reference, no Soul ID, the film's ratio). */
+  await page.getByTestId("cast-add-element").click();
+  const added = entries.last();
+  await added.getByLabel("Name").fill("Frozen harbour");
+  await added.getByRole("radio", { name: "Environment" }).click();
+  await added.getByTestId("cast-prompt").fill("Frozen harbour, a clean wide plate");
   const harbour = entries.filter({ has: page.locator('input[value="Frozen harbour"]') });
   await expect(harbour.getByTestId("cast-model-soul_location")).toHaveAttribute("aria-checked", "true");
   await harbour.getByTestId("cast-price").click();
+  await expect.poll(() => (posts.filter((b) => b.action === "quote").at(-1)!.input as { model?: string }).model).toBe("soul_location");
   expect(posts.filter((b) => b.action === "quote").at(-1)!.input).toMatchObject({ model: "soul_location", parameters: { aspect_ratio: "16:9" }, medias: [] });
   await expect(harbour.getByTestId("cast-build")).toHaveText("Build with Soul Location · 6 Higgsfield credits");
 

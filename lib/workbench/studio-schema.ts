@@ -209,6 +209,19 @@ export const productionSchema = z.object({
     }).strict()).max(100),
     agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   }).strict().optional(),
+  /* Production › Environment (owner, 24 September): the world, place by place; plates are renders or uploads. */
+  environment: z.object({
+    world: z.string().max(6000),
+    model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
+    entries: z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), name: z.string().max(120), notes: z.string().max(4000), prompt: z.string().max(5000),
+      references: z.array(z.string().max(100)).max(6),
+      plates: z.array(z.object({ assetId: z.string().max(100), at: z.string().datetime(), source: z.enum(['render', 'upload', 'library']) }).strict()).max(30),
+      selected: z.string().max(100).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), at: z.string().datetime() }).strict()).max(5).optional(),
+    }).strict()).max(100),
+    agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+  }).strict().optional(),
 }).strict();
 export const projectSchema = z.object({
   production: productionSchema.optional(),

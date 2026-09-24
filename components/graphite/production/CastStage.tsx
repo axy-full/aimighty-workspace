@@ -239,7 +239,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <span className="gx-spacer" />
           <span className="gx-hint" data-testid="cast-counts">{characters} characters · {cast.entries.length - characters} elements</span>
         </div>
-        <p className="gx-hint">Start from the beat sheet’s characters, locations and props, or have the agent cast the film with a Soul Cinema prompt for each. Every build is saved in the library as Cast or Elements.</p>
+        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film with a Soul Cinema prompt for each. Every build is saved in the library as Cast or Elements.</p>
         <div className="gx-gen-enhance">
           <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined} onClick={() => { setCast((c) => ({ ...c, entries: [...c.entries, ...fromBeats].slice(0, CAST_LIMITS.entries) })); void editor.ensureSaved(); }} data-testid="cast-from-beats">
             {p.production?.beats ? `Add ${fromBeats.length} from the beat sheet` : "Add from the beat sheet"}
