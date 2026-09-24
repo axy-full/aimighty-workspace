@@ -48,7 +48,7 @@ test("every GPT Image and Grok Imagine model is offered, priced at each size, an
     for (const ratio of model.provider === "openai" ? model.ratios : []) expect(openAISize(model, ratio)).toMatch(/^\d+x\d+$/);
   }
   expect(ENGINES.openai.kinds).toEqual(["image"]);
-  expect(ENGINES.xai.kinds).toEqual(["image", "video"]);
+  expect(ENGINES.xai.kinds).toEqual(["image", "video", "audio"]);
   /* Flexible sizes are multiples of 16 within OpenAI's bounds. */
   for (const ratio of getModel("gpt-image-2").ratios) {
     const [w, h] = openAISize(getModel("gpt-image-2"), ratio).split("x").map(Number);

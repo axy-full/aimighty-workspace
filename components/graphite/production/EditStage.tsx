@@ -14,6 +14,7 @@ import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
+import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
 import type { Project } from "@/lib/workbench/studio";
 
@@ -152,7 +153,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
             <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
           </div>
-          {entry.media === "video" ? (
+          {entry.media === "video" || entry.media === "audio" ? (
+            <TranscribePanel key={entry.take.id} scope={scope} name={entry.take.name} projectId={project.productionProjectId}
+              source={entry.asset.origin === "generation" ? { genId: entry.take.sourceId } : { uploadId: entry.take.sourceId }} />
+          ) : null}
+          {entry.media === "audio" ? null : entry.media === "video" ? (
             <div data-section="video"><SeedanceEditHost scope={scope} project={project} initialSource={sourceKey} onBack={() => setPicked(null)} /></div>
           ) : (
             <section className="gx-gen-card gx-workflow" aria-label="Re-edit the image" data-testid="edit-image" data-section="image">
