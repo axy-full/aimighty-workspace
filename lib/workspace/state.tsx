@@ -128,10 +128,12 @@ export function WorkspaceProvider({
 }) {
   const target = useMemo<UrlTarget>(() => ({ path, keep }), [path, keep]);
   const [state, rawDispatch] = useReducer(reducer, initialSearch, (search) => applyUrl(INITIAL_STATE, fromSearch(search)));
+  /* The latest state, always ahead of or equal to the rendered one: commit and
+     dispatch set it before React renders. It is never copied back from `state`
+     in an effect — a child's effect that dispatches runs before this
+     provider's effects in the same commit, so copying the rendered state back
+     would roll that newer state back (a Rig list arriving then being undone). */
   const ref = useRef(state);
-  useEffect(() => {
-    ref.current = state;
-  }, [state]);
 
   /* Every transition that changes the URL computes its next state from the
      latest one, writes it, and then dispatches — so the URL and the state

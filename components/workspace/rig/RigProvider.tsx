@@ -280,7 +280,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     if (draftRef.current && draftRef.current.project.id !== projectId) return;
     const items: SelectableItem[] = project ? shots.map((s) => ({ id: s.id, name: s.name, status: s.status })) : [];
     const key = projectId + ":" + JSON.stringify(items);
-    if (key === listed.current && state.lists.shots !== null) return;
+    /* Compared with what the page actually holds, not only with what was sent last. */
+    if (key === listed.current && state.lists.shots !== null && JSON.stringify(state.lists.shots.map((s) => ({ id: s.id, name: s.name, status: s.status }))) === JSON.stringify(items)) return;
     listed.current = key;
     dispatch({ type: "lists", lists: { shots: items } });
   }, [status, projectId, project, shots, state.lists.shots, dispatch]);

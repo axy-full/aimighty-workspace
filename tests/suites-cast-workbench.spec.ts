@@ -21,7 +21,8 @@ async function setup(page: Page) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  /* The server writes the same local files; wait for its lock instead of failing on SQLITE_BUSY. */
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl = "";
   try {
     await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Cast test", "admin", "test", Date.now()] });
@@ -30,7 +31,7 @@ async function setup(page: Page) {
   expect(tenantUrl).toMatch(/^file:/);
   /* What the real collection step writes when the account returns an original: the generation row the project may reference. */
   const collect = async (id: string) => {
-    const tenant = createClient({ url: tenantUrl });
+    const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
     try { await tenant.execute({ sql: "INSERT OR IGNORE INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at) VALUES(?,?,'soul_cinematic','cast test','{}','succeeded',?,?)", args: [id, production, Date.now(), Date.now()] }); }
     finally { tenant.close(); }
   };
