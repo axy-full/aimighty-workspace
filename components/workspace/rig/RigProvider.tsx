@@ -22,6 +22,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { Generation, SelectableItem } from "@/lib/workspace/types";
 import type { ShellSeams } from "../WorkspaceShell";
 import { videoReferenceProblem } from "@/lib/generationReferences";
+import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -78,6 +79,8 @@ export type RigContext = {
   save: () => Promise<boolean>;
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
   removeShot: (id: string) => string | null;
+  /** The production's shared canvas: who else is here, and presence to show them. */
+  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence">;
 };
 
 const Context = createContext<RigContext | null>(null);
@@ -196,17 +199,23 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     return chain.current;
   }, [scope, setDraft, reload, toast]);
 
-  const update = useCallback((fn: (p: Project) => Project) => {
+  /* A local edit is also a team canvas edit; publishRef is set once the team canvas hook exists below. */
+  const publishRef = useRef<((before: Project, after: Project) => void) | null>(null);
+  const write = useCallback((fn: (p: Project) => Project, publish: boolean) => {
     const current = draftRef.current;
     if (!current) return;
     const next = fn(current.project);
     if (next === current.project) return;
     setDraft({ ...current, project: next });
+    if (publish) publishRef.current?.(current.project, next);
     dirty.current = true;
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS);
   }, [setDraft, flush]);
+  const update = useCallback((fn: (p: Project) => Project) => write(fn, true), [write]);
+  /** A teammate's edit: into this draft, never sent back out. */
+  const fold = useCallback((fn: (p: Project) => Project) => write(fn, false), [write]);
 
   /* Open the project the shell is on; finish any pending save for the previous one first. */
   useEffect(() => {
@@ -244,6 +253,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [flush]);
 
   const project = draft && draft.project.id === projectId ? draft.project : null;
+
+  /* ── The production's team canvas (shared Rig nodes, live when Liveblocks is set up) ── */
+  const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
+  const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold });
+  useEffect(() => { publishRef.current = team.publish; }, [team.publish]);
 
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
   const [run, setRun] = useState<Run | null>(null);
@@ -518,10 +532,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     toast(why ?? `${asset.name} is a new shot in the Rig`);
   }, [project, apply, toast]);
 
+  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence }), [team.mode, team.peers, team.presence]);
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode,
-    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot]);
+    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

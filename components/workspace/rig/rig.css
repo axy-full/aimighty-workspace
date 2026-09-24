@@ -45,7 +45,7 @@
 .pxw .pxw-graph-node[data-shape="flow"] { padding: 13px; }
 .pxw .pxw-graph-node[data-selected] { background: var(--pxw-blue-selected-row); border: 1.5px solid var(--pxw-blue); border-radius: 14px; padding: 13px; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1); }
 .pxw .pxw-graph-node[data-wiring] { border-color: var(--pxw-atomik-gold); }
-.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port) { pointer-events: none; position: relative; }
+.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer) { pointer-events: none; position: relative; }
 .pxw .pxw-graph-hit { position: absolute; inset: 0; border-radius: inherit; }
 .pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
 .pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
@@ -129,3 +129,15 @@
 /* Delete shot: quiet until needed, red when it matters. */
 .pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: #FF6961; font-size: 13px; }
 .pxw-insp-delete:disabled { opacity: .45; }
+/* The team canvas: teammates' cursors, selections and drags; cards move by dragging. */
+.pxw .pxw-graph-node .pxw-graph-hit { cursor: grab; }
+.pxw .pxw-graph-node[data-moving] { z-index: 5; box-shadow: 0 18px 40px rgba(0, 0, 0, .45); }
+.pxw .pxw-graph-node[data-moving] .pxw-graph-hit { cursor: grabbing; }
+.pxw .pxw-graph-peer { position: absolute; top: -22px; left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; pointer-events: none; }
+.pxw .pxw-graph-cursor { position: absolute; z-index: 6; pointer-events: none; display: flex; align-items: flex-start; gap: 2px; transition: left .08s linear, top .08s linear; }
+.pxw .pxw-graph-cursor > span { margin-top: 12px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; }
+.pxw .pxw-team { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 12.5px; color: var(--pxw-muted); }
+.pxw .pxw-team-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pxw-faint); }
+.pxw .pxw-team[data-mode="live"] .pxw-team-dot { background: #30D158; box-shadow: 0 0 0 3px rgba(48, 209, 88, .18); }
+.pxw .pxw-team-peer { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); color: var(--pxw-text, #fff); }
+.pxw .pxw-team-peer i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; }
