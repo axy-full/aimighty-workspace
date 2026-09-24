@@ -15,7 +15,7 @@ type Row = Record<string, unknown>;
 type Analytics = {
   totals: { generations: number; succeeded: number; failed: number; pending: number; spend: number; credits: number; promptSpend: number; renderMs: number; people: number; shots: number; successRate: number };
   byProject: { id: string | null; name: string; n: number; spend: number; credits: number; failed: number; people: number; renderMs: number }[];
-  byPerson: { id: string; name: string; n: number; spend: number; credits: number; failed: number; projects: number }[];
+  byPerson: { id: string; name: string; email?: string; n: number; spend: number; credits: number; failed: number; projects: number }[];
   byModel: { model: string; label: string; n: number; spend: number; credits: number; failed: number; avgMs: number | null }[];
   byShot: { id: string; code: string | null; scene: string | null; title: string | null; takes: number; spend: number; credits: number; ok: number; failed: number }[];
   stuck?: { model: string; resolution: string | null; n: number; avgMs: number | null; maxMs: number | null; failed: number; retried: number }[];
@@ -90,7 +90,7 @@ export function ManagementDashboard() {
     const parts = [
       `# ${scopeName} · ${PERIODS.find((p) => p.days === days)?.label}`,
       "# By project", csv(data.byProject as unknown as Row[], [["name", "Project"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["people", "People"], ["renderMs", "Render ms"]]),
-      "", "# By person", csv(data.byPerson as unknown as Row[], [["name", "Person"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["projects", "Projects"]]),
+      "", "# By person", csv(data.byPerson as unknown as Row[], [["name", "Person"], ["email", "Email (masked)"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["projects", "Projects"]]),
       "", "# By model", csv(data.byModel as unknown as Row[], [["label", "Model"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["avgMs", "Average ms"]]),
       "", "# Revisions per shot", csv(data.byShot as unknown as Row[], [["code", "Shot"], ["title", "Title"], ["takes", "Takes"], ["ok", "Succeeded"], ["failed", "Failed"], ["spend", "Cost (USD)"], ["credits", "Credits"]]),
     ].join("\n");
@@ -134,7 +134,7 @@ export function ManagementDashboard() {
                 { label: "Failed", value: (r) => int(r.failed), numeric: true }, { label: "People", value: (r) => int(r.people), numeric: true }, { label: "Render", value: (r) => hours(r.renderMs), numeric: true }]} />
           ) : null}
           <Table caption="By person" testid="dash-people" rows={data!.byPerson}
-            columns={[{ label: "Person", value: (r) => r.name }, { label: "Generations", value: (r) => int(r.n), numeric: true }, { label: "Cost", value: (r) => usd(r.spend), numeric: true },
+            columns={[{ label: "Person", value: (r) => (r.email ? `${r.name} · ${r.email}` : r.name) }, { label: "Generations", value: (r) => int(r.n), numeric: true }, { label: "Cost", value: (r) => usd(r.spend), numeric: true },
               ...(credits ? [{ label: "Credits", value: (r: Analytics["byPerson"][number]) => int(r.credits), numeric: true }] : []),
               { label: "Failed", value: (r) => int(r.failed), numeric: true }, { label: "Projects", value: (r) => int(r.projects), numeric: true }]} />
           <Table caption="By model" testid="dash-models" rows={data!.byModel}

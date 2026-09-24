@@ -47,6 +47,10 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   await expect(dash.getByTestId("dash-cost")).toHaveText(/^\$\d+\.\d\d$/);
   await expect(dash.getByTestId("dash-projects")).toContainText(project.name);
   await expect(dash.getByTestId("dash-people")).toContainText(String(me.name ?? ""));
+  /* Two people can share a name: each row carries the email, mostly hidden, and never the full address. */
+  const email = String(me.email ?? "");
+  await expect(dash.getByTestId("dash-people")).toContainText(`${email[0]}•••@`);
+  await expect(dash.getByTestId("dash-people")).not.toContainText(email);
   await expect(dash.getByTestId("dash-models")).toContainText("Nano Banana 2");
   await expect(dash.getByTestId("dash-stuck")).toContainText("1K");
   await expect(dash.getByTestId("dash-iteration")).toContainText("Prompt length");

@@ -3,6 +3,7 @@ import { db, ready } from "@/lib/db";
 import { modelLabel } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { billedCreditsSum } from "@/lib/creditSql";
+import { maskEmail } from "@/lib/maskEmail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -71,7 +72,7 @@ export const GET = withTenant(async function GET(req: Request) {
         GROUP BY g.project_id ORDER BY spend DESC LIMIT 60`, args }),
 
       db().execute({ sql: `
-        SELECT COALESCE(u.name,'Unknown') AS name, g.created_by AS id,
+        SELECT COALESCE(u.name,'Unknown') AS name, u.email AS email, g.created_by AS id,
                COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                COUNT(DISTINCT g.project_id) AS projects
@@ -190,7 +191,8 @@ export const GET = withTenant(async function GET(req: Request) {
     /* Everyone's spend is for owners and admins; a member sees their own row. */
     personalOnly: got.user.role !== "admin",
     byPerson: byPerson.rows.filter((r: any) => got.user.role === "admin" || r.id === got.user.id).map((r: any) => ({
-      id: r.id, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
+      /* Masked here, so the full address never reaches the browser. */
+      id: r.id, name: r.name, email: maskEmail(r.email), n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), projects: num(r.projects),
     })),
     byModel: byModel.rows.map((r: any) => ({
