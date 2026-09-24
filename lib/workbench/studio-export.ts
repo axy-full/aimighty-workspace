@@ -5,6 +5,7 @@ import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} 
 import {moleculrAssetDependencies,validateMoleculrBindings} from './moleculr-bindings';
 import {originalAssetDownload} from './original-asset';
 import {resolveReferenceAd} from './reference-ad';
+import {withExportNames} from './export-names';
 
 export type EditSettings={exposure:number;contrast:number;saturation:number;ratio:string;flip:boolean};
 export const defaultEdits:EditSettings={exposure:100,contrast:100,saturation:100,ratio:'Original',flip:false};
@@ -104,6 +105,6 @@ The manifest preserves take lineage and saved versions. It is not an audit log o
  return files;
 }
 export async function exportPackage(p:Project){
- const files=await buildExportPackage(p);
+ const files=await buildExportPackage(await withExportNames(p));
  downloadFile(new Blob([zipSync(files,{level:0}) as BlobPart],{type:'application/zip'}),safeName(p.name)+'_editorial.zip');
 }

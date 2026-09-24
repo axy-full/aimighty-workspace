@@ -36,6 +36,11 @@ async function open(page: Page) {
 test("Delivery: EDL, FCPXML and Premiere XML download; the frame rate is changed in place and retimes the cut", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
   const { errors, store } = await open(page);
+  /* A render-backed shot is named by the workspace template in every export (SOW §9). */
+  store.current = { ...store.current, assets: store.current.assets.map((a) => (a.id === "gen-wide" ? { ...a, generationId: "gen_wide" } : a)) };
+  await page.route("**/api/workbench/export-names", (route) => route.fulfill({ json: { names: { gen_wide: "HARBOURCUT_SC01_SH010_SD25_v2_Mara" } } }));
+  await page.reload();
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour cut");
   await expect(page.getByText("Change the spec in Studio")).toHaveCount(0);
   const grab = async (testid: string) => {
     const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId(testid).click()]);
@@ -44,8 +49,10 @@ test("Delivery: EDL, FCPXML and Premiere XML download; the frame rate is changed
   const edl = await grab("deliver-edl");
   expect(edl.name).toBe("Harbour_cut.edl");
   expect(edl.text).toContain("FCM: NON-DROP FRAME");
+  expect(edl.text).toContain("* FROM CLIP NAME: HARBOURCUT_SC01_SH010_SD25_v2_Mara.mp4");
   const fcp = await grab("deliver-fcpxml");
   expect(fcp.name).toBe("Harbour_cut.fcpxml");
+  expect(fcp.text).toContain('src="media/HARBOURCUT_SC01_SH010_SD25_v2_Mara.mp4"');
   expect(fcp.text).toContain('<fcpxml version="1.10">');
   expect(fcp.text).toContain('name="02 — The window" offset="86448/24s"');
   const xml = await grab("deliver-xml");
@@ -60,4 +67,26 @@ test("Delivery: EDL, FCPXML and Premiere XML download; the frame rate is changed
   const retimed = await grab("deliver-fcpxml");
   expect(retimed.text).toContain('frameDuration="1/25s"');
   expect(errors).toEqual([]);
+});
+
+test("export names come from the workspace template for renders in this workspace only", async ({ request }) => {
+  const account = await signInLocally(request);
+  const { createClient } = await import("@libsql/client");
+  const { localPlatformDbUrl } = await import("./helpers/workbenchLocal");
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  const tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0].db_url);
+  platform.close();
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
+  const id = `gen_name_${Date.now().toString(36)}`;
+  try {
+    await tenant.execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES(?,?,?)", args: [`prj_${id}`, "Nike AW26", Date.now()] });
+    await tenant.execute({ sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)", args: [id, `prj_${id}`, "dreamina-seedance-2-5-260628", "x", "{}", "succeeded", 3, Date.now(), Date.now()] });
+  } finally { tenant.close(); }
+  const answer = await request.post("/api/workbench/export-names", { data: { generationIds: [id, "gen_not_here", "../bad"] } });
+  expect(answer.ok(), await answer.text()).toBe(true);
+  const { names } = await answer.json();
+  expect(names[id]).toMatch(/^NikeAW26_.*v3/);
+  expect(names[id]).not.toMatch(/\.[a-z0-9]+$/);
+  expect(Object.keys(names).sort()).toEqual([id, "gen_not_here"].sort());
+  expect(names["gen_not_here"]).toBe("gen_not_here");
 });
