@@ -1,5 +1,5 @@
 import { withTenant, requireUser } from '@/lib/auth';
-import { getProvider, providerConfigured } from '@/lib/providers';
+import { modelConfigured } from '@/lib/providers';
 import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia } from '@/lib/workbench/media-quote';
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 
@@ -7,7 +7,7 @@ export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
   if (got.response) return got.response;
   const q = new URL(req.url).searchParams;
-  const configured = workbenchGenerationModels().filter(model => providerConfigured(getProvider(model.provider)));
+  const configured = workbenchGenerationModels().filter(model => modelConfigured(model));
   const models = configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations,
     maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined }));

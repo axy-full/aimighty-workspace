@@ -7,7 +7,7 @@ import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd } from "./models";
-import { effectiveRate } from "./vendorPricing";
+import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { currentTenant } from "./tenant";
@@ -414,6 +414,15 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     }
     // Snapshot the cost exactly ONCE — a storeVideo retry must not recompute
     // it at whatever the rate happens to be later; history stays truthful.
+    /* Per-second engines that state their own charge (Grok Imagine Video):
+       the vendor's figure when it is within half to three times the quote
+       (xAI's tick unit is not published), else the quote itself. */
+    if (cost == null && gen.provider === "xai") {
+      const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
+      const quote = estimateCostUsd(gen.model, String(p.resolution ?? "720p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 5), 0, false)?.net ?? null;
+      const stated = task.costUsd;
+      cost = quote != null && typeof stated === "number" && Number.isFinite(stated) && stated >= quote * 0.5 && stated <= quote * 3 ? stated : quote;
+    }
     if (cost == null && task.totalTokens != null) {
       const p = gen.params as { resolution?: string; hasVideoInput?: boolean };
       rate = effectiveRate(

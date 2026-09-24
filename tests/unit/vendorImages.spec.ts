@@ -40,7 +40,7 @@ async function stubbed<T>(reply: (url: string) => unknown, run: () => Promise<T>
 const png = async () => (await sharp({ create: { width: 8, height: 8, channels: 3, background: "#c33" } }).png().toBuffer()).toString("base64");
 
 test("every GPT Image and Grok Imagine model is offered, priced at each size, and has an engine", () => {
-  const added = MODELS.filter((m) => m.provider === "openai" || m.provider === "xai");
+  const added = MODELS.filter((m) => (m.provider === "openai" || m.provider === "xai") && m.kind === "image");
   expect(added.map((m) => m.id).sort()).toEqual(["gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5", "gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "grok-imagine-image", "grok-imagine-image-2.0"]);
   for (const model of added) {
     expect(model.kind).toBe("image");
@@ -48,7 +48,7 @@ test("every GPT Image and Grok Imagine model is offered, priced at each size, an
     for (const ratio of model.provider === "openai" ? model.ratios : []) expect(openAISize(model, ratio)).toMatch(/^\d+x\d+$/);
   }
   expect(ENGINES.openai.kinds).toEqual(["image"]);
-  expect(ENGINES.xai.kinds).toEqual(["image"]);
+  expect(ENGINES.xai.kinds).toEqual(["image", "video"]);
   /* Flexible sizes are multiples of 16 within OpenAI's bounds. */
   for (const ratio of getModel("gpt-image-2").ratios) {
     const [w, h] = openAISize(getModel("gpt-image-2"), ratio).split("x").map(Number);

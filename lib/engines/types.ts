@@ -47,6 +47,8 @@ export type PollResult = {
   videoUrl: string | null; totalTokens: number | null; error: string | null;
   imageUrl?: string | null;
   vendorStartedAt: number | null; vendorEndedAt: number | null; raw: unknown;
+  /** The vendor's own charge for a finished job, when it states one (xAI); checked against the quote before it is billed. */
+  costUsd?: number | null;
 };
 
 export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };

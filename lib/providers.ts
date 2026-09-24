@@ -238,6 +238,13 @@ import { gatewayReachable } from "./gateway";
 import { vendorKey, vendorKeyForEnv, type VendorKeyName } from "./vendorKeys";
 import { engineMock } from "./mock";
 
+/** Can this model run now: its vendor is usable, and a directOnly model has the vendor's own key (no gateway door). */
+export function modelConfigured(model: { provider: string; directOnly?: boolean }): boolean {
+  const vendor = getProvider(model.provider);
+  if (!providerConfigured(vendor)) return false;
+  return !model.directOnly || engineMock() || providerVia(vendor) === "key";
+}
+
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
 export function providerConfigured(p: ProviderDef): boolean {
   if (engineMock()) return true;

@@ -114,6 +114,8 @@ export type ModelDef = {
   supportsTasks?: TaskId[];
   /** The model's id on Vercel AI Gateway, when it is also served there. */
   gatewayId?: string;
+  /** Served only on the vendor's own key (no gateway door): offered only when that key is set. */
+  directOnly?: boolean;
   /** Still engines bill per image by size (USD), plus a little per reference in. */
 
   /** Engines that bill by the SECOND of output (Kling, Topaz on fal), by
@@ -160,6 +162,11 @@ const OPENAI_IMAGE_MODELS: [string, string, string, boolean, string][] = [
   ["gpt-image-1.5", "GPT Image 1.5", "GPT 1.5", false, "OpenAI stills at three fixed sizes."],
   ["gpt-image-1", "GPT Image 1", "GPT 1", false, "The original GPT Image."],
   ["gpt-image-1-mini", "GPT Image 1 Mini", "GPT Mini", false, "The cheapest GPT Image stills."],
+];
+/** Grok Imagine Video models: id, label, short, resolutions, what it is for. */
+const XAI_VIDEO_MODELS: [string, string, string, string[], string][] = [
+  ["grok-imagine-video-1.5", "Grok Imagine Video 1.5", "GROK V1.5", ["720p", "1080p", "480p"], "xAI's newest video, with sound, up to 1080p."],
+  ["grok-imagine-video", "Grok Imagine Video", "GROK V", ["720p", "480p"], "Quick, cheap Grok clips with sound."],
 ];
 /** Grok Imagine models: id, label, short, resolutions, what it is for. */
 const XAI_IMAGE_MODELS: [string, string, string, string[], string][] = [
@@ -441,6 +448,15 @@ export const MODELS: ModelDef[] = [
     ratios: flexible ? ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9"] : ["1:1", "3:2", "2:3"],
     durations: [], supportsAudio: false, supportsCameraFixed: false,
     maxReferenceImages: 10, maxReferenceVideos: 0, maxVideoSecondsTotal: 0, use,
+  })),
+  /* xAI's Grok Imagine Video: text, a first frame or reference images to a
+     clip with sound, up to 15 s, priced per second (lib/xaiVideo.ts). On the
+     xAI key only — the gateway serves it as one blocking stream. */
+  ...XAI_VIDEO_MODELS.map(([id, label, short, resolutions, use]): ModelDef => ({
+    id, label, short, family: "grok-imagine", provider: "xai", kind: "video", billing: "second", gatewayId: `spacexai/${id}`, directOnly: true,
+    paramStyle: "fields", resolutions, ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"], durations: seconds(1, 15),
+    supportsAudio: false, supportsCameraFixed: false, maxReferenceImages: 4, maxReferenceVideos: 0, maxVideoSecondsTotal: 0, use,
+    note: `${label} — sound included, 1–15 s, priced per second; a first frame animates it, reference images guide it (at up to 720p).`,
   })),
   /* xAI's Grok Imagine (owner, 23 September: Grok APIs wherever possible).
      Direct on the xAI key, through the AI Gateway without one. */

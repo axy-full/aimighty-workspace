@@ -43,7 +43,7 @@ import { videoReferenceProblem } from "@/lib/generationReferences";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
-import { getProvider, providerConfigured, billedTo } from "@/lib/providers";
+import { modelConfigured, billedTo } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice, sourceProblem } from "@/lib/tasks";
 import { clipDoubt, clipDoubtMessage } from "@/lib/clipTrust";
@@ -296,8 +296,7 @@ export async function executeGenerationAdmission(
       return admissionReply({ error: "This engine cannot use a trained identity. Choose the identity engine or use the reference image." }, { status: 400 });
     }
     // No key, no row: better a 400 now than a "running" render that fails later.
-    const vendor = getProvider(model.provider);
-    if (!providerConfigured(vendor)) {
+    if (!modelConfigured(model)) {
       return admissionReply(
         {
           error: `${model.label} isn't connected for this workspace. Ask the platform to connect it.`,

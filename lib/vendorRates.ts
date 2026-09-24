@@ -176,6 +176,17 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
      edit also bills each image sent in, at most the price of one out. */
   "grok-imagine-image-2.0": { tiers: [], imagePricing: { "1K": 0.06, "2K": 0.08 }, imageRefInUsd: 0.06 },
   "grok-imagine-image": { tiers: [], imagePricing: { "1K": 0.02 }, imageRefInUsd: 0.02 },
+  /* Grok Imagine Video bills per second by resolution, sound included
+     (gateway catalogue, read 2026-09-23). */
+  "grok-imagine-video-1.5": { tiers: [], secondRates: [
+    { resolutions: ["480p"], withoutAudio: 0.08, withAudio: 0.08 },
+    { resolutions: ["720p"], withoutAudio: 0.14, withAudio: 0.14 },
+    { resolutions: ["1080p"], withoutAudio: 0.25, withAudio: 0.25 },
+  ] },
+  "grok-imagine-video": { tiers: [], secondRates: [
+    { resolutions: ["480p"], withoutAudio: 0.05, withAudio: 0.05 },
+    { resolutions: ["720p"], withoutAudio: 0.07, withAudio: 0.07 },
+  ] },
   "fal-ai/flux-lora": {
     tiers: [],
     imagePricing: {
