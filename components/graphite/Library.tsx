@@ -9,6 +9,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
 import { DEPT_COLORS, Glyph, KIND_DOT } from "./icons";
+import { VirtualItems } from "@/components/workspace/VirtualItems";
 
 export type AssetFilter = "All" | "Images" | "Video" | "Audio" | "Uploads" | "Cast" | "Elements";
 const FILTERS: AssetFilter[] = ["All", "Images", "Video", "Audio", "Uploads", "Cast", "Elements"];
@@ -108,8 +109,11 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
-          <div className="gx-assets gx-scroll" data-testid="library-assets">
-            {shown.map((entry) => {
+          <VirtualItems
+            className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
+            items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
+            after={!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+            renderItem={(entry) => {
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
               return (
                 <div className="gx-asset" key={entry.take.id} data-selected={state.selKind === "take" && state.selId === entry.take.id} data-cut={cutId === entry.take.id || undefined} data-asset={entry.take.id}>
@@ -128,9 +132,8 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
                   </div>
                 </div>
               );
-            })}
-            {!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
-          </div>
+            }}
+          />
           <p className="gx-lib-foot">Everything this project has made or uploaded, on every page.</p>
         </>
       )}

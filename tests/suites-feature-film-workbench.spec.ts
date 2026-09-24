@@ -75,7 +75,22 @@ test("the Rig builds a shot for every storyboard frame of a feature and saves th
   await page.goto(`/suites?suite=studio&page=rig&project=${project.id}`);
   const list = page.getByTestId("rig-list");
   await list.getByTestId("rig-from-boards").click();
-  await expect(list.getByText("180.5 — The fox on the ice, 180.5")).toBeVisible({ timeout: 60_000 });
+  /* 900 shots: the list keeps only a window of them in the page (SOW §5); the last one arrives by scrolling. */
+  const shots = list.getByRole("list", { name: "Shots" });
+  await expect(shots).toHaveAttribute("data-virtual", "on", { timeout: 60_000 });
+  const last = list.getByText("180.5 — The fox on the ice, 180.5");
+  for (let i = 0; i < 40 && !(await last.count()); i++) {
+    await shots.evaluate((el) => {
+      let node: HTMLElement | null = el as HTMLElement;
+      const scrolls = (n: HTMLElement) => ["auto", "scroll"].includes(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 1;
+      while (node && !scrolls(node)) node = node.parentElement;
+      const scroller = node ?? document.scrollingElement!;
+      scroller.scrollTop = scroller.scrollHeight;
+    });
+    await page.waitForTimeout(100);
+  }
+  await expect(last).toBeVisible();
+  expect(await shots.locator(".pxw-rig-row").count()).toBeLessThan(80);
   await expect.poll(async () => (await read()).project.nodes.length, { timeout: 60_000 }).toBe(1800);
   const nodes = (await read()).project.nodes as { x: number; y: number; boardShotId?: string }[];
   expect(nodes.filter((n) => n.boardShotId)).toHaveLength(900);

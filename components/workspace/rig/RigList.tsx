@@ -9,6 +9,7 @@ import type { RigShot, RigShotStatus } from "@/lib/workspace/shots";
 import { StatusPill, type Status } from "../ui";
 import { useRig } from "./RigProvider";
 import { shotDropHandler } from "@/lib/shell/drop-targets";
+import { VirtualItems } from "../VirtualItems";
 
 const PILL: Record<RigShotStatus, Status> = { approved: "approved", ready: "ready", queued: "queued", draft: "draft", failed: "failed" };
 
@@ -105,13 +106,12 @@ export function RigList() {
         <p className="pxw-rig-empty">Open a project to see its shots.</p>
       ) : (
         <>
-          <div role="list" aria-label="Shots">
-            {shots.map((shot) => (
-              <div role="listitem" key={shot.id}>
-                <Row shot={shot} selected={selected?.id === shot.id} onSelect={() => rig.select(shot.id)} asset={shotPreviewAsset(project, shot.id)} onDropAsset={shotDropHandler() ?? undefined} />
-              </div>
-            ))}
-          </div>
+          <VirtualItems
+            attrs={{ role: "list", "aria-label": "Shots" }} rowRole="listitem"
+            items={shots} getKey={(shot) => shot.id} layout={{ columns: 1 }} gap={0} estimateRowHeight={58} scroll="ancestor"
+            revealKey={selected?.id ?? null}
+            renderItem={(shot) => <Row shot={shot} selected={selected?.id === shot.id} onSelect={() => rig.select(shot.id)} asset={shotPreviewAsset(project, shot.id)} onDropAsset={shotDropHandler() ?? undefined} />}
+          />
           {!shots.length ? <p className="pxw-rig-empty">No shots yet. Add one to start.</p> : null}
           <button type="button" className="pxw-rig-add" onClick={rig.addShot}>+ Add shot</button>
           <BuildFromBoards />

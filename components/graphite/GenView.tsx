@@ -19,6 +19,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
+import { VirtualItems } from "@/components/workspace/VirtualItems";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -298,7 +299,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
-        <div className="gx-gen-grid">
+        <VirtualItems
+          className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
+          before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
               <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
@@ -309,8 +312,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
-          {results.map((entry) => (
-            <div className="gx-asset" key={entry.take.id} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
+          </>}
+          renderItem={(entry) => (
+            <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
               <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
                 onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
@@ -319,8 +323,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-name">{entry.take.name}</span>
               <span className="gx-asset-meta">{entry.take.meta}</span>
             </div>
-          ))}
-        </div>
+          )}
+        />
         {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
       </section>
 
