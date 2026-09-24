@@ -74,8 +74,11 @@ encrypted operator disk; process kill or host failure can leave a `.particl-ops-
 directory requiring controlled removal. Filesystem deletion is not a guaranteed
 secure erase on SSDs or snapshots.
 
-The prepared, **disabled** workflow below retains daily verified encrypted backups
-for 30 days and Sunday backups for 12 weeks. Every capture includes a complete
+Backups are **weekly and kept forever** (owner, 24 September 2026): see
+[weekly-backup.md](weekly-backup.md). Each verified ciphertext bundle is written
+once to a dedicated private Blob store that nothing deletes from, and kept for
+90 days as a run artifact. (Superseded: the earlier daily 30-day / Sunday 12-week
+retention.) Every capture includes a complete
 offline restore verification; continue a monthly independent operator/cloud
 restore rehearsal. GitHub's retained immutable artifact contains only ciphertext;
 record its backup-key version and capture time in the separately held recovery

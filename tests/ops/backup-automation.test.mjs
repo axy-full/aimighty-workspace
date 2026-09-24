@@ -59,8 +59,8 @@ test("quiescence is fresh, source-bound, and covers every mutating service", () 
       /mutating service/,
     );
 });
-test("daily retention is 30 days and a Sunday backup is retained for 12 weeks", () => {
-  assert.equal(retentionDays(at), 30);
+test("every weekly backup is retained for 12 weeks", () => {
+  assert.equal(retentionDays(at), 84);
   assert.equal(retentionDays(Date.parse("2026-09-13T02:17:00Z")), 84);
 });
 test("freshness ignores unrelated, expired, empty and future artifacts; missing/stale backup fails", () => {

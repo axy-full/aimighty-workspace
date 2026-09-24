@@ -5,12 +5,15 @@ import { pathToFileURL } from "node:url";
 import { OpsError } from "./ops-error.mjs";
 
 export const ARTIFACT_PREFIX = "particl-backup-verified-";
-export const FRESHNESS_MS = 26 * 60 * 60 * 1000;
+/* Weekly backups (owner, 24 September): stale after eight days without a verified artifact. */
+export const FRESHNESS_MS = 8 * 24 * 60 * 60 * 1000;
 export function sourceFingerprint(config) {
   return createHash("sha256").update(JSON.stringify(config)).digest("hex");
 }
+/** Every weekly backup is kept twelve weeks. */
 export function retentionDays(at = Date.now()) {
-  return new Date(at).getUTCDay() === 0 ? 84 : 30;
+  void at;
+  return 84;
 }
 export function assertQuiescence(config, value, at = Date.now()) {
   const enforced = value?.protocol === "particl-recovery-fence-v1";

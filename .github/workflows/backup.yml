@@ -7,9 +7,10 @@ on:
         type: choice
         options: [dry-run, capture]
         default: dry-run
+  # Weekly backups run from scripts/ops/weekly-backup.mjs inside a maintenance
+  # window (docs/weekly-backup.md); the schedule only checks freshness, daily.
   schedule:
-    - cron: "17 2 * * *"
-    - cron: "47 * * * *"
+    - cron: "47 6 * * *"
 permissions:
   contents: read
   actions: read
@@ -40,7 +41,7 @@ jobs:
       - run: node scripts/ops/backup-automation.mjs plan
       - run: node --test tests/ops/*.test.mjs
   capture:
-    if: vars.PARTICL_BACKUP_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event.schedule == '17 2 * * *' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'capture'))
+    if: vars.PARTICL_BACKUP_ENABLED == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'capture'
     environment: particl-backup
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -62,14 +63,18 @@ jobs:
           PARTICL_BACKUP_ENV_JSON: ${{ secrets.PARTICL_BACKUP_ENV_JSON }}
           PARTICL_BACKUP_KEY: ${{ secrets.PARTICL_BACKUP_KEY }}
           PARTICL_BACKUP_QUIESCENCE_JSON: ${{ secrets.PARTICL_BACKUP_QUIESCENCE_JSON }}
-      - name: Retain only verified ciphertext
+      - name: Keep the verified ciphertext forever in the dedicated backup store
+        run: node scripts/ops/archive-backup.mjs "${{ steps.backup.outputs.bundle_path }}" "backups/${{ github.run_id }}-${{ github.run_attempt }}"
+        env:
+          PARTICL_BACKUP_ARCHIVE_TOKEN: ${{ secrets.PARTICL_BACKUP_ARCHIVE_TOKEN }}
+      - name: Also retain the verified ciphertext as a run artifact
         uses: actions/upload-artifact@v4
         with:
           name: particl-backup-verified-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.backup.outputs.bundle_path }}/
           if-no-files-found: error
           compression-level: 0
-          retention-days: ${{ steps.backup.outputs.retention_days }}
+          retention-days: 90
           overwrite: false
       - name: Remove decrypted verification and encrypted runner copies
         if: always()
