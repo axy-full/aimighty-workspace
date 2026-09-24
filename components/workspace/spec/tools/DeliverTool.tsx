@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { MovieExport } from "@/components/workbench/MovieExport";
 import { downloadFile, exportPackage } from "@/lib/workbench/studio-export";
+import { withExportNames } from "@/lib/workbench/export-names";
 import { makeEDL, safeName, type Project } from "@/lib/workbench/studio";
 import { makeFCPXML, makeXMEML, retimeProject } from "@/lib/workbench/editorial-xml";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
@@ -76,9 +77,9 @@ export default function DeliverTool({ tool, projectId, scope, onProject }: { too
             ["XML · Premiere", ".xml", "application/xml", makeXMEML, "deliver-xml"],
           ] as const).map(([label, ext, type, make, testid]) => (
             <button key={ext} type="button" className="pxw-btn pxw-btn--control" disabled={!p.shots.length} data-testid={testid}
-              onClick={() => {
+              onClick={async () => {
                 try {
-                  downloadFile(new Blob([make(p)], { type }), safeName(p.name) + ext);
+                  downloadFile(new Blob([make(await withExportNames(p))], { type }), safeName(p.name) + ext);
                   setMessage({ kind: "status", text: `${label.split(" ·")[0]} downloaded. Its clips point at media/ in the package.` });
                 } catch (error) {
                   setMessage({ kind: "error", text: error instanceof Error ? error.message : "Could not export." });
