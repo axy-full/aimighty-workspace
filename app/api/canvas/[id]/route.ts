@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
+import { archiveAndDelete } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -36,6 +37,6 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   if (got.response) return got.response;
   const { id: itemId } = await ctx.params;
   await ready();
-  await db().execute({ sql: `DELETE FROM canvas_items WHERE id = ?`, args: [itemId] });
+  await archiveAndDelete(db(), "canvas_items", `id = ?`, [itemId]);
   return NextResponse.json({ ok: true });
 });

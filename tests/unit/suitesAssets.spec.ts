@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ASSET_LABEL, GEN_PRESET_KEY, SAY, TRASH_DAYS, assetCapabilities, readGenPreset, referenceRole, retryPreset, type AssetRef } from "../../lib/shell/assets";
+import { ASSET_LABEL, GEN_PRESET_KEY, SAY, assetCapabilities, readGenPreset, referenceRole, retryPreset, type AssetRef } from "../../lib/shell/assets";
 import { ctxItems } from "../../lib/shell/context-menu";
 
 const gen: AssetRef = { id: "generation:g1", sourceId: "g1", origin: "generation", name: "Wide on the water", media: "video" };
@@ -40,7 +40,7 @@ test("paste needs a clip and a project; a copied generation cannot be pasted, a 
 });
 
 test("delete says what really happens to each kind of asset", () => {
-  expect(SAY.deleted(gen)).toBe(`Deleted Wide on the water · ⌘Z to undo. Originals stay retained server-side for ${TRASH_DAYS} days.`);
+  expect(SAY.deleted(gen)).toBe("Deleted Wide on the water · ⌘Z to undo. The original stays on the server indefinitely.");
   expect(SAY.deleted(up)).toBe("Deleted Harbour plate from this project · ⌘Z to undo. The original stays in All assets.");
   expect(SAY.cut("X")).toBe("Cut X — paste to move it.");
   expect(SAY.pasted("X", "Northline")).toBe("Pasted X into Northline");

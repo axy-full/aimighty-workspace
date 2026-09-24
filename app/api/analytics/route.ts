@@ -187,7 +187,9 @@ export const GET = withTenant(async function GET(req: Request) {
       id: r.id ?? null, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), people: num(r.people), renderMs: num(r.render_ms),
     })),
-    byPerson: byPerson.rows.map((r: any) => ({
+    /* Everyone's spend is for owners and admins; a member sees their own row. */
+    personalOnly: got.user.role !== "admin",
+    byPerson: byPerson.rows.filter((r: any) => got.user.role === "admin" || r.id === got.user.id).map((r: any) => ({
       id: r.id, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), projects: num(r.projects),
     })),

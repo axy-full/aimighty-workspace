@@ -1,8 +1,7 @@
-import {reserveRecoveryContinuation} from "@/lib/recovery";
 import {recoveryRoute} from '@/lib/recovery';
 import { accountRequestScopeMatches } from "@/lib/accountRequestScope";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { currentContext,requireOwner,withTenant,SESSION_COOKIE } from "@/lib/auth";
 import {cookies} from "next/headers";
 import {requireTenant} from "@/lib/tenant";
@@ -10,7 +9,7 @@ import {platformDb,now,switchSessionWorkspace} from "@/lib/platform";
 import {requestWorkspace,resumeWorkspace,pendingWorkspaces,workspaceCreationReadiness} from "@/lib/workspaceProvisioning";
 import {accountFailure,sameOriginProblem,AccountError} from "@/lib/accountDb";
 import { deletionAllowed } from "@/lib/deletion";
-import { markWorkspaceDeleted, purgeWorkspace } from "@/lib/purge";
+import { markWorkspaceDeleted } from "@/lib/purge";
 
 export const dynamic = "force-dynamic";
 export const maxDuration=300;
@@ -56,9 +55,9 @@ export const PATCH=withTenant(async(req:Request)=>{
 
 /**
  * Delete the workspace the session is in: the owner, by its exact name.
- * The record goes at once; the purge — every file, the key, the database —
- * runs after the response. Everything already billed stays on the
- * platform's books.
+ * Access ends at once. The database and every file stay on the server for
+ * good (owner, 2026-09-24); the cron retires the gateway key after the grace
+ * period. Everything already billed stays on the platform's books.
  */
 export const DELETE = recoveryRoute(async function DELETE(req: Request) {
   if(sameOriginProblem(req))return Response.json({error:"Invalid request origin."},{status:403});
@@ -71,7 +70,6 @@ export const DELETE = recoveryRoute(async function DELETE(req: Request) {
   const verdict = deletionAllowed({ name: ws.name, legacy: ws.legacy, role: ctx.role }, String(body.name ?? ""));
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: 400 });
   await markWorkspaceDeleted(ws.id);
-  after(await reserveRecoveryContinuation('after-response', async () => { await purgeWorkspace(ws); }));
   const left = ctx.workspaces.filter((w) => w.id !== ws.id);
   return NextResponse.json({ ok: true, deleted: ws.id, next: left[0]?.id ?? null });
 });

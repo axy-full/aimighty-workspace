@@ -52,7 +52,7 @@ async function load(
   return mod.exports;
 }
 
-test("a failed generation Blob deletion retains quota, original locations and billed cost until a successful retry", async () => {
+test("a failed generation Blob deletion retains original locations and billed cost until a successful retry", async () => {
   let fail = true;
   const calls: unknown[][] = [];
   const api = await load(async (...args) => {
@@ -61,8 +61,7 @@ test("a failed generation Blob deletion retains quota, original locations and bi
   });
   const { runInTenant } = await import("../../lib/tenant"),
     { db } = await import("../../lib/db"),
-    { standing } = await import("../../lib/limits"),
-    { beginDirectUpload } = await import("../../lib/uploadReservations");
+    { standing } = await import("../../lib/limits");
   await runInTenant(workspace("failure"), async () => {
     await api.mediaDeletionReady();
     await db().execute(
@@ -85,10 +84,8 @@ test("a failed generation Blob deletion retains quota, original locations and bi
     );
     expect(retained.source_url).toBe("original-provider-handle");
     expect(retained.bytes).toBe(6);
-    expect((await standing()).usedBytes).toBe(6);
-    await expect(beginDirectUpload("owner", 5)).rejects.toThrow(
-      /Storage is full/,
-    );
+    // Hidden renders are kept but no longer count toward the storage cap.
+    expect((await standing()).usedBytes).toBe(0);
     fail = false;
     expect(await api.cleanupDeletedGenerations()).toEqual({
       attempted: 1,

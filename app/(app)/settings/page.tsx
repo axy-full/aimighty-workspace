@@ -641,15 +641,11 @@ function SettingsContent() {
                               "Edit and extend format",
                             )}
                           </Row>
-                          <Row label="Deleted media retention">
-                            {select(
-                              "retentionDays",
-                              [
-                                ["0", "Keep indefinitely"],
-                                ["30", "30 days"],
-                              ],
-                              "Deleted media retention",
-                            )}
+                          <Row
+                            label="Deleted media retention"
+                            description="Deleted and trashed work is hidden, never erased. It stays on the server indefinitely and can be restored."
+                          >
+                            <span>Kept indefinitely</span>
                           </Row>
                         </div>
                       </ManagementCard>

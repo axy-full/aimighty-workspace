@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireAdmin, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
+import { archiveAndDelete } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,6 @@ export const DELETE = withTenant(async function DELETE(req: Request) {
   await ready();
   const topupId = new URL(req.url).searchParams.get("id");
   if (!topupId) return NextResponse.json({ error: "id required" }, { status: 400 });
-  await db().execute({ sql: `DELETE FROM topups WHERE id=?`, args: [topupId] });
+  await archiveAndDelete(db(), "topups", `id=?`, [topupId]);
   return NextResponse.json({ ok: true });
 });

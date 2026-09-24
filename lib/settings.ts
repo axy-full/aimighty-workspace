@@ -12,7 +12,7 @@ import { memoGet, memoPut, memoDrop } from "@/lib/memo";
 export const DEFAULTS = {
   /** R9 — the platform names the file, never the API. */
   namingTemplate: "{project}_{scene}_{shot}_{model}_v{version}_{user}",
-  /** Days a soft-deleted render's media is kept before the janitor may remove it. */
+  /** Pinned: "0" = kept indefinitely. Nothing a team makes is ever erased (owner, 2026-09-24). */
   retentionDays: "0",
   /** How many times a transient provider failure is retried before the row fails. */
   maxRetries: "2",

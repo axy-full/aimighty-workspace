@@ -81,7 +81,7 @@ test("right-click: every command works or says exactly why not; delete is soft a
   await expect(menu.getByRole("menuitem", { name: /^Move to/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await menu.getByRole("menuitem", { name: /^Delete/ }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Deleted Wide on the water · ⌘Z to undo. Originals stay retained server-side for 30 days.");
+  await expect(page.getByTestId("toast")).toHaveText("Deleted Wide on the water · ⌘Z to undo. The original stays on the server indefinitely.");
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: true } });
   await page.keyboard.press("ControlOrMeta+z");
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");

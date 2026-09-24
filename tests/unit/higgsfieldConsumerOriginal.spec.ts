@@ -707,7 +707,8 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
     await markWorkspaceDeleted(ws.id);
     const retry = () =>
       platformDb().execute({
-        sql: "UPDATE workspace_purges SET next_attempt_at=0 WHERE workspace_id=?",
+        // Deleting no longer queues a purge (never-delete); the retired purge is driven directly.
+        sql: "INSERT INTO workspace_purges(workspace_id,next_attempt_at,updated_at) VALUES(?,0,0) ON CONFLICT(workspace_id) DO UPDATE SET next_attempt_at=0",
         args: [ws.id],
       });
     await retry();

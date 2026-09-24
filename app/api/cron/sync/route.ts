@@ -17,11 +17,10 @@ import { setSetting } from "@/lib/settings";
 import { getWorkspace, platformDb, platformReady } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
-import { retryWorkspacePurges } from "@/lib/purge";
+import { retireDeletedWorkspaces } from "@/lib/purge";
 import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
-import { cleanupDeletedGenerations } from "@/lib/mediaDeletion";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -123,10 +122,6 @@ export async function GET(req: Request) {
               if ("failed" in report && report.failed)
                 throw new Error("UPLOAD_CLEANUP_FAILED");
             });
-            await stage("deleted_media", async () => {
-              if ((await cleanupDeletedGenerations(5)).failed)
-                throw new Error("MEDIA_CLEANUP_FAILED");
-            });
             await stage("held_jobs", () =>
               releaseHeldJobs({ defer: (fn) => afterResponse(fn) }),
             );
@@ -158,7 +153,7 @@ export async function GET(req: Request) {
             return { failed, completed, deferred };
           });
         },
-        cleanup: () => retryWorkspacePurges(1),
+        cleanup: () => retireDeletedWorkspaces(1),
       });
       console[result.ok ? "info" : "error"](
         JSON.stringify({
