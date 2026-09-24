@@ -5,6 +5,7 @@ import { listGenerations } from '@/lib/jobs';
 import { listLibraryUploads } from '@/lib/uploadLibrary';
 import { referencedMedia } from '@/lib/mediaBindings';
 import { readDraft, workbenchReady } from './records';
+import { archiveAndDelete } from '@/lib/archive';
 
 export class ProjectLibraryError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -81,5 +82,5 @@ export async function linkProjectLibraryUpload(owner: string, projectId: string,
 export async function unlinkProjectLibraryUpload(owner: string, projectId: string, uploadId: string) {
   const scope = await resolveProjectLibrary(owner,projectId);
   if (!uploadId || uploadId.length>200) throw new ProjectLibraryError('Choose a stored upload.');
-  await db().execute({sql:'DELETE FROM project_library_uploads WHERE project_id=? AND upload_id=?',args:[scope.productionProjectId,uploadId]});
+  await archiveAndDelete(db(), "project_library_uploads", 'project_id=? AND upload_id=?', [scope.productionProjectId,uploadId]);
 }

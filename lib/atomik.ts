@@ -190,14 +190,9 @@ export async function patchChat(chatId: string, patch: {
 
 export async function deleteChat(chatId: string): Promise<void> {
   await ready();
-  /* The transcript and the proposals go with the conversation. A chat is
-     soft-deleted so the id stays resolvable, but its messages and steps are
-     only ever read through it — leaving them would accumulate rows nothing
-     can reach, in the two tables that grow fastest. Renders are untouched:
-     an approved step became an ordinary generation and belongs to the
-     project now, not to the conversation that suggested it. */
-  await db().execute({ sql: `DELETE FROM atomik_messages WHERE chat_id = ?`, args: [chatId] });
-  await db().execute({ sql: `DELETE FROM atomik_steps WHERE chat_id = ?`, args: [chatId] });
+  /* A chat is soft-deleted and its transcript and proposals stay with it:
+     nothing a team makes is ever erased (owner, 2026-09-24). They are only
+     ever read through the chat, so a hidden chat hides them too. */
   await db().execute({
     sql: `UPDATE atomik_chats SET deleted = 1, updated_at = ? WHERE id = ?`,
     args: [now(), chatId],

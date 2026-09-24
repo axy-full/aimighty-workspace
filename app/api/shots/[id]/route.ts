@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
+import { archiveAndDelete } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +77,7 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
      nothing anyone would miss, and one left behind keeps voting on what a
      change costs: a shot nobody can open would still be counted, and priced,
      every time a version it named was swapped. */
-  await db().execute({ sql: `DELETE FROM bindings WHERE shot_id = ?`, args: [shotId] });
-  await db().execute({ sql: `DELETE FROM shots WHERE id = ?`, args: [shotId] });
+  await archiveAndDelete(db(), "bindings", `shot_id = ?`, [shotId]);
+  await archiveAndDelete(db(), "shots", `id = ?`, [shotId]);
   return NextResponse.json({ ok: true });
 });

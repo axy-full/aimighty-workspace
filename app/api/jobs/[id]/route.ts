@@ -4,7 +4,7 @@ import { mediaBindingProblem } from "@/lib/mediaBindings";
 import { NextResponse, after } from "next/server";
 import { getGeneration, syncGeneration } from "@/lib/jobs";
 import { db, ready } from "@/lib/db";
-import { mediaDeletionReady, markGenerationDeletion, cleanupDeletedGenerations } from "@/lib/mediaDeletion";
+import { mediaDeletionReady, markGenerationDeletion } from "@/lib/mediaDeletion";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
@@ -14,8 +14,6 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-/** How long a trashed render keeps its bytes before the sweeper takes them. */
-const TRASH_MS = 30 * 24 * 60 * 60_000;
 type Ctx = { params: Promise<{ id: string }> };
 
 export const GET = withTenant(async function GET(req: Request, { params }: Ctx) {
@@ -45,11 +43,11 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  /* Trash and restore (FINAL_SPEC §1 step 1: delete is soft, 30 days). A
-     trashed render is hidden like a deleted one — `deleted=1` — but its
-     cleanup row is dated TRASH_MS ahead, so the sweeper leaves its bytes
-     alone until then and `{ trashed: false }` can bring it back whole. A
-     render whose bytes are already gone cannot be restored, and says so. */
+  /* Trash and restore (FINAL_SPEC §1 step 1: delete is soft). A trashed
+     render is hidden — `deleted=1` — and keeps its bytes for good: nothing a
+     team makes is ever erased (owner, 2026-09-24), so `{ trashed: false }`
+     always brings it back whole. Only a render whose bytes were removed by
+     an older release cannot be restored, and says so. */
   if (body.trashed !== undefined) {
     await workbenchReady();
     await mediaDeletionReady();
@@ -61,7 +59,6 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
         const binding = await mediaBindingProblem(tx, "generation", id);
         if (binding) return binding;
         await markGenerationDeletion(tx, id, Date.now());
-        await tx.execute({ sql: "UPDATE generation_deletions SET lease_until=?, updated_at=? WHERE id=? AND lease IS NULL", args: [Date.now() + TRASH_MS, Date.now(), id] });
         return null;
       }
       if (!Number(row.deleted)) return null;
@@ -162,10 +159,9 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
 });
 
 /**
- * "Delete" removes the video file and hides the clip, but the row survives
- * with its cost — money already spent must never vanish from the ledger.
- * Hard-deleting rows made "remaining credit" drift optimistic with every
- * library cleanup.
+ * "Delete" hides the clip; the row, its cost and its file all stay. Money
+ * already spent must never vanish from the ledger, and nothing a team makes
+ * is ever erased (owner, 2026-09-24) — a deleted render can be restored.
  */
 export const DELETE = withTenant(async function DELETE(req: Request, { params }: Ctx) {
   const got = await requireUser();
@@ -189,8 +185,6 @@ export const DELETE = withTenant(async function DELETE(req: Request, { params }:
     return null;
   });
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
-  const cleanup = await cleanupDeletedGenerations(1, Date.now(), id);
   invalidate(PROJECTS_KEY);
-  const pending = (await db().execute({ sql: "SELECT 1 FROM generation_deletions WHERE id=?", args: [id] })).rows.length > 0;
-  return NextResponse.json({ ok: true, cleanupPending: pending }, { status: pending || cleanup.failed ? 202 : 200 });
+  return NextResponse.json({ ok: true, cleanupPending: false });
 });

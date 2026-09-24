@@ -4,6 +4,7 @@ import {
   CREW_PRESETS, CUSTOM_MEMBER, DEFAULT_CHAIR, DEFAULT_CONTEXT, DEFAULT_SEATED, MEMBERS_MAX,
   type CrewContext, type CrewEffort, type CrewPhase,
 } from "./room";
+import { archiveAndDelete } from "../archive";
 
 /**
  * Crew's four tables, in the workspace's own database (CREW_ADDENDUM.md ›
@@ -128,7 +129,7 @@ export async function updateMember(owner: string, id: string, patch: MemberPatch
 }
 export async function removeMember(owner: string, id: string): Promise<void> {
   await crewReady();
-  await db().execute({ sql: "DELETE FROM crew_members WHERE id=? AND owner=?", args: [id, owner] });
+  await archiveAndDelete(db(), "crew_members", "id=? AND owner=?", [id, owner]);
 }
 
 /* ── Sessions ─────────────────────────────────────────────────────────── */
@@ -226,5 +227,5 @@ export async function setSolutionStatus(id: string, status: CrewSolutionStatus):
 }
 export async function removeSolution(owner: string, id: string): Promise<void> {
   await crewReady();
-  await db().execute({ sql: "DELETE FROM crew_solutions WHERE id=? AND session_id IN (SELECT id FROM crew_sessions WHERE owner=?)", args: [id, owner] });
+  await archiveAndDelete(db(), "crew_solutions", "id=? AND session_id IN (SELECT id FROM crew_sessions WHERE owner=?)", [id, owner]);
 }

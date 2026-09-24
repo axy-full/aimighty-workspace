@@ -34,6 +34,7 @@ async function route(file: string): Promise<Record<string, Handler>> {
   const dependencies: Record<string, unknown> = {
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/archive": await import("../../lib/archive"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
     "@/lib/cast": await import("../../lib/cast"),

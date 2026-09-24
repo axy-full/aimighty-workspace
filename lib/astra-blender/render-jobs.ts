@@ -20,7 +20,7 @@ import { astraSceneDigest, validateAstraBindings } from './proposal';
 import { astraNativeDigest, validateAstraNativeBindings, type AstraNativeSource } from './native';
 import { astraRuntimeStatus, ASTRA_MAX_OUTPUT_BYTES, renderAstraScene, renderAstraNative, getAstraRenderStatus, cancelAstraRender, prepareAstraInputs, type AstraSandboxDependencies, type AstraRuntimeUsage } from './sandbox';
 import { astraComputeRates, astraComputeCost, astraComputeCredits, ASTRA_MAX_USAGE, ASTRA_COMPUTE_MODEL, type AstraComputeRates } from './render-pricing';
-import { loadAstraRenderInputs, storeAstraArtifacts, registerAstraArtifacts, cleanupAstraArtifacts, type StoredAstraArtifact } from './render-storage';
+import { loadAstraRenderInputs, storeAstraArtifacts, registerAstraArtifacts, type StoredAstraArtifact } from './render-storage';
 import type { AstraRenderJob, AstraRenderRequest, AstraRenderQuote, AstraRenderStatus } from './render-contract';
 import type { Asset } from '../workbench/studio';
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -139,7 +139,7 @@ export async function prepareAstraRender(input: AstraRenderRequest, owner: strin
                 throw new AstraRenderError('This request identity is already in use.', 409);
             return duplicate;
         }
-        const used = (await tx.execute(`SELECT (SELECT COALESCE(SUM(bytes),0) FROM generations)+(SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads)+(SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions)+(SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state<>'stored')+(SELECT COALESCE(SUM(reserved_bytes),0) FROM astra_render_storage) AS used`)).rows[0];
+        const used = (await tx.execute(`SELECT (SELECT COALESCE(SUM(bytes),0) FROM generations WHERE deleted=0)+(SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads)+(SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions)+(SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state<>'stored')+(SELECT COALESCE(SUM(reserved_bytes),0) FROM astra_render_storage) AS used`)).rows[0];
         const verdict = quotaVerdict({ usedBytes: Number(used.used), incomingBytes: ASTRA_MAX_OUTPUT_BYTES, quotaBytes: limits.storageBytes });
         if (!verdict.allow)
             throw new AstraRenderError(verdict.error!, 507);
@@ -167,7 +167,10 @@ export async function prepareAstraRender(input: AstraRenderRequest, owner: strin
     const final = (await record(id))!;
     return { job: publicJob(final), scheduled: final.status === 'queued', duplicate: false };
 }
-async function releaseStorage(row: JobRecord) { if (!JSON.parse(row.artifacts_json).length)
+/* A settled run's reservation is released even when it left files behind: those
+   files are kept for good and artifacts_json still names them (owner, 2026-09-24),
+   but a render that never reached the project does not hold the storage cap. */
+async function releaseStorage(row: JobRecord) {
     await db().execute({ sql: 'DELETE FROM astra_render_storage WHERE job_id=?', args: [row.id] }); }
 async function settle(row: JobRecord, status: 'succeeded' | 'failed' | 'cancelled', usage: AstraRuntimeUsage | null, deps: AstraRenderDependencies) {
     const source = JSON.parse(row.source_json) as Snapshot;
@@ -184,10 +187,6 @@ async function settle(row: JobRecord, status: 'succeeded' | 'failed' | 'cancelle
     const credits = Number(row.estimate_credits) > 0 ? billCredits(actual, ASTRA_COMPUTE_MODEL) : 0;
     await db().execute({ sql: 'UPDATE astra_render_jobs SET usage_json=?,cost_usd=?,billed_credits=?,updated_at=? WHERE id=?', args: [JSON.stringify(usage), actual, credits, Date.now(), row.id] });
     await (deps.meter ?? meter)(event(row, status === 'succeeded' ? 'succeeded' : 'failed', actual), { critical: true });
-    if (!row.outputs_registered && row.runtime_id) {
-        await cleanupAstraArtifacts(row.id);
-        await db().execute({ sql: "UPDATE astra_render_jobs SET artifacts_json='[]' WHERE id=?", args: [row.id] });
-    }
     await db().execute({ sql: 'UPDATE astra_render_jobs SET status=?,settled=1,updated_at=? WHERE id=?', args: [status, Date.now(), row.id] });
     await releaseStorage((await record(row.id))!);
     await billingTransaction(tx => resolveRecoveryJobTx(tx, requireTenant().id, row.id));

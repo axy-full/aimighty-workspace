@@ -4,12 +4,12 @@ import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
 /**
- * Delete is soft for 30 days (FINAL_SPEC §1 step 1): PATCH /api/jobs/:id
- * { trashed } hides a render and dates its cleanup a month out; { trashed:
- * false } brings it back whole. Through the real route on a local mock
- * server, with the workspace database read directly for the dates.
+ * Delete is soft (FINAL_SPEC §1 step 1): PATCH /api/jobs/:id { trashed }
+ * hides a render and keeps its bytes for good — nothing is erased (owner,
+ * 2026-09-24); { trashed: false } brings it back whole. Through the real
+ * route on a local mock server, with the workspace database read directly.
  */
-test("a trashed render hides, keeps its bytes for 30 days, and comes back on restore", async ({ request }) => {
+test("a trashed render hides, keeps its bytes indefinitely, and comes back on restore", async ({ request }) => {
   const account = await signInLocally(request);
   const me = await request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
@@ -32,8 +32,9 @@ test("a trashed render hides, keeps its bytes for 30 days, and comes back on res
     expect(trashed.ok(), await trashed.text()).toBe(true);
     expect(await visible()).toBe(false);
     const cleanup = (await tenant.execute({ sql: "SELECT lease, lease_until FROM generation_deletions WHERE id=?", args: [id] })).rows[0];
+    // No sweeper claims it and no removal is scheduled.
     expect(cleanup.lease).toBeNull();
-    expect(Number(cleanup.lease_until)).toBeGreaterThan(now + 29 * 24 * 3600_000);
+    expect(cleanup.lease_until).toBeNull();
     const bytes = (await tenant.execute({ sql: "SELECT stored_url, bytes FROM generations WHERE id=?", args: [id] })).rows[0];
     expect(String(bytes.stored_url)).toContain(id);
     expect(Number(bytes.bytes)).toBe(1234);

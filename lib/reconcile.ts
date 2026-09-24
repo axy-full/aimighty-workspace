@@ -1,4 +1,5 @@
 import { db, ready, now, id as newId } from "./db";
+import { archiveAndDelete } from "./archive";
 
 /**
  * Anchoring the ledger to what the vendor actually says.
@@ -86,7 +87,7 @@ export async function recordCheck(input: {
 
 export async function deleteCheck(id: string): Promise<void> {
   await ready();
-  await db().execute({ sql: `DELETE FROM ledger_checks WHERE id = ?`, args: [id] });
+  await archiveAndDelete(db(), "ledger_checks", `id = ?`, [id]);
 }
 
 /**

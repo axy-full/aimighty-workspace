@@ -5,11 +5,11 @@ import { mediaBindingProblem } from "@/lib/mediaBindings";
 import {
   uploadReservationsReady,
   queueUploadDeletion,
-  cleanupExpiredUploads,
   UploadError,
   uploadFailure,
 } from "@/lib/uploadReservations";
 import { db, ready } from "@/lib/db";
+import { archiveReady } from "@/lib/archive";
 import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
 import { openUploadStream } from "@/lib/storage";
@@ -121,17 +121,14 @@ export const DELETE = withTenant(async function DELETE(
   try {
     await workbenchReady();
     await uploadReservationsReady();
-    const key = await workbenchTransaction(async (tx) => {
+    await archiveReady();
+    // The row is archived and the file is kept; nothing is left to clean up.
+    await workbenchTransaction(async (tx) => {
       const problem = await mediaBindingProblem(tx, "upload", id);
       if (problem) throw new UploadError(problem, 409);
       return queueUploadDeletion(tx, got.user.id, id);
     });
-    // If storage is unavailable, the durable cleanup row retains quota and retries in cron.
-    const result = key ? await cleanupExpiredUploads(1, Date.now(), key) : null;
-    return Response.json({
-      ok: true,
-      cleanupPending: Boolean(result && result.cleaned !== 1),
-    });
+    return Response.json({ ok: true, cleanupPending: false });
   } catch (error) {
     return uploadFailure(error);
   }

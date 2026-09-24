@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getIdea } from "@/lib/atomikDocs";
+import { archiveAndDelete } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -47,6 +48,6 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
-  await db().execute({ sql: `DELETE FROM ideas WHERE id = ?`, args: [id] });
+  await archiveAndDelete(db(), "ideas", `id = ?`, [id]);
   return NextResponse.json({ ok: true });
 });

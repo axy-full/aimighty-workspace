@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { nameProblem, rowToCast } from "@/lib/cast";
+import { archiveAndDelete } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -46,6 +47,6 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
-  await db().execute({ sql: `DELETE FROM cast_members WHERE id = ?`, args: [id] });
+  await archiveAndDelete(db(), "cast_members", `id = ?`, [id]);
   return NextResponse.json({ ok: true });
 });

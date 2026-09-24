@@ -7,6 +7,7 @@ import {
   citedStills, versionsFromTakes,
   type AttributeKind, type ElementKind, type Port, type Slot, type TakeRef,
 } from "./rig";
+import { archiveAndDelete } from "./archive";
 
 /**
  * Rig's elements, read and written (brief 3).
@@ -458,11 +459,7 @@ export async function clearBinding(
     : ` AND attribute_id = ?`;
   const args: (string | number)[] = [shotId, slot, ordinal];
   if (typeof attributeId === "string" && attributeId !== "*") args.push(attributeId);
-  const rs = await db().execute({
-    sql: `DELETE FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ?${where}`,
-    args,
-  });
-  return rs.rowsAffected > 0;
+  return (await archiveAndDelete(db(), "bindings", `shot_id = ? AND slot = ? AND ordinal = ?${where}`, args)) > 0;
 }
 
 /* ── The reverse lookup ─────────────────────────────────────────────────

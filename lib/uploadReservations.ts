@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { db, ready, id, now } from "./db";
 import { workspaceLimits, quotaVerdict } from "./limits";
 import { deleteChunks, deleteUpload } from "./storage";
+import { archiveAndDelete } from "./archive";
 
 export const UPLOAD_TTL_MS = 24 * 3600_000;
 export const UPLOAD_LEASE_MS = 20 * 60_000; // Longer than the 800-second finish function.
@@ -145,7 +146,7 @@ export async function reservedUploadBytes(): Promise<number> {
 }
 async function admit(tx: Transaction, incoming: number, quota: number) {
   const result = await tx.execute(`SELECT
-    (SELECT COALESCE(SUM(bytes),0) FROM generations) +
+    (SELECT COALESCE(SUM(bytes),0) FROM generations WHERE deleted=0) +
     (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) +
     (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) +
     (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') + (SELECT COALESCE(SUM(reserved_bytes),0) FROM astra_render_storage) AS used`);
@@ -587,44 +588,16 @@ export async function abortUploadSession(owner: string, session: string) {
     });
   });
 }
-/** Transfer an existing upload into durable cleanup in the caller's reference-check transaction. */
+/** Take an upload off every screen in the caller's reference-check transaction.
+ * Its row goes to the archive and its master (and delivery copy) stay in
+ * storage: nothing a team makes is ever erased (owner, 2026-09-24). */
 export async function queueUploadDeletion(
   tx: Transaction,
   owner: string,
   uploadId: string,
 ) {
-  const row = (
-    await tx.execute({
-      sql: "SELECT * FROM uploads WHERE id=?",
-      args: [uploadId],
-    })
-  ).rows[0];
-  if (!row) return null;
-  const key = scoped(owner, randomUUID());
-  const objects = [
-    { id: uploadId, ext: String(row.ext), url: String(row.stored_url) },
-  ];
-  // deriveForProvider always writes a JPEG delivery copy; the master remains unchanged.
-  if (row.derivative_url)
-    objects.push({
-      id: uploadId + "-api",
-      ext: "jpg",
-      url: String(row.derivative_url),
-    });
-  await tx.execute({
-    sql: "INSERT INTO upload_sessions(id,owner_id,state,reserved_bytes,created_at,expires_at,upload_id,objects) VALUES(?,?,'aborting',?,?,?,?,?)",
-    args: [
-      key,
-      owner,
-      Number(row.bytes ?? 0) + Number(row.derivative_bytes ?? 0),
-      now(),
-      now(),
-      uploadId,
-      JSON.stringify(objects),
-    ],
-  });
-  await tx.execute({ sql: "DELETE FROM uploads WHERE id=?", args: [uploadId] });
-  return key;
+  const removed = await archiveAndDelete(tx, "uploads", "id=?", [uploadId], { by: owner });
+  return removed ? uploadId : null;
 }
 /** Abort/expiry releases nothing until every staged or unpublished object is actually removed. */
 export async function cleanupExpiredUploads(

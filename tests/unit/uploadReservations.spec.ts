@@ -52,6 +52,7 @@ async function load() {
   const dependencies = {
     "./db": db,
     "./limits": limits,
+    "./archive": await import("../../lib/archive"),
     "./storage": {
       deleteChunks: async (key: string) => {
         if (failDeletion) throw new Error("fixture deletion unavailable");

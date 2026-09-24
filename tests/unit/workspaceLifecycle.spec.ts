@@ -120,7 +120,8 @@ test("workspace purge removes only its consumer grants and pending states, fenci
   await consumer.storeAuthorization({ workspaceId: "consumer-purge", userId: "previous-owner", state: "p".repeat(43), sessionHash: "hash", verifier: "v".repeat(43), clientId: "fixture-client", redirectUri: "https://particl.example/callback" });
   const ws = (await getWorkspace("consumer-purge"))!;
   await markWorkspaceDeleted(ws.id);
-  await p.execute("UPDATE workspace_purges SET next_attempt_at=0 WHERE workspace_id='consumer-purge'");
+  // Deleting no longer queues a purge (never-delete); the retired purge is driven directly.
+  await p.execute("INSERT INTO workspace_purges(workspace_id,next_attempt_at,updated_at) VALUES('consumer-purge',0,0) ON CONFLICT(workspace_id) DO UPDATE SET next_attempt_at=0");
   const result = await purgeWorkspace(ws, { files: async () => ({ files: 0, uploads: 0 }), key: async () => {}, database: async () => {} });
   expect(result.completed).toBe(true);
   for (const table of ["higgsfield_consumer_connections", "higgsfield_consumer_authorizations"]) {
