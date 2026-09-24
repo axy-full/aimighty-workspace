@@ -8,6 +8,7 @@ import { shotDropHandler } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
+import type { Drag, Peer } from "./use-team-canvas";
 
 /** A take's or reference's preview, else the flat bands that stand in for media. */
 function Media({ id, asset, height, badge }: { id: string; asset: Asset | undefined; height: number; badge?: boolean }) {
@@ -87,6 +88,57 @@ export function RigGraph() {
   const canvas = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
 
+  /* ── The team on the canvas: cursors, selections and drags (live rooms only) ── */
+  const { presence, peers } = rig.team;
+  useEffect(() => { presence({ selected: selId }); }, [presence, selId]);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const press = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
+  const justDragged = useRef(false);
+  const point = (e: { clientX: number; clientY: number }) => {
+    const box = canvas.current?.getBoundingClientRect();
+    return box ? { x: Math.round(e.clientX - box.left), y: Math.round(e.clientY - box.top) } : null;
+  };
+  /* Move a node by dragging its card; a press that does not travel stays a click. */
+  const startDrag = (id: string, e: React.PointerEvent) => {
+    if (e.button !== 0 || !(e.target as HTMLElement).closest(".pxw-graph-hit")) return;
+    press.current = { id, x: e.clientX, y: e.clientY, moved: false };
+  };
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const p = press.current;
+      if (!p) return;
+      const dx = Math.round(e.clientX - p.x), dy = Math.round(e.clientY - p.y);
+      if (!p.moved && Math.hypot(dx, dy) < 5) return;
+      p.moved = true;
+      const next = { id: p.id, dx, dy };
+      setDrag(next);
+      presence({ drag: next });
+    };
+    const up = (e: PointerEvent) => {
+      const p = press.current;
+      press.current = null;
+      if (!p?.moved) return;
+      const dx = Math.round(e.clientX - p.x), dy = Math.round(e.clientY - p.y);
+      justDragged.current = true;
+      setDrag(null);
+      presence({ drag: null });
+      const refusal = rig.apply((proj) => ({ ...proj, nodes: proj.nodes.map((n) => (n.id === p.id ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
+      if (refusal) setMessage(refusal);
+    };
+    /* A touch that turns into a scroll cancels the press; nothing moves. */
+    const cancel = () => { if (press.current?.moved) { setDrag(null); presence({ drag: null }); } press.current = null; };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); };
+  }, [presence, rig]);
+  const peerDrags = useMemo(() => new Map(peers.filter((p) => p.drag).map((p) => [p.drag!.id, p.drag!])), [peers]);
+  const peerSelections = useMemo(() => {
+    const out = new Map<string, Peer>();
+    for (const p of peers) if (p.selected && !out.has(p.selected)) out.set(p.selected, p);
+    return out;
+  }, [peers]);
+
   /* Edges from the cards' real boxes: offsets inside the canvas, measured after layout and on every resize. */
   const measure = useCallback(() => {
     const root = canvas.current, overlay = svg.current;
@@ -143,7 +195,13 @@ export function RigGraph() {
             {message ?? `Connecting from ${byId.get(wireFrom!)?.title ?? "a node"}. Choose an input port, or press Esc.`}
           </p>
         ) : null}
-        <div className="pxw-graph-canvas" ref={canvas} style={{ width: layout.width, height: layout.height }}>
+        <div
+          className="pxw-graph-canvas"
+          ref={canvas}
+          style={{ width: layout.width, height: layout.height }}
+          onPointerMove={peers.length ? (e) => presence({ cursor: point(e) }) : undefined}
+          onPointerLeave={peers.length ? () => presence({ cursor: null }) : undefined}
+        >
           <svg ref={svg} className="pxw-graph-edges" width={layout.width} height={layout.height} aria-hidden="true">
             {edges.map((edge) => {
               const active = edge.target === selId;
@@ -168,6 +226,9 @@ export function RigGraph() {
             const selected = !!shot && shot.id === selId;
             /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
             const dropAsset = shot ? shotDropHandler() : null;
+            /* Mine while I drag it; a teammate's while they drag it. */
+            const moving = drag?.id === card.id ? drag : peerDrags.get(card.id) ?? null;
+            const watcher = peerSelections.get(card.id);
             return (
               <div
                 key={card.id}
@@ -178,13 +239,18 @@ export function RigGraph() {
                 data-selected={selected || undefined}
                 data-wiring={wireFrom === card.id || undefined}
                 data-drop={dropOver === card.id || undefined}
+                data-moving={moving ? true : undefined}
+                data-peer={watcher ? watcher.name : undefined}
                 role="group"
                 aria-label={`${NODE_DEFS[node.type].label}: ${node.title}`}
-                style={{ left: card.left, top: card.top, width: card.width }}
+                style={{ left: card.left + (moving?.dx ?? 0), top: card.top + (moving?.dy ?? 0), width: card.width, ...(watcher ? { outline: `2px solid ${watcher.color}`, outlineOffset: 3 } : {}) }}
+                onPointerDown={node.locked ? undefined : (e) => startDrag(card.id, e)}
+                onClickCapture={(e) => { if (justDragged.current) { justDragged.current = false; e.stopPropagation(); e.preventDefault(); } }}
                 onDragOver={dropAsset ? (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(card.id); } } : undefined}
                 onDragLeave={dropAsset ? () => setDropOver((v) => (v === card.id ? null : v)) : undefined}
                 onDrop={dropAsset && shot ? (e) => { e.preventDefault(); setDropOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) dropAsset(id, { nodeId: shot.id, name: shot.name }); } : undefined}
               >
+                {watcher ? <span className="pxw-graph-peer" style={{ background: watcher.color }}>{watcher.name}</span> : null}
                 <Card
                   node={node}
                   shot={shot}
@@ -198,6 +264,12 @@ export function RigGraph() {
               </div>
             );
           })}
+          {peers.filter((p) => p.cursor).map((p) => (
+            <span key={p.id} className="pxw-graph-cursor" style={{ left: p.cursor!.x, top: p.cursor!.y, color: p.color }} aria-hidden="true">
+              <svg width="14" height="18" viewBox="0 0 14 18"><path d="M1 1l12 9-5.5 1L5 17z" fill="currentColor" stroke="#fff" strokeWidth="1" /></svg>
+              <span style={{ background: p.color }}>{p.name}</span>
+            </span>
+          ))}
         </div>
         <p className="pxw-graph-note">
           The graph is the advanced view of the same {shotCount.toLocaleString("en-US")} {shotCount === 1 ? "shot" : "shots"}. Everything here can be done from the shot list.

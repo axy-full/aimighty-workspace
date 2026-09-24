@@ -400,3 +400,7 @@ export const saveSchema = z
           path: ["project", "nodes"],
         });
   });
+
+/** The Rig node and asset shapes on their own, for the shared team canvas (lib/workbench/team-canvas.ts). */
+export const canvasNodeSchema = node;
+export const canvasAssetSchema = asset;
