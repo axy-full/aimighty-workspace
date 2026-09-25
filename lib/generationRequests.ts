@@ -69,6 +69,8 @@ export async function bindGenerationRequest(claim: GenerationRequest, genId: str
 export type GenerationRequestOptions = { atomicBinding?: boolean };
 
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
+/** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
+export const STALE_CLAIM_MS = 30 * 60_000;
 
 /**
  * With atomic binding, a claim that names no job proves no job exists — so
@@ -128,6 +130,19 @@ export async function withGenerationRequestData(
       const jobs = await db().execute({ sql: `SELECT id,status,error FROM generations WHERE id=?`, args: [String(row.generation_id)] });
       const job = jobs.rows[0];
       if (job) return Response.json({ id: job.id, status: job.status, error: job.error ?? undefined }, { status: 202, headers });
+    }
+    /* The request that made this claim died without reaching its catch (the
+       function was killed), or it failed before this version bound claims
+       atomically. Either way it is gone, and it named no job. Every job path
+       binds its claim before any vendor is asked, and a job that was never
+       sent ends at no charge (the janitor refunds it well inside this
+       cutoff). The retry completes the claim instead of waiting for ever. */
+    else if (options.atomicBinding && Number(row.created_at) < now() - STALE_CLAIM_MS) {
+      const settled = await completeUnadmitted(userId, key);
+      if (settled) {
+        settled.headers.set("Idempotency-Replayed", "true");
+        return settled;
+      }
     }
     return Response.json({ error: "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.", pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
   }

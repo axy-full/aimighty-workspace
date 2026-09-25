@@ -278,3 +278,38 @@ test("with atomic binding, a request interrupted before its job existed complete
     expect((await pending.json()).pending).toBe(true);
   });
 });
+
+test("a claim whose request died before its catch, or before claims were bound atomically, completes on retry once that request is gone", async () => {
+  const { withGenerationRequest, generationRequestsReady, generationFingerprint, STALE_CLAIM_MS } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("stale-claims"), async () => {
+    await ready();
+    await generationRequestsReady();
+    // What a killed function leaves behind: the claim, with no job and no answer.
+    const orphan = async (key: string, age: number) => {
+      const fingerprint = generationFingerprint({ method: "POST", path: "/api/generate", body: { prompt: "A studio test" } });
+      await db().execute({ sql: "INSERT INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES('u_test',?,?,?,?)",
+        args: [key, fingerprint, Date.now() - age, Date.now() - age] });
+    };
+    const never = async () => { throw new Error("a replay never runs the request again"); };
+    await orphan("stale-atomic", STALE_CLAIM_MS + 60_000);
+    const repaired = await withGenerationRequest(request("stale-atomic"), "u_test", never, { atomicBinding: true });
+    expect(repaired.status).toBe(409);
+    expect(repaired.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await repaired.json()).error).toContain("Nothing was charged");
+    const replay = await withGenerationRequest(request("stale-atomic"), "u_test", never, { atomicBinding: true });
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+
+    // A claim young enough that its request may still be running stays pending.
+    await orphan("fresh-atomic", 60_000);
+    const fresh = await withGenerationRequest(request("fresh-atomic"), "u_test", never, { atomicBinding: true });
+    expect(fresh.status).toBe(409);
+    expect((await fresh.json()).pending).toBe(true);
+
+    // A route that does not bind atomically cannot prove there is no job: it stays pending.
+    await orphan("stale-legacy", STALE_CLAIM_MS + 60_000);
+    const legacy = await withGenerationRequest(request("stale-legacy"), "u_test", never);
+    expect((await legacy.json()).pending).toBe(true);
+  });
+});
