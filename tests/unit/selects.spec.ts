@@ -50,3 +50,23 @@ test("the archive's own structure: a local header per file, a directory, and an 
   expect(text).toContain("hello");
   expect(text).toContain("world!");
 });
+
+/* A package of approved masters must not outrun the producer's connection:
+   storage is read one chunk per pull, never all at once into memory. */
+test("the zip reads storage only as fast as the download drains, and a cancelled download stops the read", async () => {
+  let pulled = 0, cancelled = false;
+  const master = new ReadableStream<Uint8Array>({
+    pull(c) {
+      pulled++;
+      c.enqueue(new Uint8Array(64 * 1024));
+      if (pulled >= 2000) c.close();
+    },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 });
+  const reader = zipStream([{ name: "SH010_v2.mp4", body: async () => master }]).getReader();
+  for (let i = 0; i < 4; i++) expect((await reader.read()).done).toBe(false);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(pulled).toBeLessThan(8);
+  await reader.cancel();
+  expect(cancelled).toBe(true);
+});

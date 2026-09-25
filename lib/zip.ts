@@ -62,56 +62,77 @@ function dosTime(at: Date): { time: number; date: number } {
   };
 }
 
-/** The whole archive as one stream: local header, bytes, descriptor, per file, then the directory. */
+/**
+ * The whole archive as one stream: local header, bytes, descriptor, per file, then the directory.
+ *
+ * Pull-driven: storage is read one chunk per pull, so the archive advances
+ * only as fast as the response drains. Built in start() it raced ahead of a
+ * producer's connection and piled the approved masters up in memory.
+ */
 export function zipStream(entries: ZipEntry[], at = new Date()): ReadableStream<Uint8Array> {
+  const parts = zipParts(entries, at);
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await parts.next();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch (e) {
+        controller.error(e);
+      }
+    },
+    async cancel() {
+      await parts.return(undefined).catch(() => {});
+    },
+  }, { highWaterMark: 1 });
+}
+
+async function* zipParts(entries: ZipEntry[], at: Date): AsyncGenerator<Uint8Array, void, undefined> {
   const enc = new TextEncoder();
   const { time, date } = dosTime(at);
   const dir: Uint8Array[] = [];
   let offset = 0;
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
+  for (const entry of entries) {
+    const name = enc.encode(entry.name);
+    /* Bit 3 says the sizes follow the data; bit 11 says the name is UTF-8. */
+    const flags = 0x0008 | 0x0800;
+    const local = join(u32(0x04034b50), u16(20), u16(flags), u16(0), u16(time), u16(date), u32(0), u32(0), u32(0), u16(name.length), u16(0), name);
+    yield local;
+    const localAt = offset;
+    offset += local.length;
+
+    let crc = 0; let size = 0;
+    const body = await entry.body();
+    if (body instanceof Uint8Array) {
+      crc = crc32(body); size = body.length;
+      if (size) yield body;
+    } else {
+      const reader = body.getReader();
       try {
-        for (const entry of entries) {
-          const name = enc.encode(entry.name);
-          /* Bit 3 says the sizes follow the data; bit 11 says the name is UTF-8. */
-          const flags = 0x0008 | 0x0800;
-          const local = join(u32(0x04034b50), u16(20), u16(flags), u16(0), u16(time), u16(date), u32(0), u32(0), u32(0), u16(name.length), u16(0), name);
-          controller.enqueue(local);
-          const localAt = offset;
-          offset += local.length;
-
-          let crc = 0; let size = 0;
-          const body = await entry.body();
-          if (body instanceof Uint8Array) {
-            crc = crc32(body); size = body.length;
-            if (size) controller.enqueue(body);
-          } else {
-            const reader = body.getReader();
-            for (;;) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              if (!value?.length) continue;
-              crc = crc32(value, crc); size += value.length;
-              controller.enqueue(value);
-            }
-          }
-          offset += size;
-
-          const desc = join(u32(0x08074b50), u32(crc), u32(size), u32(size));
-          controller.enqueue(desc);
-          offset += desc.length;
-
-          dir.push(join(u32(0x02014b50), u16(20), u16(20), u16(flags), u16(0), u16(time), u16(date),
-            u32(crc), u32(size), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(localAt), name));
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!value?.length) continue;
+          crc = crc32(value, crc); size += value.length;
+          yield value;
         }
-        const central = join(...dir);
-        controller.enqueue(central);
-        controller.enqueue(join(u32(0x06054b50), u16(0), u16(0), u16(dir.length), u16(dir.length), u32(central.length), u32(offset), u16(0)));
-        controller.close();
-      } catch (e) {
-        controller.error(e);
+      } finally {
+        /* A cancelled download stops the storage read too, not only the zip. */
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
       }
-    },
-  });
+    }
+    offset += size;
+
+    const desc = join(u32(0x08074b50), u32(crc), u32(size), u32(size));
+    yield desc;
+    offset += desc.length;
+
+    dir.push(join(u32(0x02014b50), u16(20), u16(20), u16(flags), u16(0), u16(time), u16(date),
+      u32(crc), u32(size), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(localAt), name));
+  }
+  const central = join(...dir);
+  yield central;
+  yield join(u32(0x06054b50), u16(0), u16(0), u16(dir.length), u16(dir.length), u32(central.length), u32(offset), u16(0));
 }
