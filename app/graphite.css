@@ -283,7 +283,9 @@
 .gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
 .gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
 .gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed); border-color: rgba(255, 69, 58, .45); }
-.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); font-size: 10px; letter-spacing: -.12em; }
+.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); }
+/* Paused, not stopped: two bars drawn, so no font turns them into a square. */
+.gx-tile-pause { width: 9px; height: 11px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
 .gx-tile-face[data-face="live"] .gx-tile-glyph { border: 0; }
 .gx-tile-spin { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--gx-hair-strong); border-top-color: var(--gx-accent); animation: gx-spin 1s linear infinite; }
 @keyframes gx-spin { to { transform: rotate(360deg); } }

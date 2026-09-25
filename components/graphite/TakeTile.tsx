@@ -25,7 +25,7 @@ function Chip({ label, tone }: { label: string; tone: ChipTone }) {
 function Face({ face, entry, onFail }: { face: EntryFace; entry: LibraryEntry; onFail: () => void }) {
   if (face === "media" && entry.url && (entry.media === "image" || entry.media === "video"))
     return <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" onFail={onFail} />;
-  const glyph = face === "live" ? <span className="gx-tile-spin" /> : face === "held" ? "❚❚" : face === "failed" ? "!" : face === "audio" ? "♪" : face === "unavailable" ? "" : "▤";
+  const glyph = face === "live" ? <span className="gx-tile-spin" /> : face === "held" ? <span className="gx-tile-pause" /> : face === "failed" ? "!" : face === "audio" ? "♪" : face === "unavailable" ? "" : "▤";
   return <span className="gx-tile-face" data-face={face}><span className="gx-tile-glyph" aria-hidden="true">{glyph}</span></span>;
 }
 
