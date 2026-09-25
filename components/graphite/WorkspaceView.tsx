@@ -9,6 +9,7 @@ import { creditsLabel } from "@/lib/workspace/format";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
+import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
 /**
@@ -296,6 +297,7 @@ function Engines() {
         <span className="cw-dim">Keys are encrypted and never returned. Verify checks access categories and quotes only — it never trains, generates or spends.{owner ? "" : " Keys are the owner’s to change."}</span>
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
+      <ConnectedAccountRow owner={owner} />
       <XaiEngineRow />
       <DeveloperApiRow />
     </>

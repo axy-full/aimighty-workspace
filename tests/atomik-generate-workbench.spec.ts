@@ -76,7 +76,7 @@ async function fixture(page: Page, options: { connected?: boolean; unlim?: boole
       const body = request.postDataJSON();
       posts.push(body);
       if (body.action === "voices")
-        return json({ voices: { voices: [{ id: "voice-nova", type: "preset", name: "Nova", language: "en-US" }, { id: "elem-1", type: "element", name: "My studio voice" }], complete: true, fetchedAt: Date.now() } });
+        return json({ voices: { voices: [{ id: "voice-nova", type: "preset", name: "Nova", language: "en-US" }], complete: true, fetchedAt: Date.now() } });
       unexpected.push(`voice ${body.action}`);
       return json({ error: "No other mutation permitted." }, 409);
     }
@@ -214,7 +214,9 @@ test("the Sound and Video workflows expose declared enum, number and toggle sett
   await expect(settings.getByRole("textbox", { name: "voice id", exact: true })).toHaveCount(0);
   const voice = panel.getByRole("combobox", { name: "Voice", exact: true });
   await expect(voice.locator("option", { hasText: "Nova · en-US" })).toHaveCount(1);
-  await expect(voice.locator("optgroup").nth(1)).toHaveAttribute("label", "Your voices");
+  // Preset voices only: voices made on the account are never listed (the route never returns them).
+  await expect(voice.locator("optgroup")).toHaveCount(1);
+  await expect(voice.locator("optgroup")).toHaveAttribute("label", "Preset voices");
   await voice.selectOption("preset:voice-nova");
   await expect(panel.getByText("requires the setting “variant”.", { exact: false })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Get connected-credit quote", exact: true })).toBeDisabled();

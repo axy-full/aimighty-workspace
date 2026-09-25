@@ -226,7 +226,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
         setNotice(saved.status === "completed" ? (saved.tool.output === "report" ? "The report is ready to save to this project." : originalAsset(saved) ? "The original is ready to save to this project." : "The job completed, but its original is unavailable. Refresh saved jobs before saving it.")
-          : saved.status === "failed" ? "The connected account reported that this job failed." : "Status checked. The saved job remains available here.");
+          : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this job failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -254,7 +254,8 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     } catch (reason) { if (live.current && token === lifecycle.current) setError(reason instanceof Error ? reason.message : "The result could not be saved in this project."); }
     finally { if (token === lifecycle.current) { pending.current = false; if (live.current) setBusy(""); } }
   }
-  const presets = voices?.voices.filter((voice) => voice.type === "preset") ?? [], custom = voices?.voices.filter((voice) => voice.type === "element") ?? [];
+  /* Preset voices only: voices made on the account stay there (standalone rule). */
+  const presets = voices?.voices.filter((voice) => voice.type === "preset") ?? [];
   return <>
     <fieldset className={styles.form} disabled={!capability.owner || !!busy} aria-label={`${definition.label} settings`}>
       <p className={styles.hint} aria-label="Selected tool">{definition.label}: {definition.description} Needs one video from this project; no prompt.</p>
@@ -262,8 +263,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
       {tool === "voice_change" && <label>Voice<select aria-label="Voice" value={input.voiceId ? `${input.voiceType}:${input.voiceId}` : ""} onChange={(e) => { const [type, ...rest] = e.target.value.split(":"); const id = rest.join(":"); const voice = voices?.voices.find((v) => v.type === type && v.id === id); change({ voiceId: voice?.id ?? "", voiceType: voice?.type ?? "preset", voiceName: voice?.name ?? "" }); }}>
         <option value="">{voices ? "Choose a voice" : busy === "voices" ? "Reading voices…" : "Voices not loaded"}</option>
         {presets.length > 0 && <optgroup label="Preset voices">{presets.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
-        {custom.length > 0 && <optgroup label="Your voices">{custom.map((voice) => <option key={`element:${voice.id}`} value={`element:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
-      </select><small className={styles.hint}>{voices ? `${voices.voices.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}` : "The connected account’s voices are read once an hour."}</small></label>}
+      </select><small className={styles.hint}>{voices ? `${presets.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}` : "The connected account’s voices are read once an hour."}</small></label>}
       {tool === "reframe" && <label>Target aspect ratio<select aria-label="Target aspect ratio" value={input.aspectRatio} onChange={(e) => change({ aspectRatio: e.target.value as AspectRatio | "" })}>
         <option value="">Choose an aspect ratio</option>
         {REFRAME_ASPECT_RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratio}</option>)}
@@ -291,7 +291,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
       <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
       {tool === "voice_change" && <button type="button" className="suite-button" disabled={!!busy || !capability.connected} onClick={() => void loadVoices(true)}><RefreshCw size={14} />Reload voices</button>}
     </div>
-    {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+    {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
     {selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
       <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
       <small>{selected.tool.label} · {selected.source.name} · {settingsSummary(selected)}</small>

@@ -7,6 +7,7 @@ import {
   disconnectConsumer,
   finishConsumerRefresh,
   hashConsumerSecret,
+  releaseConsumerRefresh,
   storeAuthorization,
   type ConsumerIdentity,
   type ConsumerTokens,
@@ -30,14 +31,14 @@ const messages: Record<ErrorCode, string> = {
   configuration:
     "The account connection is not configured for this deployment.",
   invalid_state:
-    "This connection attempt expired or was already used. Start again in workspace settings.",
+    "This connection attempt expired or was already used. Start again in Workspace › Engines.",
   session_changed:
     "Your browser session or workspace changed. Start the connection again in the intended workspace.",
   authorization_denied: "Account authorization was not approved.",
   authorization_failed:
-    "The connected account could not complete this connection. Start again in workspace settings.",
+    "The connected account could not complete this connection. Start again in Workspace › Engines.",
   reconnect_required:
-    "Reconnect the account in workspace settings before continuing.",
+    "Reconnect the account in Workspace › Engines before continuing.",
   connection_changed:
     "The account connection changed. Request a new quote before starting a new job; existing jobs require their original connection.",
   connection_busy:
@@ -102,8 +103,11 @@ export function consumerClientMetadata() {
     token_endpoint_auth_method: "none",
   };
 }
+/** Back to Suites › Workspace › Engines, where the connection card reads the
+ * outcome. It rides in the fragment: the shell rewrites the query to its own
+ * params on load but always carries the fragment across. */
 export function consumerCallbackLocation(code: "connected" | ErrorCode) {
-  return `${consumerConfiguration().origin}/settings?higgsfield=${encodeURIComponent(code)}#engines`;
+  return `${consumerConfiguration().origin}/suites?view=workspace&tab=engines#${new URLSearchParams({ higgsfield: code })}`;
 }
 export const consumerSessionHash = hashConsumerSecret;
 
@@ -136,24 +140,38 @@ export async function beginConsumerAuthorization(
   return { url: `${CONSUMER_ISSUER}/oauth/authorize?${params}` };
 }
 
+/** The token endpoint never answered: a network failure, our timeout, or a
+ * server error / rate limit. Distinct from an answer that refuses the grant. */
+class TokenEndpointUnanswered extends Error {}
 async function tokenResponse(
   params: URLSearchParams,
   fetcher: typeof fetch,
 ): Promise<Record<string, unknown>> {
   const abort = new AbortController(),
     timer = setTimeout(() => abort.abort(), 12_000);
+  let answered = false;
   try {
-    const response = await fetcher(TOKEN_ENDPOINT, {
-      method: "POST",
-      redirect: "error",
-      cache: "no-store",
-      signal: abort.signal,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: params.toString(),
-    });
+    let response: Response;
+    try {
+      response = await fetcher(TOKEN_ENDPOINT, {
+        method: "POST",
+        redirect: "error",
+        cache: "no-store",
+        signal: abort.signal,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: params.toString(),
+      });
+    } catch {
+      throw new TokenEndpointUnanswered();
+    }
+    if (response.status >= 500 || response.status === 429) {
+      void response.body?.cancel().catch(() => {});
+      throw new TokenEndpointUnanswered();
+    }
+    answered = true;
     if (
       !response.ok ||
       !response.headers
@@ -188,10 +206,46 @@ async function tokenResponse(
     } finally {
       reader.releaseLock();
     }
-  } catch {
+  } catch (error) {
+    // A body cut off by our own timeout was never fully answered either.
+    if (error instanceof TokenEndpointUnanswered || (answered && abort.signal.aborted))
+      throw new TokenEndpointUnanswered();
     throw new ConsumerOAuthError("authorization_failed");
   } finally {
     clearTimeout(timer);
+  }
+}
+/** Exchange flows keep one answer: anything but a usable token fails the attempt. */
+async function exchangeResponse(params: URLSearchParams, fetcher: typeof fetch) {
+  try {
+    return await tokenResponse(params, fetcher);
+  } catch (error) {
+    if (error instanceof TokenEndpointUnanswered) throw new ConsumerOAuthError("authorization_failed");
+    throw error;
+  }
+}
+
+/**
+ * Which account a token response belongs to: a hash of the ID token's issuer
+ * and subject, or null when there is no usable ID token. The token came
+ * straight from the issuer's token endpoint over TLS (OIDC Core 3.1.3.7), so
+ * the payload is read for its identity claims only; nothing else is trusted
+ * and nothing is stored but the hash.
+ */
+export function consumerSubjectHash(data: Record<string, unknown>, clientId: string): string | null {
+  const token = data.id_token;
+  if (typeof token !== "string" || token.length > 16_384) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[1])) return null;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    if (!claims || typeof claims !== "object" || Array.isArray(claims)) return null;
+    const { iss, sub, aud } = claims as Record<string, unknown>;
+    const audiences = Array.isArray(aud) ? aud : [aud];
+    if (iss !== CONSUMER_ISSUER || typeof sub !== "string" || !sub || sub.length > 512 || !audiences.includes(clientId)) return null;
+    return hashConsumerSecret(`${iss}\n${sub}`);
+  } catch {
+    return null;
   }
 }
 function parseTokens(
@@ -261,7 +315,7 @@ export async function finishConsumerAuthorization(
     /[\x00-\x20\x7f]/.test(code)
   )
     throw new ConsumerOAuthError("authorization_failed");
-  const data = await tokenResponse(
+  const data = await exchangeResponse(
     new URLSearchParams({
       grant_type: "authorization_code",
       client_id: authorization.clientId,
@@ -277,7 +331,8 @@ export async function finishConsumerAuthorization(
     authorization.clientId,
     authorization.redirectUri,
   );
-  if (!(await completeAuthorization(authorization, tokens)))
+  const subject = consumerSubjectHash(data, authorization.clientId);
+  if (!(await completeAuthorization(authorization, tokens, Date.now(), subject)))
     throw new ConsumerOAuthError("session_changed");
 }
 
@@ -286,7 +341,8 @@ export type ConsumerAccess = { accessToken: string; generation: string };
 /**
  * Server-only access snapshot; never serialize it in a route response.
  * Capture generation with a quote, then pass it as expectedGeneration immediately
- * before dispatch/poll. Refresh preserves it; reconnect/disconnect invalidate it.
+ * before dispatch/poll. Refresh preserves it, and so does the same account
+ * signing in again; another account invalidates it.
  * This admission snapshot does not lock out a subsequent owner disconnect.
  */
 export async function getConsumerAccess(
@@ -329,7 +385,13 @@ export async function getConsumerAccess(
       if (!(await finishConsumerRefresh(claim, tokens)))
         throw new ConsumerOAuthError("reconnect_required");
       return { accessToken: tokens.accessToken, generation: claim.generation };
-    } catch {
+    } catch (error) {
+      // No answer from the account is not a refusal: keep the grant, so jobs
+      // pinned to it are not stranded, and let the next access try again.
+      if (error instanceof TokenEndpointUnanswered) {
+        await releaseConsumerRefresh(claim).catch(() => {});
+        throw new ConsumerOAuthError("unavailable");
+      }
       await finishConsumerRefresh(claim, null).catch(() => {});
       throw new ConsumerOAuthError("reconnect_required");
     }

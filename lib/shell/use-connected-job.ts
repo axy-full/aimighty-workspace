@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CONNECTED_GENERATION_ENDPOINT, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
+  CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -58,7 +58,7 @@ export function useConnectedJob(draftId: string | null) {
         const job = await call(connectedStatusRequest(draftId, state.job.id));
         if (stop) return;
         if (job.status === "completed") setState({ phase: "done", job });
-        else if (job.status === "failed") setState({ phase: "failed", job, error: "The connected account reported this job as failed. Failed renders are not billed." });
+        else if (job.status === "failed") setState({ phase: "failed", job, error: connectedFailureText(job) });
         else if (connectedRecoverable(job)) setState({ phase: "running", job });
         else setState({ phase: "done", job });
       } catch { /* a missed poll is retried on the next tick */ }
@@ -74,7 +74,7 @@ export function useConnectedJob(draftId: string | null) {
     setState({ phase: "submitting", job: now.job });
     try {
       const job = await call(connectedSubmitRequest(draftId, now.job));
-      setState(job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: "The connected account reported this job as failed. Failed renders are not billed." } : { phase: "running", job });
+      setState(job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: connectedFailureText(job) } : { phase: "running", job });
     } catch (error) {
       setState({ phase: "failed", job: now.job, error: error instanceof Error ? error.message : "The job could not be submitted." });
     }

@@ -51,7 +51,7 @@ import {
 import { loadConnectedVoices } from "./voices-cache";
 import { describeConsumerVoiceToolSource, resolveConsumerVoiceToolSource, resolveConsumerVoiceToolImport } from "./voice-tool-sources";
 import { sameConsumerValue } from "./video-contract";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { CONSUMER_ORIGINAL_SECONDS, collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
 
@@ -132,6 +132,9 @@ export function assertVoiceToolEnabled(input: Pick<ConsumerVoiceToolInput, "tool
 export async function quoteConsumerVoiceTool(userId: string, draftId: string, input: ConsumerVoiceToolInput, idempotencyKey: string) {
   const normalized = parseConsumerVoiceToolInput(input);
   assertVoiceToolEnabled(normalized);
+  // A voice the owner made on the account is its own library, never Particl's.
+  if (normalized.voice && normalized.voice.type !== "preset")
+    throw new VoiceToolError("invalid_input", "Choose one of the account's preset voices.");
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
@@ -145,6 +148,10 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
   const access = await connected(userId);
   const described = await describeConsumerVoiceToolSource(normalized);
   const source = await resolveConsumerVoiceToolSource(normalized);
+  // A voice change or dub is as long as its source; one longer than Particl
+  // can keep would be paid for and never collected.
+  if (requireVoiceTool(normalized.tool).output === "video" && source.durationSeconds !== undefined && source.durationSeconds > CONSUMER_ORIGINAL_SECONDS)
+    throw new VoiceToolError("invalid_input", `Choose a video up to ${CONSUMER_ORIGINAL_SECONDS / 60} minutes long; a longer result cannot be kept.`);
   // Reframe is priced from the stored duration; an unknown or over-long one stops here.
   if (normalized.tool === "reframe") consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000", { durationSeconds: source.durationSeconds });
   const quote = await getConsumerVoiceToolQuote(access.accessToken, normalized, source, {
@@ -282,7 +289,15 @@ export async function pollConsumerVoiceTool(scope: ConsumerJobScope) {
       const terminal = consumerVoiceToolOriginalResult(response.raw, providerJobId);
       if (terminal) {
         await connected(scope.userId, claim.job.connectionGeneration);
-        const original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+        let original;
+        try {
+          original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+        } catch (error) {
+          // Refused the same way on every poll: settle once, receipt kept.
+          if (!uncollectableOriginal(error)) throw error;
+          const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+          return { job: await consumerVoiceToolView(settled ?? (await ownedJob(scope))), collection: { code: error.code, message: error.message }, pollAfterSeconds };
+        }
         const completed = await completeConsumerJob({
           ...scope,
           leaseToken: claim.leaseToken,

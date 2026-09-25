@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { ManagementCard, ManagementNotice } from "./ManagementPage";
 import ConsumerVideoVerification from "./ConsumerVideoVerification";
 
-type Connection = { connected: boolean; requiresReconnect: boolean; connectedAt?: number; expiresAt?: number };
+type Connection = { connected: boolean; requiresReconnect: boolean; connectedAt?: number; expiresAt?: number; capacity?: { mine?: unknown[] } | null };
 type Discovery = { discoveryOnly: true; capabilitiesVerified: false; tools: { name: string; description?: string; inputSchema: Record<string, unknown> }[]; summary: Record<string, string[]>; protocolVersion: string };
 type Qualification = { readOnly: true; results: { tool: string; arguments: Record<string, unknown>; result?: unknown; error?: unknown }[] };
 const labels: Record<string, string> = { marketingVideo: "Marketing Video", brandExtraction: "Brand extraction", adReference: "Ad references", virality: "Virality Predictor", workspace: "Connected workspaces", uploads: "Media uploads", jobs: "Jobs and reports", pricing: "Pricing" };
@@ -23,6 +23,9 @@ export default function HiggsfieldConsumerConnection() {
   const [notice, setNotice] = useState("");
   const outcome = useSyncExternalStore(subscribeLocation, connectionOutcome, () => "");
   const [dismissedOutcome, setDismissedOutcome] = useState(false);
+  /* A sign-in or disconnect while jobs run is confirmed once: they are collected under the grant they started on. */
+  const [confirm, setConfirm] = useState<"connect" | "disconnect" | null>(null);
+  const running = Array.isArray(data?.capacity?.mine) ? data.capacity.mine.length : 0;
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
   const [qualification, setQualification] = useState<Qualification | null>(null);
   const [analysisQualification, setAnalysisQualification] = useState<Qualification | null>(null);
@@ -30,6 +33,8 @@ export default function HiggsfieldConsumerConnection() {
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   async function act(kind: "connect" | "discover" | "qualify" | "analysis" | "disconnect") {
     if (pending.current) return;
+    if ((kind === "connect" || kind === "disconnect") && data?.connected && running && confirm !== kind) { setConfirm(kind); return; }
+    setConfirm(null);
     pending.current = true; setBusy(kind); setProblem(""); setNotice(""); setDismissedOutcome(true);
     try {
       const response = await scopedFetch(`/api/higgsfield/consumer/${kind === "connect" ? "connect" : kind === "discover" ? "capabilities" : kind === "qualify" ? "qualification" : kind === "analysis" ? "analysis-qualification" : "connection"}`, { method: kind === "disconnect" ? "DELETE" : "POST" });
@@ -60,13 +65,14 @@ export default function HiggsfieldConsumerConnection() {
       <p className="text-sm text-mute">{data?.connected && !data.requiresReconnect ? "Account connected to this workspace owner." : data?.requiresReconnect ? "Reconnect your account to restore access." : "Sign in to the account to authorize Particl. You will see the permissions before you approve."}</p>
       <p className="text-xs text-dim leading-relaxed">The connection requests your profile, email and permission to retain access. Connecting and checking available tools do not start paid jobs. Media operations require a separate reviewed request.</p>
       <div className="flex flex-wrap gap-3">
-        <button type="button" className="management-button primary" disabled={!!busy || !data} onClick={() => void act("connect")}>{busy === "connect" ? "Opening sign-in…" : data?.connected ? "Reconnect account" : "Connect account"}</button>
+        <button type="button" className="management-button primary" disabled={!!busy || !data} onClick={() => void act("connect")}>{busy === "connect" ? "Opening sign-in…" : confirm === "connect" ? "Reconnect anyway" : data?.connected ? "Reconnect account" : "Connect account"}</button>
         {data?.connected && !data.requiresReconnect && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("discover")}>{busy === "discover" ? "Checking workflows…" : "Check available workflows"}</button>}
         {data?.connected && !data.requiresReconnect && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("qualify")}>{busy === "qualify" ? "Checking account options…" : "Check account options and pricing"}</button>}
         {data?.connected && !data.requiresReconnect && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("analysis")}>{busy === "analysis" ? "Checking analysis models…" : "Check analysis model definitions"}</button>}
-        {(data?.connected || data?.requiresReconnect) && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("disconnect")}>{busy === "disconnect" ? "Disconnecting…" : "Disconnect marketing account"}</button>}
+        {(data?.connected || data?.requiresReconnect) && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("disconnect")}>{busy === "disconnect" ? "Disconnecting…" : confirm === "disconnect" ? "Disconnect anyway" : "Disconnect marketing account"}</button>}
         {error && <button type="button" className="management-button" disabled={!!busy} onClick={() => void refresh()}>Retry connection status</button>}
       </div>
+      {confirm && <ManagementNotice error>{running} of your jobs {running === 1 ? "is" : "are"} still running. Sign back in with the same account to keep collecting {running === 1 ? "it" : "them"}.</ManagementNotice>}
       {(problem || error) && <ManagementNotice error>{problem || error}</ManagementNotice>}
       {!dismissedOutcome && outcome && <ManagementNotice error={outcome !== "connected"}>{outcome === "connected" ? "Account connected. Check available workflows to continue setup." : "The account connection was not completed. Sign in to the same Particl workspace and try connecting again."}</ManagementNotice>}
       {notice && <p role="status" className="text-sm">{notice}</p>}

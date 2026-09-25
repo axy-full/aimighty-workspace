@@ -42,6 +42,8 @@ export type ConnectedJob = {
   providerReceipt?: unknown;
   originalAvailable?: boolean;
   originalAvailability?: string;
+  /** Why a failed job failed: the account refused it, or it finished but its result could not be kept. */
+  failureCode?: string | null;
   createdAt: number;
 };
 
@@ -81,6 +83,13 @@ export function connectedStatusRequest(draftId: string, id: string) {
   return { action: "status" as const, draftId, id };
 }
 
+/** What a failed job means for the owner: a refused render is not billed; a
+ * result the account finished but Particl could not keep may have been. */
+export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
+  return job.failureCode === "invalid_result"
+    ? "The account finished this job, but its result could not be kept. Its receipt is saved."
+    : "The connected account reported this job as failed. Failed renders are not billed.";
+}
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);
 

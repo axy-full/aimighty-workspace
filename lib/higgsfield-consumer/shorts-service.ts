@@ -39,6 +39,7 @@ import {
 } from "./jobs";
 import { getConsumerShortsQuote, submitConsumerShorts, readConsumerShortsSession, readConsumerShortsClips, readShortsPresets } from "./mcp";
 import {
+  SHORTS_LISTED_SOURCES,
   ShortsStudioError,
   consumerShortsAcknowledgement,
   consumerShortsParams,
@@ -54,7 +55,7 @@ import { consumerVoiceToolFailureResult, consumerVoiceToolOriginalResult } from 
 import { describeConsumerShortsSource, resolveConsumerShortsImport, resolveConsumerShortsSource } from "./shorts-sources";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { sameConsumerValue } from "./video-contract";
-import { ConsumerOriginalError, collectConsumerVideoOriginal, consumerClipKey, consumerOriginalGenerationId } from "./video-original";
+import { ConsumerOriginalError, collectConsumerVideoOriginal, consumerClipKey, consumerOriginalGenerationId, uncollectableOriginal } from "./video-original";
 import { ConsumerVideoServiceError } from "./video-service";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
@@ -174,6 +175,9 @@ const sameInput = (a: unknown, b: ConsumerShortsInput) => sameConsumerValue(pars
 const PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 export async function quoteConsumerShorts(userId: string, draftId: string, input: ConsumerShortsInput, idempotencyKey: string) {
   const normalized = parseConsumerShortsInput(input);
+  // A style the owner saved on the account is its own library, never Particl's.
+  if (!SHORTS_LISTED_SOURCES.includes(normalized.preset.source))
+    throw new ShortsStudioError("invalid_input", "Choose one of the listed styles.");
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     if (previous.workflow !== "shorts" || !sameInput(JSON.parse(previous.payloadJson).input, normalized)) throw new ConsumerJobError("idempotency_conflict");
@@ -308,6 +312,8 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
     const statuses = await readConsumerShortsClips(access.accessToken, session.jobIds, wallet);
     const outcomes: ShortsClipOutcome[] = [];
     let pending = false;
+    /** Why a completed clip is not filed yet (storage full, busy, …), shown to the owner. */
+    let collection: { code: string; message: string } | undefined;
     for (const [index, { jobId, raw }] of statuses.entries()) {
       const failure = consumerVoiceToolFailureResult(raw, jobId);
       if (failure) { outcomes.push({ index, providerJobId: jobId, state: "failed", reason: failure.slice(0, 40) }); continue; }
@@ -318,16 +324,24 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
         const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { clip: { index, providerJobId: jobId } });
         outcomes.push({ index, providerJobId: jobId, state: "collected", original: original as unknown as Record<string, unknown> });
       } catch (error) {
-        // A clip deleted from the library before settlement is settled as such;
-        // any other collection problem is retried on the next poll.
-        if (error instanceof ConsumerOriginalError && error.code === "deleted") outcomes.push({ index, providerJobId: jobId, state: "failed", reason: "deleted" });
-        else pending = true;
+        // A clip deleted from the library, or one whose result can never be
+        // kept (over the size limit, not a valid video), is settled as failed.
+        // Anything that can pass later (storage full, busy, time limit) is
+        // retried on the next poll, and the reason goes back to the owner.
+        if (error instanceof ConsumerOriginalError && (error.code === "deleted" || uncollectableOriginal(error)))
+          outcomes.push({ index, providerJobId: jobId, state: "failed", reason: error.code });
+        else {
+          pending = true;
+          collection ??= error instanceof ConsumerOriginalError || error instanceof ConsumerOAuthError
+            ? { code: error.code, message: error.message }
+            : { code: "unavailable", message: "A finished clip could not be saved yet. It is tried again on the next check." };
+        }
       }
     }
     progress.collected = outcomes.filter((clip) => clip.state === "collected").length;
     if (pending) {
       pollAfterSeconds = 15;
-      return { job: await consumerShortsView(await ownedJob(scope), progress), pollAfterSeconds };
+      return { job: await consumerShortsView(await ownedJob(scope), progress), ...(collection ? { collection } : {}), pollAfterSeconds };
     }
     await connected(scope.userId, claim.job.connectionGeneration);
     const settlement = shortsSettlement(outcomes);

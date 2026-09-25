@@ -61,7 +61,7 @@ import { loadMarketingTemplateCatalogue, loadMarketingTemplateCosts } from "./ma
 import { resolveConsumerMarketingTemplateSource, resolveConsumerMarketingTemplateImport } from "./marketing-template-sources";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { sameConsumerValue } from "./video-contract";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
 
@@ -327,7 +327,15 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
     if (terminal) {
       await connected(scope.userId, claim.job.connectionGeneration);
       const snapshot = JSON.parse(claim.job.payloadJson) as Snapshot;
-      const original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+      let original;
+      try {
+        original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+      } catch (error) {
+        // Refused the same way on every poll: settle once, receipt kept.
+        if (!uncollectableOriginal(error)) throw error;
+        const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+        return { job: await consumerMarketingTemplateView(settled ?? (await ownedTemplateJob(scope))), collection: { code: error.code, message: error.message }, pollAfterSeconds };
+      }
       const completed = await completeConsumerJob({
         ...scope,
         leaseToken: claim.leaseToken,

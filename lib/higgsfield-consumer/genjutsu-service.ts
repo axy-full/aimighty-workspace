@@ -38,7 +38,7 @@ import {
   resolveConsumerGenjutsuSources,
   resolveConsumerMediaImport,
 } from "./genjutsu-sources";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import {
   consumerOriginalAvailability,
   type ConsumerOriginalAvailability,
@@ -382,10 +382,23 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
       // authorize collection under a replacement connection.
       await connected(scope.userId, claim.job.connectionGeneration);
-      const original = await collectConsumerVideoOriginal(
-        claim.job,
-        terminal.url,
-      );
+      let original;
+      try {
+        original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+      } catch (error) {
+        // Refused the same way on every poll: settle once, receipt kept.
+        if (!uncollectableOriginal(error)) throw error;
+        const settled = await failConsumerPoll({
+          ...scope,
+          leaseToken: claim.leaseToken,
+          failureCode: "invalid_result",
+        });
+        return {
+          job: await consumerGenjutsuView(settled ?? (await ownedGenjutsu(scope))),
+          collection: { code: error.code, message: error.message },
+          pollAfterSeconds,
+        };
+      }
       const providerResult = { model: params.model };
       const completed = await completeConsumerJob({
         ...scope,

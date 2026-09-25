@@ -446,6 +446,40 @@ test("a completed reconnect invalidates old quote generations before a replaceme
   expect(calls).toBe(1);
 });
 
+test("the same account signing in again keeps its jobs' grant; another account, or one whose identity is unknown, does not", async () => {
+  const { oauth, store } = await modules(),
+    id = fresh(),
+    clientId = oauth.consumerConfiguration().clientId;
+  const idToken = (sub: string, claims: Record<string, unknown> = {}) =>
+    ["e30", Buffer.from(JSON.stringify({ iss: oauth.CONSUMER_ISSUER, sub, aud: clientId, ...claims })).toString("base64url"), "signature"].join(".");
+  const signIn = async (token?: string) => {
+    const flow = await start(id);
+    await oauth.finishConsumerAuthorization(id, flow.session, flow.params, asFetch(async () =>
+      Response.json({ access_token: "access-private-abc", refresh_token: "refresh-private-xyz", expires_in: 3600, token_type: "Bearer", ...(token ? { id_token: token } : {}) })));
+    return (await oauth.getConsumerAccess(id.workspaceId, id.userId))!.generation;
+  };
+  const first = await signIn(idToken("user_a"));
+  // Reconnect (after a refused refresh, or from the Reconnect button) with the same account.
+  expect(await signIn(idToken("user_a"))).toBe(first);
+  // Disconnect, then the same account again: its running jobs resume.
+  await store.disconnectConsumer(id);
+  expect(await oauth.getConsumerAccess(id.workspaceId, id.userId, { expectedGeneration: first })).toBeNull();
+  expect(await signIn(idToken("user_a"))).toBe(first);
+  // Another account can never read or spend under the first one's jobs.
+  const other = await signIn(idToken("user_b"));
+  expect(other).not.toBe(first);
+  await expect(oauth.getConsumerAccess(id.workspaceId, id.userId, { expectedGeneration: first })).rejects.toMatchObject({ code: "connection_changed" });
+  // No usable identity claim: the old behaviour, a new grant every time.
+  const unknown = await signIn();
+  expect(unknown).not.toBe(other);
+  expect(await signIn()).not.toBe(unknown);
+  // Only the issuer's own claims about this client identify an account; the hash is all that is kept.
+  expect(oauth.consumerSubjectHash({ id_token: idToken("user_a") }, clientId)).toMatch(/^[a-f0-9]{64}$/);
+  expect(oauth.consumerSubjectHash({ id_token: idToken("user_a", { aud: [clientId, "other"] }) }, clientId)).toMatch(/^[a-f0-9]{64}$/);
+  for (const token of [idToken("user_a", { iss: "https://issuer.example" }), idToken("user_a", { aud: "another-client" }), idToken(""), "not-a-token", 42])
+    expect(oauth.consumerSubjectHash({ id_token: token }, clientId)).toBeNull();
+});
+
 test("routine refresh preserves the quote generation and excludes competing refresh claims", async () => {
   const { oauth, store } = await modules(),
     flow = await connected(Date.now() + 1000);
@@ -537,12 +571,22 @@ test("disconnect and reconnect during refresh reject the old result without clea
     } else await store.disconnectConsumer(flow.id);
     respond(tokenResponse());
     await expect(pending).rejects.toMatchObject({ code: "reconnect_required" });
-    await expect(
-      oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
-        expectedGeneration: snapshot.generation,
-        fetch: fetcher,
-      }),
-    ).rejects.toMatchObject({ code: "connection_changed" });
+    // Another account's sign-in replaces the grant; a disconnect keeps the
+    // generation for the same account to resume, but nothing reads meanwhile.
+    if (reconnect)
+      await expect(
+        oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+          expectedGeneration: snapshot.generation,
+          fetch: fetcher,
+        }),
+      ).rejects.toMatchObject({ code: "connection_changed" });
+    else
+      expect(
+        await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+          expectedGeneration: snapshot.generation,
+          fetch: fetcher,
+        }),
+      ).toBeNull();
     const current = await oauth.getConsumerAccess(
       flow.id.workspaceId,
       flow.id.userId,
@@ -562,23 +606,53 @@ test("disconnect and reconnect during refresh reject the old result without clea
   }
 });
 
-test("ambiguous refresh and malformed refresh token require reconnect without replay", async () => {
-  const { oauth } = await modules();
+test("an unanswered refresh keeps the grant and retries; a refused or malformed one requires reconnect without replay", async () => {
+  const { oauth, store } = await modules();
+  // No answer (network failure, 5xx, rate limit): the grant and its jobs'
+  // generation are kept, the lease is released, and the next access retries
+  // with the saved refresh token.
+  for (const unanswered of [
+    () => Promise.reject(new Error("secret lost acknowledgement")),
+    () => Promise.resolve(new Response("upstream private detail", { status: 503 })),
+    () => Promise.resolve(new Response("slow down", { status: 429 })),
+  ]) {
+    const flow = await connected(Date.now() + 1000);
+    const before = await store.claimConsumerAccess(flow.id, Date.now() - 120_000);
+    if (before.kind !== "ready") throw new Error("Fixture access unavailable");
+    const bodies: string[] = [];
+    let calls = 0;
+    const fetcher = asFetch(async (_url, init) => {
+      bodies.push(String(init?.body));
+      return ++calls === 1 ? unanswered() : tokenResponse();
+    });
+    const error = await oauth
+      .getConsumerAccess(flow.id.workspaceId, flow.id.userId, { expectedGeneration: before.generation, fetch: fetcher })
+      .catch((caught) => caught);
+    expect(error).toMatchObject({ code: "unavailable", status: 503 });
+    expect(error.message).not.toContain("private");
+    expect(await oauth.getConsumerConnection(flow.id)).toMatchObject({ connected: true, requiresReconnect: false });
+    expect(
+      await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, { expectedGeneration: before.generation, fetch: fetcher }),
+    ).toEqual({ accessToken: "access-private-abc", generation: before.generation });
+    expect(calls).toBe(2);
+    for (const body of bodies) expect(new URLSearchParams(body).get("refresh_token")).toBe(flow.tokens.refreshToken);
+  }
+  // An answer that refuses the grant, or one that is malformed, ends it once.
   for (const response of [
-    null,
-    Response.json({
-      access_token: "new-token",
-      expires_in: 3600,
-      token_type: "Bearer",
-      refresh_token: "",
-    }),
+    () => Response.json({ error: "invalid_grant" }, { status: 400 }),
+    () =>
+      Response.json({
+        access_token: "new-token",
+        expires_in: 3600,
+        token_type: "Bearer",
+        refresh_token: "",
+      }),
   ]) {
     const flow = await connected(Date.now() + 1000);
     let calls = 0;
     const fetcher = asFetch(async () => {
       calls++;
-      if (!response) throw new Error("secret lost acknowledgement");
-      return response;
+      return response();
     });
     await expect(
       oauth.getConsumerAccessToken(
@@ -629,17 +703,27 @@ test("a validated refresh may retain an omitted refresh token and its original s
   }
 });
 
-test("expired refresh lease cannot be reclaimed and disconnect cannot be undone by late rotation", async () => {
+test("an expired refresh lease is taken over with the saved grant, its late holder cannot finish, and disconnect cannot be undone by late rotation", async () => {
   const { store, oauth } = await modules(),
     flow = await connected(Date.now() + 1000);
   const access = await store.claimConsumerAccess(flow.id);
   expect(access.kind).toBe("refresh");
-  expect(
-    await store.claimConsumerAccess(
-      flow.id,
-      Date.now() + store.REFRESH_LEASE_TTL + 1,
-    ),
-  ).toEqual({ kind: "reconnect" });
+  // The holder died mid-refresh: the next access retries with the saved
+  // refresh token under a new lease instead of discarding the grant.
+  const takeover = await store.claimConsumerAccess(
+    flow.id,
+    Date.now() + store.REFRESH_LEASE_TTL + 1,
+  );
+  expect(takeover.kind).toBe("refresh");
+  if (takeover.kind === "refresh" && access.kind === "refresh") {
+    expect(takeover.claim.lease).not.toBe(access.claim.lease);
+    expect(takeover.claim.generation).toBe(access.claim.generation);
+    expect(takeover.claim.tokens.refreshToken).toBe(flow.tokens.refreshToken);
+  }
+  expect(await oauth.getConsumerConnection(flow.id)).toMatchObject({
+    connected: true,
+    requiresReconnect: false,
+  });
   if (access.kind === "refresh")
     expect(
       await store.finishConsumerRefresh(access.claim, {
@@ -782,6 +866,9 @@ async function routeFixture() {
   let starts = 0,
     disconnects = 0,
     limit = false;
+  const held = "33333333-3333-4333-8333-333333333333",
+    asides: { userId: string; id: string }[] = [],
+    limits: string[] = [];
   const dependencies: Record<string, unknown> = {
     "next/headers": {
       cookies: async () => ({ get: () => ({ value: "session" }) }),
@@ -791,10 +878,20 @@ async function routeFixture() {
     "@/lib/workbench/request-scope": scope,
     "@/lib/accountDb": {
       AccountError: account.AccountError,
-      takeAccountLimit: async (_key: string, count: number, window: number) => {
-        expect(count).toBe(5);
-        expect(window).toBe(300_000);
+      takeAccountLimit: async (key: string, count: number, window: number) => {
+        limits.push(key);
+        if (key.startsWith("higgsfield-consumer-connect:")) {
+          expect(count).toBe(5);
+          expect(window).toBe(300_000);
+        }
         if (limit) throw new account.AccountError("Too many requests.", 429);
+      },
+    },
+    "@/lib/higgsfield-consumer/jobs": {
+      consumerCapacity: async (userId: string) => ({ limit: 4, active: 1, mine: [{ id: held, userId }] }),
+      setAsideConsumerJob: async (input: { userId: string; id: string }) => {
+        asides.push(input);
+        return input.id === held;
       },
     },
     "@/lib/higgsfield-consumer/developer-api": {
@@ -848,6 +945,9 @@ async function routeFixture() {
     set: (value: TenantStore) => (store = value),
     original: () => store,
     counts: () => ({ starts, disconnects }),
+    held,
+    asides,
+    limits,
     limit: () => {
       limit = true;
     },
@@ -856,6 +956,7 @@ async function routeFixture() {
       method: string,
       captured?: string,
       origin?: string,
+      body?: unknown,
     ) =>
       routes[route][method](
         new Request(
@@ -865,12 +966,35 @@ async function routeFixture() {
             headers: {
               ...(captured ? { "X-Workbench-Scope": captured } : {}),
               ...(origin ? { origin } : {}),
+              ...(body === undefined ? {} : { "Content-Type": "application/json" }),
             },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           },
         ),
       ),
   };
 }
+test("the connection read carries the owner's slot holders, and set-aside is an owner-only, scoped ledger action", async () => {
+  const route = await routeFixture(),
+    original = route.original(),
+    scope = "particl-active-ws-owner";
+  const read = await route.request("connection", "GET", scope);
+  expect(read.status).toBe(200);
+  expect(await read.json()).toEqual({ connected: false, requiresReconnect: false, capacity: { limit: 4, active: 1, mine: [{ id: route.held, userId: "owner" }] } });
+  const aside = (id: unknown, captured = scope) => route.request("connection", "POST", captured, undefined, { action: "set-aside", id });
+  expect((await aside("not-a-job")).status).toBe(400);
+  expect((await aside("44444444-4444-4444-8444-444444444444")).status).toBe(409);
+  const done = await aside(route.held);
+  expect(done.status).toBe(200);
+  expect(await done.json()).toMatchObject({ capacity: { limit: 4 } });
+  expect(route.asides).toEqual([{ userId: "owner", id: "44444444-4444-4444-8444-444444444444" }, { userId: "owner", id: route.held }]);
+  expect(route.limits.filter((key) => key.endsWith(":set-aside"))).toHaveLength(2);
+  expect((await aside(route.held, "stale")).status).toBe(409);
+  route.set({ ...original, user: { ...original.user!, owner: false } });
+  expect((await aside(route.held)).status).toBe(403);
+  expect(route.asides).toHaveLength(2);
+});
+
 test("real route guards reject stale scope, cross-origin, bearer tokens and nonowners before starting or disconnecting", async () => {
   const route = await routeFixture(),
     original = route.original(),
@@ -901,4 +1025,10 @@ test("real route guards reject stale scope, cross-origin, bearer tokens and nono
   route.limit();
   expect((await route.request("connect", "POST", scope)).status).toBe(429);
   expect(route.counts()).toEqual({ starts: 1, disconnects: 1 });
+});
+
+test("the sign-in callback returns to Suites › Workspace › Engines with its outcome, never the legacy settings page", async () => {
+  const { oauth } = await modules();
+  expect(oauth.consumerCallbackLocation("connected")).toBe("https://particl.example/suites?view=workspace&tab=engines#higgsfield=connected");
+  expect(oauth.consumerCallbackLocation("authorization_denied")).toBe("https://particl.example/suites?view=workspace&tab=engines#higgsfield=authorization_denied");
 });

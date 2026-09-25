@@ -125,15 +125,14 @@ function VoicePicker({ kinds, required, voices, error, disabled, type, id, onCha
   kinds: ("preset" | "element")[]; required: boolean; voices: ConnectedVoices | null; error: string; disabled: boolean; type: string; id: string;
   onChange: (next: { type: "preset" | "element"; id: string } | null) => void; onRefresh: () => void;
 }) {
-  const usable = voices?.voices.filter((voice) => kinds.includes(voice.type)) ?? [];
-  const presets = usable.filter((voice) => voice.type === "preset"), custom = usable.filter((voice) => voice.type === "element");
+  /* Preset voices only: voices made on the account stay there (standalone rule). */
+  const usable = voices?.voices.filter((voice) => voice.type === "preset" && kinds.includes(voice.type)) ?? [];
   const value = type && id ? `${type}:${id}` : "";
   const known = !value || usable.some((voice) => `${voice.type}:${voice.id}` === value);
   return <div className={styles.settings} role="group" aria-label="Voice">
     <label>Voice<select aria-label="Voice" disabled={disabled || !voices} value={known ? value : ""} onChange={(e) => { const [kind, ...rest] = e.target.value.split(":"); const voice = usable.find((v) => v.type === kind && v.id === rest.join(":")); onChange(voice ? { type: voice.type, id: voice.id } : null); }}>
       <option value="">{voices ? (required ? "Choose a voice" : "Model default voice") : error ? "Voices unavailable" : "Reading voices…"}</option>
-      {presets.length > 0 && <optgroup label="Preset voices">{presets.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
-      {custom.length > 0 && <optgroup label="Your voices">{custom.map((voice) => <option key={`element:${voice.id}`} value={`element:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
+      {usable.length > 0 && <optgroup label="Preset voices">{usable.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
     </select><small>{error || (voices ? `${usable.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}${required ? " · Required" : ""}` : "The connected account’s voices are read once an hour.")}</small></label>
     <button type="button" className="suite-button" disabled={disabled} onClick={onRefresh}><RefreshCw size={14} />Reload voices</button>
   </div>;
@@ -327,7 +326,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save to this project." : "The generation completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? "The connected account reported that this generation failed." : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save to this project." : "The generation completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this generation failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -462,7 +461,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
             <button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void refresh(true, true)}>Reload catalogue</button>
           </div>}
           {voiceTool && <div className={styles.actions}><button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh(true)}><RefreshCw size={14} />Refresh saved jobs</button></div>}
-          {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+          {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
           {!!missing.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another generation.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missing[0])}>Recover earlier submission</button></div>}
           {!voiceTool && selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
             <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>

@@ -304,7 +304,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save as a variant." : "The template run completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? "The connected account reported that this template run failed." : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save as a variant." : "The template run completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this template run failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -348,7 +348,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
         <button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14} />Refresh saved template jobs</button>
       </div>
-      {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+      {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
       {!!missing.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another template run.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missing[0])}>Recover earlier submission</button></div>}
       {selected?.status === "quoted" && <div className={styles.quote} aria-label="Template quote">
         <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>

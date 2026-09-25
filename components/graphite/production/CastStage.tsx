@@ -195,7 +195,9 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
       const { build: out } = await call<{ build: { state: string; element?: ConnectedElement | null; reason?: string } }>({ action: "elements-create", name: entry.name.trim().slice(0, 32), category: entryCategory(entry), description: entry.description.slice(0, 1000), sources: [{ genId }], projectId: latest.current.id });
       if (out.state === "refused") throw new Error(`The account refused: ${out.reason}`);
       if (out.element) { setEntry(entry.id, (e) => ({ ...e, elementId: out.element!.elementId })); void editor.ensureSaved(); }
-      toast(out.element ? `${entry.name} is a reference element: ${elementToken(out.element.elementId)}` : "The account accepted the element; it appears below once it lists it.");
+      toast(out.element ? `${entry.name} is a reference element: ${elementToken(out.element.elementId)}`
+        : out.state === "uncertain" ? "Sent, but the account’s answer was lost. It is not sent again."
+        : "Accepted without an id yet. Listed once the account shows an element by this name.");
       void call<{ available: boolean; elements: ConnectedElement[] }>({ action: "elements" }).then(setElements).catch(() => undefined);
     } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The element could not be saved." })); }
     finally { setWorking((w) => ({ ...w, [k]: "" })); }
