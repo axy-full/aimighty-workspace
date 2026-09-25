@@ -2,8 +2,13 @@ import { parseScreenplay, type ScriptScene } from "./screenplay";
 import { uid, type CanvasNode, type Project } from "./studio";
 import { PROJECT_LIMITS, limitText } from "./project-limits";
 
-/** The lowest y a new scene node may take: the project schema caps positions at 20,000. */
-const SCENE_FLOOR = 20000;
+/** Scene nodes fill a 4-wide grid from y 1,030 down; the project schema caps positions at 20,000, so a
+ * grid that reaches the floor continues in a new block to its right instead of stacking on its last row. */
+const POSITION_LIMIT = 20000, SCENE_ROWS = Math.floor((POSITION_LIMIT - 1030) / 290) + 1, SCENE_BLOCK = SCENE_ROWS * 4;
+const scenePosition = (index: number) => {
+  const block = Math.floor(index / SCENE_BLOCK), at = index % SCENE_BLOCK;
+  return { x: Math.min(POSITION_LIMIT, 50 + block * 1400 + (at % 4) * 350), y: 1030 + Math.floor(at / 4) * 290 };
+};
 
 export function sceneCoverageRequest(
   project: Project,
@@ -108,8 +113,7 @@ export function buildScreenplayNodes(
         pageStart: scene.pageStart,
         pageEnd: scene.pageEnd,
       },
-      x: 50 + (index % 4) * 350,
-      y: Math.min(SCENE_FLOOR, 1030 + Math.floor(index / 4) * 290),
+      ...scenePosition(index),
       width: 300,
       linked: [],
     };

@@ -154,8 +154,12 @@ test("a large scene batch stays inside the project's position bounds and saves",
   expect(scenes).toHaveLength(300);
   p.nodes = buildScreenplayNodes(p, scenes);
   expect(p.nodes).toHaveLength(300);
-  expect(Math.max(...p.nodes.map((n) => n.y))).toBe(20000);
+  expect(Math.max(...p.nodes.map((n) => n.y))).toBeLessThanOrEqual(20000);
   expect(saveSchema.safeParse({ project: p, revision: 0 }).error?.issues.slice(0, 3)).toBeUndefined();
+  // Past the floor the grid continues in a new block to the right: no two scene nodes share a spot.
+  expect(new Set(p.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(300);
+  expect(p.nodes[0]).toMatchObject({ x: 50, y: 1030 });
+  expect(p.nodes[264]).toMatchObject({ x: 1450, y: 1030 });
 });
 test("reviewed beats and source lineage are preserved while outdated notes cannot enter a new node", () => {
   const p = sourceProject(),

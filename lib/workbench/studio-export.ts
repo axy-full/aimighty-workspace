@@ -52,14 +52,16 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  const exportAssets=new Map(p.assets.map(asset=>[asset.id,asset]));
  const links:{assetId:string;name:string;url:string}[]=[];
  let bytes=0;
+ // Over 999 shots there is no EDL to send instead, so the advice names the XML formats.
+ const tooLarge='This browser package is limited to 200 MB. Export '+(p.shots.length>EDL_EVENTS?'FCPXML or Premiere XML':'the EDL')+' and collect large sources separately.';
  for(const original of sources){
   if(original.kind==='link'){links.push({assetId:original.id,name:original.name,url:original.url});continue;}
   const response=await fetchAsset(referenceVideoUrls.get(original.id) ?? originalAssetDownload(original)?.url ?? original.url);
   if(!response.ok)throw new Error('Cannot export '+original.name+'. Try opening the asset first.');
   const length=Number(response.headers.get('content-length')||0);
-  if(length>EXPORT_LIMIT-bytes)throw new Error('This browser package is limited to 200 MB. Export the EDL and collect large sources separately.');
+  if(length>EXPORT_LIMIT-bytes)throw new Error(tooLarge);
   const blob=await response.blob();bytes+=blob.size;
-  if(bytes>EXPORT_LIMIT)throw new Error('This browser package is limited to 200 MB. Export the EDL and collect large sources separately.');
+  if(bytes>EXPORT_LIMIT)throw new Error(tooLarge);
   const mime=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
   if(['image','video','audio'].includes(original.kind)&&(!blob.size||(mime&&mime!=='application/octet-stream'&&!mime.startsWith(original.kind+'/'))))throw new Error('The source for '+original.name+' did not return usable '+original.kind+' media.');
   // A protected media URL often has no extension; use its actual response type for relinking.

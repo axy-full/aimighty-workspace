@@ -149,4 +149,8 @@ test("a cut past 999 shots exports whole as FCPXML, Premiere XML and a package; 
   expect(strFromU8(files["README.txt"])).toContain("sequence.edl: not included. CMX3600 holds 999 events and this cut has 1200");
   expect(strFromU8(files["shotlist.csv"]).split("\r\n")).toHaveLength(1201);
   expect(() => validateSequence(long(PROJECT_LIMITS.shots + 1))).toThrow("A cut holds up to 1,500 shots");
+  // An oversized package points at what this cut can export instead.
+  const huge = async () => new Response("large", { headers: { "Content-Length": String(201 * 1024 * 1024) } });
+  await expect(buildExportPackage(project, huge)).rejects.toThrow("Export FCPXML or Premiere XML and collect large sources separately.");
+  await expect(buildExportPackage(long(999), huge)).rejects.toThrow("Export the EDL and collect large sources separately.");
 });
