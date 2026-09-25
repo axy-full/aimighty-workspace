@@ -76,18 +76,47 @@ export const SAY = {
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
-/** What Retry hands to Gen: the render's own inputs, priced again before anything runs. */
-export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string };
-export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
-  const raw = typeof generation.params?.rawPrompt === "string" ? generation.params.rawPrompt : "";
-  const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
-  return { prompt: raw || generation.prompt, model: generation.model, type, note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same inputs · new seed` };
+/**
+ * What Gen is handed from elsewhere in the shell (lib/shell/gen-preset): a
+ * Retry carries the render's own inputs — its prompt, engine, catalogue,
+ * identity and references — priced again before anything runs; Soul ID's
+ * Use in Gen carries the identity; Crew's Open in Gen only the words.
+ */
+export type GenPresetReference = { genId: string; role?: string } | { uploadId: string; role?: string };
+export type GenPreset = {
+  prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string;
+  /** Which catalogue the model is on; the composer switches to it before it picks the model. */
+  billing?: "workspace" | "connected";
+  /** A Soul model's trained identity (`soul_id`). */
+  soulId?: string;
+  /** Present on a Retry: the inputs replace whatever the composer held. */
+  references?: GenPresetReference[];
+};
+const REFERENCES_MAX = 10;
+function presetReferences(value: unknown): GenPresetReference[] {
+  if (!Array.isArray(value)) return [];
+  const out: GenPresetReference[] = [];
+  for (const item of value) {
+    if (out.length >= REFERENCES_MAX) break;
+    if (!item || typeof item !== "object") continue;
+    const { genId, uploadId, role } = item as Record<string, unknown>;
+    const named = typeof role === "string" && role ? { role } : {};
+    if (typeof genId === "string" && genId) out.push({ genId, ...named });
+    else if (typeof uploadId === "string" && uploadId) out.push({ uploadId, ...named });
+  }
+  return out;
 }
-export const GEN_PRESET_KEY = "particl-gen-preset";
-export function readGenPreset(raw: string | null): GenPreset | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as GenPreset;
-    return parsed && typeof parsed === "object" && typeof parsed.prompt === "string" ? parsed : { prompt: raw };
-  } catch { return { prompt: raw }; }
+export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
+  const params = generation.params ?? {};
+  const raw = typeof params.rawPrompt === "string" ? params.rawPrompt : "";
+  const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
+  /* A catalogue render (lib/higgsfield-consumer/original-identity) keeps its settings, identity and media under params. */
+  const connected = params.task === "connected-generation" && (params.workflow === undefined || params.workflow === "generation");
+  const settings = params.settings && typeof params.settings === "object" ? params.settings as Record<string, unknown> : {};
+  const soulId = connected && typeof settings.soul_id === "string" && settings.soul_id ? settings.soul_id : undefined;
+  return {
+    prompt: raw || generation.prompt, model: generation.model, type, billing: connected ? "connected" : "workspace",
+    ...(soulId ? { soulId } : {}), references: presetReferences(params.references),
+    note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same inputs · new seed`,
+  };
 }
