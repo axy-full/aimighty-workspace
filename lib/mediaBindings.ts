@@ -1,5 +1,6 @@
 import type { Transaction } from "@libsql/client";
 import { requireTenant } from "./tenant";
+import { liveCanvasAssets, parseTeamCanvas } from "./workbench/team-canvas-model";
 
 export class MediaSourceError extends Error {}
 
@@ -119,6 +120,16 @@ export async function mediaBindingProblem(
       (kind === "upload" ? references.uploads : references.generations).has(id)
     )
       return "This media is used by a project draft, retained edit version or published shared context. Remove draft references first; retained source media must be kept.";
+  }
+  /* A production's shared Rig canvas folds its nodes' media into every teammate's draft. */
+  if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workbench_team_canvas'")).rows.length) {
+    for (const row of (await tx.execute("SELECT body FROM workbench_team_canvas")).rows) {
+      let refs: ReturnType<typeof referencedMedia>;
+      try { const canvas = parseTeamCanvas(JSON.parse(String(row.body))); refs = referencedMedia({ nodes: canvas.nodes, assets: liveCanvasAssets(canvas) }); }
+      catch { return "A shared Rig canvas could not be checked. Keep this media until the canvas is repaired."; }
+      if ((kind === "upload" ? refs.uploads : refs.generations).has(id))
+        return "This media is used on a shared Rig canvas. Take it off the canvas before deleting it.";
+    }
   }
   const pipelineProblem = await pipelineMediaBindingProblem(tx, kind, id);
   if (pipelineProblem) return pipelineProblem;

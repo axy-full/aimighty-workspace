@@ -94,7 +94,22 @@ export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas
     out.stamps.order = patch.at;
   }
   out.order = orderedIds(out);
+  /* Only what a node points at stays shared (a node taken off keeps its own, so it can come back whole):
+     an asset no node uses any more would otherwise be folded into every draft forever. */
+  const kept = referencedAssetIds([...Object.values(out.nodes), ...Object.values(out.removed)], Object.values(out.assets));
+  for (const id of Object.keys(out.assets)) {
+    if (kept.has(id)) continue;
+    delete out.assets[id];
+    delete out.stamps[`a:${id}`];
+  }
   return out;
+}
+
+/** The canvas assets a draft takes: only those its live nodes use. */
+export function liveCanvasAssets(canvas: Pick<TeamCanvas, "nodes" | "assets">): Asset[] {
+  const assets = Object.values(canvas.assets);
+  const used = referencedAssetIds(Object.values(canvas.nodes), assets);
+  return assets.filter((a) => used.has(a.id));
 }
 
 /** Every live node exactly once: the saved order first, then any node it does not name yet. */
@@ -109,11 +124,12 @@ export function orderedIds(canvas: Pick<TeamCanvas, "nodes" | "order">): string[
 /**
  * A person's draft with the team canvas folded in: the canvas's nodes, in its
  * order, replace the draft's; the assets they need are added or refreshed.
- * The draft's other assets stay, so nothing private is lost.
+ * The draft's other assets stay, so nothing private is lost. A canvas asset no
+ * live node uses is not folded in, so one the draft removed stays removed.
  */
 export function withTeamCanvas(project: Project, canvas: Pick<TeamCanvas, "nodes" | "assets" | "order">): Project {
   const nodes = orderedIds(canvas).map((id) => canvas.nodes[id]);
-  const shared = Object.values(canvas.assets);
+  const shared = liveCanvasAssets(canvas);
   const ids = new Set(shared.map((a) => a.id));
   const assets = [...project.assets.filter((a) => !ids.has(a.id)), ...shared];
   const nodesSame = same(project.nodes, nodes);
