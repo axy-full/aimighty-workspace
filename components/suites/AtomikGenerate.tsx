@@ -2,11 +2,12 @@
 /* eslint-disable @next/next/no-img-element -- Private originals require same-origin authenticated requests. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowUpRight, RefreshCw, X } from "lucide-react";
 import { useDraft } from "@/lib/useDraft";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { resolveGenInput, type GenInputAsset } from "@/lib/genAssetInput";
-import { libraryInput } from "@/lib/genLibrary";
+import { libraryInput, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { draftRequest, writeDraft } from "@/lib/workbench/draft-request";
 import type { Asset, Project } from "@/lib/workbench/studio";
@@ -167,6 +168,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
   onInput?: (input: ConsumerGenerationInput | null) => void;
 }) {
   const request = useScopedFetch(scope);
+  const router = useRouter();
   const draftId = project.id;
   const draft = useDraft<Creative>(`atomik-generate:${project.id}`, empty), input = creative(draft.value);
   const attemptKey = `particl-consumer-generation:${encodeURIComponent(scope)}:${encodeURIComponent(draftId)}:attempts`;
@@ -386,6 +388,32 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
     finally { if (token === lifecycle.current) { pending.current = false; if (live.current) setBusy(""); } }
   }
   const unlimited = (m: ConnectedModel) => m.supportsUnlim && catalogue?.unlim.available === true;
+  /* The library's Upscale opens the connected account's own upscale tool with
+     that file as its source, ready for a quote; nothing is priced or sent yet. */
+  async function upscaleFromLibrary(asset: LibraryAsset) {
+    const preset = findConnectedTool(libraryKind(asset) === "video" ? "upscale_video" : "upscale_image")!;
+    const candidate = catalogue ? connectedToolModels(preset, catalogue)[0] : undefined;
+    if (!candidate) { setError(catalogue ? `The connected catalogue lists no model for ${preset.label}.` : "The connected catalogue is not loaded. Reload it, then try again."); return; }
+    if (pending.current) return;
+    const token = lifecycle.current; pending.current = true; setBusy("reference"); setError(""); setNotice("");
+    try {
+      const source: GenInputAsset = await resolveGenInput(libraryInput(asset), scope);
+      if (!live.current || lifecycle.current !== token) return;
+      if (source.kind !== preset.sourceKind) throw new Error(`${preset.label} needs ${preset.sourceKind === "image" ? "an image" : "a video"} file.`);
+      if (source.bytes > 50 * 1024 * 1024) throw new Error("Each reference file must be no larger than 50 MB.");
+      const { source: role } = connectedToolRoles(preset, candidate);
+      change({ tool: preset.name, voice: "", type: preset.outputType, model: candidate.id, prompt: "", parameters: {},
+        medias: [{ role, asset: { id: source.id, origin: source.origin, kind: source.kind as StoredAsset["kind"], name: source.name, url: source.url } }] });
+      setActiveRole("");
+    } catch (reason) { if (live.current && lifecycle.current === token) setError(reason instanceof Error ? reason.message : "This file cannot be upscaled here."); }
+    finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
+  }
+  /* Particl's own Generate, the same hand-off the other suites' libraries
+     make: Edit always, and Upscale where the connected account cannot. */
+  const openInGenerate = (asset: LibraryAsset, task: "edit" | "upscale") => {
+    const video = libraryKind(asset) === "video", id = `${asset.origin}:${asset.value.id}`;
+    router.push(`/generate?${new URLSearchParams({ project: project.id, mode: video ? "video" : "images", ...(video || task === "upscale" ? { task, source: id } : { ref: id }) })}`);
+  };
   const pickTool = (next: ConnectedToolName) => { const preset = findConnectedTool(next)!; const first = catalogue ? connectedToolModels(preset, catalogue)[0] : undefined; change({ tool: next, voice: "", type: preset.outputType, model: first?.id ?? "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); };
   const typedTools = VOICE_TOOLS.filter((preset) => voiceCapabilities?.[preset.name === "voice_change" ? "voice" : preset.name === "dubbing" ? "dubbing" : preset.name === "reframe" ? "reframe" : "analysis"] === true);
   const voiceTools = typedTools.filter((preset) => preset.group === "voice");
@@ -481,7 +509,8 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
         <label className={styles.search}>Search assets<input aria-label="Search project assets" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
         <GenAssetLibrary workbenchProjectId={project.id} projectName={project.name} allowWorkspaceBrowse initialBrowseScope="project" search={search} audioReference={!voiceTool && roles.some((r) => mediaKindForRole(r) === "audio")}
           onUseAsset={(asset) => void addReference(asset)} onUseReference={(asset) => void addReference(libraryInput(asset))}
-          onUsePrompt={(take) => change({ prompt: take.prompt.slice(0, 5000) })} onEdit={() => {}} onUpscale={() => {}} />
+          onUsePrompt={(take) => change({ prompt: take.prompt.slice(0, 5000) })} onEdit={(asset) => openInGenerate(asset, "edit")}
+          onUpscale={(asset) => capability?.owner && capability.connected && !capability.suspended ? void upscaleFromLibrary(asset) : openInGenerate(asset, "upscale")} />
       </aside>
     </div>
     {capability?.owner && <ExplainerStyles disabled={!capability.connected} load={async (refresh) => {

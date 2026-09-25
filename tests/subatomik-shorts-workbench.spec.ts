@@ -120,6 +120,14 @@ test("Shorts picks a style and one project video, quotes the whole set once, run
   const style = panel.getByRole("combobox", { name: "Style", exact: true });
   await expect(style.locator("optgroup").nth(0)).toHaveAttribute("label", "Your styles");
   await expect(style.locator("optgroup").nth(1)).toHaveAttribute("label", "Library styles");
+  /* Shorts restyles a video: the library offers what it can do with one, not an Edit, Upscale or Use prompt that does nothing here. */
+  const launch = page.locator('[data-library-id="upload:launch-original"]');
+  await expect(launch).toBeVisible();
+  await expect(launch.getByRole("button", { name: /^Edit (clip|image)$/ })).toHaveCount(0);
+  await launch.getByRole("button", { name: /^Actions for / }).click();
+  await expect(page.getByRole("menuitem", { name: "Use as reference", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /^(Edit clip|Upscale video|Use prompt)$/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await useSource(page, "upload:still-original");
   await expect(panel.getByRole("alert")).toContainText("Shorts need a video file.");
   await useSource(page, "upload:launch-original");
