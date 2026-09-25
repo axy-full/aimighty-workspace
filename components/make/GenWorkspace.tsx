@@ -169,16 +169,19 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     setMobileView("create");
   };
   const toolOpen = editing || upscaling || astraUpscaling;
+  const hasProject = Boolean(generationProject);
   useEffect(() => {
     if (!promptFrom || prompted.current === promptFrom || toolOpen) return;
     if (promptTake.error) { prompted.current = promptFrom; toast(promptTake.error); return; }
     const take = promptTake.data?.generation;
-    if (!take || take.id !== promptFrom || !composer.current) return;
+    /* The composer mounts once the project resolves (often after the take has
+       loaded, when the project comes from memory); wait for it, and run again then. */
+    if (!take || take.id !== promptFrom || !hasProject || !composer.current) return;
     prompted.current = promptFrom;
     if (take.kind !== mode.kind) { toast("Open this take in its matching generation mode to reuse the prompt."); return; }
     // The receiving composer refuses replacement while a paid request needs recovery.
     composer.current.usePrompt(String(take.params.rawPrompt || take.prompt));
-  }, [promptFrom, promptTake.data, promptTake.error, toolOpen, mode.kind, toast]);
+  }, [promptFrom, promptTake.data, promptTake.error, toolOpen, mode.kind, toast, hasProject]);
   useEffect(() => {
     const take = pendingPrompt.current;
     if (take && take.kind === mode.kind && !toolOpen && composer.current) {
