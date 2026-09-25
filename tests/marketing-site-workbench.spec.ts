@@ -68,8 +68,11 @@ test("request access posts to the real endpoint and confirms", async ({ page }, 
 test("a member keeps the app at /, and the site offers the app instead of sign-in", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one member");
   await signInLocally(page.request);
-  await page.goto("/");
-  await expect(page.locator(".mk-header")).toHaveCount(0);
+  /* Read, not visited: the app at / hands a member on to the shell by itself,
+     and that navigation would abort the next goto. */
+  const home = await page.request.get("/");
+  expect(home.ok()).toBe(true);
+  expect(await home.text()).not.toContain("mk-header");
   await page.goto("/studio");
   await expect(page.locator(".mk-header").getByRole("link", { name: "Open Particl" })).toHaveAttribute("href", "/suites");
   await expect(page.locator(".mk-header").getByRole("link", { name: "Sign in" })).toHaveCount(0);
