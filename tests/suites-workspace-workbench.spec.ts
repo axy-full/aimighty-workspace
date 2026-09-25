@@ -233,3 +233,52 @@ test("General › Prompt rules: the team's rules edit here, the platform's switc
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("a rename holds across tabs and reaches the header; Disconnect turns the developer API's Verify off at once", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* /api/me answers with the workspace's name as the platform now has it: the old one until the rename lands. */
+  let saved: string | null = null;
+  await page.route("**/api/me", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    if (saved && json.workspace) json.workspace.name = saved;
+    return route.fulfill({ response, json });
+  });
+  const { errors, writes } = await open(page, "/suites?view=workspace&tab=general");
+  await page.route("**/api/workspaces", async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    saved = route.request().postDataJSON().name;
+    writes.push({ url: "/api/workspaces", method: "PATCH", body: route.request().postDataJSON() });
+    return route.fulfill({ json: { ok: true, workspace: { id: "w", name: saved, slug: "w" } } });
+  });
+  await expect(page.getByTestId("ws-general")).toBeVisible();
+  await page.getByTestId("ws-name").fill("Harbour Studio");
+  await page.getByTestId("ws-save").click();
+  await expect(page.getByTestId("ws-note")).toHaveText("Saved.");
+  expect(writes).toEqual([{ url: "/api/workspaces", method: "PATCH", body: { name: "Harbour Studio" } }]);
+  await expect(page.getByTestId("workspace-view").getByText(/^Harbour Studio · /)).toBeVisible();
+  /* The header reads /api/me again at once, not on its 30s poll. */
+  await expect(page.getByTestId("workspace-avatar")).toHaveAttribute("aria-label", "Workspace and account: Harbour Studio");
+  const tabs = page.getByRole("tablist", { name: "Workspace sections" });
+  await tabs.getByRole("tab", { name: "People" }).click();
+  await tabs.getByRole("tab", { name: "General" }).click();
+  await expect(page.getByTestId("ws-name")).toHaveValue("Harbour Studio");
+  await expect(page.getByTestId("ws-save")).toBeDisabled();
+
+  /* One reading of the connection serves both Engines rows. */
+  let connected = true;
+  await page.route("**/api/higgsfield/consumer/connection", (route) => {
+    if (route.request().method() === "DELETE") { connected = false; return route.fulfill({ json: { ok: true } }); }
+    if (route.request().method() === "POST") return route.fulfill({ json: { probe: { reachable: true, balance: 1234, unit: "credits" } } });
+    return route.fulfill({ json: { connected, requiresReconnect: false } });
+  });
+  await tabs.getByRole("tab", { name: "Engines" }).click();
+  await expect(page.getByTestId("engine-developer-api")).toContainText("Same grant as the connected account");
+  await expect(page.getByTestId("developer-api-verify")).toBeEnabled();
+  await page.getByTestId("connected-account-disconnect").click();
+  await expect(page.getByTestId("engine-connected-account")).toContainText("Not connected");
+  await expect(page.getByTestId("engine-developer-api")).toContainText("Connect the Higgsfield account above first");
+  await expect(page.getByTestId("developer-api-verify")).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ArrowUpRight, Sparkles, RefreshCw } from 'lucide-react';
 import { useSession } from '@/lib/session';
 import { suiteHref, type SuiteId } from '@/lib/suites';
+import { AGENT_DRAFT_EVENT, agentDraftKey, shownAgentDraft, type AgentDraft, type AgentDraftEdit } from '@/lib/shell/agent-draft';
 import { SUITE_AGENT_COPY } from '@/lib/workbench/suite-agent-plan';
 import type { Plan, Project } from '@/lib/workbench/studio';
 import type { AtomikJob } from '@/lib/workbench/atomik-server';
@@ -15,55 +16,26 @@ import type { ThinkingModel } from '@/components/atomik/ModelPicker';
 import styles from './suite-agent.module.css';
 
 type AgentState = { configured: boolean; models: ThinkingModel[]; jobs: AtomikJob[] };
-type AgentDraft = { request: string; refs: string[] };
-const draftEvent = 'particl-suite-agent-draft';
 const subscribeDraft = (listener: () => void) => {
-  window.addEventListener('storage', listener); window.addEventListener(draftEvent, listener);
-  return () => { window.removeEventListener('storage', listener); window.removeEventListener(draftEvent, listener); };
+  window.addEventListener('storage', listener); window.addEventListener(AGENT_DRAFT_EVENT, listener);
+  return () => { window.removeEventListener('storage', listener); window.removeEventListener(AGENT_DRAFT_EVENT, listener); };
 };
 const emptySnapshot = () => null;
 
-const draftKey = (scope: string | null | undefined, suite: SuiteId, projectId: string) =>
-  scope ? `aw_draft:suite-agent:${encodeURIComponent(scope)}:${suite}:${encodeURIComponent(projectId)}` : null;
-
-/**
- * Hand a request to this suite's agent box from elsewhere (the Suites ⌘K
- * "Ask Atomik: …"): it lands in the same draft the box edits, keeping the
- * references already selected, and an open box shows it at once. Nothing is
- * sent — the person still reads it and presses Plan.
- */
-export function prefillAgentRequest(scope: string | null | undefined, suite: SuiteId, projectId: string, request: string): boolean {
-  const key = draftKey(scope, suite, projectId);
-  const text = request.trim().slice(0, 11000);
-  if (!key || !text) return false;
-  try {
-    let refs: string[] = [];
-    const parsed = JSON.parse(localStorage.getItem(key) ?? 'null');
-    if (parsed && Array.isArray(parsed.refs)) refs = parsed.refs.filter((id: unknown): id is string => typeof id === 'string').slice(0, 12);
-    localStorage.setItem(key, JSON.stringify({ request: text, refs }));
-    window.dispatchEvent(new Event(draftEvent));
-    return true;
-  } catch { return false; }
-}
-
 /** Workbench owns its authenticated scope without a SessionProvider. Keep its
- * drafts and responses bound to that captured identity, just like Studio saves. */
+ * drafts and responses bound to that captured identity, just like Studio saves.
+ * A request handed in from ⌘K (lib/shell/agent-draft.ts) replaces an earlier
+ * edit in an open box instead of being typed over by it. */
 function useAgentDraft(scope: string | null | undefined, suite: SuiteId, projectId: string) {
-  const key = draftKey(scope, suite, projectId);
+  const key = agentDraftKey(scope, suite, projectId);
   const read = useCallback(() => { try { return key ? localStorage.getItem(key) : null; } catch { return null; } }, [key]);
   const stored = useSyncExternalStore(subscribeDraft, read, emptySnapshot);
-  const [edit, setEdit] = useState<{ key: string | null; value: AgentDraft } | null>(null);
-  let value: AgentDraft = { request: '', refs: [] };
-  try {
-    const parsed = JSON.parse(stored ?? 'null');
-    if (parsed && typeof parsed.request === 'string' && Array.isArray(parsed.refs)) value = {
-      request: parsed.request.slice(0, 11000), refs: parsed.refs.filter((id: unknown): id is string => typeof id === 'string').slice(0, 12),
-    };
-  } catch { /* An unreadable creative draft is not a paid recovery record. */ }
-  if (edit?.key === key) value = edit.value;
+  const [edit, setEdit] = useState<AgentDraftEdit | null>(null);
+  const value = shownAgentDraft(key, stored, edit);
   return { value, set(next: AgentDraft) {
-    setEdit({ key, value: next });
-    if (key) try { localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new Event(draftEvent)); } catch { /* The current editor still works without draft storage. */ }
+    const text = JSON.stringify(next);
+    setEdit({ key, value: next, seen: [stored, text] });
+    if (key) try { localStorage.setItem(key, text); window.dispatchEvent(new Event(AGENT_DRAFT_EVENT)); } catch { /* The current editor still works without draft storage. */ }
   } };
 }
 

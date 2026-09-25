@@ -103,7 +103,41 @@ test("⌘K: Ask Atomik keeps the words; a model row opens Gen on that model; no 
   await palette.getByRole("textbox").fill("zz make a thirty second teaser");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
-  await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz make a thirty second teaser");
+  const box = page.locator("[data-tool-body=\"agent\"] textarea").first();
+  await expect(box).toHaveValue("zz make a thirty second teaser");
+
+  /* Already on Agent, with words typed in the box: a second Ask replaces them on screen, and the next keystroke keeps it. */
+  await box.fill("an older idea");
+  await open();
+  await palette.getByRole("textbox").fill("zz cut a fifteen second version");
+  await page.keyboard.press("Enter");
+  await expect(box).toHaveValue("zz cut a fifteen second version");
+  await box.press("End");
+  await box.pressSequentially("!");
+  await expect(box).toHaveValue("zz cut a fifteen second version!");
+  expect(mock.dispatches).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("⌘K before any project is open: the words wait, and land in Agent once the list loads", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
+  const { mock, errors } = await setup(page);
+  let failing = true;
+  await page.route("**/api/workbench/projects**", (route) => (failing && route.request().method() === "GET" ? route.fulfill({ status: 500, json: { error: "Projects are unavailable right now." } }) : route.fallback()));
+  await page.goto("/suites?view=gen");
+  await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
+  const palette = page.getByRole("dialog", { name: "Search" });
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+  await expect(palette).toBeVisible();
+  await palette.getByRole("textbox").fill("zz a teaser for the launch");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
+  await expect(page.getByTestId("toast")).toHaveText("Your request goes into Agent once a project is open.");
+  await expect(page.getByTestId("projects-error")).toBeVisible();
+  failing = false;
+  await page.getByTestId("projects-error").getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
   expect(mock.dispatches).toEqual([]);
   expect(errors).toEqual([]);
 });

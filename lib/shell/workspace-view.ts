@@ -59,19 +59,28 @@ export function checkoutUrl(raw: unknown, origin: string): string | null {
 /**
  * GET /api/usage answers in one of two shapes. A workspace on credits gets
  * lib/creditUsage.ts: `unit: "credits"`, `spentCredits` and `byModel`
- * (model, label, n, credits). The studio's own workspace gets the vendor
- * ledger: `vendors[].models` in dollars.
+ * (model, label, provider, kind, n, credits) — one row per model, engine and
+ * kind, so the same model can appear twice. The studio's own workspace gets
+ * the vendor ledger: `vendors[].models` in dollars.
  */
 export type UsageBody = {
   unit?: string; spentCredits?: number;
-  byModel?: { model: string; label?: string; n?: number; credits?: number }[];
+  byModel?: { model: string; label?: string; provider?: string; kind?: string; n?: number; credits?: number }[];
   vendors?: { id: string; label: string; models?: { model: string; label?: string; n?: number; spend?: number }[] }[];
 };
 export type UsageRow = { id: string; label: string; n: number; amount: number };
 export function usageRows(body: UsageBody | null): { unit: "cr" | "$"; rows: UsageRow[]; total: number } {
   if (!body) return { unit: "cr", rows: [], total: 0 };
   if (body.unit === "credits") {
-    const rows = (body.byModel ?? []).map((m) => ({ id: m.model, label: m.label ?? m.model, n: m.n ?? 0, amount: m.credits ?? 0 }));
+    const models = body.byModel ?? [];
+    const labelOf = (m: (typeof models)[number]) => m.label ?? m.model;
+    /* A model billed under two engines or kinds is two rows; the second word tells them apart. */
+    const twin = (m: (typeof models)[number]) => models.filter((o) => o !== m && labelOf(o) === labelOf(m));
+    const rows = models.map((m) => {
+      const same = twin(m);
+      const extra = !same.length ? "" : same.every((o) => o.kind !== m.kind) ? m.kind : m.provider;
+      return { id: [m.model, m.provider ?? "", m.kind ?? ""].join("/"), label: extra ? `${labelOf(m)} · ${extra}` : labelOf(m), n: m.n ?? 0, amount: m.credits ?? 0 };
+    });
     return { unit: "cr", rows, total: body.spentCredits ?? rows.reduce((n, r) => n + r.amount, 0) };
   }
   const rows = (body.vendors ?? []).flatMap((v) => (v.models ?? []).map((m) => ({ id: `${v.id}/${m.model}`, label: `${m.label ?? m.model} · ${v.label}`, n: m.n ?? 0, amount: m.spend ?? 0 })));

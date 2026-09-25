@@ -36,12 +36,12 @@ export function CrewStrip({ room }: { room: CrewRoom }) {
   );
 }
 
-export function CrewView({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
+export function CrewView({ project, room, scope, projectsError = null, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError?: string | null; onRetry?: () => void }) {
   const shell = useShell();
   const page = CREW_PAGES.find((p) => p.id === shell.crewPage)!;
   return (
     <div className="cw" data-testid="crew-view" data-page={page.id}>
-      {page.id === "room" ? <Room project={project} room={room} scope={scope} /> : null}
+      {page.id === "room" ? <Room project={project} room={room} scope={scope} projectsError={projectsError} onRetry={onRetry} /> : null}
       {page.id === "members" ? <Members room={room} title={page.title} hint={page.hint} /> : null}
       {page.id === "sessions" ? <Sessions room={room} title={page.title} hint={page.hint} /> : null}
     </div>
@@ -50,7 +50,7 @@ export function CrewView({ project, room, scope }: { project: Project | null; ro
 
 /* ── Room ─────────────────────────────────────────────────────────────── */
 
-function Room({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
+function Room({ project, room, scope, projectsError, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError: string | null; onRetry?: () => void }) {
   const shell = useShell();
   const ws = useWorkspace();
   const [selected, setSelected] = useState<string | null>(null);
@@ -122,7 +122,7 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
       <section className="cw-col cw-main" aria-label="Room">
         <div className="cw-head">
           <div className="cw-head-text">
-            <span className="cw-project"><span className="cw-project-tile" aria-hidden="true">{initials(project?.name ?? "")}</span>{project?.name ?? "No project"}</span>
+            <span className="cw-project"><span className="cw-project-tile" aria-hidden="true">{initials(project?.name ?? "")}</span>{project?.name ?? (projectsError ? "Projects didn’t load" : "No project")}</span>
             <h1 className="gx-h1" data-testid="page-title">{page.title}</h1>
             <span className="gx-hint">{page.hint}</span>
           </div>
@@ -151,6 +151,13 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
           </div>
         </div>
 
+        {/* The project list failed to read: said, with Retry — not "No project", which sent people to make duplicates. */}
+        {projectsError && !project ? (
+          <div className="cw-notice" role="alert" data-testid="crew-projects-error">
+            <span className="gx-gen-error">{projectsError}</span>
+            {onRetry ? <> <button type="button" className="gx-hbtn" style={{ display: "inline-flex" }} onClick={onRetry}>Retry</button></> : null}
+          </div>
+        ) : null}
         {room.notice ? <p className="cw-notice" role="status" data-testid="crew-notice">{room.notice}</p> : null}
 
         <div className="cw-transcript" data-testid="crew-transcript">

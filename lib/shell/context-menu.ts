@@ -107,22 +107,34 @@ export function shortcutCommand(event: { key: string; metaKey: boolean; ctrlKey:
   }
 }
 
+/** A surface that shows the selection: the Library, the Inspector, an asset grid, the Rig. */
+const SELECTION_SURFACE = "[data-ctx], [data-testid='library'], [data-testid='inspector'], [data-testid='rig-graph'], [data-testid='rig-list']";
+export function inSelectionSurface(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return Boolean(el && typeof el.closest === "function" && el.closest(SELECTION_SURFACE));
+}
+
 /**
  * Where a selection shortcut may act on the lingering selection. The browser
- * keeps its own ⌘C/⌘X while text is selected; ⌫ and ⌘R act only from inside
- * a surface that shows the selection (the Library, the Inspector, an asset
- * grid, the Rig) — never from another button, and ⌘R never from the page
- * itself, where it means reload.
+ * keeps its own ⌘C/⌘X while text is selected. ⌫, ⌘R and ⌘D act only from a
+ * surface that shows the selection — never from another control, and never
+ * from the page when the last press landed somewhere else (there ⌘R is reload
+ * and ⌘D is the bookmark).
+ *
+ * Focus on the page itself is common, not a corner case: Safari, and Firefox
+ * on macOS, do not focus a clicked button, so a Library or Gen tile leaves
+ * focus on <body>; the Rig canvas takes none either; and Chrome drops focus to
+ * <body> on a press in the Inspector's plain text. There, where the last press
+ * landed (`pressedInSurface`) says where the person is working.
  */
-const SELECTION_SURFACE = "[data-ctx], [data-testid='library'], [data-testid='inspector'], [data-testid='rig-graph'], [data-testid='rig-list']";
-export function shortcutApplies(cmd: CtxCommand, context: { target: EventTarget | null; textSelected: boolean; selection: CtxTarget["kind"] }): boolean {
+export function shortcutApplies(cmd: CtxCommand, context: { target: EventTarget | null; textSelected: boolean; selection: CtxTarget["kind"]; pressedInSurface?: boolean }): boolean {
   if ((cmd === "copy" || cmd === "cut") && context.textSelected) return false;
-  if (cmd !== "delete" && cmd !== "retry") return true;
+  if (cmd !== "delete" && cmd !== "retry" && cmd !== "duplicate") return true;
   const el = context.target as HTMLElement | null;
   if (!el || typeof el.closest !== "function") return false;
   if (el.closest(SELECTION_SURFACE)) return true;
-  /* A Rig node is picked on the canvas, which takes no focus: ⌫ on the page itself still deletes it. An asset is picked by a button, so its ⌫ comes from where it is shown. */
-  return cmd === "delete" && context.selection === "node" && (el.tagName === "BODY" || el.tagName === "HTML");
+  if (el.tagName !== "BODY" && el.tagName !== "HTML") return false;
+  return context.pressedInSurface === true;
 }
 
 /** True when the event started in something a person types into. */

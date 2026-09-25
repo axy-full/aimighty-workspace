@@ -4,7 +4,7 @@ import {
 } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
-import { ctxItems, parseCtx, placeMenu, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
+import { ctxItems, inSelectionSurface, parseCtx, placeMenu, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
 import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
 
 /* ── Information architecture ───────────────────────────────────────────── */
@@ -154,23 +154,31 @@ test("shortcuts map to commands; modifiers that mean something else do not", () 
   expect(key("k")).toBeNull();
 });
 
-test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R from an unrelated button", () => {
+test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/⌘D from an unrelated button", () => {
   /* A stand-in element: `closest` answers for the selector the shell asks about. */
   const el = (tagName: string, inside: boolean) => ({ tagName, closest: (sel: string) => (inside && sel.includes("data-ctx") ? {} : null) }) as unknown as EventTarget;
   const libraryThumb = el("BUTTON", true), otherButton = el("BUTTON", false), body = el("BODY", false);
+  expect(inSelectionSurface(libraryThumb)).toBe(true);
+  expect(inSelectionSurface(otherButton)).toBe(false);
+  expect(inSelectionSurface(null)).toBe(false);
   expect(shortcutApplies("copy", { target: libraryThumb, textSelected: false, selection: "asset" })).toBe(true);
   expect(shortcutApplies("copy", { target: body, textSelected: true, selection: "asset" })).toBe(false);
   expect(shortcutApplies("cut", { target: body, textSelected: true, selection: "asset" })).toBe(false);
   expect(shortcutApplies("paste", { target: body, textSelected: true, selection: "asset" })).toBe(true);
-  expect(shortcutApplies("delete", { target: libraryThumb, textSelected: false, selection: "asset" })).toBe(true);
-  expect(shortcutApplies("delete", { target: otherButton, textSelected: false, selection: "asset" })).toBe(false);
-  expect(shortcutApplies("delete", { target: body, textSelected: false, selection: "asset" })).toBe(false);
-  /* A Rig node is picked on a canvas that takes no focus. */
-  expect(shortcutApplies("delete", { target: body, textSelected: false, selection: "node" })).toBe(true);
-  expect(shortcutApplies("delete", { target: otherButton, textSelected: false, selection: "node" })).toBe(false);
-  expect(shortcutApplies("retry", { target: body, textSelected: false, selection: "asset" })).toBe(false);
-  expect(shortcutApplies("retry", { target: libraryThumb, textSelected: false, selection: "asset" })).toBe(true);
   expect(shortcutApplies("undo", { target: otherButton, textSelected: false, selection: "empty" })).toBe(true);
+  for (const cmd of ["delete", "retry", "duplicate"] as const) {
+    /* From the tile (Chrome focuses a clicked button). */
+    expect(shortcutApplies(cmd, { target: libraryThumb, textSelected: false, selection: "asset" }), cmd).toBe(true);
+    /* Another control has focus: the key is its, whatever was pressed last. */
+    expect(shortcutApplies(cmd, { target: otherButton, textSelected: false, selection: "asset", pressedInSurface: true }), cmd).toBe(false);
+    expect(shortcutApplies(cmd, { target: otherButton, textSelected: false, selection: "node", pressedInSurface: true }), cmd).toBe(false);
+    /* Focus on the page. Safari and Firefox on macOS leave it there after a click on a tile, and the Rig canvas takes none:
+       the last press decides. Pressed in the Library, Inspector or Rig: the selection's. Pressed anywhere else: the browser's (reload, bookmark). */
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "asset", pressedInSurface: true }), cmd).toBe(true);
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "node", pressedInSurface: true }), cmd).toBe(true);
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "asset", pressedInSurface: false }), cmd).toBe(false);
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "node" }), cmd).toBe(false);
+  }
 });
 
 /* ── ⌘K ─────────────────────────────────────────────────────────────────── */

@@ -89,10 +89,19 @@ test("packs read as the top-up screen writes them; checkout leaves only for http
 test("usage: a credit workspace reads creditUsage().byModel and spentCredits; the studio's own reads its vendors", () => {
   const credit = usageRows({
     unit: "credits", spentCredits: 312,
-    byModel: [{ model: "seedance", label: "Seedance 2.5", n: 6, credits: 240 }, { model: "nb2", label: "Nano Banana 2", n: 9, credits: 72 }],
+    byModel: [{ model: "seedance", label: "Seedance 2.5", provider: "byteplus", kind: "video", n: 6, credits: 240 }, { model: "nb2", label: "Nano Banana 2", provider: "fal", kind: "image", n: 9, credits: 72 }],
     vendors: [{ id: "byteplus", label: "BytePlus" }],
   });
-  expect(credit).toEqual({ unit: "cr", total: 312, rows: [{ id: "seedance", label: "Seedance 2.5", n: 6, amount: 240 }, { id: "nb2", label: "Nano Banana 2", n: 9, amount: 72 }] });
+  expect(credit).toEqual({ unit: "cr", total: 312, rows: [{ id: "seedance/byteplus/video", label: "Seedance 2.5", n: 6, amount: 240 }, { id: "nb2/fal/image", label: "Nano Banana 2", n: 9, amount: 72 }] });
+  /* creditUsage groups by model, engine AND kind: one model twice is two bars with two keys, told apart in words. */
+  const twice = usageRows({ unit: "credits", byModel: [
+    { model: "kling", label: "Kling 3.0", provider: "fal", kind: "video", n: 1, credits: 7 },
+    { model: "kling", label: "Kling 3.0", provider: "kling", kind: "video", n: 2, credits: 14 },
+    { model: "gpt", label: "GPT", provider: "openai", kind: "text", n: 1, credits: 1 },
+    { model: "gpt", label: "GPT", provider: "openai", kind: "image", n: 1, credits: 3 },
+  ] });
+  expect(new Set(twice.rows.map((r) => r.id)).size).toBe(4);
+  expect(twice.rows.map((r) => r.label)).toEqual(["Kling 3.0 · fal", "Kling 3.0 · kling", "GPT · text", "GPT · image"]);
   /* The old tab's two branches, both empty for this shape, were the 0 cr bug. */
   expect(usageRows({ unit: "credits", byModel: [{ model: "m", n: 1, credits: 5 }] }).total).toBe(5);
   const legacy = usageRows({ vendors: [{ id: "byteplus", label: "BytePlus", models: [{ model: "seedance", label: "Seedance", n: 2, spend: 3.5 }] }] });

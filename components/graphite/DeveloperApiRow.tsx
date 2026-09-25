@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { DeveloperProbe } from "@/lib/higgsfield-consumer/developer-api";
 
@@ -8,17 +8,11 @@ import type { DeveloperProbe } from "@/lib/higgsfield-consumer/developer-api";
  * one free read with the account's own grant and says plainly whether that
  * grant is accepted; nothing is trained, generated or spent. Nothing in
  * Particl builds on it yet, so it promises nothing beyond the answer.
+ * `connected` is the account row's own reading (null while it reads), so a
+ * disconnect above turns Verify off here at once.
  */
-export function DeveloperApiRow() {
+export function DeveloperApiRow({ connected }: { connected: boolean | null }) {
   const scoped = useScopedFetch();
-  const [connected, setConnected] = useState<boolean | null>(null);
-  useEffect(() => {
-    let live = true;
-    scoped("/api/higgsfield/consumer/connection", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((json: { connected?: boolean; requiresReconnect?: boolean } | null) => {
-      if (live) setConnected(json?.connected === true && json.requiresReconnect !== true);
-    }).catch(() => { if (live) setConnected(false); });
-    return () => { live = false; };
-  }, [scoped]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const verify = async () => {
@@ -42,7 +36,7 @@ export function DeveloperApiRow() {
         <button type="button" className="gx-hbtn" disabled={busy || connected !== true} onClick={() => void verify()} data-testid="developer-api-verify">{busy ? "Verifying…" : "Verify"}</button>
       </div>
       <p className="cw-foot" style={{ padding: 0 }}>Verify is one free read; it never spends.</p>
-      {result ? <p className="cw-notice" role="status" data-testid="developer-api-result">{result}</p> : null}
+      {result && connected ? <p className="cw-notice" role="status" data-testid="developer-api-result">{result}</p> : null}
     </div>
   );
 }

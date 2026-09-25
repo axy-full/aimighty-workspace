@@ -14,7 +14,7 @@ import {
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
-import type { WorkspaceAccount } from "@/lib/workspace/data";
+import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
@@ -83,7 +83,11 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
   };
   const current = account?.workspace?.id ?? session.workspace?.id ?? null;
   const others = (session.workspaces ?? []).filter((w) => w.id !== current);
-  const name = account?.workspace?.name ?? session.workspace?.name ?? "Workspace";
+  /* A rename shows at once, here and on General's field, while /api/me catches up; the account's own name wins once it differs from what was renamed. */
+  const known = account?.workspace?.name ?? session.workspace?.name ?? "Workspace";
+  const [renamed, setRenamed] = useState<{ id: string | null; from: string; to: string } | null>(null);
+  const name = renamed && renamed.id === current && renamed.from === known ? renamed.to : known;
+  const onRenamed = (to: string) => { setRenamed({ id: current, from: known, to }); requestAccountRefresh(); };
   return (
     <div className="gx-workspace gx-scroll" data-testid="workspace-view">
       <div className="wsx">
@@ -93,7 +97,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
             <button key={t.id} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.wsTab === t.id} onClick={() => shell.goWorkspace(t.id)}><span>{t.label}</span></button>
           ))}
         </div>
-        {shell.wsTab === "general" ? <><General name={name} /><Rules /></> : null}
+        {shell.wsTab === "general" ? <><General name={name} onRenamed={onRenamed} /><Rules /></> : null}
         {shell.wsTab === "people" ? <People /> : null}
         {shell.wsTab === "credits" ? <Plans credits={credits} /> : null}
         {shell.wsTab === "usage" ? <Usage /> : null}
@@ -125,12 +129,13 @@ function inForce(key: string, raw: string): string {
   return raw;
 }
 const ENGINES = (kind: "video" | "image") => MODELS.filter((m) => m.kind === kind && !m.hidden);
-function General({ name }: { name: string }) {
+function General({ name, onRenamed }: { name: string; onRenamed: (name: string) => void }) {
   const session = useSession();
   const write = useWrite();
   const { data, error, read } = useRead<Settings>("/api/settings");
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [title, setTitle] = useState<{ saved: string; draft: string }>({ saved: name, draft: name });
+  /* null until the owner types: the field shows the workspace's name as it stands. */
+  const [title, setTitle] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const admin = session.role === "admin" || session.role === "owner";
@@ -139,14 +144,15 @@ function General({ name }: { name: string }) {
   const value = (key: string) => draft[key] ?? stored(key);
   const set = (key: string, next: string) => setDraft({ ...draft, [key]: next });
   const changed = Object.keys(draft).filter((k) => draft[k] !== stored(k));
-  const renamed = owner && title.draft.trim() !== title.saved && title.draft.trim().length > 0;
+  const typed = (title ?? name).trim();
+  const renamed = owner && typed !== name && typed.length > 0;
   const save = async () => {
     setSaving(true); setNote(null);
     try {
       if (renamed) {
-        const { error: refused } = await write("/api/workspaces", "PATCH", { name: title.draft.trim() });
+        const { error: refused } = await write("/api/workspaces", "PATCH", { name: typed });
         if (refused) throw new Error(refused);
-        setTitle({ saved: title.draft.trim(), draft: title.draft.trim() });
+        onRenamed(typed); setTitle(null);
       }
       if (changed.length) {
         const { error: refused } = await write("/api/settings", "PATCH", Object.fromEntries(changed.map((k) => [k, draft[k]])));
@@ -171,7 +177,7 @@ function General({ name }: { name: string }) {
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       <div className="wsx-grid">
         <label className="wsx-label"><span className="gx-eyebrow">Workspace name</span>
-          <input className="gx-field" value={title.draft} maxLength={80} readOnly={!owner} title={owner ? undefined : "The owner names the workspace."} onChange={(e) => setTitle({ ...title, draft: e.target.value })} data-testid="ws-name" />
+          <input className="gx-field" value={title ?? name} maxLength={80} readOnly={!owner} title={owner ? undefined : "The owner names the workspace."} onChange={(e) => setTitle(e.target.value)} data-testid="ws-name" />
         </label>
         {select("approvalRule", "Cost approval", APPROVAL_OPTIONS, "ws-approval")}
         <label className="wsx-label"><span className="gx-eyebrow">Per-shot cap (cr)</span><input className="gx-field" inputMode="numeric" value={value("shotCapCredits")} disabled={!admin || value("approvalRule") !== "cap"} onChange={(e) => set("shotCapCredits", e.target.value.replace(/[^0-9]/g, ""))} data-testid="ws-shot-cap" /></label>
@@ -475,6 +481,8 @@ function Engines() {
   const [entering, setEntering] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  /* The account row reads the connection; the developer-API row follows it. */
+  const [linked, setLinked] = useState<boolean | null>(null);
   const save = async (name: string) => {
     setNote(null);
     const { error: refused } = await write("/api/workspaces/keys", "PUT", { name, value: key.trim() });
@@ -508,9 +516,9 @@ function Engines() {
         {owner ? <span className="cw-dim">{data?.mode === "legacy" ? "This workspace runs on the deployment’s keys." : "Keys are encrypted and never returned."}</span> : null}
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
-      {owner ? <ConnectedAccountRow /> : null}
+      {owner ? <ConnectedAccountRow onLinked={setLinked} /> : null}
       <XaiEngineRow />
-      {owner ? <DeveloperApiRow /> : null}
+      {owner ? <DeveloperApiRow connected={linked} /> : null}
     </>
   );
 }

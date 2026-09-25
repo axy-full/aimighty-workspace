@@ -77,10 +77,16 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
   return useMemo(() => ({ ...data, retry }), [data, retry]);
 }
 
+/** Ask every mounted useAccount to read /api/me now — after a change it reports, such as a rename. */
+export const ACCOUNT_REFRESH_EVENT = "particl-account-refresh";
+export function requestAccountRefresh() {
+  try { window.dispatchEvent(new Event(ACCOUNT_REFRESH_EVENT)); } catch { /* no window: nothing mounted to refresh */ }
+}
+
 /**
  * The workspace's live credit state, refreshed the same way the workbench's
  * account menu does it (components/workbench/WorkspaceMenu.tsx): on mount,
- * every 30 seconds and whenever the tab becomes visible.
+ * every 30 seconds and whenever the tab becomes visible, and at once on requestAccountRefresh().
  */
 export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount | null {
   const [account, setAccount] = useState(initial);
@@ -101,10 +107,12 @@ export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount |
     refresh();
     const timer = setInterval(refresh, 30000);
     document.addEventListener("visibilitychange", refresh);
+    window.addEventListener(ACCOUNT_REFRESH_EVENT, refresh);
     return () => {
       controller.abort();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener(ACCOUNT_REFRESH_EVENT, refresh);
     };
   }, [workspaceId]);
   return account;

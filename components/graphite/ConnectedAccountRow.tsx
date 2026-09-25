@@ -10,11 +10,12 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * /api/higgsfield/consumer/connect returns the account's own sign-in page, its
  * callback returns here with `?higgsfield=<outcome>`, and DELETE on
  * /api/higgsfield/consumer/connection lets go of the grant. Connecting starts
- * no paid job.
+ * no paid job. Every read reports whether the grant is live (`onLinked`), so
+ * the developer-API row below follows a disconnect at once.
  */
 type Connection = { connected: boolean; requiresReconnect: boolean };
 
-export function ConnectedAccountRow() {
+export function ConnectedAccountRow({ onLinked }: { onLinked?: (live: boolean) => void }) {
   const scoped = useScopedFetch();
   const [status, setStatus] = useState<Connection | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -30,9 +31,11 @@ export function ConnectedAccountRow() {
       const response = await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" });
       const json = await response.json().catch(() => null) as (Connection & { error?: string }) | null;
       if (!response.ok || !json) throw new Error(json?.error ?? "The connection could not be read.");
-      setStatus({ connected: json.connected === true, requiresReconnect: json.requiresReconnect === true });
-    } catch (caught) { setProblem(caught instanceof Error ? caught.message : "The connection could not be read."); }
-  }, [scoped]);
+      const next = { connected: json.connected === true, requiresReconnect: json.requiresReconnect === true };
+      setStatus(next);
+      onLinked?.(next.connected && !next.requiresReconnect);
+    } catch (caught) { setProblem(caught instanceof Error ? caught.message : "The connection could not be read."); onLinked?.(false); }
+  }, [scoped, onLinked]);
   useEffect(() => { const t = setTimeout(() => void read(), 0); return () => clearTimeout(t); }, [read]);
   const connect = async () => {
     setBusy("connect"); setProblem(null);
