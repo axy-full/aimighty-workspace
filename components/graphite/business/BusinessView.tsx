@@ -13,7 +13,7 @@ import {
 import { useShell } from "@/lib/shell/state";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
-import { useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { composerBusy, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -153,6 +153,7 @@ function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnec
 
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
+  if (state.phase === "resuming") return "Checking the last take…";
   if (state.phase === "quoting") return `${verb} · pricing…`;
   if (state.phase === "quoted") return `${verb} · ${cr(state.job.quoteCredits)}`;
   if (state.phase === "submitting") return "Submitting…";
@@ -187,7 +188,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   /* The button wears the account's exact price for exactly this input. */
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
   useEffect(() => {
-    if (!input || quotedFor === inputKey || phase === "submitting" || phase === "running") return;
+    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
@@ -285,7 +286,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const inputKey = JSON.stringify(input);
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
   useEffect(() => {
-    if (!input || quotedFor === inputKey || phase === "submitting" || phase === "running") return;
+    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);

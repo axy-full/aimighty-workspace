@@ -19,7 +19,7 @@ const DTC_MODEL = { id: "ms_image", name: "DTC Ads", outputType: "image", aspect
 /* The server answers every job with the input it was admitted with; a status read before any quote in this page still carries it. */
 const SAVED_INPUT = { type: "video", model: "marketing_studio_video", prompt: "Morning routine with the bottle on the sill.", parameters: { mode: "ugc", aspect_ratio: "9:16", duration: 15, resolution: "720p", generate_audio: true }, medias: [] };
 
-async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAvailable?: boolean } = {}) {
+async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAvailable?: boolean; holdStatus?: Promise<void> } = {}) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -41,7 +41,7 @@ async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAva
       if (body.credits !== 40) return route.fulfill({ status: 409, json: { code: "approval_changed", error: "Review this job’s wallet and exact credit quote again." } });
       return route.fulfill({ json: { job: job("accepted", 40) } });
     }
-    if (body.action === "status") return route.fulfill({ json: { job: job("completed", 40) } });
+    if (body.action === "status") { await options.holdStatus; return route.fulfill({ json: { job: job("completed", 40) } }); }
     return route.fulfill({ status: 400, json: { error: "unexpected" } });
   });
   await page.route("**/api/higgsfield/consumer/marketing-templates**", async (route) => {
@@ -236,6 +236,52 @@ test("an ad submitted before the page was left is picked up again and settled", 
   const { requests, errors } = await open(page, "ads");
   await expect(page.getByTestId("ads-done")).toContainText("Rendered.", { timeout: 15_000 });
   expect(requests.find((r) => r.action === "status")).toEqual({ action: "status", draftId: "ws-biz", id });
+  expect(await page.evaluate(() => localStorage.getItem("particl:connected-job:ads:ws-biz"))).toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test("while the last ad is read back nothing is priced or submitted, so a newer ad is never stranded under it", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const id = "9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d";
+  await page.addInitScript((jobId) => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("particl:connected-job:ads:ws-biz", jobId); } }, id);
+  /* The read-back of the finished ad is slow (its original is being collected). */
+  let release: () => void = () => undefined;
+  const holdStatus = new Promise<void>((resolve) => { release = resolve; });
+  const { requests, errors } = await open(page, "ads", { holdStatus });
+  await page.getByTestId("ads-prompt").fill("Morning routine with the bottle on the sill.");
+  await expect(page.getByTestId("ads-generate")).toHaveText("Checking the last take…");
+  await expect(page.getByTestId("ads-generate")).toBeDisabled();
+  await page.waitForTimeout(1500);
+  expect(requests.filter((r) => r.action === "quote")).toHaveLength(0);
+  expect(requests.filter((r) => r.action === "submit")).toHaveLength(0);
+  release();
+  await expect(page.getByTestId("ads-done")).toContainText("Rendered.", { timeout: 15_000 });
+  expect(await page.evaluate(() => localStorage.getItem("particl:connected-job:ads:ws-biz"))).toBeNull();
+  /* The next ad is priced from here, and only now. */
+  await page.getByTestId("ads-requote").click();
+  await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
+  expect(errors).toEqual([]);
+});
+
+test("an ad the server no longer knows is forgotten and the composer prices at once; a lost submit reply is read, never re-sent", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  await page.addInitScript(() => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("particl:connected-job:ads:ws-biz", "0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b"); } });
+  let lose = true;
+  await page.route("**/api/higgsfield/consumer/generation", async (route) => {
+    const body = route.request().postDataJSON() as { action?: string; id?: string };
+    if (body.action === "status" && body.id === "0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b") return route.fulfill({ status: 404, json: { code: "not_found", error: "This generation job is not available." } });
+    /* The account took the job, but the reply never arrived. */
+    if (body.action === "submit" && lose) { lose = false; return route.fulfill({ status: 503, json: { error: "The connected account could not complete this request. Check the saved job before trying again." } }); }
+    return route.fallback();
+  });
+  const { requests, errors } = await open(page, "ads");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("particl:connected-job:ads:ws-biz"))).toBeNull();
+  await page.getByTestId("ads-prompt").fill("Morning routine with the bottle on the sill.");
+  await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
+  await page.getByTestId("ads-generate").click();
+  await expect(page.getByTestId("ads-done")).toContainText("Rendered.", { timeout: 15_000 });
+  expect(requests.filter((r) => r.action === "submit")).toHaveLength(1);
+  expect(requests.filter((r) => r.action === "status").at(-1)).toMatchObject({ action: "status", id: "9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d" });
   expect(await page.evaluate(() => localStorage.getItem("particl:connected-job:ads:ws-biz"))).toBeNull();
   expect(errors).toEqual([]);
 });
