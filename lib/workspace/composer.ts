@@ -47,6 +47,13 @@ export type ComposerModel = {
   soulId?: boolean;
   /** Connected models: the most references the smallest slot allows, when declared. */
   mediaMax?: number;
+  /** Workspace image/video engines: the most reference images and videos the engine takes. */
+  maxImages?: number;
+  maxVideos?: number;
+  /** Renders sound with the picture: the engine's own flag, or a connected schema's audio parameter. */
+  audio?: boolean;
+  /** Workspace image/video engines: the price at the composer's untouched settings (GET /api/workbench/engines › rate). */
+  rate?: EngineRate | null;
 };
 
 /** A project file picked as a reference: already saved, so it is cited by id. */
@@ -174,6 +181,9 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 
 /* ── Model lists ──────────────────────────────────────────────────────── */
 
+/** An engine's price at the composer's untouched settings, in credits (lib/workbench/media-quote.ts › workbenchRate). */
+export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+
 /** A row of GET /api/workbench/engines, as the composer reads it. */
 export type EngineRow = {
   id: string;
@@ -183,6 +193,12 @@ export type EngineRow = {
   durations: number[];
   soulIdentity?: boolean;
   marketing?: boolean;
+  maxReferenceImages?: number;
+  maxReferenceVideos?: number;
+  /** One line on what the engine is for. */
+  use?: string;
+  audio?: boolean;
+  rate?: EngineRate | null;
 };
 
 /** A row of the connected account's catalogue, as the composer reads it (the CLI's `model get` shape). */
@@ -219,6 +235,11 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ratios: engine.ratios,
       resolutions: engine.resolutions,
       durations: engine.durations,
+      ...(engine.use ? { description: engine.use } : {}),
+      ...(typeof engine.maxReferenceImages === "number" ? { maxImages: engine.maxReferenceImages } : {}),
+      ...(typeof engine.maxReferenceVideos === "number" ? { maxVideos: engine.maxReferenceVideos } : {}),
+      ...(engine.audio ? { audio: true } : {}),
+      ...(engine.rate ? { rate: engine.rate } : {}),
     }));
   if (audio?.configured) {
     const speech = audio.defaultSpeechModel || audio.speechModels[0]?.id || "";
@@ -258,6 +279,7 @@ export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] 
       enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
       soulId: Boolean(row.parameters?.some((p) => p.name === "soul_id")),
       ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
+      ...(type === "video" && row.parameters?.some((p) => /audio|sound/i.test(p.name)) ? { audio: true } : {}),
     }];
   });
 }
@@ -362,6 +384,10 @@ export function liveCredits(quote: ComposerQuote | null, quoteKey: string): numb
   return quote.credits;
 }
 
+/** The two reasons that mean "still loading", not "refused" — the model sheet draws them as a loading list. */
+export const READING_ACCOUNT = "Reading the connected account…";
+export const READING_MODELS = "Reading the available models…";
+
 /**
  * Why Generate cannot run, or null. A missing or stale quote blocks with a
  * visible reason rather than a button that silently does nothing.
@@ -379,13 +405,13 @@ export function composerBlock(input: {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
   if (state.billing === "connected") {
-    if (!input.capability) return "Reading the connected account…";
+    if (!input.capability) return READING_ACCOUNT;
     if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
     if (!input.capability.connected) return "No account is connected. Connect one in Workspace settings, or use this workspace’s credits.";
     if (input.capability.suspended) return "Rendering is paused for this workspace.";
   }
   if (input.catalogue.error) return input.catalogue.error;
-  if (input.catalogue.loading && !model) return "Reading the available models…";
+  if (input.catalogue.loading && !model) return READING_MODELS;
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
   if (!state.prompt.trim()) return "Write what to generate.";
   if (model.audioTask === "speech" && !state.voiceId) return "Choose a voice.";

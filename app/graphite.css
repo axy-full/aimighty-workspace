@@ -268,6 +268,54 @@
 .gx-sheet-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .gx-sheet-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 6px; min-height: 48px; }
 .gx-sheet-row:hover, .gx-sheet-row[aria-selected="true"] { background: var(--gx-input); }
+/* Gen's model sheet (components/graphite/ModelSheet.tsx): search, Recent, spec chips and a price on every row. */
+/* min-width 0: a one-liner never widens the sheet past a phone (the veil's grid track would grow to its min-content). */
+.gx-sheet--models { min-width: 0; }
+/* One width whichever catalogue is showing, so switching tabs or searching never makes the dialog jump. */
+@media (min-width: 768px) { .gx-sheet--models { width: min(640px, calc(100vw - 32px)); } }
+.gx-sheet--models .gx-sheet-main .gx-model-sub { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.gx-sheet-find { flex: 1 1 100%; min-width: 0; }
+.gx-sheet-find .gx-field { height: 36px; }
+.gx-sheet-find .gx-field::-webkit-search-cancel-button { cursor: pointer; }
+.gx-sheet-group { display: flex; flex-direction: column; gap: 2px; }
+.gx-sheet-group + .gx-sheet-group { margin-top: 6px; }
+.gx-sheet-group-label { padding: 6px 10px 2px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-sheet-row--spec { align-items: center; padding: 10px 16px 10px 12px; text-align: left; }
+.gx-sheet-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.gx-sheet-specs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.gx-spec { height: 20px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--gx-text-2); background: rgba(255, 255, 255, .05); border: 1px solid var(--gx-hair); }
+.gx-spec[data-spec="audio"], .gx-spec[data-spec="enhance"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-sheet-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; min-width: 64px; text-align: right; }
+.gx-sheet-price b { font-family: var(--gx-mono); font-size: 13.5px; font-weight: 600; color: var(--gx-text); white-space: nowrap; }
+.gx-sheet-price span { font-size: 11px; color: var(--gx-text-2); white-space: nowrap; }
+.gx-sheet-price[data-kind="none"] span { max-width: 76px; white-space: normal; line-height: 1.25; }
+.gx-sheet-tick { flex: none; width: 12px; color: var(--gx-accent-text); }
+.gx-sheet-none { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px; }
+.gx-sheet-loading { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
+.gx-sheet-skel { height: 64px; border-radius: 999px; background: linear-gradient(90deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, .08), rgba(255, 255, 255, .04)); animation: gx-pulse 1.4s ease-in-out infinite; }
+@media (max-width: 767px) {
+  /* Title and Close on one line, the catalogue switch full width under them, then the search. */
+  .gx-sheet--models .gx-sheet-head .gx-panel-title { margin-right: auto; }
+  .gx-sheet--models .gx-sheet-head .gx-seg { order: 2; flex: 1 1 100%; margin-right: 0; }
+  .gx-sheet--models .gx-sheet-head .gx-seg-btn { flex: 1 1 0; justify-content: center; }
+  .gx-sheet--models .gx-sheet-find { order: 3; }
+  /* The name already leads the row: the two-letter tag gives its width to the chips. */
+  .gx-sheet-row--spec > .gx-tool-tag { display: none; }
+  /* The row is a capsule (GLASS_SPEC): 20px sides keep its first and last lines clear of the curve. */
+  .gx-sheet-row--spec { gap: 10px; padding: 10px 20px; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-sheet-find .gx-field { height: 44px; }
+  .gx-sheet-group-label, .gx-spec, .gx-sheet-price span { font-size: 12px; }
+  .gx-spec { height: 22px; }
+}
+/* A phone on its side: the sheet takes the screen's height rather than 70% of it under a 12vh gap. */
+@media (max-height: 500px) and (min-width: 768px) {
+  .gx-veil:has(> .gx-sheet--models) { padding-top: 12px; padding-bottom: 12px; }
+  .gx-sheet--models { max-height: calc(100dvh - 24px); }
+  .gx-sheet--models .gx-sheet-head { padding: 8px 14px; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .gx-sheet-skel { animation: none; } }
 @media (max-width: 1023px) { .gx-gen { grid-template-columns: minmax(0, 1fr); padding: 12px; } }
 
 /* ── Assets on every page (FINAL_SPEC §1 step 1) ─────────────────────── */

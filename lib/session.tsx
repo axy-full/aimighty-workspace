@@ -73,7 +73,8 @@ const SessionContext = createContext<Session>({ signedIn: false, name: null, ema
  * Preferences deliberately survive: theme, composer defaults, whether the
  * chat dock was open. Those are about the browser, not about the work.
  */
-const PRIVATE_PREFIXES = ["aw_poster:", "aw_draft:"];
+/* "particl-picker:" is Gen's model sheet (lib/workspace/model-picker.ts): recent picks and last connected quotes. */
+const PRIVATE_PREFIXES = ["aw_poster:", "aw_draft:", "particl-picker:"];
 const PRIVATE_KEYS = ["aw_posters:index", "aw_project", "aw_compose_seed", "aw_compose_spec"];
 
 export function clearPrivateLocal(): void {

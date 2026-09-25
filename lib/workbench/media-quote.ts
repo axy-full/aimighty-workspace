@@ -66,3 +66,40 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
     : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: false, task: 'generate' });
   return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput };
 }
+
+/**
+ * Whether an engine's clips carry sound: an audio switch (supportsAudio), or
+ * xAI's video, which always renders it and so has no switch (lib/models.ts ›
+ * XAI_VIDEO_MODELS). For the model sheet's Audio chip.
+ */
+export function rendersSound(model: ModelDef): boolean {
+  return model.kind === 'video' && (model.supportsAudio || model.provider === 'xai');
+}
+
+/** The settings an untouched composer renders an engine with, and what they cost. */
+export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false };
+
+/**
+ * The price the model sheet prints beside an engine, before anything is written:
+ * the composer's own untouched settings (lib/workspace/composer.ts ›
+ * composerSettings — the first size, 16:9 where offered, 5 s where offered) with
+ * no references, through the same quoteWorkbenchMedia the button uses, so
+ * picking the engine shows the same figure on Generate. It reads no row and
+ * reserves nothing; only credits leave the server. Null where only a live quote
+ * can price the engine (campaign and identity engines) or nothing prices it.
+ */
+export function workbenchRate(model: ModelDef): WorkbenchRate | null {
+  if (model.marketing || model.soulIdentity) return null;
+  const resolution = model.resolutions[0];
+  const ratio = model.ratios.includes('16:9') ? '16:9' : model.ratios.find(r => r !== 'adaptive') ?? model.ratios[0];
+  const duration = model.kind === 'video' ? (model.durations.includes(5) ? 5 : model.durations[0] ?? null) : null;
+  if (!resolution || !ratio || (model.kind === 'video' && duration == null)) return null;
+  try {
+    const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration: duration ?? 5 }, NO_REFERENCES);
+    return credits == null ? null : { credits, resolution, ratio, duration };
+  } catch (error) {
+    if (error instanceof MediaQuoteError) return null;
+    throw error;
+  }
+}
