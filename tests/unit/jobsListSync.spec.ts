@@ -21,15 +21,16 @@ function load<T>(file: string, dependencies: Record<string, unknown>): T {
 test("the jobs list answers before reconciling what is in flight, and reconciles after the response", async () => {
   const { NextResponse } = createRequire(path.resolve("package.json"))("next/server") as typeof import("next/server");
   const later: (() => Promise<unknown>)[] = [];
-  let syncs = 0, finish!: () => void;
+  let syncs = 0, reserved = 0, active = true, finish!: () => void;
   const slow = new Promise<void>((resolve) => { finish = resolve; });
   const route = load<typeof import("../../app/api/jobs/route")>("app/api/jobs/route.ts", {
     "next/server": { NextResponse, after: (fn: () => Promise<unknown>) => { later.push(fn); } },
-    "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, fn: () => Promise<unknown>) => fn },
+    "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, fn: () => Promise<unknown>) => { reserved++; return fn; } },
     "@/lib/auth": { requireUser: async () => ({ user: { id: "member", role: "member" }, token: null }), withTenant: (handler: unknown) => handler },
     "@/lib/tenant": { requireTenant: () => ({ id: "ws_list" }) },
     "@/lib/jobs": {
       listGenerations: async () => [],
+      hasActiveGenerations: async () => active,
       // A render landing now would download its master here; the list must not wait for it.
       syncActive: async () => { syncs++; await slow; },
     },
@@ -47,5 +48,13 @@ test("the jobs list answers before reconciling what is in flight, and reconciles
   // sync=0 reads never reconcile at all.
   later.length = 0;
   await (route.GET as unknown as (req: Request) => Promise<Response>)(new Request("http://unit.invalid/api/jobs?limit=5&sync=0"));
+  expect(later).toHaveLength(0);
+
+  // With nothing in flight, a poll reserves nothing on the platform: one read, then the list.
+  active = false;
+  reserved = 0;
+  const idle = await (route.GET as unknown as (req: Request) => Promise<Response>)(new Request("http://unit.invalid/api/jobs?limit=5"));
+  expect(idle.status).toBe(200);
+  expect(reserved).toBe(0);
   expect(later).toHaveLength(0);
 });

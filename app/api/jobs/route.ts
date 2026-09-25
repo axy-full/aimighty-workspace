@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listGenerations, syncActive } from "@/lib/jobs";
+import { hasActiveGenerations, listGenerations, syncActive } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
@@ -41,11 +41,13 @@ export const GET = withTenant(async function GET(req: Request) {
 
   // Reconcile anything actually in flight — after answering, never before: a
   // render that lands may start a master download of up to 200 MB, and the
-  // list must not wait on it. The next poll shows what landed. A no-op (one
-  // indexed lookup) whenever nothing is rendering; the cron owns repairs.
+  // list must not wait on it. The next poll shows what landed. Whenever
+  // nothing is rendering this is one indexed lookup and nothing is reserved;
+  // the cron owns repairs.
   if (url.searchParams.get("sync") !== "0") {
     try {
-      after(await reserveRecoveryContinuation("after-response", () => syncActive().catch(() => { /* the next poll tries again */ })));
+      if (await hasActiveGenerations())
+        after(await reserveRecoveryContinuation("after-response", () => syncActive().catch(() => { /* the next poll tries again */ })));
     } catch { /* listing still works */ }
   }
 

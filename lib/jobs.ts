@@ -597,6 +597,13 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 });
 }
 
+/** Whether anything is in flight: one indexed read, so an idle list poll costs nothing more. */
+export async function hasActiveGenerations(): Promise<boolean> {
+  await ready();
+  const rs = await db().execute(`SELECT 1 FROM generations WHERE status IN ('queued','running') AND deleted = 0 LIMIT 1`);
+  return rs.rows.length > 0;
+}
+
 /**
  * The cheap sync for READ paths.
  *
