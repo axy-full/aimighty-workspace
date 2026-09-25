@@ -128,12 +128,38 @@ test("the two tools have their own lane nodes, take only stored originals, and a
   const changed: Asset = { ...asset, id: "gen-vc-1", generationId: "gen-vc-1", name: "Interview · voice changed (Avery)" };
   const replaced = placeGeneratedClip({ ...edited, assets: [...edited.assets, changed] }, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 65);
   expect(replaced.audioClips).toHaveLength(2);
-  expect(replaced.audioClips![0]).toEqual({ ...clip, assetId: "gen-vc-1", sourceIn: 0 });
+  // The re-voiced file keeps the source's timing, so the trimmed clip keeps its in point.
+  expect(replaced.audioClips![0]).toEqual({ ...clip, assetId: "gen-vc-1" });
   expect(() => validateAudio(replaced)).not.toThrow();
+  // A shorter file trims the clip (and its fades) to what the file holds.
+  const withChanged = { ...edited, assets: [...edited.assets, changed] };
+  const shorter = placeGeneratedClip(withChanged, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 1.5);
+  expect(shorter.audioClips![0]).toMatchObject({ startFrame: 6, sourceIn: 3, duration: 33, fadeIn: 2, fadeOut: 2 });
+  const tiny = placeGeneratedClip(withChanged, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 2 / 24);
+  expect(tiny.audioClips![0]).toMatchObject({ sourceIn: 1, duration: 1, fadeIn: 1, fadeOut: 0 });
+  expect(() => validateAudio(tiny)).not.toThrow();
   // Replacing twice is a no-op; a vanished clip falls back to adding one at the playhead.
   expect(placeGeneratedClip(replaced, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 65)).toBe(replaced);
   const added = placeGeneratedClip({ ...edited, assets: [...edited.assets, changed] }, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "gone", startFrame: 30 }, changed, 65);
   expect(added.audioClips).toHaveLength(3);
-  expect(added.audioClips![2]).toMatchObject({ assetId: "gen-vc-1", lane: "dialogue", startFrame: 30, duration: 65 * added.fps });
+  // Added at the playhead, it ends with the 15 s cut rather than running 65 s past it.
+  expect(added.audioClips![2]).toMatchObject({ assetId: "gen-vc-1", lane: "dialogue", startFrame: 30, duration: 360 - 30 });
+});
+
+test("a generated clip never runs past the cut or its own file", () => {
+  const project = { ...seedProject(), fps: 24, assets: [asset], audioClips: [] };
+  const total = project.shots.reduce((n, s) => n + s.duration, 0);
+  expect(total).toBe(360);
+  // 30 s of music at 00:00 + 12 frames on a 15 s cut: trimmed at the cut's end.
+  const music = placeGeneratedClip(project, { ...placement, task: "music", lane: "music", label: "Music" }, asset, 30);
+  const clip = music.audioClips![0];
+  expect(clip).toMatchObject({ startFrame: 12, sourceIn: 0, duration: total - 12 });
+  expect(clip.startFrame + clip.duration).toBe(total);
+  expect(() => validateAudio(music)).not.toThrow();
+  // Whole frames only: 5.03 s at 24 fps is 120 frames, never 121 (which would pass the file's end).
+  expect(placeGeneratedClip(project, { ...placement, startFrame: 0 }, asset, 5.03).audioClips![0].duration).toBe(120);
+  // A playhead at or past the cut's end, or an empty cut, cannot place a clip; the asset stays in the library.
+  expect(() => placeGeneratedClip(project, { ...placement, startFrame: total }, asset, 3)).toThrow(/in the library, not on the timeline: the cut ends before 00:15/);
+  expect(() => placeGeneratedClip({ ...project, shots: [] }, placement, asset, 3)).toThrow(/the cut is empty/);
 });
 
