@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { ESTIMATE_LIFETIME_MS, listedJobs, pendingJobIds } from "./viral";
+import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfterStatus, type ViralRun } from "./viral";
 
 /**
  * The Genjutsu pages' one line to the connected account
@@ -28,7 +28,7 @@ export function useViral(draftId: string | null, ready: boolean) {
   const [capabilities, setCapabilities] = useState<ViralCapabilities | null>(null);
   const [jobs, setJobs] = useState<GenjutsuJob[]>([]);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
-  const [run, setRun] = useState<{ phase: "idle" } | { phase: "submitting"; job: GenjutsuJob } | { phase: "running"; job: GenjutsuJob } | { phase: "done"; job: GenjutsuJob } | { phase: "failed"; job: GenjutsuJob | null; error: string }>({ phase: "idle" });
+  const [run, setRun] = useState<ViralRun<GenjutsuJob>>({ phase: "idle" });
   const [listError, setListError] = useState<string | null>(null);
 
   const call = useCallback(async (body: unknown) => {
@@ -76,10 +76,13 @@ export function useViral(draftId: string | null, ready: boolean) {
     try {
       const job = await call({ action: "submit", draftId, id: current.job.id, workspaceId: current.job.workspaceId, credits: current.credits });
       setEstimate(null);
-      setRun(job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: "The connected account reported this job as failed. Failed renders are not billed." } : { phase: "running", job });
+      setRun(job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: VIRAL_FAILED } : { phase: "running", job });
       void refresh();
     } catch (error) {
       setRun({ phase: "failed", job: current.job, error: error instanceof Error ? error.message : "The job could not be submitted." });
+      /* A lost reply may still have reached the account: the list says so, and a job it took is polled
+         like any other — this run too, which then shows it rendering. */
+      void refresh();
     }
   }, [call, draftId, refresh]);
 
@@ -97,12 +100,7 @@ export function useViral(draftId: string | null, ready: boolean) {
         const job = await call({ action: "status", draftId, id });
         if (stop) return;
         setJobs((list) => list.map((j) => (j.id === job.id ? job : j)));
-        setRun((current) => {
-          if (current.phase !== "running" || current.job.id !== job.id) return current;
-          if (job.status === "completed") return { phase: "done", job };
-          if (job.status === "failed") return { phase: "failed", job, error: "The connected account reported this job as failed. Failed renders are not billed." };
-          return { phase: "running", job };
-        });
+        setRun((current) => runAfterStatus(current, job));
         if (job.status === "completed") void refresh();
       } catch { /* retried on its next turn */ }
     }, POLL_MS);

@@ -109,16 +109,43 @@ export function pendingJobIds(jobs: readonly Listed[], running: string | null): 
   return running && !ids.includes(running) ? [running, ...ids] : ids;
 }
 
+/** The composer's run, as the page tracks it. */
+export type ViralRun<J extends Listed> = { phase: "idle" } | { phase: "submitting"; job: J } | { phase: "running"; job: J } | { phase: "done"; job: J } | { phase: "failed"; job: J | null; error: string };
+export const VIRAL_FAILED = "The connected account reported this job as failed. Failed renders are not billed.";
+/**
+ * Where a status read leaves the composer's run: the job submitted here, and
+ * also one whose submit reply was lost (shown failed) that the list then
+ * shows the account took — it is rendering after all.
+ */
+export function runAfterStatus<J extends Listed>(current: ViralRun<J>, job: J): ViralRun<J> {
+  const mine = (current.phase === "running" || current.phase === "failed") && current.job?.id === job.id;
+  if (!mine) return current;
+  if (job.status === "completed") return { phase: "done", job };
+  if (job.status === "failed") return { phase: "failed", job, error: VIRAL_FAILED };
+  if ((PENDING_STATUSES as readonly string[]).includes(job.status)) return { phase: "running", job };
+  return current;
+}
+
 /**
  * Compare's two players on one clock: a seek on one is mirrored onto the
  * other, and the `seeked` that mirrored seek fires is not mirrored back (that
- * ping-pong, with frame snapping, kept both players re-seeking). `last` holds
- * the player last seeked on the other's behalf. True when it seeked `to`.
+ * ping-pong, with frame snapping, kept both players re-seeking). `last` marks
+ * the player seeked on the other's behalf, to which time and when; only a
+ * `seeked` that matches the mark, soon after, is that echo. A mirrored seek
+ * that never fires (a player without its metadata yet) leaves a mark that
+ * expires, so it cannot swallow the viewer's next real seek. True when it
+ * seeked `to`.
  */
-export function mirrorSeek<T extends { currentTime: number }>(from: T, to: T | null, last: { current: T | null }): boolean {
-  if (last.current === from) { last.current = null; return false; }
+export type MirrorMark<T> = { player: T; time: number; at: number } | null;
+export const MIRROR_ECHO_MS = 1000;
+export function mirrorSeek<T extends { currentTime: number }>(from: T, to: T | null, last: { current: MirrorMark<T> }, now = Date.now()): boolean {
+  const mark = last.current;
+  if (mark && mark.player === from) {
+    last.current = null;
+    if (now - mark.at <= MIRROR_ECHO_MS && Math.abs(from.currentTime - mark.time) <= 0.1) return false;
+  }
   if (!to || Math.abs(to.currentTime - from.currentTime) <= 0.05) return false;
-  last.current = to;
+  last.current = { player: to, time: from.currentTime, at: now };
   to.currentTime = from.currentTime;
   return true;
 }

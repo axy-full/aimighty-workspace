@@ -1,11 +1,10 @@
 "use client";
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { agentStateLabel, priceText, runButton, stepRows } from "@/lib/workspace/atomik-view";
-import { pageDef, suiteOfPage } from "@/lib/workspace/pages";
+import { pageDef } from "@/lib/workspace/pages";
 import { formatCredits } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
-import type { PageId } from "@/lib/workspace/types";
-import { pageOfLegacy, suiteOfLegacy } from "@/lib/shell/ia";
+import { atomikSheetRuns } from "@/lib/shell/atomik-sheet";
 import { useShell } from "@/lib/shell/state";
 
 /**
@@ -28,17 +27,12 @@ export function AtomikSheet() {
   const runnable = atomik.runnable(state.page);
   const button = runButton(run, runnable);
   const rows = plan ? stepRows(plan, run, atomik.ctx) : [];
-  const waiting = run?.status === "waiting";
-  const quote = run?.quote ?? null;
+  /* A run held on another page stays reachable: its page opens it, or its gate is here. */
+  const { elsewhere, gate: gateRun } = atomikSheetRuns(run, atomik.state.run);
+  const openElsewhere = elsewhere?.open ?? null;
+  const waiting = Boolean(gateRun);
+  const quote = gateRun?.quote ?? null;
   const gatePrice = quote ? formatCredits(quote.credits, quote.unit) : null;
-  /* A run held on another page stays reachable: an approval never hides. */
-  const elsewhere = atomik.state.run && (!run || atomik.state.run.id !== run.id) && ["running", "waiting"].includes(atomik.state.run.status) ? atomik.state.run : null;
-  const elsewherePage = elsewhere ? (elsewhere.page as PageId) : null;
-  const openElsewhere = (page: PageId) => {
-    const legacy = suiteOfPage(page);
-    const target = pageOfLegacy(legacy, page);
-    if (target) shell.goSuite(suiteOfLegacy(legacy), target.id);
-  };
 
   return (
     <div className="gx-veil" onClick={close} data-testid="atomik-veil">
@@ -51,11 +45,13 @@ export function AtomikSheet() {
           <button type="button" className="gx-hbtn" onClick={close} data-testid="atomik-close">Close</button>
         </div>
         <div className="gx-atomik-body gx-scroll">
-          {elsewhere && elsewherePage ? (
-            <button type="button" className="gx-hbtn gx-atomik-elsewhere" onClick={() => openElsewhere(elsewherePage)} data-testid="atomik-elsewhere">
-              {pageDef(elsewherePage).title} {elsewhere.status === "waiting" ? "is waiting on your approval" : "is running"} · Open
+          {elsewhere ? (openElsewhere ? (
+            <button type="button" className="gx-hbtn gx-atomik-elsewhere" onClick={() => shell.goSuite(openElsewhere.suite, openElsewhere.page)} data-testid="atomik-elsewhere">
+              {pageDef(elsewhere.page).title} {elsewhere.run.status === "waiting" ? "is waiting on your approval" : "is running"} · Open
             </button>
-          ) : null}
+          ) : (
+            <p className="gx-hint" role="status" data-testid="atomik-elsewhere">{pageDef(elsewhere.page).title} {elsewhere.run.status === "waiting" ? "is waiting on your approval" : "is running"}</p>
+          )) : null}
           <div>
             <div className="gx-model-name" data-testid="atomik-plan-title">{plan?.title ?? pageDef(state.page).title}</div>
             <p className="gx-hint">{plan ? plan.line : "No plan is available for this page."}</p>
@@ -76,12 +72,12 @@ export function AtomikSheet() {
             <div className="gx-atomik-gate" role="group" aria-label="Approval required" data-testid="atomik-gate">
               <div className="gx-atomik-gate-head"><span>Approval required</span><span className="gx-mono" data-testid="atomik-gate-price">{gatePrice ?? "—"}</span></div>
               {quote ? <p className="gx-hint">{quote.line}</p> : null}
-              {run?.notice ? <p className="gx-hint" role="status">{run.notice}</p> : null}
-              {run?.quoting ? <p className="gx-hint" role="status">Getting a fresh quote…</p> : null}
+              {gateRun?.notice ? <p className="gx-hint" role="status">{gateRun.notice}</p> : null}
+              {gateRun?.quoting ? <p className="gx-hint" role="status">Getting a fresh quote…</p> : null}
               <div className="gx-atomik-actions">
-                <button type="button" className="gx-hbtn" onClick={atomik.decline} disabled={run?.approved}>Not now</button>
+                <button type="button" className="gx-hbtn" onClick={atomik.decline} disabled={gateRun?.approved}>Not now</button>
                 {/* approve(), never start(): the run resumes from its gate. */}
-                <button type="button" className="gx-primary" disabled={!quote || run?.quoting} onClick={() => void atomik.approve()} data-testid="atomik-approve">Approve {gatePrice ?? ""}</button>
+                <button type="button" className="gx-primary" disabled={!quote || gateRun?.quoting} onClick={() => void atomik.approve()} data-testid="atomik-approve">Approve {gatePrice ?? ""}</button>
               </div>
             </div>
           ) : null}

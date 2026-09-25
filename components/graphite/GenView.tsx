@@ -89,7 +89,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, Soul ID › Use in Gen, an
      asset's Retry generation) is applied the moment it arrives — on Gen too — then forgotten.
      The catalogue comes first (it decides which models exist), then the kind, the model, the words,
-     the identity; a Retry's own references replace the well. */
+     the settings, the identity; a Retry's own references replace the well. */
   const [presetNote, setPresetNote] = useState<string | null>(null);
   const presetTurn = useRef(0);
   const applyPreset = useCallback((preset: GenPreset) => {
@@ -100,6 +100,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     if (preset.type) dispatchComposer({ type: "type", value: preset.type });
     if (preset.model) dispatchComposer({ type: "model", value: preset.model });
     dispatchComposer({ type: "prompt", value: preset.prompt });
+    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
     if (preset.soulId) dispatchComposer({ type: "pick", value: { soulId: preset.soulId } });
     setPresetNote(preset.note ?? null);
     setWellError(null);

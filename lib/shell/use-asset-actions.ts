@@ -133,9 +133,10 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     if (!entry) return;
     if (entry.asset.origin !== "generation") { ws.toast("An upload was not generated; there is nothing to retry."); return; }
     /* Gen applies it at once when it is on screen, or when it opens. */
-    sendGenPreset(retryPreset(entry.asset.value));
+    const preset = retryPreset(entry.asset.value);
+    sendGenPreset(preset);
     if (shell.view !== "gen") shell.goGen();
-    ws.toast(SAY.retry(entry.take.name));
+    ws.toast(SAY.retry(entry.take.name, preset.kept));
   }, [find, shell, ws]);
 
   /* A render dropped on a Rig row is filed on that shot (its next version); an upload cannot be. */

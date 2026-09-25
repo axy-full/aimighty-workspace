@@ -7,7 +7,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
 import { useViral, type GenjutsuJob } from "@/lib/shell/use-viral";
 import {
-  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, mirrorSeek, moveReference, viralBlock, viralMedia,
+  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, mirrorSeek, moveReference, type MirrorMark, viralBlock, viralMedia,
   type ViralMedia, type ViralPage, type ViralResolution, type ViralState,
 } from "@/lib/shell/viral";
 import type { Project } from "@/lib/workbench/studio";
@@ -227,7 +227,7 @@ function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; sour
   const a = useRef<HTMLVideoElement>(null), b = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   /* A seek mirrored onto the other player fires its own `seeked`; that one is not mirrored back. */
-  const mirrored = useRef<HTMLVideoElement | null>(null);
+  const mirrored = useRef<MirrorMark<HTMLVideoElement>>(null);
   const follow = (from: HTMLVideoElement, to: HTMLVideoElement | null) => { mirrorSeek(from, to, mirrored); };
   const both = (fn: (v: HTMLVideoElement) => void) => [a.current, b.current].forEach((v) => v && fn(v));
   const toggle = () => { if (playing) { both((v) => v.pause()); setPlaying(false); } else { both((v) => { void v.play().catch(() => undefined); }); setPlaying(true); } };

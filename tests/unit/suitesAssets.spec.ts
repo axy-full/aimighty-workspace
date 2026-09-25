@@ -47,16 +47,30 @@ test("delete says what really happens to each kind of asset", () => {
   expect(SAY.pasted("X", "Northline")).toBe("Pasted X into Northline");
 });
 
-test("Retry hands Gen the render's own inputs: words, engine, catalogue, identity and references", () => {
-  const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox", references: [{ genId: "g7", role: "reference_image", kind: "image" }, { uploadId: "u3", role: "reference_video", kind: "video" }, { url: "https://elsewhere.invalid/x.png" }] }, title: "Fox" });
-  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", references: [{ genId: "g7", role: "reference_image" }, { uploadId: "u3", role: "reference_video" }], note: "Retry · Fox · same inputs · new seed" });
+test("Retry hands Gen the render's own inputs: words, engine, catalogue, settings, identity and references", () => {
+  const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox", ratio: "9:16", resolution: "1080p", duration: 10, references: [{ genId: "g7", role: "reference_image", kind: "image" }, { uploadId: "u3", role: "reference_video", kind: "video" }, { url: "https://elsewhere.invalid/x.png" }] }, title: "Fox" });
+  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", references: [{ genId: "g7", role: "reference_image" }, { uploadId: "u3", role: "reference_video" }], picks: { ratio: "9:16", resolution: "1080p", duration: 10 }, kept: "same inputs", note: "Retry · Fox · same inputs · new seed" });
+  expect(SAY.retry("Fox", preset.kept)).toBe("Retry Fox — same inputs, new seed. Quoted before it runs.");
   expect(retryPreset({ prompt: "p", model: "m", kind: "model" }).type).toBeUndefined();
   expect(retryPreset({ prompt: "p", model: "m", kind: "image" }).references).toEqual([]);
-  /* A catalogue render keeps its catalogue and its Soul ID (lib/higgsfield-consumer/original-identity). */
-  const soul = retryPreset({ prompt: "Mira at dusk", model: "soul_2", kind: "image", params: { task: "connected-generation", outputType: "image", settings: { aspect_ratio: "3:4", soul_id: "soul_ready" }, references: [{ uploadId: "u9", role: "image", kind: "image" }] } });
-  expect(soul).toMatchObject({ billing: "connected", model: "soul_2", soulId: "soul_ready", references: [{ uploadId: "u9", role: "image" }] });
-  /* Another connected workflow (a template, a voice tool) is not a Gen catalogue render. */
-  expect(retryPreset({ prompt: "p", model: "marketing_studio_v2", kind: "image", params: { task: "connected-generation", workflow: "marketing-template" } }).billing).toBe("workspace");
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image" }).picks).toBeUndefined();
+  /* A catalogue render keeps its catalogue, its settings and its Soul ID (lib/higgsfield-consumer/original-identity). */
+  const soul = retryPreset({ prompt: "Mira at dusk", model: "soul_2", kind: "image", params: { task: "connected-generation", outputType: "image", settings: { aspect_ratio: "3:4", resolution: "2k", soul_id: "soul_ready" }, references: [{ uploadId: "u9", role: "image", kind: "image" }] } });
+  expect(soul).toMatchObject({ billing: "connected", model: "soul_2", soulId: "soul_ready", references: [{ uploadId: "u9", role: "image" }], picks: { ratio: "3:4", resolution: "2k" }, kept: "same inputs" });
+  /* This workspace's composer gives a reference its role from its kind: a render's frames come back as references, and it says so. */
+  const framed = retryPreset({ prompt: "p", model: "kling-3-pro", kind: "video", params: { references: [{ genId: "g1", role: "first_frame", kind: "image" }, { genId: "g2", role: "last_frame", kind: "image" }] }, title: "Door" });
+  expect(framed.kept).toBe("same inputs, frames as references");
+  expect(framed.note).toBe("Retry · Door · same inputs, frames as references · new seed");
+  /* Made by another tool (a template, a voice tool, Viral, an edit or upscale of a clip): Gen takes the words only, clears the well, and says so. */
+  for (const params of [{ task: "connected-generation", workflow: "marketing-template" }, { task: "connected-generation", workflow: "voice-tool" }, { task: "genjutsu" }, { task: "upscale", sourceGenId: "g0" }, { task: "edit", references: [{ genId: "g0" }] }]) {
+    const other = retryPreset({ prompt: "p", model: "marketing_studio_v2", kind: "image", params, title: "Poster" });
+    expect(other).toEqual({ prompt: "p", type: "image", references: [], kept: "prompt only", note: "Retry · Poster · prompt only" });
+  }
+  expect(SAY.retry("Poster", "prompt only")).toBe("Retry Poster — prompt only, new seed. Quoted before it runs.");
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: { task: "generate" } }).billing).toBe("workspace");
+  /* The render's own task column says the same where params do not. */
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: {}, task: "generate" }).kept).toBe("same inputs");
+  expect(retryPreset({ prompt: "p", model: "topaz", kind: "video", params: {}, task: "upscale" }).kept).toBe("prompt only");
   expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: { references: Array.from({ length: 14 }, (_, i) => ({ genId: `g${i}` })) } }).references).toHaveLength(10);
 });
 

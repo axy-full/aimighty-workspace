@@ -122,12 +122,24 @@ test("phone: the Studio grid counts the project as saved now, not as first loade
   await page.getByTestId("tabbar-home").click();
   await page.getByTestId("home-suite-studio").click();
   await expect(page.getByTestId("home-stage-brief")).toContainText("5 words");
-  /* Another stage (or a teammate) saves the brief; the grid reads it when it opens again. */
-  store.current = { ...store.current, brief: "A fox crosses the frozen harbour at dusk and meets the keeper" };
+  /* Another stage (or a teammate) saves the brief, as the route saves it (a new revision); the grid reads it when it opens again. */
+  await page.evaluate(async (brief) => {
+    const read = await fetch("/api/workbench/projects?id=ws-audit").then((r) => r.json()) as { project: Project; revision: number };
+    await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: { ...read.project, brief }, revision: read.revision }) });
+  }, "A fox crosses the frozen harbour at dusk and meets the keeper");
   await page.getByTestId("home-stage-takes").click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
   await page.getByTestId("phone-back").click();
   await expect(page.getByTestId("home-stage-brief")).toContainText("12 words");
+  /* Opened again with nothing saved since: only the list of revisions is read, never the whole project. */
+  await page.getByTestId("home-stage-takes").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  const full: string[] = [];
+  page.on("request", (request) => { if (request.method() === "GET" && /\/api\/workbench\/projects\?id=/.test(request.url())) full.push(request.url()); });
+  await page.getByTestId("phone-back").click();
+  await expect(page.getByTestId("home-stage-brief")).toContainText("12 words");
+  await page.waitForTimeout(2500);
+  expect(full).toEqual([]);
   expect(errors).toEqual([]);
 });
 
