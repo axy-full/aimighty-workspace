@@ -931,7 +931,7 @@ export async function executeGenerationAdmission(
     const afterCast = ceilingProblem(references, model, castUsed);
     if (afterCast) return admissionReply({ error: afterCast }, { status: 400 });
     if (model.kind === "video" && task.id === "generate") {
-      const rolesProblem = videoReferenceProblem(model, references);
+      const rolesProblem = videoReferenceProblem(model, references, params.resolution);
       if (rolesProblem) return admissionReply({ error: rolesProblem }, { status: 400 });
     }
 
