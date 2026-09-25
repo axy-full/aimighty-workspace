@@ -11,7 +11,7 @@ test('real development HTTP persists every script section, resumes idempotently,
   const account = await signInLocally(request);
   const me = await request.get('/api/me').then(response => response.json());
   const headers = { 'X-Workbench-Scope': `particl-active-${account.workspace.id}-${me.id}` };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const tenantRow = (await platform.execute({ sql: 'SELECT db_url FROM workspaces WHERE id=?', args: [account.workspace.id] })).rows[0];
   expect(String(tenantRow.db_url)).toMatch(/^file:/);
   const tenant = createClient({ url: String(tenantRow.db_url) });

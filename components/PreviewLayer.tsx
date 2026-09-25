@@ -125,7 +125,14 @@ export default function PreviewLayer() {
   const close = useCallback(() => {
     setOpen(null);
     const back = returnFocus.current;
-    if (back?.isConnected) setTimeout(() => back.focus?.(), 0);
+    /* Focus goes back to what opened the preview only if nothing has taken it
+       since: the viewer's Close button leaves with the viewer, so focus rests
+       on <body>. A tile focused in that moment (a quick Tab, or Space on the
+       next tile) keeps its focus instead of being yanked back. */
+    if (back?.isConnected) setTimeout(() => {
+      const now = document.activeElement;
+      if (!now || now === document.body || !now.isConnected) back.focus?.();
+    }, 0);
   }, []);
 
   return (
