@@ -68,12 +68,15 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
 }
 
 /**
- * Whether an engine's clips carry sound: an audio switch (supportsAudio), or
- * xAI's video, which always renders it and so has no switch (lib/models.ts ›
- * XAI_VIDEO_MODELS). For the model sheet's Audio chip.
+ * Whether a take from this engine carries sound as the workbench renders it,
+ * for the model sheet's Audio chip. xAI's video always does and so has no
+ * switch (lib/models.ts › XAI_VIDEO_MODELS). An engine with an audio switch
+ * (supportsAudio) renders silent here: the workbench never sends
+ * generateAudio (lib/generationAdmission.ts defaults it to false) and its
+ * rate is the silent one, so a chip would promise sound the take lacks.
  */
 export function rendersSound(model: ModelDef): boolean {
-  return model.kind === 'video' && (model.supportsAudio || model.provider === 'xai');
+  return model.kind === 'video' && model.provider === 'xai';
 }
 
 /** The settings an untouched composer renders an engine with, and what they cost. */

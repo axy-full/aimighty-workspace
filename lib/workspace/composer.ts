@@ -50,7 +50,7 @@ export type ComposerModel = {
   /** Workspace image/video engines: the most reference images and videos the engine takes. */
   maxImages?: number;
   maxVideos?: number;
-  /** Renders sound with the picture: the engine's own flag, or a connected schema's audio parameter. */
+  /** Takes carry sound: a Studio engine that always renders it (engines route › audio), or a connected schema's audio parameter. */
   audio?: boolean;
   /** Workspace image/video engines: the price at the composer's untouched settings (GET /api/workbench/engines › rate). */
   rate?: EngineRate | null;
@@ -197,6 +197,7 @@ export type EngineRow = {
   maxReferenceVideos?: number;
   /** One line on what the engine is for. */
   use?: string;
+  /** A take from this engine carries sound as the workbench renders it (lib/workbench/media-quote.ts › rendersSound). */
   audio?: boolean;
   rate?: EngineRate | null;
 };

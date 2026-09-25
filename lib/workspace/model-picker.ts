@@ -84,7 +84,7 @@ export function modelChips(m: ComposerModel): SpecChip[] {
   if (length) out.push({ key: "length", text: length, title: `Length ${length}` });
   const refs = refsChip(m);
   if (refs) out.push(refs);
-  if (m.audio) out.push({ key: "audio", text: "Audio", title: "Can render sound with the picture" });
+  if (m.audio) out.push({ key: "audio", text: "Audio", title: m.connected ? "Renders sound on the account" : "Takes carry sound" });
   if (m.enhanceable) out.push({ key: "enhance", text: "Enhance", title: "Can enhance the prompt on the account" });
   return out;
 }

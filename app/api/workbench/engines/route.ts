@@ -11,7 +11,7 @@ export const GET = withTenant(async (req: Request) => {
   const models = configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations,
     maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined,
-    /* The model sheet's row: what the engine is for, whether it renders sound, and its price at the untouched settings (credits only, nothing reserved). */
+    /* The model sheet's row: what the engine is for, whether its takes carry sound, and its price at the untouched settings (credits only, nothing reserved). */
     use: model.use, audio: rendersSound(model) || undefined, rate: workbenchRate(model) }));
   const headers = { 'Cache-Control': 'no-store' };
   if (!q.has('model')) return Response.json({ models, credits: null }, { headers });

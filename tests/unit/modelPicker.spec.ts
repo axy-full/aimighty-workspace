@@ -153,12 +153,16 @@ test("the engines route's rate is the button's own quote at the composer's untou
   expect(workbenchRate({ ...video, id: "no-such-engine" })).toBeNull();
 });
 
-test("the Audio chip follows the engine: an audio switch, or a clip that always carries sound; never a still", () => {
+test("the Audio chip is what a Studio take carries: sound that is always on, never a switch the workbench leaves off", () => {
   const byId = (id: string) => MODELS.find((m) => m.id === id)!;
-  expect(rendersSound(byId("dreamina-seedance-2-5-260628"))).toBe(true);
-  expect(rendersSound(byId("dreamina-seedance-2-0-260128"))).toBe(false);
   /* xAI's video has no switch because its clips always carry sound. */
   expect(rendersSound(byId("grok-imagine-video"))).toBe(true);
+  expect(rendersSound(byId("grok-imagine-video-1.5"))).toBe(true);
+  /* An audio switch is left off by the workbench (and priced silent), so no chip promises sound. */
+  expect(byId("dreamina-seedance-2-5-260628").supportsAudio).toBe(true);
+  expect(rendersSound(byId("dreamina-seedance-2-5-260628"))).toBe(false);
+  expect(rendersSound(byId("fal-ai/kling-video/v3/pro"))).toBe(false);
+  expect(rendersSound(byId("dreamina-seedance-2-0-260128"))).toBe(false);
   expect(rendersSound(byId("grok-imagine-image"))).toBe(false);
   for (const model of MODELS.filter((m) => m.kind === "image")) expect(rendersSound(model), model.id).toBe(false);
 });
