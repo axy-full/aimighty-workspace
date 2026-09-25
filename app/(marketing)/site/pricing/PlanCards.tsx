@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { usd } from "@/lib/marketing/format";
-import { ACCESS_HREF } from "@/lib/marketing/site";
+import { ACCESS_HREF } from "@/lib/marketing/links";
 import s from "./pricing.module.css";
 
 /** One plan card, already worded on the server (planLines, PLAN_AUDIENCE). */

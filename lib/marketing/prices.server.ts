@@ -7,7 +7,7 @@ import { buildRateTable } from "@/lib/rateTable.server";
 import { charged, estimateImage, estimateVideo, writerCall, type RateTable } from "@/lib/rateTable";
 import { estimateComposerVideo } from "@/lib/composerQuote";
 import { costUsd, getModel } from "@/lib/models";
-import { TRAIN_STEPS, trainCostUsd } from "@/lib/identities";
+import { TRAIN_STEPS, trainCostUsd } from "@/lib/identityPricing";
 
 /**
  * Every figure the public site states, computed from the same sources the

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { GEN_PRESET_KEY, type GenPreset } from "@/lib/shell/assets";
-import { APP_HREF, SIGN_IN_HREF } from "@/lib/marketing/site";
+import { APP_HREF, SIGN_IN_HREF } from "@/lib/marketing/links";
 import { cr } from "@/lib/marketing/format";
 
 const SAMPLE = "A woman in an ivory suit crosses a dune at golden hour; a chrome sphere reflects the sky. Slow dolly in, 35mm.";

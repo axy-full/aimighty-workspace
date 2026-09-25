@@ -45,11 +45,7 @@ export const SITE_SUITES: SiteSuite[] = [
     pages: WORKSPACE_TABS.map((tab) => tab.label) },
 ];
 
-export const PRICING_HREF = "/pricing";
-export const ACCESS_HREF = "#access";
-export const SIGN_IN_HREF = "/login";
-/* Where a member goes from the site: the Suites shell. */
-export const APP_HREF = "/suites";
+export { PRICING_HREF, ACCESS_HREF, SIGN_IN_HREF, APP_HREF } from "./links";
 
 /** A screenshot of the product, served from public/marketing. */
 export const shot = (name: string) => `/marketing/screens/${name}.jpg`;

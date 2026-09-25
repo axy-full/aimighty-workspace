@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/sessionCookie";
-import { SHELL_COOKIE, LEGACY_SHELL } from "@/lib/workspace/switchover";
+import { SHELL_COOKIE, LEGACY_SHELL } from "@/lib/workspace/shell-choice";
 
 /**
  * The public site lives at /site (app/(marketing)/site) and is served at the
