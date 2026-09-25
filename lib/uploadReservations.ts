@@ -81,6 +81,12 @@ export async function uploadReservationsReady() {
               if (!/duplicate column name/i.test(String(error))) throw error;
             });
         }
+        /* An .m4a or .m4b (an iPhone voice memo) used to be sniffed as video
+           from its MPEG-4 header, so the sound tools refused it. The file is
+           untouched; only its label is corrected, once, idempotently. */
+        await client.execute(
+          "UPDATE uploads SET kind='audio', mime='audio/mp4' WHERE kind='video' AND lower(ext) IN ('m4a','m4b')",
+        );
       })
       .catch((error) => {
         initialized.delete(client);
@@ -164,11 +170,16 @@ async function createSession(
   bytes: number,
   at: number,
 ) {
+  /* One person's unfinished uploads, not the workspace's: a failed batch must
+     not stop a colleague. A cancelled or refused session with nothing staged
+     in final storage is no longer work in progress; its chunk bytes stay
+     reserved against the quota until cleanup deletes them. */
   const active = Number(
     (
-      await tx.execute(
-        "SELECT COUNT(*) AS n FROM upload_sessions WHERE state NOT IN ('committed','aborted')",
-      )
+      await tx.execute({
+        sql: "SELECT COUNT(*) AS n FROM upload_sessions WHERE owner_id=? AND state NOT IN ('committed','aborted') AND NOT (state='aborting' AND objects='[]')",
+        args: [owner],
+      })
     ).rows[0].n,
   );
   if (active >= MAX_SESSIONS)
@@ -551,21 +562,21 @@ export async function completeUpload(
 }
 /** Failed storage writes may have been accepted remotely. Keep their lease before cleanup. */
 export async function abandonUpload(claim: FinishClaim) {
-  await transaction(async (tx) => {
+  const aborting = await transaction(async (tx) => {
     const session = await sessionOf(tx, claim.key);
     if (
       !session ||
       session.lease !== claim.lease ||
       session.state !== "assembling"
     )
-      return;
+      return false;
     // Prepared bytes can be published by an identical finish retry without any new write.
     if (session.prepared) {
       await tx.execute({
         sql: "UPDATE upload_sessions SET lease=NULL,lease_until=NULL WHERE id=? AND lease=?",
         args: [claim.key, claim.lease],
       });
-      return;
+      return false;
     }
     const hasObjects = (JSON.parse(session.objects) as unknown[]).length > 0;
     await tx.execute({
@@ -577,7 +588,9 @@ export async function abandonUpload(claim: FinishClaim) {
         claim.lease,
       ],
     });
+    return true;
   });
+  if (aborting) await releaseNow(claim.key);
 }
 export async function abortUploadSession(owner: string, session: string) {
   const key = scoped(owner, session);
@@ -587,6 +600,14 @@ export async function abortUploadSession(owner: string, session: string) {
       args: [now(), key],
     });
   });
+  await releaseNow(key);
+}
+/* Cancelling releases the session at once when nothing is still in flight;
+   the chunk paths are deterministic, so there is nothing to wait for. A live
+   lease (a chunk or final write still landing) leaves it to the cron, which
+   is what the leases are for. Best effort: the cron retries a failure. */
+async function releaseNow(key: string) {
+  await cleanupExpiredUploads(1, now(), key).catch(() => {});
 }
 /** Take an upload off every screen in the caller's reference-check transaction.
  * Its row goes to the archive and its master (and delivery copy) stay in

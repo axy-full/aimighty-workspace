@@ -117,6 +117,9 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
         width: null, height: null,
       };
     }
+    // Audio-only brands (an .m4a, an iPhone voice memo, an .m4b book) are not
+    // pictures or video: null lets lib/audioMeta.ts claim them as audio.
+    if (brand === "M4A " || brand === "M4B " || brand === "M4P ") return null;
     const mov = brand === "qt  ";
     return {
       kind: "video",

@@ -58,6 +58,8 @@ export const AUDIO_INSPECTION_LIMIT = 100 * 1024 * 1024;
 const AUDIO_READ_LIMIT = 32 * 1024 * 1024;
 const AUDIO_MAX_SECONDS = 4 * 3600;
 export const SOURCE_BYTES_LIMIT = 100 * 1024 * 1024;
+/** Extensions of MPEG-4 containers that hold sound only. */
+const AUDIO_ONLY_EXTS = new Set(["m4a", "m4b"]);
 
 /** The Reference-shaped handle the video inspector reads through. */
 function videoReference(src: StoredSource): Reference {
@@ -191,12 +193,15 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
     })).rows[0] as unknown as { id: string; filename: string; mime: string; ext: string; bytes: number; kind: string; duration_s: number | null; stored_url: string } | undefined;
     if (!row) return null;
     const ext = String(row.ext ?? "").toLowerCase();
+    // An .m4a/.m4b stored before its ftyp brand was read as audio carries
+    // kind 'video' (lib/imagemeta.ts); the container says it is sound.
+    const misfiled = row.kind === "video" && AUDIO_ONLY_EXTS.has(ext);
     const mediaKind: StoredSource["mediaKind"] | null =
-      row.kind === "video" ? "video"
-      : row.kind === "audio" || isAudioMime(row.mime) || (row.kind !== "image" && INSPECTABLE_AUDIO_EXTS.has(ext)) ? "audio"
+      row.kind === "video" && !misfiled ? "video"
+      : misfiled || row.kind === "audio" || isAudioMime(row.mime) || (row.kind !== "image" && INSPECTABLE_AUDIO_EXTS.has(ext)) ? "audio"
       : null;
     if (!mediaKind) return null;
-    return { kind: "upload", id: row.id, mediaKind, name: String(row.filename ?? row.id), mime: String(row.mime ?? ""), ext, bytes: Number(row.bytes ?? 0), storedUrl: String(row.stored_url ?? ""), seconds: row.duration_s == null ? null : Number(row.duration_s), demo: false };
+    return { kind: "upload", id: row.id, mediaKind, name: String(row.filename ?? row.id), mime: misfiled ? "audio/mp4" : String(row.mime ?? ""), ext, bytes: Number(row.bytes ?? 0), storedUrl: String(row.stored_url ?? ""), seconds: row.duration_s == null ? null : Number(row.duration_s), demo: false };
   }
   if (ref.genId) {
     const row = (await db().execute({
@@ -226,7 +231,8 @@ async function measure(src: StoredSource): Promise<{ seconds: number | null; rea
   try {
     if (src.mediaKind === "video") {
       if (src.bytes > VIDEO_INSPECTION_LIMIT) return { seconds: null, reason: "Video originals over 200 MB cannot be measured." };
-      return { seconds: (await inspectOriginalVideo(videoReference(src), src.bytes)).seconds };
+      // The sound tools' own ceiling, not the video tools' five minutes.
+      return { seconds: (await inspectOriginalVideo(videoReference(src), src.bytes, false, { maxSeconds: AUDIO_MAX_SECONDS })).seconds };
     }
     if (src.kind === "generation") {
       const bytes = await readOriginalBytesLimited("audio", src.id, AUDIO_INSPECTION_LIMIT);

@@ -212,7 +212,8 @@ export async function claimUploadEnvelope(
     const prior = read(key);
     if (prior) return prior;
     const entries = listUploadEnvelopes(scope);
-    if (entries.filter((entry) => entry.state !== "complete").length >= 32)
+    // Only live uploads hold a server session; a blocked one is already gone.
+    if (entries.filter((entry) => entry.state !== "complete" && entry.state !== "blocked").length >= 32)
       throw new Error(
         "Resume or cancel an unfinished upload before starting another.",
       );
