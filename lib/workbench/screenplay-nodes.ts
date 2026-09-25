@@ -1,5 +1,9 @@
 import { parseScreenplay, type ScriptScene } from "./screenplay";
 import { uid, type CanvasNode, type Project } from "./studio";
+import { PROJECT_LIMITS, limitText } from "./project-limits";
+
+/** The lowest y a new scene node may take: the project schema caps positions at 20,000. */
+const SCENE_FLOOR = 20000;
 
 export function sceneCoverageRequest(
   project: Project,
@@ -36,9 +40,12 @@ export function buildScreenplayNodes(
   requested: ScriptScene[],
 ): CanvasNode[] {
   if (!requested.length) throw new Error("Select at least one scene.");
-  if (project.nodes.length + requested.length > 250)
+  const room = Math.max(0, PROJECT_LIMITS.nodes - project.nodes.length);
+  if (requested.length > room)
     throw new Error(
-      `Select at most ${250 - project.nodes.length} scenes for the available canvas space.`,
+      room
+        ? `Select at most ${limitText(room)} scenes for the available canvas space.`
+        : `This project holds ${limitText(PROJECT_LIMITS.nodes)} nodes. Remove nodes from the canvas before building scenes.`,
     );
   if (new Set(requested.map((s) => s.id)).size !== requested.length)
     throw new Error("A scene was selected more than once.");
@@ -102,7 +109,7 @@ export function buildScreenplayNodes(
         pageEnd: scene.pageEnd,
       },
       x: 50 + (index % 4) * 350,
-      y: 1030 + Math.floor(index / 4) * 290,
+      y: Math.min(SCENE_FLOOR, 1030 + Math.floor(index / 4) * 290),
       width: 300,
       linked: [],
     };
