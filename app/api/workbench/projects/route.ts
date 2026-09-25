@@ -4,7 +4,7 @@ import { withTenant, requireSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { saveSchema } from '@/lib/workbench/studio-schema';
 import { newProject, type Project } from '@/lib/workbench/studio';
-import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible } from '@/lib/workbench/records';
+import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, DraftConflictError } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 
@@ -53,7 +53,7 @@ export const PUT=withTenant(async(req:Request)=>{
   await workbenchReady();
   const {project:p,revision}=parsed.data;
   try{return Response.json(await saveDraft(auth.user.id,p,revision));}
-  catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.'},{status:409});}
+  catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
 
 export const POST=withTenant(async(req:Request)=>{

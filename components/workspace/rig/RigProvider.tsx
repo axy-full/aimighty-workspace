@@ -2,7 +2,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { useProductionJobs } from "@/components/workbench/use-production-jobs";
-import { DraftRequestError, draftRequest, writeDraft } from "@/lib/workbench/draft-request";
+import { DraftRequestError, draftRequest, writeMergedDraft } from "@/lib/workbench/draft-request";
+import { rebaseDraft } from "@/lib/workbench/merge";
 import { resolveGenerationReferences } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey, readPendingGeneration } from "@/lib/workbench/pending-generation";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
@@ -30,8 +31,12 @@ import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
  *
  *  - the project draft (GET /api/workbench/projects?id=), edited only through
  *    shotPatch / addShotNode and saved through the ordinary revision-checked
- *    draft save (writeDraft), debounced; a rejected save reloads the saved
- *    version instead of overwriting it;
+ *    draft save, debounced. When another save landed first (a Studio stage,
+ *    another tab), the Rig's edits since the version it holds are merged into
+ *    the newer one (writeMergedDraft, lib/workbench/merge.ts) and saved; the
+ *    Rig then shows the merged draft, and the team canvas gets what the merge
+ *    brought in. A save that is refused outright reloads the saved version
+ *    instead of overwriting it;
  *  - the production jobs (useProductionJobs, the Studio's own poller), which
  *    also file finished takes into the draft;
  *  - live quotes (the shared ShotEstimator) so "ready" means priced;
@@ -43,7 +48,8 @@ import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
  * is on another page, and so G works however Rig was reached.
  */
 
-type Draft = { project: Project; revision: number };
+/** `base` is the project exactly as the server holds it at `revision`: what the Rig's edits are merged from. */
+type Draft = { project: Project; revision: number; base: Project };
 type Quote = { key: string; credits: number | null; state: "loading" | "ready" | "unavailable"; reason: string | null };
 type Run = { shotId: string; name: string; meta: string; jobId: string | null };
 
@@ -93,6 +99,9 @@ export function useRig(): RigContext {
 
 const API = "/api/workbench";
 const SAVE_DEBOUNCE_MS = 700;
+/** A save whose outcome is unknown (the connection dropped) is tried again after this, then less often. */
+const RETRY_MS = 4000;
+const RETRY_MAX_MS = 60_000;
 const DONE_HOLD_MS = 1400;
 const FAILED_HOLD_MS = 6000;
 
@@ -149,7 +158,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const load = useCallback(async (id: string, signal?: AbortSignal) => {
     const data = await draftRequest<{ project?: Project | null; revision: number }>(`${API}/projects?id=${encodeURIComponent(id)}`, scope, { signal });
-    return data.project ? { project: data.project, revision: data.revision } : null;
+    return data.project ? { project: data.project, revision: data.revision, base: data.project } : null;
   }, [scope]);
 
   /** Reload the saved version (after a rejected save). Local edits since the last save are dropped, never pushed over it. */
@@ -165,33 +174,52 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* Set once the team canvas hook exists below: its waiting edit goes out before the draft save. */
   const teamFlushRef = useRef<(() => Promise<void>) | null>(null);
+  /* A local edit is also a team canvas edit; publishRef is set once the team canvas hook exists below. */
+  const publishRef = useRef<((before: Project, after: Project) => void) | null>(null);
+  const retries = useRef(0);
+  const flushRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
   const flush = useCallback((options: { force?: boolean } = {}): Promise<boolean> => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-    chain.current = chain.current.then(async () => {
-      const current = draftRef.current;
-      if (!current) return false;
+    /* One save at a time; a save that failed never stops the next. */
+    chain.current = chain.current.catch(() => false).then(async () => {
+      if (!draftRef.current) return false;
       if (!dirty.current && !options.force) return true;
       await teamFlushRef.current?.();
+      /* Read after that wait, together: what is sent is exactly what counts as saved. */
+      const current = draftRef.current;
+      if (!current) return false;
       dirty.current = false;
       setSaveState("saving");
       try {
-        const receipt = await writeDraft(API, scope, { project: current.project, revision: current.revision });
+        const saved = await writeMergedDraft(API, scope, { base: current.base, mine: current.project, revision: current.revision });
+        retries.current = 0;
         const now = draftRef.current;
         if (!now || now.project.id !== current.project.id) return false;
-        setDraft({ project: { ...now.project, productionProjectId: receipt.productionProjectId, shotMappings: receipt.shotMappings }, revision: receipt.revision });
+        /* What another save brought in joins the Rig — and the team canvas, so the two agree; edits made meanwhile stay. */
+        const project = rebaseDraft(current.project, now.project, saved.project);
+        setDraft({ project, revision: saved.revision, base: saved.project });
+        if (project !== now.project) publishRef.current?.(now.project, project);
         setSaveState(dirty.current ? "saving" : "saved");
         setSaveError(null);
         return true;
       } catch (err) {
         const message = err instanceof Error ? err.message : "The project could not be saved.";
         if (err instanceof DraftRequestError && (err.retryable || err.uncertain)) {
-          /* Unconfirmed: keep the edits and try again on the next change. */
+          /* Unconfirmed: keep the edits and send the same save again (merged, so never applied twice). */
+          dirty.current = true;
+          setSaveState("error");
+          setSaveError(message);
+          if (!saveTimer.current) saveTimer.current = setTimeout(() => void flushRef.current(), Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** retries.current++));
+          return false;
+        }
+        if (err instanceof DraftRequestError && err.status === 401) {
+          /* Signed out: a reload could not read the project either. The edits stay here, unsaved, and it says so. */
           dirty.current = true;
           setSaveState("error");
           setSaveError(message);
           return false;
         }
-        /* Rejected (another window saved first, or the draft is invalid): reload, never overwrite. */
+        /* Refused (the draft is invalid, or it kept changing past every merge): reload, never overwrite. */
         setSaveState("saved");
         setSaveError(null);
         await reload();
@@ -201,9 +229,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     });
     return chain.current;
   }, [scope, setDraft, reload, toast]);
+  useEffect(() => { flushRef.current = () => flush(); }, [flush]);
 
-  /* A local edit is also a team canvas edit; publishRef is set once the team canvas hook exists below. */
-  const publishRef = useRef<((before: Project, after: Project) => void) | null>(null);
   const write = useCallback((fn: (p: Project) => Project, publish: boolean) => {
     const current = draftRef.current;
     if (!current) return;
@@ -234,6 +261,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         const next = await load(projectId, controller.signal);
         if (controller.signal.aborted) return;
         dirty.current = false;
+        retries.current = 0;
         setDraft(next);
         setStatus("ready");
       } catch (err) {

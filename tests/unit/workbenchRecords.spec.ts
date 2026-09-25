@@ -129,3 +129,21 @@ test('two collaborators publishing the same base accept one winner and can expli
   expect(String((await db().execute('SELECT body FROM workbench_bibles WHERE version=2')).rows[0].body)).toBe(String(rows[1].body));
  });
 });
+
+test('a stale revision is a conflict the client can merge over, with its code',async()=>{
+ const {saveDraft,readDraft,DraftConflictError}=await import('../../lib/workbench/records');
+ const {newProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');
+ await runInTenant(workspace('stale-revision'),async()=>{
+  const p=newProject('Two windows');
+  await saveDraft('owner',p,0);
+  const saved=(await readDraft('owner',p.id))!;
+  await saveDraft('owner',{...saved.project,brief:'Saved first'},saved.revision);
+  await expect(saveDraft('owner',{...saved.project,brief:'Stale'},saved.revision)).rejects.toBeInstanceOf(DraftConflictError);
+  await expect(saveDraft('owner',{...saved.project,brief:'Stale'},saved.revision)).rejects.toMatchObject({code:'revision_conflict'});
+  expect((await readDraft('owner',p.id))?.project.brief).toBe('Saved first');
+  /* Any other refusal carries no code: it is never merged over. */
+  const other=await saveDraft('owner',{...saved.project,productionProjectId:'prj_someone_else'},saved.revision+1).catch(error=>error);
+  expect(other).toBeInstanceOf(Error);
+  expect(other).not.toBeInstanceOf(DraftConflictError);
+ });
+});

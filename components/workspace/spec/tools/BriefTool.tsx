@@ -70,8 +70,11 @@ export default function BriefTool({
       throw new Error("The source changed after this development run. Review the saved result or run development again.");
     if (!latest.current || latest.current.id !== current.id || sourceCanonical(latest.current, job.kind) !== source)
       throw new Error("The project changed while checking the result. Try again.");
-    const next = applyDevelopment(latest.current, job, choice);
-    change(() => next);
+    /* Worked out from the draft as the editor holds it now, never from a copy a render older. */
+    change((p) => {
+      if (p.id !== current.id || sourceCanonical(p, job.kind) !== source) throw new Error("The project changed while checking the result. Try again.");
+      return applyDevelopment(p, job, choice);
+    });
     if (!(await ensureSaved())) throw new Error("The result was added locally, but is not saved yet. Keep this project open and retry saving.");
     toast.success("idea" in choice ? "Idea added to creative direction." : "Scene breakdown added to the canvas.");
   }

@@ -226,8 +226,8 @@ export default function MarketingStudioFlow({
   function buildStoryboard() {
     if (!draft.live()) return;
     try {
-      const next = buildMoleculrStoryboard(draft.latest(), () => uid("campaign"));
-      draft.change(() => next);
+      /* Built on the draft as the host holds it now, never on a copy a render older. */
+      draft.change((current) => buildMoleculrStoryboard(current, () => uid("campaign")));
       onPage("variants");
       toast.success("Editable storyboard shots prepared. Review each generation before rendering.");
     } catch (error) {
@@ -238,8 +238,7 @@ export default function MarketingStudioFlow({
   function prepareVariants(kind: "image" | "video") {
     if (!draft.live()) return;
     try {
-      const next = prepareMoleculrVariants(draft.latest(), kind, () => uid("campaign"));
-      draft.change(() => next);
+      draft.change((current) => prepareMoleculrVariants(current, kind, () => uid("campaign")));
       toast.success("Variations prepared. Review each engine and credit quote before rendering.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The variations could not be prepared.");
@@ -351,30 +350,31 @@ export default function MarketingStudioFlow({
         ...(existing ? current.nodes.map((item) => (item.id === nodeId ? binding.node : item)) : [...current.nodes, binding.node]),
         ...binding.sources,
       ];
-      draft.change((old) => ({
-        ...old,
-        nodes: nextNodes,
-        moleculr: {
-          ...brief,
-          variants: existing
-            ? brief.variants
-            : [
-                ...brief.variants,
-                {
-                  id: uid("campaign"),
-                  nodeId,
-                  hook,
-                  castAssetId: castId,
-                  kind,
-                  productId: brief.activeProductId,
-                  templateId: template?.id,
-                  ...(referenceVideo ? { referenceVideo } : {}),
-                  createdAt: new Date().toISOString(),
-                  generation,
-                },
-              ],
-        },
-      }));
+      const variant = {
+        id: uid("campaign"),
+        nodeId,
+        hook,
+        castAssetId: castId,
+        kind,
+        productId: brief.activeProductId,
+        templateId: template?.id,
+        ...(referenceVideo ? { referenceVideo } : {}),
+        createdAt: new Date().toISOString(),
+        generation,
+      };
+      /* Laid over the draft as the host holds it now: the variant's node, its sources and its entry, nothing else. */
+      draft.change((old) => {
+        const known = new Set(old.nodes.map((item) => item.id));
+        const was = old.moleculr ?? brief;
+        return {
+          ...old,
+          nodes: [
+            ...(known.has(nodeId) ? old.nodes.map((item) => (item.id === nodeId ? binding.node : item)) : [...old.nodes, binding.node]),
+            ...binding.sources.filter((source) => !known.has(source.id)),
+          ],
+          moleculr: { ...was, variants: existing || was.variants.some((item) => item.nodeId === nodeId) ? was.variants : [...was.variants, variant] },
+        };
+      });
       const targetRefs = generationReferenceIds(binding.node, { ...current, nodes: nextNodes });
       setTarget({
         node: binding.node,

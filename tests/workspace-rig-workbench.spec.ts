@@ -178,16 +178,19 @@ test("shot list, selection, edits that persist and a live estimate", async ({ pa
   await expect.poll(async () => (await savedDraft(page, scope, project.id)).nodes.filter((n) => n.type === "scene").length).toBe(4);
   await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved");
 
-  /* Another window saves first: the next save is refused, and Rig reloads the saved version instead of overwriting it. */
+  /* Another window saves first: the next save is refused, and the Rig merges its own edit into the saved version and
+     saves again — the other window's rename is kept (never overwritten) and the note made here is kept too (never dropped). */
   const other = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json()) as { project: Project; revision: number };
   other.project.nodes = other.project.nodes.map((n) => (n.id === "rig-a" ? { ...n, title: "Renamed elsewhere" } : n));
   expect((await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: other })).ok()).toBeTruthy();
-  await page.getByRole("textbox", { name: "Direction note" }).fill("A stale edit");
-  await expect(page.getByRole("status").filter({ hasText: "This project changed elsewhere" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Direction note" }).fill("A note made here");
+  await expect.poll(async () => {
+    const kept = await savedDraft(page, scope, project.id);
+    return { title: kept.nodes.find((n) => n.id === "rig-a")!.title, note: JSON.stringify(kept).includes("A note made here") };
+  }, { timeout: 15_000 }).toEqual({ title: "Renamed elsewhere", note: true });
   await expect(row(page, /Renamed elsewhere/)).toBeVisible();
-  const kept = await savedDraft(page, scope, project.id);
-  expect(kept.nodes.find((n) => n.id === "rig-a")!.title).toBe("Renamed elsewhere");
-  expect(JSON.stringify(kept)).not.toContain("A stale edit");
+  await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved");
+  await expect(page.getByRole("status").filter({ hasText: "This project changed elsewhere" })).toHaveCount(0);
 
   expect(errors).toEqual([]);
 });

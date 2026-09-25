@@ -117,11 +117,14 @@ export async function mapNodeShot(owner:string, project:Project, nodeId:string):
   });
 }
 
+/** Another save of this draft landed first: the caller may merge its edits into the newer version and save again. */
+export class DraftConflictError extends Error { readonly code = 'revision_conflict'; }
+
 /** Revision zero may only insert; stale windows may never overwrite a newer draft. */
 export async function saveDraft(owner:string, project:Project, revision:number) {
   await workbenchReady();
   const current=await readDraft(owner,project.id);
-  if((current?.revision??0)!==revision)throw new Error('This project changed in another window. Download your work before reloading.');
+  if((current?.revision??0)!==revision)throw new DraftConflictError('This project changed in another window. Download your work before reloading.');
   if(current?.project.productionProjectId && project.productionProjectId && current.project.productionProjectId!==project.productionProjectId)
     throw new Error('A draft cannot change its project. Open a separate space.');
   const pid=await linkProduction(owner,{...project,productionProjectId:current?.project.productionProjectId||project.productionProjectId});
@@ -132,7 +135,7 @@ export async function saveDraft(owner:string, project:Project, revision:number) 
     const result=await tx.execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at) VALUES (?,?,?,?,?,1,?)
       ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at WHERE workbench_projects.revision=?`,
       args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),revision]});
-    if(!result.rowsAffected)throw new Error('A newer version exists. Your changes have not overwritten it.');
+    if(!result.rowsAffected)throw new DraftConflictError('A newer version exists. Your changes have not overwritten it.');
     return {revision:revision+1,productionProjectId:pid,shotMappings:mappings};
   });
 }
