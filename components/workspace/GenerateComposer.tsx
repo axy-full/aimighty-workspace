@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { previewAttrs } from "@/lib/preview";
 import { X } from "lucide-react";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { libraryInput } from "@/lib/genLibrary";
@@ -214,7 +215,7 @@ export function GenerateComposer({
                   <ul className="pxw-composer-ref-list">
                     {state.references.map((reference) => (
                       <li key={reference.key} data-testid="composer-reference">
-                        <span>{reference.name}</span>
+                        <span {...previewAttrs({ url: reference.url, kind: reference.kind === "video" ? "video" : "image", name: reference.name })}>{reference.name}</span>
                         <button type="button" aria-label={`Remove ${reference.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: reference.key })}><X size={12} /></button>
                       </li>
                     ))}

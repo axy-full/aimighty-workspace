@@ -8,21 +8,25 @@ import { shotDropHandler } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
+import LazyMedia from "@/components/LazyMedia";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 import type { Drag, Peer } from "./use-team-canvas";
 import { DEFAULT_VIEW, distance, fitView, loadView, midpoint, panBy, pinchView, resetZoom, saveView, stepZoom, viewKey, wheelFactor, zoomAround, type View } from "@/lib/viewport";
 
 /** A take's or reference's preview, else the flat bands that stand in for media. */
 function Media({ id, asset, height, badge }: { id: string; asset: Asset | undefined; height: number; badge?: boolean }) {
   const [c1, c2] = mediaBands(id);
-  const preview = asset?.generationId ? `/api/workbench/preview/generation/${encodeURIComponent(asset.generationId)}`
+  const full = assetPreview(asset);
+  const preview = full?.kind === "video" ? null : asset?.generationId ? `/api/workbench/preview/generation/${encodeURIComponent(asset.generationId)}`
     : asset?.uploadId ? `/api/workbench/preview/upload/${encodeURIComponent(asset.uploadId)}`
     : asset?.kind === "image" ? asset.url : null;
   return (
-    <span className="pxw-graph-media" style={{ height }}>
+    <span className="pxw-graph-media" style={{ height }} {...previewAttrs(full)}>
       <span style={{ flex: 1, background: c1 }} />
       <span style={{ flex: 1.1, background: c2 }} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {preview ? <img src={preview} alt="" loading="lazy" decoding="async" /> : null}
+      {full?.kind === "video" ? <span className="pxw-thumb-video"><LazyMedia url={full.url} kind="video" preview={false} /></span> : null}
       {badge ? <span className="pxw-graph-badge">SCENE PREVIEW</span> : null}
     </span>
   );

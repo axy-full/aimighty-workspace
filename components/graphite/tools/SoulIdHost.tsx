@@ -100,7 +100,7 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
           <div className="gx-soul-grid" role="group" aria-label="Stills" data-testid="soul-stills">
             {stills.map((e) => (
               <button key={e.take.id} type="button" className="gx-soul-still" aria-pressed={picked.includes(e.take.id)} title={e.take.name} onClick={() => toggle(e.take.id)} data-testid={`soul-still-${e.take.sourceId}`}>
-                <LazyMedia url={e.url!} kind="image" alt="" className="gx-lazy" />
+                <LazyMedia url={e.url!} kind="image" alt="" name={e.take.name} className="gx-lazy" />
                 {picked.includes(e.take.id) ? <span className="gx-badge gx-badge--new">{picked.indexOf(e.take.id) + 1}</span> : null}
               </button>
             ))}

@@ -60,7 +60,7 @@ function Well({ scope, medias, roles, max, onAdd, onRemove, onRole, hint }: {
         onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) void drop(id); }}>
         {medias.length ? medias.map((m) => (
           <span className="gx-ref" key={m.id}>
-            <span className="gx-ref-thumb"><LazyMedia url={m.url} kind="image" alt="" className="gx-lazy" /></span>
+            <span className="gx-ref-thumb"><LazyMedia url={m.url} kind="image" alt="" name={m.name} className="gx-lazy" /></span>
             {onRole && m.role ? (
               <button type="button" className="bz-role" title="Click to cycle the role" onClick={() => onRole(m.id, roles[(roles.indexOf(m.role!) + 1) % roles.length] as AdMediaRole)}>{m.role}</button>
             ) : null}
@@ -322,7 +322,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           <span className="gx-eyebrow" data-functional-label="">Prompt</span>
           <textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="dtc-prompt" />
         </div>
-        <Well scope={scope} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: "" }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
+        <Well scope={scope} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert">{job.state.error}</p> : null}

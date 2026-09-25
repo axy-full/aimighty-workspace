@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { posterSrc } from "@/lib/format";
+import { previewAttrs } from "@/lib/preview";
 
 /**
  * A render on a wall, done the way galleries do it.
@@ -162,7 +163,7 @@ function capturePoster(url: string): Promise<string | "fail"> {
 }
 
 export default function LazyMedia({
-  url, kind, alt, className = "", placeholder, hoverPlay = false,
+  url, kind, alt, className = "", placeholder, hoverPlay = false, name, preview = true,
 }: {
   url: string;
   kind: "video" | "image";
@@ -171,6 +172,10 @@ export default function LazyMedia({
   placeholder?: React.ReactNode;
   /** Play (muted, looping) while the pointer rests on it; the poster otherwise. */
   hoverPlay?: boolean;
+  /** The asset's name in the previewer (defaults to `alt`). */
+  name?: string;
+  /** Every render shown is previewable (components/PreviewLayer); false only where the tile is itself a player. */
+  preview?: boolean;
 }) {
   const holder = useRef<HTMLSpanElement>(null);
   // Browsers without IntersectionObserver just show everything, as before.
@@ -243,6 +248,7 @@ export default function LazyMedia({
     <span
       ref={holder}
       className={`relative block h-full w-full ${className}`}
+      {...(preview && url ? previewAttrs({ url, kind, name: name ?? alt }) : {})}
       onMouseEnter={canHover ? () => setHover(true) : undefined}
       onMouseLeave={canHover ? () => setHover(false) : undefined}
     >

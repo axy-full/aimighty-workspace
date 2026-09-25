@@ -1,5 +1,7 @@
 "use client";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { assetPreview, previewAttrs } from "@/lib/preview";
+import { openPreview } from "@/components/PreviewLayer";
 import {
   FileText,
   Upload,
@@ -409,7 +411,8 @@ export function ScriptPanel({
           </div>
           {source && (
             <p className={styles.sourceLink}>
-              <a href={source.url} target="_blank" rel="noreferrer">
+              <a href={source.url} target="_blank" rel="noreferrer" {...previewAttrs(assetPreview(source))}
+                onClick={(e) => { const item = assetPreview(source); if (item) { e.preventDefault(); openPreview([item]); } }}>
                 Original: {source.name}
               </a>{" "}
               · {project.scriptSource?.pages.length || "Text"}

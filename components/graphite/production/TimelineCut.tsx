@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 import { addTakeToCut, moveShot, removeShot, setShotSeconds } from "@/lib/production/sequence";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -25,7 +26,7 @@ export function TimelineCut({ project, items, onChange }: { project: Project; it
             const asset = assets.get(shot.assetId);
             return (
               <li key={shot.id} className="pd-cut-row" data-testid="timeline-shot">
-                <span className="pd-cut-thumb">{asset?.url && (asset.kind === "image" || asset.kind === "video") ? <LazyMedia url={asset.url} kind={asset.kind} alt="" className="gx-lazy" /> : null}</span>
+                <span className="pd-cut-thumb">{asset?.url && (asset.kind === "image" || asset.kind === "video") ? <LazyMedia url={asset.url} kind={asset.kind} alt="" name={asset.name} className="gx-lazy" /> : asset ? <span {...previewAttrs(assetPreview(asset))} aria-hidden="true">♪</span> : null}</span>
                 <span className="pd-cut-name" title={shot.name}>{shot.name}</span>
                 <label className="pd-seconds"><span className="gx-hint">Seconds</span>
                   <input className="gx-field" type="number" min={0.1} max={3600} step={0.5} aria-label={`${shot.name} seconds`} value={Math.round((shot.duration / project.fps) * 100) / 100}
@@ -46,7 +47,7 @@ export function TimelineCut({ project, items, onChange }: { project: Project; it
         <div className="pd-take-grid" role="list" aria-label="Takes to add">
           {takes.map((e) => (
             <div key={e.take.id} className="pd-take" role="listitem">
-              <LazyMedia url={e.url!} kind={e.media === "video" ? "video" : "image"} alt="" className="gx-lazy" />
+              <LazyMedia url={e.url!} kind={e.media === "video" ? "video" : "image"} alt="" name={e.take.name} className="gx-lazy" />
               <span className="gx-badge">{e.media === "video" ? "VIDEO" : "IMAGE"}</span>
               <span className="pd-take-name">{e.take.name}</span>
               <button type="button" className="gx-hbtn pd-take-add" aria-label={`Add ${e.take.name} to the cut`} onClick={() => { setProblem(null); try { onChange((p) => addTakeToCut(p, e)); } catch (cause) { setProblem(cause instanceof Error ? cause.message : "It could not be added."); } }} data-testid="timeline-add">+ Add</button>

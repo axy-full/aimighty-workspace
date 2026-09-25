@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
+import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
@@ -218,7 +219,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) void drop(id); }}>
               {state.references.length ? state.references.map((r, i) => (
                 <span className="gx-ref" key={r.key}>
-                  <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" className="gx-lazy" /> : null}</span>
+                  <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" name={r.name} className="gx-lazy" /> : null}</span>
                   {model?.connected && (model.referenceRoles?.length ?? 0) > 1 ? (
                     <button type="button" className="bz-role" title="Click to cycle the role" data-testid="gen-ref-role" onClick={() => { const roles = model.referenceRoles!; const at = roles.indexOf(r.role ?? roles[0]); composer.dispatch({ type: "referenceRole", key: r.key, role: roles[(at + 1) % roles.length] }); }}>{r.role ?? model.referenceRoles![0]}</button>
                   ) : null}
@@ -315,10 +316,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           </>}
           renderItem={(entry) => (
             <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
-              <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`}
+              <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
                 onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
-                {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" className="gx-lazy" /> : null}
+                {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}
               </button>
               <span className="gx-asset-name">{entry.take.name}</span>
               <span className="gx-asset-meta">{entry.take.meta}</span>

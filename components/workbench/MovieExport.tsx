@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { previewAttrs } from "@/lib/preview";
 import { Download, Film, Loader2 } from "lucide-react";
 import { audioClips } from "@/lib/workbench/audio";
 import { safeName, type Project } from "@/lib/workbench/studio";
@@ -309,6 +310,7 @@ export function MovieExport({
           </p>
           <video
             src={result.url}
+            {...previewAttrs({ url: result.url, kind: "video", name: "The movie" })}
             controls
             playsInline
             preload="metadata"

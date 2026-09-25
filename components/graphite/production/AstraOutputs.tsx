@@ -1,5 +1,6 @@
 "use client";
 import LazyMedia from "@/components/LazyMedia";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 import { sendToRig } from "@/lib/production/rig-build";
 import { useShell } from "@/lib/shell/state";
 import type { Asset } from "@/lib/workbench/studio";
@@ -39,7 +40,7 @@ export function AstraOutputs() {
             </div>
           ))}
           {files.map((a) => (
-            <div key={a.id} className="pd-take" data-testid="astra-file">
+            <div key={a.id} className="pd-take" data-testid="astra-file" {...previewAttrs(assetPreview(a))}>
               <span className="pd-take-name">{a.name}</span>
               <span className="gx-hint">{a.description}</span>
               <a className="gx-hbtn" href={a.url} download={a.name}>Download</a>

@@ -57,10 +57,12 @@
 .pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
 .pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: #7fb6ff; }
-.pxw .pxw-graph-media { display: flex; flex-direction: column; border-radius: 7px; margin-top: 9px; overflow: hidden; }
+.pxw .pxw-graph-media { position: relative; display: flex; flex-direction: column; border-radius: 7px; margin-top: 9px; overflow: hidden; }
 .pxw .pxw-graph-node[data-shape="scene"] .pxw-graph-media { border-radius: 8px; margin-top: 10px; }
 .pxw .pxw-graph-media > span:not(.pxw-graph-badge) { display: block; }
 .pxw .pxw-graph-media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* A video take shows its own frame (LazyMedia), laid over the bands like a picture. */
+.pxw .pxw-rig-thumb > .pxw-thumb-video, .pxw .pxw-graph-media > .pxw-thumb-video { position: absolute; inset: 0; display: block; }
 .pxw .pxw-graph-badge { position: absolute; left: 8px; bottom: 8px; font-family: var(--pxw-mono); font-size: 8.5px; letter-spacing: 0.09em; color: var(--pxw-near-primary); background: rgba(0, 0, 0, 0.55); padding: 2px 6px; border-radius: 4px; }
 .pxw .pxw-graph-title { display: block; font-size: 13px; font-weight: 545; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-title,
