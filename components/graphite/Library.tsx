@@ -50,7 +50,7 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ project = null, items, ready, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
+export function Library({ project = null, items, ready, error = null, onRetry, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; error?: string | null; onRetry?: () => void; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
   const shell = useShell();
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
@@ -113,7 +113,9 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
-            after={!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+            after={!shown.length ? (error && !ready
+              ? <div className="gx-empty" role="alert" style={{ gridColumn: "1 / -1" }} data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
+              : <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p>) : null}
             renderItem={(entry) => {
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
               return (

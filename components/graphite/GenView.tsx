@@ -7,7 +7,8 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
-import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
+import { GEN_PRESET_KEY, readGenPreset, type GenPreset } from "@/lib/shell/assets";
+import { useGenPresetInbox } from "@/lib/shell/gen-preset-inbox";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
@@ -95,12 +96,15 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       return found;
     } catch { return null; }
   });
-  useEffect(() => {
-    if (!preset) return;
-    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
-    dispatchComposer({ type: "prompt", value: preset.prompt });
-  }, [preset, dispatchComposer]);
+  const applyPreset = useCallback((next: GenPreset) => {
+    if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+    if (next.type) dispatchComposer({ type: "type", value: next.type });
+    if (next.model) dispatchComposer({ type: "model", value: next.model });
+    if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
+  }, [dispatchComposer]);
+  useEffect(() => { if (preset) applyPreset(preset); }, [preset, applyPreset]);
+  /* A preset sent while Gen is already open (⌘K › a model) applies at once. */
+  useGenPresetInbox(applyPreset);
   const presetNote = preset?.note ?? null;
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
@@ -323,7 +327,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
-              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: "var(--gx-accent)" }} aria-hidden="true" /></span>
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>

@@ -152,7 +152,7 @@ test("Setup lists what the account lists, says what it does not, and Use in Ads 
 test("when the account does not list setup items, the pages say so and take an id from the CLI", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one viewport");
   await open(page, "ads", { setupAvailable: false });
-  await expect(page.getByTestId("ads-hook")).toContainText("does not list hooks through its tools");
+  await expect(page.getByTestId("ads-hook")).toContainText("does not list hooks here");
   await page.getByTestId("ads-hook").getByRole("textbox", { name: "Hook id" }).fill("c0ffee00-0000-4000-8000-000000000001");
   await page.getByTestId("ads-hook").getByRole("textbox", { name: "Hook id" }).blur();
   await expect(page.getByTestId("ads-hook").getByRole("button", { name: /^c0ffee00/ })).toBeVisible();

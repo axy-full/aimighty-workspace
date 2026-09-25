@@ -23,10 +23,33 @@ const subscribeDraft = (listener: () => void) => {
 };
 const emptySnapshot = () => null;
 
+const draftKey = (scope: string | null | undefined, suite: SuiteId, projectId: string) =>
+  scope ? `aw_draft:suite-agent:${encodeURIComponent(scope)}:${suite}:${encodeURIComponent(projectId)}` : null;
+
+/**
+ * Hand a request to this suite's agent box from elsewhere (the Suites ⌘K
+ * "Ask Atomik: …"): it lands in the same draft the box edits, keeping the
+ * references already selected, and an open box shows it at once. Nothing is
+ * sent — the person still reads it and presses Plan.
+ */
+export function prefillAgentRequest(scope: string | null | undefined, suite: SuiteId, projectId: string, request: string): boolean {
+  const key = draftKey(scope, suite, projectId);
+  const text = request.trim().slice(0, 11000);
+  if (!key || !text) return false;
+  try {
+    let refs: string[] = [];
+    const parsed = JSON.parse(localStorage.getItem(key) ?? 'null');
+    if (parsed && Array.isArray(parsed.refs)) refs = parsed.refs.filter((id: unknown): id is string => typeof id === 'string').slice(0, 12);
+    localStorage.setItem(key, JSON.stringify({ request: text, refs }));
+    window.dispatchEvent(new Event(draftEvent));
+    return true;
+  } catch { return false; }
+}
+
 /** Workbench owns its authenticated scope without a SessionProvider. Keep its
  * drafts and responses bound to that captured identity, just like Studio saves. */
 function useAgentDraft(scope: string | null | undefined, suite: SuiteId, projectId: string) {
-  const key = scope ? `aw_draft:suite-agent:${encodeURIComponent(scope)}:${suite}:${encodeURIComponent(projectId)}` : null;
+  const key = draftKey(scope, suite, projectId);
   const read = useCallback(() => { try { return key ? localStorage.getItem(key) : null; } catch { return null; } }, [key]);
   const stored = useSyncExternalStore(subscribeDraft, read, emptySnapshot);
   const [edit, setEdit] = useState<{ key: string | null; value: AgentDraft } | null>(null);

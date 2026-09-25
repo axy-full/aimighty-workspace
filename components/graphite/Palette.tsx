@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MODELS, displayModelName } from "@/lib/models";
+import { sendGenPreset } from "@/lib/shell/gen-preset-inbox";
 import { paletteIndex, searchPalette, type PaletteRun } from "@/lib/shell/palette";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -28,7 +29,14 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
   const run = (r: PaletteRun) => {
     shell.setPalette(false);
     switch (r.type) {
-      case "gen": case "model": shell.goGen(); return;
+      case "gen": shell.goGen(); return;
+      case "model": {
+        /* Gen opens on the model picked, on the studio's engines (the index lists MODELS). */
+        const model = MODELS.find((m) => m.id === r.id);
+        if (model) sendGenPreset({ prompt: "", model: model.id, type: model.kind, billing: "workspace" });
+        shell.goGen();
+        return;
+      }
       case "suite": shell.goSuite(r.suite); return;
       case "page": shell.goSuite(r.suite, r.page); return;
       case "workspace": shell.goWorkspace(r.tab); return;

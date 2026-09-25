@@ -1,4 +1,5 @@
 import type { LibraryEntry } from "@/lib/workspace/library";
+import type { BillingSource } from "@/lib/workspace/composer";
 import type { CtxCapabilities, CtxCommand } from "./context-menu";
 
 /**
@@ -76,8 +77,12 @@ export const SAY = {
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
-/** What Retry hands to Gen: the render's own inputs, priced again before anything runs. */
-export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string };
+/**
+ * What another surface hands to Gen: Retry's render inputs (priced again before
+ * anything runs), a Soul character, or a model picked in ⌘K. An empty prompt
+ * leaves the composer's own prompt as it is.
+ */
+export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; billing?: BillingSource; note?: string };
 export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
   const raw = typeof generation.params?.rawPrompt === "string" ? generation.params.rawPrompt : "";
   const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
