@@ -70,7 +70,18 @@ export async function archiveStatement(
   };
 }
 
-/** Copy, then delete, in the executor's own write. Returns rows removed. */
+/** A plain client, as opposed to a transaction already open on one. */
+const isClient = (ex: Executor): ex is Client =>
+  typeof (ex as Partial<Client>).transaction === "function" && typeof (ex as Partial<Client>).batch === "function";
+
+/**
+ * Copy, then delete, as one write. Returns rows removed.
+ *
+ * Inside a caller's transaction the two statements already land together.
+ * On a plain client they are sent as one write batch: two autocommitted
+ * statements would let a row inserted or edited between them be deleted
+ * without its archive copy.
+ */
 export async function archiveAndDelete(
   ex: Executor,
   table: string,
@@ -78,6 +89,29 @@ export async function archiveAndDelete(
   args: unknown[],
   meta: { reason?: string; by?: string | null } = {},
 ): Promise<number> {
-  await ex.execute(await archiveStatement(ex, table, where, args as InArgs, meta));
-  return (await ex.execute({ sql: `DELETE FROM ${table} WHERE ${where}`, args: args as InArgs })).rowsAffected;
+  const copy = await archiveStatement(ex, table, where, args as InArgs, meta);
+  const remove: InStatement = { sql: `DELETE FROM ${table} WHERE ${where}`, args: args as InArgs };
+  if (isClient(ex)) return (await ex.batch([copy, remove], "write"))[1].rowsAffected;
+  await ex.execute(copy);
+  return (await ex.execute(remove)).rowsAffected;
+}
+
+/**
+ * Several archive-and-deletes, and whatever else a delete touches, as one
+ * write: every step lands or none does, so a failure halfway through never
+ * leaves a record half taken apart.
+ */
+export async function archiveTransaction<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
+  await archiveReady();
+  const tx = await db().transaction("write");
+  try {
+    const result = await work(tx);
+    await tx.commit();
+    return result;
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  } finally {
+    tx.close();
+  }
 }

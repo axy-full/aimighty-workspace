@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
-import { archiveAndDelete, archiveReady } from "@/lib/archive";
+import { archiveAndDelete, archiveTransaction } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -59,37 +59,43 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
-  const found = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [id] });
-  if (!found.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
-  await archiveReady();
-  await db().execute({
-    sql: `INSERT INTO archived_rows(id,table_name,row_id,body,reason,archived_by,archived_at)
-          SELECT lower(hex(randomblob(16))), 'generations.project_id', ?, json_group_array(id), 'unfiled', ?, ?
-          FROM generations WHERE project_id = ? HAVING COUNT(*) > 0`,
-    args: [id, got.user.id, Date.now(), id],
+  /* One write transaction: every step lands or none does, so a failure
+     partway never leaves a production still standing with its renders
+     already unfiled and its cast already archived. */
+  const deleted = await archiveTransaction(async (tx) => {
+    const found = await tx.execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [id] });
+    if (!found.rows.length) return false;
+    await tx.execute({
+      sql: `INSERT INTO archived_rows(id,table_name,row_id,body,reason,archived_by,archived_at)
+            SELECT lower(hex(randomblob(16))), 'generations.project_id', ?, json_group_array(id), 'unfiled', ?, ?
+            FROM generations WHERE project_id = ? HAVING COUNT(*) > 0`,
+      args: [id, got.user.id, Date.now(), id],
+    });
+    await tx.execute({ sql: `UPDATE generations SET project_id = NULL WHERE project_id = ?`, args: [id] });
+    await tx.execute({ sql: `UPDATE identities SET project_id = NULL WHERE project_id = ?`, args: [id] });
+    await archiveAndDelete(tx, "cast_members", `project_id = ?`, [id]);
+    /* Rig's rows go with it. Foreign keys are declared but not enforced here,
+       so a binding left behind would keep being counted by the impact query —
+       a production nobody can open, still adding shots to what a change costs.
+       Versions and attributes go through their element, which is why the
+       element ids are read first. */
+    const elements = await tx.execute({ sql: `SELECT id FROM elements WHERE project_id = ?`, args: [id] });
+    const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
+    if (elementIds.length) {
+      const holes = elementIds.map(() => "?").join(",");
+      await archiveAndDelete(tx, "attribute_versions", `element_id IN (${holes})`, elementIds);
+      await archiveAndDelete(tx, "element_attributes", `element_id IN (${holes})`, elementIds);
+      await archiveAndDelete(tx, "bindings", `element_id IN (${holes})`, elementIds);
+    }
+    await archiveAndDelete(tx, "bindings", `project_id = ?`, [id]);
+    await archiveAndDelete(tx, "elements", `project_id = ?`, [id]);
+    await archiveAndDelete(tx, "shots", `project_id = ?`, [id]);
+    await archiveAndDelete(tx, "canvas_items", `project_id = ?`, [id]);
+    await archiveAndDelete(tx, "shot_presets", `project_id = ?`, [id]);
+    await archiveAndDelete(tx, "projects", `id = ?`, [id]);
+    return true;
   });
-  await db().execute({ sql: `UPDATE generations SET project_id = NULL WHERE project_id = ?`, args: [id] });
-  await db().execute({ sql: `UPDATE identities SET project_id = NULL WHERE project_id = ?`, args: [id] });
-  await archiveAndDelete(db(), "cast_members", `project_id = ?`, [id]);
-  /* Rig's rows go with it. Foreign keys are declared but not enforced here,
-     so a binding left behind would keep being counted by the impact query —
-     a production nobody can open, still adding shots to what a change costs.
-     Versions and attributes go through their element, which is why the
-     element ids are read first. */
-  const elements = await db().execute({ sql: `SELECT id FROM elements WHERE project_id = ?`, args: [id] });
-  const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
-  if (elementIds.length) {
-    const holes = elementIds.map(() => "?").join(",");
-    await archiveAndDelete(db(), "attribute_versions", `element_id IN (${holes})`, elementIds);
-    await archiveAndDelete(db(), "element_attributes", `element_id IN (${holes})`, elementIds);
-    await archiveAndDelete(db(), "bindings", `element_id IN (${holes})`, elementIds);
-  }
-  await archiveAndDelete(db(), "bindings", `project_id = ?`, [id]);
-  await archiveAndDelete(db(), "elements", `project_id = ?`, [id]);
-  await archiveAndDelete(db(), "shots", `project_id = ?`, [id]);
-  await archiveAndDelete(db(), "canvas_items", `project_id = ?`, [id]);
-  await archiveAndDelete(db(), "shot_presets", `project_id = ?`, [id]);
-  await archiveAndDelete(db(), "projects", `id = ?`, [id]);
+  if (!deleted) return NextResponse.json({ error: "No such project." }, { status: 404 });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
 });

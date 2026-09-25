@@ -42,6 +42,36 @@ test("a delete copies the whole row to the archive before it leaves the table", 
   });
 });
 
+test("an archive copy and its delete land together, and a multi-step delete lands whole or not at all", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { archiveAndDelete, archiveTransaction } = await import("../../lib/archive");
+  await runInTenant(workspace("archive-atomic"), async () => {
+    await ready();
+    await db().execute("CREATE TABLE sample(id TEXT PRIMARY KEY, n INTEGER)");
+    await db().execute("INSERT INTO sample VALUES('a',1),('b',2)");
+    const archived = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM archived_rows WHERE table_name='sample'")).rows[0].n);
+    const ids = async () => (await db().execute("SELECT id FROM sample ORDER BY id")).rows.map((r) => r.id);
+    // On a plain client: if the delete fails, the copy is not left behind either.
+    await db().execute("CREATE TRIGGER refuse BEFORE DELETE ON sample BEGIN SELECT RAISE(ABORT,'fixture refusal'); END");
+    await expect(archiveAndDelete(db(), "sample", "id=?", ["a"])).rejects.toThrow(/fixture refusal/);
+    expect(await archived()).toBe(0);
+    await db().execute("DROP TRIGGER refuse");
+    // Several steps: a failure halfway leaves every row where it was.
+    await expect(archiveTransaction(async (tx) => {
+      await archiveAndDelete(tx, "sample", "id=?", ["a"]);
+      throw new Error("fixture failure halfway");
+    })).rejects.toThrow(/halfway/);
+    expect(await ids()).toEqual(["a", "b"]);
+    expect(await archived()).toBe(0);
+    expect(await archiveTransaction(async (tx) =>
+      (await archiveAndDelete(tx, "sample", "id=?", ["a"])) + (await archiveAndDelete(tx, "sample", "id=?", ["b"])))).toBe(2);
+    expect(await ids()).toEqual([]);
+    expect(await archived()).toBe(2);
+    expect(await archiveAndDelete(db(), "sample", "id=?", ["missing"])).toBe(0);
+  });
+});
+
 test("deleting an upload archives its row and leaves the file in storage", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
