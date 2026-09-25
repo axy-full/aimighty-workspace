@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { atomikFramesKey, prepareAtomikVideoFrames, type AtomikFrameCache } from "../../lib/workbench/atomik-video-frames";
+import { atomikFramesKey, forgetAtomikVideoFrames, prepareAtomikVideoFrames, staleAtomikFrames, type AtomikFrameCache } from "../../lib/workbench/atomik-video-frames";
 import type { AtomikVideoFrame } from "../../lib/workbench/atomik-reference-types";
 import type { Asset } from "../../lib/workbench/studio";
 
@@ -10,7 +10,7 @@ const video = (id: string, extra: Partial<Asset> = {}): Asset => ({
 });
 function harness() {
   const store = new Map<string, AtomikVideoFrame[]>();
-  const cache: AtomikFrameCache = { get: (key) => store.get(key), set: (key, frames) => void store.set(key, frames) };
+  const cache: AtomikFrameCache = { get: (key) => store.get(key), set: (key, frames) => void store.set(key, frames), delete: (key) => void store.delete(key) };
   let sampled = 0, saved = 0;
   const deps = {
     cache,
@@ -56,4 +56,22 @@ test("an unreadable or foreign cache entry is ignored, and a cancelled preparati
   aborted.abort();
   await expect(prepareAtomikVideoFrames([video("c")], "project-1", "scope-a", aborted.signal, false, h.deps)).rejects.toThrow("cancelled");
   expect(h.store.has(atomikFramesKey("scope-a", "project-1", video("c"), false))).toBe(false);
+});
+
+test("a still removed from the library is forgotten on the estimate's refusal, and the next preparation saves fresh ones", async () => {
+  const h = harness(), signal = new AbortController().signal;
+  const first = await prepareAtomikVideoFrames([video("a"), video("b")], "project-1", "scope-a", signal, false, h.deps);
+  expect(first.map((f) => f.uploadId)).toEqual(["still-1", "still-2", "still-3", "still-4", "still-5", "still-6"]);
+  // The server's words for a still that is gone, or no longer matches its video.
+  expect(staleAtomikFrames("A sampled frame is unavailable in this workspace.")).toBe(true);
+  expect(staleAtomikFrames("The sampled times do not match this original. Prepare its review frames again.")).toBe(true);
+  expect(staleAtomikFrames("A sampled frame is outside the selected video.")).toBe(true);
+  expect(staleAtomikFrames("Not enough credits.")).toBe(false);
+  // Only this scope and project's entries go; an image in the selection is ignored.
+  await prepareAtomikVideoFrames([video("a")], "project-2", "scope-a", signal, false, h.deps);
+  forgetAtomikVideoFrames([video("a"), video("b"), { ...video("i"), kind: "image" }], "project-1", "scope-a", false, h.deps.cache);
+  expect(h.store.has(atomikFramesKey("scope-a", "project-2", video("a"), false))).toBe(true);
+  const again = await prepareAtomikVideoFrames([video("a"), video("b")], "project-1", "scope-a", signal, false, h.deps);
+  expect(again.map((f) => f.uploadId)).toEqual(["still-10", "still-11", "still-12", "still-13", "still-14", "still-15"]);
+  expect(h.counts()).toEqual({ sampled: 5, saved: 15 });
 });
