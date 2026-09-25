@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
+import { dragAttrs } from "@/lib/drop";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boards";
 import { getModel } from "@/lib/models";
@@ -136,7 +137,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
             {generations.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))}>
+              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
                 {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
                 <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
                 <span className="pd-take-name">{e.take.name}</span>
@@ -207,7 +208,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             <div className="pd-row-head"><span className="pd-asset-group-name">{group.label}</span><span className="gx-hint">{group.items.length}</span></div>
             <div className="pd-take-grid" role="radiogroup" aria-label={group.label}>
               {group.items.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))}>
+              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
                 {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
                 <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
                 <span className="pd-take-name">{e.take.name}</span>

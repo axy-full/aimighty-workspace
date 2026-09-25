@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
-import { useProjectLibrary } from "@/lib/workspace/library";
+import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
+import { FILES_EVENT, type FilesDropDetail } from "@/components/DragLayer";
 import { useWorkspace } from "@/lib/workspace/state";
 import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
@@ -123,6 +124,22 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   };
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink((entry) => shell.pushUndo(entry)); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
+
+  /* A file dropped where no target took it (components/DragLayer) is kept in this project's Library. */
+  const projectId = project?.id ?? null;
+  useEffect(() => {
+    if (!projectId) return;
+    const onFiles = (e: Event) => {
+      const detail = (e as CustomEvent<FilesDropDetail>).detail;
+      if (!detail?.files.length) return;
+      detail.handled = true;
+      void uploadFilesToProject(scope, projectId, detail.files)
+        .then(({ ids, notes }) => toast(notes.length ? notes.join(" ") : `${ids.length} ${ids.length === 1 ? "file" : "files"} added to the Library`))
+        .catch((error: unknown) => toast(error instanceof Error ? error.message : "The files could not be uploaded."));
+    };
+    window.addEventListener(FILES_EVENT, onFiles);
+    return () => window.removeEventListener(FILES_EVENT, onFiles);
+  }, [scope, projectId, toast]);
 
   /* One keymap: ⌘K, ⌘J, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {

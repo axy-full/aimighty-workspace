@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { setRigDropHandler } from "@/lib/shell/drop-targets";
+import { setRigDropHandler, setShotFilesHandler } from "@/lib/shell/drop-targets";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
@@ -11,7 +11,7 @@ import { entryAsset } from "@/lib/production/sequence";
 import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { shotEngines } from "@/lib/workspace/engines";
-import { useProjectLibrary } from "@/lib/workspace/library";
+import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
 import { shotInputs, shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -224,6 +224,26 @@ export function RigLibrary() {
   const handler = useRef<(key: string, shot: { nodeId: string; name: string }) => void>(() => {});
   useEffect(() => { handler.current = (key, shot) => place(byKey.get(key) ?? byKey.get(`take:${key}`), shot.nodeId, shot.name); }, [place, byKey]);
   useEffect(() => { setRigDropHandler((key, shot) => handler.current(key, shot)); return () => setRigDropHandler(null); }, []);
+  /* Files from the device dropped on a shot: kept in the Library, and every picture or video becomes the shot's input. */
+  const filesOnShot = useRef<(files: File[], shot: { nodeId: string; name: string }) => Promise<void>>(async () => {});
+  useEffect(() => {
+    filesOnShot.current = async (files, shot) => {
+      if (!project) return;
+      toast(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`} for ${shot.name}…`);
+      try {
+        const { uploads, notes } = await uploadFilesToProject(rig.scope, project.id, files);
+        const placed: string[] = [], kept: string[] = [];
+        for (const u of uploads) {
+          if (u.kind !== "image" && u.kind !== "video") { kept.push(u.filename); continue; }
+          const asset: Asset = { id: u.id, uploadId: u.id, kind: u.kind, category: "Reference", name: u.filename.slice(0, 200), url: u.url, mime: u.mime, description: `Reference for ${shot.name}`, prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
+          const why = rig.apply((p) => addInput(p, shot.nodeId, asset, asset.name));
+          if (why) kept.push(`${u.filename} (${why})`); else placed.push(u.filename);
+        }
+        toast([placed.length ? `${placed.join(", ")} ${placed.length === 1 ? "is an input" : "are inputs"} of ${shot.name}.` : "", kept.length ? `Kept in the Library, not an input: ${kept.join(", ")}.` : "", ...notes].filter(Boolean).join(" "));
+      } catch (cause) { toast(cause instanceof Error ? cause.message : "The files could not be uploaded."); }
+    };
+  }, [project, rig, toast]);
+  useEffect(() => { setShotFilesHandler((files, shot) => void filesOnShot.current(files, shot)); return () => setShotFilesHandler(null); }, []);
 
   if (!project) return null;
   const shown = group === "All" ? items : items.filter((i) => i.group === group);

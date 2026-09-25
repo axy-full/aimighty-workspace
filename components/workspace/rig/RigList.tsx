@@ -8,7 +8,7 @@ import { shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot, RigShotStatus } from "@/lib/workspace/shots";
 import { StatusPill, type Status } from "../ui";
 import { useRig } from "./RigProvider";
-import { shotDropHandler } from "@/lib/shell/drop-targets";
+import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { VirtualItems } from "../VirtualItems";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
@@ -49,7 +49,7 @@ function annotation(shot: RigShot) {
   return shot.issues.join(" ");
 }
 
-function Row({ shot, selected, onSelect, asset, onDropAsset }: { shot: RigShot; selected: boolean; onSelect: () => void; asset: Asset | null; onDropAsset?: (assetId: string, shot: { nodeId: string; name: string }) => void }) {
+function Row({ shot, selected, onSelect, asset }: { shot: RigShot; selected: boolean; onSelect: () => void; asset: Asset | null }) {
   const tone = roleTone(shot.status);
   const note = shot.note || shot.issues[0] || "";
   const [over, setOver] = useState(false);
@@ -63,10 +63,10 @@ function Row({ shot, selected, onSelect, asset, onDropAsset }: { shot: RigShot; 
       data-status={shot.status}
       data-drop={over || undefined}
       onClick={onSelect}
-      /* A Library asset dropped on the row is filed on this shot (text/plain = asset id). */
-      onDragOver={onDropAsset ? (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setOver(true); } } : undefined}
-      onDragLeave={onDropAsset ? () => setOver(false) : undefined}
-      onDrop={onDropAsset ? (e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) onDropAsset(id, { nodeId: shot.id, name: shot.name }); } : undefined}
+      /* Anything dropped on the row lands on this shot: an asset from anywhere, a brief, or files from the device (lib/shell/drop-targets). */
+      onDragOver={(e) => { if (canDropOnShot(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setOver(true); } }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { setOver(false); if (dropOnShot(e.dataTransfer, { nodeId: shot.id, name: shot.name })) e.preventDefault(); }}
     >
       <span className="pxw-rig-num">{String(shot.index).padStart(2, "0")}</span>
       <ShotThumb id={shot.id} asset={asset} />
@@ -115,7 +115,7 @@ export function RigList() {
             attrs={{ role: "list", "aria-label": "Shots" }} rowRole="listitem"
             items={shots} getKey={(shot) => shot.id} layout={{ columns: 1 }} gap={0} estimateRowHeight={58} scroll="ancestor"
             revealKey={selected?.id ?? null}
-            renderItem={(shot) => <Row shot={shot} selected={selected?.id === shot.id} onSelect={() => rig.select(shot.id)} asset={shotPreviewAsset(project, shot.id)} onDropAsset={shotDropHandler() ?? undefined} />}
+            renderItem={(shot) => <Row shot={shot} selected={selected?.id === shot.id} onSelect={() => rig.select(shot.id)} asset={shotPreviewAsset(project, shot.id)} />}
           />
           {!shots.length ? <p className="pxw-rig-empty">No shots yet. Add one to start.</p> : null}
           <button type="button" className="pxw-rig-add" onClick={rig.addShot}>+ Add shot</button>

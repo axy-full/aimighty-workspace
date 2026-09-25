@@ -1,5 +1,6 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { isDroppable, readDrop } from "@/lib/drop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
@@ -167,13 +168,18 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
     } catch (error) { fail(entry.id, error, "The picture could not be uploaded."); }
     finally { setWorking((w) => ({ ...w, [entry.id]: "" })); }
   };
-  /* A Library tile dropped on a place (text/plain = its take id) becomes a reference. */
-  const dropOn = (entry: EnvironmentEntry, takeId: string) => {
-    const lib = items.find((e) => e.take.id === takeId);
-    if (!lib) return;
-    if (!isPicture(lib)) { setErrors((x) => ({ ...x, [entry.id]: "Only pictures can be references for a place." })); return; }
-    addReference(entry, lib);
-    toast(`${lib.take.name} is a reference for ${entry.name || "this place"}`);
+  /* Anything dropped on a place: a picture from anywhere, or picture files from the device. On the plate it becomes the plate; elsewhere on the card, a reference. */
+  const dropOn = (entry: EnvironmentEntry, e: React.DragEvent, asPlate: boolean) => {
+    e.preventDefault(); e.stopPropagation(); setDropOver(null);
+    const { ids, files } = readDrop(e.dataTransfer, p.assets);
+    for (const id of ids) {
+      const lib = items.find((x) => x.take.id === id);
+      if (!lib) { setErrors((x) => ({ ...x, [entry.id]: "That asset is not in this project's Library." })); continue; }
+      if (!isPicture(lib)) { setErrors((x) => ({ ...x, [entry.id]: `Only pictures can be ${asPlate ? "a plate" : "references"} for a place.` })); continue; }
+      if (asPlate) { takePlate(entry, lib); toast(`${lib.take.name} is the plate for ${entry.name || "this place"}`); }
+      else { addReference(entry, lib); toast(`${lib.take.name} is a reference for ${entry.name || "this place"}`); }
+    }
+    void (async () => { for (const file of files) await upload(entry, file, asPlate); })();
   };
 
   /* ── Rendering a plate through the quoted /api/generate path, as Storyboards does. ── */
@@ -267,10 +273,10 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
           const reason = !entry.name.trim() && !entry.prompt.trim() ? "Name the place or write its prompt first." : null;
           return (
             <article key={entry.id} className="gx-gen-card pd-frame" data-testid="environment-entry" aria-label={entry.name || "Unnamed place"} data-drop={dropOver === entry.id || undefined}
-              onDragOver={(e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(entry.id); } }}
+              onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(entry.id); } }}
               onDragLeave={() => setDropOver((v) => (v === entry.id ? null : v))}
-              onDrop={(e) => { e.preventDefault(); setDropOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) dropOn(entry, id); }}>
-              <div className="pd-frame-image" data-ratio={p.aspect}>
+              onDrop={(e) => dropOn(entry, e, false)}>
+              <div className="pd-frame-image" data-ratio={p.aspect} data-testid="environment-plate-drop" onDrop={(e) => dropOn(entry, e, true)}>
                 {shown ? <LazyMedia url={urlOf(shown)} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{rendering ? "Rendering the plate…" : "No plate yet"}</span>}
               </div>
               <input className="gx-field pd-cast-name" aria-label="Place name" value={entry.name} maxLength={ENVIRONMENT_LIMITS.name} placeholder="Place name" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, name: v })); }} data-testid="environment-name" />

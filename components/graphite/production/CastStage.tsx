@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { entryAsset } from "@/lib/production/sequence";
+import { isDroppable, readDrop } from "@/lib/drop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
@@ -209,6 +211,23 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     finally { setWorking((w) => ({ ...w, [entry.id]: "" })); }
   };
 
+  /* A picture dropped on an entry — a tile from anywhere, or a file from the device — becomes its reference image. */
+  const [dropOver, setDropOver] = useState<string | null>(null);
+  const dropOn = (entry: CastEntry, e: React.DragEvent) => {
+    e.preventDefault(); setDropOver(null);
+    const { ids, files } = readDrop(e.dataTransfer, p.assets);
+    const file = files.find((f) => f.type.startsWith("image/"));
+    if (file) { void uploadReference(entry, file); return; }
+    if (files.length) { setErrors((x) => ({ ...x, [entry.id]: "A reference is a picture; the other files are not used here." })); return; }
+    const lib = ids.map((id) => items.find((x) => x.take.id === id)).find(Boolean);
+    if (!lib) { if (ids.length) setErrors((x) => ({ ...x, [entry.id]: "That asset is not in this project's Library." })); return; }
+    if (lib.media !== "image" || !lib.url) { setErrors((x) => ({ ...x, [entry.id]: "A reference is a picture." })); return; }
+    const asset = entryAsset(lib);
+    editor.change((old) => ({ ...old, assets: old.assets.some((a) => a.id === asset.id) ? old.assets : [...old.assets, asset] }));
+    setEntry(entry.id, (x) => ({ ...x, referenceAssetId: asset.id }));
+    void editor.ensureSaved();
+  };
+
   const fromBeats = useMemo(() => castFromBeats(p.production?.beats, cast.entries), [p.production?.beats, cast.entries]);
   const agentModel = agent.model;
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
@@ -267,7 +286,9 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           const declares = (name: string) => Boolean(model?.parameters.some((x) => x.name === name));
           const reason = accountBlocked ?? (!model ? `The connected account does not offer ${label}.` : !entry.name.trim() ? "Name it first." : !entry.prompt.trim() ? "Write its prompt first." : null);
           return (
-            <article key={entry.id} className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} aria-label={entry.name || "Unnamed"}>
+            <article key={entry.id} className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} aria-label={entry.name || "Unnamed"} data-drop={dropOver === entry.id || undefined}
+              onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(entry.id); } }}
+              onDragLeave={() => setDropOver((v) => (v === entry.id ? null : v))} onDrop={(e) => dropOn(entry, e)}>
               <div className="pd-frame-image" data-ratio={entry.kind === "character" ? "4:5" : p.aspect}>
                 {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{building ? "Building on the account…" : "Not built yet"}</span>}
               </div>

@@ -1,5 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { isDroppable, readDrop } from "@/lib/drop";
+import { uploadFilesToProject } from "@/lib/workspace/library";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { addTakeToCut, moveShot, removeShot, setShotSeconds } from "@/lib/production/sequence";
@@ -11,12 +13,39 @@ import type { LibraryEntry } from "@/lib/workspace/library";
  * length in seconds, moved or taken out — and the project's takes, any of which
  * goes on the end of the cut in one press. Sound stays in the lanes below.
  */
-export function TimelineCut({ project, items, onChange }: { project: Project; items: LibraryEntry[]; onChange: (fn: (p: Project) => Project) => void }) {
+export function TimelineCut({ project, items, onChange, scope }: { project: Project; items: LibraryEntry[]; onChange: (fn: (p: Project) => Project) => void; scope?: string }) {
   const [problem, setProblem] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
   const takes = items.filter((e) => (e.media === "video" || e.media === "image") && e.url);
+  /* Dropped files join the cut once the Library lists them (their upload reloads it). */
+  const pending = useRef<string[]>([]);
+  useEffect(() => {
+    if (!pending.current.length) return;
+    const ready = pending.current.map((id) => takes.find((t) => t.take.id === id)).filter((t): t is LibraryEntry => Boolean(t));
+    if (!ready.length) return;
+    pending.current = pending.current.filter((id) => !ready.some((t) => t.take.id === id));
+    onChange((p) => ready.reduce((acc, t) => addTakeToCut(acc, t), p));
+  });
+  /* A take dropped on the cut goes on its end: a tile from anywhere, or picture and video files from the device. */
+  const drop = (e: React.DragEvent) => {
+    e.preventDefault(); setOver(false); setProblem(null);
+    const { ids, files } = readDrop(e.dataTransfer, project.assets);
+    const found = ids.map((id) => takes.find((t) => t.take.id === id)).filter((t): t is LibraryEntry => Boolean(t));
+    if (ids.length > found.length) setProblem("Only this project's pictures and videos go on the picture track.");
+    if (found.length) { try { onChange((p) => found.reduce((acc, t) => addTakeToCut(acc, t), p)); } catch (cause) { setProblem(cause instanceof Error ? cause.message : "It could not be added."); } }
+    if (!files.length) return;
+    if (!scope) { setProblem("Files cannot be uploaded here."); return; }
+    void uploadFilesToProject(scope, project.id, files).then(({ uploads, notes }) => {
+      pending.current.push(...uploads.filter((u) => u.kind === "image" || u.kind === "video").map((u) => `upload:${u.id}`));
+      const skipped = uploads.filter((u) => u.kind !== "image" && u.kind !== "video").length;
+      if (notes.length || skipped) setProblem([...notes, ...(skipped ? ["Sound and documents are kept in the Library; sound goes on the lanes below."] : [])].join(" "));
+    }).catch((cause: unknown) => setProblem(cause instanceof Error ? cause.message : "The files could not be uploaded."));
+  };
   const assets = new Map(project.assets.map((a) => [a.id, a]));
   return (
-    <section className="pd-cut" aria-label="The cut" data-testid="timeline-cut" data-section="cut">
+    <section className="pd-cut" aria-label="The cut" data-testid="timeline-cut" data-section="cut" data-drop={over || undefined}
+      onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setOver(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }} onDrop={drop}>
       <div className="pd-row-head">
         <span className="gx-eyebrow" data-functional-label="">Picture · {project.shots.length} {project.shots.length === 1 ? "shot" : "shots"}</span>
       </div>
@@ -41,7 +70,7 @@ export function TimelineCut({ project, items, onChange }: { project: Project; it
             );
           })}
         </ol>
-      ) : <p className="gx-hint">The cut is empty. Add takes from the tray below.</p>}
+      ) : <p className="gx-hint">The cut is empty. Add takes from the tray below, or drop them here.</p>}
       <details className="pd-more" open={!project.shots.length}>
         <summary>Add takes · {takes.length} in this project</summary>
         <div className="pd-take-grid" role="list" aria-label="Takes to add">

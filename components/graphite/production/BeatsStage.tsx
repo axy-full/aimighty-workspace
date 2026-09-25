@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { hasFiles } from "@/lib/drop";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { BEAT_LIMITS, BEAT_SOURCE_CHARS, beatCount, beatSheetFrom, move, newBeat, newScene, newShot, shotCount, type BeatScene, type BeatSheet, type BeatShot, type BeatSource } from "@/lib/production/beats";
@@ -53,6 +54,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   const [reading, setReading] = useState<{ page: number; total: number } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const [importOver, setImportOver] = useState(false);
   const loading = useRef(new Set<string>());
   const script = p.script ?? "";
   const sheet = p.production?.beats ?? null;
@@ -242,9 +244,12 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
         ) : null}
         {!sheet ? <button type="button" className="gx-hbtn" onClick={startSheet} data-testid="beats-by-hand">Or write the beats by hand</button> : null}
 
-        <div className="pd-import" data-testid="beats-import">
+        <div className="pd-import" data-testid="beats-import" data-drop={importOver || undefined}
+          onDragOver={(e) => { if (hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setImportOver(true); } }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImportOver(false); }}
+          onDrop={(e) => { const file = Array.from(e.dataTransfer.files).find((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name)); setImportOver(false); if (!file) return; e.preventDefault(); if (!reading) void readBeatSheet(file); }}>
           <span className="gx-eyebrow" data-functional-label="">Upload a beat sheet</span>
-          <p className="gx-hint">A beat sheet from Final Draft — its beat board or outline, exported as a PDF. The PDF is read here in the browser, and the agent summarises it into scenes and beats{sheet ? "; you choose whether that replaces this sheet" : ""}.</p>
+          <p className="gx-hint">A beat sheet from Final Draft — its beat board or outline, exported as a PDF; choose it or drop it here. The PDF is read here in the browser, and the agent summarises it into scenes and beats{sheet ? "; you choose whether that replaces this sheet" : ""}.</p>
           <div className="pd-import-row">
             <button type="button" className="gx-hbtn" disabled={Boolean(reading)} onClick={() => fileInput.current?.click()} data-testid="beats-import-choose">
               {reading ? (reading.total ? `Reading page ${reading.page} of ${reading.total}…` : "Reading the PDF…") : source ? "Upload another PDF" : "Upload a beat sheet PDF"}
