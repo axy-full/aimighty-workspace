@@ -606,13 +606,74 @@ test("a connected-account still that is never acknowledged, or never collected, 
     await syncPending(10);
     expect(await row("gen_hf_unacked")).toMatchObject({ status: "failed", error: expect.stringContaining("never confirmed") });
     expect(await bill("gen_hf_unacked")).toMatchObject({ status: "failed", engine_cost_usd: 1, billed_credits: 15 });
-    // The workspace's one slot is free again. Accepted a day and more ago; every poll since has failed (the account was rotated).
+    // The workspace's one slot is free again. Accepted a day and more ago; every poll since has failed (the account was rotated), the latest just now.
     await still("gen_hf_uncollected", { paidClaim: Date.now() - 25 * 3600_000,
-      higgsfieldStillHandle: { provider: "higgsfield", model: MARKETING_IMAGE_MODEL_ID, ref: "req-1", credentialFingerprint: "fp" } });
+      higgsfieldStillHandle: { provider: "higgsfield", model: MARKETING_IMAGE_MODEL_ID, ref: "req-1", credentialFingerprint: "fp" },
+      higgsfieldStillCollection: { since: Date.now() - 25 * 3600_000, last: Date.now() - 10 * 60_000, failures: 150 } });
     await syncPending(10);
     expect(await row("gen_hf_uncollected")).toMatchObject({ status: "failed", cost_usd: 0.5, error: expect.stringContaining("stopped answering") });
     expect(await bill("gen_hf_uncollected")).toMatchObject({ status: "failed", engine_cost_usd: 0.5 });
   });
+});
+
+test("a connected-account still is never given up on for time alone: only a day of failed collection that is failing still", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { syncPending } = await import("../../lib/jobs");
+  const { engineFor } = await import("../../lib/engines");
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  const handle = { provider: "higgsfield", model: MARKETING_IMAGE_MODEL_ID, ref: "req-aged", credentialFingerprint: "fp" };
+  const still = async (id: string, params: Record<string, unknown>) => {
+    await ready();
+    await db().execute({
+      sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at,billed_to)
+            VALUES(?,'image','higgsfield',?,'test',?,'running',?,?,'higgsfield')`,
+      args: [id, MARKETING_IMAGE_MODEL_ID, JSON.stringify({ ratio: "16:9", resolution: "2k", higgsfieldVendorCostUsd: 0.5, higgsfieldCredentialFingerprint: "fp",
+        paidClaim: Date.now() - 30 * 3600_000, higgsfieldStillHandle: handle, ...params }), Date.now() - 30 * 3600_000, Date.now() - 30 * 3600_000],
+    });
+    await reserveGenerationSpend({ ...event(id), kind: "image", engine: "higgsfield", model: MARKETING_IMAGE_MODEL_ID });
+  };
+  const state = async (id: string) => {
+    const r = (await db().execute({ sql: "SELECT status,error,params FROM generations WHERE id=?", args: [id] })).rows[0];
+    return { status: r.status, error: r.error, collection: JSON.parse(String(r.params)).higgsfieldStillCollection };
+  };
+  const engine = engineFor("higgsfield"), poll = engine.poll, fetchMaster = engine.fetchMaster;
+  type Poll = Awaited<ReturnType<NonNullable<typeof poll>>>;
+  const answer = (status: Poll["status"], imageUrl: string | null = null) =>
+    ({ status, imageUrl, videoUrl: null, totalTokens: null, error: null, vendorStartedAt: null, vendorEndedAt: null, raw: {} }) as Poll;
+  try {
+    await runInTenant({ ...(await setup("higgsfield_alive")), concurrency: 4 }, async () => {
+      // Thirty hours old, and the vendor is still working on it: it keeps its slot, and an old run of failures is over.
+      engine.poll = async () => answer("running");
+      await still("gen_hf_working", { higgsfieldStillCollection: { since: Date.now() - 26 * 3600_000, last: Date.now() - 3 * 3600_000, failures: 4 } });
+      await syncPending(10);
+      expect(await state("gen_hf_working")).toMatchObject({ status: "running", collection: undefined });
+
+      // The image is in hand but cannot be stored: our failure, not the vendor's. It is never given up on.
+      engine.poll = async () => answer("succeeded", "https://unit.invalid/still.png");
+      engine.fetchMaster = async () => Buffer.from("not an image");
+      await syncPending(10);
+      expect(await state("gen_hf_working")).toMatchObject({ status: "running", error: expect.any(String), collection: undefined });
+
+      // A day of failures, but none lately (the sweep had not reached it): it is tried again first, not ended on the clock.
+      engine.poll = async () => { throw new Error("The connected account is not reachable."); };
+      await still("gen_hf_quiet", { higgsfieldStillCollection: { since: Date.now() - 25 * 3600_000, last: Date.now() - 3 * 3600_000, failures: 5 } });
+      await syncPending(10);
+      const tried = await state("gen_hf_quiet");
+      expect(tried).toMatchObject({ status: "running", error: expect.stringContaining("not reachable") });
+      // The run it belongs to is kept (since), and counted: one more failure, the latest now.
+      expect(tried.collection.since).toBeLessThan(Date.now() - 24 * 3600_000);
+      expect(tried.collection.failures).toBe(6);
+      expect(tried.collection.last).toBeGreaterThan(Date.now() - 60_000);
+      // Failing for a day and failing still: now it ends.
+      await syncPending(10);
+      expect(await state("gen_hf_quiet")).toMatchObject({ status: "failed", error: expect.stringContaining("stopped answering") });
+    });
+  } finally {
+    engine.poll = poll;
+    engine.fetchMaster = fetchMaster;
+  }
 });
 
 test("a still that fails before its paid step was claimed is never charged, even when its job cannot be loaded", async () => {

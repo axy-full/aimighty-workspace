@@ -128,6 +128,7 @@ export function rowToGeneration(r: any): Generation {
   delete params.higgsfieldVendorCostUsd;
   delete params.higgsfieldStillHandle;
   delete params.higgsfieldStillPollUntil;
+  delete params.higgsfieldStillCollection;
   delete params.higgsfieldVideoHandle;
   delete params.higgsfieldVideoPollUntil;
   delete params.higgsfieldVideoPollToken;
@@ -302,8 +303,15 @@ const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 const STORE_LEASE_MS = 180_000;
 /** A connected-account still sent with no acknowledgement: its receipt is written the moment the POST answers. */
 const HIGGSFIELD_UNCONFIRMED_MS = 2 * 60 * 60_000;
-/** A connected-account still whose polls have failed for a day will not be collected. */
+/** A connected-account still whose collection has failed, without a break, for a day will not be collected. */
 const HIGGSFIELD_COLLECTION_MS = 24 * 60 * 60_000;
+type StillCollection = { since?: number; last?: number; failures?: number };
+/** Failing for a day and failing still: three or more tries, the latest within the hour. Time alone never gives up on a take. */
+function collectionAbandoned(run: StillCollection | undefined, at: number): boolean {
+  if (!run) return false;
+  const since = Number(run.since), last = Number(run.last), failures = Number(run.failures);
+  return since > 0 && since < at - HIGGSFIELD_COLLECTION_MS && last > at - 60 * 60_000 && failures >= 3;
+}
 
 /**
  * Poll Ark for one generation and reconcile our row.
@@ -716,15 +724,18 @@ export async function syncPending(
             return;
           }
           /* A connected-account still that was sent but never collected: no
-             acknowledgement after two hours (the POST was lost), or a day of
-             polls that cannot reach it (the account was rotated). It stops
-             holding a render slot and can be hidden. The charge stays — the
-             request may well have been accepted — at its verified price when
-             the handle is known, so its receipt settles and is not reopened. */
+             acknowledgement after two hours (the POST was lost), or a day in
+             which every attempt to collect it failed and it is failing still
+             (the account was rotated). A vendor still working on it, or a
+             storage failure with the image in hand, is never given up on.
+             It stops holding a render slot and can be hidden. The charge
+             stays — the request may well have been accepted — at its
+             verified price when the handle is known, so its receipt settles
+             and is not reopened. */
           if (gen.kind === "image" && gen.provider === "higgsfield" && params.paidClaim != null && !TERMINAL.has(gen.status)) {
             const handle = Boolean(params.higgsfieldStillHandle);
             const since = Number(params.paidClaim) || gen.createdAt;
-            if (since < now() - (handle ? HIGGSFIELD_COLLECTION_MS : HIGGSFIELD_UNCONFIRMED_MS)) {
+            if (handle ? collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
               const price = gen.model === SOUL_CHARACTER_MODEL_ID ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
               const known = handle && typeof price === "number" && Number.isFinite(price) && price > 0 ? price : null;
               await writeGenerationOutcome(

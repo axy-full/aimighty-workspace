@@ -455,6 +455,8 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
     });
     if (!claim.rows.length) return;
     const params = JSON.parse(String(claim.rows[0].params));
+    // Once the image is in hand, a failure is ours (storage), never the vendor's: it does not count toward giving up.
+    let inHand = false;
     try {
       const job = await loadJob(genId);
       if (!job || job.kind !== "image") return;
@@ -473,14 +475,18 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
         return;
       }
       if (state.status !== "succeeded") {
-        await db().execute({ sql: "UPDATE generations SET status=?,error=NULL,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+        // The vendor answered: it is still working, and any run of failed polls is over.
+        await db().execute({ sql: `UPDATE generations SET status=?,error=NULL,params=json_remove(params,'$.higgsfieldStillCollection'),updated_at=?
+            WHERE id=? AND status IN ('queued','running') AND deleted=0`,
           args: [state.status, now(), genId] });
         return;
       }
       if (!state.imageUrl || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
         throw new Error("The connected-account request needs its saved image and verified price before collection can finish.");
+      const bytes = await engine.fetchMaster!(state.imageUrl);
+      inHand = true;
       const out = await finishStill(job, {
-        bytes: await engine.fetchMaster!(state.imageUrl), mime: "image/png",
+        bytes, mime: "image/png",
         costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
       }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
@@ -491,8 +497,18 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       // Transport, connection rotation and storage failures never imply a refund.
       // Preserve both the original request handle and its existing reservation.
       const message = error instanceof Error ? error.message : "Soul collection could not complete.";
-      await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
-        args: [message.slice(0, 600), now(), genId] });
+      /* The run of failed collections is counted — since when, the latest,
+         how many — so the pending sweep ends a take only while it is
+         actually failing (lib/jobs.ts). A storage failure with the image in
+         hand ends the run instead: the image is there to collect. */
+      const t = now();
+      await db().execute(inHand
+        ? { sql: `UPDATE generations SET error=?,params=json_remove(params,'$.higgsfieldStillCollection'),updated_at=?
+              WHERE id=? AND status IN ('queued','running') AND deleted=0`, args: [message.slice(0, 600), t, genId] }
+        : { sql: `UPDATE generations SET error=?,updated_at=?,params=json_set(params,'$.higgsfieldStillCollection',json_object(
+                'since',COALESCE(json_extract(params,'$.higgsfieldStillCollection.since'),?),'last',?,
+                'failures',COALESCE(json_extract(params,'$.higgsfieldStillCollection.failures'),0)+1))
+              WHERE id=? AND status IN ('queued','running') AND deleted=0`, args: [message.slice(0, 600), t, t, t, genId] });
       throw error;
     } finally {
       await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.higgsfieldStillPollUntil') WHERE id=? AND json_extract(params,'$.higgsfieldStillPollUntil')=?",
