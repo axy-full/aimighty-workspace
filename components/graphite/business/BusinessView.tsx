@@ -157,6 +157,20 @@ function priceLabel(state: ConnectedJobState, verb: string, blocked: string | nu
   return verb;
 }
 
+/** What each composer reads from Setup on its own. */
+const ADS_SETUP: SetupType[] = ["product", "avatar", "hook", "setting", "ad_reference"];
+const DTC_SETUP: SetupType[] = ["image_style", "brand_kit", "product"];
+
+/** A failed setup read: the account's words and one way to ask again. */
+function SetupError({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="gx-retry" role="alert" data-testid="business-setup-error">
+      <span className="gx-gen-error">{error}</span>
+      <button type="button" className="gx-hbtn" onClick={onRetry}>Read again</button>
+    </div>
+  );
+}
+
 /* ── Ads ─────────────────────────────────────────────────────────────── */
 function AdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
   const shell = useShell();
@@ -176,13 +190,14 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
   const enhancer = useEnhancer({ prompt: s.prompt, mode: "video", model: ADS_MODEL, anchored: s.medias.some((m) => m.role === "start_image"), editing: false });
-  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading;
-  useEffect(() => { if (connected && !hasSetup && !setupLoading) void readSetup(["product", "avatar", "hook", "setting", "ad_reference"]); }, [connected, hasSetup, setupLoading, readSetup]);
+  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading, setupError = business.setup.error;
+  /* Read once on its own; after a failure only Read again asks the account again. */
+  useEffect(() => { if (connected && !hasSetup && !setupLoading && !setupError) void readSetup(ADS_SETUP); }, [connected, hasSetup, setupLoading, setupError, readSetup]);
 
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
   const range = model?.durationRange ?? null;
-  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? business.modelBlock(ADS_MODEL);
   const clamped = clampedDuration(s, range);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
@@ -205,7 +220,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <p className="bz-intro">Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode. Quoted before it runs; saved to your takes.</p>
         {!connected && business.connection ? <p className="gx-reason" data-testid="ads-connect">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
-        {business.catalogueError ? <p className="gx-gen-error" role="alert">{business.catalogueError}</p> : null}
+        {business.setup.error ? <SetupError error={business.setup.error} onRetry={() => void readSetup(ADS_SETUP)} /> : null}
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <div className="gx-gen-row" data-testid="ads-product">
           <span className="gx-eyebrow" data-functional-label="">Product<span className="bz-note"> · product_ids · hooks are weak without one</span></span>
@@ -250,11 +265,11 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit()} data-testid="ads-generate">
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit(inputKey)} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
         {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · saved to your takes</p> : null}
-        {job.state.phase === "done" ? <p className="gx-gen-note" role="status" data-testid="ads-done">Rendered. It is in Takes and in Library › Assets. <button type="button" className="cw-link" onClick={() => { job.reset(); shell.goSuite("studio", "takes"); }}>Open Takes</button></p> : null}
+        {job.landed ? <p className="gx-gen-note" role="status" data-testid="ads-done">Rendered. It is in Takes and in Library › Assets. <button type="button" className="cw-link" onClick={() => { job.reset(); shell.goSuite("studio", "takes"); }}>Open Takes</button></p> : null}
       </section>
       <section className="gx-gen-results" aria-label="Setup items">
         <div className="gx-gen-results-head"><span className="gx-panel-title">Setup items</span><button type="button" className="gx-hbtn" onClick={() => shell.goSuite("business", "setup")}>Open Setup</button></div>
@@ -274,11 +289,11 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
   /* DTC needs the account's styles (the ad formats), brand kits and products; read once the engine is chosen. */
-  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading;
-  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading) void readSetup(["image_style", "brand_kit", "product"]); }, [dtc, connected, hasStyles, setupLoading, readSetup]);
+  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading, setupError = business.setup.error;
+  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading && !setupError) void readSetup(DTC_SETUP); }, [dtc, connected, hasStyles, setupLoading, setupError, readSetup]);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? business.modelBlock(s.engine);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "image", model: s.engine, prompt: s.prompt.trim(),
     parameters: {
@@ -308,6 +323,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           </div>
           {dtc ? <p className="gx-hint" data-testid="dtc-copy">{DTC_COPY}</p> : null}
         </div>
+        {dtc && business.setup.error ? <SetupError error={business.setup.error} onRetry={() => void readSetup(DTC_SETUP)} /> : null}
         {dtc ? (<>
           <SetupPicker label="Style" note="the ad format · required, no default" type="image_style" business={business} value={s.styleId} onPick={(id) => set({ ...s, styleId: id })} testId="dtc-style" />
           <SetupPicker label="Brand kit" note="optional · a completed kit" type="brand_kit" business={business} value={s.brandKitId} onPick={(id) => set({ ...s, brandKitId: id })} testId="dtc-brand-kit" />
@@ -342,10 +358,10 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert">{job.state.error}</p> : null}
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit()} data-testid="dtc-generate">
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit(inputKey)} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
-        {job.state.phase === "done" ? <p className="gx-gen-note" role="status">Rendered. It is in Takes and in Library › Assets. <button type="button" className="cw-link" onClick={() => { job.reset(); shell.goSuite("studio", "takes"); }}>Open Takes</button></p> : null}
+        {job.landed ? <p className="gx-gen-note" role="status" data-testid="dtc-done">Rendered. It is in Takes and in Library › Assets. <button type="button" className="cw-link" onClick={() => { job.reset(); shell.goSuite("studio", "takes"); }}>Open Takes</button></p> : null}
       </section>
       {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
       <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
@@ -374,8 +390,9 @@ function SetupView({ business }: { business: Business }) {
   const shell = useShell();
   const { dispatch } = useWorkspace();
   const connected = business.connection?.connected ?? false;
-  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length;
-  useEffect(() => { if (connected && !setupLoading && setupEmpty) void readSetup(); }, [connected, setupLoading, setupEmpty, readSetup]);
+  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length, setupError = business.setup.error;
+  /* Read once on its own; after a failure the Read again button below asks the account again. */
+  useEffect(() => { if (connected && !setupLoading && setupEmpty && !setupError) void readSetup(); }, [connected, setupLoading, setupEmpty, setupError, readSetup]);
   const [selected, setSelected] = useState<SetupItem | null>(null);
   const rows = SETUP_TYPES.flatMap(([type]) => business.setup.reads[type]?.items ?? []);
   const sendTo = (item: SetupItem, page: "ads" | "dtc") => {

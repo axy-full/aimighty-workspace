@@ -15,6 +15,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { useShell } from "@/lib/shell/state";
 import { ContextMenu } from "./ContextMenu";
+import { AtomikGate } from "./AtomikGate";
 import { BusinessView } from "./business/BusinessView";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
@@ -195,6 +196,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
+        <AtomikGate />
         {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}

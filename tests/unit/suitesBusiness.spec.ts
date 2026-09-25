@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   AD_DURATIONS, AD_MODES, INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_MODES, WHY, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock,
-  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH } from "../../lib/shell/business";
+  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH, catalogueBlock, retryAfterMs, ADS_MODEL } from "../../lib/shell/business";
 import { consumerVideoInputSchema, consumerVideoOriginalResult, consumerVideoParams } from "../../lib/higgsfield-consumer/video-contract";
 import { parseSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 
@@ -95,4 +95,16 @@ test("setup items are read from whatever list key the account uses, never invent
   expect(parseSetupItems({ results: [{ uuid: "p1", title: "Sneaker Runner", status: "completed", image_url: "https://cdn.test/p.jpg" }] }, "product")[0]).toMatchObject({ id: "p1", name: "Sneaker Runner", previewUrl: "https://cdn.test/p.jpg" });
   expect(parseSetupItems("nothing", "avatar")).toEqual([]);
   expect(parseSetupItems({ items: [{ id: "x", url: "http://insecure/preview.jpg" }] }, "brand_kit")[0].previewUrl).toBeNull();
+});
+
+test("a composer's catalogue line never says Reading… for ever: a failure says so, a missing model says the account lacks it", () => {
+  const at = (over: Partial<Parameters<typeof catalogueBlock>[0]>) => catalogueBlock({ connected: true, status: "loading", error: null, offered: false, model: ADS_MODEL, ...over });
+  expect(at({})).toBe("Reading the connected catalogue…");
+  expect(at({ status: "error", error: "The account is busy." })).toBe("The account is busy.");
+  expect(at({ status: "ready" })).toBe("The connected account does not offer Marketing Studio video.");
+  expect(at({ status: "ready", offered: true })).toBeNull();
+  /* Not connected has its own line. */
+  expect(at({ connected: false })).toBeNull();
+  /* Re-reads after a failure back off to once a minute. */
+  expect([1, 2, 3, 4, 9].map(retryAfterMs)).toEqual([5000, 15000, 45000, 60000, 60000]);
 });

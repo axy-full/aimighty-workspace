@@ -14,10 +14,17 @@ import type { CtxCapabilities, CtxCommand } from "./context-menu";
  *   (`/api/jobs/:id` PATCH `{ trashed }`): hidden, never erased, restorable
  *   from the undo stack. It can be moved, never copied — a copy would be a new render.
  */
-export type AssetRef = { id: string; sourceId: string; origin: "upload" | "generation"; name: string; media: "image" | "video" | "audio" | null };
+export type AssetRef = {
+  id: string; sourceId: string; origin: "upload" | "generation"; name: string; media: "image" | "video" | "audio" | null;
+  /** Why Gen cannot make this generation again from its own inputs; null when it can. */
+  retryBlock?: string | null;
+};
 
 export function assetRef(entry: LibraryEntry): AssetRef {
-  return { id: entry.take.id, sourceId: entry.take.sourceId, origin: entry.asset.origin, name: entry.take.name, media: entry.media };
+  return {
+    id: entry.take.id, sourceId: entry.take.sourceId, origin: entry.asset.origin, name: entry.take.name, media: entry.media,
+    ...(entry.asset.origin === "generation" ? { retryBlock: retryBlock(entry.asset.value) } : {}),
+  };
 }
 
 /** The reference role a dropped or `+`-ed asset takes in the Gen composer (per-model roles arrive in step 4). */
@@ -42,12 +49,12 @@ export function assetCapabilities(input: {
 }): CtxCapabilities {
   const { asset, clip, projectId } = input;
   const can: CtxCapabilities["can"] = { copy: true, cut: true, "open-in-inspector": true, delete: true };
-  const why: CtxCapabilities["why"] = { bypass: "Open Rig to bypass a node.", unplug: "Open Rig to unplug a node." };
+  const why: CtxCapabilities["why"] = {};
   if (asset) {
     if (asset.media === "image" || asset.media === "video") can["use-as-reference"] = true;
     else why["use-as-reference"] = "References are images and videos.";
-    if (asset.origin === "generation") can.retry = true;
-    else why.retry = "An upload was not generated; there is nothing to retry.";
+    if (asset.origin === "generation" && !asset.retryBlock) can.retry = true;
+    else why.retry = asset.retryBlock ?? "An upload was not generated; there is nothing to retry.";
     if (input.otherProjects > 0) can.move = true;
     else why.move = "This workspace has no other project to move it to.";
     why.duplicate = asset.origin === "generation"
@@ -76,12 +83,73 @@ export const SAY = {
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
+/** A reference as Gen's composer takes it: the Library id (`generation:…` / `upload:…`) and, on the connected account, its role. */
+export type GenPresetReference = { id: string; role?: string };
 /** What Retry hands to Gen: the render's own inputs, priced again before anything runs. */
-export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string };
-export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
-  const raw = typeof generation.params?.rawPrompt === "string" ? generation.params.rawPrompt : "";
+export type GenPreset = {
+  prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string;
+  /** Which wallet made it: a connected-account render is retried on the connected account, with its own model. */
+  billing?: "workspace" | "connected";
+  picks?: { ratio?: string; resolution?: string; duration?: number };
+  references?: GenPresetReference[];
+  /** Sound only: length, instrumental, voice. */
+  sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
+};
+type RetrySource = { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null };
+const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+const number = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
+/** Marketing Studio renders carry Business setup (products, avatars, styles) that Gen's composer has no place for. */
+const BUSINESS_MODELS = new Set(["marketing_studio_video", "marketing_studio_image", "ms_image", "marketing_studio_v2"]);
+/** A render the connected account made through the generation route (lib/higgsfield-consumer/original-identity). */
+const connectedGeneration = (p: Record<string, unknown>) => p.task === "connected-generation" && p.consumerCreditUnit === "higgsfield_credits";
+
+/**
+ * Why Gen cannot make this take again from its own inputs, or null when it
+ * can. Gen composes plain generations; a take made from a source clip (an
+ * edit, an extend, a dub), by a connected tool or as a dialogue is run again
+ * where it was made, not re-imagined here as something else.
+ */
+export function retryBlock(generation: RetrySource): string | null {
+  const p = generation.params ?? {};
+  if (generation.kind !== "image" && generation.kind !== "video" && generation.kind !== "audio") return "Gen makes pictures, videos and sound; this take is neither.";
+  if (p.sourceGenId || p.sourceUploadId || (typeof p.task === "string" && p.task !== "connected-generation" && p.task !== "generate"))
+    return "This take was made from a source clip. Run that tool again from Takes.";
+  if (connectedGeneration(p) && p.workflow) return "This take came from a connected tool, not Gen. Run that tool again.";
+  if (BUSINESS_MODELS.has(generation.model)) return "This ad was made in Business, with its product and setup. Make it again from Ads.";
+  if (Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
+  return null;
+}
+
+export function retryPreset(generation: RetrySource): GenPreset {
+  const p = generation.params ?? {};
+  const raw = typeof p.rawPrompt === "string" ? p.rawPrompt : "";
   const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
-  return { prompt: raw || generation.prompt, model: generation.model, type, note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same inputs · new seed` };
+  const connected = connectedGeneration(p);
+  const settings = connected && record(p.settings) ? p.settings : {};
+  const picks = {
+    ratio: text(p.ratio) ?? text(settings.aspect_ratio),
+    resolution: text(p.resolution) ?? text(settings.resolution),
+    duration: number(p.duration) ?? number(settings.duration),
+  };
+  const references = (Array.isArray(p.references) ? p.references : []).flatMap((ref): GenPresetReference[] => {
+    if (!record(ref)) return [];
+    const id = typeof ref.genId === "string" ? `generation:${ref.genId}` : typeof ref.uploadId === "string" ? `upload:${ref.uploadId}` : null;
+    /* A workspace engine places references itself; only a connected model is told each one's role. */
+    return id ? [{ id, ...(connected && typeof ref.role === "string" ? { role: ref.role } : {}) }] : [];
+  });
+  const lengthMs = number(p.lengthMs);
+  const sound = type === "audio"
+    ? { seconds: number(p.durationSeconds) ?? (lengthMs ? Math.round(lengthMs / 1000) : undefined), instrumental: typeof p.instrumental === "boolean" ? p.instrumental : undefined, voiceId: text(p.voiceId) }
+    : undefined;
+  return {
+    prompt: raw || generation.prompt, model: generation.model, type,
+    billing: connected ? "connected" : "workspace",
+    ...(Object.values(picks).some((v) => v !== undefined) ? { picks: Object.fromEntries(Object.entries(picks).filter(([, v]) => v !== undefined)) as GenPreset["picks"] } : {}),
+    ...(references.length ? { references } : {}),
+    ...(sound && Object.values(sound).some((v) => v !== undefined) ? { sound: Object.fromEntries(Object.entries(sound).filter(([, v]) => v !== undefined)) as GenPreset["sound"] } : {}),
+    note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same inputs · new seed`,
+  };
 }
 export const GEN_PRESET_KEY = "particl-gen-preset";
 export function readGenPreset(raw: string | null): GenPreset | null {

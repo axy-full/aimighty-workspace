@@ -5,7 +5,9 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import type { LibraryEntry } from "@/lib/workspace/library";
+import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { useSession } from "@/lib/session";
+import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
@@ -63,6 +65,9 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  /* The shell's own library store (one per scope and project): its error, its retry and its next page. */
+  const library = useProjectLibrary(useSession().requestScope ?? "", project?.id ?? null);
+  const failed = library.state.status === "error";
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();
@@ -113,7 +118,10 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
-            after={!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+            after={<>
+              {!shown.length && !failed ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+              {project ? <LibraryMore library={library} /> : null}
+            </>}
             renderItem={(entry) => {
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
               return (

@@ -34,14 +34,24 @@ const EMPTY: LibraryState = {
   pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, uploading: null,
 };
 
-type Entry = { state: LibraryState; listeners: Set<() => void>; busy: Promise<void> | null };
+type Entry = {
+  state: LibraryState;
+  listeners: Set<() => void>;
+  busy: Promise<void> | null;
+  /** A read asked for while one was in flight: it runs once that one lands, so it sees every change made before it was asked for. */
+  rerun: Promise<void> | null;
+  /** A first read that failed is tried again on its own, a few times, further apart each time. */
+  retry: { attempts: number; timer: ReturnType<typeof setTimeout> | null };
+};
 const entries = new Map<string, Entry>();
 const keyOf = (scope: string, projectId: string) => JSON.stringify([scope, projectId]);
+/** Waits before re-reading a library whose first read failed; then it waits for Try again. */
+export const LIBRARY_RETRY_MS = [2_000, 8_000, 30_000] as const;
 
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, listeners: new Set(), busy: null };
+    found = { state: EMPTY, listeners: new Set(), busy: null, rerun: null, retry: { attempts: 0, timer: null } };
     entries.set(key, found);
   }
   return found;
@@ -65,11 +75,16 @@ async function readPage(scope: string, projectId: string, source: Source, cursor
 }
 
 /** Re-read the loaded range of both sources, first page onwards. */
-async function load(scope: string, projectId: string) {
+async function load(scope: string, projectId: string): Promise<void> {
   const key = keyOf(scope, projectId);
   const e = entry(key);
-  if (e.busy) return e.busy;
-  if (e.state.status === "idle") set(key, { status: "loading" });
+  /* A read already in flight may have started before the change this refresh is for: read once more after it. */
+  if (e.busy) {
+    e.rerun ??= e.busy.then(() => { e.rerun = null; return load(scope, projectId); });
+    return e.rerun;
+  }
+  if (e.retry.timer) { clearTimeout(e.retry.timer); e.retry.timer = null; }
+  if (e.state.status === "idle" || e.state.status === "error") set(key, { status: "loading", error: null });
   e.busy = (async () => {
     try {
       const read = async (source: Source) => {
@@ -85,6 +100,7 @@ async function load(scope: string, projectId: string) {
         return { items, next: cursor, pages };
       };
       const [uploads, generations] = await Promise.all([read("uploads"), read("generations")]);
+      e.retry.attempts = 0;
       set(key, {
         status: "ready", error: null,
         uploads: uploads.items as LibraryUpload[], generations: generations.items as Generation[],
@@ -92,12 +108,27 @@ async function load(scope: string, projectId: string) {
         pages: { uploads: uploads.pages, generations: generations.pages },
       });
     } catch (error) {
-      set(key, { status: e.state.status === "ready" ? "ready" : "error", error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      const first = e.state.status !== "ready";
+      set(key, { status: first ? "error" : "ready", error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      /* A blip on the first read is not left on screen for the session: try again, a few times, further apart. */
+      const wait = first ? LIBRARY_RETRY_MS[e.retry.attempts] : undefined;
+      if (wait !== undefined && e.listeners.size) {
+        e.retry.attempts++;
+        e.retry.timer = setTimeout(() => { e.retry.timer = null; if (e.listeners.size) void load(scope, projectId); }, wait);
+      }
     } finally {
       e.busy = null;
     }
   })();
   return e.busy;
+}
+
+/** Read (or re-read) a project's library outside a component, and what the store holds for it. */
+export function loadProjectLibrary(scope: string, projectId: string) {
+  return load(scope, projectId);
+}
+export function projectLibraryState(scope: string, projectId: string): LibraryState {
+  return entry(keyOf(scope, projectId)).state;
 }
 
 /**
@@ -234,13 +265,24 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
   }, [key]);
   const state = useSyncExternalStore(subscribe, () => (key ? entry(key).state : EMPTY), () => EMPTY);
   useEffect(() => {
-    if (projectId && entry(keyOf(scope, projectId)).state.status === "idle") void load(scope, projectId);
+    if (!projectId) return;
+    const e = entry(keyOf(scope, projectId));
+    /* Opening a project whose last read failed reads it again, from the top of the retries. */
+    if (e.state.status === "error" && !e.busy && !e.retry.timer) e.retry.attempts = 0;
+    if (e.state.status === "idle" || (e.state.status === "error" && !e.busy && !e.retry.timer)) void load(scope, projectId);
   }, [scope, projectId]);
   const items = useMemo(() => libraryEntries(state), [state]);
   return {
     state,
     items,
-    refresh: useCallback(() => (projectId ? load(scope, projectId) : Promise.resolve()), [scope, projectId]),
+    /** True while a cursor says the project has more than is loaded. */
+    hasMore: Boolean(state.next.uploads || state.next.generations),
+    /** Try again after a failed read: resets the automatic retries. */
+    refresh: useCallback(() => {
+      if (!projectId) return Promise.resolve();
+      entry(keyOf(scope, projectId)).retry.attempts = 0;
+      return load(scope, projectId);
+    }, [scope, projectId]),
     more: useCallback(() => (projectId ? more(scope, projectId) : Promise.resolve()), [scope, projectId]),
     upload: useCallback((files: File[]) => (projectId ? uploadToProject(scope, projectId, files) : Promise.reject(new Error("Open a saved project first."))), [scope, projectId]),
   };

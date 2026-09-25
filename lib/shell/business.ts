@@ -179,3 +179,27 @@ export const SETUP_TYPES = [
 ] as const;
 export type SetupType = (typeof SETUP_TYPES)[number][0];
 export type SetupItem = { id: string; type: SetupType; name: string; meta: string; previewUrl: string | null };
+
+/* ── The connected catalogue ─────────────────────────────────────────── */
+
+export type CatalogueStatus = "idle" | "loading" | "ready" | "error";
+/** What each composer calls its catalogue model when the account does not offer it. */
+export const CATALOGUE_LABEL: Record<string, string> = {
+  [ADS_MODEL]: "Marketing Studio video",
+  [IMAGE_ADS_MODEL]: "Marketing Studio Image",
+  [DTC_ADS_MODEL]: "DTC Ads",
+};
+/**
+ * Why a composer cannot use its catalogue model yet, or null when it can (or
+ * when the account is not connected — that has its own line). A read that
+ * failed says so, and one that succeeded without the model says the account
+ * does not offer it: never "Reading…" for ever.
+ */
+export function catalogueBlock(input: { connected: boolean; status: CatalogueStatus; error: string | null; offered: boolean; model: string }): string | null {
+  if (input.offered || !input.connected) return null;
+  if (input.status === "error") return input.error ?? "The connected catalogue could not be read.";
+  if (input.status === "ready") return `The connected account does not offer ${CATALOGUE_LABEL[input.model] ?? input.model}.`;
+  return "Reading the connected catalogue…";
+}
+/** Waits before asking the account again after a failed read or quote: 5 s, 15 s, 45 s, then every minute. */
+export const retryAfterMs = (failures: number) => Math.min(60_000, 5000 * 3 ** Math.max(0, failures - 1));

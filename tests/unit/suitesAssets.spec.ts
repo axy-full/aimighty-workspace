@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ASSET_LABEL, GEN_PRESET_KEY, SAY, assetCapabilities, readGenPreset, referenceRole, retryPreset, type AssetRef } from "../../lib/shell/assets";
+import { ASSET_LABEL, GEN_PRESET_KEY, SAY, assetCapabilities, readGenPreset, referenceRole, retryBlock, retryPreset, type AssetRef } from "../../lib/shell/assets";
 import { ctxItems } from "../../lib/shell/context-menu";
 
 const gen: AssetRef = { id: "generation:g1", sourceId: "g1", origin: "generation", name: "Wide on the water", media: "video" };
@@ -48,10 +48,47 @@ test("delete says what really happens to each kind of asset", () => {
 
 test("Retry hands Gen the render's own inputs, and Gen reads old and new presets", () => {
   const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox" }, title: "Fox" });
-  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", note: "Retry · Fox · same inputs · new seed" });
+  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", note: "Retry · Fox · same inputs · new seed" });
   expect(retryPreset({ prompt: "p", model: "m", kind: "model" }).type).toBeUndefined();
   expect(readGenPreset(JSON.stringify(preset))).toEqual(preset);
   expect(readGenPreset("plain words from Crew")).toEqual({ prompt: "plain words from Crew" });
   expect(readGenPreset(null)).toBeNull();
   expect(GEN_PRESET_KEY).toBe("particl-gen-preset");
+});
+
+test("Retry carries every input the render was made with: settings, references, the wallet, the sound", () => {
+  /* A workspace render: its ratio, resolution, length and references; the engine places references itself. */
+  const workspace = retryPreset({
+    prompt: "harbour at dawn", model: "seedance-2.5", kind: "video", title: "Harbour",
+    params: { ratio: "9:16", resolution: "1080p", duration: 8, references: [{ genId: "g7", role: "first_frame", kind: "image" }, { uploadId: "u3", role: "reference_image", kind: "image" }] },
+  });
+  expect(workspace).toMatchObject({
+    billing: "workspace", picks: { ratio: "9:16", resolution: "1080p", duration: 8 },
+    references: [{ id: "generation:g7" }, { id: "upload:u3" }],
+  });
+  expect(workspace.references![0]).not.toHaveProperty("role");
+  /* A connected-account render is retried on the connected account, with each reference's role. */
+  const connected = retryPreset({
+    prompt: "neon alley", model: "kling_3_0", kind: "video",
+    params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", settings: { aspect_ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ uploadId: "u9", role: "start_image", kind: "image" }] },
+  });
+  expect(connected).toMatchObject({ billing: "connected", model: "kling_3_0", picks: { ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ id: "upload:u9", role: "start_image" }] });
+  /* Sound: length, instrumental, voice. */
+  expect(retryPreset({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { lengthMs: 45_000, instrumental: true } }).sound).toEqual({ seconds: 45, instrumental: true });
+  expect(retryPreset({ prompt: "door slam", model: "eleven_sfx", kind: "audio", params: { durationSeconds: 3 } }).sound).toEqual({ seconds: 3 });
+});
+
+test("a take Gen cannot make again from its own inputs says why, and Retry is blocked with that reason", () => {
+  expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: {} })).toBeNull();
+  expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: { task: "extend", sourceGenId: "g1" } })).toContain("source clip");
+  expect(retryBlock({ prompt: "", model: "eleven_sts", kind: "audio", params: { sourceUploadId: "u1" } })).toContain("source clip");
+  expect(retryBlock({ prompt: "p", model: "marketing_studio_v2", kind: "image", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", workflow: "marketing-template" } })).toContain("connected tool");
+  expect(retryBlock({ prompt: "p", model: "marketing_studio_video", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toContain("Business");
+  expect(retryBlock({ prompt: "p", model: "m", kind: "model", params: {} })).not.toBeNull();
+  const edited: AssetRef = { ...gen, retryBlock: "This take was made from a source clip. Run that tool again from Takes." };
+  const caps = assetCapabilities({ ...base, asset: edited });
+  expect(caps.can.retry).toBeUndefined();
+  expect(caps.why.retry).toBe(edited.retryBlock);
+  /* No promise that a node can be bypassed from an asset's menu. */
+  expect(caps.why.bypass).toBeUndefined();
 });

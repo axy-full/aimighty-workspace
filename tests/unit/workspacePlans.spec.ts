@@ -10,6 +10,7 @@ import {
 } from "../../lib/workspace/run-engine";
 import { activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
+import { idempotencyKey } from "../../lib/workspace/plan-helpers";
 
 /* ------------------------------------------------------------ mock backend */
 
@@ -465,6 +466,59 @@ test("a failed dispatch fails the run honestly and a resume goes back through th
   engine.start("boards");
   await until(() => engine.getState().run?.status === "waiting", "re-gated");
   expect(engine.getState().run!.approved).toBe(false);
+});
+
+test("running a plan again with unchanged inputs is a new request; a resume inside one run recovers the same one", async () => {
+  let fail = true;
+  const inner = backend();
+  const keys: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/generate" && init?.method === "POST") {
+      keys.push(new Headers(init.headers).get("Idempotency-Key") ?? "");
+      if (fail) return new Response(JSON.stringify({ error: "The connection dropped." }), { status: 503 });
+    }
+    return inner.fetcher(input, init);
+  }) as typeof fetch;
+  const engine = engineFor(context(fetcher));
+  engine.start("rig");
+  await until(() => engine.getState().run?.status === "waiting");
+  await engine.approve();
+  await until(() => engine.getState().run?.status === "failed", "failed");
+  const firstRun = engine.getState().run!.id;
+  /* The resume re-gates, and the re-sent parts carry the keys this run already used: the server recovers, never pays twice. */
+  fail = false;
+  engine.start("rig");
+  await until(() => engine.getState().run?.status === "waiting" && !engine.getState().run?.quoting, "re-gated");
+  expect(await engine.approve()).toEqual({ ok: true });
+  await until(() => engine.getState().run?.status === "done", "done");
+  expect(engine.getState().run!.id).toBe(firstRun);
+  expect(keys).toHaveLength(3);
+  expect(keys[1]).toBe(keys[0]);
+  expect(keys[2]).not.toBe(keys[1]);
+  /* Run again from the top with the same shots: new keys, so the account really renders again. */
+  engine.start("rig");
+  await until(() => engine.getState().run?.status === "waiting" && !engine.getState().run?.quoting, "second run gated");
+  await engine.approve();
+  await until(() => engine.getState().run?.status === "done", "second run done");
+  expect(keys).toHaveLength(5);
+  expect(keys.slice(3).some((key) => keys.slice(0, 3).includes(key))).toBe(false);
+  for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9._:-]{8,160}$/);
+});
+
+test("a request keeps its key for the whole run, whatever else the resume's quote holds", () => {
+  const part = (shot: string, credits = 18) => ({ credits, fingerprint: `fp-${shot}-${credits}`, body: { shotId: shot, prompt: `shot ${shot}` } });
+  const a = part("a"), b = part("b");
+  const first = { runId: "run-1", parts: [a, b] };
+  /* A was admitted; the resume re-quotes only B: B keeps its own key and never takes A's. */
+  const resumed = { runId: "run-1", parts: [part("b", 21)] };
+  expect(idempotencyKey("ws-rig", resumed.parts[0], resumed)).toBe(idempotencyKey("ws-rig", b, first));
+  expect(idempotencyKey("ws-rig", resumed.parts[0], resumed)).not.toBe(idempotencyKey("ws-rig", a, first));
+  /* The same body twice in one run is two requests. */
+  const twice = { runId: "run-1", parts: [part("a"), part("a")] };
+  expect(idempotencyKey("ws-rig", twice.parts[0], twice)).not.toBe(idempotencyKey("ws-rig", twice.parts[1], twice));
+  /* Another run with the same inputs is another request. */
+  expect(idempotencyKey("ws-rig", a, { runId: "run-2", parts: [a, b] })).not.toBe(idempotencyKey("ws-rig", a, first));
+  for (const key of [idempotencyKey("ws-rig", a, first), idempotencyKey("ws-rig", twice.parts[1], twice)]) expect(key).toMatch(/^[A-Za-z0-9._:-]{8,160}$/);
 });
 
 test("visual pacing is bounded and only for read/compute steps", () => {

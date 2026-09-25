@@ -7,7 +7,9 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
-import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
+import type { GenPreset } from "@/lib/shell/assets";
+import { useGenPresetInbox } from "@/lib/shell/gen-preset";
+import { displayModelName } from "@/lib/models";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
@@ -85,23 +87,32 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     }
   }, [scope, dispatchComposer]);
 
-  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen, an
-     asset's Retry generation) arrives once, then is forgotten. Read at mount
-     (this view only renders in the browser) and applied to the composer. */
-  const [preset] = useState(() => {
-    try {
-      const found = readGenPreset(sessionStorage.getItem(GEN_PRESET_KEY));
-      if (found) sessionStorage.removeItem(GEN_PRESET_KEY);
-      return found;
-    } catch { return null; }
-  });
-  useEffect(() => {
-    if (!preset) return;
-    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
-    dispatchComposer({ type: "prompt", value: preset.prompt });
-  }, [preset, dispatchComposer]);
-  const presetNote = preset?.note ?? null;
+  /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, an
+     asset's Retry generation — also ⌘R while Gen is open) replaces what the
+     composer holds: wallet, kind, engine, settings, references and prompt. */
+  const [preset, setPreset] = useState<GenPreset | null>(null);
+  const applyPreset = useCallback((next: GenPreset) => {
+    setPreset(next);
+    dispatchComposer({ type: "reset" });
+    if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+    if (next.type) dispatchComposer({ type: "type", value: next.type });
+    if (next.model) dispatchComposer({ type: "model", value: next.model });
+    if (next.picks) dispatchComposer({ type: "pick", value: next.picks });
+    if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
+    if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
+    if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
+    dispatchComposer({ type: "prompt", value: next.prompt });
+    void (async () => {
+      for (const ref of next.references ?? []) {
+        await drop(ref.id);
+        if (ref.role) dispatchComposer({ type: "referenceRole", key: ref.id, role: ref.role });
+      }
+    })();
+  }, [dispatchComposer, drop]);
+  useGenPresetInbox(applyPreset);
+  /* The engine the take was made on may not be on offer here any more: say which one stands in. */
+  const presetNote = !preset?.note ? null
+    : preset.model && model && composer.models.length && model.id !== preset.model ? `${preset.note} · ${displayModelName(preset.model)} is not offered here; ${model.label} is selected` : preset.note;
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);

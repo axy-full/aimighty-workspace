@@ -3,7 +3,7 @@ import {
   ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, WORKSPACE_TABS, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy,
 } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
-import { UNDO_DEPTH, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
+import { UNDO_DEPTH, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 import { ctxItems, parseCtx, placeMenu, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
 import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
 
@@ -78,6 +78,24 @@ test("the undo stack keeps the newest twenty and pops newest first", () => {
   expect(popUndo([])).toBeNull();
 });
 
+test("⌘Z undoes the open project's newest step; another project's steps wait for their project", () => {
+  let stack: UndoEntry[] = [];
+  stack = pushUndo(stack, { label: "A: shot restored", undo: () => {}, projectId: "a" });
+  stack = pushUndo(stack, { label: "B: take restored", undo: () => {}, projectId: "b" });
+  /* In A, the newer B step is not A's to undo: A's own step comes back, and B's stays. */
+  const inA = popUndo(stack, "a")!;
+  expect(inA.entry.label).toBe("A: shot restored");
+  expect(inA.rest.map((e) => e.label)).toEqual(["B: take restored"]);
+  expect(canUndo(inA.rest, "a")).toBe(false);
+  expect(popUndo(inA.rest, "a")).toBeNull();
+  expect(canUndo(inA.rest, "b")).toBe(true);
+  expect(popUndo(inA.rest, "b")!.entry.label).toBe("B: take restored");
+  /* A step with no project belongs to every project; without a project id, the newest of all. */
+  const loose = pushUndo(stack, { label: "anywhere", undo: () => {} });
+  expect(popUndo(loose, "a")!.entry.label).toBe("anywhere");
+  expect(popUndo(stack)!.entry.label).toBe("B: take restored");
+});
+
 /* ── Right-click menu ───────────────────────────────────────────────────── */
 
 const caps = (over: Partial<CtxCapabilities> = {}): CtxCapabilities => ({ can: {}, why: {}, hasClipboard: false, canUndo: false, ...over });
@@ -94,7 +112,9 @@ test("the menu follows the README's order for each target", () => {
   const head = ["copy", "cut", "paste", "duplicate", "—"];
   const tail = ["move", "retry", "—", "delete", "undo"];
   expect(commands(ctxItems({ kind: "asset", id: "a" }, caps()))).toEqual([...head, "use-as-reference", "open-in-inspector", ...tail]);
-  expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual([...head, "bypass", "unplug", ...tail]);
+  /* A Rig shot lists only what the Rig can do: Delete and Undo, and the rest once the Rig registers them. */
+  expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual(["delete", "undo"]);
+  expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, unplug: true } })))).toEqual(["bypass", "unplug", "—", "delete", "undo"]);
   expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library", "toggle-inspector"]);
 });
 
@@ -149,7 +169,10 @@ const rows = paletteIndex({
 test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
   expect(rows[0]).toMatchObject({ label: "Generate", run: { type: "gen" } });
   expect(rows.filter((r) => r.run.type === "suite")).toHaveLength(4);
-  expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.length);
+  /* The phone's own screens (Where to?, the Studio grid) are not desktop pages. */
+  expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).length);
+  expect(rows.some((r) => r.run.type === "page" && (r.run.page === "home" || r.run.page === "stages"))).toBe(false);
+  expect(rows.filter((r) => r.run.type === "page").every((r) => /^\d{2} \S/.test(r.label))).toBe(true);
   expect(rows.filter((r) => r.run.type === "workspace")).toHaveLength(WORKSPACE_TABS.length);
   expect(rows.some((r) => r.run.type === "model")).toBe(true);
   expect(rows.some((r) => r.run.type === "asset")).toBe(true);
