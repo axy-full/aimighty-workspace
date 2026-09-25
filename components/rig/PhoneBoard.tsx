@@ -5,8 +5,8 @@ import type { Board, BoardNode } from "@/lib/boards";
 import type { ElementFull } from "@/lib/elements";
 import type { RateTable } from "@/lib/rateTable";
 import { charged, estimateVideo } from "@/lib/rateTable";
-import { applySummary, rerenderable, rerenderPrompt } from "@/lib/rigApply";
-import { estimateTokens, costUsd } from "@/lib/models";
+import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes } from "@/lib/rigApply";
+import { estimateTokens, costUsd, getModel } from "@/lib/models";
 import { Mono } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
@@ -200,8 +200,11 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const uses = useMemo(() => element ? shots.filter((s) => s.cast.some((c) => c.replace(/^@/, "").toLowerCase() === element.name.toLowerCase())) : [], [shots, element]);
   const approved = uses.filter((s) => s.state === "approved");
   const draft = uses.filter((s) => s.state !== "approved");
+  /* What the engine offers: a shot's length and frame are snapped to it the way admission snaps them, so the quote is what the take bills. */
+  const engineDef = useMemo(() => { try { return engine ? getModel(engine) : null; } catch { return null; } }, [engine]);
+  const paramsOf = (s: ShotLike) => rerenderParams(engineDef, s.planned);
   /* Each take is billed on its own, rounded the way the ledger rounds it; a shot with no words to render is neither priced nor sent. */
-  const quote = (s: ShotLike) => { const secs = s.planned ?? 5; return engine ? charged(rates, estimateVideo(rates, engine, "1080p", secs, estimateTokens("1080p", "16:9", secs), costUsd)) : null; };
+  const quote = (s: ShotLike) => { const p = paramsOf(s); return engine ? charged(rates, estimateVideo(rates, engine, p.resolution, p.duration, estimateTokens(p.resolution, p.ratio, p.duration), costUsd)) : null; };
   /* One shot the engine cannot price leaves the lot unpriced: no price, no Apply (never "0 cr"). */
   const cost = (list: ShotLike[]) => { let total = 0; for (const s of rerenderable(list)) { const q = quote(s); if (q == null) return null; total += q; } return total; };
   const price = (list: ShotLike[]) => { const c = cost(list); return c == null ? "No price" : fmt(c); };
@@ -217,14 +220,11 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
     setBusy(true);
     try {
       const targets = rerenderable(chosen.list);
-      const started: ShotLike[] = [];
-      let failure: string | null = null;
-      for (const s of targets) {
-        /* The price on the button is the ceiling: a take that would now cost more is refused, not charged. */
-        const r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: rerenderPrompt(s), model: engine, projectId, shotId: s.id, ratio: "16:9", resolution: "1080p", duration: s.planned ?? 5, ...(rates.unit === "cr" ? { maxCredits: quote(s) ?? 0 } : {}) }) });
-        if (r.ok) started.push(s);
-        else { const j = await r.json().catch(() => ({})); failure = `${s.code} didn't start: ${String(j.error ?? "try again").replace(/\.$/, "")}`; break; }
-      }
+      /* The price on the button is the ceiling: a take that would now cost more is refused, not charged. */
+      const { started, failure } = await sendTakes(targets, (s) => fetch("/api/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: rates.unit === "cr" ? quote(s) : null })),
+      }));
       /* The binding changes only once a take is actually rendering with it. */
       if (started.length) onRebind(src.id, port.id, picked, vNum(picked));
       toast(applySummary({ asset: element?.name ?? "Asset", from: vNum(boundId), to: vNum(picked), started: started.length, sent: targets.length, cost: price(started), failure, skipped: chosen.list.length - targets.length }));
