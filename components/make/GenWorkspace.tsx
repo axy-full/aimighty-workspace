@@ -69,6 +69,9 @@ function Workspace({ initialKind }: { initialKind?: string }) {
   const project = projectResult.data?.project?.id === workbenchProjectId ? projectResult.data.project : null;
   const generationProject = project?.productionProjectId ? { id: project.id, name: project.name, productionProjectId: project.productionProjectId } : null;
   const projectQuery = workbenchProjectId ? `&project=${encodeURIComponent(workbenchProjectId)}` : "";
+  const savedProjects = projectResult.data?.projects ?? [];
+  /* This page's own address in that project: mode, promptFrom and the rest carried over. */
+  const withProject = (id: string) => { const params = new URLSearchParams(search.toString()); params.set("project", id); return `/generate?${params}`; };
   const toast = useToast();
   const mode =
     GEN_MODES.find(
@@ -275,7 +278,13 @@ function Workspace({ initialKind }: { initialKind?: string }) {
           }}>
           {!generationProject ? <div className={styles.notice} role="status">
             <p>{projectResult.error || (workbenchProjectId ? projectResult.data ? "This saved project is unavailable for generation. Open it in Studio to save its production mapping." : "Loading the saved project…" : "Choose a saved project before generating.")}</p>
-            <Link href="/workbench">Choose a project in Studio</Link>
+            {/* Chosen here, the project joins this address and everything else in it
+                stays, so a prompt on its way in (`promptFrom`) is not lost to a detour. */}
+            {!workbenchProjectId && savedProjects.length > 0 && <nav aria-label="Saved projects" className="mb-[10px] flex flex-wrap gap-[6px]">
+              {savedProjects.slice(0, 6).map(saved => <Link key={saved.id} href={withProject(saved.id)} replace
+                className="block h-[44px] max-w-full truncate rounded-[6px] border border-[var(--gen-edge)] px-[12px] leading-[42px] text-[var(--gen-ink)]">{saved.name || "Untitled project"}</Link>)}
+            </nav>}
+            <Link href="/workbench">{!workbenchProjectId && savedProjects.length ? "Open Studio" : "Choose a project in Studio"}</Link>
           </div> : astraUpscaling ? (
             <AstraUpscale
               project={generationProject}

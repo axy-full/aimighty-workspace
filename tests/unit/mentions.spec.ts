@@ -35,7 +35,7 @@ test("only a name the note resolved reads as a mention", () => {
 test("an unknown name is one word unless a known one is longer, and never an address or an engine citation", () => {
   expect(unknownMentions("Close on @Maya Walks toward camera", [])).toEqual(["Maya"]);
   expect(unknownMentions("Close on @Maya Walks toward camera", ["Maya"])).toEqual([]);
-  expect(unknownMentions("@Nike Air shoes on a plinth", ["nike"])).toEqual([]);
+  expect(unknownMentions("@Lantern Pro shoes on a plinth", ["lantern"])).toEqual([]);
   expect(unknownMentions("Email studio@acme.com for the plates", [])).toEqual([]);
   expect(unknownMentions("@Coast road at dawn, @Cass waits", ["Coast road"])).toEqual(["Cass"]);
   expect(unknownMentions("Match @Image1 and @video2, voice @Audio1", [])).toEqual([]);

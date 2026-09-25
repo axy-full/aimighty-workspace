@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
-import { trainApproval, trainApprovalProblem, trainingPhotos, trainPrice } from "../../lib/identityTraining";
+import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainApprovalProblem, trainingPhotos, trainPrice } from "../../lib/identityTraining";
 import { billCredits } from "../../lib/creditTerms";
 
 process.env.ENGINE_MOCK = "1";
@@ -48,6 +48,22 @@ test("the approval carries the shown price, and a higher charge is refused", () 
   expect(trainApprovalProblem({ maxCredits: "54" }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxCredits: 54.5 }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxUsd: 3.59 }, charge)).toContain("price changed");
+  // The sheet knows this answer by its exact words, and reads the terms again.
+  expect(trainApprovalProblem({ maxCredits: 1 }, charge)).toBe(TRAIN_PRICE_CHANGED);
+});
+
+/* A voice clip whose browser MIME type is empty (some .opus, .flac or .m4a)
+   went to the reference intake, which reads pictures and video only. */
+test("sound uploads as a file by its type or, failing that, its extension; pictures and clips as references", () => {
+  expect(assetUploadPurpose({ type: "image/png", name: "face.png" })).toBe("reference");
+  expect(assetUploadPurpose({ type: "video/mp4", name: "walk.mp4" })).toBe("reference");
+  expect(assetUploadPurpose({ type: "audio/wav", name: "voice.wav" })).toBe("chat");
+  expect(assetUploadPurpose({ type: "", name: "voice.opus" })).toBe("chat");
+  expect(assetUploadPurpose({ type: "", name: "Voice.FLAC" })).toBe("chat");
+  expect(assetUploadPurpose({ type: "application/octet-stream", name: "line.m4a" })).toBe("chat");
+  // An unknown file still goes to the intake, which names what it takes.
+  expect(assetUploadPurpose({ type: "", name: "face.heic" })).toBe("reference");
+  expect(assetUploadPurpose({ type: "application/pdf", name: "brief.pdf" })).toBe("reference");
 });
 
 type Handler = (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -102,23 +118,32 @@ test("a retried New asset hands back the caller's own untrained identity instead
   const fixtures = [
     { id: "idn_other", name: "Iver", createdBy: "someone-else", projectId: null, status: "draft", loraUrl: null, castId: null },
     { id: "idn_trained", name: "Mara", createdBy: "caller", projectId: null, status: "failed", loraUrl: "https://lora", castId: null },
-    { id: "idn_mine", name: "Iver", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null },
+    { id: "idn_carried", name: "Iver", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null },
+    { id: "idn_mine", name: "Iver", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null, description: "Kept" },
+    { id: "idn_asset_only", name: "Tove", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null },
   ];
-  const updated: { id: string; photos: string[] }[] = [], created: string[] = [];
+  /* Rig assets already built on these identities (attribute_versions.identity_id). */
+  const carried = new Set(["idn_carried", "idn_asset_only"]);
+  const asked: string[][] = [];
+  const updated: { id: string; photos: string[]; description?: string }[] = [], created: string[] = [];
   const route = load("app/api/identities/route.ts", {
     "next/server": nextServer(),
     "@/lib/allowance": { allowanceCheck: async () => ({ ok: true }) },
     "@/lib/auth": { requireUser: async () => ({ user: { id: "caller" } }), withTenant: (h: Handler) => h },
     "@/lib/identities": {
       listIdentities: async () => fixtures,
-      updateIdentity: async (id: string, patch: { photos: string[] }) => { updated.push({ id, photos: patch.photos }); return { ...fixtures.find((f) => f.id === id), photos: patch.photos }; },
-      createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Iver") throw new Error("There is already an identity called Iver."); return { id: "idn_new", name: input.name }; },
+      updateIdentity: async (id: string, patch: { photos: string[]; description?: string }) => { updated.push({ id, ...patch }); return { ...fixtures.find((f) => f.id === id), ...patch }; },
+      createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Iver" || input.name === "Tove") throw new Error(`There is already an identity called ${input.name}.`); return { id: "idn_new", name: input.name }; },
       syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => 3.6, RENDER_USD_PER_MP: 0.035, TRAINER: "trainer",
     },
     "@/lib/fal": { falConfigured: () => true },
     "@/lib/credits": { creditsApply: () => true },
     "@/lib/creditTerms": { billCredits },
     "@/lib/tenant": { currentTenant: () => null },
+    "@/lib/db": {
+      ready: async () => {},
+      db: () => ({ execute: async ({ args }: { args: string[] }) => { asked.push(args); return { rows: args.filter((a) => carried.has(a)).map((identity_id) => ({ identity_id })) }; } }),
+    },
   });
   const post = (body: unknown) => route.POST(
     new Request("http://localhost/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
@@ -127,8 +152,21 @@ test("a retried New asset hands back the caller's own untrained identity instead
   const again = await post({ name: "iver", photos: ["up1", "up2"], projectId: null, reuseDraft: true });
   expect(again.status).toBe(200);
   expect((await again.json()).identity.id).toBe("idn_mine");
+  // The failed identity a Rig asset already carries is left to that asset; the free one is reused, and its description kept.
+  expect(asked).toEqual([["idn_carried", "idn_mine"]]);
   expect(updated).toEqual([{ id: "idn_mine", photos: ["up1", "up2"] }]);
   expect(created).toEqual([]);
+
+  // Every same-named draft already under an asset: the name clash stops it, before any training.
+  const clash = await post({ name: "Tove", photos: ["up1"], reuseDraft: true });
+  expect(clash.status).toBe(400);
+  expect(updated).toHaveLength(1);
+  expect(created).toEqual(["Tove"]);
+  created.length = 0;
+
+  // A description the body sends is written; a blank one leaves the stored one alone.
+  await post({ name: "Iver", description: "Tall, grey coat", photos: ["up3"], reuseDraft: true });
+  expect(updated.at(-1)).toEqual({ id: "idn_mine", photos: ["up3"], description: "Tall, grey coat" });
 
   // A trained identity is never taken over, and without reuseDraft the clash stands.
   expect((await post({ name: "Mara", photos: [], reuseDraft: true })).status).toBe(201);

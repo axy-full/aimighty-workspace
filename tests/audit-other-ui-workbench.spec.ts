@@ -5,16 +5,20 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { legacyShell } from "./helpers/legacyShell";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { createAstraScene } from "../lib/astra-blender/scene";
 
 /**
  * Audit fixes on surfaces outside the suites (other-ui): the Library's
  * unfiled wall, the New asset sheet's training price, desktop menus, the
  * app-wide right-click menu, the asset library's paging, the prompt boxes'
- * attach, and the phone production header. Real local routes, mock engine;
- * nothing here reaches a provider.
+ * attach, the phone production header and the Rig's Apply on a phone.
+ * Real local routes, mock engine; nothing here reaches a provider.
  */
 const DESKTOP = ["workbench-1440x900"];
+const PHONES = ["workbench-360x640", "workbench-390x844"];
+const fits = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
 const png = (fill: string) => sharp({ create: { width: 320, height: 320, channels: 3, background: fill } }).png().toBuffer();
 function wav() {
@@ -65,7 +69,7 @@ async function production(page: Page, name: string) {
   return { projectId, shotId: (shotJson.id ?? shotJson.shot?.id) as string };
 }
 
-test("Unfiled takes: File to shot files the take, Use prompt reaches Generate, and right-click keeps the browser's menu", async ({ page }, info) => {
+test("Unfiled takes: File to shot files the take, Use prompt reaches Generate with no project remembered, and right-click keeps the browser's menu", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "one desktop");
   const { workspaceId, me, scope, headers } = await account(page);
   const { projectId, shotId } = await production(page, `Filing fixture ${randomUUID().slice(0, 6)}`);
@@ -75,11 +79,11 @@ test("Unfiled takes: File to shot files the take, Use prompt reaches Generate, a
     { id: toFile, kind: "image", prompt: "A lighthouse keeper climbs the stair" },
     { id: toReuse, kind: "image", prompt: "A red kite over the salt flats at noon" },
   ]);
-  /* A saved project Generate can open, remembered the way Generate remembers one. */
+  /* A saved project Generate can open. Nothing remembers it: the Library names
+     no project and Generate has none in memory, so Generate has to ask. */
   const draft: Project = { ...newProject("Unfiled fixture project"), productionProjectId: projectId };
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: draft, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
-  await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: draft.id });
   const patches: (string | undefined)[] = [];
   page.on("request", (r) => { if (r.method() === "PATCH" && r.url().includes(`/api/jobs/${toFile}`)) patches.push(r.headers()["x-workbench-scope"]); });
 
@@ -113,10 +117,22 @@ test("Unfiled takes: File to shot files the take, Use prompt reaches Generate, a
   const filed = await page.request.get(`/api/jobs/${toFile}?sync=0`).then((r) => r.json());
   expect(filed.generation.shotId).toBe(shotId);
 
-  /* Use prompt: Generate opens on this take's prompt. */
+  /* Use prompt: Generate asks for a project in place, and the prompt survives the choice. */
   await page.getByRole("article").filter({ hasText: "A red kite over the salt flats at noon" }).getByRole("button", { name: "Use prompt" }).click();
   await expect(page).toHaveURL(new RegExp(`/generate\\?.*promptFrom=${toReuse}`));
+  await expect(page).not.toHaveURL(/[?&]project=/);
+  await page.getByRole("navigation", { name: "Saved projects" }).getByRole("link", { name: "Unfiled fixture project" }).click({ timeout: 30_000 });
+  await expect(page).toHaveURL(new RegExp(`project=${draft.id}`));
+  await expect(page).toHaveURL(new RegExp(`promptFrom=${toReuse}`));
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("A red kite over the salt flats at noon", { timeout: 30_000 });
+
+  /* The still's role is an output setting with its own visible label, not a
+     "First frame" beside the reference thumbnails. */
+  const saveAs = page.getByRole("group", { name: "Save still as" });
+  await expect(saveAs).toBeVisible();
+  await expect(saveAs).toContainText("Save still as");
+  await expect(saveAs.getByRole("button", { name: "Loose", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[aria-label="Generation references"]').getByRole("button", { name: "First frame" })).toHaveCount(0);
 });
 
 test("New asset: training is priced in the workspace's unit, only uploaded stills count, and a voice clip uploads", async ({ page }, info) => {
@@ -254,16 +270,173 @@ test("Prompt attach keeps the files that arrived when one fails, and the compose
 });
 
 test("Phone production header offers only the pages that exist", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "one run");
+  test.skip(!PHONES.includes(info.project.name), "phones");
   await account(page);
   const { projectId } = await production(page, `Header fixture ${randomUUID().slice(0, 6)}`);
   const list = await page.request.get("/api/productions").then((r) => r.json());
   const prod = (list.productions as { id: string; projects: { id: string }[] }[]).find((p) => p.projects.some((x) => x.id === projectId))!;
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/productions/${prod.id}/${projectId}/shots`);
   const tabs = page.getByRole("group", { name: "Project", exact: true });
   await expect(tabs.getByRole("button")).toHaveText(["Shots", "Media"], { timeout: 30_000 });
   await tabs.getByRole("button", { name: "Media" }).click();
   await expect(page).toHaveURL(new RegExp(`/productions/${prod.id}/${projectId}/media`));
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await fits(page)).toBe(true);
+});
+
+test("Rig on a phone: Apply prices each shot at the engine's own settings, sends that ceiling, and rebinds only once a take starts", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "phones");
+  await account(page);
+  const engine = "dreamina-seedance-2-0-260128"; // lengths 4-15s: a 3s shot bills 4s
+  const at = Date.now();
+  const node = (id: string, kind: string, label: string, extra: Record<string, unknown> = {}) => ({ id, kind, label, x: 0, y: 0, ref: null, ports: [], inputs: [], output: null, settings: {}, state: "idle", credits: 0, staleSince: null, ...extra });
+  const board = {
+    id: "brd_audit", projectId: "prj_audit", name: "Apply fixture", createdAt: at, updatedAt: at,
+    nodes: [
+      node("n_asset", "asset", "@Iver", { ref: { elementId: "el_iver" }, ports: [{ id: "face", label: "FACE", attributeId: "att_face", versionId: "ver_1", version: "v1" }] }),
+      node("n_shot", "shot", "SH01", { ref: { shotId: "sh1" }, inputs: [{ id: "cast", label: "CAST" }], settings: { title: "Wide" } }),
+      node("n_video", "video", "Seedance", { ref: { engine }, settings: { resolution: "1080p", seconds: 5 } }),
+    ],
+    wires: [{ id: "w1", from: { nodeId: "n_asset", portId: "face" }, to: { nodeId: "n_shot", slotId: "cast" }, kind: "inherited" }],
+  };
+  const shot = (id: string, code: string, planned: number, description: string) => ({ id, projectId: "prj_audit", code, title: code, description, cast: ["@Iver"], planned, setup: {}, state: "draft", takes: 0, spend: 0 });
+  const version = (id: string, i: number) => ({ id, attributeId: "att_face", elementId: "el_iver", label: `v${i}`, uploadId: null, genId: null, identityId: null, status: "ready", createdAt: at + i });
+  const element = { id: "el_iver", projectId: "prj_audit", castId: null, kind: "character", name: "Iver", description: "", locked: false, lockedBy: null, lockedAt: null, fromShotId: null, fromGenId: null, createdAt: at,
+    attributes: [{ id: "att_face", elementId: "el_iver", kind: "face", label: "Face", currentId: "ver_1", locked: false, position: 0, versions: [version("ver_1", 1), version("ver_2", 2)] }] };
+  const bodies: Record<string, unknown>[] = [];
+  const puts: { nodes: { id: string; ports: { versionId?: string; version?: string }[] }[] }[] = [];
+  let phase: "drop" | "refuse" = "drop";
+  await page.route((url) => url.pathname === "/api/rig/boards/brd_audit", (route) => {
+    if (route.request().method() === "PUT") { puts.push(route.request().postDataJSON()); return route.fulfill({ json: { board } }); }
+    return route.fulfill({ json: { board } });
+  });
+  await page.route((url) => url.pathname === "/api/shots", (route) => route.fulfill({ json: { shots: [shot("sh1", "SH01", 3, "Iver crosses the ice"), shot("sh2", "SH02", 8, "Iver turns"), shot("sh3", "SH03", 5, "Iver waves")] } }));
+  await page.route((url) => url.pathname === "/api/rig/elements", (route) => route.fulfill({ json: { elements: [element] } }));
+  await page.route((url) => url.pathname === "/api/generate", async (route) => {
+    const body = route.request().postDataJSON();
+    bodies.push(body);
+    if (phase === "refuse") return route.fulfill({ status: 409, json: { error: "The generation estimate changed." } });
+    // The first take starts; the connection drops on the second.
+    return bodies.length === 1 ? route.fulfill({ status: 202, json: { id: "gen_audit_1", status: "queued" } }) : route.abort("connectionreset");
+  });
+
+  await page.goto("/rig/canvas/brd_audit");
+  await page.getByRole("button", { name: "CAST slot" }).click({ timeout: 30_000 });
+  const sheet = page.getByRole("dialog", { name: "CAST · SH01" });
+  await sheet.getByRole("option").nth(1).click();
+  const draftSubset = sheet.getByRole("radio", { name: /^Apply to draft · 3/ });
+  await expect(draftSubset).not.toContainText("No price");
+  await draftSubset.click();
+  const apply = page.locator("[data-apply]");
+  await expect(apply).toContainText("Apply v2 to draft");
+  expect(await fits(page)).toBe(true);
+  await apply.click();
+
+  const toast = page.getByRole("status").filter({ hasText: "Iver" });
+  await expect(toast).toContainText("Iver → v2 · 1 of 3 takes rendering");
+  await expect(toast).toContainText("SH02 may not have started: the connection dropped");
+  expect(bodies.map((b) => b.shotId)).toEqual(["sh1", "sh2"]);
+  /* Priced and sent at what admission bills: the 3s shot at the engine's 4s. */
+  expect(bodies[0]).toMatchObject({ model: engine, shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 4, projectId: "prj_audit" });
+  expect(bodies[1]).toMatchObject({ duration: 8 });
+  const cost = (await toast.textContent())!.match(/rendering · ([^·]+?) ·/)?.[1]?.trim() ?? "";
+  if (/cr$/i.test(cost)) expect(bodies[0].maxCredits).toBe(Number(cost.replace(/\D/g, "")));
+  else expect(bodies[0]).not.toHaveProperty("maxCredits");
+  /* One take started, so the slot now carries v2. */
+  await expect.poll(() => puts.length).toBe(1);
+  expect(puts[0].nodes.find((n) => n.id === "n_asset")!.ports[0]).toMatchObject({ versionId: "ver_2", version: "v2" });
+
+  /* Nothing starts: the binding stays where it was, and the refusal is said. */
+  phase = "refuse";
+  bodies.length = 0;
+  await page.getByRole("button", { name: "CAST slot" }).click();
+  await sheet.getByRole("option").nth(0).click();
+  await sheet.getByRole("radio", { name: /^Apply to draft · 3/ }).click();
+  await page.locator("[data-apply]").click();
+  await expect(page.getByRole("status").filter({ hasText: "Nothing started" })).toContainText("Nothing started · Iver stays on v2 · SH01 didn't start: The generation estimate changed");
+  expect(bodies).toHaveLength(1);
+  await page.waitForTimeout(800); // past the board's 400ms save beat
+  expect(puts).toHaveLength(1);
+});
+
+test("The changed surfaces fit every size: Library unfiled wall, New asset sheet, Generate's project choice and composer", async ({ page }) => {
+  const { workspaceId, me, headers } = await account(page);
+  const { projectId } = await production(page, `Fit fixture ${randomUUID().slice(0, 6)}`);
+  await takes(page, workspaceId, me.id, [{ id: `gen_audit_fit_${randomUUID().replaceAll("-", "")}`, kind: "image", prompt: "A heron standing in a flooded field" }]);
+  const draft: Project = { ...newProject("Fit fixture project"), productionProjectId: projectId };
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: draft, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+
+  await page.goto("/library?all=1&view=unfiled");
+  await expect(page.getByRole("article").filter({ hasText: "A heron standing in a flooded field" })).toBeVisible({ timeout: 30_000 });
+  expect(await fits(page)).toBe(true);
+
+  await page.goto("/library?all=1&view=elements");
+  await page.getByRole("button", { name: /^New asset/ }).first().click({ timeout: 30_000 });
+  await expect(page.getByRole("dialog", { name: "New asset", exact: true })).toBeVisible();
+  expect(await fits(page)).toBe(true);
+
+  await page.goto("/generate?mode=images");
+  const choice = page.getByRole("navigation", { name: "Saved projects" }).getByRole("link", { name: "Fit fixture project" });
+  await expect(choice).toBeVisible({ timeout: 30_000 });
+  expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await fits(page)).toBe(true);
+  await choice.click();
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeVisible({ timeout: 30_000 });
+  const saveAs = page.getByRole("group", { name: "Save still as" });
+  await saveAs.scrollIntoViewIfNeeded();
+  await expect(saveAs).toBeVisible();
+  /* Touch sizes (below 900 wide) get 44px targets. */
+  if (page.viewportSize()!.width < 900) for (const b of await saveAs.getByRole("button").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await fits(page)).toBe(true);
+});
+
+test("Astra: a failed render-history poll clears on the next good one, and the upscale picker takes the same file again", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "one desktop");
+  const { headers } = await account(page);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+
+  /* Upscale: the picker is emptied after every choice, so the same file fires again after a failed upload. */
+  const { projectId } = await production(page, `Astra fixture ${randomUUID().slice(0, 6)}`);
+  const draft: Project = { ...newProject("Astra fixture project"), productionProjectId: projectId };
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: draft, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  let finishes = 0;
+  await page.route("**/api/uploads/finish", (route) => { finishes++; return route.fulfill({ status: 422, json: { error: "The store refused this clip." } }); });
+  await page.goto(`/generate?mode=video&task=upscale&project=${draft.id}`);
+  const picker = page.getByLabel("Upload Astra source");
+  const clip = { name: "clip.mp4", mimeType: "video/mp4", buffer: Buffer.alloc(2048, 1) };
+  await picker.setInputFiles(clip, { timeout: 30_000 });
+  await expect(picker).toHaveValue("");
+  await expect.poll(() => finishes, { timeout: 30_000 }).toBe(1);
+  await picker.setInputFiles(clip);
+  await expect.poll(() => finishes, { timeout: 30_000 }).toBe(2);
+  await page.unroute("**/api/uploads/finish");
+
+  /* Render history: a failed poll says so; the next good poll takes the message away. */
+  const project: Project = { ...newProject("Astra poll study"), id: "astra-poll-study", productionProjectId: "astra-poll-production", shotMappings: {}, astraBlender: createAstraScene("product"), astraNative: { schemaVersion: 1, name: "Poll study", program: "import bpy\n", assetIds: [] } };
+  let historyDown = true;
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.pathname === "/api/me") return route.fulfill({ json: me });
+    if (url.pathname === "/api/workbench/projects") return route.fulfill({ json: request.method() === "PUT" ? { revision: 2, productionProjectId: project.productionProjectId, shotMappings: {} } : { project, projects: [{ id: project.id, name: project.name }], productions: [], revision: 1 } });
+    if (url.pathname === "/api/workbench/astra-blender/render") {
+      if (request.method() !== "GET") return route.fulfill({ status: 409, json: { error: "No renders in this fixture." } });
+      return historyDown
+        ? route.fulfill({ status: 503, json: { error: "Render history is unavailable right now." } })
+        : route.fulfill({ json: { runtime: { configured: true, reason: null, blenderVersion: "5.0", timeoutMs: 180000, vcpus: 2, memoryMb: 4096 }, jobs: [] } });
+    }
+    if (request.method() !== "GET") return route.fulfill({ status: 409, json: { error: "Unexpected write in this fixture." } });
+    if (url.pathname === "/api/jobs") return route.fulfill({ json: { generations: [], nextCursor: null } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto(await legacyShell(page, `/workbench?project=${project.id}&stage=astra-blender`));
+  const workspace = page.getByRole("region", { name: "Astra", exact: true });
+  await expect(workspace).toBeVisible({ timeout: 30_000 });
+  await workspace.getByRole("navigation", { name: "Inspector panels" }).getByRole("button", { name: "Output", exact: true }).click();
+  const panel = workspace.getByRole("region", { name: "Native 3D renders", exact: true });
+  await expect(panel.getByRole("alert")).toContainText("Render history is unavailable right now.");
+  historyDown = false;
+  await panel.getByRole("button", { name: "Refresh native render history" }).click();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(panel.getByText("3D runtime 5.0 · Ready", { exact: true })).toBeVisible();
 });

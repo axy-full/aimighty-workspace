@@ -16,7 +16,7 @@ import { usePhone } from "@/lib/usePhone";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
-import { trainApproval, trainingPhotos, trainPrice, type TrainTerms } from "@/lib/identityTraining";
+import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos, trainPrice, type TrainTerms } from "@/lib/identityTraining";
 
 /**
  * The New asset sheet (design/particl-v2/README.md §12; boards 3a, 3b):
@@ -144,7 +144,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const phone = usePhone();
   const picker = useRef<HTMLInputElement>(null);
   const nameField = useRef<HTMLInputElement>(null);
-  const { data: terms } = useApi<{ terms: TrainTerms }>(signedIn ? "/api/identities" : null, 0);
+  const { data: terms, refresh: refreshTerms } = useApi<{ terms: TrainTerms }>(signedIn ? "/api/identities" : null, 0);
   /* §13 · Train on create: "ask" shows the switch off, "always" on, "never" hides the row. */
   const { data: ws } = useApi<{ settings: Record<string, string> }>(signedIn ? "/api/settings" : null, 0);
   const trainRule = ws?.settings.trainOnCreate === "always" ? "always" : ws?.settings.trainOnCreate === "never" ? "never" : "ask";
@@ -176,8 +176,12 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const trainNote = kind === "character"
     ? (!terms?.terms.configured ? "No trainer is connected to this workspace yet." : trainCost == null ? "No training price yet." : !enoughPhotos ? `Needs ${terms?.terms.minPhotos ?? 5} uploaded stills of the same person; ${photos.length} so far. Off, the character carries a still and trains later in Rig.` : "A likeness that holds across shots. Off, the character carries a still and trains later in Rig.")
     : "No engine is connected for this yet. It will be priced from the engine when one is, from Rig.";
-  const note = trainOn
-    ? `Creates ${tag} · trains the face now · ${money.price(cost)} · renders with the still while it trains`
+  /* While the training price is unknown, nothing on the sheet reads as free. */
+  const shownPrice = pricePending ? "No price" : money.price(cost);
+  const note = pricePending
+    ? `Creates ${tag} · trains the face now · no training price yet`
+    : trainOn
+    ? `Creates ${tag} · trains the face now · ${shownPrice} · renders with the still while it trains`
     : `Creates ${tag} with ${stills.length ? "a still" : "no picture yet"} · ${trainable ? "train the face later in Rig" : "attributes read from the references"} · 0 CR`;
 
   const addFiles = async (files: FileList | File[]) => {
@@ -188,7 +192,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
     try {
       for (const f of list) {
         /* A clip for a voice is a file, not a reference still: the reference intake reads pictures and video only. */
-        const up = await uploadFile(f, f.type.startsWith("audio/") ? "chat" : "reference");
+        const up = await uploadFile(f, assetUploadPurpose(f));
         setRefs((prev) => prev.some((r) => r.uploadId === up.id) ? prev : [...prev, { uploadId: up.id, url: up.url, label: up.filename, kind: up.kind === "video" ? "video" : up.kind === "file" || up.kind === "audio" ? "audio" : "image" }]);
       }
     } catch (e) { toast((e as Error).message); }
@@ -246,7 +250,11 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
       toast(`${tag} created · ${trainOn ? `${money.price(cost)} · the face is training` : "0 CR"}`);
       onCreated?.({ id: j.element.id, name: j.element.name, kind });
       onClose();
-    } catch (e) { toast((e as Error).message); }
+    } catch (e) {
+      /* A refused price was quoted from terms read when the sheet opened: read them again, so the next press shows and approves the new one. */
+      if ((e as Error).message === TRAIN_PRICE_CHANGED) void refreshTerms();
+      toast((e as Error).message);
+    }
     finally { setBusy(false); }
   };
 
@@ -275,7 +283,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
             <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error || pricePending} data-create=""
               className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
               <span className="flex items-center gap-[10px]">{busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}</span>
-              <span className="ui-mono ui-mono-cost !text-[12px] text-on-primary-cost">{money.price(cost)}</span>
+              <span className="ui-mono ui-mono-cost !text-[12px] text-on-primary-cost">{shownPrice}</span>
             </button>
           </span>
         }>
@@ -423,7 +431,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <span className="ml-auto flex gap-[8px]">
             <button type="button" onClick={onClose} className="h-[46px] rounded-card border border-border-mid px-[14px] text-[14px] font-medium leading-none text-ink">Cancel</button>
             <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error || pricePending} className="flex h-[46px] items-center gap-[12px] rounded-card bg-action hover:bg-action-hover px-[16px] text-[14px] font-semibold leading-none text-on-action disabled:opacity-60" data-create="">
-              {busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(cost)}</span>
+              {busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}<span className="ui-mono ui-mono-cost text-on-primary-cost">{shownPrice}</span>
             </button>
           </span>
         </div>

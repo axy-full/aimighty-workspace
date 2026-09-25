@@ -1122,8 +1122,8 @@ function ScopedComposer({
                   <span>{kind === "video" ? "…or a clip for motion" : "Drop a composition reference"}</span>
                 </button>}
               </div>
-              <div className={styles.referenceHint}>
-                {kind === "video" ? (
+              {kind === "video" && (
+                <div className={styles.referenceHint}>
                   <label>First frame
                     <select aria-label="First frame" value={refs.find(ref => ref.role === "first_frame") ? referenceKey(refs.find(ref => ref.role === "first_frame")!) : ""}
                       disabled={locked} onChange={event => chooseFirstFrame(event.target.value || null)}>
@@ -1132,34 +1132,8 @@ function ScopedComposer({
                     </select>
                     <span> Right-click an image to choose its role. Reference images do not set the opening frame.</span>
                   </label>
-                ) : (
-                  /* What the new still is on the production (params.useAs,
-                     read by the takes wall): a loose still or a first frame.
-                     It does not change how closely the engine follows the
-                     references, so it no longer reads "Loose / Exact". */
-                  <div
-                    className={styles.trackTabs}
-                    role="group"
-                    aria-label="Save the new still as"
-                  >
-                    {(
-                      [
-                        { id: "loose", label: "Loose still" },
-                        { id: "first", label: "First frame" },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        aria-pressed={useAs === item.id}
-                        onClick={() => setUseAs(item.id)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
               {referenceProblem && <p className={styles.notice} role="alert">{referenceProblem}</p>}
             </div>
           )}
@@ -1204,6 +1178,34 @@ function ScopedComposer({
                   )}
                   {setting("Variations", "count", `×${count}`)}
                 </div>
+                {kind === "image" && (
+                  /* The new still's role on the production (params.useAs, the
+                     takes wall's First frames / Loose filter). An output
+                     setting, not a reference role: it does not change how
+                     closely the engine follows the references. */
+                  <div className={styles.toggle} role="group" aria-label="Save still as" style={{ flexWrap: "wrap" }}>
+                    <span style={{ whiteSpace: "nowrap" }}>Save still as</span>
+                    <div className={styles.trackTabs} style={{ margin: 0, flexWrap: "nowrap" }}>
+                      {(
+                        [
+                          { id: "loose", label: "Loose" },
+                          { id: "first", label: "First frame" },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          aria-pressed={useAs === item.id}
+                          disabled={locked}
+                          onClick={() => setUseAs(item.id)}
+                          style={{ whiteSpace: "nowrap" }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {kind === "video" && model.supportsAudio && (
                   <label className={styles.toggle}>
                     <span>
