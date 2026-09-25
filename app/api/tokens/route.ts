@@ -2,6 +2,8 @@ import { securityAuditStatement } from "@/lib/securityAudit";
 import { requireTenant } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
+import { creditsApply } from "@/lib/credits";
+import { billedCreditsExpr } from "@/lib/creditSql";
 import {
   currentUser, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
@@ -30,13 +32,16 @@ export const GET = withTenant(async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
   await ready();
+  /* A credit workspace sees what its tokens were billed, in credits — never
+     the vendor's dollars behind them (see /api/analytics for why). */
+  const inCredits = creditsApply(requireTenant());
 
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);
 
   const rs = await db().execute({
     sql: `SELECT t.id, t.name, t.scope, t.cap_usd, t.last_used, t.created_at,
-                 COALESCE((SELECT SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0))
+                 COALESCE((SELECT SUM(${inCredits ? billedCreditsExpr("g") : "COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)"})
                            FROM generations g
                            WHERE g.token_id = t.id AND g.created_at >= ?), 0) AS spend
           FROM api_tokens t
@@ -46,11 +51,13 @@ export const GET = withTenant(async function GET() {
   });
 
   return NextResponse.json({
+    unit: inCredits ? "cr" : "usd",
     tokens: rs.rows.map((r: any) => ({
       id: r.id,
       name: r.name,
       scope: r.scope,
       capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
+      /** In `unit`: credits billed for a credit workspace, dollars otherwise. */
       spendThisMonth: Number(r.spend),
       lastUsed: r.last_used == null ? null : Number(r.last_used),
       createdAt: Number(r.created_at),

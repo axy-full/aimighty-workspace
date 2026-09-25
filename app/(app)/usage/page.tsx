@@ -509,11 +509,11 @@ function Breakdown({
   rows,
 }: {
   title: string;
-  rows: { name: string; n: number; spend: number; credits?: number }[];
+  rows: { name: string; n: number; spend?: number; credits?: number }[];
 }) {
   const money = useMoney();
   const amount = (row: (typeof rows)[number]) =>
-    money.inCredits ? (row.credits ?? 0) : row.spend;
+    money.inCredits ? (row.credits ?? 0) : (row.spend ?? 0);
   const ordered = rows.slice().sort((a, b) => amount(b) - amount(a)),
     max = Math.max(1, ...ordered.map(amount));
   return (

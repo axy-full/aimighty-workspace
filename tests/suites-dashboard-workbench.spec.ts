@@ -44,7 +44,8 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   await expect(dash).toBeVisible();
   await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute("aria-selected", "true");
   await expect(dash.getByTestId("dash-generations")).toHaveText("2", { timeout: 30_000 });
-  await expect(dash.getByTestId("dash-cost")).toHaveText(/^\$\d+\.\d\d$/);
+  /* In the workspace's own unit: credits on a credit workspace, never the vendor's dollars. */
+  await expect(dash.getByTestId("dash-cost")).toHaveText(/^(\$\d+\.\d\d|[\d,]+ cr)$/);
   await expect(dash.getByTestId("dash-projects")).toContainText(project.name);
   await expect(dash.getByTestId("dash-people")).toContainText(String(me.name ?? ""));
   /* Two people can share a name: each row carries the email, mostly hidden, and never the full address. */

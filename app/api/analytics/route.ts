@@ -4,6 +4,8 @@ import { modelLabel } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { billedCreditsSum } from "@/lib/creditSql";
 import { maskEmail } from "@/lib/maskEmail";
+import { creditsApply } from "@/lib/credits";
+import { requireTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,11 +22,19 @@ export const maxDuration = 60;
  * The money figure is always all-in: the render plus its prompt refinement.
  * Deleted renders still count — money spent is money spent, and a ledger
  * that forgets binned takes flatters the project.
+ *
+ * A credit workspace gets credits and ONLY credits. Every row used to carry
+ * the vendor's dollars (`spend`) beside the credits billed for them, so
+ * `credits × 0.10 ÷ spend` gave up the markup per engine to any member —
+ * the thing lib/jobs.ts, lib/price.ts and the session all withhold. The
+ * dollars are dropped here, and the lists are ordered by credits so not
+ * even the order says what the vendor charged.
  */
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
+  const inCredits = creditsApply(requireTenant());
 
   const url = new URL(req.url);
   const raw = url.searchParams.get("projectId");
@@ -42,6 +52,7 @@ export const GET = withTenant(async function GET(req: Request) {
 
   const SPEND = `COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0)`;
   const CREDITS = billedCreditsSum("g");
+  const BY = inCredits ? "credits" : "spend";
 
   const [totals, byProject, byPerson, byModel, byShot, byStatus, byDay, stuck, byCategory, iteration] =
     await Promise.all([
@@ -69,7 +80,7 @@ export const GET = withTenant(async function GET(req: Request) {
                COUNT(DISTINCT g.created_by) AS people,
                COALESCE(SUM(g.duration_ms),0) AS render_ms
         FROM generations g LEFT JOIN projects p ON p.id = g.project_id ${W}
-        GROUP BY g.project_id ORDER BY spend DESC LIMIT 60`, args }),
+        GROUP BY g.project_id ORDER BY ${BY} DESC LIMIT 60`, args }),
 
       db().execute({ sql: `
         SELECT COALESCE(u.name,'Unknown') AS name, u.email AS email, g.created_by AS id,
@@ -77,14 +88,14 @@ export const GET = withTenant(async function GET(req: Request) {
                SUM(g.status='failed') AS failed,
                COUNT(DISTINCT g.project_id) AS projects
         FROM generations g LEFT JOIN users u ON u.id = g.created_by ${W}
-        GROUP BY g.created_by ORDER BY spend DESC LIMIT 60`, args }),
+        GROUP BY g.created_by ORDER BY ${BY} DESC LIMIT 60`, args }),
 
       db().execute({ sql: `
         SELECT g.model AS model, COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                AVG(NULLIF(g.duration_ms,0)) AS avg_ms
         FROM generations g ${W}
-        GROUP BY g.model ORDER BY spend DESC`, args }),
+        GROUP BY g.model ORDER BY ${BY} DESC`, args }),
 
       // R2's "revisions per shot" — the number that tells a producer which
       // setup is fighting them.
@@ -96,7 +107,7 @@ export const GET = withTenant(async function GET(req: Request) {
                SUM(g.status='failed')    AS failed,
                MAX(g.version) AS latest
         FROM generations g JOIN shots s ON s.id = g.shot_id
-        ${W} GROUP BY s.id ORDER BY takes DESC, spend DESC LIMIT 100`, args }),
+        ${W} GROUP BY s.id ORDER BY takes DESC, ${BY} DESC LIMIT 100`, args }),
 
       db().execute({ sql: `
         SELECT g.status AS status, COUNT(*) AS n FROM generations g ${W}
@@ -132,7 +143,7 @@ export const GET = withTenant(async function GET(req: Request) {
                COUNT(DISTINCT g.project_id) AS projects,
                COUNT(DISTINCT g.shot_id) AS shots
         FROM generations g LEFT JOIN projects p ON p.id = g.project_id ${W}
-        GROUP BY category ORDER BY spend DESC`, args }),
+        GROUP BY category ORDER BY ${BY} DESC`, args }),
 
       // Prompting and iteration patterns: how long prompts run, how often the
       // refine layer is bypassed, and how many takes a shot really needs.
@@ -154,24 +165,29 @@ export const GET = withTenant(async function GET(req: Request) {
 
   // Credit is workspace-wide, so it ignores the project filter.
   const topups = await db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`);
-  const allSpend = await db().execute(
-    `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS s FROM generations`);
+  const allSpend = await db().execute(inCredits
+    ? `SELECT ${billedCreditsSum()} AS s FROM generations`
+    : `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS s FROM generations`);
+
+  /* The vendor's dollars, for a workspace that pays its vendors in them. */
+  const vendor = (spend: unknown) => (inCredits ? {} : { spend: num(spend) });
 
   const filed = num(it?.filed);
   const shots = num(it?.shots);
 
   return NextResponse.json({
     scope: { projectId: raw ?? "all", days },
+    unit: inCredits ? "cr" : "usd",
     totals: {
       generations: num(t?.n),
       succeeded: num(t?.ok),
       failed: num(t?.failed),
       pending: num(t?.pending),
       binned: num(t?.binned),
-      spend: num(t?.spend),
+      ...vendor(t?.spend),
       credits: num(t?.credits),
       /** The prompt writer's share of `spend`, and how many prompts it wrote. */
-      promptSpend: num(t?.prompt_spend),
+      ...(inCredits ? {} : { promptSpend: num(t?.prompt_spend) }),
       prompts: num(t?.prompts),
       tokens: num(t?.tokens),
       /** Machine time, not people time — the honest version of "hours on this project". */
@@ -182,31 +198,32 @@ export const GET = withTenant(async function GET(req: Request) {
     },
     credit: {
       toppedUp: num((topups.rows[0] as any)?.total),
+      /** Dollars for a vendor-paying workspace; credits billed for a credit one. */
       spentAllTime: num((allSpend.rows[0] as any)?.s),
     },
     byProject: byProject.rows.map((r: any) => ({
-      id: r.id ?? null, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
+      id: r.id ?? null, name: r.name, n: num(r.n), ...vendor(r.spend), credits: num(r.credits),
       failed: num(r.failed), people: num(r.people), renderMs: num(r.render_ms),
     })),
     /* Everyone's spend is for owners and admins; a member sees their own row. */
     personalOnly: got.user.role !== "admin",
     byPerson: byPerson.rows.filter((r: any) => got.user.role === "admin" || r.id === got.user.id).map((r: any) => ({
       /* Masked here, so the full address never reaches the browser. */
-      id: r.id, name: r.name, email: maskEmail(r.email), n: num(r.n), spend: num(r.spend), credits: num(r.credits),
+      id: r.id, name: r.name, email: maskEmail(r.email), n: num(r.n), ...vendor(r.spend), credits: num(r.credits),
       failed: num(r.failed), projects: num(r.projects),
     })),
     byModel: byModel.rows.map((r: any) => ({
-      model: r.model, label: label(r.model), n: num(r.n), spend: num(r.spend), credits: num(r.credits),
+      model: r.model, label: label(r.model), n: num(r.n), ...vendor(r.spend), credits: num(r.credits),
       failed: num(r.failed), avgMs: r.avg_ms == null ? null : num(r.avg_ms),
     })),
     byShot: byShot.rows.map((r: any) => ({
       id: r.id, code: r.code, scene: r.scene, title: r.title, status: r.status,
-      takes: num(r.takes), spend: num(r.spend), credits: num(r.credits), ok: num(r.ok),
+      takes: num(r.takes), ...vendor(r.spend), credits: num(r.credits), ok: num(r.ok),
       failed: num(r.failed), latest: num(r.latest),
     })),
     byStatus: byStatus.rows.map((r: any) => ({ status: r.status, n: num(r.n) })),
     byDay: byDay.rows.map((r: any) => ({
-      day: num(r.day) * 86400000, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
+      day: num(r.day) * 86400000, n: num(r.n), ...vendor(r.spend), credits: num(r.credits),
     })).reverse(),
     stuck: stuck.rows.map((r: any) => ({
       model: label(r.model), resolution: r.resolution ?? "—", n: num(r.n),
@@ -214,7 +231,7 @@ export const GET = withTenant(async function GET(req: Request) {
       failed: num(r.failed), retried: num(r.retried),
     })),
     byCategory: byCategory.rows.map((r: any) => ({
-      category: r.category, n: num(r.n), spend: num(r.spend), credits: num(r.credits), failed: num(r.failed),
+      category: r.category, n: num(r.n), ...vendor(r.spend), credits: num(r.credits), failed: num(r.failed),
       avgMs: r.avg_ms == null ? null : num(r.avg_ms),
       projects: num(r.projects), shots: num(r.shots),
     })),

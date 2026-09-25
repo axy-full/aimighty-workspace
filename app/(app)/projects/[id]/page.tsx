@@ -112,7 +112,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           </button>{" "}
           — how this job is grouped on the project dashboard.
         </p>
-        {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
+        {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend ?? 0} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
         <ReviewLinks projectId={id} isAdmin={isAdmin} />
         {/* The selects, on the way out (brief 2.6). */}
         <section className="rvl">
@@ -188,7 +188,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
               <div className="row"><span>Render time</span>
                 <span className="row-value tabular-nums">{hours(t.renderMs)}</span></div>
               <div className="row"><span>Renders</span>
-                <span className="row-value tabular-nums">{money.inCredits ? money.of(t) : usd(t.spend - t.promptSpend, 2)}</span></div>
+                <span className="row-value tabular-nums">{money.inCredits ? money.of(t) : usd((t.spend ?? 0) - (t.promptSpend ?? 0), 2)}</span></div>
               <div className="row">
                 <span className="flex flex-col">
                   Prompt writing
@@ -196,7 +196,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
                     {t.prompts} prompt{t.prompts === 1 ? "" : "s"} finished by the writer
                   </span>
                 </span>
-                <span className="row-value tabular-nums">{money.inCredits ? "included" : usd(t.promptSpend, 3)}</span></div>
+                <span className="row-value tabular-nums">{money.inCredits ? "included" : usd(t.promptSpend ?? 0, 3)}</span></div>
               <div className="row"><span className="font-medium">Total cost</span>
                 <span className="row-value font-semibold tabular-nums !text-bone">{money.of(t)}</span></div>
             </div>
@@ -328,10 +328,10 @@ function BurnDown({ project, totals, byShot, shotCount }: {
   const money = useMoney();
   const inCredits = money.inCredits;
   const show = (n: number) => (inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
-  const spend = (s: { credits?: number; spend: number }) => (inCredits ? s.credits ?? 0 : s.spend);
+  const spend = (s: { credits?: number; spend?: number }) => (inCredits ? s.credits ?? 0 : s.spend ?? 0);
   const rows = byShot.map((s) => ({ id: s.id, code: s.code, title: s.title, takes: s.takes, credits: spend(s) }));
   const b = burnDown({
-    spentCredits: inCredits ? totals.credits : totals.spend,
+    spentCredits: inCredits ? totals.credits : totals.spend ?? 0,
     capCredits: (inCredits ? project.capCredits : project.capUsd) ?? null,
     shotCount, byShot: rows,
   });

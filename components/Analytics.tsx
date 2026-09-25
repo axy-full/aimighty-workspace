@@ -8,28 +8,31 @@
 import { compactTokens, hours, dur, pct } from "@/lib/format";
 import { useMoney } from "@/lib/price";
 
+/* `spend` and `promptSpend` are the vendor's dollars. A credit workspace is
+   never sent them (see /api/analytics): it gets `credits` alone. */
 export type Analytics = {
   scope: { projectId: string; days: number };
+  unit?: "usd" | "cr";
   totals: {
     generations: number; succeeded: number; failed: number; pending: number;
-    binned: number; spend: number; credits: number; promptSpend: number; prompts: number;
+    binned: number; spend?: number; credits: number; promptSpend?: number; prompts: number;
     tokens: number; renderMs: number;
     people: number; shots: number; successRate: number;
   };
   credit: { toppedUp: number; spentAllTime: number };
-  byProject: { id: string | null; name: string; n: number; spend: number; credits: number;
+  byProject: { id: string | null; name: string; n: number; spend?: number; credits: number;
                failed: number; people: number; renderMs: number }[];
-  byPerson: { id: string; name: string; n: number; spend: number; credits: number;
+  byPerson: { id: string; name: string; n: number; spend?: number; credits: number;
               failed: number; projects: number }[];
-  byModel: { model: string; label: string; n: number; spend: number; credits: number;
+  byModel: { model: string; label: string; n: number; spend?: number; credits: number;
              failed: number; avgMs: number | null }[];
   byShot: { id: string; code: string; scene: string; title: string; status: string;
-            takes: number; spend: number; credits?: number; ok: number; failed: number; latest: number }[];
+            takes: number; spend?: number; credits?: number; ok: number; failed: number; latest: number }[];
   byStatus: { status: string; n: number }[];
-  byDay: { day: number; n: number; spend: number; credits: number }[];
+  byDay: { day: number; n: number; spend?: number; credits: number }[];
   stuck: { model: string; resolution: string; n: number; avgMs: number | null;
            maxMs: number; failed: number; retried: number }[];
-  byCategory: { category: string; n: number; spend: number; credits: number; failed: number;
+  byCategory: { category: string; n: number; spend?: number; credits: number; failed: number;
                 avgMs: number | null; projects: number; shots: number }[];
   patterns: {
     avgPromptLength: number; refined: number; withCast: number;
@@ -52,12 +55,14 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
 
 /** A labelled bar list — the same shape for projects, people and models. */
 export function BarList({ rows, empty }: {
-  rows: { key: string; label: string; value: number; credits?: number; note?: string }[];
+  rows: { key: string; label: string; value?: number; credits?: number; note?: string }[];
   empty: string;
 }) {
   const money = useMoney();
   if (!rows.length) return <p className="px-4 py-6 text-center text-[14px] text-mute">{empty}</p>;
-  const max = Math.max(...rows.map((r) => r.value), 0.000001);
+  /* Bars in the unit on the label: a credit workspace has no dollars to size by. */
+  const amount = (r: (typeof rows)[number]) => (money.inCredits ? r.credits ?? 0 : r.value ?? 0);
+  const max = Math.max(...rows.map(amount), 0.000001);
   return (
     <div className="flex flex-col gap-3">
       {rows.map((r) => (
@@ -69,7 +74,7 @@ export function BarList({ rows, empty }: {
           </div>
           <div className="mt-1.5 h-[6px] overflow-hidden rounded-full bg-chip">
             <span className="block h-full rounded-full bg-blue"
-                  style={{ width: `${Math.max(2, (r.value / max) * 100)}%` }} />
+                  style={{ width: `${Math.max(2, (amount(r) / max) * 100)}%` }} />
           </div>
         </div>
       ))}
