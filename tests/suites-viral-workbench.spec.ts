@@ -27,16 +27,28 @@ async function open(page: Page, sp: "motion" | "swap" | "history", options: { jo
   await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
   const posts: Record<string, unknown>[] = [];
   const jobs: Record<string, unknown>[] = [...(options.jobs ?? [])];
+  /* Every quote is its own job, priced by the order of its references (two or more with an upload first: 21; otherwise 22),
+     so the price on the button and the job submitted both prove which order was quoted. */
+  const quoted = new Map<string, { input: { references?: { genId?: string; uploadId?: string }[] }; credits: number }>();
+  const quoteIds: string[] = [];
   await page.route("**/api/higgsfield/consumer/genjutsu**", async (route) => {
     const req = route.request();
     if (req.method() === "GET") return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: { resolutions: ["480p", "720p", "1080p"], minSeconds: 4, maxSeconds: 30, maxImages: 30, maxMediaBytes: 52428800 }, jobs } });
     const body = req.postDataJSON() as Record<string, unknown>;
     posts.push(body);
     const base = { draftId: "ws-viral", workspaceId: WALLET, workspaceName: "Fixture wallet", creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, createdAt: Date.now(), providerJobId: null };
-    if (body.action === "quote") { const job = { ...base, id: "11111111-1111-4111-8111-000000000001", status: "quoted", input: body.input, quoteCredits: 22 }; return route.fulfill({ json: { job } }); }
+    if (body.action === "quote") {
+      const input = body.input as { references?: { genId?: string; uploadId?: string }[] };
+      const credits = (input.references?.length ?? 0) > 1 && input.references![0].uploadId ? 21 : 22;
+      const id = `11111111-1111-4111-8111-${String(quoteIds.length + 1).padStart(12, "0")}`;
+      quoted.set(id, { input, credits });
+      quoteIds.push(id);
+      return route.fulfill({ json: { job: { ...base, id, status: "quoted", input, quoteCredits: credits } } });
+    }
     if (body.action === "submit") {
-      if (body.credits !== 22 || body.workspaceId !== WALLET) return route.fulfill({ status: 409, json: { code: "approval_changed", error: "Review this job’s wallet and exact credit quote again." } });
-      const job = { ...base, id: body.id, status: "accepted", input: (posts.find((p) => p.action === "quote") as { input: unknown }).input, quoteCredits: 22, providerJobId: "22222222-2222-4222-8222-000000000002" };
+      const q = quoted.get(String(body.id));
+      if (!q || body.credits !== q.credits || body.workspaceId !== WALLET) return route.fulfill({ status: 409, json: { code: "approval_changed", error: "Review this job’s wallet and exact credit quote again." } });
+      const job = { ...base, id: body.id, status: "accepted", input: q.input, quoteCredits: q.credits, providerJobId: "22222222-2222-4222-8222-000000000002" };
       jobs.unshift(job);
       return route.fulfill({ json: { job } });
     }
@@ -47,7 +59,7 @@ async function open(page: Page, sp: "motion" | "swap" | "history", options: { jo
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`/suites?suite=subatomik&page=${sp}&sp=${sp}`);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  return { errors, posts, jobs };
+  return { errors, posts, jobs, quoted, quoteIds };
 }
 
 const dropInto = async (page: Page, id: string) => page.getByTestId("viral-well").evaluate((well, payload) => {
@@ -57,7 +69,7 @@ const dropInto = async (page: Page, id: string) => page.getByTestId("viral-well"
 
 test("Motion Transfer needs one 4–30 s video and a reference; the button wears the live estimate; submit carries exactly that price", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, posts } = await open(page, "motion");
+  const { errors, posts, quoted, quoteIds } = await open(page, "motion");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
   await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
@@ -71,12 +83,15 @@ test("Motion Transfer needs one 4–30 s video and a reference; the button wears
   await expect(page.getByTestId("viral-reference")).toHaveCount(2);
   await page.getByRole("button", { name: "Move Dunes still earlier" }).click();
   await expect(page.getByTestId("viral-reference").first()).toContainText("Dunes still");
+  /* The order is the director's, not the order the quotes happened to go out in (the composer re-quotes 600 ms after each change,
+     so an earlier quote may carry the order before the move). 22 cr is only the reordered input's price: the button wears its estimate. */
   await expect(page.getByTestId("viral-generate")).toHaveText("Transfer motion · 22 cr");
-  const quote = posts.find((p) => p.action === "quote") as { input: Record<string, unknown> };
-  expect(quote.input).toEqual({ variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ genId: "gen_still" }, { uploadId: "up_ref" }] });
+  const live = quoteIds.at(-1)!;
+  expect(quoted.get(live)!.input).toEqual({ variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ genId: "gen_still" }, { uploadId: "up_ref" }] });
   await page.getByTestId("viral-generate").click();
   await expect(page.getByTestId("viral-done")).toContainText("Rendered.", { timeout: 15_000 });
-  expect(posts.find((p) => p.action === "submit")).toMatchObject({ action: "submit", credits: 22, workspaceId: WALLET, id: "11111111-1111-4111-8111-000000000001" });
+  /* Submitted: exactly that quote, at exactly its price. */
+  expect(posts.find((p) => p.action === "submit")).toMatchObject({ action: "submit", credits: 22, workspaceId: WALLET, id: live });
   expect(errors).toEqual([]);
 });
 
