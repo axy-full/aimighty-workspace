@@ -11,7 +11,9 @@ export function AgentAction({ id, estimateLabel, startLabel, quote, busy, blocke
   onEstimate: () => void; onStart: () => void; onChange: () => void; describe?: (quote: AgentQuote) => string; secondary?: boolean;
 }) {
   const credits = quote ? quote.value.estimateCredits.toLocaleString() : "";
-  const line = quote ? (describe ? describe(quote) : `${quote.value.calls} agent steps · ${thinkingModelName(quote.input.model)} · up to ${credits} credits${quote.value.estimateUsd != null ? ` · $${quote.value.estimateUsd.toFixed(4)} ceiling` : ""}`) : "";
+  /* A model on the workspace's own key is priced in dollars: every quote line names that ceiling. */
+  const dollars = quote?.value.estimateUsd != null ? ` · $${quote.value.estimateUsd.toFixed(4)} ceiling` : "";
+  const line = quote ? `${describe ? describe(quote) : `${quote.value.calls} agent steps · ${thinkingModelName(quote.input.model)} · up to ${credits} credits`}${dollars}` : "";
   return (
     <div className="gx-gen-enhance">
       {quote ? (
