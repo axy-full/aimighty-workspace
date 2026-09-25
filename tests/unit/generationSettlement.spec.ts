@@ -495,3 +495,70 @@ test("a rejected transition cannot rewrite an existing failed settlement or a ca
     ).toBe(0);
   });
 });
+
+test("a success whose usage has not arrived keeps its reservation, is billed once usage lands, and notifies once", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { getGeneration, syncGeneration } = await import("../../lib/jobs");
+  const { engineFor } = await import("../../lib/engines");
+  const engine = engineFor("byteplus"), original = engine.poll;
+  let tokens: number | null = null;
+  engine.poll = async () => ({
+    status: "succeeded", videoUrl: "https://unused.invalid/master", totalTokens: tokens,
+    error: null, vendorStartedAt: null, vendorEndedAt: null, raw: {},
+  });
+  const bill = async () => (await platformDb().execute("SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE id='gen_usage'")).rows[0];
+  const marker = async () => (await db().execute("SELECT json_extract(params,'$.settledBy') AS by, cost_usd FROM generations WHERE id='gen_usage'")).rows[0];
+  try {
+    await runInTenant(await setup("usage"), async () => {
+      await insert("gen_usage", { task: "usage-task", stored: "local-master" });
+      await db().execute("UPDATE generations SET model='dreamina-seedance-2-0-260128',params=json_set(params,'$.resolution','720p') WHERE id='gen_usage'");
+      await reserveGenerationSpend({ ...event("gen_usage"), model: "dreamina-seedance-2-0-260128" });
+      // ModelArk says succeeded before usage.completion_tokens appears.
+      expect((await syncGeneration((await getGeneration("gen_usage"))!)).status).toBe("succeeded");
+      expect(await bill()).toMatchObject({ status: "succeeded", engine_cost_usd: 1, billed_credits: 15 });
+      const first = await marker();
+      expect(first.by).toBeTruthy();
+      expect(first.cost_usd).toBeNull();
+      // The cron's next pass sees the usage and bills the real cost; it is a repair, not a second arrival.
+      tokens = 108_900;
+      await syncGeneration((await getGeneration("gen_usage"))!);
+      const second = await marker();
+      expect(second.by).toBe(first.by);
+      expect(Number(second.cost_usd)).toBeGreaterThan(0);
+      expect(await bill()).toMatchObject({ status: "succeeded", engine_cost_usd: Number(second.cost_usd) });
+    });
+  } finally {
+    engine.poll = original;
+  }
+});
+
+test("while one poller holds the master's download lease, the others leave the row to it", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { getGeneration, syncGeneration } = await import("../../lib/jobs");
+  const { engineFor } = await import("../../lib/engines");
+  const engine = engineFor("byteplus"), original = engine.poll;
+  engine.poll = async () => ({
+    status: "succeeded", videoUrl: "https://unused.invalid/master", totalTokens: 100,
+    error: null, vendorStartedAt: null, vendorEndedAt: null, raw: {},
+  });
+  try {
+    await runInTenant(await setup("lease"), async () => {
+      await insert("gen_lease", { task: "lease-task" });
+      await reserveGenerationSpend(event("gen_lease"));
+      await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.storeUntil',?) WHERE id='gen_lease'", args: [Date.now() + 60_000] });
+      const seen = await syncGeneration((await getGeneration("gen_lease"))!);
+      expect(seen.status).toBe("running");
+      expect(seen.params.storeUntil).toBeUndefined();
+      expect((await db().execute("SELECT status,stored_url FROM generations WHERE id='gen_lease'")).rows[0]).toMatchObject({ status: "running", stored_url: null });
+      expect((await platformDb().execute("SELECT status FROM meter_events WHERE id='gen_lease'")).rows[0].status).toBe("running");
+    });
+  } finally {
+    engine.poll = original;
+  }
+});
