@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type Project } from "../../lib/workbench/studio";
 import { deleteDrawing } from "../../lib/production/boards";
+import { EMPTY_MOLECULR } from "../../lib/workbench/moleculr";
+import { EMPTY_BRAND_KIT } from "../../lib/workbench/moleculr-creative";
 
 /** Owner, 23 September: "give me the option to delete the line drawings". */
 const drawing = (id: string): Asset => ({ id, uploadId: id, name: `${id}.png`, kind: "image", category: "Line drawing", url: `/api/uploads/${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
@@ -43,4 +45,18 @@ test("a drawing used in the cut, the edit's sound, Environment or Cast is kept, 
   // Unrelated uses of the other drawing do not block this one.
   const after = deleteDrawing({ ...project(), shots: [{ ...shot, assetId: "d2" }], production: { ...project().production, environment: { ...environment, entries: [{ ...entry, references: ["d2"] }] }, cast: { entries: [{ ...cast.entries[0], referenceAssetId: "d2" }] } } }, "d1");
   expect(after.assets.map((a) => a.id)).toEqual(["d2"]);
+});
+
+test("a drawing bound to a campaign, an Astra scene, another asset's lineage or the shared bible is kept", () => {
+  const moleculr = { ...EMPTY_MOLECULR, brandKit: { ...EMPTY_BRAND_KIT, logoAssetId: "d1" } };
+  expect(() => deleteDrawing({ ...project(), moleculr }, "d1")).toThrow("used by Brand logo");
+  const astraNative = { assetIds: ["d1"] } as unknown as NonNullable<Project["astraNative"]>;
+  expect(() => deleteDrawing({ ...project(), astraNative }, "d1")).toThrow("used in an Astra scene");
+  const made = { ...drawing("t1"), name: "Frame 1.1", category: "Storyboard", refs: ["d1"] };
+  expect(() => deleteDrawing({ ...project(), assets: [...project().assets, made] }, "d1")).toThrow("“Frame 1.1” was made from this drawing");
+  expect(() => deleteDrawing({ ...project(), assets: [...project().assets, { ...made, refs: [], parentId: "d1" }] }, "d1")).toThrow("made from this drawing");
+  expect(() => deleteDrawing({ ...project(), sharedAssetIds: ["d1"] }, "d1")).toThrow("shared with the production bible");
+  // The other drawing's uses do not hold this one.
+  const after = deleteDrawing({ ...project(), moleculr: { ...moleculr, brandKit: { ...moleculr.brandKit, logoAssetId: "d2" } }, sharedAssetIds: ["d2"], assets: [...project().assets, { ...made, refs: ["d2"] }] }, "d1");
+  expect(after.assets.map((a) => a.id)).toEqual(["d2", "t1"]);
 });

@@ -138,6 +138,13 @@ test("the two tools have their own lane nodes, take only stored originals, and a
   const tiny = placeGeneratedClip(withChanged, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 2 / 24);
   expect(tiny.audioClips![0]).toMatchObject({ sourceIn: 1, duration: 1, fadeIn: 1, fadeOut: 0 });
   expect(() => validateAudio(tiny)).not.toThrow();
+  // A length that was never read (only the 1 s estimate the request carried) trims nothing: the clip keeps its timing.
+  const unread = { ...placement, jobId: "gen-vc-1", task: "voiceChange" as const, replaceClipId: "clip-1", seconds: 1 };
+  expect(placeGeneratedClip(withChanged, unread, changed, 1).audioClips![0]).toEqual({ ...clip, assetId: "gen-vc-1" });
+  expect(placeGeneratedClip(withChanged, unread, changed, 1, false).audioClips![0]).toEqual({ ...clip, assetId: "gen-vc-1" });
+  // The same number read from the file, or stored on the asset, does trim.
+  expect(placeGeneratedClip(withChanged, unread, changed, 1, true).audioClips![0]).toMatchObject({ sourceIn: 3, duration: 21 });
+  expect(placeGeneratedClip({ ...withChanged, assets: [...edited.assets, { ...changed, seconds: 1 }] }, unread, { ...changed, seconds: 1 }, 1).audioClips![0]).toMatchObject({ sourceIn: 3, duration: 21 });
   // Replacing twice is a no-op; a vanished clip falls back to adding one at the playhead.
   expect(placeGeneratedClip(replaced, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 65)).toBe(replaced);
   const added = placeGeneratedClip({ ...edited, assets: [...edited.assets, changed] }, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "gone", startFrame: 30 }, changed, 65);

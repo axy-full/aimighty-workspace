@@ -193,12 +193,18 @@ export const SOUND_CLIP_LIMIT = 64;
 const sourceFrames = (seconds: number, fps: number) =>
   Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.floor(seconds * fps + 1e-6)) : 1;
 
-/** The finished asset becomes a clip on its lane at the remembered playhead. */
+/**
+ * The finished asset becomes a clip on its lane at the remembered playhead.
+ * `seconds` is the file's length; `measured` says it was read from the file,
+ * not the estimate the request was sent with (inferred when not given: the
+ * asset's stored length, or a length other than the estimate).
+ */
 export function placeGeneratedClip(
   project: Project,
   placement: SoundPlacement,
   asset: Asset,
   seconds: number,
+  measured: boolean = asset.seconds !== undefined || seconds !== placement.seconds,
 ): Project {
   const clips = audioClips(project);
   const length = sourceFrames(seconds, project.fps);
@@ -209,6 +215,8 @@ export function placeGeneratedClip(
       if (current.assetId === asset.id) return project;
       // Same place, same length, same mix settings: only the voice changed. Speech-to-speech
       // keeps the source's timing, so the clip keeps its in point; a shorter file trims it.
+      // An estimate is no reason to trim: with the length unread, the clip keeps its timing.
+      if (!measured) return { ...project, audioAssetId: undefined, audioClips: clips.map((c, i) => (i === index ? { ...c, assetId: asset.id } : c)) };
       const sourceIn = Math.min(current.sourceIn, length - 1);
       const duration = Math.max(1, Math.min(current.duration, length - sourceIn));
       const fadeIn = Math.min(current.fadeIn, duration);
