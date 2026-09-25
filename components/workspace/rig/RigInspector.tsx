@@ -14,6 +14,7 @@ import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
 import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
 import "./rig.css";
 
 /** The Inspector for a selected shot (03, "Inspector"). */
@@ -155,11 +156,40 @@ function ShotInspector({ shot }: { shot: RigShot }) {
               <span className="pxw-insp-version-label">{row.label}</span>
               <span className="pxw-insp-version-meta">{row.meta}</span>
               <BranchFromTake shot={shot} assetId={row.id} />
+              {row.held ? <DiscardHeld jobId={row.id} /> : null}
             </div>
           )) : <p className="pxw-inspector-note" style={{ marginTop: 0 }}>No takes yet. Generate one to start the version history.</p>}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A held take waits for credits or a slot and never ends on its own; nothing was charged, so taking it out of the line is free. */
+function DiscardHeld({ jobId }: { jobId: string }) {
+  const rig = useRig();
+  const { toast } = useWorkspace();
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  if (state === "done") return null;
+  const discard = async () => {
+    setState("busy");
+    try {
+      await studioRequest(`/api/jobs/${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": rig.scope },
+        body: JSON.stringify({ discard: true }),
+      });
+      setState("done");
+      toast("Discarded · nothing was charged");
+    } catch (error) {
+      setState("idle");
+      toast(error instanceof Error ? error.message : "The take could not be discarded.");
+    }
+  };
+  return (
+    <button type="button" className="pxw-link-button" disabled={state === "busy"} onClick={() => void discard()} data-testid="rig-discard-held">
+      {state === "busy" ? "Discarding…" : "Discard"}
+    </button>
   );
 }
 

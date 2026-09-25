@@ -92,7 +92,16 @@ export function shotPreviewAsset(project: Project, shotId: string): Asset | null
 }
 
 export type VersionState = "rendered" | "rendering" | "failed";
-export type VersionRow = { id: string; v: string; label: string; meta: string; current: boolean; state: VersionState };
+export type VersionRow = { id: string; v: string; label: string; meta: string; current: boolean; state: VersionState; held?: true };
+
+/** Held takes wait for credits or for a slot — never for an approval. */
+function heldLabel(job: Pick<MediaJob, "params">): string {
+  return job.params?.held?.why === "slots" ? "Held · waiting for a slot" : "Held · needs credits";
+}
+/** A take that ended without a clip: failed, or cancelled (a discarded held take is one). */
+function endedLabel(job: Pick<MediaJob, "id" | "status" | "creditsBilled">): string {
+  return `${job.status === "cancelled" ? "Cancelled" : "Failed"}${jobUnbilled(job) ? " · not billed" : ""}`;
+}
 
 export function relativeAge(at: number | null | undefined, now: number): string {
   if (!at) return "";
@@ -128,13 +137,14 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
     if (seen.has(job.id) || job.kind === "audio") continue;
     const failed = job.status === "failed" || job.status === "cancelled";
     const state: VersionState = job.status === "succeeded" ? "rendered" : failed ? "failed" : "rendering";
-    const label = state === "failed" ? (jobUnbilled(job) ? "Failed · not billed" : "Failed")
-      : state === "rendering" ? (job.status === "held" ? "Held for approval" : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
+    const label = state === "failed" ? endedLabel(job)
+      : state === "rendering" ? (job.status === "held" ? heldLabel(job) : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
       : `Rendered · ${engineLabel(job.model).long}`;
-    rows.push({ id: job.id, v: `v${job.version ?? 1}`, label, meta: relativeAge(job.createdAt, now), current: false, state, order: job.version ?? 1, at: job.createdAt ?? 0 });
+    rows.push({ id: job.id, v: `v${job.version ?? 1}`, label, meta: relativeAge(job.createdAt, now), current: false, state, order: job.version ?? 1, at: job.createdAt ?? 0,
+      ...(job.status === "held" ? { held: true as const } : {}) });
   }
   return rows.sort((a, b) => b.order - a.order || b.at - a.at)
-    .map((r): VersionRow => ({ id: r.id, v: r.v, label: r.label, meta: r.meta, current: r.current, state: r.state }));
+    .map((r): VersionRow => ({ id: r.id, v: r.v, label: r.label, meta: r.meta, current: r.current, state: r.state, ...(r.held ? { held: true as const } : {}) }));
 }
 
 /* ── Generation phase ────────────────────────────────────────────────── */
@@ -147,14 +157,14 @@ export type GenerationPhase = { label: string; pct: number; tone: GenerationTone
  * → complete, or failed (not billed when nothing was charged). The bar marks
  * the stage reached; engines report no percentage, so none is invented.
  */
-export function generationPhase(job: Pick<MediaJob, "status" | "creditsBilled"> | null): GenerationPhase {
+export function generationPhase(job: Pick<MediaJob, "status" | "creditsBilled" | "params"> | null): GenerationPhase {
   if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
   switch (job.status) {
     case "succeeded": return { label: "Complete", pct: 100, tone: "green", done: true };
     case "failed":
-    case "cancelled": return { label: jobUnbilled({ id: "", status: job.status, creditsBilled: job.creditsBilled }) ? "Failed · not billed" : "Failed", pct: 100, tone: "red", done: true };
+    case "cancelled": return { label: endedLabel({ id: "", status: job.status, creditsBilled: job.creditsBilled }), pct: 100, tone: "red", done: true };
     case "running": return { label: "Rendering", pct: 50, tone: "blue", done: false };
-    case "held": return { label: "Held for approval", pct: 10, tone: "blue", done: false };
+    case "held": return { label: heldLabel(job), pct: 10, tone: "blue", done: false };
     default: return { label: "Queued", pct: 10, tone: "blue", done: false };
   }
 }

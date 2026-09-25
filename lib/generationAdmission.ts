@@ -318,7 +318,7 @@ export async function executeGenerationAdmission(
     if (!allowance.ok && (await heldCount()) >= HELD_LIMIT) {
       return admissionReply(
         {
-          error: `${HELD_LIMIT} takes are already held for credits. Top up to release them before adding more.`,
+          error: `${HELD_LIMIT} takes are already held. Top up, or discard some, before adding more.`,
         },
         { status: 402 },
       );

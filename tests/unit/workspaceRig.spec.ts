@@ -107,13 +107,21 @@ test("versions merge filed takes with jobs in flight or failed, newest first", (
   expect(rows[3]).toMatchObject({ label: "Current · Seedance 2.5", meta: "1 hr" });
   for (const row of rows) expect(vendorNameIn(row.label)).toBeNull();
   expect(shotVersions(p, "s2", jobs, now)).toEqual([]);
+  // A held take says what it waits for and carries its Discard action; a discarded one reads as cancelled.
+  const held = shotVersions(p, "s1", [
+    { id: "h1", status: "held", kind: "video", shotId: "ps1", prompt: "", model: SD25, version: 5, createdAt: now - 1_000, params: { held: { why: "slots" } } },
+    { id: "h2", status: "cancelled", kind: "video", shotId: "ps1", prompt: "", model: SD25, version: 6, createdAt: now - 500, creditsBilled: 0 },
+  ], now);
+  expect(held.slice(0, 2).map((r) => [r.id, r.label, r.held ?? false])).toEqual([["h2", "Cancelled · not billed", false], ["h1", "Held · waiting for a slot", true]]);
   expect([relativeAge(now - 1000, now), relativeAge(now - 3 * 86_400_000, now), relativeAge(null, now)]).toEqual(["just now", "3 d", ""]);
 });
 
 test("generation phase follows the real job; a failed render is shown as not billed", () => {
   expect(generationPhase(null)).toMatchObject({ label: "Submitting", done: false });
   expect(generationPhase({ status: "queued" })).toMatchObject({ label: "Queued", tone: "blue", done: false });
-  expect(generationPhase({ status: "held" })).toMatchObject({ label: "Held for approval", done: false });
+  expect(generationPhase({ status: "held" })).toMatchObject({ label: "Held · needs credits", done: false });
+  expect(generationPhase({ status: "held", params: { held: { why: "slots" } } })).toMatchObject({ label: "Held · waiting for a slot", done: false });
+  expect(generationPhase({ status: "cancelled", creditsBilled: 0 })).toMatchObject({ label: "Cancelled · not billed", tone: "red", done: true });
   expect(generationPhase({ status: "running" })).toMatchObject({ label: "Rendering", done: false });
   expect(generationPhase({ status: "succeeded" })).toMatchObject({ label: "Complete", pct: 100, tone: "green", done: true });
   expect(generationPhase({ status: "failed", creditsBilled: 0 })).toMatchObject({ label: "Failed · not billed", tone: "red", done: true });
