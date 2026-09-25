@@ -322,9 +322,10 @@ test("dropping in a file whose earlier upload was deleted or purged starts a new
   }
 });
 
-test("a refused upload says why, stops holding a slot, and a retry of the same file asks the server again", async () => {
-  let finishes = 0;
+test("a refused upload says why, stops holding a slot, and the same file is answered at once for a while", async () => {
+  let finishes = 0, chunks = 0;
   const api = await client((async (url: string) => {
+    if (url.endsWith("/chunk")) chunks++;
     if (url.includes("/session?"))
       return Response.json({ state: "aborted", storedChunks: [], retryAfterMs: 0 });
     if (url.endsWith("/chunk")) return Response.json({ ok: true });
@@ -339,9 +340,16 @@ test("a refused upload says why, stops holding a slot, and a retry of the same f
   await expect(api.uploadFile(refused, "reference", undefined, { scope })).rejects.toThrow(/Unrecognised file/);
   const [entry] = api.listUploadEnvelopes(scope);
   expect(entry).toMatchObject({ state: "blocked", error: "Unrecognised file." });
-  // The same file again: the server is asked afresh (and refuses afresh), once.
+  expect(entry.refusedAt).toBeGreaterThan(0);
+  expect([finishes, chunks]).toEqual([1, 1]);
+  // The same file again soon after: the refusal, with nothing sent again.
   await expect(api.uploadFile(refused, "reference", undefined, { scope })).rejects.toThrow(/Unrecognised file/);
-  expect(finishes).toBe(2);
+  expect([finishes, chunks]).toEqual([1, 1]);
+  // Later (a setting may have changed): the server is asked afresh, once.
+  const key = api.uploadEnvelopeKey(scope, entry.identity);
+  api.items.set(key, JSON.stringify({ ...JSON.parse(api.items.get(key)!), refusedAt: Date.now() - 11 * 60_000 }));
+  await expect(api.uploadFile(refused, "reference", undefined, { scope })).rejects.toThrow(/Unrecognised file/);
+  expect([finishes, chunks]).toEqual([2, 2]);
   expect(api.listUploadEnvelopes(scope)).toHaveLength(1);
   // Refused uploads never fill the browser's unfinished-upload slots.
   for (let n = 0; n < 32; n++) {
@@ -349,7 +357,31 @@ test("a refused upload says why, stops holding a slot, and a retry of the same f
     api.items.set(api.uploadEnvelopeKey(scope, other.identity), JSON.stringify({ ...other, state: "blocked", error: "Unrecognised file." }));
   }
   await api.claimUploadEnvelope(scope, new File(["a new file"], "new.bin"), "chat");
-  // Live ones still do.
+  // Nor do they pile up: only the newest few ended records are kept.
+  expect(api.listUploadEnvelopes(scope).filter((e) => e.state === "blocked").length).toBeLessThanOrEqual(10);
+  // Live ones still count.
   for (let n = 0; n < 31; n++) await api.claimUploadEnvelope(scope, new File([`pending ${n}`], `p${n}.bin`), "chat");
   await expect(api.claimUploadEnvelope(scope, new File(["one more"], "more.bin"), "chat")).rejects.toThrow(/Resume or cancel/);
+});
+
+test("a finish that fails for the moment, not for the file, is sent again when the file is chosen again", async () => {
+  let finishes = 0;
+  const api = await client((async (url: string) => {
+    if (url.includes("/session?"))
+      return Response.json({ state: "aborted", storedChunks: [], retryAfterMs: 0 });
+    if (url.endsWith("/chunk")) return Response.json({ ok: true });
+    if (url.endsWith("/finish")) {
+      finishes++;
+      return finishes === 1
+        ? Response.json({ error: "The upload could not finish." }, { status: 503 })
+        : Response.json({ id: "upl_ok", kind: "file", url: "/api/uploads/upl_ok" });
+    }
+    throw new Error("Unexpected request " + url);
+  }) as typeof fetch);
+  const scope = "particl-active-outage-owner";
+  const file = new File(["an original"], "clip.bin");
+  await expect(api.uploadFile(file, "chat", undefined, { scope })).rejects.toThrow(/could not finish/);
+  expect(api.listUploadEnvelopes(scope)[0].refusedAt).toBeUndefined();
+  expect(await api.uploadFile(file, "chat", undefined, { scope })).toMatchObject({ id: "upl_ok" });
+  expect(finishes).toBe(2);
 });

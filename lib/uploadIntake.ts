@@ -1,6 +1,7 @@
 import { validateAstraGlb } from './astra-blender/glb';
 import { inspectStoredUploadSeconds } from "./mediaSource.server";
 import { identifyImage, validateVideo } from "./imagemeta";
+import { identifyAudio } from "./audioMeta";
 import { storeUpload } from "./storage";
 import { getProvider, DEFAULT_PROVIDER } from "./providers";
 import { assess, deriveForProvider } from "./derive";
@@ -41,7 +42,7 @@ export async function storeReferenceUpload(
   const meta = identifyImage(buf);
   if (!meta)
     throw new UploadError(
-      "Unrecognised file. Images: jpeg/png/webp/bmp/tiff/gif/heic. Videos: mp4/mov.",
+      `${identifyAudio(buf) ? "Audio can't be a reference." : "Unrecognised file."} Images: jpeg/png/webp/bmp/tiff/gif/heic. Videos: mp4/mov.`,
     );
   const provider = getProvider(DEFAULT_PROVIDER);
   if (meta.kind === "video") {

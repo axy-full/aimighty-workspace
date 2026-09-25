@@ -194,8 +194,10 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
     if (!row) return null;
     const ext = String(row.ext ?? "").toLowerCase();
     // An .m4a/.m4b stored before its ftyp brand was read as audio carries
-    // kind 'video' (lib/imagemeta.ts); the container says it is sound.
-    const misfiled = row.kind === "video" && AUDIO_ONLY_EXTS.has(ext);
+    // kind 'video' (lib/imagemeta.ts); the container says it is sound. A
+    // reference upload stored ext 'mp4', so its own name is read too.
+    const nameExt = String(row.filename ?? "").match(/\.([A-Za-z0-9]{1,8})$/)?.[1]?.toLowerCase() ?? "";
+    const misfiled = row.kind === "video" && (AUDIO_ONLY_EXTS.has(ext) || AUDIO_ONLY_EXTS.has(nameExt));
     const mediaKind: StoredSource["mediaKind"] | null =
       row.kind === "video" && !misfiled ? "video"
       : misfiled || row.kind === "audio" || isAudioMime(row.mime) || (row.kind !== "image" && INSPECTABLE_AUDIO_EXTS.has(ext)) ? "audio"

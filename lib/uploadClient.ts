@@ -57,6 +57,10 @@ export class UploadGoneError extends Error {
   }
 }
 const GONE_STATES: UploadStatus["state"][] = ["expired", "aborting", "aborted", "removed"];
+/** Answers that refuse the file itself, not the moment (quota, conflicts and outages are retried). */
+const REFUSALS = new Set([400, 413, 415, 422]);
+/** How long the same file is answered with its refusal instead of being sent again. */
+const REFUSAL_MEMORY_MS = 10 * 60_000;
 const headers = (entry: UploadEnvelope) => ({
   "X-Workbench-Scope": entry.scope,
 });
@@ -115,7 +119,9 @@ async function status(entry: UploadEnvelope): Promise<UploadStatus> {
 }
 /** A refused finish ends the server session (the route abandons it). Once
  *  status confirms that, the saved upload is marked unavailable with the
- *  server's own reason, so it stops holding one of the browser's slots. */
+ *  server's own reason, so it stops holding one of the browser's slots. A
+ *  refusal of the file itself is remembered for a while, so choosing the
+ *  same file again answers at once instead of sending every byte again. */
 async function settleRefusedFinish(entry: UploadEnvelope, response: Response): Promise<never> {
   const value = await response.json().catch(() => null);
   const message =
@@ -123,7 +129,11 @@ async function settleRefusedFinish(entry: UploadEnvelope, response: Response): P
     `Upload request failed (${response.status}). Resume it from Uploads.`;
   const remote = await status(entry).catch(() => null);
   if (remote && GONE_STATES.includes(remote.state))
-    await updateUploadEnvelope(entry, { state: "blocked", error: message });
+    await updateUploadEnvelope(entry, {
+      state: "blocked",
+      error: message,
+      ...(REFUSALS.has(response.status) ? { refusedAt: Date.now() } : {}),
+    });
   throw new Error(message);
 }
 /** Read-only status also makes a lost successful finish visible without selecting the file again. */
@@ -154,6 +164,12 @@ export async function resumeUpload(
     );
   return withUploadLock(uploadRunLock(entry), async () => {
     let current = readUploadEnvelope(entry);
+    if (
+      current.state === "blocked" &&
+      current.refusedAt !== undefined &&
+      Date.now() - current.refusedAt < REFUSAL_MEMORY_MS
+    )
+      throw new Error(current.error || "This file was refused.");
     try {
       const remote: UploadStatus = current.started
         ? await status(current)

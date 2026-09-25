@@ -18,7 +18,7 @@ const original = readFileSync(path.resolve("tests/fixtures/astra-source.mp4"));
 const workspace = { id: "review-studio", legacy: false } as TenantWorkspace;
 
 /** The review media route over a fake private store that honours Range the way Blob does, or over local disk. */
-async function reviewRoute(row: { kind: string; params?: string }, calls: string[] = [], local = false) {
+async function reviewRoute(row: { kind: string; params?: string; bytes?: number | null }, calls: string[] = [], local = false) {
   const storage = local
     ? loadIsolated<typeof import("../../lib/storage")>("lib/storage.ts", { "./tenant": { currentTenant } }, {
         process: { ...process, env: { ...process.env, BLOB_READ_WRITE_TOKEN: "", STORAGE_BACKEND: "local" } },
@@ -106,6 +106,28 @@ test("a review link answers byte ranges with 206, so an approved video plays on 
   expect(past.headers.get("content-range")).toBe(`bytes */${original.length}`);
 
   expect(calls.every((call) => call.endsWith("ws/review-studio/generations/gen_1.mp4"))).toBe(true);
+});
+
+test("the size recorded with the take answers each range without a storage probe; a stale one is corrected", async () => {
+  const calls: string[] = [];
+  const recorded = await reviewRoute({ kind: "video", params: "{}", bytes: original.length }, calls);
+  for (const range of ["bytes=0-1", "bytes=100-199", "bytes=-16"]) {
+    const part = await recorded.GET(new Request("https://studio.test/x", { headers: { range } }), ctx);
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toMatch(new RegExp(`/${original.length}$`));
+  }
+  expect(calls.filter((call) => call.startsWith("head"))).toEqual([]);
+
+  // The row is wrong: storage's own length wins, never a broken answer.
+  for (const bytes of [original.length - 5, original.length + 5000]) {
+    calls.length = 0;
+    const stale = await reviewRoute({ kind: "video", params: "{}", bytes }, calls);
+    const tail = await stale.GET(new Request("https://studio.test/x", { headers: { range: `bytes=${original.length - 4}-` } }), ctx);
+    expect(tail.status).toBe(206);
+    expect(tail.headers.get("content-range")).toBe(`bytes ${original.length - 4}-${original.length - 1}/${original.length}`);
+    expect(Buffer.from(await tail.arrayBuffer())).toEqual(original.subarray(original.length - 4));
+    expect(calls.filter((call) => call.startsWith("head"))).toHaveLength(1);
+  }
 });
 
 test("a review link reads each kind from its own object and serves it as its own type", async () => {

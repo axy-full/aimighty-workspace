@@ -590,6 +590,11 @@ test("an .m4a stored as a video before its brand was read is relabelled audio, a
     await insert("book", "M4B", "video", "video/mp4");
     await insert("clip", "mp4", "video", "video/mp4");
     await insert("song", "m4a", "audio", "audio/mp4");
+    // A reference upload stored the sniffed 'mp4'; the name it arrived with says m4a.
+    await db().execute({
+      sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,1,'x',NULL,NULL,?,?,NULL,0)",
+      args: ["refmemo", "Voice Memo.M4A", "video/mp4", "mp4", "/api/uploads/refmemo", "video"],
+    });
     await api.uploadReservationsReady();
     const rows = Object.fromEntries(
       (await db().execute("SELECT id,kind,mime FROM uploads ORDER BY id")).rows.map(
@@ -600,6 +605,7 @@ test("an .m4a stored as a video before its brand was read is relabelled audio, a
       book: "audio audio/mp4",
       clip: "video video/mp4",
       memo: "audio audio/mp4",
+      refmemo: "audio audio/mp4",
       song: "audio audio/mp4",
     });
   });

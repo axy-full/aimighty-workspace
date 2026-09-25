@@ -21,6 +21,8 @@ export type UploadEnvelope = {
   createdAt: number;
   updatedAt: number;
   error?: string;
+  /** When the server refused this file outright (its bytes, for this purpose). */
+  refusedAt?: number;
   result?: UploadedFile;
 };
 export const uploadEnvelopeKey = (scope: string, identity: string) =>
@@ -76,6 +78,7 @@ function validate(key: string, value: UploadEnvelope): UploadEnvelope {
     !Number.isFinite(value.updatedAt) ||
     value.updatedAt < 0 ||
     (value.error !== undefined && typeof value.error !== "string") ||
+    (value.refusedAt !== undefined && !Number.isFinite(value.refusedAt)) ||
     (value.result !== undefined && !isUploadReceipt(value.result)) ||
     (value.state === "complete" && !value.result)
   )
@@ -135,7 +138,7 @@ export async function updateUploadEnvelope(
   patch: Partial<
     Pick<
       UploadEnvelope,
-      "state" | "error" | "result" | "storedChunks" | "started"
+      "state" | "error" | "result" | "storedChunks" | "started" | "refusedAt"
     >
   >,
 ) {
@@ -217,13 +220,15 @@ export async function claimUploadEnvelope(
       throw new Error(
         "Resume or cancel an unfinished upload before starting another.",
       );
-    // Completed receipts are only a convenience; pending identities are never evicted.
-    entries
-      .filter((entry) => entry.state === "complete")
-      .slice(9)
-      .forEach((entry) =>
-        localStorage.removeItem(uploadEnvelopeKey(scope, entry.identity)),
-      );
+    // Completed receipts and ended (blocked) records are only a convenience:
+    // the newest of each are kept. Pending identities are never evicted.
+    for (const ended of ["complete", "blocked"] as const)
+      entries
+        .filter((entry) => entry.state === ended)
+        .slice(9)
+        .forEach((entry) =>
+          localStorage.removeItem(uploadEnvelopeKey(scope, entry.identity)),
+        );
     const value: UploadEnvelope = {
       version: 1,
       scope,

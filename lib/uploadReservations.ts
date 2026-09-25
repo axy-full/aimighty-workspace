@@ -83,9 +83,11 @@ export async function uploadReservationsReady() {
         }
         /* An .m4a or .m4b (an iPhone voice memo) used to be sniffed as video
            from its MPEG-4 header, so the sound tools refused it. The file is
-           untouched; only its label is corrected, once, idempotently. */
+           untouched; only its label is corrected, once, idempotently. A
+           reference upload kept the sniffed 'mp4' as its ext, so the name
+           the person gave it is read too. */
         await client.execute(
-          "UPDATE uploads SET kind='audio', mime='audio/mp4' WHERE kind='video' AND lower(ext) IN ('m4a','m4b')",
+          "UPDATE uploads SET kind='audio', mime='audio/mp4' WHERE kind='video' AND (lower(ext) IN ('m4a','m4b') OR lower(filename) LIKE '%.m4a' OR lower(filename) LIKE '%.m4b')",
         );
       })
       .catch((error) => {

@@ -48,6 +48,52 @@ test("an .m4a (an iPhone voice memo) is identified as audio, never as a video", 
   }
   expect(identifyImage(ftyp("isom", ["isom", "mp42"]))).toMatchObject({ kind: "video", mime: "video/mp4" });
   expect(identifyImage(ftyp("qt  ", ["qt  "]))).toMatchObject({ kind: "video", mime: "video/quicktime" });
+  // A protected iTunes track is sound too, never a video.
+  expect(identifyImage(ftyp("M4P ", ["M4P "])) ?? identifyAudio(ftyp("M4P ", ["M4P "]))).toMatchObject({ kind: "audio" });
+});
+
+/** An ISO BMFF box. */
+const box = (type: string, ...children: Buffer[]) => {
+  const body = Buffer.concat(children);
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(8 + body.length, 0);
+  head.write(type, 4, "latin1");
+  return Buffer.concat([head, body]);
+};
+/** A track whose media handler is `handler` ('soun', 'vide' …). */
+const trak = (handler: string) => {
+  const hdlr = Buffer.alloc(24);
+  hdlr.write(handler, 8, "latin1");
+  return box("trak", box("tkhd", Buffer.alloc(84)), box("mdia", box("mdhd", Buffer.alloc(24)), box("hdlr", hdlr)));
+};
+const moov = (...tracks: Buffer[]) => box("moov", box("mvhd", Buffer.alloc(100)), ...tracks);
+const brands = (major: string) => box("ftyp", Buffer.from(`${major}\0\0\0\0isommp42`, "latin1"));
+
+test("an Android recording under a generic brand is sound when its tracks are all sound", async () => {
+  const { identifyImage } = await import("../../lib/imagemeta");
+  const { identifyAudio } = await import("../../lib/audioMeta");
+  const sniff = (head: Buffer) => identifyImage(head) ?? identifyAudio(head);
+  for (const major of ["isom", "mp42"]) {
+    expect(sniff(Buffer.concat([brands(major), moov(trak("soun")), box("mdat", Buffer.alloc(32))]))).toEqual({ kind: "audio", mime: "audio/mp4", ext: "m4a" });
+    expect(sniff(Buffer.concat([brands(major), moov(trak("vide"), trak("soun"))]))).toMatchObject({ kind: "video" });
+    expect(sniff(Buffer.concat([brands(major), moov(trak("vide"))]))).toMatchObject({ kind: "video" });
+  }
+  // The movie header after the media, out of reach of the head: still read as video.
+  const mdat = box("mdat", Buffer.alloc(4096));
+  expect(sniff(Buffer.concat([brands("isom"), mdat.subarray(0, 64)]))).toMatchObject({ kind: "video" });
+  // A truncated movie header is not guessed at either.
+  expect(sniff(Buffer.concat([brands("isom"), moov(trak("soun")).subarray(0, 60)]))).toMatchObject({ kind: "video" });
+  // The checked-in clip has a picture.
+  expect(sniff(readFileSync(path.resolve("tests/fixtures/astra-source.mp4")))).toMatchObject({ kind: "video" });
+});
+
+test("audio dropped where a reference is wanted is told so, not called unrecognised", async () => {
+  const { storeReferenceUpload } = await import("../../lib/uploadIntake");
+  const memo = ftyp("M4A ", ["M4A ", "mp42", "isom"]);
+  const claim = { bytes: memo.length } as Parameters<typeof storeReferenceUpload>[0];
+  await expect(storeReferenceUpload(claim, memo, "memo.m4a")).rejects.toThrow(/^Audio can't be a reference\. Images: /);
+  const junk = Buffer.alloc(64, 7);
+  await expect(storeReferenceUpload({ ...claim, bytes: junk.length }, junk, "junk.bin")).rejects.toThrow(/^Unrecognised file\./);
 });
 
 test("sound tools read a misfiled .m4a as audio, and measure a video longer than five minutes", async () => {
@@ -73,6 +119,12 @@ test("sound tools read a misfiled .m4a as audio, and measure a video longer than
     // A voice memo stored before the fix: kind 'video', mime 'video/mp4'.
     await insert(`${stamp}-memo`, "m4a", "video", "video/mp4", 100);
     expect(await findStoredSource({ uploadId: `${stamp}-memo` })).toMatchObject({ mediaKind: "audio", mime: "audio/mp4", ext: "m4a" });
+    // One dropped where a reference goes kept the sniffed 'mp4'; its name says what it is.
+    await db().execute({
+      sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,?,'x',NULL,NULL,?,?,NULL,?)",
+      args: [`${stamp}-ref`, "Voice Memo.M4A", "video/mp4", "mp4", 100, `/api/uploads/${stamp}-ref`, "video", Date.now()],
+    });
+    expect(await findStoredSource({ uploadId: `${stamp}-ref` })).toMatchObject({ mediaKind: "audio", mime: "audio/mp4", ext: "mp4" });
 
     // A 7.5 minute interview: priced per minute by the sound tools, still refused by Astra.
     const clip = longClip(), clipId = `${stamp}-interview`;

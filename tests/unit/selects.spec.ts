@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { selectsCsv, type Select } from "../../lib/selects";
 import { crc32, zipName, uniqueNames, zipStream } from "../../lib/zip";
+import { originalKindOf } from "../../lib/originalMedia";
+import { currentTenant, runInTenant, type TenantWorkspace } from "../../lib/tenant";
+import { loadIsolated } from "./storageSeam";
 
 const rows: Select[] = [
   { id: "gen_a", shot: "SH010", shotTitle: "The jetty", version: 2, kind: "video", engine: "SD25", credits: 40, usd: 2.86, seconds: 5, prompt: "a boat at dawn", filename: "prod_1_SH010_SD25_v2_ana.mp4" },
@@ -69,4 +72,45 @@ test("the zip reads storage only as fast as the download drains, and a cancelled
   expect(pulled).toBeLessThan(8);
   await reader.cancel();
   expect(cancelled).toBe(true);
+});
+
+/* The zip is drained by the response after the route handler (and the
+   workspace scope it ran in) has returned. Every entry must still read the
+   workspace's own keys on cloud storage, never the bare legacy ones. */
+test("a package built for a workspace reads that workspace's keys even after the handler has returned", async () => {
+  const gets: string[] = [];
+  const blob = {
+    async get(name: string) {
+      gets.push(name);
+      if (!name.startsWith("ws/studio-a/")) return null;
+      return { stream: new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(name)); c.close(); } }), headers: new Headers(), statusCode: 200 };
+    },
+  };
+  const previous = process.env.BLOB_READ_WRITE_TOKEN;
+  process.env.BLOB_READ_WRITE_TOKEN = "local-sdk-fixture-no-network";
+  try {
+    const storage = loadIsolated<typeof import("../../lib/storage")>("lib/storage.ts", {
+      "@vercel/blob": blob,
+      "./tenant": { currentTenant },
+    });
+    const takes = [{ id: "gen_v", kind: "video" }, { id: "gen_i", kind: "image" }, { id: "gen_m", kind: "model" }];
+    const stream = await runInTenant({ id: "studio-a", legacy: false } as TenantWorkspace, async () => zipStream(
+      takes.map((t) => ({ name: `${t.id}.bin`, body: async () => storage.openMediaStream(t.id, originalKindOf(t.kind)) })),
+    ));
+    expect(currentTenant()).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const reader = stream.getReader();
+    const parts: Uint8Array[] = [];
+    for (;;) { const { done, value } = await reader.read(); if (done) break; if (value) parts.push(value); }
+    expect(gets).toEqual([
+      "ws/studio-a/generations/gen_v.mp4",
+      "ws/studio-a/generations/gen_i.png",
+      "ws/studio-a/generations/gen_m.glb",
+    ]);
+    const text = new TextDecoder().decode(Buffer.concat(parts));
+    expect(text).toContain("ws/studio-a/generations/gen_m.glb");
+  } finally {
+    if (previous === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
+    else process.env.BLOB_READ_WRITE_TOKEN = previous;
+  }
 });

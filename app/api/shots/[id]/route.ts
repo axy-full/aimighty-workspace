@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
-import { archiveAndDelete, archiveTransaction } from "@/lib/archive";
+import { archiveDeleteStatements, archiveTransaction } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 
@@ -78,9 +78,13 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
      every time a version it named was swapped. One write, so the renders are
      never unfiled from a shot that then fails to go. */
   await archiveTransaction(async (tx) => {
-    await tx.execute({ sql: `UPDATE generations SET shot_id = NULL WHERE shot_id = ?`, args: [shotId] });
-    await archiveAndDelete(tx, "bindings", `shot_id = ?`, [shotId]);
-    await archiveAndDelete(tx, "shots", `id = ?`, [shotId]);
+    await tx.batch([
+      { sql: `UPDATE generations SET shot_id = NULL WHERE shot_id = ?`, args: [shotId] },
+      ...(await archiveDeleteStatements(tx, [
+        { table: "bindings", where: `shot_id = ?`, args: [shotId] },
+        { table: "shots", where: `id = ?`, args: [shotId] },
+      ])),
+    ]);
   });
   return NextResponse.json({ ok: true });
 });

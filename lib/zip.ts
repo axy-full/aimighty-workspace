@@ -8,6 +8,8 @@
  * descriptor, which is exactly what that part of the format is for. No
  * dependency: this is a few hundred bytes of header per file.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -68,21 +70,29 @@ function dosTime(at: Date): { time: number; date: number } {
  * Pull-driven: storage is read one chunk per pull, so the archive advances
  * only as fast as the response drains. Built in start() it raced ahead of a
  * producer's connection and piled the approved masters up in memory.
+ *
+ * A pull runs when the response drains, after the route handler has
+ * returned and its workspace scope with it. Each one runs back inside the
+ * scope the zip was built in, so an entry's body opens that workspace's
+ * storage keys and never the bare ones.
  */
 export function zipStream(entries: ZipEntry[], at = new Date()): ReadableStream<Uint8Array> {
   const parts = zipParts(entries, at);
+  const inScope = AsyncLocalStorage.snapshot();
   return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const { done, value } = await parts.next();
-        if (done) controller.close();
-        else controller.enqueue(value);
-      } catch (e) {
-        controller.error(e);
-      }
+    pull(controller) {
+      return inScope(async () => {
+        try {
+          const { done, value } = await parts.next();
+          if (done) controller.close();
+          else controller.enqueue(value);
+        } catch (e) {
+          controller.error(e);
+        }
+      });
     },
-    async cancel() {
-      await parts.return(undefined).catch(() => {});
+    cancel() {
+      return inScope(async () => { await parts.return(undefined).catch(() => {}); });
     },
   }, { highWaterMark: 1 });
 }

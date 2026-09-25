@@ -7,6 +7,7 @@
  * byte the bytes that were uploaded — see `docs` in README and the sha256 check
  * in the upload route.
  */
+import { mp4SoundOnly } from "./audioMeta";
 
 export type ImageMeta = {
   kind: "image" | "video";
@@ -117,9 +118,9 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
         width: null, height: null,
       };
     }
-    // Audio-only brands (an .m4a, an iPhone voice memo, an .m4b book) are not
-    // pictures or video: null lets lib/audioMeta.ts claim them as audio.
-    if (brand === "M4A " || brand === "M4B " || brand === "M4P ") return null;
+    // Sound with no picture (an .m4a, an iPhone voice memo, an .m4b book, an
+    // Android recording) is not video: null lets lib/audioMeta.ts claim it.
+    if (mp4SoundOnly(buf)) return null;
     const mov = brand === "qt  ";
     return {
       kind: "video",
