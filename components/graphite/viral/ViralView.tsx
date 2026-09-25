@@ -7,7 +7,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
 import { useViral, type GenjutsuJob } from "@/lib/shell/use-viral";
 import {
-  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, moveReference, viralBlock, viralMedia,
+  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, mirrorSeek, moveReference, viralBlock, viralMedia,
   type ViralMedia, type ViralPage, type ViralResolution, type ViralState,
 } from "@/lib/shell/viral";
 import type { Project } from "@/lib/workbench/studio";
@@ -191,7 +191,8 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
     const id = job.result?.original?.generationId;
     if (!id) { ws.toast("This result's original is not available yet."); return; }
     ws.dispatch({ type: "patch", patch: { selKind: "take", selId: `generation:${id}` } });
-    shell.goSuite("studio", "edit");
+    /* Takes opens the selected take in Seedance Edit; Edit & Sound is the cut. */
+    shell.goSuite("studio", "takes");
   };
   return (
     <div className="vr-history gx-enter" data-testid="history-view">
@@ -225,6 +226,9 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
 function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; source: string | null; result: string | null; onClose: () => void }) {
   const a = useRef<HTMLVideoElement>(null), b = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
+  /* A seek mirrored onto the other player fires its own `seeked`; that one is not mirrored back. */
+  const mirrored = useRef<HTMLVideoElement | null>(null);
+  const follow = (from: HTMLVideoElement, to: HTMLVideoElement | null) => { mirrorSeek(from, to, mirrored); };
   const both = (fn: (v: HTMLVideoElement) => void) => [a.current, b.current].forEach((v) => v && fn(v));
   const toggle = () => { if (playing) { both((v) => v.pause()); setPlaying(false); } else { both((v) => { void v.play().catch(() => undefined); }); setPlaying(true); } };
   return (
@@ -232,8 +236,8 @@ function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; sour
       <div className="gx-sheet vr-compare" role="dialog" aria-modal="true" aria-label="Compare" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
         <div className="gx-sheet-head"><span className="gx-panel-title">Compare · {job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"}</span><button type="button" className="gx-hbtn" onClick={toggle}>{playing ? "Pause" : "Play both"}</button><button type="button" className="gx-hbtn" onClick={onClose}>Close</button></div>
         <div className="vr-compare-grid">
-          <figure><figcaption className="gx-eyebrow">Original</figcaption>{source ? <video ref={a} src={source} playsInline preload="metadata" onSeeked={(e) => { if (b.current) b.current.currentTime = e.currentTarget.currentTime; }} controls /> : <p className="cw-dim">The source is no longer in this project.</p>}</figure>
-          <figure><figcaption className="gx-eyebrow">Result</figcaption>{result ? <video ref={b} src={result} playsInline preload="metadata" onSeeked={(e) => { if (a.current) a.current.currentTime = e.currentTarget.currentTime; }} controls /> : <p className="cw-dim">The result’s original is not available yet.</p>}</figure>
+          <figure><figcaption className="gx-eyebrow">Original</figcaption>{source ? <video ref={a} src={source} playsInline preload="metadata" onSeeked={(e) => follow(e.currentTarget, b.current)} controls /> : <p className="cw-dim">The source is no longer in this project.</p>}</figure>
+          <figure><figcaption className="gx-eyebrow">Result</figcaption>{result ? <video ref={b} src={result} playsInline preload="metadata" onSeeked={(e) => follow(e.currentTarget, a.current)} controls /> : <p className="cw-dim">The result’s original is not available yet.</p>}</figure>
         </div>
       </div>
     </div>

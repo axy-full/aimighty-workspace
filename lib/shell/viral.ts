@@ -95,3 +95,30 @@ export function estimateReason(estimate: { key: string; expiresAt: number; credi
 }
 
 export const HISTORY_ACTIONS = ["Recreate", "Compare", "Send to Edit"] as const;
+
+/** A job the account may still settle: never re-sent, only polled until it completes or fails. */
+export const PENDING_STATUSES = ["dispatching", "accepted", "uncertain"] as const;
+type Listed = { id: string; status: string };
+/** History and Recent list what ran; a read-only estimate (`quoted`) is not a result. */
+export function listedJobs<T extends Listed>(jobs: readonly T[]): T[] {
+  return jobs.filter((job) => job.status !== "quoted");
+}
+/** The jobs to poll: the one submitted here first, then every listed job still pending. */
+export function pendingJobIds(jobs: readonly Listed[], running: string | null): string[] {
+  const ids = jobs.filter((job) => (PENDING_STATUSES as readonly string[]).includes(job.status)).map((job) => job.id);
+  return running && !ids.includes(running) ? [running, ...ids] : ids;
+}
+
+/**
+ * Compare's two players on one clock: a seek on one is mirrored onto the
+ * other, and the `seeked` that mirrored seek fires is not mirrored back (that
+ * ping-pong, with frame snapping, kept both players re-seeking). `last` holds
+ * the player last seeked on the other's behalf. True when it seeked `to`.
+ */
+export function mirrorSeek<T extends { currentTime: number }>(from: T, to: T | null, last: { current: T | null }): boolean {
+  if (last.current === from) { last.current = null; return false; }
+  if (!to || Math.abs(to.currentTime - from.currentTime) <= 0.05) return false;
+  last.current = to;
+  to.currentTime = from.currentTime;
+  return true;
+}

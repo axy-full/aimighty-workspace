@@ -16,4 +16,9 @@
 .bz-row-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bz-detail { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); position: sticky; top: 0; }
 @media (max-width: 1023px) { .bz-setup { grid-template-columns: minmax(0, 1fr); padding: 12px; } .bz-detail { position: static; } }
-@media (max-width: 767px), (pointer: coarse) { .bz-role { height: 28px; min-width: 44px; } }
+/* The thumb's floors on a phone: a role you can cycle is a 44px target; every label and hint is 12px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .bz-role { height: 28px; min-width: 44px; font-size: 12px; }
+  button.bz-role { height: 44px; }
+  .bz-note, .bz code, .bz-idrow code { font-size: 12px; }
+}
