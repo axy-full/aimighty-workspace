@@ -10,8 +10,12 @@ import { currentTenant } from "@/lib/tenant";
 import { openMediaStream } from "@/lib/storage";
 import { zipStream, zipName, uniqueNames } from "@/lib/zip";
 import { selectsCsv, type Select } from "@/lib/selects";
+import { originalKindOf, originalMediaOf } from "@/lib/originalMedia";
 
 export const dynamic = "force-dynamic";
+/* A package of every approved master streams for as long as the producer's
+   connection takes to drain it (lib/zip.ts reads storage only as it does). */
+export const maxDuration = 800;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 async function approvedSelects(projectId: string): Promise<{ rows: Select[]; production: string }> {
@@ -36,10 +40,10 @@ async function approvedSelects(projectId: string): Promise<{ rows: Select[]; pro
     let short = String(r.model ?? "");
     try { short = getModel(String(r.model)).short; } catch { /* a retired id keeps its own name */ }
     const usd = Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0);
-    const ext = r.kind === "image" ? "png" : r.kind === "audio" ? "mp3" : "mp4";
+    const { kind, ext } = originalMediaOf({ kind: r.kind, params });
     return {
       id: String(r.id), shot: String(r.shot_code ?? ""), shotTitle: String(r.shot_title ?? ""),
-      version: Number(r.version ?? 1), kind: String(r.kind ?? "video"),
+      version: Number(r.version ?? 1), kind,
       engine: short, credits: billCredits(usd, String(r.model ?? "")), usd,
       seconds: Number((params.duration as number | undefined) ?? 0),
       prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],
@@ -78,12 +82,12 @@ export const GET = withTenant(async function GET(req: Request) {
   }
   /* The masters, plus the shot list beside them, so a zip is the whole
      handover. There used to be an EDL in here as well; it is gone. */
-  const names = uniqueNames(rows.map((r, i) => zipName(r.filename, `take_${i + 1}.mp4`)));
+  const names = uniqueNames(rows.map((r, i) => zipName(r.filename, `take_${i + 1}.${r.filename.split(".").pop() || "mp4"}`)));
   const enc = new TextEncoder();
   const entries = [
     ...rows.map((r, i) => ({
       name: names[i],
-      body: async () => openMediaStream(r.id, r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : "video"),
+      body: async () => openMediaStream(r.id, originalKindOf(r.kind)),
     })),
     { name: `${stem}_selects.csv`, body: async () => enc.encode(selectsCsv(rows, unit)) },
   ];

@@ -62,5 +62,6 @@ export async function resolveShare(token: string): Promise<{ share: Share; works
   const share = rowToShare(rs.rows[0]);
   if (!shareLive(share)) return null;
   const workspace = await getWorkspace(share.workspaceId);
-  return workspace ? { share, workspace } : null;
+  // A deleted workspace's access ends at once, links included.
+  return workspace && !workspace.deletedAt ? { share, workspace } : null;
 }
