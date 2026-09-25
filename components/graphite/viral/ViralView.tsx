@@ -93,7 +93,7 @@ function Composer({ page, project, viral, items }: { page: ViralPage; project: P
             onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) drop(id); }}>
             {s.source ? (
               <span className="gx-ref vr-source" data-testid="viral-source">
-                <span className="gx-ref-thumb">{s.source.url ? <LazyMedia url={s.source.url} kind="video" alt="" className="gx-lazy" /> : null}</span>
+                <span className="gx-ref-thumb">{s.source.url ? <LazyMedia url={s.source.url} kind="video" alt="" name={s.source.name} className="gx-lazy" /> : null}</span>
                 <span className="bz-role">video · 0</span>
                 <span className="gx-ref-name">{s.source.name}{s.source.seconds != null ? ` · ${Math.round(s.source.seconds)} s` : ""}</span>
                 <button type="button" className="gx-ref-x" aria-label={`Remove ${s.source.name}`} onClick={() => set({ ...s, source: null })}>×</button>
@@ -101,7 +101,7 @@ function Composer({ page, project, viral, items }: { page: ViralPage; project: P
             ) : null}
             {s.references.map((r, i) => (
               <span className="gx-ref" key={r.id} data-testid="viral-reference">
-                <span className="gx-ref-thumb">{r.url ? <LazyMedia url={r.url} kind="image" alt="" className="gx-lazy" /> : null}</span>
+                <span className="gx-ref-thumb">{r.url ? <LazyMedia url={r.url} kind="image" alt="" name={r.name} className="gx-lazy" /> : null}</span>
                 <span className="bz-role">image · {i + 1}</span>
                 <span className="gx-ref-name">{r.name}</span>
                 <button type="button" className="gx-ref-x" aria-label={`Move ${r.name} earlier`} disabled={i === 0} onClick={() => set(moveReference(s, r.id, -1))}>↑</button>

@@ -1,5 +1,6 @@
 "use client";
 import LazyMedia from "@/components/LazyMedia";
+import { entryPreview, previewAttrs } from "@/lib/preview";
 import { useShell } from "@/lib/shell/state";
 import { recentTakes, stageCards, upNext } from "@/lib/shell/studio-home";
 import type { Project } from "@/lib/workbench/studio";
@@ -54,7 +55,7 @@ export function StudioHome({ project, items }: { project: Project | null; items:
         <div className="gx-home-recent" data-testid="home-recent">
           {recent.map((entry) => (
             <button key={entry.take.id} type="button" className="gx-home-take" onClick={() => openTake(entry)} title={entry.take.name}>
-              <span className="gx-home-take-thumb">{entry.url && entry.media ? <LazyMedia url={entry.url} kind={entry.media === "video" ? "video" : "image"} alt="" className="gx-lazy" /> : null}</span>
+              <span className="gx-home-take-thumb" {...previewAttrs(entryPreview(entry))}>{entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}</span>
               <span className="gx-home-take-name">{entry.take.name}</span>
               <span className="gx-home-take-meta">{entry.take.meta}</span>
             </button>

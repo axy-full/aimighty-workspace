@@ -10,21 +10,26 @@ import { StatusPill, type Status } from "../ui";
 import { useRig } from "./RigProvider";
 import { shotDropHandler } from "@/lib/shell/drop-targets";
 import { VirtualItems } from "../VirtualItems";
+import LazyMedia from "@/components/LazyMedia";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 
 const PILL: Record<RigShotStatus, Status> = { approved: "approved", ready: "ready", queued: "queued", draft: "draft", failed: "failed" };
 
 /** Stills stand in until real media exists; a take's own preview replaces them. */
 export function ShotThumb({ id, asset, className = "pxw-rig-thumb" }: { id: string; asset: Asset | null; className?: string }) {
   const [c1, c2] = mediaBands(id);
-  const preview = asset?.generationId
+  const full = assetPreview(asset);
+  /* A video take is drawn from its own frame (the 640px preview route is for pictures); a picture from the preview route. */
+  const preview = full?.kind === "video" ? null : asset?.generationId
     ? `/api/workbench/preview/generation/${encodeURIComponent(asset.generationId)}`
     : asset?.uploadId ? `/api/workbench/preview/upload/${encodeURIComponent(asset.uploadId)}` : null;
   return (
-    <span className={className} aria-hidden="true">
+    <span className={className} aria-hidden="true" {...previewAttrs(full)}>
       <span style={{ flex: 1, background: c1 }} />
       <span style={{ flex: 1.1, background: c2 }} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {preview ? <img src={preview} alt="" loading="lazy" decoding="async" /> : null}
+      {full?.kind === "video" ? <span className="pxw-thumb-video"><LazyMedia url={full.url} kind="video" preview={false} /></span> : null}
     </span>
   );
 }

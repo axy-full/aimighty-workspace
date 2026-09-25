@@ -5,6 +5,8 @@ import { useShell } from "@/lib/shell/state";
 import type { Project } from "@/lib/workbench/studio";
 import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { entryPreview, previewAttrs } from "@/lib/preview";
+import { openPreview } from "@/components/PreviewLayer";
 
 /**
  * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
@@ -52,6 +54,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       <div className="gx-insp-actions">
         <button type="button" className="gx-hbtn" disabled={!role} title={role ? undefined : "References are images and videos."} onClick={() => command("use-as-reference")}>Use as reference</button>
         {generation ? <button type="button" className="gx-hbtn" onClick={() => command("retry")}>Retry generation</button> : null}
+        {entryPreview(entry) ? <button type="button" className="gx-hbtn" onClick={() => openPreview([entryPreview(entry)!])} data-testid="inspector-open-preview">Preview</button> : null}
         {downloadable ? <a className="gx-hbtn" href={download} download={upload ? upload.filename : true}>Download original</a> : null}
         <button type="button" className="gx-hbtn" onClick={() => command("copy")}>Copy</button>
         <button type="button" className="gx-hbtn" onClick={() => command("move")}>Move to…</button>
@@ -68,7 +71,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
   const timed = Boolean(entry.url) && (entry.media === "video" || entry.media === "audio");
   const toggle = () => { const el = player.current; if (!el) return; if (el.paused) void el.play().catch(() => setPlaying(false)); else el.pause(); };
   return (
-    <div className="gx-insp-card" data-testid="inspector-preview">
+    <div className="gx-insp-card" data-testid="inspector-preview" {...previewAttrs(entryPreview(entry))}>
       {entry.url && entry.media === "image" ? (
         // eslint-disable-next-line @next/next/no-img-element -- workspace-scoped media route, as the workbench library
         <img src={entry.url} alt={entry.take.name} />
@@ -76,7 +79,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
         <video ref={player} src={entry.url} playsInline preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
       ) : entry.url && entry.media === "audio" ? (
         <><audio ref={player} src={entry.url} preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} /><span className="gx-badge">AUDIO</span></>
-      ) : <span className="gx-badge">{entry.take.status === "rendering" ? "RENDERING" : "NO PREVIEW"}</span>}
+      ) : <span className="gx-badge">{entry.take.status === "rendering" ? "RENDERING" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
       {timed ? <button type="button" className="gx-play" aria-pressed={playing} onClick={toggle}>{playing ? "Pause" : "Play"}</button> : null}
     </div>
   );

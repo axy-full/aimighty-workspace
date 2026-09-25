@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import DeviceProbe from "@/components/switchover/DeviceProbe";
+import PreviewLayer from "@/components/PreviewLayer";
 import "./fonts.css";
 import "./globals.css";
 import "./four-suites.css";
+import "./preview.css";
 
 /* Keep the approved wordmark fonts (Outfit, Kode Mono), bundled in public/fonts
    and declared in app/fonts.css. Graphite interface typography is defined by the
@@ -57,7 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             and docs/workspace-switchover.md. */}
         <DeviceProbe />
       </head>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">{children}<PreviewLayer /></body>
     </html>
   );
 }

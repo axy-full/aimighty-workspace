@@ -1,5 +1,6 @@
 "use client";
 import { rigUndoSink } from "@/lib/shell/rig-commands";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCredits, formatTokens } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
@@ -60,7 +61,7 @@ function Preview({ shot }: { shot: RigShot }) {
         <Kicker>Output</Kicker>
         <span className="pxw-insp-output-label">{asset ? `v${asset.version} · ${asset.kind === "video" ? "Take" : "Still"}` : "Still preview"}</span>
       </div>
-      <div className="pxw-insp-preview" data-testid="shot-preview">
+      <div className="pxw-insp-preview" data-testid="shot-preview" {...previewAttrs(assetPreview(asset))}>
         {playable ? (
           <video
             ref={video}

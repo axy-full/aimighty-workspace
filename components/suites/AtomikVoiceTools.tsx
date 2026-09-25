@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { previewAttrs } from "@/lib/preview";
 import { RefreshCw, X } from "lucide-react";
 import { useDraft } from "@/lib/useDraft";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -278,7 +279,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
         <span className={styles.hint}>Pick the video this tool works on from the library. The source is copied to the connected account when a quote is requested.</span>
         <div className={styles.chips} role="group" aria-label="Source role"><button type="button" aria-pressed="true">video source</button></div>
         {input.source && <div className={styles.reference}>
-          <video src={input.source.url} muted playsInline preload="metadata" />
+          <video src={input.source.url} muted playsInline preload="metadata" {...previewAttrs({ url: input.source.url, kind: "video", name: "Source" })} />
           <span>{input.source.name}</span>
           <button type="button" aria-label={`Remove ${input.source.name}`} onClick={() => change({ source: null })}><X size={14} /></button>
         </div>}
@@ -314,7 +315,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}
           {(job.status === "accepted" || (job.status === "uncertain" && !!job.providerReceipt)) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved request" : "Check result"}</button>}
           {original && <div className={styles.result}>
-            <video src={original.url} controls playsInline preload="metadata" />
+            <video src={original.url} controls playsInline preload="metadata" {...previewAttrs({ url: original.url, kind: "video", name: "Result" })} />
             <div className={styles.actions}><a className="suite-text-button" href={`${original.url}?download=1`} download>Download original</a><button type="button" className="suite-button" disabled={!!busy || !!saved} onClick={() => void save(original)}>{saved ? "In project library" : "Save to project"}</button></div>
           </div>}
           {analysis && note && <div className={styles.result} aria-label="Analysis report">

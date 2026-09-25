@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setRigDropHandler } from "@/lib/shell/drop-targets";
 import LazyMedia from "@/components/LazyMedia";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { addInput, branchFromTake, buildFromBoards, removeInput, setFirstFrame } from "@/lib/production/rig-build";
@@ -98,7 +99,7 @@ export function ShotInputs({ shot, locked }: { shot: RigShot; locked: boolean })
         const first = Boolean(row.asset && node.firstFrameId === row.asset.id);
         return (
           <div className="pxw-insp-row pxw-insp-row--input" key={row.id} data-testid="rig-input">
-            <span className="pxw-insp-row-thumb pxw-insp-row-thumb--media" aria-hidden="true">{row.asset?.url && (row.asset.kind === "image" || row.asset.kind === "video") ? <LazyMedia url={row.asset.url} kind={row.asset.kind} alt="" className="gx-lazy" /> : null}</span>
+            <span className="pxw-insp-row-thumb pxw-insp-row-thumb--media" aria-hidden="true">{row.asset?.url && (row.asset.kind === "image" || row.asset.kind === "video") ? <LazyMedia url={row.asset.url} kind={row.asset.kind} alt="" name={row.asset.name} className="gx-lazy" /> : row.asset ? <span {...previewAttrs(assetPreview(row.asset))} className="pxw-insp-row-glyph">▤</span> : null}</span>
             <span className="pxw-insp-row-text">
               <span className="pxw-insp-row-name">{row.name}</span>
               <span className="pxw-insp-row-kind">{first ? "First frame" : row.asset?.kind === "video" ? "Reference video" : row.asset ? "Reference image" : row.kind}</span>
@@ -243,9 +244,9 @@ export function RigLibrary() {
           </div>
           <div className="pxw-rig-library-items">
             {shown.map((item) => (
-              <div key={item.key} className="pxw-rig-library-item" draggable data-testid="rig-library-item" data-group={item.group}
+              <div key={item.key} className="pxw-rig-library-item" draggable data-testid="rig-library-item" data-group={item.group} {...(item.url && item.media !== "text" ? previewAttrs({ url: item.url, kind: item.media === "image" || item.media === "video" || item.media === "audio" ? item.media : "file", name: item.label }) : {})}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.key); e.dataTransfer.effectAllowed = "copy"; }}>
-                <span className="pxw-rig-library-thumb">{item.url && (item.media === "image" || item.media === "video") ? <LazyMedia url={item.url} kind={item.media} alt="" className="gx-lazy" /> : <span aria-hidden="true">{item.media === "text" ? "¶" : item.media === "audio" ? "♪" : "▤"}</span>}</span>
+                <span className="pxw-rig-library-thumb">{item.url && (item.media === "image" || item.media === "video") ? <LazyMedia url={item.url} kind={item.media} alt="" name={item.label} className="gx-lazy" /> : <span aria-hidden="true">{item.media === "text" ? "¶" : item.media === "audio" ? "♪" : "▤"}</span>}</span>
                 <span className="pxw-rig-library-name" title={item.text ?? item.label}>{item.label}</span>
                 <button type="button" className="pxw-link-button" disabled={!selected} aria-label={`Add ${item.label} to the shot`} onClick={() => selected && place(item, selected.id, selected.name)}>+</button>
               </div>

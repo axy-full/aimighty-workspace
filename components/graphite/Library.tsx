@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection } from "@/lib/shell/production-tools";
 import LazyMedia from "@/components/LazyMedia";
+import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -117,10 +118,10 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
               return (
                 <div className="gx-asset" key={entry.take.id} data-selected={state.selKind === "take" && state.selId === entry.take.id} data-cut={cutId === entry.take.id || undefined} data-asset={entry.take.id}>
-                  <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`}
+                  <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
                     onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copyMove"; }}
                     onClick={() => open(entry)}>
-                    {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" /> : null}
+                    {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} /> : null}
                     <span className="gx-badge">{entry.media === "video" ? "VIDEO" : entry.media === "audio" ? "AUDIO" : entry.media === "image" ? "IMAGE" : "FILE"}</span>
                     {fresh ? <span className="gx-badge gx-badge--new">NEW</span> : null}
                   </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useImperativeHandle, type Ref } from "react";
+import { previewAttrs } from "@/lib/preview";
 import { Film, Upload, X } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
@@ -318,6 +319,7 @@ export default function SeedanceEdit({
             {previewUrl && (
               <video
                 src={previewUrl}
+                {...previewAttrs(previewUrl ? { url: previewUrl, kind: "video", name: "Source video" } : null)}
                 controls
                 playsInline
                 className={edit.preview}

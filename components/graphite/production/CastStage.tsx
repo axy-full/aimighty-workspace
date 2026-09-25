@@ -2,6 +2,7 @@
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
@@ -309,7 +310,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                   {reference ? "Replace reference" : "Reference image"}
                   <input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`Upload a reference image for ${entry.name || "this entry"}`} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadReference(entry, f); }} />
                 </label>}
-                {reference ? <span className="gx-hint">{reference.name}</span> : null}
+                {reference ? <span className="pd-ref-chip" {...previewAttrs(assetPreview(reference))} data-testid="cast-reference"><span className="gx-ref-thumb"><LazyMedia url={assetPreview(reference)!.url} kind="image" alt="" name={reference.name} preview={false} className="gx-lazy" /></span><span className="gx-hint">{reference.name}</span></span> : null}
               </div>
               {entry.takes.length > 1 ? (
                 <div className="pd-takes" role="radiogroup" aria-label={`${entry.name} builds`}>
