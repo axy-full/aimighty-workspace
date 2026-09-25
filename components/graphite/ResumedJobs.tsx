@@ -43,14 +43,20 @@ export function ResumedJobRows({ rows, label, onDismiss, onOpen, testId }: {
     <ul className="gx-resumed" aria-label={label} data-testid={testId}>
       {rows.map((row) => {
         const phase = resumePhase(row.status);
+        const open = row.status === "completed" && onOpen;
+        const dismiss = (row.status === "completed" || row.status === "failed") && onDismiss;
         return (
           <li className="vr-job gx-resumed-row" key={row.id} data-status={row.status} data-tone={phase.tone} data-testid={`${testId}-row`}>
             <span className="gx-resumed-dot" aria-hidden="true" />
-            <span className="vr-job-name">{row.name}</span>
+            <span className="vr-job-name" title={row.name}>{row.name}</span>
             <span className="gx-resumed-state" title={row.status === "uncertain" ? "The account has not confirmed it yet. It is never sent twice." : undefined}>{resumeLine(row.status, row.createdAt, now)}</span>
-            {row.status === "completed" && onOpen ? <button type="button" className="cw-link" onClick={onOpen}>Open Takes</button> : null}
-            {(row.status === "completed" || row.status === "failed") && onDismiss ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => onDismiss(row.id)} aria-label={`Dismiss ${row.name}`}>Dismiss</button> : null}
             {row.problem ? <p className="gx-resumed-problem" role="status">{row.problem}</p> : null}
+            {open || dismiss ? (
+              <span className="gx-resumed-actions">
+                {open ? <button type="button" className="gx-hbtn gx-resumed-x gx-resumed-open" onClick={onOpen}>Open Takes</button> : null}
+                {dismiss ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => onDismiss(row.id)} aria-label={`Dismiss ${row.name}`}>Dismiss</button> : null}
+              </span>
+            ) : null}
           </li>
         );
       })}

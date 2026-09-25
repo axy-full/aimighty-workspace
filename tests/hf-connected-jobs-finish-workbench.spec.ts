@@ -82,12 +82,12 @@ async function thumbSized(page: Page, name: string, testId: string) {
   const box = await page.getByTestId(testId).getByRole("button", { name }).first().boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(44);
 }
-async function shoot(page: Page, project: string, name: string, target: string) {
+async function shoot(page: Page, project: string, name: string, target: string, index = 0) {
   const size = SHOTS[project];
   const dir = process.env.HF_JOBS_SHOTS;
   if (!size || !dir) return;
   mkdirSync(dir, { recursive: true });
-  await page.getByTestId(target).first().scrollIntoViewIfNeeded();
+  await page.getByTestId(target).nth(index).evaluate((el) => el.scrollIntoView({ block: "center" }));
   await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
 }
 
@@ -126,7 +126,7 @@ test("Gen picks up takes left rendering, names each state, and files a finished 
   await expect(cards.nth(1).getByRole("status")).toHaveText("Reconnect the account in Workspace › Engines to finish this take.");
   await expect(cards.nth(0).getByRole("status")).toHaveCount(0);
   await noOverflow(page);
-  await shoot(page, info.project.name, "gen-picked-up", "gen-resumed");
+  await shoot(page, info.project.name, "gen-picked-up", "gen-resumed", 1);
 
   /* The account finishes both: the rendered take lands in Takes, the failed one says it was not billed. */
   phase = "done";
@@ -175,6 +175,13 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
     await thumbSized(page, "Open Takes", "ads-earlier");
     await thumbSized(page, "Dismiss Unboxing the trail runner on a kitchen counter", "ads-earlier");
   }
+  /* The actions travel together at the end of the row, never split across lines. */
+  const open = await rows.getByRole("button", { name: "Open Takes" }).boundingBox();
+  const dismiss = await rows.getByRole("button", { name: /^Dismiss/ }).boundingBox();
+  const row = await rows.boundingBox();
+  expect(Math.abs(open!.y - dismiss!.y)).toBeLessThanOrEqual(1);
+  expect(open!.x).toBeLessThan(dismiss!.x);
+  expect(row!.x + row!.width - (dismiss!.x + dismiss!.width)).toBeLessThanOrEqual(16);
   await noOverflow(page);
   await shoot(page, info.project.name, "ads-complete", "ads-earlier");
   await rows.getByRole("button", { name: "Open Takes" }).click();
