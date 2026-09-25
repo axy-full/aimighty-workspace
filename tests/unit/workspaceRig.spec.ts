@@ -113,6 +113,13 @@ test("versions merge filed takes with jobs in flight or failed, newest first", (
     { id: "h2", status: "cancelled", kind: "video", shotId: "ps1", prompt: "", model: SD25, version: 6, createdAt: now - 500, creditsBilled: 0 },
   ], now);
   expect(held.slice(0, 2).map((r) => [r.id, r.label, r.held ?? false])).toEqual([["h2", "Cancelled · not billed", false], ["h1", "Held · waiting for a slot", true]]);
+  // A held take the release refused for its own cap says why, in full where the label is cut.
+  const cap = "This take and reserved takes exceed the shot's credit cap. An admin must start it.";
+  const [blocked] = shotVersions(p, "s1", [
+    { id: "h3", status: "held", kind: "video", shotId: "ps1", prompt: "", model: SD25, version: 7, createdAt: now, error: cap, params: { held: { why: "credits" } } },
+  ], now);
+  expect(blocked).toMatchObject({ id: "h3", label: `Held · ${cap}`, note: cap, held: true });
+  expect(held[1].note).toBeUndefined();
   expect([relativeAge(now - 1000, now), relativeAge(now - 3 * 86_400_000, now), relativeAge(null, now)]).toEqual(["just now", "3 d", ""]);
 });
 

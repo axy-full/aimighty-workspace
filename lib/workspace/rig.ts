@@ -92,7 +92,11 @@ export function shotPreviewAsset(project: Project, shotId: string): Asset | null
 }
 
 export type VersionState = "rendered" | "rendering" | "failed";
-export type VersionRow = { id: string; v: string; label: string; meta: string; current: boolean; state: VersionState; held?: true };
+export type VersionRow = {
+  id: string; v: string; label: string; meta: string; current: boolean; state: VersionState; held?: true;
+  /** Why a held take could not start when last tried, in full (the label is one line). */
+  note?: string;
+};
 
 /** Held takes wait for credits or for a slot — never for an approval. */
 function heldLabel(job: Pick<MediaJob, "params">): string {
@@ -137,14 +141,17 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
     if (seen.has(job.id) || job.kind === "audio") continue;
     const failed = job.status === "failed" || job.status === "cancelled";
     const state: VersionState = job.status === "succeeded" ? "rendered" : failed ? "failed" : "rendering";
+    // A held take the release refused for a reason of its own (a cap) says so: that reason, not the wait, is what to act on.
+    const reason = job.status === "held" && job.error ? job.error : null;
     const label = state === "failed" ? endedLabel(job)
-      : state === "rendering" ? (job.status === "held" ? heldLabel(job) : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
+      : state === "rendering" ? (job.status === "held" ? (reason ? `Held · ${reason}` : heldLabel(job)) : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
       : `Rendered · ${engineLabel(job.model).long}`;
     rows.push({ id: job.id, v: `v${job.version ?? 1}`, label, meta: relativeAge(job.createdAt, now), current: false, state, order: job.version ?? 1, at: job.createdAt ?? 0,
-      ...(job.status === "held" ? { held: true as const } : {}) });
+      ...(job.status === "held" ? { held: true as const } : {}), ...(reason ? { note: reason } : {}) });
   }
   return rows.sort((a, b) => b.order - a.order || b.at - a.at)
-    .map((r): VersionRow => ({ id: r.id, v: r.v, label: r.label, meta: r.meta, current: r.current, state: r.state, ...(r.held ? { held: true as const } : {}) }));
+    .map((r): VersionRow => ({ id: r.id, v: r.v, label: r.label, meta: r.meta, current: r.current, state: r.state,
+      ...(r.held ? { held: true as const } : {}), ...(r.note ? { note: r.note } : {}) }));
 }
 
 /* ── Generation phase ────────────────────────────────────────────────── */

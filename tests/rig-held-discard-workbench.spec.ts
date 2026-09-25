@@ -69,6 +69,8 @@ test("a held take says what it waits for and can be discarded at no charge", asy
   await held.getByTestId("rig-discard-held").click();
   await expect(page.getByText("Discarded · nothing was charged")).toBeVisible();
   expect(patches).toEqual([{ discard: true }]);
+  // The row reads as what it now is at once, without waiting for the next jobs poll.
+  await expect(page.locator(".pxw-insp-version").filter({ hasText: "Cancelled · not billed" })).toHaveCount(1, { timeout: 2_000 });
 
   const jobs = await page.request.get("/api/jobs?sync=0&limit=20", { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json());
   const take = (jobs.generations ?? []).find((g: { model: string }) => g.model === ENGINE);
