@@ -44,6 +44,8 @@ export type ConnectedJob = {
   originalAvailability?: string;
   /** Why a failed job failed: the account refused it, or it finished but its result could not be kept. */
   failureCode?: string | null;
+  /** Unsettled but set aside (by its owner, or past the capacity window): it no longer gates new spend. */
+  setAside?: boolean;
   createdAt: number;
 };
 

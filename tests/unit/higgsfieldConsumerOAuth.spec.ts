@@ -171,8 +171,16 @@ test("expired, superseded and disconnected authorization states cannot exchange"
 test("callback exchanges captured client and redirect exactly once; stores encrypted tokens and safe status", async () => {
   const { oauth, platform } = await modules(),
     flow = await start();
-  let calls = 0;
+  let calls = 0,
+    userinfo = 0;
   const fetcher = asFetch(async (url, init) => {
+    // The exchange names no ID token, so the new token's account is read once
+    // from the issuer's userinfo (free) to record which account signed in.
+    if (url === oauth.CONSUMER_USERINFO) {
+      userinfo++;
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer access-private-abc" });
+      return Response.json({ sub: "user_fixture", email: "private@example.com" });
+    }
     calls++;
     expect(url).toBe("https://clerk.higgsfield.ai/oauth/token");
     expect(init?.redirect).toBe("error");
@@ -205,6 +213,7 @@ test("callback exchanges captured client and redirect exactly once; stores encry
     ),
   ).rejects.toMatchObject({ code: "invalid_state" });
   expect(calls).toBe(1);
+  expect(userinfo).toBe(1);
   const row = (
     await platform.platformDb().execute({
       sql: "SELECT * FROM higgsfield_consumer_connections WHERE workspace_id=?",
@@ -213,13 +222,17 @@ test("callback exchanges captured client and redirect exactly once; stores encry
   ).rows[0];
   expect(JSON.stringify(row)).not.toContain("access-private");
   expect(JSON.stringify(row)).not.toContain("refresh-private");
+  // Only a hash of the account is kept: never its subject or email.
+  expect(JSON.stringify(row)).not.toContain("user_fixture");
+  expect(JSON.stringify(row)).not.toContain("private@example.com");
   const status = await oauth.getConsumerConnection(flow.id);
-  expect(status).toMatchObject({ connected: true, requiresReconnect: false });
+  expect(status).toMatchObject({ connected: true, requiresReconnect: false, subjectKnown: true });
   expect(Object.keys(status).sort()).toEqual([
     "connected",
     "connectedAt",
     "expiresAt",
     "requiresReconnect",
+    "subjectKnown",
   ]);
   expect(
     await oauth.getConsumerAccessToken(
@@ -281,7 +294,8 @@ test("disconnect during code exchange prevents a late callback from restoring th
     flow.id,
     flow.session,
     flow.params,
-    asFetch(async () => {
+    asFetch(async (url) => {
+      if (url === oauth.CONSUMER_USERINFO) return new Response(null, { status: 401 });
       called();
       return new Promise((resolve) => (respond = resolve));
     }),
@@ -478,6 +492,102 @@ test("the same account signing in again keeps its jobs' grant; another account, 
   expect(oauth.consumerSubjectHash({ id_token: idToken("user_a", { aud: [clientId, "other"] }) }, clientId)).toMatch(/^[a-f0-9]{64}$/);
   for (const token of [idToken("user_a", { iss: "https://issuer.example" }), idToken("user_a", { aud: "another-client" }), idToken(""), "not-a-token", 42])
     expect(oauth.consumerSubjectHash({ id_token: token }, clientId)).toBeNull();
+});
+
+test("a connection that never recorded its account learns it from its saved grant before a reconnect or disconnect, so the same account keeps its running jobs", async () => {
+  const { oauth, store } = await modules(),
+    clientId = oauth.consumerConfiguration().clientId;
+  const idToken = (sub: string) =>
+    ["e30", Buffer.from(JSON.stringify({ iss: oauth.CONSUMER_ISSUER, sub, aud: clientId })).toString("base64url"), "signature"].join(".");
+  const reads: string[] = [];
+  /** userinfo answers `sub` for the saved token; a refresh answers `refresh`. */
+  const account = (sub: string | null, refresh?: Record<string, unknown>) =>
+    asFetch(async (url, init) => {
+      if (url === oauth.CONSUMER_USERINFO) {
+        reads.push(String((init?.headers as Record<string, string>).Authorization));
+        return sub ? Response.json({ sub }) : new Response(null, { status: 401 });
+      }
+      if (url === "https://clerk.higgsfield.ai/oauth/token/revoke") return new Response(null, { status: 200 });
+      return Response.json({ access_token: "access-private-abc", refresh_token: "refresh-private-xyz", expires_in: 3600, token_type: "Bearer", ...refresh });
+    });
+  const generation = async (id: { workspaceId: string; userId: string }) => {
+    const access = await store.claimConsumerAccess(id);
+    if (access.kind !== "ready") throw new Error(`Fixture access ${access.kind}`);
+    return access.generation;
+  };
+  const signIn = async (id: { workspaceId: string; userId: string }, token: string | null, sub: string | null = null) => {
+    const flow = await start(id);
+    await oauth.finishConsumerAuthorization(id, flow.session, flow.params, account(sub, token ? { id_token: token } : {}));
+    return generation(id);
+  };
+
+  // Connected before subjects were kept: unknown, until the free userinfo read with the SAVED token.
+  const legacy = await connected();
+  const before = await generation(legacy.id);
+  expect(await oauth.getConsumerConnection(legacy.id)).toMatchObject({ connected: true, subjectKnown: false });
+  expect(await oauth.backfillConsumerSubject(legacy.id, account("user_a"))).toBe(true);
+  expect(reads.at(-1)).toBe("Bearer old-access-private");
+  expect(await oauth.getConsumerConnection(legacy.id)).toMatchObject({ subjectKnown: true });
+  // Known subjects are never re-read or replaced.
+  expect(await oauth.backfillConsumerSubject(legacy.id, account("user_b"))).toBe(true);
+  expect(reads).toHaveLength(1);
+  // Reconnecting with the same account keeps the grant its jobs are pinned to.
+  expect(await signIn(legacy.id, idToken("user_a"))).toBe(before);
+
+  // The userinfo read refused: still unknown (the page warns), and nothing is thrown.
+  const refused = await connected();
+  const refusedBefore = await generation(refused.id);
+  expect(await oauth.backfillConsumerSubject(refused.id, account(null))).toBe(false);
+  expect(await oauth.getConsumerConnection(refused.id)).toMatchObject({ subjectKnown: false });
+  expect(await signIn(refused.id, idToken("user_a"))).not.toBe(refusedBefore);
+
+  // A due refresh whose answer names the account fills it in, and never replaces a known one.
+  const refreshing = await connected(Date.now() + 1000);
+  const refreshingBefore = (await store.claimConsumerAccess(refreshing.id, Date.now() - 120_000)) as { generation: string };
+  expect(await oauth.backfillConsumerSubject(refreshing.id, account(null, { id_token: idToken("user_c") }))).toBe(true);
+  expect(reads).toHaveLength(2);
+  expect(await signIn(refreshing.id, idToken("user_c"))).toBe(refreshingBefore.generation);
+
+  // Disconnect learns the account while the grant still exists; the same account connecting again resumes.
+  const leaving = await connected();
+  const leavingBefore = await generation(leaving.id);
+  await oauth.removeConsumerConnection(leaving.id, account("user_d"));
+  expect(await oauth.getConsumerConnection(leaving.id)).toMatchObject({ connected: false, subjectKnown: true });
+  expect(await oauth.backfillConsumerSubject(leaving.id, account("user_x"))).toBe(true);
+  // A sign-in whose answer carries no ID token is identified by userinfo for the NEW token.
+  expect(await signIn(leaving.id, null, "user_d")).toBe(leavingBefore);
+  expect(reads.at(-1)).toBe("Bearer access-private-abc");
+  // Another account still never inherits the jobs.
+  expect(await signIn(leaving.id, null, "user_e")).not.toBe(leavingBefore);
+});
+
+test("the issuer's recorded discovery document pins the identity assumptions: exact issuer, public subjects, userinfo endpoint", async () => {
+  const { oauth } = await modules();
+  // Recorded 25 September 2026 from https://clerk.higgsfield.ai/.well-known/openid-configuration
+  // (an unauthenticated, read-only public GET; no sign-in or token was involved).
+  const discovery = JSON.parse(readFileSync("tests/fixtures/clerk-openid-configuration.json", "utf8")) as Record<string, unknown>;
+  // OIDC Core §2: an ID token's iss equals the issuer exactly, and its aud contains our client id.
+  expect(discovery.issuer).toBe(oauth.CONSUMER_ISSUER);
+  expect(discovery.token_endpoint).toBe(`${oauth.CONSUMER_ISSUER}/oauth/token`);
+  expect(discovery.userinfo_endpoint).toBe(oauth.CONSUMER_USERINFO);
+  expect(discovery.subject_types_supported).toEqual(["public"]);
+  expect(discovery.claims_supported).toEqual(expect.arrayContaining(["iss", "sub", "aud"]));
+  expect(discovery.scopes_supported).toEqual(expect.arrayContaining(oauth.CONSUMER_SCOPES.split(" ")));
+  expect(discovery.authorization_response_iss_parameter_supported).toBe(true);
+  const clientId = oauth.consumerConfiguration().clientId;
+  const claims = (overrides: Record<string, unknown>) => ({
+    id_token: ["e30", Buffer.from(JSON.stringify({ iss: discovery.issuer, sub: "user_2abc", aud: clientId, iat: 1, exp: 2, ...overrides })).toString("base64url"), "sig"].join("."),
+  });
+  // An ID token shaped as the document describes identifies the account, and
+  // hashes to the same value as a userinfo read of the same public subject.
+  const fromToken = oauth.consumerSubjectHash(claims({}), clientId);
+  const fromUserinfo = await oauth.consumerUserinfoSubject("fixture", asFetch(async () => Response.json({ sub: "user_2abc" })));
+  expect(fromToken).toMatch(/^[a-f0-9]{64}$/);
+  expect(fromUserinfo).toBe(fromToken);
+  expect(oauth.consumerSubjectHash(claims({ iss: `${discovery.issuer}/` }), clientId)).toBeNull();
+  // A userinfo reply that is not a small JSON object with a subject names no account.
+  for (const reply of [new Response("nope", { status: 200 }), Response.json({ email: "x@example.com" }), Response.json({ sub: "" }), new Response(null, { status: 500 })])
+    expect(await oauth.consumerUserinfoSubject("fixture", asFetch(async () => reply))).toBeNull();
 });
 
 test("routine refresh preserves the quote generation and excludes competing refresh claims", async () => {
@@ -799,11 +909,12 @@ test("oversized token body is cancelled and ciphertext swapped across accounts c
 test("disconnect succeeds even when upstream revoke fails and exposes no token in its error", async () => {
   const { oauth } = await modules(),
     flow = await connected();
-  let calls = 0;
+  const urls: string[] = [];
   await oauth.removeConsumerConnection(
     flow.id,
     asFetch(async (url, init) => {
-      calls++;
+      urls.push(String(url));
+      if (url === oauth.CONSUMER_USERINFO) throw new Error("private failed userinfo");
       expect(url).toBe("https://clerk.higgsfield.ai/oauth/token/revoke");
       expect(new URLSearchParams(String(init?.body)).get("token")).toBe(
         flow.tokens.refreshToken,
@@ -811,10 +922,13 @@ test("disconnect succeeds even when upstream revoke fails and exposes no token i
       throw new Error("private failed revoke");
     }),
   );
-  expect(calls).toBe(1);
+  // The account is looked up (while the grant still exists) before revoking;
+  // neither failure stops the disconnect.
+  expect(urls).toEqual([oauth.CONSUMER_USERINFO, "https://clerk.higgsfield.ai/oauth/token/revoke"]);
   expect(await oauth.getConsumerConnection(flow.id)).toEqual({
     connected: false,
     requiresReconnect: false,
+    subjectKnown: false,
   });
 });
 
@@ -865,7 +979,9 @@ async function routeFixture() {
   );
   let starts = 0,
     disconnects = 0,
-    limit = false;
+    backfills = 0,
+    limit = false,
+    connection: Record<string, unknown> = { connected: false, requiresReconnect: false };
   const held = "33333333-3333-4333-8333-333333333333",
     asides: { userId: string; id: string }[] = [],
     limits: string[] = [];
@@ -903,10 +1019,12 @@ async function routeFixture() {
         starts++;
         return { url: "https://clerk.higgsfield.ai/oauth/authorize" };
       },
-      getConsumerConnection: async () => ({
-        connected: false,
-        requiresReconnect: false,
-      }),
+      backfillConsumerSubject: async () => {
+        backfills++;
+        if (connection.connected) connection = { ...connection, subjectKnown: true };
+        return connection.subjectKnown === true;
+      },
+      getConsumerConnection: async () => connection,
       removeConsumerConnection: async () => {
         disconnects++;
       },
@@ -945,6 +1063,10 @@ async function routeFixture() {
     set: (value: TenantStore) => (store = value),
     original: () => store,
     counts: () => ({ starts, disconnects }),
+    backfills: () => backfills,
+    connect: (value: Record<string, unknown>) => {
+      connection = value;
+    },
     held,
     asides,
     limits,
@@ -993,6 +1115,32 @@ test("the connection read carries the owner's slot holders, and set-aside is an 
   route.set({ ...original, user: { ...original.user!, owner: false } });
   expect((await aside(route.held)).status).toBe(403);
   expect(route.asides).toHaveLength(2);
+});
+
+test("before the owner can reconnect, the connection read and the reconnect start both learn which account the grant belongs to", async () => {
+  const route = await routeFixture(),
+    scope = "particl-active-ws-owner";
+  // Not connected: nothing to learn.
+  await route.request("connection", "GET", scope);
+  expect(route.backfills()).toBe(0);
+  route.connect({ connected: true, requiresReconnect: false, subjectKnown: false });
+  const read = await route.request("connection", "GET", scope);
+  expect(await read.json()).toMatchObject({ connected: true, subjectKnown: true });
+  expect(route.backfills()).toBe(1);
+  expect(route.limits.filter((key) => key.endsWith(":subject"))).toHaveLength(1);
+  // Known: no further read.
+  await route.request("connection", "GET", scope);
+  expect(route.backfills()).toBe(1);
+  // The reconnect start makes sure too, just before the sign-in replaces the grant.
+  expect((await route.request("connect", "POST", scope)).status).toBe(200);
+  expect(route.backfills()).toBe(2);
+  // Rate-limited: the read still answers, it just does not look the account up.
+  route.connect({ connected: true, requiresReconnect: false, subjectKnown: false });
+  route.limit();
+  const limited = await route.request("connection", "GET", scope);
+  expect(limited.status).toBe(200);
+  expect(await limited.json()).toMatchObject({ subjectKnown: false });
+  expect(route.backfills()).toBe(2);
 });
 
 test("real route guards reject stale scope, cross-origin, bearer tokens and nonowners before starting or disconnecting", async () => {

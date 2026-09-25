@@ -222,7 +222,7 @@ export async function consumerConnectionStatus(identity: ConsumerIdentity) {
   return accountTransaction(async (tx) => {
     const row = (
       await tx.execute({
-        sql: "SELECT status,connected_at,expires_at FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
+        sql: "SELECT status,connected_at,expires_at,subject_hash FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
         args: [identity.workspaceId, identity.userId],
       })
     ).rows[0];
@@ -233,6 +233,9 @@ export async function consumerConnectionStatus(identity: ConsumerIdentity) {
       requiresReconnect: row?.status === "reconnect_required",
       ...(row?.connected_at ? { connectedAt: Number(row.connected_at) } : {}),
       ...(row?.expires_at ? { expiresAt: Number(row.expires_at) } : {}),
+      // Whether Particl knows which account this grant belongs to. Only then
+      // does the same account signing in again keep its running jobs.
+      ...(row ? { subjectKnown: row.subject_hash != null } : {}),
     };
   });
 }
@@ -327,25 +330,54 @@ export async function finishConsumerRefresh(
   claim: RefreshClaim,
   tokens: ConsumerTokens | null,
   at = Date.now(),
+  subjectHash: string | null = null,
 ) {
   await consumerStoreReady();
   return accountTransaction(
     async (tx) =>
       (
         await tx.execute({
-          sql: `UPDATE higgsfield_consumer_connections SET tokens_enc=?,expires_at=?,status=?,refresh_lease=NULL,refresh_lease_until=NULL,updated_at=?
+          // A refresh answer that names the account (its ID token) fills in a
+          // subject the grant never recorded; it never replaces a known one.
+          sql: `UPDATE higgsfield_consumer_connections SET tokens_enc=?,expires_at=?,status=?,refresh_lease=NULL,refresh_lease_until=NULL,updated_at=?,
+      subject_hash=COALESCE(subject_hash,?)
       WHERE workspace_id=? AND user_id=? AND generation=? AND refresh_lease=? AND status='connected'${tokens ? " AND refresh_lease_until>?" : ""}`,
           args: [
             tokens ? encode(claim, tokens) : null,
             tokens?.expiresAt ?? null,
             tokens ? "connected" : "reconnect_required",
             at,
+            tokens ? subjectHash : null,
             claim.workspaceId,
             claim.userId,
             claim.generation,
             claim.lease,
             ...(tokens ? [at] : []),
           ],
+        })
+      ).rowsAffected === 1,
+  );
+}
+
+/**
+ * Record which account the CURRENT grant belongs to, when it was never
+ * recorded (connections made before subjects were kept, or a sign-in whose
+ * answer named no account). Only a connected grant of this exact generation,
+ * and only a missing subject: a known one is never replaced.
+ */
+export async function recordConsumerSubject(
+  identity: ConsumerIdentity,
+  generation: string,
+  subjectHash: string,
+) {
+  if (!/^[a-f0-9]{64}$/.test(subjectHash)) return false;
+  await consumerStoreReady();
+  return accountTransaction(
+    async (tx) =>
+      (
+        await tx.execute({
+          sql: "UPDATE higgsfield_consumer_connections SET subject_hash=?,updated_at=? WHERE workspace_id=? AND user_id=? AND generation=? AND status='connected' AND subject_hash IS NULL",
+          args: [subjectHash, Date.now(), identity.workspaceId, identity.userId, generation],
         })
       ).rowsAffected === 1,
   );

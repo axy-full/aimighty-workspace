@@ -12,7 +12,7 @@ import { ready } from "@/lib/db";
 import { resolveConsumerGenerationSources } from "./generation-sources";
 import { parseCharacters, parseCharacterCreate, type ConnectedCharacter, type ConnectedPlan, type SoulBuildOutcome, type SoulBuildSource, parsePlan } from "./soul-build";
 import { onlyParticlCharacters, particlCharacterIds, recordParticlCharacter } from "./character-records";
-import { accountCreatedAt, assertNoOpenBuild, buildFingerprint, claimBuild, matchBuild, openBuilds, settleBuild, type PendingBuild } from "./build-records";
+import { accountCreatedAt, assertNoOpenBuild, buildFingerprint, claimBuild, matchBuild, openBuilds, pagingForOpenBuilds, settleBuild, type PendingBuild } from "./build-records";
 export * from "./soul-build";
 
 /** Every entry the paged read can return, parsed (the caller narrows them). */
@@ -29,16 +29,19 @@ function rawEntries(value: unknown): unknown[] {
  * Particl has not recorded, created just after the build was sent, and only
  * when one entry fits. A match is recorded as Particl-built from then on.
  */
-async function resolveOpenCharacterBuilds(userId: string, value: unknown, ours: Set<string>): Promise<PendingBuild[]> {
-  const builds = await openBuilds("character", userId);
-  if (!builds.length) return [];
+/** The account entries Particl has not recorded, as matchBuild reads them. */
+function unrecordedCharacters(value: unknown, ours: ReadonlySet<string>) {
   const createdAt = new Map<string, number | null>();
   for (const entry of rawEntries(value)) {
     const [parsed] = parseCharacters([entry], 1);
     if (parsed) createdAt.set(parsed.soulId, accountCreatedAt(entry));
   }
-  const unrecorded = parseCharacters(value, LIBRARY_LIMIT).filter((c) => !ours.has(c.soulId))
+  return parseCharacters(value, LIBRARY_LIMIT).filter((c) => !ours.has(c.soulId))
     .map((c) => ({ id: c.soulId, name: c.name, type: c.type, createdAt: createdAt.get(c.soulId) ?? null }));
+}
+async function resolveOpenCharacterBuilds(userId: string, builds: Awaited<ReturnType<typeof openBuilds>>, value: unknown, ours: Set<string>): Promise<PendingBuild[]> {
+  if (!builds.length) return [];
+  const unrecorded = unrecordedCharacters(value, ours);
   const open: PendingBuild[] = [];
   for (const build of builds) {
     const soulId = matchBuild(build, unrecorded.filter((entry) => !ours.has(entry.id)));
@@ -61,11 +64,14 @@ export async function connectedCharacters(userId: string): Promise<{ connected: 
   const access = await getConsumerAccess(requireTenant().id, userId);
   if (!access) return { connected: false, available: false, characters: [] };
   try {
-    // Page until every Soul ID Particl built is found, not just the first 100.
+    // Page until every Soul ID Particl built is found (then read each one
+    // still missing by its soul_id), and far enough to cover open builds.
     const ours = await particlCharacterIds();
-    const read = await listConsumerCharacters(access.accessToken, ours);
+    const builds = await openBuilds("character", userId);
+    const more = pagingForOpenBuilds(builds, (entries) => unrecordedCharacters({ items: entries }, ours));
+    const read = await listConsumerCharacters(access.accessToken, ours, {}, more);
     if (read.state !== "ok") return { connected: true, available: false, characters: [] };
-    const pending = await resolveOpenCharacterBuilds(userId, read.value, ours);
+    const pending = await resolveOpenCharacterBuilds(userId, builds, read.value, ours);
     return { connected: true, available: true, characters: onlyParticlCharacters(parseCharacters(read.value, LIBRARY_LIMIT), ours), pending };
   } catch (error) {
     if (error instanceof ConsumerOAuthError) return { connected: false, available: false, characters: [] };

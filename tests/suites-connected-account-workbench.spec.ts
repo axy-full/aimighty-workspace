@@ -15,7 +15,7 @@ const minutesAgo = (m: number) => Date.now() - m * 60_000;
 const stuck = { id: "11111111-1111-4111-8111-111111111111", draftId: "ws-connected", projectName: "Coastal light study", workflow: "generation", status: "uncertain", createdAt: minutesAgo(40), releasable: true };
 const fresh = { id: "22222222-2222-4222-8222-222222222222", draftId: "ws-other", projectName: "Harbour spot", workflow: "marketing-video", status: "accepted", createdAt: minutesAgo(3), releasable: false };
 
-async function open(page: Page, path: string) {
+async function open(page: Page, path: string, connection: Record<string, unknown> = { subjectKnown: true }) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -31,7 +31,7 @@ async function open(page: Page, path: string) {
       if (body.action === "set-aside") return route.fulfill({ json: { capacity: { limit: 4, active: 3, mine: [fresh] } } });
       return route.fulfill({ json: { probe: { reachable: true, balance: 1, unit: "credits" } } });
     }
-    return route.fulfill({ json: { connected: true, requiresReconnect: false, capacity: { limit: 4, active: 4, mine: [stuck, fresh] } } });
+    return route.fulfill({ json: { connected: true, requiresReconnect: false, ...connection, capacity: { limit: 4, active: 4, mine: [stuck, fresh] } } });
   });
   let connects = 0;
   await page.route("**/api/higgsfield/consumer/connect", (route) => {
@@ -87,4 +87,19 @@ test("Engines connects the account, shows the owner's slot holders, sets a stuck
   await page.getByTestId("connected-account-connect").click();
   await page.waitForURL(/^https:\/\/clerk\.higgsfield\.ai\/oauth\/authorize/);
   expect(connects()).toBe(1);
+});
+
+test("when Particl cannot tell which account started the running jobs, the warning says they will not be collected; a refused sign-in says so", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { errors, connects } = await open(page, "/suites?view=workspace&tab=engines#higgsfield=authorization_denied", { subjectKnown: false });
+  await expect(page.getByTestId("connected-account-note")).toHaveText("Sign-in was not approved. Nothing changed.");
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await page.getByTestId("connected-account-disconnect").click();
+  await expect(page.getByTestId("connected-account-warning")).toHaveText("2 of your jobs are still running and can't be collected after a disconnect.");
+  await expect(page.getByTestId("connected-account-disconnect")).toHaveText("Disconnect anyway");
+  await page.getByTestId("connected-account-connect").click();
+  await expect(page.getByTestId("connected-account-warning")).toHaveText("2 of your jobs are still running and can't be collected after a reconnect.");
+  expect(connects()).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(errors).toEqual([]);
 });

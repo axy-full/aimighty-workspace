@@ -27,6 +27,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -95,6 +96,7 @@ function presentVoiceTool(job: ConsumerJob, availability: ConsumerOriginalAvaila
     originalAvailable: !report && availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }

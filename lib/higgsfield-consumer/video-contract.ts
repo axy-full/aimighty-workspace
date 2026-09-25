@@ -503,18 +503,6 @@ export function consumerVideoFailureResult(value: unknown, expectedJobId: string
   if (raw.result_url != null && raw.result_url !== "") return null;
   return raw.status;
 }
-/**
- * Our marketing video finished, but not as approved: its echoed settings or
- * result do not match what was paid for, so it will never be collected. The
- * caller settles it once (receipt kept) instead of polling forever. A reply
- * naming another job, or with contradicting statuses, is not ours to settle.
- */
-export function consumerVideoUnmatchedResult(value: unknown, expectedJobId: string, input: ConsumerVideoInput): boolean {
-  const raw = ownVideoEnvelope(value, expectedJobId);
-  if (!raw || raw.status !== "completed") return false;
-  if (record(value) && "status" in value && value.status !== "completed") return false;
-  return consumerVideoOriginalResult(value, expectedJobId, input) === null;
-}
 
 export const ENHANCED_PROMPT_MAX = 8000;
 /**

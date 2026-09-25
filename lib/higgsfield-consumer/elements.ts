@@ -13,7 +13,7 @@ import { resolveConsumerGenerationSources } from "./generation-sources";
 import type { SoulBuildSource } from "./soul-build";
 export * from "./element-parse";
 import { parseElementCreate, parseElements, type ConnectedElement } from "./element-parse";
-import { accountCreatedAt, assertNoOpenBuild, buildFingerprint, claimBuild, matchBuild, openBuilds, settleBuild, type PendingBuild } from "./build-records";
+import { accountCreatedAt, assertNoOpenBuild, buildFingerprint, claimBuild, matchBuild, openBuilds, pagingForOpenBuilds, settleBuild, type PendingBuild } from "./build-records";
 
 const initialized = new WeakMap<ReturnType<typeof db>, Promise<void>>();
 async function elementsReady() {
@@ -41,17 +41,19 @@ export async function connectedElements(userId: string): Promise<{ connected: bo
   if (!access) return { connected: false, available: false, elements: [] };
   try {
     const ours = await particlElementIds();
-    // Page (and `get` by id) until every element Particl created is found.
-    const read = await listConsumerElements(access.accessToken, {}, ours);
-    if (read.state !== "ok") return { connected: true, available: false, elements: [] };
-    const entries = (read.value as { items: unknown[] }).items;
     // An element accepted without a named id is matched by exact name and category among unrecorded entries made just after it was sent.
-    const pending: PendingBuild[] = [];
-    const unrecorded = entries.flatMap((entry) => {
+    const unrecordedOf = (entries: readonly unknown[]) => entries.flatMap((entry) => {
       const id = entryId(entry), [parsed] = parseElements([entry]);
       return id && parsed && !ours.has(id) ? [{ id, name: parsed.name, type: parsed.category, createdAt: accountCreatedAt(entry) }] : [];
     });
-    for (const build of await openBuilds("element", userId)) {
+    const builds = await openBuilds("element", userId);
+    // Page (and `get` by id) until every element Particl created is found, and far enough to cover open builds.
+    const read = await listConsumerElements(access.accessToken, {}, ours, pagingForOpenBuilds(builds, unrecordedOf));
+    if (read.state !== "ok") return { connected: true, available: false, elements: [] };
+    const entries = (read.value as { items: unknown[] }).items;
+    const pending: PendingBuild[] = [];
+    const unrecorded = unrecordedOf(entries);
+    for (const build of builds) {
       const elementId = matchBuild(build, unrecorded.filter((entry) => !ours.has(entry.id)));
       if (!elementId) { pending.push({ id: build.id, kind: build.kind, name: build.name, type: build.type, state: build.state, createdAt: build.createdAt, stale: build.stale }); continue; }
       await recordElement({ elementId }, { userId, projectId: build.projectId, name: build.name, category: build.type });

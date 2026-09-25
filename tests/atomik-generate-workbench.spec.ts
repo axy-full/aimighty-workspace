@@ -183,6 +183,37 @@ test("Generate picks a catalogue model, quotes in connected credits, approves th
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });
 
+test("a submission set aside in Workspace › Engines stops blocking the next quote; one still unconfirmed blocks it", async ({ page }) => {
+  const state = await fixture(page);
+  // Sent, answer lost, no receipt id: nothing can ever reconcile it.
+  const stuck: Job = { id: "11111111-1111-4111-8111-00000000aaaa", draftId: "atomik-draft", status: "uncertain", input: { type: "image", model: "nano_banana_2", prompt: "An earlier bottle.", parameters: {}, medias: [] },
+    model: { id: "nano_banana_2", name: "Nano Banana 2", outputType: "image" }, workspaceId: wallet, workspaceName: "Studio wallet", quoteCredits: 9, creditUnit: "higgsfield_credits",
+    quoteExpiresAt: Date.now() - 3_000_000, providerJobId: null, result: null, providerReceipt: null, failureCode: null, setAside: false, createdAt: Date.now() - 3_300_000 };
+  state.jobs.push(stuck);
+  const ready = async () => {
+    const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
+    await panel.getByRole("combobox", { name: "Generate model", exact: true }).selectOption("nano_banana_2");
+    await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).fill("A plain bottle on a clean studio background.");
+    return { panel, quote: panel.getByRole("button", { name: "Get connected-credit quote", exact: true }), results: page.getByRole("region", { name: "Saved generation jobs", exact: true }) };
+  };
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
+  let view = await ready();
+  await expect(view.results.getByText("Submission needs reconciliation", { exact: true })).toBeVisible();
+  await expect(view.panel.getByText("A submission needs reconciliation.", { exact: false })).toBeVisible();
+  await expect(view.quote).toBeDisabled();
+  // The owner sets it aside in Workspace › Engines: the service now marks it so.
+  stuck.setAside = true;
+  await page.reload();
+  view = await ready();
+  await expect(view.results.getByText("Set aside · never sent again", { exact: true })).toBeVisible();
+  await expect(view.panel.getByText("A submission needs reconciliation.", { exact: false })).toHaveCount(0);
+  await expect(view.quote).toBeEnabled();
+  await noOverflow(page);
+  // Nothing was re-sent, and the set-aside job is still listed.
+  expect(state.posts.filter((body) => body.action !== "catalogue")).toEqual([]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
 test("a disconnected account cannot quote, unlimited-eligible models are flagged, and settings the model does not declare cannot be sent", async ({ page }) => {
   const state = await fixture(page, { connected: false, unlim: true });
   await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));

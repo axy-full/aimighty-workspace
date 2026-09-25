@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
+import ts from "typescript";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -9,12 +10,15 @@ import {
   QUALIFICATION_LIMITS,
   createConsumerCharacter,
   createConsumerElement,
+  characterGetArgs,
   listConsumerCharacters,
   listConsumerElements,
 } from "../../lib/higgsfield-consumer/mcp";
 import { checkTool, toolsetFrom } from "../../lib/higgsfield-consumer/toolset";
 import { parseElementCreate } from "../../lib/higgsfield-consumer/element-parse";
-import { accountCreatedAt, matchBuild, BUILD_MATCH_WINDOW } from "../../lib/higgsfield-consumer/build-records";
+import { accountCreatedAt, matchBuild, pagingForOpenBuilds, BUILD_MATCH_WINDOW } from "../../lib/higgsfield-consumer/build-records";
+import type * as Characters from "../../lib/higgsfield-consumer/characters";
+import type * as Elements from "../../lib/higgsfield-consumer/elements";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-builds-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -95,10 +99,18 @@ test("the libraries are read past the first page until every recorded id is foun
   expect(read.state).toBe("ok");
   expect(characters.named("show_characters").map((p) => p.params.arguments)).toEqual([{ action: "list", size: 100 }, { action: "list", size: 100, cursor: 100 }]);
   expect(((read as { value: { items: { soul_id: string }[] } }).value.items).some((e) => e.soul_id === "soul_150")).toBe(true);
-  // A reply that names no next page stops the read.
-  const single = account((p) => (p.params.name === "show_characters" ? { items: page(0, 3) } : undefined));
-  await listConsumerCharacters(single.token, new Set(["soul_900"]), { fetch: single.fetch });
-  expect(single.named("show_characters")).toHaveLength(1);
+  // A reply that names no next page stops the paging; a recorded Soul ID still
+  // missing is then read by its soul_id, and kept only if the reply is that one.
+  const single = account((p) => (p.params.name !== "show_characters" ? undefined
+    : p.params.arguments.action === "get" ? (p.params.arguments.soul_id === "soul_900" ? { character: { soul_id: "soul_900", name: "Mira", status: "ready" } } : { items: page(0, 3) })
+    : { items: page(0, 3) }));
+  const beyond = await listConsumerCharacters(single.token, new Set(["soul_900", "soul_901"]), { fetch: single.fetch });
+  expect(single.named("show_characters").map((p) => p.params.arguments)).toEqual([{ action: "list", size: 100 }, characterGetArgs("soul_900"), characterGetArgs("soul_901")]);
+  const ids = ((beyond as { value: { items: { soul_id: string }[] } }).value.items).map((e) => e.soul_id);
+  expect(ids).toContain("soul_900");
+  expect(ids).not.toContain("soul_901");
+  // The get passes the advertised show_characters schema (soul_id; action is a free string there).
+  expect(checkTool(toolsetFrom(recorded.tools), "show_characters", characterGetArgs("soul_900"))).toBe("ok");
   const elements = account((p) => {
     if (p.params.name !== "show_reference_elements") return undefined;
     if (p.params.arguments.action === "get") return p.params.arguments.element_id === "el_old" ? { element_id: "el_old", name: "Harbour", category: "environment" } : { error: "not found" };
@@ -170,5 +182,157 @@ test("a build is claimed durably before it is sent; the same build is refused wh
     await records.claimBuild(claim);
     const rows = (await database.db().execute("SELECT state FROM higgsfield_consumer_builds ORDER BY created_at")).rows.map((row) => String(row.state));
     expect(rows.sort()).toEqual(["not_sent", "refused", "sending", "unmatched"]);
+  });
+});
+
+test("while a build waits to be named, the list is paged until it is matched or the pages reach entries older than its window", async () => {
+  const sent = Date.now() - 5 * 60_000;
+  const builds = [{ name: "Mira", type: "soul_2", createdAt: sent, stale: false }];
+  const entry = (id: string, name: string, minutes: number) => ({ soul_id: id, name, type: "soul_2", created_at: new Date(sent + minutes * 60_000).toISOString() });
+  const candidates = (entries: readonly unknown[]) => entries.map((e) => e as { soul_id: string; name: string; type: string; created_at: string })
+    .map((e) => ({ id: e.soul_id, name: e.name, type: e.type, createdAt: accountCreatedAt(e) }));
+  const more = pagingForOpenBuilds(builds, candidates)!;
+  // Nothing waits (or only stale builds): no extra paging.
+  expect(pagingForOpenBuilds([], candidates)).toBeUndefined();
+  expect(pagingForOpenBuilds([{ ...builds[0], stale: true }], candidates)).toBeUndefined();
+  // Newer entries only, no match yet: keep paging. A match, or entries older than the window: stop.
+  expect(more([entry("a", "Other", 30), entry("b", "Else", 20)])).toBe(true);
+  expect(more([entry("a", "Other", 30), entry("new", "Mira", 3)])).toBe(false);
+  expect(more([entry("a", "Other", 30), entry("old", "Old", -60)])).toBe(false);
+  // Through the reader: page two holds the build, so the read goes that far and no further.
+  const pages = [[entry("p1", "Other", 40)], [entry("new", "Mira", 3)], [entry("p3", "Older", -90)]];
+  const a = account((p) => {
+    if (p.params.name !== "show_characters") return undefined;
+    const cursor = Number(p.params.arguments.cursor ?? 0);
+    return { items: pages[cursor], next_cursor: cursor + 1 < pages.length ? cursor + 1 : null };
+  });
+  const read = await listConsumerCharacters(a.token, new Set(), { fetch: a.fetch }, more);
+  expect(a.named("show_characters").map((p) => p.params.arguments.cursor ?? 0)).toEqual([0, 1]);
+  expect(((read as { value: { items: { soul_id: string }[] } }).value.items).map((e) => e.soul_id)).toEqual(["p1", "new"]);
+  // With nothing recorded and nothing waiting, page one is the whole read.
+  const b = account((p) => (p.params.name === "show_characters" ? { items: pages[0], next_cursor: 1 } : undefined));
+  await listConsumerCharacters(b.token, new Set(), { fetch: b.fetch });
+  expect(b.named("show_characters")).toHaveLength(1);
+});
+
+/** characters.ts and elements.ts with the account replaced: the real ledger,
+ * records and parsers on a tenant database; the paid creates never leave. */
+async function buildServices() {
+  const tenant = await import("../../lib/tenant"), database = await import("../../lib/db"), oauth = await import("../../lib/higgsfield-consumer/oauth");
+  const state = {
+    mode: "created" as "created" | "pending" | "refused" | "uncertain" | "not_sent",
+    creates: 0,
+    list: [] as unknown[],
+    reads: [] as { wanted: string[]; paging: boolean }[],
+  };
+  const create = (value: unknown) => async (_token: string, _input: unknown, _sources: unknown, options: { admit: () => Promise<void> }) => {
+    await options.admit();
+    state.creates++;
+    if (state.mode === "not_sent") { state.creates--; throw new Error("Stopped before the create was sent"); }
+    if (state.mode === "refused") return { state: "refused", reason: "Not on this plan." };
+    if (state.mode === "uncertain") return { state: "uncertain" };
+    return { state: "accepted", value: state.mode === "created" ? value : { ok: true } };
+  };
+  const listing = async (_token: string, a: unknown, b: unknown, more?: (entries: readonly unknown[]) => boolean) => {
+    const wanted = (a instanceof Set ? a : b) as Set<string>;
+    state.reads.push({ wanted: [...wanted], paging: Boolean(more) });
+    return { state: "ok", value: { items: state.list } };
+  };
+  const deps: Record<string, unknown> = {
+    "@/lib/tenant": tenant,
+    "@/lib/db": database,
+    "./oauth": { ConsumerOAuthError: oauth.ConsumerOAuthError, getConsumerAccess: async () => ({ accessToken: "fixture-private-access", generation: "g" }) },
+    "./mcp": {
+      CONNECTED_LIBRARY_GETS: 20, CONNECTED_LIBRARY_PAGES: 5,
+      readConnectedPlannerReads: async () => [],
+      createConsumerCharacter: create({ soul_id: "soul_made", name: "Mira", type: "soul_2", status: "training" }),
+      createConsumerElement: create({ element_id: "el_made", name: "Harbour", category: "environment" }),
+      listConsumerCharacters: listing,
+      listConsumerElements: listing,
+    },
+    "./generation-sources": { resolveConsumerGenerationSources: async (input: { medias: unknown[] }) => input.medias.map((_, i) => ({ url: `https://fixtures.particl.invalid/still-${i}.png` })) },
+    "./soul-build": await import("../../lib/higgsfield-consumer/soul-build"),
+    "./element-parse": await import("../../lib/higgsfield-consumer/element-parse"),
+    "./character-records": await import("../../lib/higgsfield-consumer/character-records"),
+    "./build-records": await import("../../lib/higgsfield-consumer/build-records"),
+  };
+  const load = <T,>(file: string) => {
+    const loaded = { exports: {} as T };
+    const source = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    new Function("require", "module", "exports", source)((name: string) => { if (!(name in deps)) throw new Error(`Unexpected dependency: ${name}`); return deps[name]; }, loaded, loaded.exports);
+    return loaded.exports;
+  };
+  return {
+    state, database, tenant,
+    characters: load<typeof Characters>("lib/higgsfield-consumer/characters.ts"),
+    elements: load<typeof Elements>("lib/higgsfield-consumer/elements.ts"),
+    ledger: async () => (await database.db().execute("SELECT kind,name,state,provider_id FROM higgsfield_consumer_builds ORDER BY created_at,rowid")).rows.map((row) => [String(row.kind), String(row.name), String(row.state), row.provider_id == null ? null : String(row.provider_id)]),
+  };
+}
+const soulSources = [{ uploadId: "a" }, { uploadId: "b" }, { uploadId: "c" }, { uploadId: "d" }, { uploadId: "e" }];
+
+test("every way a Soul ID build ends is kept in the ledger; one accepted without an id is matched to the account's list later", async () => {
+  const f = await buildServices();
+  await f.tenant.runInTenant(workspace(), async () => {
+    const build = (name: string) => f.characters.buildConnectedCharacter("owner", { name, type: "soul_2", sources: soulSources, projectId: "ws-1" });
+    // Stopped before the create went out: closed as not_sent, and free to try again.
+    f.state.mode = "not_sent";
+    await expect(build("Mira")).rejects.toThrow("Stopped before the create was sent");
+    // The account said no: closed as refused.
+    f.state.mode = "refused";
+    expect(await build("Mira")).toEqual({ state: "refused", reason: "Not on this plan." });
+    // The answer was lost: kept open, and the same build is refused before anything is sent.
+    f.state.mode = "uncertain";
+    expect(await build("Mira")).toEqual({ state: "uncertain" });
+    const sends = f.state.creates;
+    await expect(build("Mira")).rejects.toMatchObject({ code: "build_in_flight", status: 409 });
+    expect(f.state.creates).toBe(sends);
+    // Accepted without an id: pending until the account lists it.
+    f.state.mode = "pending";
+    expect(await build("Nova")).toEqual({ state: "accepted", character: null });
+    // Named at once: recorded and listed.
+    f.state.mode = "created";
+    expect(await build("Ada")).toMatchObject({ state: "training", character: { soulId: "soul_made" } });
+    expect(await f.ledger()).toEqual([
+      ["character", "Mira", "not_sent", null], ["character", "Mira", "refused", null], ["character", "Mira", "uncertain", null],
+      ["character", "Nova", "pending", null], ["character", "Ada", "recorded", "soul_made"],
+    ]);
+    // The account now lists a "Nova" made just after the send (and an older one of its own).
+    const at = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+    f.state.list = [
+      { soul_id: "soul_made", name: "Ada", type: "soul_2", status: "training", created_at: at(0) },
+      { soul_id: "soul_nova", name: "Nova", type: "soul_2", status: "training", created_at: at(1) },
+      { soul_id: "soul_site", name: "Nova", type: "soul_2", status: "ready", created_at: at(-600) },
+    ];
+    const listed = await f.characters.connectedCharacters("owner");
+    expect(listed.characters.map((c) => c.soulId).sort()).toEqual(["soul_made", "soul_nova"]);
+    expect(listed.pending?.map((b) => [b.name, b.state])).toEqual([["Mira", "uncertain"]]);
+    // Builds still open page the list further.
+    expect(f.state.reads.at(-1)).toMatchObject({ paging: true });
+    expect((await f.ledger()).find((row) => row[1] === "Nova")).toEqual(["character", "Nova", "recorded", "soul_nova"]);
+    expect((await f.characters.connectedCharacters("owner")).characters.map((c) => c.soulId).sort()).toEqual(["soul_made", "soul_nova"]);
+  });
+});
+
+test("reference elements keep the same ledger: pending builds are listed as pending, then matched", async () => {
+  const f = await buildServices();
+  await f.tenant.runInTenant(workspace(), async () => {
+    const build = () => f.elements.buildConnectedElement("owner", { name: "Harbour", category: "environment", description: "", sources: [{ genId: "gen_1" }], projectId: "ws-1" });
+    f.state.mode = "pending";
+    expect(await build()).toEqual({ state: "accepted", element: null });
+    await expect(build()).rejects.toMatchObject({ code: "build_in_flight" });
+    f.state.list = [];
+    const waiting = await f.elements.connectedElements("owner");
+    expect(waiting).toMatchObject({ available: true, elements: [] });
+    expect(waiting.pending?.map((b) => [b.name, b.state, b.stale])).toEqual([["Harbour", "pending", false]]);
+    expect(f.state.reads.at(-1)).toMatchObject({ paging: true });
+    f.state.list = [{ element_id: "el_harbour", name: "Harbour", category: "environment", created_at: new Date(Date.now() + 60_000).toISOString() }];
+    const matched = await f.elements.connectedElements("owner");
+    expect(matched.elements.map((e) => e.elementId)).toEqual(["el_harbour"]);
+    expect(matched.pending).toEqual([]);
+    expect(await f.ledger()).toEqual([["element", "Harbour", "recorded", "el_harbour"]]);
+    // Nothing left open: the next read does not page for builds.
+    await f.elements.connectedElements("owner");
+    expect(f.state.reads.at(-1)).toMatchObject({ paging: false });
   });
 });

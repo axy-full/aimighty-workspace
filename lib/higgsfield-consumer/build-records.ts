@@ -69,7 +69,7 @@ export class BuildInFlightError extends Error {
   readonly code = "build_in_flight";
   readonly status = 409;
   constructor() {
-    super("This build was already sent and may have been accepted. It is not sent again; it appears here once the account lists it.");
+    super("This build was already sent and may have been accepted, so it is not sent again.");
     this.name = "BuildInFlightError";
   }
 }
@@ -163,4 +163,29 @@ export function matchBuild(
     entry.createdAt >= build.createdAt - BUILD_MATCH_WINDOW.beforeMs &&
     entry.createdAt <= build.createdAt + BUILD_MATCH_WINDOW.afterMs);
   return fits.length === 1 ? fits[0].id : null;
+}
+
+/**
+ * How far to page the account's list while builds wait to be matched: on,
+ * while some open build (not yet stale) has no single fitting entry among the
+ * pages read and those pages have not yet reached entries made before its
+ * matching window (lists read newest first). Undefined when nothing waits.
+ * The paging itself stays bounded by the reader.
+ */
+export function pagingForOpenBuilds(
+  builds: readonly Pick<PendingBuild, "name" | "type" | "createdAt" | "stale">[],
+  /** The unrecorded account entries among those read, as matchBuild takes them. */
+  candidates: (entries: readonly unknown[]) => { id: string; name: string; type: string | null; createdAt: number | null }[],
+): ((entries: readonly unknown[]) => boolean) | undefined {
+  const live = builds.filter((build) => !build.stale);
+  if (!live.length) return undefined;
+  const floor = Math.min(...live.map((build) => build.createdAt)) - BUILD_MATCH_WINDOW.beforeMs;
+  return (entries) => {
+    const list = candidates(entries);
+    if (live.every((build) => matchBuild(build, list) !== null)) return false;
+    return !entries.some((entry) => {
+      const at = accountCreatedAt(entry);
+      return at !== null && at < floor;
+    });
+  };
 }

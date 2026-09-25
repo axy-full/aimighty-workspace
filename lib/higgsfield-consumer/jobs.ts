@@ -93,6 +93,21 @@ export const CONSUMER_RELEASE_GRACE_MS = 15 * 60_000;
  * aside by their owner, and inside the capacity window. */
 const holdsCapacity = (alias = "") =>
   `${alias}status IN ('dispatching','accepted','uncertain') AND ${alias}released_at IS NULL AND ${alias}created_at>?`;
+/**
+ * The same rule for one job, from its views: an unsettled job its owner set
+ * aside, or one past the capacity window, no longer holds a slot and no longer
+ * blocks its workflow. It stays listed and recoverable (a saved receipt can
+ * still be checked) and is never dispatched again.
+ */
+export function consumerJobSetAside(
+  job: Pick<ConsumerJob, "status" | "releasedAt" | "createdAt">,
+  now = Date.now(),
+): boolean {
+  return (
+    (job.status === "dispatching" || job.status === "accepted" || job.status === "uncertain") &&
+    (job.releasedAt !== null || job.createdAt <= now - CONSUMER_CAPACITY_WINDOW_MS)
+  );
+}
 // A result read can include bounded original-media collection before settling.
 export const CONSUMER_POLL_LEASE_MS = 180_000;
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -199,6 +214,8 @@ export async function consumerJobsReady() {
           // When the owner set an unsettled job aside: it keeps its status,
           // receipt and recovery path but stops holding capacity. Additive.
           await add("higgsfield_consumer_jobs", "released_at INTEGER");
+          // When the background heartbeat last took the job for a read. Additive.
+          await add("higgsfield_consumer_jobs", "swept_at INTEGER");
         })
         .catch((error) => {
           initialized.delete(client);
@@ -863,5 +880,48 @@ export function releaseConsumerPoll(
   return finishPoll(input, {
     status: "accepted",
     nextPollAt: input.nextPollAt,
+  });
+}
+
+/** A job is read in the background for this long after it was admitted. Past
+ * it, the page can still check it; the heartbeat stops spending reads on it. */
+export const CONSUMER_SWEEP_AGE_MS = 7 * 24 * 3_600_000;
+/** The heartbeat takes the same job for a read at most this often. */
+export const CONSUMER_SWEEP_INTERVAL_MS = 5 * 60_000;
+/**
+ * The next accepted job due for a background read (its next poll time has
+ * passed and no read is in flight), least recently taken first. It is stamped
+ * as taken before it is read, so a job that cannot be read right now (its
+ * grant changed, the account is disconnected) steps behind the others instead
+ * of starving them. The read itself is the workflow's own leased poll: this
+ * never quotes, dispatches or sends anything again.
+ */
+export async function claimConsumerSweep(
+  workflows: readonly ConsumerWorkflow[],
+  now = Date.now(),
+): Promise<(ConsumerJobScope & { workflow: ConsumerWorkflow }) | null> {
+  if (!workflows.length || workflows.some((workflow) => !CONSUMER_WORKFLOWS.includes(workflow))) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const row = (
+      await tx.execute({
+        sql: `SELECT id,user_id,draft_id,workflow FROM higgsfield_consumer_jobs
+          WHERE status='accepted' AND provider_job_id IS NOT NULL AND workflow IN (${workflows.map(() => "?").join(",")})
+            AND (poll_lease_until IS NULL OR poll_lease_until<=?) AND created_at>? AND (swept_at IS NULL OR swept_at<=?)
+          ORDER BY COALESCE(swept_at,0) ASC,created_at ASC,id ASC LIMIT 1`,
+        args: [...workflows, now, now - CONSUMER_SWEEP_AGE_MS, now - CONSUMER_SWEEP_INTERVAL_MS],
+      })
+    ).rows[0];
+    if (!row) return null;
+    await tx.execute({
+      sql: "UPDATE higgsfield_consumer_jobs SET swept_at=? WHERE id=? AND status='accepted'",
+      args: [now, row.id],
+    });
+    return {
+      id: String(row.id),
+      userId: String(row.user_id),
+      draftId: String(row.draft_id),
+      workflow: row.workflow as ConsumerWorkflow,
+    };
   });
 }

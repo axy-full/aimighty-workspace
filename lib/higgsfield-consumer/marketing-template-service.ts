@@ -27,6 +27,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -103,6 +104,7 @@ function presentTemplateJob(job: ConsumerJob, availability: ConsumerOriginalAvai
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }

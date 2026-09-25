@@ -10,6 +10,7 @@ import { draftRequest, writeDraft } from "@/lib/workbench/draft-request";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { SHORTS_ASPECT_RATIOS, SHORTS_LIMITS, consumerShortsInputSchema, shortsClipName, type ConsumerShortsInput, type ShortsAspectRatio, type ShortsPreset } from "@/lib/higgsfield-consumer/shorts-studio";
+import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./atomik-generate.module.css";
 
 export const shortsEndpoint = "/api/higgsfield/consumer/shorts";
@@ -95,7 +96,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
     : consumerShortsInputSchema.safeParse(normalized).success ? "" : "Review the source and style.";
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && !!normalized && JSON.stringify(selected.input) === JSON.stringify(normalized);
-  const unresolved = jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
+  const unresolved = jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
   const ready = !!capability?.owner && capability.connected && !busy;
   const canQuote = ready && !validation && !unresolved && disclosed;
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
@@ -111,7 +112,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
   const saveAttempts = (next: string[]) => { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
     const byId = new Map(confirmed.map((job) => [job.id, job]));
-    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && job.quoteExpired !== true); });
+    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || awaitingReconciliation(job) || (job.status === "quoted" && job.quoteExpired !== true); });
     try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); } catch { /* Keep the guard when its resolution cannot be saved. */ }
   }, [attemptKey]);
   const json = useCallback(async (url: string, init?: RequestInit) => {
@@ -222,7 +223,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
     });
   }
   const statusLabel = (job: Job) => job.status === "completed" ? `${job.settlement?.collected ?? 0} of ${job.settlement?.clips ?? job.clips.length} clips ready` : job.status === "accepted" ? (job.progress ? `In progress · ${job.progress.clips} clip${job.progress.clips === 1 ? "" : "s"}` : "In progress")
-    : job.status === "quoted" && job.quoteExpired ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "No clips produced" : "Saved quote";
+    : job.status === "quoted" && job.quoteExpired ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "No clips produced" : "Saved quote";
   return <div className={styles.workspace}>
     <div className={styles.columns}>
       <section className={`suite-panel ${styles.creator}`} aria-label="Shorts on the connected account">

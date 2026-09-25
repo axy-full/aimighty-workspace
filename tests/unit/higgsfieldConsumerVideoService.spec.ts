@@ -579,7 +579,7 @@ test("qualified terminal result collects once, keeps measured dimensions, and re
     expect(f.state.collectCount).toBe(1); expect(f.state.statusCount).toBe(1); expect(f.state.paidCount).toBe(1);
   });
 });
-test("unknown terminal shapes and conflicting identities remain accepted diagnostic without collection", async () => {
+test("unknown terminal shapes, conflicting identities and changed settings remain accepted diagnostic without collection", async () => {
   await fixture(async f => {
     const scope = await admitted(f), good = terminal(f.state.providerJobId);
     for (const raw of [
@@ -589,6 +589,15 @@ test("unknown terminal shapes and conflicting identities remain accepted diagnos
       { status: "failed", ...good },
       { raw_data: { ...good.raw_data, job_ids: [randomUUID()] } },
       { raw_data: { ...good.raw_data, job_set_type: "other" } },
+      // Completed, but not in a shape Particl can collect yet: the result URL
+      // not filled in, under another key, or settings echoed differently. Never
+      // settled — a later poll or a parser fix may still collect the paid video.
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, prompt: "Another prompt" } } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, generate_audio: false } } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, ad_reference_id: "unapproved-reference" } } },
+      { raw_data: { ...good.raw_data, result_url: null } },
+      { status: "completed", raw_data: { ...good.raw_data, result_url: null } },
+      { raw_data: { ...good.raw_data, result_url: null, h264_url: good.raw_data.result_url } },
       // Another job's failure, or a failure the outer status contradicts, is not ours to settle.
       { raw_data: { ...good.raw_data, id: randomUUID(), status: "failed", result_url: null } },
       { status: "completed", raw_data: { ...good.raw_data, status: "failed", result_url: null } },
@@ -600,7 +609,7 @@ test("unknown terminal shapes and conflicting identities remain accepted diagnos
     expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
   });
 });
-test("a video the account rejected settles as provider_failed and frees its slot; one finished other than approved settles once as invalid_result, never collected", async () => {
+test("a video the account rejected settles as provider_failed and frees its slot", async () => {
   for (const status of ["failed", "canceled", "nsfw", "ip_detected"]) {
     await fixture(async f => {
       const scope = await admitted(f), good = terminal(f.state.providerJobId);
@@ -614,22 +623,20 @@ test("a video the account rejected settles as provider_failed and frees its slot
       expect((await f.jobs.consumerCapacity(identity.userId)).active).toBe(0);
     });
   }
-  const changes: ((good: ReturnType<typeof terminal>) => unknown)[] = [
-    (good) => ({ raw_data: { ...good.raw_data, params: { ...good.raw_data.params, prompt: "Another prompt" } } }),
-    (good) => ({ raw_data: { ...good.raw_data, params: { ...good.raw_data.params, generate_audio: false } } }),
-    (good) => ({ raw_data: { ...good.raw_data, params: { ...good.raw_data.params, ad_reference_id: "unapproved-reference" } } }),
-    (good) => ({ raw_data: { ...good.raw_data, result_url: null, h264_url: good.raw_data.result_url } }),
-  ];
-  for (const change of changes) {
-    await fixture(async f => {
-      const scope = await admitted(f), raw = change(terminal(f.state.providerJobId));
-      f.state.pollRaw = raw;
-      const settled = await f.service.pollConsumerMarketingVideo(scope);
-      expect(settled.job).toMatchObject({ status: "failed", failureCode: "invalid_result" });
-      expect(settled.providerStatus).toEqual(raw);
-      expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
-    });
-  }
+});
+test("a job its owner set aside reads as set aside in the workflow's own view, keeps polling, and is never sent again", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f);
+    const view = async () => f.service.consumerVideoView((await f.jobs.getConsumerJob(scope))!);
+    expect(await view()).toMatchObject({ status: "accepted", setAside: false });
+    expect(await f.jobs.setAsideConsumerJob({ userId: identity.userId, id: scope.id }, Date.now() + f.jobs.CONSUMER_RELEASE_GRACE_MS + 1)).toBe(true);
+    expect(await view()).toMatchObject({ status: "accepted", setAside: true, providerJobId: f.state.providerJobId });
+    // Still collected when its result arrives; never submitted a second time.
+    f.state.pollRaw = terminal(f.state.providerJobId);
+    expect((await f.service.pollConsumerMarketingVideo(scope)).job).toMatchObject({ status: "completed", setAside: false });
+    expect(await f.service.submitConsumerMarketingVideo(scope, { workspaceId: f.state.wallet, credits: f.state.credits })).toMatchObject({ status: "completed" });
+    expect(f.state.paidCount).toBe(1);
+  });
 });
 test("a result that can never be kept settles once as invalid_result with its reason; one that can still pass stays accepted", async () => {
   await fixture(async f => {

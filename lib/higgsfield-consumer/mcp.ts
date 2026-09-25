@@ -2312,9 +2312,13 @@ const entryIdOf = (entry: unknown, keys: readonly string[]) => {
   for (const key of keys) if (typeof entry[key] === "string") return entry[key] as string;
   return null;
 };
+/** Whether the pages read so far still leave an open build unaccounted for:
+ * the list keeps paging (bounded) while it says so. */
+export type LibraryPaging = (entries: readonly unknown[]) => boolean;
 /**
  * A free, paged read of one of the account's libraries, only as far as it
- * takes to find the ids Particl recorded: page one, then the reply's cursor
+ * takes to find the ids Particl recorded (and, with `more`, to cover the
+ * builds Particl is still waiting on): page one, then the reply's cursor
  * (bounded), then — where the tool offers `get` — each recorded id still
  * missing, one by one (bounded). Returns the raw entries; the caller narrows
  * them to what Particl built, so nothing else of the library is kept.
@@ -2326,6 +2330,7 @@ async function readConnectedLibrary(
   idKeys: readonly string[],
   wanted: ReadonlySet<string>,
   get?: (id: string) => Record<string, unknown>,
+  more?: LibraryPaging,
 ): Promise<{ state: "ok"; entries: unknown[] } | { state: "unavailable" }> {
   const { toolset } = await connectedToolset(session);
   if (checkTool(toolset, tool, { action: "list", size: 100 }) !== "ok") return { state: "unavailable" };
@@ -2342,7 +2347,7 @@ async function readConnectedLibrary(
     }
     const { entries: items, next } = libraryPage(normalized.result, cursor);
     take(items);
-    if ([...wanted].every((id) => found.has(id)) || next === null || !session.active()) break;
+    if (([...wanted].every((id) => found.has(id)) && !more?.(entries)) || next === null || !session.active()) break;
     cursor = next;
   }
   if (get) {
@@ -2355,7 +2360,7 @@ async function readConnectedLibrary(
         const value = normalized.result;
         const item = object(value) && entryIdOf(value, idKeys) === id ? value
           : libraryPage(value, null).entries.find((entry) => entryIdOf(entry, idKeys) === id)
-            ?? (object(value) ? [value.element, value.data, value.result].find((entry) => entryIdOf(entry, idKeys) === id) : undefined);
+            ?? (object(value) ? [value.element, value.character, value.soul, value.data, value.result].find((entry) => entryIdOf(entry, idKeys) === id) : undefined);
         if (item) take([item]);
       } catch (error) {
         if (error instanceof ConsumerDiscoveryError && (error.code === "reconnect_required" || error.code === "rate_limited")) throw error;
@@ -2365,11 +2370,11 @@ async function readConnectedLibrary(
   return { state: "ok", entries };
 }
 /** The account's element list (free read) — narrowed by the caller to the ones Particl created. */
-export async function listConsumerElements(accessToken: string, options: Options = {}, wanted: ReadonlySet<string> = new Set()): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
+export async function listConsumerElements(accessToken: string, options: Options = {}, wanted: ReadonlySet<string> = new Set(), more?: LibraryPaging): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
   try {
     return await withConsumerSession(accessToken, options, 60_000, async (session) => {
       if (!session.supportsTools) return { state: "unavailable" as const };
-      const read = await readConnectedLibrary(session, (args) => session.elementsCall(args), ELEMENTS_TOOL, ["element_id", "id"], wanted, (id) => ({ action: "get", element_id: id }));
+      const read = await readConnectedLibrary(session, (args) => session.elementsCall(args), ELEMENTS_TOOL, ["element_id", "id"], wanted, (id) => ({ action: "get", element_id: id }), more);
       return read.state === "ok" ? { state: "ok" as const, value: { items: read.entries } } : read;
     });
   } catch (error) {
@@ -2377,13 +2382,18 @@ export async function listConsumerElements(accessToken: string, options: Options
     return { state: "unavailable" };
   }
 }
+/** One Soul ID by id: `show_characters` takes `soul_id` (its `action` is a free
+ * string in the advertised schema). A free read; a reply that is not that
+ * character is ignored. */
+export const characterGetArgs = (soulId: string) => ({ action: "get", soul_id: soulId });
 /** The account's Soul IDs (free read), paged until every id Particl recorded
- * is found — narrowed by the caller to the ones Particl built. */
-export async function listConsumerCharacters(accessToken: string, wanted: ReadonlySet<string>, options: Options = {}): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
+ * is found, then each one still missing read by its soul_id — narrowed by the
+ * caller to the ones Particl built. */
+export async function listConsumerCharacters(accessToken: string, wanted: ReadonlySet<string>, options: Options = {}, more?: LibraryPaging): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
   try {
     return await withConsumerSession(accessToken, options, 60_000, async (session) => {
       if (!session.supportsTools) return { state: "unavailable" as const };
-      const read = await readConnectedLibrary(session, (args) => session.charactersCall(args), CHARACTERS_TOOL, ["soul_id", "id"], wanted);
+      const read = await readConnectedLibrary(session, (args) => session.charactersCall(args), CHARACTERS_TOOL, ["soul_id", "id"], wanted, characterGetArgs, more);
       return read.state === "ok" ? { state: "ok" as const, value: { items: read.entries } } : read;
     });
   } catch (error) {

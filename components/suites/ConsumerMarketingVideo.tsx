@@ -6,6 +6,7 @@ import type { Asset, Project } from "@/lib/workbench/studio";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { CONSUMER_VIDEO_MODES, CONSUMER_VIDEO_RATIOS, CONSUMER_VIDEO_RESOLUTIONS, consumerVideoInputSchema, type ConsumerVideoInput } from "@/lib/higgsfield-consumer/video-contract";
+import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./consumer-marketing-video.module.css";
 
 type Job = {
@@ -110,7 +111,7 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
   const selected = jobs.find(job => job.id === selectedId);
   const matches = !!selected && sameInput(selected.input, input);
   const missingAttempts = attempts.filter(id => !jobs.some(job => job.id === id));
-  const unresolved = missingAttempts.length > 0 || jobs.some(job => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
+  const unresolved = missingAttempts.length > 0 || jobs.some(job => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
   const canQuote = enabled && capability?.owner && capability.connected && !capability.suspended && !busy && valid && !unresolved;
   const canSubmit = canQuote && selected?.status === "quoted" && matches && walletReviewed && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   const update = (next: ConsumerVideoInput) => {
@@ -121,7 +122,7 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
     const byId = new Map(confirmed.map(job => [job.id, job]));
     const next = attemptIds.current.filter(id => {
       const job = byId.get(id);
-      return !job || ["dispatching", "uncertain"].includes(job.status) || job.status === "quoted" && job.quoteExpired !== true;
+      return !job || awaitingReconciliation(job) || job.status === "quoted" && job.quoteExpired !== true;
     });
     try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); }
     catch { /* Keep the guard if its authoritative resolution cannot be saved. */ }
@@ -251,7 +252,7 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
       {!!jobs.length && <div className={styles.jobs} aria-label="Saved video jobs">{jobs.map(job => {
         const original = originalAsset(job), attached = original && project.assets.some(asset => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
-        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
+        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.input.prompt}</p><small>{modeLabel(job.input.mode)} · {job.input.duration}s · {job.input.resolution} · {job.input.aspectRatio} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { update(job.input); setSelectedId(job.id); setWalletReviewed(false); }}>Review this saved quote</button>}
           {(job.status === "accepted" || job.status === "uncertain" && !!job.providerReceipt) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved video request" : "Check video result"}</button>}

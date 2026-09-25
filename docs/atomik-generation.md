@@ -27,7 +27,7 @@ Outputs are the connected account's and are billed in **its credits**; Particl r
 ## Limits
 
 - Prompt ≤ 5,000 characters; ≤ 30 reference files; ≤ 50 MB per reference; ≤ 100 MiB per original; 32 MB for a GLB that must preview in Astra blender.
-- Four active connected-account jobs per workspace (shared with Marketing Video and Genjutsu).
+- Four active connected-account jobs per workspace (shared with Marketing Video and Genjutsu). A job holds its slot for at most two hours; after 15 minutes its owner can set it aside in Workspace › Engines (ledger only, never re-sent). The ten-minute heartbeat (`app/api/cron/sync`, `lib/higgsfield-consumer/sweep.ts`) reads due accepted jobs and collects finished ones with no page open.
 - Rate limits per owner: 12 catalogue reads, 6 quotes, 6 submits, 30 status reads per minute.
 - The connected account's selected wallet is global across its clients; Particl checks it immediately before submission but cannot bind a request to a wallet. This surface is owner-operated, not qualified for unattended multi-tenant spending.
 

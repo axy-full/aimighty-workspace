@@ -2,6 +2,7 @@ import { requireOwner, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import {
+  backfillConsumerSubject,
   getConsumerAccess,
   getConsumerConnection,
   removeConsumerConnection,
@@ -63,7 +64,14 @@ export const GET = withTenant(async (req: Request) => {
   try {
     // The owner's view of the four shared slots rides along, so a reconnect,
     // disconnect or blocked job can say which jobs are still running.
-    const [connection, capacity] = await Promise.all([getConsumerConnection(identity), consumerCapacity(identity.userId).catch(() => null)]);
+    const [read, capacity] = await Promise.all([getConsumerConnection(identity), consumerCapacity(identity.userId).catch(() => null)]);
+    let connection = read;
+    // A grant that never recorded its account learns it here, with one free
+    // read, before the owner can reconnect or disconnect (a few a minute).
+    if (connection.connected && connection.subjectKnown === false) {
+      const allowed = await takeAccountLimit(`hf-consumer-connection:${identity.workspaceId}:${identity.userId}:subject`, 4, 60_000).then(() => true, () => false);
+      if (allowed && (await backfillConsumerSubject(identity))) connection = await getConsumerConnection(identity);
+    }
     return Response.json({ ...connection, capacity }, { headers });
   } catch {
     return Response.json(

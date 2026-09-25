@@ -11,12 +11,22 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  */
 type CapacityJob = { id: string; draftId: string; projectName: string | null; workflow: string; status: string; createdAt: number; releasable: boolean };
 type Capacity = { limit: number; active: number; mine: CapacityJob[] };
-type Connection = { connected: boolean; requiresReconnect: boolean; capacity?: Capacity | null };
+/* subjectKnown: Particl knows which account the grant belongs to, so the same
+   account signing in again keeps its running jobs. */
+type Connection = { connected: boolean; requiresReconnect: boolean; subjectKnown?: boolean; capacity?: Capacity | null };
 const WORKFLOW: Record<string, string> = {
   "marketing-video": "Marketing video", generation: "Generate", genjutsu: "Transform", "marketing-template": "Ad template", "voice-tool": "Voice tool", shorts: "Shorts",
 };
 const STATUS: Record<string, string> = { dispatching: "sending", accepted: "running", uncertain: "unconfirmed" };
 const OUTCOME_PARAM = "higgsfield";
+/* The sign-in callback's outcome codes (lib/higgsfield-consumer/oauth.ts), each with its own advice. */
+const OUTCOME: Record<string, string> = {
+  connected: "Account connected.",
+  authorization_denied: "Sign-in was not approved. Nothing changed.",
+  invalid_state: "That sign-in expired or was already used. Connect again.",
+  session_changed: "Your session or workspace changed. Sign in to the same Particl workspace and connect again.",
+  configuration: "The account connection is not configured for this deployment.",
+};
 const since = (ms: number) => {
   const minutes = Math.max(1, Math.round((Date.now() - ms) / 60_000));
   return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
@@ -53,7 +63,7 @@ export function ConnectedAccountRow({ owner }: { owner: boolean }) {
       fragment.delete(OUTCOME_PARAM);
       const rest = fragment.toString();
       window.history.replaceState(null, "", window.location.pathname + window.location.search + (rest ? `#${rest}` : ""));
-      setNote(outcome === "connected" ? "Account connected." : "The connection was not completed. Sign in to the same Particl workspace and try again.");
+      setNote(OUTCOME[outcome] ?? "The account could not complete the connection. Try again.");
     }, 0);
     return () => clearTimeout(t);
   }, []);
@@ -112,7 +122,7 @@ export function ConnectedAccountRow({ owner }: { owner: boolean }) {
           </>
         ) : null}
       </div>
-      {confirm ? <p className="cw-notice" role="alert" data-testid="connected-account-warning">{running} of your jobs {running === 1 ? "is" : "are"} still running. Sign back in with the same account to keep collecting {running === 1 ? "it" : "them"}.</p> : null}
+      {confirm ? <p className="cw-notice" role="alert" data-testid="connected-account-warning">{running} of your jobs {running === 1 ? "is" : "are"} still running{state?.subjectKnown ? `. Sign back in with the same account to keep collecting ${running === 1 ? "it" : "them"}.` : ` and can't be collected after a ${confirm === "connect" ? "reconnect" : "disconnect"}.`}</p> : null}
       {capacity ? (
         <div data-testid="connected-account-capacity">
           <span className="cw-dim">{capacity.active} of {capacity.limit} job slots in use</span>

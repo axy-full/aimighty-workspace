@@ -26,6 +26,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -101,6 +102,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }

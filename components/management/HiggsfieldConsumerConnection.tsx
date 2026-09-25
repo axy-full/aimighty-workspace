@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { ManagementCard, ManagementNotice } from "./ManagementPage";
 import ConsumerVideoVerification from "./ConsumerVideoVerification";
 
-type Connection = { connected: boolean; requiresReconnect: boolean; connectedAt?: number; expiresAt?: number; capacity?: { mine?: unknown[] } | null };
+type Connection = { connected: boolean; requiresReconnect: boolean; subjectKnown?: boolean; connectedAt?: number; expiresAt?: number; capacity?: { mine?: unknown[] } | null };
 type Discovery = { discoveryOnly: true; capabilitiesVerified: false; tools: { name: string; description?: string; inputSchema: Record<string, unknown> }[]; summary: Record<string, string[]>; protocolVersion: string };
 type Qualification = { readOnly: true; results: { tool: string; arguments: Record<string, unknown>; result?: unknown; error?: unknown }[] };
 const labels: Record<string, string> = { marketingVideo: "Marketing Video", brandExtraction: "Brand extraction", adReference: "Ad references", virality: "Virality Predictor", workspace: "Connected workspaces", uploads: "Media uploads", jobs: "Jobs and reports", pricing: "Pricing" };
@@ -33,7 +33,7 @@ export default function HiggsfieldConsumerConnection() {
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   async function act(kind: "connect" | "discover" | "qualify" | "analysis" | "disconnect") {
     if (pending.current) return;
-    if ((kind === "connect" || kind === "disconnect") && data?.connected && running && confirm !== kind) { setConfirm(kind); return; }
+    if ((kind === "connect" || kind === "disconnect") && (data?.connected || data?.requiresReconnect) && running && confirm !== kind) { setConfirm(kind); return; }
     setConfirm(null);
     pending.current = true; setBusy(kind); setProblem(""); setNotice(""); setDismissedOutcome(true);
     try {
@@ -72,7 +72,7 @@ export default function HiggsfieldConsumerConnection() {
         {(data?.connected || data?.requiresReconnect) && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("disconnect")}>{busy === "disconnect" ? "Disconnecting…" : confirm === "disconnect" ? "Disconnect anyway" : "Disconnect marketing account"}</button>}
         {error && <button type="button" className="management-button" disabled={!!busy} onClick={() => void refresh()}>Retry connection status</button>}
       </div>
-      {confirm && <ManagementNotice error>{running} of your jobs {running === 1 ? "is" : "are"} still running. Sign back in with the same account to keep collecting {running === 1 ? "it" : "them"}.</ManagementNotice>}
+      {confirm && <ManagementNotice error>{running} of your jobs {running === 1 ? "is" : "are"} still running{data?.subjectKnown ? `. Sign back in with the same account to keep collecting ${running === 1 ? "it" : "them"}.` : ` and can't be collected after a ${confirm === "connect" ? "reconnect" : "disconnect"}.`}</ManagementNotice>}
       {(problem || error) && <ManagementNotice error>{problem || error}</ManagementNotice>}
       {!dismissedOutcome && outcome && <ManagementNotice error={outcome !== "connected"}>{outcome === "connected" ? "Account connected. Check available workflows to continue setup." : "The account connection was not completed. Sign in to the same Particl workspace and try connecting again."}</ManagementNotice>}
       {notice && <p role="status" className="text-sm">{notice}</p>}

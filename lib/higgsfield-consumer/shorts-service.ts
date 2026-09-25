@@ -33,6 +33,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -138,6 +139,7 @@ async function presentShorts(job: ConsumerJob, observedAt: number, progress?: { 
     ...(progress ? { progress } : {}),
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }
@@ -185,6 +187,13 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
   }
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
+  // The style must be one the account lists as a library style now, not one
+  // the request merely labels "cms": the standalone rule is enforced here,
+  // not only by what the page lists (hourly cached, free read).
+  const listed = await connectedShortsPresets(userId);
+  const presetId = normalized.preset.id.toLowerCase();
+  if (!listed.presets.some((preset) => preset.id === presetId && SHORTS_LISTED_SOURCES.includes(preset.source)))
+    throw new ShortsStudioError("invalid_input", "Choose one of the listed styles.");
   const described = await describeConsumerShortsSource(normalized);
   const source = await resolveConsumerShortsSource(normalized);
   // The stored duration prices the session; an unknown or out-of-range one stops here.

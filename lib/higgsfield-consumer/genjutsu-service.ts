@@ -16,6 +16,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -83,6 +84,7 @@ function presentGenjutsu(
     originalAvailability: availability,
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }

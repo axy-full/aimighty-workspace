@@ -22,6 +22,7 @@ import {
   type VideoAnalysisReport,
   type VoiceToolName,
 } from "@/lib/higgsfield-consumer/voice-tools";
+import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./atomik-generate.module.css";
 
 export const voiceEndpoint = "/api/higgsfield/consumer/audio-tools";
@@ -147,7 +148,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     : consumerVoiceToolInputSchema.safeParse(normalized).success ? "" : "Review the source file and settings.";
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && JSON.stringify(selected.input) === JSON.stringify(normalized);
-  const unresolved = jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
+  const unresolved = jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
   const enabled = tool === "video_analysis" ? capabilities?.analysis === true : tool === "dubbing" ? capabilities?.dubbing !== false : tool === "reframe" ? capabilities?.reframe === true : capabilities?.voice !== false;
   const ready = capability.owner && capability.connected && !capability.suspended && !busy && enabled;
   const canQuote = ready && !validation && !unresolved && disclosed;
@@ -155,7 +156,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
   const change = (patch: Partial<Draft>) => { stored.set((before) => ({ ...draft(before), ...patch })); setApproved(false); setNotice(""); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
     const byId = new Map(confirmed.map((job) => [job.id, job]));
-    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && job.quoteExpired !== true); });
+    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || awaitingReconciliation(job) || (job.status === "quoted" && job.quoteExpired !== true); });
     try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); } catch { /* Keep the guard when its resolution cannot be saved. */ }
   }, [attemptKey]);
   const saveJob = (job: Job) => { setJobs((before) => retain([job, ...before.filter((item) => item.id !== job.id)], attemptIds.current)); setSelectedId(job.id); };
@@ -309,7 +310,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
         const saved = (original && project.assets.some((asset) => asset.generationId === original.generationId)) || (note && project.assets.some((asset) => asset.id === note.id));
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
         return <article key={job.id} className={styles.job}>
-          <div><strong>{job.status === "completed" ? (original ? "Original ready" : analysis ? "Report ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Job failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
+          <div><strong>{job.status === "completed" ? (original ? "Original ready" : analysis ? "Report ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Job failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.source.name}</p>
           <small>{job.tool.label} · {settingsSummary(job)} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}

@@ -800,5 +800,15 @@ test("stuck jobs stop holding the four slots once their owner sets them aside or
     expect((await jobs.claimConsumerDispatch(key(next)))?.job.status).toBe("dispatching");
     expect((await jobs.getConsumerJob(key(held[1].job)))?.status).toBe("uncertain");
     expect(Number((await database.db().execute("SELECT COUNT(*) AS n FROM higgsfield_consumer_jobs")).rows[0].n)).toBe(6);
+    // Every workflow view reads the same rule, so the set-aside job and the one
+    // past the window stop gating their project's next quote; the others still do.
+    const setAside = async (job: ConsumerJob) => jobs.consumerJobSetAside((await jobs.getConsumerJob(key(job)))!);
+    expect(await setAside(target)).toBe(true);
+    expect(await setAside(held[1].job)).toBe(true);
+    expect(await setAside(held[2].job)).toBe(false);
+    expect(await setAside(waiting)).toBe(false);
+    // A settled or merely quoted job is never "set aside", whatever its age.
+    expect(jobs.consumerJobSetAside({ status: "failed", releasedAt: later, createdAt: 0 })).toBe(false);
+    expect(jobs.consumerJobSetAside({ status: "quoted", releasedAt: null, createdAt: 0 })).toBe(false);
   });
 });
