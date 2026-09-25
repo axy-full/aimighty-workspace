@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { strFromU8, unzipSync, zipSync } from "fflate";
 import { assetFilename, makeEDL, seedProject, validateSequence } from "../../lib/workbench/studio";
 import { buildExportPackage, collectExportAssets } from "../../lib/workbench/studio-export";
+import { makeFCPXML, makeXMEML } from "../../lib/workbench/editorial-xml";
+import { PROJECT_LIMITS } from "../../lib/workbench/project-limits";
 
 test("EDL preserves frame-exact cut boundaries and gives reused sources a stable reel", () => {
   const project = seedProject();
@@ -125,4 +127,26 @@ test("document reference filenames use their actual content type", () => {
   const project = seedProject();
   project.shots[0].note = "Review\r\n999 FAKE\u0000note";
   expect(makeEDL(project)).toContain("* COMMENT: Review  999 FAKE note");
+});
+
+test("a cut past 999 shots exports whole as FCPXML, Premiere XML and a package; only the EDL is refused", async () => {
+  const long = (count: number) => {
+    const project = seedProject();
+    const shots = project.shots;
+    project.shots = Array.from({ length: count }, (_, i) => ({ ...shots[i % shots.length], id: "shot-" + i, duration: 24 }));
+    return project;
+  };
+  const project = long(1200);
+  expect(() => validateSequence(project)).not.toThrow();
+  expect(makeFCPXML(project).match(/<asset-clip /g)?.length).toBeGreaterThanOrEqual(1200);
+  expect(makeXMEML(project)).toContain("<clipitem");
+  expect(() => makeEDL(project)).toThrow("A CMX3600 EDL holds up to 999 events; this cut has 1,200. Use FCPXML or Premiere XML");
+  expect(makeEDL(long(999)).split("\r\n").filter(line => /^\d{3} /.test(line))).toHaveLength(999);
+  const files = await buildExportPackage(project, async () => new Response(new Uint8Array([82, 73, 70, 70]), { headers: { "Content-Type": "image/webp" } }));
+  expect(files["sequence.edl"]).toBeUndefined();
+  expect(files["sequence.fcpxml"]).toBeDefined();
+  expect(files["sequence.xml"]).toBeDefined();
+  expect(strFromU8(files["README.txt"])).toContain("sequence.edl: not included. CMX3600 holds 999 events and this cut has 1200");
+  expect(strFromU8(files["shotlist.csv"]).split("\r\n")).toHaveLength(1201);
+  expect(() => validateSequence(long(PROJECT_LIMITS.shots + 1))).toThrow("A cut holds up to 1,500 shots");
 });

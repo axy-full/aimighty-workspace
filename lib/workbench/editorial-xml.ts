@@ -23,9 +23,10 @@ const path = (asset: Asset) => `media/${assetFilename(asset)}`;
 const t = (frames: number, fps: number) => (frames === 0 ? "0s" : `${frames}/${fps}s`);
 
 type Placed = { asset: Asset; clip: AudioClip };
+/** Every Sound clip, including a video's own sound (production sound from a take), which is placed audio-only. */
 function placedAudio(p: Project): Placed[] {
   const byId = new Map(p.assets.map((a) => [a.id, a]));
-  return audioClips(p).flatMap((clip) => { const asset = byId.get(clip.assetId); return asset && asset.kind === "audio" ? [{ asset, clip }] : []; });
+  return audioClips(p).flatMap((clip) => { const asset = byId.get(clip.assetId); return asset && (asset.kind === "audio" || asset.kind === "video") ? [{ asset, clip }] : []; });
 }
 /** Every source's length as used: an asset is as long as the furthest frame the cut reads from it. */
 function sourceLengths(p: Project, audio: Placed[]) {
@@ -61,7 +62,7 @@ export function makeFCPXML(p: Project): string {
     const shot = p.shots[index];
     const offset = shot.sourceIn + (clip.startFrame - starts[index]);
     const lane = -(LANE_ORDER.indexOf(clip.lane) + 1);
-    const line = `          <asset-clip ref="${ref.get(asset.id)}" lane="${lane}" name="${escapeXml(asset.name)}" offset="${t(offset, fps)}" start="${t(clip.sourceIn, fps)}" duration="${t(clip.duration, fps)}" audioRole="${clip.lane === "sfx" ? "effects" : clip.lane}"${clip.muted ? ` enabled="0"` : ""}>${clip.gainDb ? `\n            <adjust-volume amount="${clip.gainDb.toFixed(1)}dB"/>\n          ` : ""}</asset-clip>`;
+    const line = `          <asset-clip ref="${ref.get(asset.id)}" lane="${lane}" name="${escapeXml(asset.name)}" offset="${t(offset, fps)}" start="${t(clip.sourceIn, fps)}" duration="${t(clip.duration, fps)}" audioRole="${clip.lane === "sfx" ? "effects" : clip.lane}"${asset.kind === "video" ? ` srcEnable="audio"` : ""}${clip.muted ? ` enabled="0"` : ""}>${clip.gainDb ? `\n            <adjust-volume amount="${clip.gainDb.toFixed(1)}dB"/>\n          ` : ""}</asset-clip>`;
     connected.set(index, [...(connected.get(index) ?? []), line]);
   }
   const spine = p.shots.map((shot, i) => {
@@ -150,14 +151,32 @@ ${tracks.join("\n")}
  * The delivery spec's frame rate, changed without changing the cut: every
  * shot and Sound clip keeps its real-time position and length, re-counted in
  * the new rate's frames (a duration never drops below one frame).
+ *
+ * Edit points are converted, not lengths: each shot runs between its converted
+ * start and end on the timeline, so the cut's length is the converted length
+ * and a clip that ended with the cut still does. A clip's fades stay inside it,
+ * and nothing reads past the end of its source after rounding.
  */
 export function retimeProject(p: Project, fps: 24 | 25 | 30): Project {
   if (fps === p.fps) return p;
   const f = (frames: number) => Math.round((frames * fps) / p.fps);
-  const d = (frames: number) => Math.max(1, f(frames));
-  return {
-    ...p, fps,
-    shots: p.shots.map((s) => ({ ...s, sourceIn: f(s.sourceIn), duration: d(s.duration) })),
-    ...(p.audioClips ? { audioClips: p.audioClips.map((c) => ({ ...c, startFrame: f(c.startFrame), sourceIn: f(c.sourceIn), duration: d(c.duration), fadeIn: f(c.fadeIn), fadeOut: f(c.fadeOut) })) } : {}),
-  };
+  /* The converted in point, moved earlier by the rounding (never before 0) so in + length stays inside the source. */
+  const sourceIn = (from: number, length: number, converted: number) => Math.max(0, Math.min(f(from), f(from + length) - converted));
+  let old = 0, at = 0;
+  const shots = p.shots.map((s) => {
+    old += s.duration;
+    const end = Math.max(at + 1, f(old)), duration = end - at;
+    at = end;
+    return { ...s, sourceIn: sourceIn(s.sourceIn, s.duration, duration), duration };
+  });
+  const total = at;
+  const audio = p.audioClips?.map((c) => {
+    const startFrame = f(c.startFrame);
+    let duration = Math.max(1, f(c.startFrame + c.duration) - startFrame);
+    // A clip that started inside the cut ends by the cut's end.
+    if (startFrame < total) duration = Math.min(duration, total - startFrame);
+    const fadeIn = Math.min(f(c.fadeIn), duration);
+    return { ...c, startFrame, sourceIn: sourceIn(c.sourceIn, c.duration, duration), duration, fadeIn, fadeOut: Math.min(f(c.fadeOut), duration - fadeIn) };
+  });
+  return { ...p, fps, shots, ...(audio ? { audioClips: audio } : {}) };
 }

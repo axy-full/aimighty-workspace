@@ -1,7 +1,7 @@
 import { makeFCPXML, makeXMEML } from './editorial-xml';
 import {audioClips} from './audio';
 import {zipSync,strToU8} from 'fflate';
-import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
+import {Asset,EDL_EVENTS,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
 import {moleculrAssetDependencies,validateMoleculrBindings} from './moleculr-bindings';
 import {originalAssetDownload} from './original-asset';
 import {resolveReferenceAd} from './reference-ad';
@@ -71,7 +71,9 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
   sourceFiles.push({assetId:asset.id,file:filename});
  }
  const project={...p,assets:[...exportAssets.values()]};
- files['sequence.edl']=strToU8(makeEDL(project));
+ // CMX3600 stops at 999 events; a longer cut travels whole in the two XML formats.
+ const edl=project.shots.length<=EDL_EVENTS;
+ if(edl)files['sequence.edl']=strToU8(makeEDL(project));
  files['sequence.fcpxml']=strToU8(makeFCPXML(project));
  files['sequence.xml']=strToU8(makeXMEML(project));
  let at=p.fps*3600;
@@ -88,7 +90,7 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
 ${p.name}
 ${p.fps} fps, non-drop frame. Record starts at 01:00:00:00.
 
-sequence.edl: CMX3600, one video track, straight cuts only.
+${edl?'sequence.edl: CMX3600, one video track, straight cuts only.':`sequence.edl: not included. CMX3600 holds 999 events and this cut has ${p.shots.length}; use sequence.fcpxml or sequence.xml.`}
 sequence.fcpxml: FCPXML 1.10 for Final Cut Pro and DaVinci Resolve — the cut plus the Sound lanes (dialogue, music, effects) at their positions, gain and mute.
 sequence.xml: Final Cut Pro 7 XML (XMEML v4) for Premiere Pro — the same cut and lanes. Both point at media/ by relative path; relink to the unzipped folder if asked.
 shotlist.csv: inclusive in / exclusive out timecodes and creative notes.
