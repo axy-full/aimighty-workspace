@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
@@ -37,8 +38,8 @@ type Business = ReturnType<typeof useBusiness>;
 type Media = { id: string; name: string; sourceId: string; origin: "upload" | "generation"; url: string };
 
 /** Drag a Library still in; the roles cycle image → start_image → end_image on click. */
-function Well({ scope, medias, roles, max, onAdd, onRemove, onRole, hint }: {
-  scope: string; medias: (Media & { role?: AdMediaRole })[]; roles: readonly string[]; max: number; hint: string;
+function Well({ scope, projectId, medias, roles, max, onAdd, onRemove, onRole, hint }: {
+  scope: string; projectId?: string | null; medias: (Media & { role?: AdMediaRole })[]; roles: readonly string[]; max: number; hint: string;
   onAdd: (m: Media) => void; onRemove: (id: string) => void; onRole?: (id: string, role: AdMediaRole) => void;
 }) {
   const [over, setOver] = useState(false);
@@ -56,8 +57,13 @@ function Well({ scope, medias, roles, max, onAdd, onRemove, onRole, hint }: {
     <div className="gx-gen-row">
       <span className="gx-eyebrow" data-functional-label="">{hint}</span>
       <div className="gx-well" data-over={over} data-testid="business-well"
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) void drop(id); }}>
+        onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } }} onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault(); setOver(false);
+          const payload = readDrop(e.dataTransfer);
+          void dropToIds(payload, { scope, projectId }).then(async ({ ids, notes }) => { for (const id of ids) await drop(id); if (notes.length) setError(notes.join(" ")); })
+            .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "The files could not be uploaded."));
+        }}>
         {medias.length ? medias.map((m) => (
           <span className="gx-ref" key={m.id}>
             <span className="gx-ref-thumb"><LazyMedia url={m.url} kind="image" alt="" name={m.name} className="gx-lazy" /></span>
@@ -230,7 +236,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
             </div>
           ) : null}
         </div>
-        <Well scope={scope} medias={s.medias} roles={AD_MEDIA_ROLES} max={AD_MEDIA_MAX} hint="Reference stills · optional"
+        <Well scope={scope} projectId={project?.id} medias={s.medias} roles={AD_MEDIA_ROLES} max={AD_MEDIA_MAX} hint="Reference stills · optional"
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
@@ -322,7 +328,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           <span className="gx-eyebrow" data-functional-label="">Prompt</span>
           <textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="dtc-prompt" />
         </div>
-        <Well scope={scope} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
+        <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert">{job.state.error}</p> : null}

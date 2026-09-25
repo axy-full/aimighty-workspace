@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
@@ -215,8 +216,14 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">References</span>
             <div className="gx-well" data-over={over} data-testid="gen-well"
-              onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-              onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) void drop(id); }}>
+              onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } }} onDragLeave={() => setOver(false)}
+              onDrop={(e) => {
+                e.preventDefault(); setOver(false);
+                /* A tile from anywhere, or files from the device (uploaded into the project first). */
+                const payload = readDrop(e.dataTransfer, project?.assets);
+                void dropToIds(payload, { scope, projectId: project?.id }).then(({ ids, notes }) => { ids.forEach((id) => void drop(id)); if (notes.length) setWellError(notes.join(" ")); })
+                  .catch((error: unknown) => setWellError(error instanceof Error ? error.message : "The files could not be uploaded."));
+              }}>
               {state.references.length ? state.references.map((r, i) => (
                 <span className="gx-ref" key={r.key}>
                   <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" name={r.name} className="gx-lazy" /> : null}</span>

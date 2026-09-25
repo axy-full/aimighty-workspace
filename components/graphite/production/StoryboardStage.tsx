@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { isDroppable, readDrop } from "@/lib/drop";
+import { resolveGenInput } from "@/lib/genAssetInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
@@ -278,6 +280,29 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
     finally { setWorking((w) => ({ ...w, [shot.id]: "" })); }
   };
 
+  /* A picture dropped on a frame — a tile from anywhere, or a file from the device — becomes the shot's rough drawing, read and converted like an upload. */
+  const [dropOver, setDropOver] = useState<string | null>(null);
+  const dropOnFrame = (shot: NumberedShot, e: React.DragEvent) => {
+    e.preventDefault(); setDropOver(null);
+    const { ids, files } = readDrop(e.dataTransfer, p.assets);
+    const file = files.find((f) => f.type.startsWith("image/"));
+    if (file) { void uploadSketch(shot, file); return; }
+    if (files.length) { setErrors((x) => ({ ...x, [shot.id]: "A drawing is a picture; the other files are not used here." })); return; }
+    if (!ids[0]) return;
+    void (async () => {
+      setWorking((w) => ({ ...w, [shot.id]: "Placing the drawing…" }));
+      try {
+        const got = await resolveGenInput(ids[0], scope);
+        if (got.kind !== "image") throw new Error("A drawing is a picture.");
+        const asset: Asset = { id: got.id, ...(got.origin === "generation" ? { generationId: got.id } : { uploadId: got.id }), kind: "image", category: "Sketch", name: got.name.slice(0, 200), url: got.url, mime: got.mime, description: `Rough drawing for shot ${shot.number}`, prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
+        editor.change((old) => ({ ...old, assets: old.assets.some((a) => a.id === asset.id) ? old.assets : [...old.assets, asset] }));
+        setFrame(shot.id, (f) => ({ ...f, sketch: { assetId: asset.id, name: asset.name }, reading: undefined, readingJobId: undefined }));
+        await editor.ensureSaved();
+      } catch (error) { setErrors((x) => ({ ...x, [shot.id]: error instanceof Error ? error.message : "The drawing could not be placed." })); }
+      finally { setWorking((w) => ({ ...w, [shot.id]: "" })); }
+    })();
+  };
+
   const model = agent.model;
   const q = runs.quote && runs.quote.input.model === model?.id && runs.quote.input.effort === agent.effort ? runs.quote : null;
   const promptsQuote = q && q.input.kind === "frames" && !q.input.shotId ? q : null;
@@ -438,7 +463,9 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
           const sketchQuote = q && q.input.kind === "sketch" && q.input.shotId === shot.id && q.input.sketchAssetId === frame.sketch?.assetId ? q : null;
           const canSee = Boolean(model?.vision);
           return (
-            <article key={shot.id} className="gx-gen-card pd-frame" data-testid="board-frame" data-picked={picked.includes(shot.id) || undefined} aria-label={`Shot ${shot.number}`}>
+            <article key={shot.id} className="gx-gen-card pd-frame" data-testid="board-frame" data-picked={picked.includes(shot.id) || undefined} aria-label={`Shot ${shot.number}`} data-drop={dropOver === shot.id || undefined}
+              onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(shot.id); } }}
+              onDragLeave={() => setDropOver((v) => (v === shot.id ? null : v))} onDrop={(e) => dropOnFrame(shot, e)}>
               <label className="pd-frame-pick">
                 <input type="checkbox" checked={picked.includes(shot.id)} onChange={() => togglePick(shot.id)} aria-label={`Select shot ${shot.number}`} data-testid="frame-select" />
                 <span>Select</span>

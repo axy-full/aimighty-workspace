@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { posterSrc } from "@/lib/format";
-import { previewAttrs } from "@/lib/preview";
+import { assetIdFromUrl, previewAttrs } from "@/lib/preview";
+import { dragAttrs } from "@/lib/drop";
 
 /**
  * A render on a wall, done the way galleries do it.
@@ -248,7 +249,7 @@ export default function LazyMedia({
     <span
       ref={holder}
       className={`relative block h-full w-full ${className}`}
-      {...(preview && url ? previewAttrs({ url, kind, name: name ?? alt }) : {})}
+      {...(preview && url ? { ...previewAttrs({ url, kind, name: name ?? alt }), ...dragAttrs(assetIdFromUrl(url), { name: name ?? alt, kind }) } : {})}
       onMouseEnter={canHover ? () => setHover(true) : undefined}
       onMouseLeave={canHover ? () => setHover(false) : undefined}
     >

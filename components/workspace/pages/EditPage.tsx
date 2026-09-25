@@ -135,7 +135,7 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
         <Button onClick={() => setPlaying((p) => !p)} disabled={!cut.frames} aria-pressed={playing}>{playing ? "Pause" : "Play"}</Button>
       </div>
 
-      <TimelineCut project={project} items={library.items} onChange={draft.onChange} />
+      <TimelineCut project={project} items={library.items} onChange={draft.onChange} scope={scope} />
 
       {rows.map((row) => {
         const s = STATE[row.state];

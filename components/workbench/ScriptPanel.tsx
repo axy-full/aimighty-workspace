@@ -209,7 +209,10 @@ export function ScriptPanel({
     (a) => a.id === project.scriptSource?.assetId,
   );
   return (
-    <div className={(embedded ? "script-embedded " : "stage-scroll ") + styles.panel} id={embedded ? "script" : undefined}>
+    <div className={(embedded ? "script-embedded " : "stage-scroll ") + styles.panel} id={embedded ? "script" : undefined} data-testid="script-drop"
+      /* A screenplay file dropped on the script imports it, as the Import button does (PDF, TXT, Fountain). */
+      onDragOver={(e) => { if (!busy && Array.from(e.dataTransfer.types).includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+      onDrop={(e) => { const file = Array.from(e.dataTransfer.files).find((f) => /\.(pdf|txt|fountain)$/i.test(f.name) || f.type === "application/pdf" || f.type === "text/plain"); if (!file || busy) return; e.preventDefault(); void read(file); }}>
       <header className={styles.header}>
         <div>
           <span className="eyebrow">SCRIPT & BREAKDOWN</span>

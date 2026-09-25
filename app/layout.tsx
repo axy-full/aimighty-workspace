@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import DeviceProbe from "@/components/switchover/DeviceProbe";
 import PreviewLayer from "@/components/PreviewLayer";
+import DragLayer from "@/components/DragLayer";
 import "./fonts.css";
 import "./globals.css";
 import "./four-suites.css";
@@ -59,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             and docs/workspace-switchover.md. */}
         <DeviceProbe />
       </head>
-      <body className="font-sans antialiased">{children}<PreviewLayer /></body>
+      <body className="font-sans antialiased">{children}<PreviewLayer /><DragLayer /></body>
     </html>
   );
 }

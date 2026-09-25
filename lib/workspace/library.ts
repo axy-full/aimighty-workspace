@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { Generation } from "../jobs";
 import { libraryKind, libraryReady, libraryUrl, type LibraryAsset, type LibraryUpload } from "../genLibrary";
 import { inlineSafe } from "../serveType";
-import { uploadFile } from "../uploadClient";
+import { uploadFile, type UploadedFile } from "../uploadClient";
 import { fileProjectUpload } from "../workbench/project-library-client";
 import { projectTakes, type Take } from "./takes";
 
@@ -161,6 +161,42 @@ export async function uploadToProject(scope: string, projectId: string, files: F
     if (completed) await load(scope, projectId);
   }
   return completed;
+}
+
+/**
+ * Device files into this project's Library, from any drop or prompt box
+ * (owner, 25 September: every kind of media, from anywhere). A picture or
+ * video goes up as a reference the engines can take; if the reference intake
+ * refuses it (too small, a format the engines do not read), it is still kept
+ * as the file it is, and the note says why. Filed to the project, the Library
+ * reloaded; answers the new Library ids in order.
+ */
+export async function uploadFilesToProject(scope: string, projectId: string, files: File[]): Promise<{ ids: string[]; uploads: UploadedFile[]; notes: string[] }> {
+  const key = keyOf(scope, projectId);
+  if (files.length > 20) throw new Error("Choose up to 20 files at a time.");
+  const ids: string[] = [], notes: string[] = [], uploads: UploadedFile[] = [];
+  try {
+    for (const file of files) {
+      set(key, { uploading: `Uploading ${file.name}` });
+      const progress = (pct: number) => set(key, { uploading: `${file.name} · ${pct}%` });
+      const media = file.type.startsWith("image/") || file.type.startsWith("video/");
+      let stored: UploadedFile;
+      if (media) {
+        try { stored = await uploadFile(file, "reference", progress, { scope }); }
+        catch (error) {
+          stored = await uploadFile(file, "chat", progress, { scope });
+          notes.push(`${file.name} is kept in the Library; engines may not take it as a reference (${error instanceof Error ? error.message.replace(/\.$/, "") : "the reference check refused it"}).`);
+        }
+      } else stored = await uploadFile(file, "chat", progress, { scope });
+      await fileProjectUpload(projectId, stored.id, scope);
+      ids.push(`upload:${stored.id}`);
+      uploads.push(stored);
+    }
+  } finally {
+    set(key, { uploading: null });
+    if (ids.length) await load(scope, projectId);
+  }
+  return { ids, uploads, notes };
 }
 
 /* ── Cards ────────────────────────────────────────────────────────────── */

@@ -21,11 +21,14 @@ const PATTERNS: [RegExp, "generation" | "upload"][] = [
   [new RegExp(`^/api/workbench/preview/upload/(${ID})(?:[/?#]|$)`), "upload"],
 ];
 
+/** Upload routes that are not an asset (the chunked upload protocol). */
+const RESERVED = new Set(["session", "chunk", "finish", "metadata"]);
+
 function path(url: string): string {
   if (url.startsWith("/")) return url;
   try {
     const u = new URL(url);
-    if (typeof location !== "undefined" && u.origin !== location.origin) return "";
+    if (typeof location === "undefined" || u.origin !== location.origin) return "";
     return u.pathname + u.search;
   } catch { return ""; }
 }
@@ -35,7 +38,7 @@ export function assetIdFromUrl(url: string | null | undefined): string | null {
   const p = path(String(url ?? ""));
   for (const [re, kind] of PATTERNS) {
     const m = re.exec(p);
-    if (m && m[1] !== "metadata") return `${kind}:${m[1]}`;
+    if (m && !RESERVED.has(m[1])) return `${kind}:${m[1]}`;
   }
   return null;
 }

@@ -30,3 +30,9 @@
   .pv-stage { padding: 8px; }
   .pv-step { top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); transform: none; width: 56px; height: 44px; }
 }
+
+/* The drag layer (components/DragLayer): where a dropped file goes when no target takes it. */
+.dl-hint { position: fixed; inset: 10px; z-index: 9980; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 28px; border: 2px dashed rgba(10, 132, 255, .7); border-radius: 18px; pointer-events: none; background: rgba(10, 132, 255, .06); }
+.dl-hint span { padding: 10px 16px; border-radius: 999px; background: rgba(12, 12, 14, .85); color: #f4f4f6; font-size: 13px; }
+.dl-note { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 9991; padding: 10px 16px; border-radius: 999px; background: rgba(12, 12, 14, .9); color: #f4f4f6; font-size: 13px; border: 1px solid rgba(255, 255, 255, .14); }
+

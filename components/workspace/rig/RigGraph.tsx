@@ -4,7 +4,7 @@ import { NODE_DEFS, operationsFor, resolveAsset } from "@/lib/workbench/node-gra
 import type { Asset, CanvasNode } from "@/lib/workbench/studio";
 import { mediaBands } from "@/lib/workspace/format";
 import { edgePath, graphEdges, graphLayout, GRAPH_PAD, type Box } from "@/lib/workspace/rig-graph";
-import { shotDropHandler } from "@/lib/shell/drop-targets";
+import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
@@ -372,7 +372,7 @@ export function RigGraph() {
             const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
             const selected = !!shot && shot.id === selId;
             /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
-            const dropAsset = shot ? shotDropHandler() : null;
+            const dropAsset = Boolean(shot);
             /* Mine while I drag it; a teammate's while they drag it. */
             const moving = drag?.id === card.id ? drag : peerDrags.get(card.id) ?? null;
             const watcher = peerSelections.get(card.id);
@@ -393,9 +393,9 @@ export function RigGraph() {
                 style={{ left: card.left + (moving?.dx ?? 0), top: card.top + (moving?.dy ?? 0), width: card.width, ...(watcher ? { outline: `2px solid ${watcher.color}`, outlineOffset: 3 } : {}) }}
                 onPointerDown={node.locked ? undefined : (e) => startDrag(card.id, e)}
                 onClickCapture={(e) => { if (justDragged.current) { justDragged.current = false; e.stopPropagation(); e.preventDefault(); } }}
-                onDragOver={dropAsset ? (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(card.id); } } : undefined}
+                onDragOver={dropAsset ? (e) => { if (canDropOnShot(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(card.id); } } : undefined}
                 onDragLeave={dropAsset ? () => setDropOver((v) => (v === card.id ? null : v)) : undefined}
-                onDrop={dropAsset && shot ? (e) => { e.preventDefault(); setDropOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) dropAsset(id, { nodeId: shot.id, name: shot.name }); } : undefined}
+                onDrop={dropAsset && shot ? (e) => { setDropOver(null); if (dropOnShot(e.dataTransfer, { nodeId: shot.id, name: shot.name })) e.preventDefault(); } : undefined}
               >
                 {watcher ? <span className="pxw-graph-peer" style={{ background: watcher.color }}>{watcher.name}</span> : null}
                 <Card

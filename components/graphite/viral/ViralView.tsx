@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isDroppable, readDrop } from "@/lib/drop";
+import { uploadFilesToProject } from "@/lib/workspace/library";
 import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
 import { useViral, type GenjutsuJob } from "@/lib/shell/use-viral";
@@ -26,7 +28,7 @@ const PRESET_KEY = "particl-viral-preset";
 export function ViralView({ scope, project, page, items }: { scope: string; project: Project | null; page: ViralPage | "history"; items: LibraryEntry[] }) {
   const viral = useViral(project?.id ?? null, Boolean(scope));
   if (page === "history") return <HistoryView viral={viral} items={items} />;
-  return <Composer key={page} page={page} project={project} viral={viral} items={items} />;
+  return <Composer key={page} scope={scope} page={page} project={project} viral={viral} items={items} />;
 }
 type Viral = ReturnType<typeof useViral>;
 
@@ -35,7 +37,7 @@ function findMedia(items: LibraryEntry[], id: string): ViralMedia | null {
   return entry ? viralMedia(entry) : null;
 }
 
-function Composer({ page, project, viral, items }: { page: ViralPage; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
+function Composer({ scope, page, project, viral, items }: { scope: string; page: ViralPage; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
   const shell = useShell();
   const ws = useWorkspace();
   const copy = VIRAL_COPY[page];
@@ -67,11 +69,26 @@ function Composer({ page, project, viral, items }: { page: ViralPage; project: P
   const reason = blocked ?? estimateReason(viral.estimate, key, now);
   const credits = !reason && viral.estimate ? viral.estimate.credits : null;
 
-  const drop = (id: string) => {
-    const media = findMedia(items, id);
-    if (!media) { setNote("That asset is not in this project's Library."); return; }
-    const next = addMedia(s, media);
-    set(next.state); setNote(next.note);
+  /* Several at once apply in order, each against the state the last one left. */
+  const place = (medias: ViralMedia[], missing = 0) => {
+    const notes: string[] = [];
+    set((prev) => { let st = prev; notes.length = 0; for (const m of medias) { const r = addMedia(st, m); st = r.state; if (r.note) notes.push(r.note); } return st; });
+    setNote([...(missing ? ["That asset is not in this project's Library."] : []), ...notes].join(" ") || null);
+  };
+  /* A tile from anywhere, or files from the device: uploaded into the project and placed at once. */
+  const dropped = (e: React.DragEvent) => {
+    e.preventDefault(); setOver(false);
+    const { ids, files } = readDrop(e.dataTransfer, project?.assets);
+    const found = ids.map((id) => findMedia(items, id));
+    place(found.filter((m): m is ViralMedia => Boolean(m)), found.filter((m) => !m).length);
+    if (!files.length) return;
+    if (!project) { setNote("Open a project first; dropped files are kept in its Library."); return; }
+    setNote(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
+    void uploadFilesToProject(scope, project.id, files).then(({ uploads, notes }) => {
+      const medias = uploads.flatMap((u): ViralMedia[] => (u.kind === "video" || u.kind === "image" ? [{ id: `upload:${u.id}`, sourceId: u.id, origin: "upload", kind: u.kind, name: u.filename, url: u.url, seconds: u.durationS ?? null }] : []));
+      place(medias);
+      if (notes.length || medias.length < uploads.length) setNote([...notes, ...(medias.length < uploads.length ? ["Only videos and pictures go in this well; the rest is kept in the Library."] : [])].join(" "));
+    }).catch((error: unknown) => setNote(error instanceof Error ? error.message : "The files could not be uploaded."));
   };
   const label = viral.run.phase === "submitting" ? "Submitting…" : viral.run.phase === "running" ? "Rendering…" : credits != null ? `${copy.verb} · ${cr(credits)}` : copy.verb;
 
@@ -89,8 +106,8 @@ function Composer({ page, project, viral, items }: { page: ViralPage; project: P
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">{VIRAL_COPY.mediaLabel}</span>
           <div className="gx-well vr-well" data-over={over} data-testid="viral-well"
-            onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-            onDrop={(e) => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) drop(id); }}>
+            onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } }} onDragLeave={() => setOver(false)}
+            onDrop={dropped}>
             {s.source ? (
               <span className="gx-ref vr-source" data-testid="viral-source">
                 <span className="gx-ref-thumb">{s.source.url ? <LazyMedia url={s.source.url} kind="video" alt="" name={s.source.name} className="gx-lazy" /> : null}</span>
