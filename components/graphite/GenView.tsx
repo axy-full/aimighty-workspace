@@ -99,6 +99,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     if (!preset) return;
     if (preset.type) dispatchComposer({ type: "type", value: preset.type });
     if (preset.model) dispatchComposer({ type: "model", value: preset.model });
+    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
     dispatchComposer({ type: "prompt", value: preset.prompt });
   }, [preset, dispatchComposer]);
   const presetNote = preset?.note ?? null;

@@ -77,7 +77,8 @@ export const SAY = {
 };
 
 /** What Retry hands to Gen: the render's own inputs, priced again before anything runs. */
-export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string };
+/** A prompt handed to Gen. `picks` are the settings it was quoted at (the public site's hero), kept only where the model allows them. */
+export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string; picks?: { ratio?: string; resolution?: string; duration?: number } };
 export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
   const raw = typeof generation.params?.rawPrompt === "string" ? generation.params.rawPrompt : "";
   const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
