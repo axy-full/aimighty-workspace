@@ -12,7 +12,7 @@ import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendMail, mailConfigured } from "./mail";
-import { workspaceAdmins } from "./platform";
+import { membershipRole, workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
 
@@ -113,6 +113,24 @@ type HeldRow = {
   token?: { id: string; capUsd: number | null };
 };
 
+/**
+ * Whether a released take skips the shot's credit cap. That is its author's
+ * standing (an admin's take was never capped), or an admin pressing Release
+ * on it — never whoever's poll happened to settle another take and start
+ * the line. An author who has left the workspace is capped.
+ */
+function shotCapExemption(adminReleasing: boolean): (author: string | null) => Promise<boolean> {
+  const roles = new Map<string, Promise<boolean>>();
+  return async (author) => {
+    if (adminReleasing) return true;
+    const ws = currentTenant()?.workspace;
+    if (!author || !ws) return false;
+    if (!roles.has(author))
+      roles.set(author, membershipRole(ws.id, author).then((role) => role === "owner" || role === "admin").catch(() => false));
+    return roles.get(author)!;
+  };
+}
+
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
@@ -156,10 +174,11 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
  * pressing Release); `defer` is how the caller keeps the render alive past
  * its response (by default, Next's `after` behind a recovery continuation).
  *
- * Takes held for credits keep their order among themselves: the first that
- * does not fit stops that line. A take that only waited for a slot, or one
- * that cannot start for a reason of its own (a project or token cap), does
- * not hold up the takes behind it; the reason is written on it instead.
+ * Takes held for credits keep their order among themselves: the first the
+ * balance does not cover stops that line. A take that only waited for a
+ * slot, or one that cannot start for a reason of its own (a project, shot
+ * or token cap), spends nothing and holds up nobody: the reason is written
+ * on it, and the line is measured again without it.
  */
 export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {}): Promise<{ released: string[]; short: number }> {
   await assertRecoveryOpen();
@@ -168,10 +187,14 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
   const state = await creditState();
   /* Credits are checked for the takes held for credits; a slot is needed by
      every release, whatever it was held for. */
-  const plan = planRelease(rows.filter((r) => r.why === "credits"), state ? state.balance : null);
+  const credits = rows.filter((r) => r.why === "credits");
+  const balance = state ? state.balance : null;
+  const refused = new Set<string>();
+  let plan = planRelease(credits, balance);
   const [limits, st] = await Promise.all([workspaceLimits(), standing()]);
   let running = st.running;
   const defer: Defer = opts.defer ?? continueAfterResponse();
+  const exempt = shotCapExemption(opts.only ? currentTenant()?.user?.role === "admin" : false);
   const released: string[] = [];
   let creditsStalled = false;
   for (const r of rows) {
@@ -183,14 +206,23 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
     // The meter first: work the platform cannot bill does not start.
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
-                    engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy }, { token: r.token });
+                    engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
+                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
     } catch (e) {
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
       // A workspace-wide stop (every slot reserved, the hourly limit, a paused workspace) ends the pass.
       if (!(e instanceof SpendReservationError) || !(e.perJob || e.status === 402)) break;
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held'",
         args: [e.message.slice(0, 600), now(), r.id] }).catch(() => {});
-      if (r.why === "credits") creditsStalled = true;
+      if (r.why === "credits") {
+        // Only the balance stops the line. A take its own cap refuses spent
+        // nothing, so the takes behind it are measured without it.
+        if (e.status === 402) creditsStalled = true;
+        else {
+          refused.add(r.id);
+          plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
+        }
+      }
       continue;
     }
     const t = now();

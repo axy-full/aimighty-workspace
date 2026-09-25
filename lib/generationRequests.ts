@@ -164,10 +164,14 @@ type Baseline = { id: string; projectId: string | null; shotId: string | null; t
  * The balance test and meter insert commit together, across server instances.
  * Meter completions update this same row to the actual cost. */
 let reservationTurn: Promise<void> = Promise.resolve();
-export async function reserveGenerationSpend(event: MeterEvent, options: {
+type ReservationOptions = {
   token?: { id: string; capUsd: number | null };
   projectId?: string | null;
-} = {}): Promise<void> {
+  /** Whether the shot's credit cap is skipped. Omitted, the signed-in admin skips it;
+   * a held take's release decides from its author instead of whoever's request released it. */
+  shotCapExempt?: boolean;
+};
+export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
   // The database transaction below also protects requests in other processes.
   const result = reservationTurn.then(() => reserveGenerationSpendLocked(event, options));
@@ -175,10 +179,7 @@ export async function reserveGenerationSpend(event: MeterEvent, options: {
   return result;
 }
 
-async function reserveGenerationSpendLocked(event: MeterEvent, options: {
-  token?: { id: string; capUsd: number | null };
-  projectId?: string | null;
-} = {}): Promise<void> {
+async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   const ws = requireTenant();
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
@@ -189,7 +190,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
   await reservationsReady();
   const cap = projectId ? await projectCap(projectId) : null;
   const limits = await workspaceLimits();
-  const shotCap = event.shotId && currentTenant()?.user?.role !== "admin" && cleanRule(await getSetting("approvalRule")) === "cap"
+  const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
+  const shotCap = event.shotId && !shotCapExempt && cleanRule(await getSetting("approvalRule")) === "cap"
     ? cleanShotCap(await getSetting("shotCapCredits")) : null;
   const ruleRaw = cap ? await getSetting("atCap") : null;
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
