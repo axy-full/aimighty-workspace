@@ -186,6 +186,15 @@
 .gx .pd-asset-group { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
 .gx .pd-asset-group-name { font-weight: 600; font-size: 13px; flex: 1; }
 .gx .pd-take-file { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; background: #0c0c0e; font-size: 28px; color: var(--gx-text-3); }
+/* Takes in the card contract (components/graphite/TakeTile.tsx): the picture holds the project's frame. */
+.gx .pd-take-cell { position: relative; display: flex; min-width: 0; }
+.gx .pd-take-cell > .pd-take { flex: 1; }
+.gx .pd-take-media { position: relative; display: block; width: 100%; aspect-ratio: var(--tile-aspect, 16 / 9); border-radius: 6px; overflow: hidden; background: #0c0c0e; }
+.gx .pd-take-media img, .gx .pd-take-media video, .gx .pd-take-media .gx-lazy { aspect-ratio: auto; width: 100%; height: 100%; border-radius: 0; }
+.gx .pd-take-media .gx-badge { top: 6px; left: 6px; }
+.gx .pd-take-cell > .gx-tile-over { inset: 7px 7px auto; aspect-ratio: var(--tile-aspect, 16 / 9); }
+.gx .pd-take .gx-tile-reason { margin-top: -2px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+.gx .pd-take.gx-skel { border-color: transparent; }
 
 /* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */
 .gx .pxw-rig-library { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }

@@ -14,8 +14,11 @@ function initials(name: string) {
 }
 
 /** `[DS] Project ▾` — the project switcher: a list with ✓ on the current one, and New project. */
-export function ProjectHead({ project, projects, loading, onPick, onCreate }: {
-  project: Project | null; projects: ProjectSummary[]; loading: boolean; onPick: (id: string) => void;
+export function ProjectHead({ project, projects, loading, failed = false, onPick, onCreate }: {
+  project: Project | null; projects: ProjectSummary[]; loading: boolean;
+  /** The project list did not load: the head says so instead of "No project" (the banner below offers Try again). */
+  failed?: boolean;
+  onPick: (id: string) => void;
   /** Starts a project here and opens it; returns the refusal, or null. Without it, New project opens the older dialog. */
   onCreate?: (name: string) => Promise<string | null>;
 }) {
@@ -41,7 +44,7 @@ export function ProjectHead({ project, projects, loading, onPick, onCreate }: {
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
-  const name = project?.name ?? (loading ? "Opening…" : "No project");
+  const name = project?.name ?? (loading ? "Opening…" : failed ? "Not loaded" : "No project");
   const meta = [project?.aspect, project?.fps ? `${project.fps} fps` : null].filter(Boolean).join(" · ");
   return (
     <div className="gx-project" ref={box} data-row="project">

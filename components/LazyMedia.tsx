@@ -164,7 +164,7 @@ function capturePoster(url: string): Promise<string | "fail"> {
 }
 
 export default function LazyMedia({
-  url, kind, alt, className = "", placeholder, hoverPlay = false, name, preview = true,
+  url, kind, alt, className = "", placeholder, hoverPlay = false, name, preview = true, onFail,
 }: {
   url: string;
   kind: "video" | "image";
@@ -177,6 +177,8 @@ export default function LazyMedia({
   name?: string;
   /** Every render shown is previewable (components/PreviewLayer); false only where the tile is itself a player. */
   preview?: boolean;
+  /** The stored bytes would not load (a still that errors, a video with neither poster nor frame); the card says so. */
+  onFail?: () => void;
 }) {
   const holder = useRef<HTMLSpanElement>(null);
   // Browsers without IntersectionObserver just show everything, as before.
@@ -257,10 +259,10 @@ export default function LazyMedia({
         placeholder ?? <span className="desk-grid block h-full w-full" />
       ) : kind === "image" ? (
         /* eslint-disable-next-line @next/next/no-img-element */
-        <img src={url} alt={alt ?? ""} draggable={false} className="h-full w-full object-cover" />
+        <img src={url} alt={alt ?? ""} draggable={false} className="h-full w-full object-cover" onError={onFail} />
       ) : poster === "fail" ? (
         <video
-          src={posterSrc(url)} muted preload="metadata" playsInline draggable={false}
+          src={posterSrc(url)} muted preload="metadata" playsInline draggable={false} onError={onFail}
           loop={canHover}
           onMouseEnter={canHover ? (e) => { e.currentTarget.play().catch(() => {}); } : undefined}
           onMouseLeave={canHover ? (e) => { const v = e.currentTarget; v.pause(); try { v.currentTime = 0.1; } catch { /* not seekable yet */ } } : undefined}

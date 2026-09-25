@@ -270,6 +270,70 @@
 .gx-sheet-row:hover, .gx-sheet-row[aria-selected="true"] { background: var(--gx-input); }
 @media (max-width: 1023px) { .gx-gen { grid-template-columns: minmax(0, 1fr); padding: 12px; } }
 
+/* ── One card contract for takes: Gen › Results, Library › Assets, Takes ─
+   The picture area holds the project's frame (--tile-aspect, set on the shell
+   body) from the first skeleton to the landed media, so nothing jumps. */
+.gx-tile { position: relative; }
+.gx-tile-media { position: relative; }
+.gx-tile .gx-asset-thumb, .gx-asset.gx-skel .gx-skel-thumb { aspect-ratio: var(--tile-aspect, 4 / 3); }
+.gx-tile-face { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gx-text-3);
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .03) 0 8px, transparent 8px 16px); }
+.gx-tile-face[data-face="failed"] { background-color: rgba(255, 69, 58, .08); }
+.gx-tile-face[data-face="held"] { background-color: rgba(255, 159, 10, .07); }
+.gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
+.gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
+.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed); border-color: rgba(255, 69, 58, .45); }
+.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); font-size: 10px; letter-spacing: -.12em; }
+.gx-tile-face[data-face="live"] .gx-tile-glyph { border: 0; }
+.gx-tile-spin { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--gx-hair-strong); border-top-color: var(--gx-accent); animation: gx-spin 1s linear infinite; }
+@keyframes gx-spin { to { transform: rotate(360deg); } }
+.gx-tile-chip { position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); height: 20px; padding: 0 8px 0 7px; display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text);
+  background: rgba(12, 12, 16, .72); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(8px); pointer-events: none; }
+.gx-tile-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--gx-idle); }
+.gx-tile-chip[data-tone="live"] .gx-tile-chip-dot { background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-tile-chip[data-tone="picked"] .gx-tile-chip-dot { background: var(--gx-accent); }
+.gx-tile-chip[data-tone="waiting"] .gx-tile-chip-dot { background: var(--gx-waiting); }
+.gx-tile-chip[data-tone="done"] .gx-tile-chip-dot { background: var(--gx-done); }
+.gx-tile-chip[data-tone="failed"] { color: #FFB4AE; border-color: rgba(255, 69, 58, .4); }
+.gx-tile-chip[data-tone="failed"] .gx-tile-chip-dot { background: var(--gx-failed); }
+.gx-tile-reason { display: block; margin-top: 3px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gx-tile-reason[data-tone="failed"] { color: #FF8A80; }
+.gx-tile-reason[data-tone="waiting"] { color: var(--gx-waiting); }
+.gx-asset.gx-tile > .gx-tile-reason { padding: 0 2px; }
+/* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
+.gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"]) .gx-tile-glyph { display: none; }
+.gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+.gx-tile-over { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.gx-tile-refresh { pointer-events: auto; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 600; text-align: center;
+  color: var(--gx-text); background: rgba(12, 12, 16, .72); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(8px); }
+.gx-tile-refresh:hover { background: var(--gx-input-hover); }
+.gx-tile-refresh:disabled { opacity: .6; cursor: default; }
+/* Skeletons: the card's own shape, a slow pulse, no text. */
+.gx-skel { pointer-events: none; }
+.gx-skel-thumb { display: block; width: 100%; border-radius: 6px; background: rgba(255, 255, 255, .06); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-skel-line { display: block; width: 72%; height: 10px; margin-top: 9px; border-radius: 4px; background: rgba(255, 255, 255, .06); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-skel-line--short { width: 44%; margin-top: 6px; }
+/* A read that failed: one line and Try again, never an empty grid. */
+.gx-banner { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 12px; border-radius: 10px; font-size: 12.5px; color: var(--gx-text);
+  border: 1px solid rgba(255, 69, 58, .35); background: rgba(255, 69, 58, .08); }
+.gx-banner[data-tone="stale"] { border-color: rgba(255, 159, 10, .35); background: rgba(255, 159, 10, .08); }
+.gx-banner-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--gx-failed); }
+.gx-banner[data-tone="stale"] .gx-banner-dot { background: var(--gx-waiting); }
+.gx-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gx-banner[data-compact] { flex-wrap: wrap; }
+.gx-banner[data-compact] .gx-banner-text { flex-basis: calc(100% - 18px); }
+.gx-banner[data-compact] .gx-hbtn { margin-left: 18px; }
+.gx-main > .gx-banner { flex: none; margin: 0 20px 8px; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-tile-refresh { height: 44px; padding: 0 16px; }
+  .gx-tile-chip { height: 22px; font-size: 12px; }
+  .gx-main > .gx-banner { margin: 0 12px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gx-skel-thumb, .gx-skel-line, .gx-tile-spin, .gx-tile-chip-dot { animation: none; }
+}
+
 /* ── Assets on every page (FINAL_SPEC §1 step 1) ─────────────────────── */
 .gx-asset[data-cut="true"] { opacity: .45; }
 .gx-asset[data-cut="true"] .gx-asset-thumb { outline: 1px dashed var(--gx-hair-strong); outline-offset: -1px; }

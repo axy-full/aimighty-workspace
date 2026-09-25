@@ -2,8 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
-import { entryPreview, previewAttrs } from "@/lib/preview";
-import { dragAttrs } from "@/lib/drop";
+import { previewAttrs } from "@/lib/preview";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boards";
 import { getModel } from "@/lib/models";
@@ -14,9 +13,10 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { libraryView, refreshProjectLibrary, type LibraryEntry, type LibraryLoad } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
+import { LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
 import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
 import type { Project } from "@/lib/workbench/studio";
@@ -55,7 +55,7 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  * re-edited from an instruction with the take as its reference, priced before
  * it renders; any take goes to the Timeline in one press.
  */
-export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
+export function EditStage({ scope, projectId, items, load, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; load?: LibraryLoad; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
   const { toast, state } = useWorkspace();
   const shell = useShell();
@@ -69,7 +69,13 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
   const entry = items.find((e) => e.take.id === picked && editable(e)) ?? generations.find(editable) ?? null;
   const pick = (e: LibraryEntry) => {
-    if (!editable(e)) { toast(e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit."); return; }
+    if (!editable(e)) {
+      const { take } = e;
+      toast(take.status === "failed" ? `${take.name} did not render${take.reason ? ` · ${take.reason}` : ""}.`
+        : take.status === "rendering" ? (take.stage === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}.` : `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`)
+        : e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit.");
+      return;
+    }
     setPicked(e.take.id); setQuote(null); setError("");
     requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   };
@@ -106,6 +112,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     return () => clearInterval(timer);
   }, [pending, scope, projectId, toast]);
 
+  const view = libraryView(load ?? null, items.length);
   if (!project) return <p className="gx-empty" role="status">{draft.state.error ?? "Opening the takes…"}</p>;
   const key = entry ? JSON.stringify([entry.take.id, instruction.trim(), model, project.aspect, extras.map((x) => x.id)]) : "";
   const shown = quote && quote.key === key ? quote : null;
@@ -138,23 +145,22 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
 
   return (
     <div className="pd-stage gx-enter" data-testid="edit-stage">
+      {view.banner && load ? <LoadBanner banner={view.banner} onRetry={load.refresh} testId="takes-error" /> : null}
       <section className="gx-gen-card" aria-label="Generations" data-testid="edit-takes" data-section="takes">
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">Generations</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{generations.length} made in this project · {project.shots.length} in the cut</span>
+          <span className="gx-hint">{view.skeletons ? "Reading this project…" : view.banner?.tone === "error" ? `${project.shots.length} in the cut` : `${generations.length} made in this project · ${project.shots.length} in the cut`}</span>
         </div>
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
             {generations.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
-                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
-                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
-                <span className="pd-take-name">{e.take.name}</span>
-              </button>
+              <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={() => load?.refresh() ?? refreshProjectLibrary(scope, projectId)} />
             ))}
           </div>
-        ) : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
+        ) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
+          : view.banner?.tone === "error" ? null
+          : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
       </section>
 
       {entry ? (
@@ -211,22 +217,20 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">All assets</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{items.length} in this project</span>
+          {view.banner?.tone === "error" ? null : <span className="gx-hint">{view.skeletons ? "Reading this project…" : `${items.length} in this project`}</span>}
         </div>
         {groups.length ? groups.map((group) => (
           <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
             <div className="pd-row-head"><span className="pd-asset-group-name">{group.label}</span><span className="gx-hint">{group.items.length}</span></div>
             <div className="pd-take-grid" role="radiogroup" aria-label={group.label}>
               {group.items.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
-                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
-                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
-                <span className="pd-take-name">{e.take.name}</span>
-              </button>
-            ))}
+                <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={() => load?.refresh() ?? refreshProjectLibrary(scope, projectId)} />
+              ))}
             </div>
           </div>
-        )) : <p className="gx-empty">No assets yet.</p>}
+        )) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
+          : view.banner?.tone === "error" ? null
+          : <p className="gx-empty">No assets yet.</p>}
       </section>
     </div>
   );

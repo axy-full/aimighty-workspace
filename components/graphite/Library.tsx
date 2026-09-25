@@ -1,11 +1,10 @@
 "use client";
 import { useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection } from "@/lib/shell/production-tools";
-import LazyMedia from "@/components/LazyMedia";
-import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import type { LibraryEntry } from "@/lib/workspace/library";
+import { entryKind, libraryView, type LibraryEntry, type LibraryLoad } from "@/lib/workspace/library";
+import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
@@ -37,9 +36,10 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
   const q = query.trim().toLowerCase();
   return items.filter((item) => {
     if ((filter === "Cast" || filter === "Elements") && filed.get(item.take.sourceId) !== filter) return false;
-    if (filter === "Images" && item.media !== "image") return false;
-    if (filter === "Video" && item.media !== "video") return false;
-    if (filter === "Audio" && item.media !== "audio") return false;
+    /* By what the asset is, not whether it rendered: a failed still is still an image. */
+    if (filter === "Images" && entryKind(item) !== "image") return false;
+    if (filter === "Video" && entryKind(item) !== "video") return false;
+    if (filter === "Audio" && entryKind(item) !== "audio") return false;
     if (filter === "Uploads" && item.take.kind !== "UPLOAD") return false;
     return !q || item.take.name.toLowerCase().includes(q);
   });
@@ -50,7 +50,12 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ project = null, items, ready, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
+export function Library({ project = null, items, load, projects = "ready", overlay, now, onUseAsReference, cutId }: {
+  project?: Project | null; items: LibraryEntry[];
+  /** The project library's read; `projects` is the project list's own read. */
+  load?: LibraryLoad; projects?: "loading" | "ready" | "error";
+  overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null;
+}) {
   const shell = useShell();
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
@@ -63,6 +68,10 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  const view = libraryView(project ? load ?? null : null, items.length, projects);
+  /* A count only once the read has answered: never "0 assets" while reading or after a failed read. */
+  const counted = project ? !view.skeletons && view.banner?.tone !== "error" : projects === "ready";
+  const assetCount = counted ? items.length.toLocaleString("en-US") : view.skeletons ? "…" : "—";
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();
@@ -71,7 +80,7 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
     <aside className={`gx-panel gx-library${overlay ? " gx-panel--overlay" : ""}`} aria-label="Library" data-testid="library">
       <div className="gx-panel-head">
         <span className="gx-panel-title">Library</span>
-        <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${items.length.toLocaleString("en-US")} ${items.length === 1 ? "asset" : "assets"}`}</span>
+        <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${assetCount} ${counted && items.length === 1 ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
 {shell.view === "gen" ? null : (
@@ -80,7 +89,7 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>
             <Glyph name={tab === "tools" ? "wrench" : "stack"} size={13} className="gx-glyph" />
             <span>{tab === "tools" ? "Tools" : "Assets"}</span>
-            <span className="gx-seg-count">{(tab === "tools" ? tools : items.length).toLocaleString("en-US")}</span>
+            <span className="gx-seg-count">{tab === "tools" ? tools.toLocaleString("en-US") : assetCount}</span>
           </button>
         ))}
       </div>
@@ -110,30 +119,20 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
+          {view.banner && load ? <LoadBanner banner={view.banner} onRetry={load.refresh} testId="library-error" compact /> : null}
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
-            after={!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
-            renderItem={(entry) => {
-              const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
-              return (
-                <div className="gx-asset" key={entry.take.id} data-selected={state.selKind === "take" && state.selId === entry.take.id} data-cut={cutId === entry.take.id || undefined} data-asset={entry.take.id}>
-                  <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
-                    onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copyMove"; }}
-                    onClick={() => open(entry)}>
-                    {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} /> : null}
-                    <span className="gx-badge">{entry.media === "video" ? "VIDEO" : entry.media === "audio" ? "AUDIO" : entry.media === "image" ? "IMAGE" : "FILE"}</span>
-                    {fresh ? <span className="gx-badge gx-badge--new">NEW</span> : null}
-                  </button>
-                  <div className="gx-asset-row">
-                    <span className="gx-asset-name">{entry.take.name}</span>
-                    {/* `+` sends the asset into the composer as a reference; the toast names the role. */}
-                    <button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
-                      disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>
-                  </div>
-                </div>
-              );
-            }}
+            before={view.skeletons ? <TakeSkeletons count={4} variant="library" /> : null}
+            after={!shown.length && !view.skeletons && view.banner?.tone !== "error" && (project || view.empty) ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!project ? "Open a project to see what it has made." : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+            renderItem={(entry) => (
+              <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={() => load?.refresh()}
+                selected={state.selKind === "take" && state.selId === entry.take.id} cut={cutId === entry.take.id}
+                fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && now - entry.take.createdAt < FRESH_MS}
+                /* `+` sends the asset into the composer as a reference; the toast names the role. */
+                action={<button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
+                  disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>} />
+            )}
           />
           <p className="gx-lib-foot">Everything this project has made or uploaded, on every page.</p>
         </>

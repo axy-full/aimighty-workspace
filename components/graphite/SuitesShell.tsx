@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
-import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
+import { tileAspect, uploadFilesToProject, useProjectLibrary, type LibraryLoad } from "@/lib/workspace/library";
 import { FILES_EVENT, type FilesDropDetail } from "@/components/DragLayer";
 import { useWorkspace } from "@/lib/workspace/state";
 import { GenerateComposer } from "@/components/workspace/GenerateComposer";
@@ -26,6 +26,7 @@ import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
+import { LoadBanner } from "./TakeTile";
 import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { ProjectHead } from "./ProjectHead";
@@ -64,6 +65,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const project = data.project;
   const library = useProjectLibrary(scope, project?.id ?? null);
   const items = library.items;
+  /* Every grid of takes reads the same load state: skeletons first, a failed read says so. */
+  const load: LibraryLoad = { status: library.state.status, error: library.state.error, refresh: library.refresh };
+  const opening = data.status === "loading";
   /* Loaded only while Crew is on screen; the open room is remembered per project, so coming back reopens it. */
   const crew = useCrew(shell.view === "crew" ? project?.id ?? null : null);
   const actions = useAssetActions({ scope, project, projects: data.projects, items });
@@ -196,11 +200,11 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         <Header account={account} />
         <StageStrip />
         {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
-          <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
+          <div className="gx-body" style={{ gridTemplateColumns: columns, ...(tileAspect(project?.aspect) ? { "--tile-aspect": tileAspect(project?.aspect) } : {}) } as React.CSSProperties} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
+            {showLibrary ? <Library project={project} items={items} load={load} projects={data.status} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"}
+              <ProjectHead project={project} projects={data.projects} loading={opening} failed={data.status === "error"}
                 onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
                 onCreate={async (name) => {
                   const created = newProject(name.slice(0, 120));
@@ -211,6 +215,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   toast(`${created.name} is open`);
                   return null;
                 }} />
+              {data.status === "error" ? <LoadBanner banner={{ tone: "error", message: data.error || "Projects could not be loaded." }} onRetry={data.refresh} testId="projects-error" /> : null}
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
@@ -223,7 +228,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     </>) : null}
                   </div>
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    <GenView scope={scope} project={project} items={items} load={load} projects={data.status} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
                   </div>
                 </>
               ) : (
@@ -240,7 +245,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
                       project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
-                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
+                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} load={load} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "environment" ? (
                       project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to build its world.</p>
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (

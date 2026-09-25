@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/workbench/studio";
 
 /* Client data hooks for the shell. They read the existing routes the
@@ -25,12 +25,21 @@ export type ProjectsState = {
  * the workbench's remembered project for this scope opens, else the most
  * recently updated one; `onResolved` reports which id that was.
  */
-export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState {
+export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState & { refresh: () => void } {
   const [data, setData] = useState<ProjectsState>({ status: "loading", projects: [], project: null, error: null });
   const loaded = useRef<{ scope: string; id: string } | null>(null);
+  /* Try again after a failed read: the same request, asked once more. */
+  const [attempt, setAttempt] = useState(0);
+  const tried = useRef(0);
+  const refresh = useCallback(() => {
+    setData((prev) => ({ ...prev, status: "loading", error: null }));
+    setAttempt((n) => n + 1);
+  }, []);
   useEffect(() => {
+    const retry = tried.current !== attempt;
+    tried.current = attempt;
     /* The id this hook just resolved coming back through the URL is not a new request. */
-    if (projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
+    if (!retry && projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
     const controller = new AbortController();
     const request = async (id: string | null) => {
       const response = await fetch("/api/workbench/projects" + (id ? "?id=" + encodeURIComponent(id) : ""), {
@@ -64,8 +73,8 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     return () => controller.abort();
     // onResolved is a navigation callback; re-fetching when its identity changes would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, projectId]);
-  return data;
+  }, [scope, projectId, attempt]);
+  return { ...data, refresh };
 }
 
 /**

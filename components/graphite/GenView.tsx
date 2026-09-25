@@ -4,7 +4,6 @@ import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/compon
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
-import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
@@ -16,7 +15,8 @@ import { COMPOSER_TYPES, TAKES_MAX, type BillingSource, type ComposerType } from
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
-import type { LibraryEntry } from "@/lib/workspace/library";
+import { entryKind, libraryView, type LibraryEntry, type LibraryLoad } from "@/lib/workspace/library";
+import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
@@ -34,11 +34,14 @@ const PLACEHOLDER: Record<ComposerType, string> = {
 const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }, { id: "connected", label: "Higgsfield catalogue" }];
 const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
-const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
+const FILTER_KIND: Record<Filter, ReturnType<typeof entryKind> | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
-export function GenView({ scope, project, items, workspaceName, onProject }: {
-  scope: string; project: Project | null; items: LibraryEntry[]; workspaceName: string | null; onProject: (id: string) => void;
+export function GenView({ scope, project, items, load, projects = "ready", workspaceName, onProject }: {
+  scope: string; project: Project | null; items: LibraryEntry[];
+  /** The project library's read (skeletons, a failed read's banner); `projects` is the project list's own read. */
+  load?: LibraryLoad; projects?: "loading" | "ready" | "error";
+  workspaceName: string | null; onProject: (id: string) => void;
 }) {
   const shell = useShell();
   const ws = useWorkspace();
@@ -129,11 +132,15 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   };
 
 
+  /* By what the take is, not what rendered: a failed still is still under Images. */
   const results = useMemo(() => {
-    const media = FILTER_MEDIA[filter];
-    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
+    const kind = FILTER_KIND[filter];
+    return items.filter((entry) => entry.take.kind === "GEN" && (kind === "all" || entryKind(entry) === kind));
   }, [items, filter]);
-  const running = ws.state.gen;
+  const made = useMemo(() => items.some((entry) => entry.take.kind === "GEN"), [items]);
+  const view = libraryView(project ? load ?? null : null, made ? 1 : 0, projects);
+  /* The strip's run until the library carries the same take. */
+  const running = ws.state.gen && !results.some((entry) => entry.take.sourceId === ws.state.gen?.id) ? ws.state.gen : null;
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
   /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
   const attachToGen = async (attached: Attached) => {
@@ -318,33 +325,32 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
+        {view.banner && load ? <LoadBanner banner={view.banner} onRetry={load.refresh} testId="gen-results-error" /> : null}
         <VirtualItems
           className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
-            <div className="gx-asset" data-testid="gen-running">
-              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live">
+              <div className="gx-tile-media">
+                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(${running.tone === "red" ? "var(--gx-failed)" : "var(--gx-accent)"} ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+                <span className="gx-tile-chip" data-tone={running.tone === "red" ? "failed" : running.tone === "green" ? "done" : "live"}><span className="gx-tile-chip-dot" aria-hidden="true" />{running.label ?? "Rendering"}</span>
+              </div>
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
-              <span className="gx-asset-meta">{running.label ?? "Running"}</span>
+              <span className="gx-asset-meta">{running.meta || running.label || "Running"}</span>
             </div>
           ) : null}
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
+          {view.skeletons ? <TakeSkeletons count={6} variant="grid" /> : null}
           </>}
           renderItem={(entry) => (
-            <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
-              <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
-                onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
-                onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
-                {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}
-              </button>
-              <span className="gx-asset-name">{entry.take.name}</span>
-              <span className="gx-asset-meta">{entry.take.meta}</span>
-            </div>
+            <TakeTile entry={entry} variant="grid" selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={() => load?.refresh()}
+              onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
           )}
         />
-        {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !results.length && view.empty ? <p className="gx-empty" data-testid="gen-results-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !results.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">No {filter === "Images" ? "images" : filter === "Video" ? "video" : "audio"} generated in this project yet.</p> : null}
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`
