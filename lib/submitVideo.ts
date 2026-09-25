@@ -176,12 +176,14 @@ async function submissionFailed(
       /* The existing meter reservation remains authoritative. */
     }
   }
-  await writeSubmission(() =>
-    db().execute({
+  let ended = false;
+  await writeSubmission(async () => {
+    const out = await db().execute({
       sql: `UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL AND json_extract(params,'$.higgsfieldVideoHandle') IS NULL`,
       args: [error, retainedCost, now(), job.genId],
-    }),
-  ).catch(() => {});
+    });
+    ended ||= out.rowsAffected > 0;
+  }).catch(() => {});
   await meter(
     {
       id: job.genId,
@@ -193,6 +195,11 @@ async function submissionFailed(
     },
     { critical: false },
   ).catch(() => {});
+  /* The take ended without a settlement, but its slot (and, when refused,
+     its reservation) came back all the same: start what waited for it now,
+     not at the next ten-minute cron. Imported late: held.ts submits through
+     this module. */
+  if (ended) await (await import("./held")).releaseAfterSettlement();
   return {
     ok: false,
     error,
