@@ -23,9 +23,10 @@ const path = (asset: Asset) => `media/${assetFilename(asset)}`;
 const t = (frames: number, fps: number) => (frames === 0 ? "0s" : `${frames}/${fps}s`);
 
 type Placed = { asset: Asset; clip: AudioClip };
+/** Every Sound clip, including a video's own sound (production sound from a take), which is placed audio-only. */
 function placedAudio(p: Project): Placed[] {
   const byId = new Map(p.assets.map((a) => [a.id, a]));
-  return audioClips(p).flatMap((clip) => { const asset = byId.get(clip.assetId); return asset && asset.kind === "audio" ? [{ asset, clip }] : []; });
+  return audioClips(p).flatMap((clip) => { const asset = byId.get(clip.assetId); return asset && (asset.kind === "audio" || asset.kind === "video") ? [{ asset, clip }] : []; });
 }
 /** Every source's length as used: an asset is as long as the furthest frame the cut reads from it. */
 function sourceLengths(p: Project, audio: Placed[]) {
@@ -61,7 +62,7 @@ export function makeFCPXML(p: Project): string {
     const shot = p.shots[index];
     const offset = shot.sourceIn + (clip.startFrame - starts[index]);
     const lane = -(LANE_ORDER.indexOf(clip.lane) + 1);
-    const line = `          <asset-clip ref="${ref.get(asset.id)}" lane="${lane}" name="${escapeXml(asset.name)}" offset="${t(offset, fps)}" start="${t(clip.sourceIn, fps)}" duration="${t(clip.duration, fps)}" audioRole="${clip.lane === "sfx" ? "effects" : clip.lane}"${clip.muted ? ` enabled="0"` : ""}>${clip.gainDb ? `\n            <adjust-volume amount="${clip.gainDb.toFixed(1)}dB"/>\n          ` : ""}</asset-clip>`;
+    const line = `          <asset-clip ref="${ref.get(asset.id)}" lane="${lane}" name="${escapeXml(asset.name)}" offset="${t(offset, fps)}" start="${t(clip.sourceIn, fps)}" duration="${t(clip.duration, fps)}" audioRole="${clip.lane === "sfx" ? "effects" : clip.lane}"${asset.kind === "video" ? ` srcEnable="audio"` : ""}${clip.muted ? ` enabled="0"` : ""}>${clip.gainDb ? `\n            <adjust-volume amount="${clip.gainDb.toFixed(1)}dB"/>\n          ` : ""}</asset-clip>`;
     connected.set(index, [...(connected.get(index) ?? []), line]);
   }
   const spine = p.shots.map((shot, i) => {
@@ -150,14 +151,47 @@ ${tracks.join("\n")}
  * The delivery spec's frame rate, changed without changing the cut: every
  * shot and Sound clip keeps its real-time position and length, re-counted in
  * the new rate's frames (a duration never drops below one frame).
+ *
+ * Edit points are converted, not lengths: each shot runs between its converted
+ * start and end on the timeline, so the cut's length is the converted length
+ * and a clip that started inside the cut still ends by its end. A clip's fades
+ * stay inside it.
+ *
+ * Nothing reads past the end of its source after rounding. The old out point
+ * may be the file's last frame, so the new out point is it rounded DOWN (or the
+ * file's measured whole frames, when longer): the in point moves earlier to fit,
+ * and a part that starts at the top of its file is shortened instead. A shot
+ * shortened that way hands the frame to the next shot's edit point.
  */
 export function retimeProject(p: Project, fps: 24 | 25 | 30): Project {
   if (fps === p.fps) return p;
   const f = (frames: number) => Math.round((frames * fps) / p.fps);
-  const d = (frames: number) => Math.max(1, f(frames));
-  return {
-    ...p, fps,
-    shots: p.shots.map((s) => ({ ...s, sourceIn: f(s.sourceIn), duration: d(s.duration) })),
-    ...(p.audioClips ? { audioClips: p.audioClips.map((c) => ({ ...c, startFrame: f(c.startFrame), sourceIn: f(c.sourceIn), duration: d(c.duration), fadeIn: f(c.fadeIn), fadeOut: f(c.fadeOut) })) } : {}),
+  const assets = new Map(p.assets.map((a) => [a.id, a]));
+  const fit = (assetId: string, from: number, length: number, duration: number) => {
+    const seconds = assets.get(assetId)?.seconds;
+    const end = Math.max(Math.floor(((from + length) * fps) / p.fps), seconds ? Math.floor(seconds * fps + 1e-6) : 0);
+    const sourceIn = Math.max(0, Math.min(f(from), end - duration));
+    return { sourceIn, duration: Math.max(1, Math.min(duration, end - sourceIn)) };
   };
+  let old = 0, at = 0;
+  const shots = p.shots.map((s) => {
+    old += s.duration;
+    const duration = Math.max(at + 1, f(old)) - at;
+    // A still has no end to read past.
+    const next = assets.get(s.assetId)?.kind === "image" ? { sourceIn: f(s.sourceIn), duration } : fit(s.assetId, s.sourceIn, s.duration, duration);
+    at += next.duration;
+    return { ...s, ...next };
+  });
+  const total = at, oldTotal = old;
+  const audio = p.audioClips?.map((c) => {
+    // A clip that started inside the cut still does, and ends by the cut's end.
+    const inside = c.startFrame < oldTotal;
+    const startFrame = inside ? Math.min(f(c.startFrame), total - 1) : f(c.startFrame);
+    let duration = Math.max(1, f(c.startFrame + c.duration) - startFrame);
+    if (inside) duration = Math.min(duration, total - startFrame);
+    const next = fit(c.assetId, c.sourceIn, c.duration, duration);
+    const fadeIn = Math.min(f(c.fadeIn), next.duration);
+    return { ...c, startFrame, ...next, fadeIn, fadeOut: Math.min(f(c.fadeOut), next.duration - fadeIn) };
+  });
+  return { ...p, fps, shots, ...(audio ? { audioClips: audio } : {}) };
 }

@@ -10,6 +10,7 @@ import {validateColor, type ColorGrade} from './color';
 import {validateAudio, type AudioClip} from './audio';
 import type {ScriptSource, SceneReview} from './screenplay';
 import {PARTICL_STAGE_ALIASES} from '../suites';
+import {PROJECT_LIMITS, limitText} from './project-limits';
 export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'astra-blender' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
 export type AssetKind = 'image' | 'video' | 'audio' | 'document' | 'link';
 export type AssetStatus = 'Draft' | 'Selected' | 'Continuity note';
@@ -82,7 +83,7 @@ export function validateSequence(p:Project):void {
  validateColor(p);
  if(![24,25,30].includes(p.fps))throw new Error('Choose 24, 25 or 30 fps for a non-drop-frame EDL.');
  if(!p.shots.length)throw new Error('Add a shot before exporting.');
- if(p.shots.length>999)throw new Error('A CMX3600 EDL supports up to 999 events.');
+ if(p.shots.length>PROJECT_LIMITS.shots)throw new Error('A cut holds up to '+limitText(PROJECT_LIMITS.shots)+' shots. Remove shots before exporting.');
  const assets=new Map<string,Asset>();
  for(const asset of p.assets){if(assets.has(asset.id))throw new Error('Two assets have the same ID. Resolve the duplicate before exporting.');assets.set(asset.id,asset);}
  let record=p.fps*3600;const day=24*3600*p.fps;
@@ -97,8 +98,11 @@ export function validateSequence(p:Project):void {
  if(p.audioAssetId&&assets.get(p.audioAssetId)?.kind!=='audio')throw new Error('The sequence scratch audio is missing or is not an audio file.');
  validateAudio(p);
 }
+/** CMX3600 numbers events 001–999; FCPXML and XMEML carry a longer cut whole. */
+export const EDL_EVENTS=999;
 export function makeEDL(p:Project) {
  validateSequence(p);
+ if(p.shots.length>EDL_EVENTS)throw new Error('A CMX3600 EDL holds up to 999 events; this cut has '+limitText(p.shots.length)+'. Use FCPXML or Premiere XML for the whole cut.');
  let record=p.fps*3600;
  const lines=['TITLE: '+safeName(p.name).toUpperCase(),'FCM: NON-DROP FRAME',''];
  const reelIds=new Map<string,string>();
