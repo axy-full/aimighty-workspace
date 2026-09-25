@@ -6,7 +6,7 @@ import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
-import { costUsd } from "./models";
+import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
@@ -24,7 +24,7 @@ import {
 } from "./generationSettlement";
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { loadJob, producedOutcome, seal, reconcileTopazImage, reconcileHiggsfieldImage } from "./renderWork";
-import { restoreHiggsfieldGenerationReceipts } from "./higgsfieldGenerationReceipts";
+import { restoreHiggsfieldGenerationReceipts, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
@@ -300,6 +300,10 @@ export async function getGeneration(genId: string): Promise<Generation | null> {
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 /** Long enough for storeVideo's two-minute download budget, short enough to recover a crash. */
 const STORE_LEASE_MS = 180_000;
+/** A connected-account still sent with no acknowledgement: its receipt is written the moment the POST answers. */
+const HIGGSFIELD_UNCONFIRMED_MS = 2 * 60 * 60_000;
+/** A connected-account still whose polls have failed for a day will not be collected. */
+const HIGGSFIELD_COLLECTION_MS = 24 * 60 * 60_000;
 
 /**
  * Poll Ark for one generation and reconcile our row.
@@ -704,6 +708,37 @@ export async function syncPending(
             );
             return;
           }
+          /* A connected-account still that was sent but never collected: no
+             acknowledgement after two hours (the POST was lost), or a day of
+             polls that cannot reach it (the account was rotated). It stops
+             holding a render slot and can be hidden. The charge stays — the
+             request may well have been accepted — at its verified price when
+             the handle is known, so its receipt settles and is not reopened. */
+          if (gen.kind === "image" && gen.provider === "higgsfield" && params.paidClaim != null && !TERMINAL.has(gen.status)) {
+            const handle = Boolean(params.higgsfieldStillHandle);
+            const since = Number(params.paidClaim) || gen.createdAt;
+            if (since < now() - (handle ? HIGGSFIELD_COLLECTION_MS : HIGGSFIELD_UNCONFIRMED_MS)) {
+              const price = gen.model === SOUL_CHARACTER_MODEL_ID ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
+              const known = handle && typeof price === "number" && Number.isFinite(price) && price > 0 ? price : null;
+              await writeGenerationOutcome(
+                {
+                  sql: `UPDATE generations SET status='failed',error=?,cost_usd=COALESCE(cost_usd,?),params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+                    WHERE id=? AND status IN ('queued','running') AND deleted=0`,
+                  args: [
+                    handle
+                      ? "The connected account stopped answering about this request, so its result could not be collected. Its cost stays charged; it will not be sent again."
+                      : "The connected account never confirmed this request. Its estimated cost stays charged; it will not be sent again.",
+                    known, now(), gen.id,
+                  ],
+                },
+                { id: gen.id, kind: "image", engine: billedTo(gen.provider), model: gen.model, status: "failed",
+                  engineCostUsd: known, projectId: gen.projectId, shotId: gen.shotId },
+              );
+              await deliverGenerationSettlement(gen.id);
+              await settleHiggsfieldGenerationReceipt(gen.id).catch(() => false);
+              return;
+            }
+          }
           const orphan =
             !gen.arkTaskId &&
             !params.falRequestId &&
@@ -716,18 +751,32 @@ export async function syncPending(
               now() - (params.worker ? 2 * 60 * 60_000 : 15 * 60_000);
           const expired = Boolean(gen.arkTaskId && gen.createdAt < horizon);
           if ((orphan || expired) && !TERMINAL.has(gen.status)) {
+            /* Every paid path (claimRender, the video submit's paidClaim) claims
+               the row before a vendor is called. No claim and nothing produced
+               proves nothing was sent: the take ends and its reservation is
+               released. The guard is in the write, so a worker that claims it
+               at this very moment keeps it. */
+            const unsent = orphan && params.paidClaim == null && !params.producedOutcome;
             // An expired function/handle does not prove the vendor refunded anything.
             // Keep its reservation, end the execution slot, and retain the permanent paid claim.
             await writeGenerationOutcome(
-              {
-                sql: `UPDATE generations SET status='failed',error=?,params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+              unsent
+                ? {
+                    sql: `UPDATE generations SET status='failed',error=?,cost_usd=0,updated_at=?
+                WHERE id=? AND status IN ('queued','running') AND deleted=0
+                  AND json_extract(params,'$.paidClaim') IS NULL AND json_extract(params,'$.producedOutcome') IS NULL
+                  AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL`,
+                    args: ["This take never started, so nothing was charged. Generate it again.", now(), gen.id],
+                  }
+                : {
+                    sql: `UPDATE generations SET status='failed',error=?,params=json_set(params,'$.outcomeUncertain',1),updated_at=?
             WHERE id=? AND status IN ('queued','running') AND deleted=0`,
-                args: [
-                  "This attempt was interrupted and its provider outcome is unconfirmed. Its reserved credits remain pending reconciliation; it will not be submitted again automatically.",
-                  now(),
-                  gen.id,
-                ],
-              },
+                    args: [
+                      "This attempt was interrupted after it was sent, and the provider never confirmed the outcome. Its estimated cost stays charged; it will not be sent again.",
+                      now(),
+                      gen.id,
+                    ],
+                  },
               {
                 id: gen.id,
                 // Retained connected-account originals are never queued here;
@@ -736,7 +785,7 @@ export async function syncPending(
                 engine: billedTo(gen.provider),
                 model: gen.model,
                 status: "failed",
-                engineCostUsd: null,
+                engineCostUsd: unsent ? 0 : null,
                 projectId: gen.projectId,
                 shotId: gen.shotId,
               },

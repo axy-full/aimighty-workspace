@@ -740,7 +740,9 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
  * The estimated cost goes on the row even in failure: if the engine drew it
  * or the voice spoke it, the money is gone whether or not we managed to keep
  * the file, and dropping it here is how a real charge disappears from the
- * ledger.
+ * ledger. But only once the paid step was claimed: a render that failed
+ * before claimRender (a lost row, a database error, a missing source) was
+ * never sent to anyone, and it is failed at no charge.
  */
 export async function failJob(
   genId: string,
@@ -751,8 +753,24 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
 
   await ready();
   const job = await loadJob(genId).catch(() => null);
-  const ms = job ? Math.max(0, now() - job.startedAt) : null;
-  const spentUsd = rejectedBeforeGeneration
+  // The row itself says whether a vendor was ever asked; a job that cannot be loaded still ends.
+  const row = (await db().execute({
+    sql: `SELECT kind, model, created_at, json_extract(params,'$.task') AS task,
+            json_extract(params,'$.paidClaim') AS claim, json_extract(params,'$.producedOutcome') AS produced
+          FROM generations WHERE id=? AND deleted=0 AND status NOT IN ('succeeded','failed','cancelled')`,
+    args: [genId],
+  })).rows[0];
+  // Nothing left to end (already over, hidden, or a dubbing project its own workflow owns).
+  if (!row || (row.kind === "audio" && row.task === "dub")) {
+    await deliverGenerationSettlement(genId);
+    return;
+  }
+  const unsent = row.claim == null && row.produced == null;
+  const free = rejectedBeforeGeneration || unsent;
+  const kind = job?.kind ?? (row.kind === "audio" ? "audio" : "image");
+  const modelId = job?.modelId ?? String(row.model);
+  const ms = Math.max(0, now() - (job?.startedAt ?? Number(row.created_at)));
+  const spentUsd = free
     ? 0
     : job?.kind === "audio"
       ? (job.estUsd ?? usdForCredits(job.estCredits, null))
@@ -760,34 +778,35 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
         ? (isHiggsfieldImageModel(job.modelId) ? (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd) ?? null : estimateImageCostUsd(job.modelId, job.size, job.references.length)
             ?.net ?? null)
         : null;
-  const spentCredits = rejectedBeforeGeneration
+  const spentCredits = free
     ? 0
     : job?.kind === "audio"
       ? job.estCredits || null
       : null;
-  if (!job) {
-    await deliverGenerationSettlement(genId);
-    return;
+  let engine: string;
+  try {
+    engine = kind === "audio" ? audioVendor(modelId) : billedTo(getModel(modelId).provider);
+  } catch {
+    engine = kind === "audio" ? "elevenlabs" : "byteplus";
   }
   await writeGenerationOutcome(
     {
+      // An unsent refund holds only while nothing has claimed the paid step since.
       sql: `UPDATE generations
       SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?),
           cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?), updated_at=?
-      WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      WHERE id=? AND status NOT IN ('succeeded','cancelled')${unsent && !rejectedBeforeGeneration
+        ? " AND json_extract(params,'$.paidClaim') IS NULL AND json_extract(params,'$.producedOutcome') IS NULL" : ""}`,
       args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
     },
     {
       id: genId,
-      kind: job.kind,
-      engine:
-        job.kind === "audio"
-          ? "elevenlabs"
-          : billedTo(getModel(job.modelId).provider),
-      model: job.modelId,
+      kind,
+      engine,
+      model: modelId,
       status: "failed",
       // Retain the original reservation for an ambiguous provider/storage failure.
-      engineCostUsd: rejectedBeforeGeneration ? 0 : null,
+      engineCostUsd: free ? 0 : null,
       durationMs: ms,
     },
   );

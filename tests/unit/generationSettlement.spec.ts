@@ -196,7 +196,7 @@ test("janitor frees a stranded running slot without refunding or repeating an un
     ).rows[0];
     expect(gen.status).toBe("failed");
     expect(JSON.parse(String(gen.params)).paidClaim).toBe(10);
-    expect(gen.error).toContain("unconfirmed");
+    expect(gen.error).toContain("never confirmed");
     const meter = (
       await platformDb().execute(
         "SELECT status,billed_credits FROM meter_events WHERE id='gen_stale'",
@@ -561,4 +561,93 @@ test("while one poller holds the master's download lease, the others leave the r
   } finally {
     engine.poll = original;
   }
+});
+
+test("the janitor refunds a take that was never claimed, and keeps the charge for one that was", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { syncPending } = await import("../../lib/jobs");
+  await runInTenant(await setup("unsent"), async () => {
+    // A worker or after() that never ran: no paid claim, nothing produced, no handle.
+    await insert("gen_unsent", { status: "queued", age: 20 * 60_000 });
+    await reserveGenerationSpend(event("gen_unsent"));
+    expect((await syncPending(5)).failed).toBe(0);
+    const gen = (await db().execute("SELECT status,cost_usd,error FROM generations WHERE id='gen_unsent'")).rows[0];
+    expect(gen).toMatchObject({ status: "failed", cost_usd: 0 });
+    expect(gen.error).toContain("nothing was charged");
+    expect((await platformDb().execute("SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE id='gen_unsent'")).rows[0])
+      .toMatchObject({ status: "failed", engine_cost_usd: 0, billed_credits: 0 });
+  });
+});
+
+test("a connected-account still that is never acknowledged, or never collected, stops holding a slot", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { syncPending } = await import("../../lib/jobs");
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  const still = async (id: string, params: Record<string, unknown>) => {
+    await ready();
+    await db().execute({
+      sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at,billed_to)
+            VALUES(?,'image','higgsfield',?,'test',?,'running',?,?,'higgsfield')`,
+      args: [id, MARKETING_IMAGE_MODEL_ID, JSON.stringify({ ratio: "16:9", resolution: "2k", higgsfieldVendorCostUsd: 0.5, higgsfieldCredentialFingerprint: "fp", ...params }), Date.now() - 30 * 3600_000, Date.now() - 30 * 3600_000],
+    });
+    await reserveGenerationSpend({ ...event(id), kind: "image", engine: "higgsfield", model: MARKETING_IMAGE_MODEL_ID });
+  };
+  const bill = async (id: string) => (await platformDb().execute({ sql: "SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE id=?", args: [id] })).rows[0];
+  const row = async (id: string) => (await db().execute({ sql: "SELECT status,error,cost_usd FROM generations WHERE id=?", args: [id] })).rows[0];
+  await runInTenant(await setup("higgsfield_ceiling"), async () => {
+    // The POST timed out three hours ago and no acknowledgement was ever saved.
+    await still("gen_hf_unacked", { paidClaim: Date.now() - 3 * 3600_000 });
+    await syncPending(10);
+    expect(await row("gen_hf_unacked")).toMatchObject({ status: "failed", error: expect.stringContaining("never confirmed") });
+    expect(await bill("gen_hf_unacked")).toMatchObject({ status: "failed", engine_cost_usd: 1, billed_credits: 15 });
+    // The workspace's one slot is free again. Accepted a day and more ago; every poll since has failed (the account was rotated).
+    await still("gen_hf_uncollected", { paidClaim: Date.now() - 25 * 3600_000,
+      higgsfieldStillHandle: { provider: "higgsfield", model: MARKETING_IMAGE_MODEL_ID, ref: "req-1", credentialFingerprint: "fp" } });
+    await syncPending(10);
+    expect(await row("gen_hf_uncollected")).toMatchObject({ status: "failed", cost_usd: 0.5, error: expect.stringContaining("stopped answering") });
+    expect(await bill("gen_hf_uncollected")).toMatchObject({ status: "failed", engine_cost_usd: 0.5 });
+  });
+});
+
+test("a still that fails before its paid step was claimed is never charged, even when its job cannot be loaded", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { failJob } = await import("../../lib/renderWork");
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  const image = async (id: string, model: string, params: Record<string, unknown>) => {
+    await ready();
+    await db().execute({
+      sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at,billed_to)
+            VALUES(?,'image','google',?,'test',?,'running',?,?,'google')`,
+      args: [id, model, JSON.stringify({ ratio: "16:9", resolution: "1K", ...params }), Date.now(), Date.now()],
+    });
+    await reserveGenerationSpend({ ...event(id), kind: "image", engine: "google", model });
+  };
+  const bill = async (id: string) => (await platformDb().execute({ sql: "SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE id=?", args: [id] })).rows[0];
+  const row = async (id: string) => (await db().execute({ sql: "SELECT status,cost_usd FROM generations WHERE id=?", args: [id] })).rows[0];
+  await runInTenant(await setup("fail_unclaimed"), async () => {
+    await image("gen_unclaimed", "gemini-3-pro-image", {});
+    await failJob("gen_unclaimed", "The database was briefly unavailable.");
+    expect(await row("gen_unclaimed")).toMatchObject({ status: "failed", cost_usd: 0 });
+    expect(await bill("gen_unclaimed")).toMatchObject({ status: "failed", engine_cost_usd: 0, billed_credits: 0 });
+
+    await image("gen_claimed", "gemini-3-pro-image", { paidClaim: Date.now() });
+    await failJob("gen_claimed", "The connection dropped after the request was sent.");
+    expect(await row("gen_claimed")).toMatchObject({ status: "failed" });
+    expect(await bill("gen_claimed")).toMatchObject({ status: "failed", engine_cost_usd: 1, billed_credits: 15 });
+
+    // loadJob throws for a Marketing Studio take whose source is gone; the row still ends, by id.
+    await image("gen_unloadable", MARKETING_IMAGE_MODEL_ID, { references: [{ uploadId: "missing", role: "reference_image", kind: "image" }] });
+    await failJob("gen_unloadable", "A Marketing Studio source is no longer available.");
+    expect(await row("gen_unloadable")).toMatchObject({ status: "failed", cost_usd: 0 });
+    expect(await bill("gen_unloadable")).toMatchObject({ status: "failed", engine_cost_usd: 0 });
+  });
 });
