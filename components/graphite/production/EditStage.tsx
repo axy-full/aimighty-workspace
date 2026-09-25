@@ -67,13 +67,15 @@ export function EditStage({ scope, projectId, items, load, onTimeline }: { scope
   /* A take sent here (Viral's Send to Edit, the Library) opens first. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
   const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
-  const entry = items.find((e) => e.take.id === picked && editable(e)) ?? generations.find(editable) ?? null;
+  /* Sound is picked for its transcript only; the cut and the re-edits are for pictures. */
+  const pickable = (e: LibraryEntry) => editable(e) || (e.media === "audio" && Boolean(e.url));
+  const entry = items.find((e) => e.take.id === picked && pickable(e)) ?? generations.find(editable) ?? null;
   const pick = (e: LibraryEntry) => {
-    if (!editable(e)) {
+    if (!pickable(e)) {
       const { take } = e;
       toast(take.status === "failed" ? `${take.name} did not render${take.reason ? ` · ${take.reason}` : ""}.`
         : take.status === "rendering" ? (take.stage === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}.` : `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`)
-        : e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit.");
+        : "This file has no picture or sound to edit.");
       return;
     }
     setPicked(e.take.id); setQuote(null); setError("");
@@ -167,8 +169,10 @@ export function EditStage({ scope, projectId, items, load, onTimeline }: { scope
         <>
           <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
           <div className="gx-gen-enhance">
-            <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
-            <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+            {entry.media === "audio" ? null : <>
+              <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
+              <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+            </>}
             <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
           </div>
           {entry.media === "video" || entry.media === "audio" ? (

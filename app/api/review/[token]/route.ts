@@ -3,6 +3,7 @@ import { runInTenant } from "@/lib/tenant";
 import { resolveShare } from "@/lib/shares";
 import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
+import { originalKindOf } from "@/lib/originalMedia";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -57,7 +58,7 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
       takes: rows.map((r) => {
         const params = ((): Record<string, unknown> => { try { return JSON.parse(r.params || "{}"); } catch { return {}; } })();
         return {
-          id: String(r.id), kind: r.kind === "image" ? "image" : "video",
+          id: String(r.id), kind: originalKindOf(r.kind),
           shot: r.shot_code ? String(r.shot_code) : null, title: r.shot_title ? String(r.shot_title) : null,
           version: Number(r.version ?? 1),
           prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],

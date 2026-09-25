@@ -501,3 +501,27 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-soul-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--gx-hair); flex-wrap: wrap; }
 .gx-soul-row:first-child { border-top: 0; }
 .gx-soul-name { font-weight: 600; }
+
+/* Atomik › the page's plan (components/graphite/AtomikSheet): steps, the gate with its live price, the run. */
+.gx-atomik { max-height: min(78vh, 720px); }
+.gx-atomik-body { display: flex; flex-direction: column; gap: 12px; padding: 14px; overflow-y: auto; min-height: 0; }
+.gx-atomik-body .gx-hint { margin: 4px 0 0; }
+.gx-atomik-elsewhere { align-self: flex-start; height: auto; min-height: 36px; white-space: normal; text-align: left; color: var(--gx-waiting); }
+.gx-atomik-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.gx-atomik-step { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 32px; font-size: 13px; color: var(--gx-text-2); }
+.gx-atomik-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx-atomik-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); border: 1px solid var(--gx-hair-strong); }
+.gx-atomik-step[data-tone="done"] .gx-atomik-mark { color: var(--gx-done); border-color: var(--gx-done); }
+.gx-atomik-step[data-tone="now"] { color: var(--gx-text); }
+.gx-atomik-step[data-tone="now"] .gx-atomik-mark { color: var(--gx-accent-text); border-color: var(--gx-accent); }
+.gx-atomik-step[data-tone="gate"] .gx-atomik-mark { color: var(--gx-waiting); border-color: var(--gx-waiting); }
+.gx-atomik-step[data-tone="failed"] .gx-atomik-mark { color: var(--gx-failed); border-color: var(--gx-failed); }
+.gx-atomik-meta { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); white-space: nowrap; }
+.gx-atomik-gate { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255, 159, 10, .3); background: rgba(255, 159, 10, .08); }
+.gx-atomik-gate-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; color: var(--gx-waiting); }
+.gx-atomik-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.gx-atomik-foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--gx-hair); }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-atomik-step, .gx-atomik-meta, .gx-atomik-mark { font-size: 12px; }
+  .gx-atomik-elsewhere { min-height: 44px; }
+}

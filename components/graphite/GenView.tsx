@@ -6,7 +6,8 @@ import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
-import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
+import type { GenPreset } from "@/lib/shell/assets";
+import { useGenPresetInbox } from "@/lib/shell/gen-preset";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
@@ -88,23 +89,37 @@ export function GenView({ scope, project, items, load, projects = "ready", works
     }
   }, [scope, dispatchComposer]);
 
-  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen, an
-     asset's Retry generation) arrives once, then is forgotten. Read at mount
-     (this view only renders in the browser) and applied to the composer. */
-  const [preset] = useState(() => {
-    try {
-      const found = readGenPreset(sessionStorage.getItem(GEN_PRESET_KEY));
-      if (found) sessionStorage.removeItem(GEN_PRESET_KEY);
-      return found;
-    } catch { return null; }
-  });
-  useEffect(() => {
-    if (!preset) return;
+  /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, Soul ID › Use in Gen, an
+     asset's Retry generation) is applied the moment it arrives — on Gen too — then forgotten.
+     The catalogue comes first (it decides which models exist), then the kind, the model, the words,
+     the settings, the identity; a Retry's own references replace the well. */
+  const [presetNote, setPresetNote] = useState<string | null>(null);
+  const presetTurn = useRef(0);
+  const applyPreset = useCallback((preset: GenPreset) => {
+    const turn = ++presetTurn.current;
+    setMode("compose");
+    if (preset.references) dispatchComposer({ type: "reset" });
+    if (preset.billing) dispatchComposer({ type: "billing", value: preset.billing });
     if (preset.type) dispatchComposer({ type: "type", value: preset.type });
     if (preset.model) dispatchComposer({ type: "model", value: preset.model });
     dispatchComposer({ type: "prompt", value: preset.prompt });
-  }, [preset, dispatchComposer]);
-  const presetNote = preset?.note ?? null;
+    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
+    if (preset.soulId) dispatchComposer({ type: "pick", value: { soulId: preset.soulId } });
+    setPresetNote(preset.note ?? null);
+    setWellError(null);
+    const references = preset.type === "audio" ? [] : preset.references ?? [];
+    void Promise.all(references.map(async (ref) => {
+      const asset = await resolveGenInput("genId" in ref ? `generation:${ref.genId}` : `upload:${ref.uploadId}`, scope);
+      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
+      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(preset.billing === "connected" && ref.role ? { role: ref.role } : {}) };
+    }).map((p) => p.catch(() => null))).then((found) => {
+      if (turn !== presetTurn.current) return;
+      for (const value of found) if (value) dispatchComposer({ type: "addReference", value });
+      const lost = found.filter((value) => !value).length;
+      if (lost) setWellError(`${lost} of this take’s references ${lost === 1 ? "is" : "are"} no longer available; the rest are back in the well.`);
+    });
+  }, [scope, dispatchComposer]);
+  useGenPresetInbox(applyPreset);
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
