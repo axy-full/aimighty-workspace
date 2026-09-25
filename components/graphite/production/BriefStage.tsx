@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { useAgentAttachments } from "./use-agent-attachments";
+import { PromptAttach } from "@/components/PromptAttach";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScriptPanel } from "@/components/workbench/ScriptPanel";
 import { DevelopmentPanel } from "@/components/workbench/DevelopmentPanel";
@@ -44,6 +46,8 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
   const { toast, go } = useWorkspace();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
+  /* Pictures and text files attached to the prompt or the notes go with the writer's next run. */
+  const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
   const [tab, setTab] = useState<"write" | "script">("write");
   const [notes, setNotes] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
@@ -160,7 +164,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             </div>
             <label className="gx-gen-row">
               <span className="gx-eyebrow" data-functional-label="">What are we making?</span>
-              <textarea className="gx-textarea pd-prompt" aria-label="What are we making?" maxLength={PROMPT_LIMIT} value={p.brief} placeholder="Start with a thought, a story, a client brief — as much or as little as you have." onChange={(e) => { const value = e.target.value; editor.change((old) => ({ ...old, brief: value })); }} data-testid="brief-prompt-input" />
+              <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="brief-attach"><textarea className="gx-textarea pd-prompt" aria-label="What are we making?" maxLength={PROMPT_LIMIT} value={p.brief} placeholder="Start with a thought, a story, a client brief — as much or as little as you have." onChange={(e) => { const value = e.target.value; editor.change((old) => ({ ...old, brief: value })); }} data-testid="brief-prompt-input" />{attach.chips}</PromptAttach>
             </label>
             <span className="gx-hint pd-count">{p.brief.length.toLocaleString()} / {PROMPT_LIMIT.toLocaleString()}</span>
             {(["audience", "deliverables", "direction"] as const).map((field) => (
@@ -186,7 +190,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                 </>
               ) : (
                 <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} aria-describedby={writeBlocked ? "brief-write-blocked" : undefined}
-                  onClick={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort })} data-testid="brief-estimate">{runs.busy || (finished.length ? "Develop a fresh script with the agent" : "Develop with an agent")}</button>
+                  onClick={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, ...attach.input })} data-testid="brief-estimate">{runs.busy || (finished.length ? "Develop a fresh script with the agent" : "Develop with an agent")}</button>
               )}
               {writeBlocked && !writeQuote ? <span className="gx-reason" id="brief-write-blocked" data-testid="brief-write-blocked">{writeBlocked}</span> : null}
             </div>
@@ -235,7 +239,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
 
               <label className="gx-gen-row pd-redraft">
                 <span className="gx-eyebrow" data-functional-label="">Not there yet? Notes for the next draft</span>
-                <textarea className="gx-textarea pd-small" maxLength={NOTES_LIMIT} value={notes} placeholder="What should change — a scene, a character’s voice, the ending, the length…" onChange={(e) => setNotes(e.target.value)} data-testid="brief-notes" />
+                <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="brief-notes-attach"><textarea className="gx-textarea pd-small" maxLength={NOTES_LIMIT} value={notes} placeholder="What should change — a scene, a character’s voice, the ending, the length…" onChange={(e) => setNotes(e.target.value)} data-testid="brief-notes" /></PromptAttach>
               </label>
               <div className="gx-gen-enhance">
                 {redraftQuote ? (
@@ -246,7 +250,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                   </>
                 ) : (
                   <button type="button" className="gx-hbtn" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} aria-describedby={redraftBlocked ? "brief-redraft-blocked" : undefined}
-                    onClick={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromJobId: shown.id, instructions: notes.trim() })} data-testid="brief-redraft-estimate">Estimate the redraft</button>
+                    onClick={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromJobId: shown.id, instructions: notes.trim(), ...attach.input })} data-testid="brief-redraft-estimate">Estimate the redraft</button>
                 )}
                 {redraftBlocked && !redraftQuote ? <span className="gx-reason" id="brief-redraft-blocked" data-testid="brief-redraft-blocked">{redraftBlocked}</span> : null}
               </div>
@@ -264,7 +268,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
           </div>
           <div className="pxw gx-legacy"><div className="ps">
             <ScriptPanel embedded key={p.id} project={p}
-              development={<DevelopmentPanel key={p.id + "-" + (p.scriptFormat || "screenplay")} project={p} kind={p.scriptFormat || "screenplay"} scope={scope} enabled models={[]} onSave={editor.ensureSaved} onApply={applyBreakdown} />}
+              development={<DevelopmentPanel key={p.id + "-" + (p.scriptFormat || "screenplay")} project={p} kind={p.scriptFormat || "screenplay"} scope={scope} enabled models={[]} onSave={editor.ensureSaved} onApply={applyBreakdown} change={editor.change} />}
               onScript={(value) => editor.change((old) => ({ ...old, script: value, scriptSource: old.scriptSource ? { ...old.scriptSource, edited: true } : undefined }))}
               onFormat={(value) => editor.change((old) => ({ ...old, scriptFormat: value }))}
               onImport={importScreenplay}

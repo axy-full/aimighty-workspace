@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { useAgentAttachments } from "./use-agent-attachments";
+import { PromptAttach, attachedAsset, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
@@ -50,6 +52,8 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
   const p = editor.project!;
   const { toast } = useWorkspace();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
+  /* Attached to the world: the agent sees it when it builds the world and its places. */
+  const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
   const agent = useAgentChoice(runs.models);
   useStageFacts("boards", p);
   const env = p.production?.environment ?? DEFAULT_ENVIRONMENT;
@@ -144,6 +148,23 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
     setEntry(entry.id, (e) => (e.references.includes(asset.id) ? e : { ...e, references: [...e.references, asset.id].slice(0, ENVIRONMENT_LIMITS.references) }));
     void editor.ensureSaved();
   };
+  /* Attached to a place's notes or plate prompt: pictures become its references (what the plate render follows). */
+  const attachToPlace = (entry: EnvironmentEntry) => async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const placed: string[] = [], kept = [...unreadable];
+    let refs = latest.current.production?.environment?.entries.find((e) => e.id === entry.id)?.references ?? entry.references;
+    for (const m of media) {
+      if (m.kind !== "image") { kept.push(m.name); continue; }
+      if (refs.length >= ENVIRONMENT_LIMITS.references) { kept.push(m.name); continue; }
+      const known = latest.current.assets.find((a) => a.id === m.id || a.generationId === m.id || a.uploadId === m.id);
+      const asset = known ?? attachedAsset(m, "Reference", `Reference for ${entry.name || "a place"}`);
+      if (!known) editor.change((old) => ({ ...old, assets: old.assets.some((a) => a.id === asset.id) ? old.assets : [...old.assets, asset] }));
+      if (!refs.includes(asset.id)) refs = [...refs, asset.id];
+      placed.push(m.name);
+    }
+    if (placed.length) { const next = refs; setEntry(entry.id, (e) => ({ ...e, references: next.slice(0, ENVIRONMENT_LIMITS.references) })); await editor.ensureSaved(); }
+    return [placed.length ? `${placed.join(", ")} ${placed.length === 1 ? "is a reference" : "are references"} for ${entry.name || "this place"}.` : "", keptNote(kept, `a place's references are pictures, up to ${ENVIRONMENT_LIMITS.references}.`) ?? ""].filter(Boolean).join(" ") || null;
+  };
   const takePlate = (entry: EnvironmentEntry, lib: LibraryEntry) => {
     const asset = adopt(entry, lib, true);
     if (!asset) return;
@@ -237,8 +258,8 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
           <span className="gx-hint" data-testid="environment-counts">{env.entries.length} {env.entries.length === 1 ? "place" : "places"} · {withPlates} with a plate</span>
         </div>
         <p className="gx-hint">What every place in the film shares — the period, the season and weather, the light, the palette and the materials. Every plate rendered here follows it.</p>
-        <textarea className="gx-textarea pd-small" aria-label="The world" value={env.world} maxLength={ENVIRONMENT_LIMITS.world} placeholder="Late winter on a northern coast: low sun, salt haze, weathered timber and iron…"
-          onChange={(e) => { const v = e.target.value; setEnv((x) => ({ ...x, world: v })); }} data-testid="environment-world-text" />
+        <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the agent" testId="environment-world-attach"><textarea className="gx-textarea pd-small" aria-label="The world" value={env.world} maxLength={ENVIRONMENT_LIMITS.world} placeholder="Late winter on a northern coast: low sun, salt haze, weathered timber and iron…"
+          onChange={(e) => { const v = e.target.value; setEnv((x) => ({ ...x, world: v })); }} data-testid="environment-world-text" />{attach.chips}</PromptAttach>
         <div className="pd-row-head">
           <span className="gx-hint">Engine</span>
           <div className="gx-seg gx-seg--sm pd-engines" role="radiogroup" aria-label="Plate engine">
@@ -262,7 +283,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
         {activeEnv ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeEnv.model) ?? "claude")} is building the world · step {Math.min(activeEnv.completedSteps + 1, activeEnv.totalSteps)} of {activeEnv.totalSteps}</p> : null}
         <AgentAction id="environment-agent" secondary estimateLabel="Have the agent build the world" startLabel={(c) => `Build the world · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
           describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
-          onEstimate={() => void runs.estimate({ kind: "environment", model: agentModel!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
+          onEstimate={() => void runs.estimate({ kind: "environment", model: agentModel!.id, effort: agent.effort, ...attach.input })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       </section>
 
       <section className="pd-frames" aria-label="Places" data-testid="environment-entries" data-section="places">
@@ -280,10 +301,10 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
                 {shown ? <LazyMedia url={urlOf(shown)} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{rendering ? "Rendering the plate…" : "No plate yet"}</span>}
               </div>
               <input className="gx-field pd-cast-name" aria-label="Place name" value={entry.name} maxLength={ENVIRONMENT_LIMITS.name} placeholder="Place name" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, name: v })); }} data-testid="environment-name" />
-              <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Place"} notes`} value={entry.notes} maxLength={ENVIRONMENT_LIMITS.notes} placeholder="What it is, which scenes use it, what happens there"
-                onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, notes: v })); }} />
-              <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Place"} plate prompt`} value={entry.prompt} maxLength={ENVIRONMENT_LIMITS.prompt} placeholder="The plate: layout, light, weather, time of day — no people"
-                onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="environment-prompt" />
+              <PromptAttach scope={scope} projectId={p.id} onAttach={attachToPlace(entry)} testId="environment-notes-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Place"} notes`} value={entry.notes} maxLength={ENVIRONMENT_LIMITS.notes} placeholder="What it is, which scenes use it, what happens there"
+                onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, notes: v })); }} /></PromptAttach>
+              <PromptAttach scope={scope} projectId={p.id} onAttach={attachToPlace(entry)} testId="environment-prompt-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Place"} plate prompt`} value={entry.prompt} maxLength={ENVIRONMENT_LIMITS.prompt} placeholder="The plate: layout, light, weather, time of day — no people"
+                onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="environment-prompt" /></PromptAttach>
 
               <div className="pd-row-head" data-testid="environment-references">
                 <span className="gx-hint">References {entry.references.length}/{ENVIRONMENT_LIMITS.references}</span>

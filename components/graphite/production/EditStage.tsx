@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { dragAttrs } from "@/lib/drop";
@@ -39,12 +40,12 @@ export function assetGroups(items: readonly LibraryEntry[], project: Project | n
 type Generation = { id: string; status: string; error?: string | null };
 
 /** The re-edit request for a still: the take as the reference, the instruction, and the order to change nothing else. */
-export function reEditRequest(entry: LibraryEntry, instruction: string, model: BoardModel, productionProjectId: string, ratio: string): GenerationBodyInput {
+export function reEditRequest(entry: LibraryEntry, instruction: string, model: BoardModel, productionProjectId: string, ratio: string, extras: ({ genId: string } | { uploadId: string })[] = []): GenerationBodyInput {
   const source = entry.asset.origin === "generation" ? { genId: entry.take.sourceId } : { uploadId: entry.take.sourceId };
   return {
-    prompt: `Edit the reference image: ${instruction.trim()}\n\nChange only what is asked. Keep the composition, framing, lighting, people and every other detail exactly as they are.`.slice(0, 10_000),
+    prompt: `Edit the reference image: ${instruction.trim()}\n\nChange only what is asked. Keep the composition, framing, lighting, people and every other detail exactly as they are.${extras.length ? ` The first image is the one to edit; the ${extras.length === 1 ? "other image shows" : `other ${extras.length} images show`} what to bring into it.` : ""}`.slice(0, 10_000),
     kind: "image", model: { id: model }, mapping: { shotId: "", productionProjectId }, ...stillShape(getModel(model), ratio), duration: 5,
-    references: [{ ...source, role: "reference_image" }], firstFrameAssetId: "",
+    references: [{ ...source, role: "reference_image" }, ...extras.map((x) => ({ ...x, role: "reference_image" as const }))], firstFrameAssetId: "",
   };
 }
 
@@ -75,6 +76,15 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<BoardModel>(BOARD_MODELS[0].id);
   const [quote, setQuote] = useState<{ key: string; credits: number } | null>(null);
+  /* Pictures attached to the instruction ride as further references: what to bring into the still. */
+  const [extras, setExtras] = useState<{ id: string; name: string; ref: { genId: string } | { uploadId: string } }[]>([]);
+  const attachToEdit = async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const pictures = media.filter((m) => m.kind === "image").slice(0, 3);
+    setExtras((prev) => [...prev, ...pictures.filter((m) => !prev.some((x) => x.id === m.key)).map((m) => ({ id: m.key, name: m.name, ref: m.origin === "generation" ? { genId: m.id } : { uploadId: m.id } }))].slice(0, 3));
+    setQuote(null);
+    return [pictures.length ? `${pictures.map((m) => m.name).join(", ")} ${pictures.length === 1 ? "goes" : "go"} with the edit as ${pictures.length === 1 ? "a reference" : "references"}.` : "", keptNote([...unreadable, ...media.filter((m) => !pictures.includes(m)).map((m) => m.name)], "an edit takes up to three reference pictures.") ?? ""].filter(Boolean).join(" ") || null;
+  };
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<{ jobId: string; from: string } | null>(null);
@@ -97,9 +107,9 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   }, [pending, scope, projectId, toast]);
 
   if (!project) return <p className="gx-empty" role="status">{draft.state.error ?? "Opening the takes…"}</p>;
-  const key = entry ? JSON.stringify([entry.take.id, instruction.trim(), model, project.aspect]) : "";
+  const key = entry ? JSON.stringify([entry.take.id, instruction.trim(), model, project.aspect, extras.map((x) => x.id)]) : "";
   const shown = quote && quote.key === key ? quote : null;
-  const request = () => reEditRequest(entry!, instruction, model, project.productionProjectId!, project.aspect);
+  const request = () => reEditRequest(entry!, instruction, model, project.productionProjectId!, project.aspect, extras.map((x) => x.ref));
   const price = async () => {
     setBusy("Pricing…"); setError("");
     try {
@@ -168,7 +178,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
                 <h2 className="gx-workflow-title">Change something in this still</h2>
                 <p className="gx-hint">The take is the reference; only what you ask for changes. The result is a new take — the original stays.</p>
               </div>
-              <textarea className="gx-textarea pd-small" aria-label="What should change" maxLength={EDIT_LIMIT} value={instruction} placeholder="Make it night, add rain on the glass, turn her head towards camera…" onChange={(e) => setInstruction(e.target.value)} data-testid="edit-instruction" />
+              <PromptAttach scope={scope} projectId={projectId} onAttach={attachToEdit} testId="edit-attach"><textarea className="gx-textarea pd-small" aria-label="What should change" maxLength={EDIT_LIMIT} value={instruction} placeholder="Make it night, add rain on the glass, turn her head towards camera…" onChange={(e) => setInstruction(e.target.value)} data-testid="edit-instruction" />{extras.length ? <div className="pa-chips" data-testid="edit-extras">{extras.map((x) => <span key={x.id} className="pa-chip" {...previewAttrs({ url: "genId" in x.ref ? `/api/media/${x.ref.genId}` : `/api/uploads/${x.ref.uploadId}`, kind: "image", name: x.name })}><span className="pa-chip-name">{x.name}</span><button type="button" aria-label={`Remove ${x.name}`} onClick={() => { setExtras((prev) => prev.filter((y) => y.id !== x.id)); setQuote(null); }}>×</button></span>)}</div> : null}</PromptAttach>
               <div className="pd-row-head">
                 <span className="gx-hint">Engine</span>
                 <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Re-edit engine">

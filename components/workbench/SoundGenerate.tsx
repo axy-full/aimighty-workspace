@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { PromptAttach, keptNote, resolveAttached } from "@/components/PromptAttach";
 import { studioRequest, StudioRequestError } from "./GenerationDialog";
 import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
 import { validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
@@ -538,7 +539,10 @@ export function SoundGenerate({
       {!tool && (
         <label className={styles.text}>
           {def.field}
-          <textarea
+          <PromptAttach scope={scope} projectId={project.id} testId="sound-attach" onAttach={async (attached) => {
+            const { media, unreadable } = await resolveAttached(scope, attached);
+            return keptNote([...unreadable, ...media.map((m) => m.name)], `${task === "speech" ? "speech is read from the line" : task === "sound" ? "sound effects are made from the words" : "music is made from the words"}; put the files on the lanes, or use Change voice for a recording.`);
+          }}><textarea
             aria-label={def.field}
             value={text}
             maxLength={5000}
@@ -552,7 +556,7 @@ export function SoundGenerate({
                   : "Slow piano, warm room tone, builds at the end."
             }
             onChange={(e) => setText(e.target.value)}
-          />
+          /></PromptAttach>
         </label>
       )}
       <div className={styles.fields}>

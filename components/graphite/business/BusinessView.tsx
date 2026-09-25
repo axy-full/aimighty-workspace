@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
@@ -38,6 +39,15 @@ type Business = ReturnType<typeof useBusiness>;
 type Media = { id: string; name: string; sourceId: string; origin: "upload" | "generation"; url: string };
 
 /** Drag a Library still in; the roles cycle image → start_image → end_image on click. */
+/** A Business prompt's attachments: pictures become reference stills, up to the well's limit; the rest stays in the Library. */
+async function attachStills(scope: string, attached: Attached, have: number, max: number): Promise<{ stills: Media[]; note: string | null }> {
+  const { media, unreadable } = await resolveAttached(scope, attached);
+  const pictures = media.filter((m) => m.kind === "image");
+  const stills = pictures.slice(0, Math.max(0, max - have)).map((m): Media => ({ id: m.key, name: m.name, sourceId: m.id, origin: m.origin, url: m.url }));
+  const kept = [...unreadable, ...media.filter((m) => m.kind !== "image").map((m) => m.name), ...pictures.slice(stills.length).map((m) => m.name)];
+  return { stills, note: keptNote(kept, `reference stills are pictures, up to ${max}.`) };
+}
+
 function Well({ scope, projectId, medias, roles, max, onAdd, onRemove, onRole, hint }: {
   scope: string; projectId?: string | null; medias: (Media & { role?: AdMediaRole })[]; roles: readonly string[]; max: number; hint: string;
   onAdd: (m: Media) => void; onRemove: (id: string) => void; onRole?: (id: string, role: AdMediaRole) => void;
@@ -223,7 +233,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         </div>
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">Prompt</span>
-          <textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="What the presenter says and shows. The hook is prepended automatically." value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="ads-prompt" />
+          <PromptAttach scope={scope} projectId={project?.id} testId="ads-attach" onAttach={async (attached) => { const { stills, note } = await attachStills(scope, attached, s.medias.length, AD_MEDIA_MAX); if (stills.length) set({ ...s, medias: [...s.medias, ...stills.map(media)] }); return note; }}><textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="What the presenter says and shows. The hook is prepended automatically." value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="ads-prompt" /></PromptAttach>
           <div className="gx-gen-enhance">
             <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)}><span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span></button>
             <span className="gx-spacer" />
@@ -326,7 +336,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         <Chips label="Resolution" options={resolutions} value={s.resolution} onPick={(v) => set({ ...s, resolution: v as ImageAdsState["resolution"] })} testId="dtc-resolution" />
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">Prompt</span>
-          <textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="dtc-prompt" />
+          <PromptAttach scope={scope} projectId={project?.id} testId="dtc-attach" onAttach={async (attached) => { const { stills, note } = await attachStills(scope, attached, s.medias.length, AD_MEDIA_MAX); if (stills.length) set({ ...s, medias: [...s.medias, ...stills.map((m) => ({ id: m.id, name: m.name }))] }); return note; }}><textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="dtc-prompt" /></PromptAttach>
         </div>
         <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />

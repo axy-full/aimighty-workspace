@@ -1,5 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Asset } from '@/lib/workbench/studio';
+import { PromptAttach, attachedAsset, keptNote, resolveAttached, type Attached } from '@/components/PromptAttach';
 import type { Project, Plan } from '@/lib/workbench/studio';
 import { ASTRA_BLENDER_MODEL, createAstraScene } from '@/lib/astra-blender/scene';
 import { astraSceneDigest, validateAstraBindings } from '@/lib/astra-blender/proposal';
@@ -12,7 +14,7 @@ import { studioRequest } from '@/components/workbench/GenerationDialog';
 import styles from './astra-integration.module.css';
 
 type State = { models: ThinkingModel[]; jobs: AtomikJob[] };
-export function AstraAgentPanel({ project, scope, enabled, onSave, onApply }: { project: Project; scope: string; enabled: boolean; onSave: () => Promise<boolean>; onApply: (plan: Plan) => Promise<void> }) {
+export function AstraAgentPanel({ project, scope, enabled, onSave, onApply, onAsset }: { project: Project; scope: string; enabled: boolean; onSave: () => Promise<boolean>; onApply: (plan: Plan) => Promise<void>; onAsset?: (asset: Asset) => void }) {
   const [request, setRequest] = useState('');
   const [mode, setMode] = useState<'scene' | 'native'>('scene');
   const [referenceIds, setReferenceIds] = useState<string[]>([]);
@@ -21,6 +23,19 @@ export function AstraAgentPanel({ project, scope, enabled, onSave, onApply }: { 
   const [recovery, setRecovery] = useState<AtomikRunTarget | null>(null);
   const [target, setTarget] = useState<AtomikRunTarget | null>(null);
   const [busy, setBusy] = useState(false);
+  /* The request box takes media: pictures are filed on the project and ticked as visual references (up to four) for Astra to inspect. */
+  const attach = async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const pictures = media.filter(m => m.kind === 'image');
+    const room = Math.max(0, 4 - referenceIds.length);
+    const going = pictures.slice(0, room).map(m => project.assets.find(a => a.id === m.id || a.generationId === m.id || a.uploadId === m.id) ?? attachedAsset(m, 'Astra', 'Attached for Astra'));
+    if (going.length && onAsset) {
+      for (const asset of going) if (!project.assets.some(a => a.id === asset.id)) onAsset(asset);
+      await onSave();
+      setReferenceIds(ids => [...new Set([...ids, ...going.map(a => a.id)])].slice(0, 4));
+    }
+    return [going.length && onAsset ? `${going.map(a => a.name).join(', ')} ${going.length === 1 ? 'is a visual reference' : 'are visual references'}.` : '', keptNote([...unreadable, ...media.filter(m => m.kind !== 'image').map(m => m.name), ...pictures.slice(onAsset ? room : 0).map(m => m.name)], 'Astra inspects up to four pictures.') ?? ''].filter(Boolean).join(' ') || null;
+  };
   const sequence = useRef(0);
   const active = enabled && !!project.productionProjectId;
   const refresh = useCallback(async () => {
@@ -71,7 +86,7 @@ export function AstraAgentPanel({ project, scope, enabled, onSave, onApply }: { 
       ['Compositing', 'Create a restrained filmic compositor setup with controllable exposure and color treatment.'],
       ['Simulation', 'Set up a bounded native physics simulation appropriate to this scene, retaining editable controls and explaining bake limits.'],
     ].map(([label, text]) => <button key={label} className={styles.button} onClick={() => setRequest(text)}>{label}</button>)}</div></details>}
-    <textarea aria-label="Astra scene request" placeholder="Create a brushed-metal product on a warm stone plinth. Use a large soft key and a slow turntable…" maxLength={11000} value={request} onChange={event => setRequest(event.target.value)} disabled={!enabled || busy} />
+    <PromptAttach scope={scope} projectId={project.id} onAttach={attach} testId="astra-attach"><textarea aria-label="Astra scene request" placeholder="Create a brushed-metal product on a warm stone plinth. Use a large soft key and a slow turntable…" maxLength={11000} value={request} onChange={event => setRequest(event.target.value)} disabled={!enabled || busy} /></PromptAttach>
     <details><summary>Visual references · {referenceIds.length}/4</summary><p>Attach project images or a previous native render for Astra to inspect and refine.</p><div className={styles.referenceList}>{[...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, all) => asset.kind === 'image' && all.findIndex(item => item.id === asset.id) === index).map(asset => <label key={asset.id}><input type="checkbox" checked={referenceIds.includes(asset.id)} disabled={!referenceIds.includes(asset.id) && referenceIds.length >= 4} onChange={event => setReferenceIds(ids => event.target.checked ? [...ids, asset.id] : ids.filter(id => id !== asset.id))} />{asset.name}</label>)}</div></details>
     <button className={`${styles.button} ${styles.primary}`} disabled={!!recovery || !active || !model || running || busy || request.trim().length < 3} onClick={() => void review()}>{running ? 'Astra is working…' : busy ? 'Preparing scene…' : 'Review Astra quote'}</button>
     {recovery && <button className={styles.button} disabled={!enabled || busy} onClick={() => setTarget(recovery)}>Recover saved Astra request</button>}

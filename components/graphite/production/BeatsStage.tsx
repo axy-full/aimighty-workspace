@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAgentAttachments } from "./use-agent-attachments";
+import { PromptAttach } from "@/components/PromptAttach";
 import { hasFiles } from "@/lib/drop";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
@@ -43,6 +45,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   const { toast } = useWorkspace();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
+  const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
   useStageFacts("brief", p);
   const [scriptSha, setScriptSha] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
@@ -320,11 +323,11 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
         <section className="gx-gen-card" aria-label="Redraft the script" data-testid="beats-redraft" data-section="redraft">
           <span className="gx-eyebrow" data-functional-label="">Redraft the script from these beats</span>
           <p className="gx-hint">The agent rewrites the script so it plays this beat sheet — your edits, in this order — and the new draft goes to Brief & Script for your review.</p>
-          <textarea className="gx-textarea pd-small" maxLength={5000} value={notes} placeholder="Anything else for the writer (optional)" onChange={(e) => setNotes(e.target.value)} data-testid="beats-notes" />
+          <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="beats-notes-attach"><textarea className="gx-textarea pd-small" maxLength={5000} value={notes} placeholder="Anything else for the writer (optional)" onChange={(e) => setNotes(e.target.value)} data-testid="beats-notes" />{attach.chips}</PromptAttach>
           {activeWrite ? <p className="gx-hint" role="status" data-testid="beats-redraft-progress">{agentLabel(agentFamilyOf(activeWrite.model) ?? "claude")} is redrafting · step {Math.min(activeWrite.completedSteps + 1, activeWrite.totalSteps)} of {activeWrite.totalSteps}</p> : null}
           <AgentAction id="beats-redraft" estimateLabel="Estimate the redraft" startLabel={(c) => `Redraft the script · up to ${c} credits`} quote={redraftQuote} busy={runs.busy}
             blocked={blocked ?? (stale ? "Break the current script down first, or it is redrafted from beats of an older draft." : null)} secondary
-            onEstimate={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromBeats: true, ...(notes.trim() ? { instructions: notes.trim() } : {}) })}
+            onEstimate={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromBeats: true, ...(notes.trim() ? { instructions: notes.trim() } : {}), ...attach.input })}
             onStart={() => void runs.start().then(() => setNotes(""))} onChange={runs.clearQuote} />
           {lastRedraft && !activeWrite ? <button type="button" className="gx-hbtn" onClick={onBrief} data-testid="beats-review-redraft">A new draft is ready · review it in Brief & Script ›</button> : null}
         </section>

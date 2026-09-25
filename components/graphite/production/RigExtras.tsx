@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PromptAttach, attachedAsset, keptNote, resolveAttached } from "@/components/PromptAttach";
 import { setRigDropHandler, setShotFilesHandler } from "@/lib/shell/drop-targets";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
@@ -19,6 +20,24 @@ import { AgentAction } from "./AgentAction";
 import { useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 
+/** A shot's prompt boxes take media: pictures and videos become the shot's inputs (the render follows them); the rest stays in the Library. */
+export function ShotAttach({ shot, testId, children }: { shot: RigShot; testId: string; children: React.ReactNode }) {
+  const rig = useRig();
+  const project = rig.project;
+  return (
+    <PromptAttach scope={rig.scope} projectId={project?.id} testId={testId} onAttach={async (attached) => {
+      const { media, unreadable } = await resolveAttached(rig.scope, attached);
+      const placed: string[] = [], kept = [...unreadable];
+      for (const m of media) {
+        if (m.kind !== "image" && m.kind !== "video") { kept.push(m.name); continue; }
+        const why = rig.apply((p) => addInput(p, shot.id, p.assets.find((a) => a.id === m.id || a.generationId === m.id || a.uploadId === m.id) ?? attachedAsset(m, "Reference", `Reference for ${shot.name}`), m.name));
+        if (why) kept.push(`${m.name} (${why})`); else placed.push(m.name);
+      }
+      return [placed.length ? `${placed.join(", ")} ${placed.length === 1 ? "is an input" : "are inputs"} of ${shot.name}.` : "", keptNote(kept, "a shot's inputs are pictures and video.") ?? ""].filter(Boolean).join(" ") || null;
+    }}>{children}</PromptAttach>
+  );
+}
+
 /** The shot's own prompt (20,000 characters) and, when what it sends is over the engine's limit, the agent's condensation. */
 export function ShotPrompt({ shot, locked }: { shot: RigShot; locked: boolean }) {
   const rig = useRig();
@@ -31,8 +50,8 @@ export function ShotPrompt({ shot, locked }: { shot: RigShot; locked: boolean })
   return (
     <div className="pxw-insp-fieldcard" data-section="prompt" data-testid="rig-prompt">
       <div className="pxw-insp-fieldcard-head"><span>Prompt</span><span>{text.length.toLocaleString()} / {RIG_PROMPT_LIMIT.toLocaleString()}</span></div>
-      <textarea aria-label="Shot prompt" rows={8} maxLength={RIG_PROMPT_LIMIT} value={text} disabled={locked} placeholder="Everything this shot should be — up to 20,000 characters."
-        onChange={(e) => setError(rig.patchShot(shot.id, { prompt: e.target.value }))} data-testid="rig-prompt-input" />
+      <ShotAttach shot={shot} testId="rig-prompt-attach"><textarea aria-label="Shot prompt" rows={8} maxLength={RIG_PROMPT_LIMIT} value={text} disabled={locked} placeholder="Everything this shot should be — up to 20,000 characters."
+        onChange={(e) => setError(rig.patchShot(shot.id, { prompt: e.target.value }))} data-testid="rig-prompt-input" /></ShotAttach>
       {error ? <p className="pxw-insp-error" role="alert">{error}</p> : null}
       {render.prompt !== null && render.condensed ? <p className="pxw-inspector-note" data-testid="rig-condensed">Sends the agent’s condensed prompt ({render.prompt.length.toLocaleString()} characters) — edit the prompt and it asks again.</p> : null}
       {render.prompt === null ? <Condense shotId={shot.id} full={full} /> : null}

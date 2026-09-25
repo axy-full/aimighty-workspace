@@ -82,6 +82,8 @@ test("Gen's well takes a picture straight from the desktop as a reference", asyn
   test.skip(!DESKTOPS.includes(info.project.name), "one desktop: HTML drag and drop");
   const { project, errors } = await setup(page);
   await page.goto(`/suites?view=gen&project=${project.id}`);
+  /* The composer settles on the project first (it starts that project's own composer state). */
+  await expect(page.getByTestId("project-name")).toHaveText(project.name);
   await expect(page.getByTestId("gen-well")).toBeVisible();
   await dropFiles(page.getByTestId("gen-well"), [{ name: "look.png", type: "image/png", b64: await png("#7a4a2b") }]);
   await expect(page.getByTestId("gen-well")).toContainText("look.png", { timeout: 30_000 });

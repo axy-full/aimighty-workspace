@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
@@ -134,6 +135,16 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   }, [items, filter]);
   const running = ws.state.gen;
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
+  /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
+  const attachToGen = async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const used: string[] = [], kept = [...unreadable];
+    for (const m of media) {
+      if (takesReferences && (m.kind === "image" || m.kind === "video")) { dispatchComposer({ type: "addReference", value: { key: m.key, id: m.id, origin: m.origin, kind: m.kind, name: m.name, url: m.url } }); used.push(m.name); }
+      else kept.push(m.name);
+    }
+    return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, takesReferences ? "references are pictures and video." : `${model?.label ?? "this model"} takes a prompt only.`) ?? ""].filter(Boolean).join(" ") || null;
+  };
   const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
 
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
@@ -174,8 +185,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
           {presetNote ? <p className="gx-gen-note" role="status" data-testid="gen-preset-note">{presetNote}</p> : null}
-          <textarea className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
-            onChange={(e) => composer.dispatch({ type: "prompt", value: e.target.value })} data-testid="gen-prompt" />
+          <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToGen} testId="gen-attach"><textarea className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
+            onChange={(e) => composer.dispatch({ type: "prompt", value: e.target.value })} data-testid="gen-prompt" /></PromptAttach>
           <div className="gx-gen-enhance">
             <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="When an enhancement is on the card, it is what gets generated.">
               <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
