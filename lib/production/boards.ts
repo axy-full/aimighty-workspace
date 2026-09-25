@@ -77,16 +77,40 @@ export function renderPrompt(prompt: string, style: BoardStyle, sketch: boolean)
   return `${prompt.trim()}\n\n${look}${keep}`.slice(0, 10_000);
 }
 
+type DrawingUsers = {
+  assets: { id: string }[];
+  nodes: { assetId?: string; title: string }[];
+  bins?: { assetIds: string[] }[];
+  shots?: { assetId: string }[];
+  audioAssetId?: string;
+  audioClips?: { assetId: string }[];
+  production?: {
+    boards?: Boards;
+    environment?: { entries: { name: string; references: string[]; plates: { assetId: string }[]; selected?: string }[] };
+    cast?: { entries: { name: string; referenceAssetId?: string }[] };
+  };
+};
+
 /**
  * Deletes a line drawing (owner, 23 September): the drawing leaves the
  * project — its asset, any bin that lists it, and the beat it was on (with the
- * agent's reading of it). A drawing the Rig uses as an input is refused, so no
- * shot loses its reference. The upload itself stays in the workspace library.
+ * agent's reading of it). A drawing something else still uses — a Rig input,
+ * a shot in the cut, a sound clip, an Environment reference or plate, a Cast
+ * reference — is refused with where it is used, so nothing is left pointing
+ * at a missing asset. The upload itself stays in the workspace library.
  */
-export function deleteDrawing<P extends { assets: { id: string }[]; nodes: { assetId?: string; title: string }[]; bins?: { assetIds: string[] }[]; production?: { boards?: Boards } }>(project: P, assetId: string): P {
+export function deleteDrawing<P extends DrawingUsers>(project: P, assetId: string): P {
   if (!project.assets.some((a) => a.id === assetId)) throw new Error("That drawing is no longer in the project.");
   const user = project.nodes.find((n) => n.assetId === assetId);
   if (user) throw new Error(`This drawing is an input of “${user.title}” in the Rig. Remove it there first.`);
+  const shot = project.shots?.findIndex((s) => s.assetId === assetId) ?? -1;
+  if (shot >= 0) throw new Error(`This drawing is shot ${shot + 1} of the cut. Remove it from the timeline first.`);
+  if (project.audioAssetId === assetId || project.audioClips?.some((c) => c.assetId === assetId))
+    throw new Error("This drawing is a sound clip in the edit. Remove it from Sound mix first.");
+  const place = project.production?.environment?.entries.find((e) => e.references.includes(assetId) || e.selected === assetId || e.plates.some((p) => p.assetId === assetId));
+  if (place) throw new Error(`This drawing is ${place.references.includes(assetId) ? "a reference" : "a plate"} of “${place.name}” in Environment. Remove it there first.`);
+  const member = project.production?.cast?.entries.find((e) => e.referenceAssetId === assetId);
+  if (member) throw new Error(`This drawing is the reference of “${member.name}” in Cast & Elements. Remove it there first.`);
   const boards = project.production?.boards;
   const frames = boards ? Object.fromEntries(Object.entries(boards.frames).map(([id, f]) => [id, f.sketch?.assetId === assetId ? { ...f, sketch: undefined, reading: undefined, readingJobId: undefined } : f])) : undefined;
   return {
