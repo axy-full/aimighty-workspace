@@ -58,13 +58,14 @@ import {
 } from "./catalogue";
 import { loadConnectedCatalogue } from "./catalogue-cache";
 import { describeConsumerGenerationSources, longestVideoSourceSeconds, resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
-import { requireConnectedTool, type ConnectedToolName } from "./tools";
+import { findConnectedTool, requireConnectedTool, type ConnectedToolName } from "./tools";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { sameConsumerValue } from "./video-contract";
 import { CONSUMER_ORIGINAL_SECONDS, collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
 import { requireConnectedPreset } from "./presets";
+import { consumerTakeAsset, fileConsumerOriginal } from "./draft-filing";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 type Snapshot = {
@@ -76,6 +77,8 @@ type Snapshot = {
   tool?: { name: ConnectedToolName; label: string; model: string; suffix: string };
   /** Display names of the request's reference files, in request order. */
   sources?: { role: string; kind: string; name: string }[];
+  /** The Gen composer's takes: filed into the project on the server once collected. */
+  fileToProject?: true;
 };
 function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvailability, observedAt: number) {
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -90,6 +93,8 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     model: snapshot.model,
     tool: snapshot.tool ?? null,
     sources: snapshot.sources ?? [],
+    /** A Gen composer take, filed into the project by the server when it lands. */
+    fileToProject: snapshot.fileToProject === true,
     workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId,
     quoteCredits: job.quoteCredits,
@@ -148,7 +153,7 @@ async function requireModel(userId: string, input: ConsumerGenerationInput): Pro
 const sameInput = (a: unknown, b: ConsumerGenerationInput) =>
   sameConsumerValue(parseConsumerGenerationInput(a), b);
 const PLACEHOLDER_MEDIA = "00000000-0000-4000-8000-000000000000";
-export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string) {
+export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string, options: { fileToProject?: boolean } = {}) {
   const normalized = parseConsumerGenerationInput(input);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
@@ -191,6 +196,7 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
     workspaceName: quote.workspace.name ?? "Connected wallet",
     model: { id: model.id, name: model.name, outputType: model.outputType },
     sources: described,
+    ...(options.fileToProject === true ? { fileToProject: true as const } : {}),
   };
   if (normalized.tool) {
     const tool = requireConnectedTool(normalized.tool.name);
@@ -321,12 +327,27 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
         leaseToken: claim.leaseToken,
         resultManifest: { original, providerResult: { model: snapshot.params.model, type: snapshot.input.type, ...(enhancedPrompt ? { enhancedPrompt } : {}) } },
       });
+      if (completed && snapshot.fileToProject) await fileGenerationTake(completed, snapshot, original, Boolean(enhancedPrompt));
       return { job: await consumerGenerationView(completed ?? (await ownedGeneration(scope))), pollAfterSeconds };
     }
     return { job: await consumerGenerationView(await ownedGeneration(scope)), providerStatus: response.raw, pollAfterSeconds };
   } finally {
     await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 });
   }
+}
+/** A completed Gen take joins its project whether or not anyone is watching.
+ * Filing is free and repeatable; a failure never un-completes the job — the
+ * take is already in Takes, and the next save or the composer can file it. */
+async function fileGenerationTake(job: ConsumerJob, snapshot: Snapshot, original: Awaited<ReturnType<typeof collectConsumerVideoOriginal>>, enhanced: boolean) {
+  const preset = snapshot.tool ? findConnectedTool(snapshot.tool.name) : null;
+  const tool = preset ? { name: preset.name, sourceName: snapshot.sources?.find((source) => source.kind === preset.sourceKind)?.name ?? "Source" } : null;
+  const asset = consumerTakeAsset({
+    generationId: original.asset.generationId, url: original.asset.url, kind: original.asset.kind, mime: original.asset.mime,
+    credits: job.quoteCredits, modelName: snapshot.model.name, prompt: snapshot.input.prompt, enhanced, tool,
+  });
+  await fileConsumerOriginal(job.userId, job.draftId, asset).catch(() => {
+    console.error(JSON.stringify({ level: "error", event: "consumer_generation.filing_failed" }));
+  });
 }
 export async function consumerGenerationJobs(userId: string, draftId: string) {
   const observedAt = Date.now();

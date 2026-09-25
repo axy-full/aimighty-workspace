@@ -69,6 +69,7 @@ async function serviceFixture() {
       if (presetId !== "preset-dolly") throw new (await import("../../lib/higgsfield-consumer/catalogue")).CatalogueError("parameter_invalid", "That motion preset is not offered by the connected account.");
     } },
     "./video-contract": contract,
+    "./draft-filing": await import("../../lib/higgsfield-consumer/draft-filing"),
     "./video-original": {
       uncollectableOriginal: original.uncollectableOriginal,
       CONSUMER_ORIGINAL_SECONDS: 600,
@@ -302,6 +303,36 @@ test("polling collects the verified original once, records failure from the prov
       expect(f.state.collectCount).toBe(collects + 1);
     }
     f.state.collectorError = undefined;
+  }));
+
+test("a Gen take quoted to file into its project joins the saved draft when its status read completes it, once; other jobs are left to their surface", async () =>
+  fixture(async (f) => {
+    await f.database.db().execute({ sql: "UPDATE workbench_projects SET body=? WHERE owner='owner' AND project_id='draft'", args: [JSON.stringify({ assets: [] })] });
+    const assets = async () => (JSON.parse(String((await f.database.db().execute("SELECT body FROM workbench_projects WHERE owner='owner' AND project_id='draft'")).rows[0].body)) as { assets: { id: string; generationId?: string; name: string; category: string; description: string; prompt: string; status: string }[] }).assets;
+    const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID(), { fileToProject: true });
+    expect(quote.fileToProject).toBe(true);
+    await f.service.submitConsumerGenerationJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+    f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(quote.id)))!.payloadJson).params);
+    // The read that completes the job — the page's, or the background sweep's — files it; nobody has to be watching.
+    const done = await f.service.pollConsumerGeneration(scoped(quote.id));
+    expect(done.job.status).toBe("completed");
+    const generationId = (done.job.result as { original: { generationId: string } }).original.generationId;
+    expect(await assets()).toEqual([expect.objectContaining({
+      id: generationId, generationId, category: "Generate", status: "Draft", prompt: request.prompt,
+      name: `${done.job.model.name} · ${request.prompt}`, description: `${done.job.model.name} · 9 connected credits`,
+    })]);
+    // Settled: a later read, or a second window, never files it twice.
+    await f.service.pollConsumerGeneration(scoped(quote.id));
+    expect(await assets()).toHaveLength(1);
+    // A job quoted without the flag (Business, Atomik) completes into Takes but is not added to the draft here.
+    f.state.providerJobId = randomUUID();
+    const other = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt: "An ad still" }, randomUUID());
+    expect(other.fileToProject).toBe(false);
+    await f.service.submitConsumerGenerationJob(scoped(other.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+    f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(other.id)))!.payloadJson).params);
+    expect((await f.service.pollConsumerGeneration(scoped(other.id))).job.status).toBe("completed");
+    expect(await assets()).toHaveLength(1);
+    expect(f.state.paidCount).toBe(2);
   }));
 
 test("a tool preset quotes through the same pipeline, records the tool and source names on the job, and refuses a missing or extra source before any import", async () =>

@@ -24,6 +24,11 @@ import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generat
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
+import { resumePhase } from "@/lib/higgsfield-consumer/resume";
+import type { ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
+import { resumeLine, useClock } from "./ResumedJobs";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -36,6 +41,8 @@ const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label
 const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
+const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
+const takeName = (job: ConnectedJob) => job.input.prompt.trim().slice(0, 60) || `${job.model.name} take`;
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -150,6 +157,20 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
   }, [items, filter]);
   const running = ws.state.gen;
+  /* Takes still rendering on the connected account from an earlier visit: followed until they land. */
+  const toast = ws.toast;
+  const projectId = project?.id ?? null;
+  const resumed = useResumedConnectedJobs({
+    scope, draftId: projectId,
+    accept: (job) => job.fileToProject === true,
+    onSettled: (job) => {
+      if (job.status !== "completed" || !projectId) return;
+      toast(`${takeName(job)} rendered. Filed in Takes.`);
+      void refreshProjectLibrary(scope, projectId);
+    },
+  });
+  const pickedUp = resumed.jobs.filter((item) => item.job.id !== running?.id);
+  const clock = useClock(pickedUp.length ? 30_000 : 0);
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
   /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
   const attachToGen = async (attached: Attached) => {
@@ -344,6 +365,18 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>
           ) : null}
+          {pickedUp.map(({ job, problem }) => {
+            const phase = resumePhase(job.status);
+            return (
+              <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
+                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(${RING[phase.tone]} ${phase.pct}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+                <span className="gx-asset-name">{takeName(job)}</span>
+                <span className="gx-asset-meta">{resumeLine(job.status, job.createdAt, clock)}</span>
+                {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
+                {job.status === "failed" ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
+              </div>
+            );
+          })}
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
@@ -360,7 +393,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             </div>
           )}
         />
-        {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !pickedUp.length && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`

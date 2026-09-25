@@ -13,7 +13,10 @@ import {
 import { useShell } from "@/lib/shell/state";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
-import { composerBusy, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
+import type { ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { ResumedJobRows, type ResumedRow } from "../ResumedJobs";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -151,6 +154,34 @@ function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnec
   return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
 }
 
+/** The job this composer remembers for the project (it resumes that one itself, on its button). */
+function rememberedJob(slot: string, draftId: string | null): string | null {
+  try { return draftId ? localStorage.getItem(connectedJobKey(slot, draftId)) : null; } catch { return null; }
+}
+/**
+ * This composer's other jobs still on the account from an earlier visit (another
+ * device, another tab, or older than the one it remembers), followed until they
+ * land. The one it is resuming or running right now is shown by its button.
+ */
+function useEarlierJobs(scope: string, project: Project | null, job: ReturnType<typeof useConnectedJob>, slot: string, models: readonly string[], done: string, name: (job: ConnectedJob) => string) {
+  const ws = useWorkspace();
+  const resumed = useResumedConnectedJobs({
+    scope, draftId: project?.id ?? null, keepCompleted: true,
+    accept: (saved) => !saved.fileToProject && models.includes(saved.input.model),
+    onSettled: (saved) => { if (saved.status === "completed") ws.toast(done); },
+  });
+  const live = "job" in job.state && job.state.job ? job.state.job.id : null;
+  const own = rememberedJob(slot, project?.id ?? null);
+  const rows: ResumedRow[] = resumed.jobs.filter((item) => item.job.id !== live && item.job.id !== own).map(({ job: saved, problem }) => ({
+    id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem,
+  }));
+  return { rows, dismiss: resumed.dismiss };
+}
+/* Ads run one engine, so an ad is named by its prompt; Image ads say which of their two engines made it. */
+const adName = (job: ConnectedJob) => job.input.prompt.trim().slice(0, 80) || job.model.name;
+const imageAdName = (job: ConnectedJob) => [job.model.name, job.input.prompt.trim().slice(0, 60)].filter(Boolean).join(" · ");
+const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
+
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
   if (state.phase === "resuming") return "Checking the last take…";
@@ -167,6 +198,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const ws = useWorkspace();
   const [s, set] = useState<AdsState>(() => adsFromPreset(takePreset("ads")));
   const job = useConnectedJob(project?.id ?? null, "ads");
+  const earlier = useEarlierJobs(scope, project, job, "ads", [ADS_MODEL], "An ad from earlier rendered and is in your takes.", adName);
   const model: CatalogueModel | undefined = business.models[ADS_MODEL];
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
@@ -201,6 +233,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         <p className="bz-intro">Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode. Quoted before it runs; saved to your takes.</p>
         {!connected && business.connection ? <p className="gx-reason" data-testid="ads-connect">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
         {business.catalogueError ? <p className="gx-gen-error" role="alert">{business.catalogueError}</p> : null}
+        <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <div className="gx-gen-row" data-testid="ads-product">
           <span className="gx-eyebrow" data-functional-label="">Product<span className="bz-note"> · product_ids · hooks are weak without one</span></span>
@@ -266,6 +299,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const ws = useWorkspace();
   const [s, set] = useState<ImageAdsState>(() => imageAdsFromPreset(takePreset("dtc")));
   const job = useConnectedJob(project?.id ?? null, "dtc");
+  const earlier = useEarlierJobs(scope, project, job, "dtc", IMAGE_AD_MODELS, "An image ad from earlier rendered and is in your takes.", imageAdName);
   const dtc = isDtc(s);
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
@@ -295,6 +329,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
         <p className="bz-intro">A branded ad image from the prompt and up to 14 reference stills.</p>
+        <ResumedJobRows rows={earlier.rows} label="Image ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="dtc-earlier" />
         <div className="gx-gen-row" data-testid="dtc-engine">
           <span className="gx-eyebrow" data-functional-label="">Engine</span>
           <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Image ads engine">

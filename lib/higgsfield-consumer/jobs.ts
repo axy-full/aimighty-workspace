@@ -445,6 +445,33 @@ export async function listConsumerRecoveryJobs(
   }));
   return rows.rows.map(asJob);
 }
+/** The workflows that have a leased status poll a background sweep may call. */
+export const CONSUMER_POLLED_WORKFLOWS: readonly ConsumerWorkflow[] = Object.freeze([
+  "generation", "genjutsu", "marketing-video", "marketing-template", "voice-tool", "shorts",
+]);
+/**
+ * Admitted jobs nobody may be watching, for the cron sweep: accepted jobs whose
+ * poll lease and next-poll time have passed, then uncertain jobs that kept a
+ * receipt to reconcile. Never a quoted row, so a caller can only read status.
+ * Least recently asked first, so one stuck job cannot starve the rest.
+ */
+export async function listConsumerDueJobs(
+  input: { limit?: number; now?: number } = {},
+): Promise<ConsumerJob[]> {
+  const limit = input.limit ?? CONSUMER_ACTIVE_LIMIT;
+  const now = input.now ?? Date.now();
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || !Number.isSafeInteger(now)) invalid();
+  await consumerJobsReady();
+  const rows = await db().execute({
+    sql: `SELECT * FROM higgsfield_consumer_jobs
+      WHERE workflow IN (${CONSUMER_POLLED_WORKFLOWS.map(() => "?").join(",")})
+        AND ((status='accepted' AND provider_job_id IS NOT NULL AND (poll_lease_until IS NULL OR poll_lease_until<=?))
+          OR (status='uncertain' AND provider_receipt IS NOT NULL AND dispatch_claim_hash IS NOT NULL))
+      ORDER BY CASE status WHEN 'accepted' THEN 0 ELSE 1 END, COALESCE(poll_lease_until,0), updated_at, id LIMIT ?`,
+    args: [...CONSUMER_POLLED_WORKFLOWS, now, limit],
+  });
+  return rows.rows.map(asJob);
+}
 export async function listConsumerJobs(
   input: ConsumerScope & { limit?: number; before?: ConsumerJobCursor },
 ): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
+import { resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfterStatus, type ViralRun } from "./viral";
 
@@ -9,7 +10,9 @@ import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfter
  * (`/api/higgsfield/consumer/genjutsu`, the existing route): the connection
  * and capabilities, this project's jobs, a read-only quote for exactly the
  * current input (the *live estimate* the primary requires), submit at that
- * exact price, and polling. Nothing here invents a price.
+ * exact price, and polling. Nothing here invents a price. A status read
+ * that fails for a job still on the account is said plainly on its row
+ * (reconnect, storage, an outage) while it keeps being asked after.
  */
 export type GenjutsuJob = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
@@ -30,11 +33,13 @@ export function useViral(draftId: string | null, ready: boolean) {
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [run, setRun] = useState<ViralRun<GenjutsuJob>>({ phase: "idle" });
   const [listError, setListError] = useState<string | null>(null);
+  /** A failed status read for a job still in flight, in the product's words; cleared by its next good read. */
+  const [problems, setProblems] = useState<Record<string, string>>({});
 
   const call = useCallback(async (body: unknown) => {
     const response = await scoped(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const json = await response.json().catch(() => null) as { job?: GenjutsuJob; error?: string } | null;
-    if (!response.ok || !json?.job) throw new Error(json?.error ?? "The connected account could not complete this request.");
+    const json = await response.json().catch(() => null) as { job?: GenjutsuJob; error?: string; code?: string } | null;
+    if (!response.ok || !json?.job) throw Object.assign(new Error(json?.error ?? "The connected account could not complete this request."), { code: json?.code });
     return json.job;
   }, [scoped]);
 
@@ -100,12 +105,18 @@ export function useViral(draftId: string | null, ready: boolean) {
         const job = await call({ action: "status", draftId, id });
         if (stop) return;
         setJobs((list) => list.map((j) => (j.id === job.id ? job : j)));
+        setProblems((all) => { if (!(job.id in all)) return all; const next = { ...all }; delete next[job.id]; return next; });
         setRun((current) => runAfterStatus(current, job));
         if (job.status === "completed") void refresh();
-      } catch { /* retried on its next turn */ }
+      } catch (error) {
+        /* Retried on its next turn; meanwhile the row says what is wrong and who can fix it. */
+        if (stop) return;
+        const problem = resumeProblem((error as { code?: string }).code, error instanceof Error ? error.message : null);
+        setProblems((all) => (all[id] === problem ? all : { ...all, [id]: problem }));
+      }
     }, POLL_MS);
     return () => { stop = true; clearInterval(timer); };
   }, [pending, call, draftId, refresh]);
 
-  return { connection, capabilities, jobs, estimate, run, listError, quote, submit, refresh, reset: () => setRun({ phase: "idle" }) };
+  return { connection, capabilities, jobs, problems, estimate, run, listError, quote, submit, refresh, reset: () => setRun({ phase: "idle" }) };
 }
