@@ -23,6 +23,8 @@ export type DevelopmentRequest = {
   shotId?: string; sketchAssetId?: string;
   /** `condense` only: the Rig shot whose render prompt is condensed. */
   nodeId?: string;
+  /** Pictures and text files the director attached to the prompt box (project asset ids, up to four): the agent sees them (owner, 25 September). */
+  attachmentAssetIds?: string[];
 };
 export type DevelopmentIdea = { title: string; logline: string; treatment: string; visualDirection: string; critique: string };
 export type DevelopmentShot = { description: string; framing: string; movement: string; lighting: string; sound: string };

@@ -1,5 +1,6 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { PromptAttach, attachedAsset, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { entryAsset } from "@/lib/production/sequence";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -228,6 +229,21 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     void editor.ensureSaved();
   };
 
+  /* Attached to an entry's description or prompt: the first picture becomes its reference image (the Soul models take one). */
+  const attachToEntry = (entry: CastEntry) => async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const picture = media.find((m) => m.kind === "image");
+    const kept = [...unreadable, ...media.filter((m) => m !== picture).map((m) => m.name)];
+    if (picture) {
+      const known = p.assets.find((a) => a.id === picture.id || a.generationId === picture.id || a.uploadId === picture.id);
+      const asset = known ?? attachedAsset(picture, "Reference", `Reference for ${entry.name}`);
+      editor.change((old) => ({ ...old, assets: old.assets.some((a) => a.id === asset.id) ? old.assets : [...old.assets, asset] }));
+      setEntry(entry.id, (x) => ({ ...x, referenceAssetId: asset.id }));
+      await editor.ensureSaved();
+    }
+    return [picture ? `${picture.name} is the reference for ${entry.name || "this entry"}.` : "", keptNote(kept, "an entry takes one reference picture.") ?? ""].filter(Boolean).join(" ") || null;
+  };
+
   const fromBeats = useMemo(() => castFromBeats(p.production?.beats, cast.entries), [p.production?.beats, cast.entries]);
   const agentModel = agent.model;
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
@@ -298,7 +314,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                   {(["character", "element"] as const).map((k) => <button key={k} type="button" role="radio" className="gx-seg-btn" aria-checked={entry.kind === k} onClick={() => setEntry(entry.id, (x) => ({ ...x, kind: k, soulId: k === "character" ? x.soulId : undefined }))}><span>{k === "character" ? "Cast" : "Element"}</span></button>)}
                 </div>
               </div>
-              <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} description`} value={entry.description} maxLength={CAST_LIMITS.description} placeholder="Who or what it is, where it appears" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, description: v })); }} />
+              <PromptAttach scope={scope} projectId={p.id} onAttach={attachToEntry(entry)} testId="cast-description-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} description`} value={entry.description} maxLength={CAST_LIMITS.description} placeholder="Who or what it is, where it appears" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, description: v })); }} /></PromptAttach>
               <div className="gx-seg gx-seg--sm pd-soul-models" role="radiogroup" aria-label={`${entry.name || "Entry"} Soul model`}>
                 {SOUL_MODELS.map((m) => <button key={m.id} type="button" role="radio" className="gx-seg-btn" aria-checked={soul === m.id} disabled={models !== null && !models[m.id]} title={m.line} onClick={() => setEntry(entry.id, (x) => ({ ...x, model: m.id }))} data-testid={`cast-model-${m.id}`}><span>{m.label}</span></button>)}
               </div>
@@ -307,7 +323,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                   {(["environment", "prop"] as const).map((c) => <button key={c} type="button" role="radio" className="gx-seg-btn" aria-checked={entryCategory(entry) === c} onClick={() => setEntry(entry.id, (x) => ({ ...x, category: c }))}><span>{c === "environment" ? "Environment" : "Prop"}</span></button>)}
                 </div>
               ) : null}
-              <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} maxLength={CAST_LIMITS.prompt} placeholder="What Soul Cinema should build" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="cast-prompt" />
+              <PromptAttach scope={scope} projectId={p.id} onAttach={attachToEntry(entry)} testId="cast-prompt-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} maxLength={CAST_LIMITS.prompt} placeholder="What Soul Cinema should build" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="cast-prompt" /></PromptAttach>
               <div className="pd-row-head">
                 {declares("quality") ? (
                   <label className="pd-soul"><span className="gx-hint">Quality</span>

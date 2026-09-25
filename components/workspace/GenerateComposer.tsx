@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { previewAttrs } from "@/lib/preview";
 import { X } from "lucide-react";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
@@ -94,6 +95,16 @@ export function GenerateComposer({
   const wantsVoice = audioTask === "speech";
   const wantsSeconds = audioTask === "sound" || audioTask === "music";
 
+  /* The prompt takes media: pictures and videos become references (not for sound); the rest stays in the Library. */
+  const attachToComposer = async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const used: string[] = [], kept = [...unreadable];
+    for (const m of media) {
+      if (state.type !== "audio" && (m.kind === "image" || m.kind === "video")) { composer.dispatch({ type: "addReference", value: { key: m.key, id: m.id, origin: m.origin, kind: m.kind, name: m.name, url: m.url } }); used.push(m.name); }
+      else kept.push(m.name);
+    }
+    return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, state.type === "audio" ? "sound is made from the script alone." : "references are pictures and video.") ?? ""].filter(Boolean).join(" ") || null;
+  };
   const addReference = async (payload: Parameters<typeof resolveGenInput>[0]) => {
     setReferenceError(null);
     try {
@@ -151,7 +162,7 @@ export function GenerateComposer({
 
             <Field label={wantsVoice ? "Script" : "Prompt"}>
               {(id) => (
-                <textarea
+                <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToComposer} testId="composer-attach"><textarea
                   id={id}
                   ref={prompt}
                   className="pxw-textarea"
@@ -162,7 +173,7 @@ export function GenerateComposer({
                   value={state.prompt}
                   disabled={submitting}
                   onChange={(event) => composer.dispatch({ type: "prompt", value: event.target.value })}
-                />
+                /></PromptAttach>
               )}
             </Field>
 

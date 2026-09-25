@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import LazyMedia from "@/components/LazyMedia";
@@ -75,6 +76,13 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
     set((prev) => { let st = prev; notes.length = 0; for (const m of medias) { const r = addMedia(st, m); st = r.state; if (r.note) notes.push(r.note); } return st; });
     setNote([...(missing ? ["That asset is not in this project's Library."] : []), ...notes].join(" ") || null);
   };
+  /* The prompt takes media too: a video becomes the source, pictures the references. */
+  const attachToViral = async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const fit = media.filter((m) => m.kind === "video" || m.kind === "image");
+    place(fit.map((m): ViralMedia => ({ id: m.key, sourceId: m.id, origin: m.origin, kind: m.kind as "video" | "image", name: m.name, url: m.url, seconds: m.seconds })));
+    return keptNote([...unreadable, ...media.filter((m) => !fit.includes(m)).map((m) => m.name)], "this takes one source video and reference pictures.");
+  };
   /* A tile from anywhere, or files from the device: uploaded into the project and placed at once. */
   const dropped = (e: React.DragEvent) => {
     e.preventDefault(); setOver(false);
@@ -134,7 +142,7 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
         </div>
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">{copy.promptLabel}</span>
-          <textarea className="gx-textarea" aria-label={copy.promptLabel} rows={3} placeholder={copy.promptPlaceholder} value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="viral-prompt" />
+          <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToViral} testId="viral-attach"><textarea className="gx-textarea" aria-label={copy.promptLabel} rows={3} placeholder={copy.promptPlaceholder} value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="viral-prompt" /></PromptAttach>
         </div>
         {reason ? <p className="gx-reason" id="vr-reason" data-testid="viral-reason">{reason}</p> : null}
         {viral.run.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="viral-error">{viral.run.error}</p> : null}

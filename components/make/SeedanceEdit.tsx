@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useImperativeHandle, type Ref } from "react";
+import { PromptAttach, keptNote, resolveAttached } from "@/components/PromptAttach";
 import { previewAttrs } from "@/lib/preview";
 import { Film, Upload, X } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
@@ -337,14 +338,19 @@ export default function SeedanceEdit({
             <label className={styles.sectionLabel} htmlFor="edit-prompt">
               Edit direction
             </label>
-            <textarea
+            <PromptAttach scope={requestScope ?? ""} projectId={project?.id} testId="seedance-attach" onAttach={async (attached) => {
+              const { media, unreadable } = await resolveAttached(requestScope ?? "", attached);
+              const fit = media.filter((m) => m.kind === "video" || m.kind === "image");
+              for (const m of fit) await receiver.useAsset(m.key);
+              return keptNote([...unreadable, ...media.filter((m) => !fit.includes(m)).map((m) => m.name)], "an edit takes one source clip and reference pictures.");
+            }}><textarea
               id="edit-prompt"
               className={styles.prompt}
               value={displayedPrompt}
               maxLength={9500}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="Replace the daylight with soft blue hour. Keep the actor, camera movement and composition. Preserve the dialogue."
-            />
+            /></PromptAttach>
           </div>
           <div className={edit.source} aria-label="Edit reference drop area" onDragOver={receiver.onDragOver} onDrop={(event) => receiver.onDrop(event, "reference")}>
             <label className={styles.sectionLabel} htmlFor="edit-reference">

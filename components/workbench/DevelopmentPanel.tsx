@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAgentAttachments } from '@/components/graphite/production/use-agent-attachments';
+import { PromptAttach } from '@/components/PromptAttach';
 import { ArrowRight, Download, RefreshCw, Sparkles } from 'lucide-react';
 import { ModelPicker, EffortPicker, thinkingModelName, effortLabel, type ThinkingModel } from '@/components/atomik/ModelPicker';
 import type { Project } from '@/lib/workbench/studio';
@@ -13,14 +15,17 @@ const endpoint = '/api/workbench/development';
 const statusLabel = { queued: 'Queued', running: 'Developing', succeeded: 'Complete', failed: 'Needs attention', uncertain: 'Unconfirmed' };
 const stageLabel = { draft: 'Drafting', critique: 'Reviewing', refine: 'Refining', complete: 'Complete' };
 const kindLabel = (kind: DevelopmentKind) => kind === 'idea' ? 'Idea development' : kind === 'adfilm' ? 'Ad-film breakdown' : 'Screenplay breakdown';
-export function DevelopmentPanel({ project, kind, scope, enabled, models: connectedModels, onSave, onApply }: {
+export function DevelopmentPanel({ project, kind, scope, enabled, models: connectedModels, onSave, onApply, change }: {
   project: Project; kind: DevelopmentKind; scope: string; enabled: boolean; models: ThinkingModel[];
   onSave: () => Promise<boolean>; onApply: (job: DevelopmentJob, choice: ApplyChoice) => Promise<void>;
+  /** When given, the instructions box takes pictures and text files the agent sees (owner, 25 September). */
+  change?: (fn: (p: Project) => Project) => void;
 }) {
   const [provider, setProvider] = useState('anthropic');
   const [pickedModel, setPickedModel] = useState('');
   const [effort, setEffort] = useState('auto');
   const [instructions, setInstructions] = useState('');
+  const attach = useAgentAttachments({ scope, project, change: change ?? (() => {}), save: onSave });
   const [state, setState] = useState<DevelopmentState | null>(null);
   const [resultPages, setResultPages] = useState<Record<string, DevelopmentJob>>({});
   const [quote, setQuote] = useState<{ value: DevelopmentQuote; input: DevelopmentRequest } | null>(null);
@@ -39,7 +44,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
   const model = models.find(value => value.id === pickedModel)?.id ?? [...models].sort((a, b) => ((b as ThinkingModel).released ?? 0) - ((a as ThinkingModel).released ?? 0))[0]?.id ?? '';
   const selectedModel = models.find(value => value.id === model);
   const sourceHash = identity.canonical === canonical ? identity.hash : '';
-  const shownQuote = quote && quote.value.sourceHash === sourceHash && quote.input.kind === kind && quote.input.model === model && quote.input.effort === effort && quote.input.instructions === instructions ? quote : null;
+  const shownQuote = quote && quote.value.sourceHash === sourceHash && quote.input.kind === kind && quote.input.model === model && quote.input.effort === effort && quote.input.instructions === instructions && JSON.stringify(quote.input.attachmentAssetIds ?? []) === JSON.stringify(attach.ids) ? quote : null;
   const runs = state?.jobs.filter(job => job.kind === kind).map(job => resultPages[job.id] ?? job) ?? [];
   const running = state?.jobs.some(job => job.status === 'queued' || job.status === 'running');
   const completeSource = kind === 'idea' ? !!project.brief.trim() : !!project.script?.trim();
@@ -96,7 +101,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
       const snapshot = canonical;
       if (!(await callbacks.current.onSave())) throw new Error('Save this project before requesting a development estimate.');
       if (currentCanonical.current !== snapshot) throw new Error('The source changed while saving. Review the estimate again.');
-      const input: DevelopmentRequest = { projectId: project.id, requestId: crypto.randomUUID(), kind, model, effort, instructions };
+      const input: DevelopmentRequest = { projectId: project.id, requestId: crypto.randomUUID(), kind, model, effort, instructions, ...attach.input };
       const value = await studioRequest<DevelopmentQuote>(endpoint, { method: 'POST', headers, body: JSON.stringify({ ...input, quoteOnly: true }) });
       if (!active.current) return;
       if (currentCanonical.current !== snapshot || value.sourceHash !== sourceHash) throw new Error('The saved source changed. Review its latest version and request a fresh estimate.');
@@ -193,7 +198,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
       <div><label>Model</label><ModelPicker label={`${kindLabel(kind)} model`} value={model} models={models} allowAuto={false} disabled={!enabled || !models.length || !!busy || !!pending} onPick={value => { setPickedModel(value); setEffort('auto'); }} /></div>
       <div><label>Reasoning effort</label><EffortPicker label={`${kindLabel(kind)} effort`} model={selectedModel} value={effort} disabled={!enabled || !!busy || !!pending} onPick={setEffort}/></div>
     </div>
-    <label className={styles.instructions}>Creative instructions <span>Optional</span><textarea aria-label={`${kindLabel(kind)} instructions`} value={instructions} maxLength={4000} disabled={!!busy || !!pending} onChange={event => setInstructions(event.target.value)} placeholder={kind === 'idea' ? 'Tone, constraints, ideas to explore, or what to avoid…' : 'Coverage priorities, tone, duration, production constraints…'}/></label>
+    <label className={styles.instructions}>Creative instructions <span>Optional</span>{change ? <PromptAttach scope={scope} projectId={project.id} onAttach={attach.onAttach} label="Attach for the agent" testId="development-attach"><textarea aria-label={`${kindLabel(kind)} instructions`} value={instructions} maxLength={4000} disabled={!!busy || !!pending} onChange={event => setInstructions(event.target.value)} placeholder={kind === 'idea' ? 'Tone, constraints, ideas to explore, or what to avoid…' : 'Coverage priorities, tone, duration, production constraints…'}/>{attach.chips}</PromptAttach> : <textarea aria-label={`${kindLabel(kind)} instructions`} value={instructions} maxLength={4000} disabled={!!busy || !!pending} onChange={event => setInstructions(event.target.value)} placeholder={kind === 'idea' ? 'Tone, constraints, ideas to explore, or what to avoid…' : 'Coverage priorities, tone, duration, production constraints…'}/>}</label>
     {!enabled && <p className={styles.hint}>Sign in and save a project to use your assistant.</p>}
     {enabled && !completeSource && <p className={styles.hint}>{kind === 'idea' ? 'Add a creative brief to begin.' : 'Upload or write a script to begin.'}</p>}
     {enabled && loaded && !models.length && <p className={styles.hint}>No connected models for this provider. Check workspace connections.</p>}

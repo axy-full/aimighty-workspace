@@ -1,5 +1,6 @@
 "use client";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { PromptAttach, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { readsLabel } from "@/lib/crew/context";
 import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS_MAX } from "@/lib/crew/room";
 import { useCrew, type CrewRoom, type RoomMessage } from "@/lib/crew/use-crew";
@@ -135,7 +136,11 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
 
         <div className="cw-goal">
           <div className="cw-goal-top"><label className="gx-eyebrow" htmlFor="cw-goal" data-functional-label="">Goal</label><span className="cw-dim">Rounds run · {room.session?.roundsRun ?? 0} of {ROUNDS_MAX}</span></div>
-          <textarea id="cw-goal" className="cw-textarea" rows={3} value={room.goal} disabled={room.running} onChange={(e) => room.setGoal(e.target.value)} placeholder="What should the room solve? One sentence is enough." data-testid="crew-goal" />
+          <PromptAttach scope={scope} projectId={project?.id} testId="crew-goal-attach" onAttach={async (attached) => {
+            const got = await (async (attached: Attached) => { const { media, unreadable } = await resolveAttached(scope, attached); return [...media.map((m) => m.name), ...unreadable]; })(attached);
+            if (got.length) room.setGoal(`${room.goal.trim()}\n\nAttached in the project Library: ${got.join(", ")}.`.trim());
+            return got.length ? "The room reads words, not pictures or sound: the files are kept in the Library and named in the goal." : null;
+          }}><textarea id="cw-goal" className="cw-textarea" rows={3} value={room.goal} disabled={room.running} onChange={(e) => room.setGoal(e.target.value)} placeholder="What should the room solve? One sentence is enough." data-testid="crew-goal" /></PromptAttach>
           <div className="cw-goal-row">
             <span className="cw-dim">Room reads</span>
             {CONTEXT_LABELS.map(([key, label]) => <button key={key} type="button" className="gx-chip" aria-pressed={room.context[key]} disabled={room.running} onClick={() => room.setContext(key)}>{label}</button>)}
@@ -167,7 +172,11 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
         </div>
 
         <div className="cw-say">
-          <input className="gx-field" aria-label="Interject" placeholder="Say something to the room — members read it next round" value={say} disabled={!project} onChange={(e) => setSay(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(); }} data-testid="crew-say" />
+          <PromptAttach scope={scope} projectId={project?.id} testId="crew-say-attach" onAttach={async (attached) => {
+            const got = await (async (attached: Attached) => { const { media, unreadable } = await resolveAttached(scope, attached); return [...media.map((m) => m.name), ...unreadable]; })(attached);
+            if (got.length) setSay((v) => `${v.trim()} (attached in the Library: ${got.join(", ")})`.trim());
+            return got.length ? "The room reads words: the files are kept in the Library and named in your message." : null;
+          }}><input className="gx-field" aria-label="Interject" placeholder="Say something to the room — members read it next round" value={say} disabled={!project} onChange={(e) => setSay(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(); }} data-testid="crew-say" /></PromptAttach>
           <button type="button" className="gx-hbtn" disabled={!say.trim() || !project} onClick={send}>Send</button>
         </div>
       </section>

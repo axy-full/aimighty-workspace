@@ -1,7 +1,8 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
-import { resolveGenInput } from "@/lib/genAssetInput";
+import { resolveGenInput, type GenInputAsset } from "@/lib/genAssetInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
@@ -294,13 +295,24 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
       try {
         const got = await resolveGenInput(ids[0], scope);
         if (got.kind !== "image") throw new Error("A drawing is a picture.");
-        const asset: Asset = { id: got.id, ...(got.origin === "generation" ? { generationId: got.id } : { uploadId: got.id }), kind: "image", category: "Sketch", name: got.name.slice(0, 200), url: got.url, mime: got.mime, description: `Rough drawing for shot ${shot.number}`, prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
-        editor.change((old) => ({ ...old, assets: old.assets.some((a) => a.id === asset.id) ? old.assets : [...old.assets, asset] }));
-        setFrame(shot.id, (f) => ({ ...f, sketch: { assetId: asset.id, name: asset.name }, reading: undefined, readingJobId: undefined }));
-        await editor.ensureSaved();
+        await placeDrawing(shot, got);
       } catch (error) { setErrors((x) => ({ ...x, [shot.id]: error instanceof Error ? error.message : "The drawing could not be placed." })); }
       finally { setWorking((w) => ({ ...w, [shot.id]: "" })); }
     })();
+  };
+  /* One picture as the shot's rough drawing — from a drop or a prompt box's attachment. */
+  const placeDrawing = async (shot: NumberedShot, got: GenInputAsset) => {
+    const asset: Asset = { id: got.id, ...(got.origin === "generation" ? { generationId: got.id } : { uploadId: got.id }), kind: "image", category: "Sketch", name: got.name.slice(0, 200), url: got.url, mime: got.mime, description: `Rough drawing for shot ${shot.number}`, prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
+    editor.change((old) => ({ ...old, assets: old.assets.some((a) => a.id === asset.id) ? old.assets : [...old.assets, asset] }));
+    setFrame(shot.id, (f) => ({ ...f, sketch: { assetId: asset.id, name: asset.name }, reading: undefined, readingJobId: undefined }));
+    await editor.ensureSaved();
+  };
+  const attachToFrame = (shot: NumberedShot) => async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(scope, attached);
+    const picture = media.find((m) => m.kind === "image");
+    if (picture) await placeDrawing(shot, picture);
+    const kept = [...unreadable, ...media.filter((m) => m !== picture).map((m) => m.name)];
+    return [picture ? `${picture.name} is the rough drawing for shot ${shot.number}; the agent reads it and the frame keeps its blocking.` : "", keptNote(kept, "a frame takes one picture as its drawing.") ?? ""].filter(Boolean).join(" ") || null;
   };
 
   const model = agent.model;
@@ -502,8 +514,8 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                 <div className="pd-frame-edit" data-testid="frame-reviser">
                   <label className="gx-gen-row">
                     <span className="gx-eyebrow" data-functional-label="">Revise · a fresh prompt for shot {shot.number}</span>
-                    <textarea className="gx-textarea pd-small" aria-label={`Fresh prompt for shot ${shot.number}`} maxLength={FRAME_PROMPT_LIMIT} value={revising[shot.id]} placeholder="Describe this frame afresh — what you want to see instead."
-                      onChange={(e) => { const v = e.target.value; setRevising((r) => ({ ...r, [shot.id]: v })); }} data-testid="frame-revise-prompt" />
+                    <PromptAttach scope={scope} projectId={p.id} onAttach={attachToFrame(shot)} testId="frame-revise-attach"><textarea className="gx-textarea pd-small" aria-label={`Fresh prompt for shot ${shot.number}`} maxLength={FRAME_PROMPT_LIMIT} value={revising[shot.id]} placeholder="Describe this frame afresh — what you want to see instead."
+                      onChange={(e) => { const v = e.target.value; setRevising((r) => ({ ...r, [shot.id]: v })); }} data-testid="frame-revise-prompt" /></PromptAttach>
                   </label>
                   <div className="gx-gen-enhance">
                     <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || !(revising[shot.id] ?? "").trim()} onClick={() => void revise(shot)} data-testid="frame-revise-price">{working[shot.id] || "Price the revision"}</button>
@@ -517,7 +529,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                 <div className="pd-frame-edit" data-testid="frame-editor">
                   <label className="gx-gen-row">
                     <span className="gx-eyebrow" data-functional-label="">Prompt · shot {shot.number}</span>
-                    <textarea className="gx-textarea pd-small" aria-label={`Shot ${shot.number} prompt`} maxLength={FRAME_PROMPT_LIMIT} value={frame.prompt} onChange={(e) => { const v = e.target.value; setFrame(shot.id, (f) => ({ ...f, prompt: v })); }} data-testid="frame-prompt" />
+                    <PromptAttach scope={scope} projectId={p.id} onAttach={attachToFrame(shot)} testId="frame-prompt-attach"><textarea className="gx-textarea pd-small" aria-label={`Shot ${shot.number} prompt`} maxLength={FRAME_PROMPT_LIMIT} value={frame.prompt} onChange={(e) => { const v = e.target.value; setFrame(shot.id, (f) => ({ ...f, prompt: v })); }} data-testid="frame-prompt" /></PromptAttach>
                   </label>
                   <div className="gx-gen-row">
                     <span className="gx-eyebrow" data-functional-label="">Rough drawing</span>

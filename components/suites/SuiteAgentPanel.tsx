@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useDraftEditor } from '@/lib/workspace/use-draft-editor';
+import { PromptAttach, attachedAsset, keptNote, resolveAttached, type Attached } from '@/components/PromptAttach';
 import Link from 'next/link';
 import { ArrowUpRight, Sparkles, RefreshCw } from 'lucide-react';
 import { useSession } from '@/lib/session';
@@ -85,14 +87,28 @@ export function SuiteAgentPanel({ suite, project, scope, enabled = true, onSave,
   const copy = SUITE_AGENT_COPY[suite];
   const models = state.data?.models.filter(model => /^(anthropic|openai)\//.test(model.id)) ?? [];
   const configured = !!state.data?.configured && models.length > 0;
-  const assets = [...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, all) =>
+  /* The request box takes media: pictures and text files are filed on the project and selected as references (the agent reads them). */
+  const editor = useDraftEditor(requestScope ?? '', project.id);
+  const current = editor.project ?? project;
+  const attach = async (attached: Attached) => {
+    const { media, unreadable } = await resolveAttached(requestScope ?? '', attached);
+    const fit = media.filter(m => m.kind === 'image' || (m.kind === 'file' && m.mime.startsWith('text/')));
+    const made = fit.map(m => current.assets.find(a => a.id === m.id || a.generationId === m.id || a.uploadId === m.id) ?? attachedAsset(m, 'Reference', 'Attached for Atomik'));
+    if (made.length) {
+      editor.change(old => ({ ...old, assets: [...old.assets, ...made.filter(a => !old.assets.some(x => x.id === a.id))] }));
+      await editor.ensureSaved();
+      draft.set({ ...draft.value, refs: [...new Set([...draft.value.refs, ...made.map(a => a.id)])].slice(0, 12) });
+    }
+    return [made.length ? `${made.map(a => a.name).join(', ')} ${made.length === 1 ? 'is' : 'are'} selected as project references.` : '', keptNote([...unreadable, ...media.filter(m => !fit.includes(m)).map(m => m.name)], 'the agent reads pictures and text files here; select a video under Project references once its frames are prepared.') ?? ''].filter(Boolean).join(' ') || null;
+  };
+  const assets = [...current.assets, ...(current.sharedAssets ?? [])].filter((asset, index, all) =>
     ['image', 'video', 'document'].includes(asset.kind) && all.findIndex(item => item.id === asset.id) === index);
   const selected = draft.value.refs.filter(id => assets.some(asset => asset.id === id));
   const jobs = state.data?.jobs.filter(job => job.suite === suite || job.plan?.suiteAgent?.suite === suite || (!job.plan && job.request.startsWith(`[${suite}]`))) ?? [];
   const live = state.data?.jobs.some(job => ['queued', 'running'].includes(job.status)) ?? false;
   return <section className={styles.panel} aria-label={copy.title}>
     <header className={styles.heading}><div><span className={styles.eyebrow}><Sparkles size={14} /> {suite === 'moleculr' ? 'Atomik / Brand strategy' : suite === 'particl' ? 'Atomik / Production' : 'Atomik Super Agent'}</span><h2>{copy.title}</h2><p>Inspect context, develop the direction, then prepare editable production nodes.</p></div><button className={styles.iconButton} aria-label="Refresh agent proposals" onClick={() => void state.refresh()} disabled={!active}><RefreshCw size={16} /></button></header>
-    <label className={styles.label}>Creative request<textarea rows={3} maxLength={11000} placeholder={copy.placeholder} value={draft.value.request} disabled={!active || live} onChange={event => draft.set({ ...draft.value, request: event.target.value })} /></label>
+    <label className={styles.label}>Creative request<PromptAttach scope={requestScope ?? ""} projectId={project.id} onAttach={attach} testId="atomik-attach"><textarea rows={3} maxLength={11000} placeholder={copy.placeholder} value={draft.value.request} disabled={!active || live} onChange={event => draft.set({ ...draft.value, request: event.target.value })} /></PromptAttach></label>
     {!!assets.length && <details className={styles.references}><summary>Project references <span>{selected.length} selected</span></summary><div>{assets.map(asset => <label key={asset.id}><input type="checkbox" disabled={!active || live} checked={selected.includes(asset.id)} onChange={event => draft.set({ ...draft.value, refs: event.target.checked ? [...selected, asset.id].slice(0, 12) : selected.filter(id => id !== asset.id) })} /><span>{asset.name}</span><small>{asset.kind}</small></label>)}</div><p>Up to six visual samples: each video uses three. Only selected references are sent to the agent.</p></details>}
     <footer className={styles.footer}><span>Thinking model and effort selected with the quote</span><button className={styles.primary} disabled={!active || !configured || live || draft.value.request.trim().length < 3} onClick={() => setOpen(true)}>{live ? 'Agent working…' : 'Review agent quote'} <ArrowUpRight size={15} /></button></footer>
     {state.error && <p className={styles.error} role="alert">{state.error}</p>}

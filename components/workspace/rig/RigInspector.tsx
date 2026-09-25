@@ -12,7 +12,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
-import { BranchFromTake, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
+import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import "./rig.css";
 
@@ -197,7 +197,7 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
           <span>Notes</span>
           <span>{notes.length.toLocaleString()} / 5,000</span>
         </div>
-        <textarea
+        <ShotAttach shot={shot} testId="rig-note-attach"><textarea
           aria-label="Direction note"
           rows={3}
           maxLength={5000}
@@ -205,7 +205,7 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
           disabled={locked}
           placeholder="Notes for this shot — they go with the prompt."
           onChange={(e) => edit({ note: e.target.value })}
-        />
+        /></ShotAttach>
       </div>
       <Field label="Name" className="pxw-insp-field">
         {(id) => (
