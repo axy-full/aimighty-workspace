@@ -154,7 +154,11 @@ test("search narrows by name, one-liner or chip, says when nothing matches, and 
   await search.fill("audio 1080p");
   const loud = sheet.getByRole("option");
   expect(await loud.count()).toBeGreaterThan(0);
-  for (const row of await loud.all()) await expect(row.locator('[data-spec="audio"]')).toHaveText("Audio");
+  expect(await loud.count()).toBeLessThan(all);
+  /* Every match says it on the row, in a chip or the one-liner; the Audio chip itself only where the take carries sound. */
+  for (const row of await loud.all()) await expect(row).toContainText(/audio/i);
+  await expect(loud.filter({ has: page.locator('[data-spec="audio"]') }).first()).toBeVisible();
+  for (const chip of await sheet.locator('[data-spec="audio"]').all()) await expect(chip).toHaveAttribute("title", "Takes carry sound");
 
   await search.fill("no engine is called this");
   await expect(sheet.getByTestId("gen-model-none")).toContainText("No model matches “no engine is called this”.");
