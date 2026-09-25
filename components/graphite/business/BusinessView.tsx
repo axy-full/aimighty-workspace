@@ -1,14 +1,15 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
+import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import {
-  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, isDtc,
-  PRESET_KEY, PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsMedias, adsParameters, clampedDuration, imageAdsBlock, imageAdsFromPreset, imageAdsMedias,
-  isOwnedSetup, parsePreset, presetFor, presetSpent, pruneAds, pruneImageAds, withAdReference, withImageStill, withMode, withProductId, withSetup, withStill,
+  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, INITIAL_ADS, INITIAL_IMAGE_ADS, isDtc,
+  PRESET_KEY, PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsMedias, adsParameters, clampedDuration, draftKey, imageAdsBlock, imageAdsFromPreset, imageAdsMedias,
+  isOwnedSetup, parsePreset, presetFor, presetSpent, pruneAds, pruneImageAds, restoreAds, restoreImageAds, withAdReference, withImageStill, withMode, withProductId, withSetup, withStill,
   type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type ImageAdsState, type SetupItem, type SetupPreset, type SetupType,
 } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
@@ -28,10 +29,10 @@ import { useWorkspace } from "@/lib/workspace/state";
  * every parameter against the account's live schema and imports the
  * reference stills before the quote.
  *
- * Particl is standalone: every pick comes from Particl. Avatars are the
- * identities built in Cast; a product or a setting is a still from this
- * project's Library (picked, dropped or uploaded); the account's own library
- * is never listed (lib/higgsfield-consumer/marketing-records.ts).
+ * Particl is standalone: a product or a setting is a still from this
+ * project's Library (picked, dropped or uploaded); avatars, hooks, settings
+ * and ad styles are the engine's presets; the account's own library is never
+ * listed (lib/higgsfield-consumer/marketing-records.ts).
  */
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 
@@ -66,6 +67,40 @@ function useSpentPreset(page: BusinessPage) {
       if (presetSpent(raw, page, Date.now())) sessionStorage.removeItem(PRESET_KEY);
     } catch { /* nothing stored */ }
   }, [page]);
+}
+
+function readDraft<T>(key: string | null, restore: (raw: unknown) => T | null): T | null {
+  if (!key) return null;
+  try { const raw = sessionStorage.getItem(key); return raw ? restore(JSON.parse(raw)) : null; } catch { return null; }
+}
+/**
+ * The composer's draft for this project (lib/shell/business.ts › Drafts): a
+ * trip to Setup, Cast or the Library and back finds the ad as it was, and
+ * Setup's pick lands on top of it. Read before paint and never on the server,
+ * so the first render matches the server's.
+ */
+function useComposerDraft<T>(page: BusinessPage, scope: string, projectId: string | null, initial: T, restore: (raw: unknown) => T | null, apply: (preset: SetupPreset | null, current: T) => T): [T, (next: T) => void] {
+  const key = projectId ? draftKey(scope, projectId, page) : null;
+  const [draft, setDraft] = useState<{ key: string | null; value: T; ready: boolean }>({ key: null, value: initial, ready: false });
+  /* Setup's pick is read once per mount and kept: a second strict-mode pass runs after useSpentPreset has cleared the store. */
+  const pick = useRef<SetupPreset | null | undefined>(undefined);
+  /* The first project the pick landed on; another project opened later starts from its own draft. */
+  const landedOn = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (draft.ready && draft.key === key) return;
+    if (pick.current === undefined) pick.current = takePreset(page);
+    const landing = Boolean(pick.current) && (landedOn.current === null || landedOn.current === key);
+    if (landing && key) landedOn.current = key;
+    /* What was built before the project was known carries over; a switch between projects does not. */
+    const base = readDraft(key, restore) ?? (!draft.ready || draft.key === null ? draft.value : initial);
+    setDraft({ key, value: landing ? apply(pick.current!, base) : base, ready: true });
+  }, [key, draft, page, initial, restore, apply]);
+  useEffect(() => {
+    if (!draft.ready || !draft.key) return;
+    try { sessionStorage.setItem(draft.key, JSON.stringify(draft.value)); } catch { /* the draft stays on screen */ }
+  }, [draft]);
+  const set = useCallback((value: T) => setDraft((d) => ({ ...d, value })), []);
+  return [draft.value, set];
 }
 
 /** A Business prompt's attachments: pictures become reference stills, up to the well's limit; the rest stays in the Library. */
@@ -142,36 +177,45 @@ function Label({ label, note }: { label: string; note?: string }) {
   return <span className="gx-eyebrow" data-functional-label="">{label}{note ? <span className="bz-note"> · {note}</span> : null}</span>;
 }
 
-/** The chips of one setup read: None plus what Particl may use. */
-function SetupChips({ label, items, value, onPick, disabled, why }: {
-  label: string; items: readonly SetupItem[]; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null;
+/** A catalogue preview that is a picture (never a clip), for a chip's face. */
+const pictureOf = (item: SetupItem) => (item.previewUrl && !/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(item.previewUrl) ? item.previewUrl : null);
+
+/** The chips of one setup read: None plus what Particl may use. `still`: a still fills the slot, so None is not pressed. `faces`: show each preview. */
+function SetupChips({ label, items, value, onPick, disabled, why, still, faces }: {
+  label: string; items: readonly SetupItem[]; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; still?: boolean; faces?: boolean;
 }) {
   return (
     <div className="gx-chips" role="group" aria-label={label}>
-      <button type="button" className="gx-chip" aria-pressed={value === null} aria-disabled={disabled || undefined} data-off={disabled || undefined} title={disabled ? why ?? undefined : undefined} onClick={() => { if (!disabled) onPick(null); }}>None</button>
-      {items.map((item) => (
-        <button key={item.id} type="button" className="gx-chip" aria-pressed={value === item.id} aria-disabled={disabled || undefined} data-off={disabled || undefined} title={disabled ? why ?? undefined : item.meta} onClick={() => { if (!disabled) onPick(item.id); }}>{item.name}</button>
-      ))}
+      <button type="button" className="gx-chip" aria-pressed={value === null && !still} aria-disabled={disabled || undefined} data-off={disabled || undefined} title={disabled ? why ?? undefined : undefined} onClick={() => { if (!disabled) onPick(null); }}>None</button>
+      {items.map((item) => {
+        const face = faces ? pictureOf(item) : null;
+        return (
+          <button key={item.id} type="button" className={face ? "gx-chip bz-chip-face" : "gx-chip"} aria-pressed={value === item.id} aria-disabled={disabled || undefined} data-off={disabled || undefined} title={disabled ? why ?? undefined : item.meta} onClick={() => { if (!disabled) onPick(item.id); }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- A catalogue preview, as the ad-format cards show theirs. */}
+            {face ? <img src={face} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.hidden = true; }} /> : null}
+            <span>{item.name}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 /**
  * A setup-item picker. While the read is in flight it shows its shape; once
- * read, a type with nothing Particl may use is not shown at all — or shows
- * `empty` (the in-Particl place that makes one) when given.
+ * read, a type with nothing Particl may use is not shown at all.
  */
-function SetupPicker({ label, note, type, business, value, onPick, disabled, why, testId, empty }: {
-  label: string; note?: string; type: SetupType; business: Business; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; testId?: string; empty?: ReactNode;
+function SetupPicker({ label, note, type, business, value, onPick, disabled, why, testId, faces }: {
+  label: string; note?: string; type: SetupType; business: Business; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; testId?: string; faces?: boolean;
 }) {
   const read = business.setup.reads[type];
   if (!read) return business.setup.loading ? <SetupSkeleton label={label} testId={testId} /> : null;
-  if (!read.items.length) return empty ? <div className="gx-gen-row" data-testid={testId} data-empty=""><Label label={label} />{empty}</div> : null;
+  if (!read.items.length) return null;
   return (
     <div className="gx-gen-row" data-testid={testId} data-off={disabled || undefined}>
       <Label label={label} note={note} />
       {disabled && why ? <span className="gx-reason">{why}</span> : null}
-      <SetupChips label={label} items={read.items} value={value} onPick={onPick} disabled={disabled} why={why} />
+      <SetupChips label={label} items={read.items} value={value} onPick={onPick} disabled={disabled} why={why} faces={faces} />
     </div>
   );
 }
@@ -295,27 +339,29 @@ function priceLabel(state: ConnectedJobState, verb: string, blocked: string | nu
   return verb;
 }
 
-/** One toast per finished job (the toast itself changes the workspace context, so the phase alone would repeat it). */
-function useDoneToast(state: ConnectedJobState, text: string) {
-  const toast = useWorkspace().toast;
-  const told = useRef<string | null>(null);
-  const done = state.phase === "done" ? state.job.id : null;
-  useEffect(() => {
-    if (!done || told.current === done) return;
-    told.current = done;
-    toast(text);
-  }, [done, toast, text]);
-}
-
-function Done({ testId, onTakes, onLibrary }: { testId?: string; onTakes: () => void; onLibrary: () => void }) {
+/**
+ * The finished take beside the composer. The composer prices the same input
+ * again at once, so Generate is the rerun.
+ */
+function LatestTake({ job, testId, onTakes, onLibrary }: { job: ConnectedJob; testId: string; onTakes: () => void; onLibrary: () => void }) {
+  const original = connectedOriginal(job), kind = original?.kind;
+  const media = original && (kind === "image" || kind === "video") ? { url: original.url, kind } : null;
   return (
-    <div className="gx-gen-note bz-done" role="status" data-testid={testId}>
-      <span>Rendered and filed to this project.</span>
-      <span className="bz-done-actions">
-        <button type="button" className="gx-hbtn" onClick={onTakes}>Open Takes</button>
-        <button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button>
-      </span>
-    </div>
+    <section className="gx-gen-results bz-latest" aria-label="Latest take" data-testid={testId}>
+      <div className="gx-gen-results-head">
+        <span className="gx-panel-title">Latest take</span>
+        <span className="bz-done-actions">
+          <button type="button" className="gx-hbtn" onClick={onTakes}>Open Takes</button>
+          <button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button>
+        </span>
+      </div>
+      {media ? (
+        <div className="bz-latest-media" data-testid={`${testId}-take`}>
+          <LazyMedia url={media.url} kind={media.kind} alt="Latest take" name="Latest take" className="gx-lazy" hoverPlay={media.kind === "video"} />
+        </div>
+      ) : null}
+      <p className="gx-gen-note" role="status">Rendered and filed to this project.</p>
+    </section>
   );
 }
 
@@ -328,7 +374,7 @@ function Connection({ business, testId }: { business: Business; testId?: string 
 function AdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
   const shell = useShell();
   const library = useProjectLibrary(scope, project?.id ?? null);
-  const [raw, set] = useState<AdsState>(() => adsFromPreset(takePreset("ads")));
+  const [raw, set] = useComposerDraft("ads", scope, project?.id ?? null, INITIAL_ADS, restoreAds, adsFromPreset);
   useSpentPreset("ads");
   /* Once Setup is read, a pick it does not list (not Particl's, or gone) is dropped rather than sent. */
   const s = useMemo(() => pruneAds(raw, business.setup.reads), [raw, business.setup.reads]);
@@ -338,8 +384,9 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const chips = adsChipState(s);
   const sent = adsMedias(s);
   const enhancer = useEnhancer({ prompt: s.prompt, mode: "video", model: ADS_MODEL, anchored: s.medias.some((m) => m.role === "start_image"), editing: false });
-  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading;
-  useEffect(() => { if (connected && !hasSetup && !setupLoading) void readSetup([...PRESET_TYPES.ads]); }, [connected, hasSetup, setupLoading, readSetup]);
+  /* Read once; after a failure only Try again reads (never a loop against a refusing account). */
+  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
+  useEffect(() => { if (connected && !hasSetup && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.ads]); }, [connected, hasSetup, setupLoading, setupFailed, readSetup]);
 
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
@@ -354,12 +401,12 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const inputKey = JSON.stringify(input);
   /* The button wears the account's exact price for exactly this input. */
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
+  /* A finished job re-prices the same input at once, so Generate is ready to run it again. */
   useEffect(() => {
-    if (!input || quotedFor === inputKey || phase === "submitting" || phase === "running") return;
+    if (!input || (quotedFor === inputKey && phase !== "done") || phase === "submitting" || phase === "running") return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
-  useDoneToast(job.state, "Ad rendered and filed to this project.");
 
   const media = (m: Media) => ({ ...m, role: "image" as AdMediaRole });
   const products = business.setup.reads.product?.items ?? [];
@@ -370,21 +417,20 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <Connection business={business} testId="ads-connect" />
         {business.catalogueError ? <p className="gx-gen-error" role="alert">{business.catalogueError}</p> : null}
-        {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="ads-setup-error">{business.setup.error} <button type="button" className="cw-link" onClick={() => void readSetup([...PRESET_TYPES.ads])}>Try again</button></p> : null}
+        {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="ads-setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.ads])}>Try again</button></p> : null}
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
-        <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="hooks are weak without one" testId="ads-product"
+        <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="ads-product"
           still={s.productStill} onStill={(still) => set(withStill(s, "product", still))}>
-          {products.length ? <SetupChips label="Product" items={products} value={s.productId} onPick={(id) => set(withProductId(s, id))} /> : null}
+          {products.length ? <SetupChips label="Product" items={products} value={s.productId} still={Boolean(s.productStill)} onPick={(id) => set(id ? withProductId(s, id) : withStill(withProductId(s, null), "product", null))} /> : null}
         </StillSlot>
-        <SetupPicker label="Avatar" note="identities built in Cast · optional for UGC" type="avatar" business={business} value={s.avatarId} onPick={(id) => set({ ...s, avatarId: id })} testId="ads-avatar"
-          empty={connected ? <button type="button" className="gx-hbtn bz-make" onClick={() => shell.goSuite("studio", "cast")} data-testid="ads-avatar-cast">Build an identity in Cast</button> : undefined} />
+        <SetupPicker label="Avatar" note="optional for UGC" type="avatar" business={business} value={s.avatarId} onPick={(id) => set({ ...s, avatarId: id })} testId="ads-avatar" faces />
         <SetupPicker label="Hook" note={chips.hook.disabled ? undefined : "prepended to your prompt"} type="hook" business={business} value={s.hookId} onPick={(id) => set(withSetup(s, { hookId: id }))} disabled={chips.hook.disabled} why={chips.hook.why} testId="ads-hook" />
         {/* A setting still is a reference still and rides with any mode; the engine's preset settings follow the hook rule. */}
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Setting" note="scene context" testId="ads-setting"
           still={s.settingStill} onStill={(still) => set(withStill(s, "setting", still))}>
           {settings.length ? (<>
             {chips.setting.disabled && chips.setting.why ? <span className="gx-reason">{chips.setting.why}</span> : null}
-            <SetupChips label="Setting" items={settings} value={s.settingId} onPick={(id) => set(withSetup(s, { settingId: id }))} disabled={chips.setting.disabled} why={chips.setting.why} />
+            <SetupChips label="Setting" items={settings} value={s.settingId} still={Boolean(s.settingStill)} onPick={(id) => set(id ? withSetup(s, { settingId: id }) : withStill(withSetup(s, { settingId: null }), "setting", null))} disabled={chips.setting.disabled} why={chips.setting.why} />
           </>) : null}
         </StillSlot>
         <SetupPicker label="Ad reference" note="reference-driven — excludes hooks and settings" type="ad_reference" business={business} value={s.adReferenceId} onPick={(id) => set(withAdReference(s, id))} disabled={chips.adReference.disabled} why={chips.adReference.why} testId="ads-adref" />
@@ -422,26 +468,9 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
         {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · filed to this project</p> : null}
-        {job.state.phase === "done" ? <Done testId="ads-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
       </section>
-      <Sources business={business} onCast={() => shell.goSuite("studio", "cast")} onLibrary={() => shell.openLibrary("assets")} onSetup={() => shell.goSuite("business", "setup")} />
+      {job.finished ? <LatestTake job={job.finished} testId="ads-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
     </div>
-  );
-}
-
-/** Where every pick comes from — all of it Particl's. */
-function Sources({ business, onCast, onLibrary, onSetup }: { business: Business; onCast: () => void; onLibrary: () => void; onSetup: () => void }) {
-  const count = (type: SetupType) => business.setup.reads[type]?.items.length ?? null;
-  const n = (value: number | null) => (value == null ? "" : ` · ${value}`);
-  return (
-    <section className="gx-gen-results" aria-label="Sources" data-testid="business-sources">
-      <div className="gx-gen-results-head"><span className="gx-panel-title">Sources</span></div>
-      <ul className="bz-sources">
-        <li><span className="bz-source-name">Avatars{n(count("avatar"))}</span><span className="cw-dim">Built in Cast</span><button type="button" className="gx-hbtn" onClick={onCast}>Open Cast</button></li>
-        <li><span className="bz-source-name">Products · settings</span><span className="cw-dim">Stills from this project</span><button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button></li>
-        <li><span className="bz-source-name">Hooks{n(count("hook"))}</span><span className="cw-dim">The engine’s presets</span><button type="button" className="gx-hbtn" onClick={onSetup}>Open Setup</button></li>
-      </ul>
-    </section>
   );
 }
 
@@ -449,7 +478,7 @@ function Sources({ business, onCast, onLibrary, onSetup }: { business: Business;
 function ImageAdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
   const shell = useShell();
   const library = useProjectLibrary(scope, project?.id ?? null);
-  const [raw, set] = useState<ImageAdsState>(() => imageAdsFromPreset(takePreset("dtc")));
+  const [raw, set] = useComposerDraft("dtc", scope, project?.id ?? null, INITIAL_IMAGE_ADS, restoreImageAds, imageAdsFromPreset);
   useSpentPreset("dtc");
   const s = useMemo(() => pruneImageAds(raw, business.setup.reads), [raw, business.setup.reads]);
   const job = useConnectedJob(project?.id ?? null, scope);
@@ -457,8 +486,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
   /* DTC needs the account's styles (the ad formats), brand kits and products; read once the engine is chosen. */
-  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading;
-  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading) void readSetup([...PRESET_TYPES.dtc]); }, [dtc, connected, hasStyles, setupLoading, readSetup]);
+  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
+  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.dtc]); }, [dtc, connected, hasStyles, setupLoading, setupFailed, readSetup]);
   const styles = business.setup.reads.image_style ? business.setup.reads.image_style.items.length : null;
   const sent = imageAdsMedias(s);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
@@ -474,12 +503,12 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   } as ConsumerGenerationInput : null, [project, blocked, s]);
   const inputKey = JSON.stringify(input);
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
+  /* A finished job re-prices the same input at once, so Generate is ready to run it again. */
   useEffect(() => {
-    if (!input || quotedFor === inputKey || phase === "submitting" || phase === "running") return;
+    if (!input || (quotedFor === inputKey && phase !== "done") || phase === "submitting" || phase === "running") return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
-  useDoneToast(job.state, "Image ad rendered and filed to this project.");
   const products = business.setup.reads.product?.items ?? [];
   const room = AD_MEDIA_MAX - (sent.length - s.medias.length);
   return (
@@ -494,7 +523,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           </div>
           {dtc ? <p className="gx-hint" data-testid="dtc-copy">{DTC_COPY}</p> : null}
         </div>
-        {business.setup.error && dtc ? <p className="gx-gen-error" role="alert">{business.setup.error} <button type="button" className="cw-link" onClick={() => void readSetup([...PRESET_TYPES.dtc])}>Try again</button></p> : null}
+        {business.setup.error && dtc ? <p className="gx-gen-error" role="alert">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.dtc])}>Try again</button></p> : null}
         {dtc ? (<>
           <SetupPicker label="Style" note="the ad format · required, no default" type="image_style" business={business} value={s.styleId} onPick={(id) => set({ ...s, styleId: id })} testId="dtc-style" />
           <SetupPicker label="Brand kit" note="optional · a completed kit" type="brand_kit" business={business} value={s.brandKitId} onPick={(id) => set({ ...s, brandKitId: id })} testId="dtc-brand-kit" />
@@ -535,8 +564,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit()} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
-        {job.state.phase === "done" ? <Done testId="dtc-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
       </section>
+      {job.finished ? <LatestTake job={job.finished} testId="dtc-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
       {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
       <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
         <div className="gx-gen-row">
@@ -565,29 +594,33 @@ function SetupView({ business }: { business: Business }) {
   const shell = useShell();
   const { dispatch } = useWorkspace();
   const connected = business.connection?.connected ?? false;
-  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length;
-  useEffect(() => { if (connected && !setupLoading && setupEmpty) void readSetup(); }, [connected, setupLoading, setupEmpty, readSetup]);
+  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length, setupFailed = Boolean(business.setup.error);
+  /* Read once; after a failure only Try again or Read again reads. */
+  useEffect(() => { if (connected && !setupLoading && setupEmpty && !setupFailed) void readSetup(); }, [connected, setupLoading, setupEmpty, setupFailed, readSetup]);
   const [selected, setSelected] = useState<SetupItem | null>(null);
   const detail = useRef<HTMLElement>(null);
   useEffect(() => {
-    /* On a phone the detail sits under the list: bring it into view. */
-    if (selected && typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) detail.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    /* Under 1024px the detail sits under the list: bring it into view, and then its actions — a short landscape stage cannot show all of it.
+       On a portrait phone it is a sheet above the tab bar (business.css) and needs no scroll. */
+    const el = detail.current;
+    if (!selected || !el || typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches || getComputedStyle(el).position === "fixed") return;
+    el.scrollIntoView({ block: "nearest" });
+    el.querySelector<HTMLElement>(".gx-insp-actions")?.scrollIntoView({ block: "nearest" });
   }, [selected]);
   const read = !setupEmpty;
   const groups = SETUP_TYPES.filter(([type]) => (business.setup.reads[type]?.items.length ?? 0) > 0);
   const rows = groups.reduce((n, [type]) => n + (business.setup.reads[type]?.items.length ?? 0), 0);
-  const avatars = business.setup.reads.avatar;
   const sendTo = (item: SetupItem, page: BusinessPage) => {
     leavePreset(item, page);
     dispatch({ type: "toast", text: `${item.name} selected for ${PAGE_LABEL[page]}` });
     shell.goSuite("business", page);
   };
   return (
-    <div className="bz-setup gx-enter" data-testid="setup-view">
+    <div className="bz-setup gx-enter" data-testid="setup-view" data-detail={selected ? "" : undefined}>
       <div className="bz-setup-list">
         <Connection business={business} testId="setup-connect" />
-        {business.setup.error ? <p className="gx-gen-error" role="alert">{business.setup.error}</p> : null}
-        {connected && !read && (setupLoading || business.setup.connected === null) ? (
+        {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup()}>Try again</button></p> : null}
+        {connected && !read && !setupFailed && (setupLoading || business.setup.connected === null) ? (
           <div className="bz-group" aria-busy="true" data-testid="setup-loading">
             <span className="gx-eyebrow">Reading…</span>
             {[0, 1, 2].map((i) => <span key={i} className="bz-skel bz-skel--row" aria-hidden="true" />)}
@@ -597,7 +630,7 @@ function SetupView({ business }: { business: Business }) {
           <div className="bz-group" key={type} data-testid={`setup-${type}`}>
             <div className="bz-group-head">
               <span className="gx-eyebrow" data-functional-label="">{label}</span>
-              <span className="cw-dim">{type === "avatar" ? "Built in Cast" : whose === "owned" ? "Made in Particl" : "Engine presets"} · {business.setup.reads[type]!.items.length}</span>
+              <span className="cw-dim">{whose === "owned" ? "Made in Particl" : "Engine presets"} · {business.setup.reads[type]!.items.length}</span>
             </div>
             {business.setup.reads[type]!.items.map((item) => (
               <button type="button" className="bz-row" key={item.id} aria-pressed={selected?.id === item.id && selected.type === item.type} onClick={() => setSelected(item)}>
@@ -606,23 +639,17 @@ function SetupView({ business }: { business: Business }) {
             ))}
           </div>
         ))}
-        {/* The in-Particl place avatars come from, when none is built yet. */}
-        {connected && avatars && !avatars.items.length && rows ? (
-          <div className="bz-group bz-group--make" data-testid="setup-avatar-empty">
-            <div className="bz-group-head"><span className="gx-eyebrow" data-functional-label="">Avatars</span><span className="cw-dim">Built in Cast · 0</span></div>
-            <button type="button" className="gx-hbtn bz-make" onClick={() => shell.goSuite("studio", "cast")}>Build an identity in Cast</button>
-          </div>
-        ) : null}
         {connected && read && !setupLoading && !rows ? (
           <div className="bz-group bz-empty" data-testid="setup-empty">
             <span className="bz-empty-title">Nothing to set up yet</span>
+            <span className="cw-dim">Products and settings are stills from this project.</span>
             <div className="bz-done-actions">
-              <button type="button" className="gx-hbtn bz-make" onClick={() => shell.goSuite("studio", "cast")}>Build an identity in Cast</button>
-              <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("business", "ads")}>Open Ads</button>
+              <button type="button" className="gx-hbtn bz-make" onClick={() => shell.goSuite("business", "ads")}>Open Ads</button>
+              <button type="button" className="gx-hbtn" onClick={() => shell.openLibrary("assets")}>Open Library</button>
             </div>
           </div>
         ) : null}
-        {connected ? (
+        {connected && !setupFailed ? (
           <div className="bz-setup-foot">
             <span className="cw-dim" data-testid="setup-count">{rows} {rows === 1 ? "item" : "items"}</span>
             <button type="button" className="gx-hbtn" disabled={business.setup.loading} onClick={() => void business.readSetup()}>{business.setup.loading ? "Reading…" : "Read again"}</button>
@@ -631,7 +658,10 @@ function SetupView({ business }: { business: Business }) {
       </div>
       {selected ? (
         <aside className="bz-detail" aria-label="Setup item" data-testid="setup-detail" ref={detail}>
-          <span className="gx-eyebrow">{SETUP_TYPES.find((t) => t[0] === selected.type)?.[1]}{isOwnedSetup(selected.type) ? " · Particl’s" : ""}</span>
+          <div className="bz-detail-head">
+            <span className="gx-eyebrow">{SETUP_TYPES.find((t) => t[0] === selected.type)?.[1]}{isOwnedSetup(selected.type) ? " · Particl’s" : ""}</span>
+            <button type="button" className="gx-ref-x bz-detail-x" aria-label="Close" onClick={() => setSelected(null)}>×</button>
+          </div>
           <div className="gx-insp-title">{selected.name}</div>
           {selected.meta ? <div className="gx-insp-sub">{selected.meta}</div> : null}
           <div className="gx-insp-actions">

@@ -208,15 +208,15 @@ export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Mar
 /* ── Setup ───────────────────────────────────────────────────────────── */
 /**
  * The setup item types, and whose they are. `owned` items are the connected
- * account's own library (its avatars, products, brand kits, ad references):
- * Particl is a standalone platform, so only what Particl made or chose there
- * is ever listed or sent — avatars are the Soul IDs built in Cast
- * (lib/higgsfield-consumer/marketing-records.ts). `catalogue` items are the
- * account's shared building blocks (hooks, settings, ad styles), listed
- * unless the account marks one as its user's own.
+ * account's own library (its products, brand kits, ad references): Particl is
+ * a standalone platform, so only what Particl made there is ever listed or
+ * sent (lib/higgsfield-consumer/marketing-records.ts). `catalogue` items are
+ * the engine's shared presets (preset avatars, hooks, settings, ad styles),
+ * listed unless the account marks one as its user's own — plus any Particl
+ * made.
  */
 export const SETUP_TYPES = [
-  ["avatar", "Avatars", "owned"],
+  ["avatar", "Avatars", "catalogue"],
   ["product", "Products", "owned"],
   ["brand_kit", "Brand kits", "owned"],
   ["ad_reference", "Ad references", "owned"],
@@ -268,23 +268,90 @@ export function presetSpent(raw: string | null, page: BusinessPage, now: number)
   const other: BusinessPage = page === "ads" ? "dtc" : "ads";
   return !parsePreset(raw, other, now);
 }
-export function adsFromPreset(preset: SetupPreset | null): AdsState {
-  if (!preset || preset.page !== "ads") return INITIAL_ADS;
-  if (preset.type === "product") return { ...INITIAL_ADS, productId: preset.id };
-  if (preset.type === "avatar") return { ...INITIAL_ADS, avatarId: preset.id };
-  if (preset.type === "hook") return withSetup(INITIAL_ADS, { hookId: preset.id });
-  if (preset.type === "setting") return withSetup(INITIAL_ADS, { settingId: preset.id });
-  if (preset.type === "ad_reference") return withAdReference(INITIAL_ADS, preset.id);
-  return INITIAL_ADS;
+/**
+ * Setup's pick, added to the ad being built — never a fresh composer. A hook
+ * or a setting moves a mode that cannot take one to UGC, the default.
+ */
+export function adsFromPreset(preset: SetupPreset | null, current: AdsState = INITIAL_ADS): AdsState {
+  if (!preset || preset.page !== "ads") return current;
+  const family = takesSetup(current.mode) ? current : withMode(current, "ugc");
+  if (preset.type === "product") return withProductId(current, preset.id);
+  if (preset.type === "avatar") return { ...current, avatarId: preset.id };
+  if (preset.type === "hook") return withSetup(family, { hookId: preset.id });
+  if (preset.type === "setting") return withSetup(family, { settingId: preset.id });
+  if (preset.type === "ad_reference") return withAdReference(current, preset.id);
+  return current;
 }
-/** Products, brand kits and ad styles ride on the DTC Ads engine, so a pick from Setup opens it. */
-export function imageAdsFromPreset(preset: SetupPreset | null): ImageAdsState {
-  if (!preset || preset.page !== "dtc") return INITIAL_IMAGE_ADS;
-  const dtc = { ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL } as ImageAdsState;
-  if (preset.type === "product") return { ...dtc, productIds: [preset.id] };
+/** Products, brand kits and ad styles ride on the DTC Ads engine, so a pick from Setup switches to it and keeps the rest. */
+export function imageAdsFromPreset(preset: SetupPreset | null, current: ImageAdsState = INITIAL_IMAGE_ADS): ImageAdsState {
+  if (!preset || preset.page !== "dtc") return current;
+  const dtc = { ...current, engine: DTC_ADS_MODEL } as ImageAdsState;
+  if (preset.type === "product") return { ...dtc, productIds: [preset.id, ...current.productIds.filter((id) => id !== preset.id)].slice(0, DTC_PRODUCTS_MAX) };
   if (preset.type === "brand_kit") return { ...dtc, brandKitId: preset.id };
   if (preset.type === "image_style") return { ...dtc, styleId: preset.id };
-  return INITIAL_IMAGE_ADS;
+  return current;
+}
+
+/* ── Drafts ──────────────────────────────────────────────────────────── */
+/**
+ * The Ads and Image ads composers keep their draft per project in this tab,
+ * so a trip to Setup, Cast or the Library and back finds the ad as it was.
+ * What comes back from storage is checked field by field; anything that does
+ * not read cleanly falls back to the default.
+ */
+export const DRAFT_KEY = "particl-business-draft";
+export const draftKey = (scope: string, projectId: string, page: BusinessPage) => `${DRAFT_KEY}:${page}:${scope}:${projectId}`;
+const obj = (value: unknown): Record<string, unknown> | null => (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+const setupIdOr = (value: unknown): string | null => (typeof value === "string" && PRESET_ID.test(value) ? value : null);
+const LIBRARY_ID = /^(upload|generation):[^\s]{1,200}$/;
+const SAFE_URL = /^(\/(?!\/)|https:\/\/)\S{1,2048}$/;
+function stillOf(value: unknown): AdStill | null {
+  const v = obj(value);
+  if (!v || typeof v.id !== "string" || !LIBRARY_ID.test(v.id) || typeof v.name !== "string" || typeof v.sourceId !== "string" || !v.sourceId || v.sourceId.length > 200 ||
+      (v.origin !== "upload" && v.origin !== "generation") || typeof v.url !== "string" || !SAFE_URL.test(v.url)) return null;
+  return { id: v.id, name: v.name.slice(0, 300), sourceId: v.sourceId, origin: v.origin, url: v.url };
+}
+const ASPECT = /^(auto|\d{1,2}:\d{1,2})$/;
+export function restoreAds(value: unknown): AdsState | null {
+  const v = obj(value);
+  if (!v) return null;
+  const medias = (Array.isArray(v.medias) ? v.medias : []).flatMap((m) => {
+    const still = stillOf(m), role = obj(m)?.role;
+    return still && (AD_MEDIA_ROLES as readonly unknown[]).includes(role) ? [{ ...still, role: role as AdMediaRole }] : [];
+  }).slice(0, AD_MEDIA_MAX);
+  const state: AdsState = {
+    prompt: typeof v.prompt === "string" ? v.prompt.slice(0, 5000) : "",
+    mode: AD_MODES.some(([m]) => m === v.mode) ? (v.mode as AdMode) : INITIAL_ADS.mode,
+    productId: setupIdOr(v.productId), productStill: stillOf(v.productStill), avatarId: setupIdOr(v.avatarId), hookId: setupIdOr(v.hookId),
+    settingId: setupIdOr(v.settingId), settingStill: stillOf(v.settingStill), adReferenceId: setupIdOr(v.adReferenceId),
+    aspect: typeof v.aspect === "string" && ASPECT.test(v.aspect) ? (v.aspect as AdsState["aspect"]) : INITIAL_ADS.aspect,
+    duration: typeof v.duration === "number" && Number.isInteger(v.duration) && v.duration >= 4 && v.duration <= 120 ? v.duration : INITIAL_ADS.duration,
+    resolution: typeof v.resolution === "string" && /^\d{3,4}p$/.test(v.resolution) ? (v.resolution as AdsState["resolution"]) : INITIAL_ADS.resolution,
+    audio: typeof v.audio === "boolean" ? v.audio : INITIAL_ADS.audio,
+    medias,
+  };
+  /* The server rules hold on the way back in too. */
+  const ruled = state.adReferenceId ? withAdReference(withMode(state, state.mode), state.adReferenceId) : withMode(state, state.mode);
+  return ruled.productStill && ruled.productStill.id === ruled.settingStill?.id ? { ...ruled, settingStill: null } : ruled;
+}
+export function restoreImageAds(value: unknown): ImageAdsState | null {
+  const v = obj(value);
+  if (!v) return null;
+  const medias = (Array.isArray(v.medias) ? v.medias : []).flatMap((m) => {
+    const o = obj(m);
+    return o && typeof o.id === "string" && LIBRARY_ID.test(o.id) && typeof o.name === "string" ? [{ id: o.id, name: o.name.slice(0, 300) }] : [];
+  }).slice(0, AD_MEDIA_MAX);
+  return {
+    engine: IMAGE_AD_ENGINES.some(([e]) => e === v.engine) ? (v.engine as ImageAdsState["engine"]) : INITIAL_IMAGE_ADS.engine,
+    prompt: typeof v.prompt === "string" ? v.prompt.slice(0, 5000) : "",
+    aspect: typeof v.aspect === "string" && ASPECT.test(v.aspect) ? v.aspect : INITIAL_IMAGE_ADS.aspect,
+    resolution: (IMAGE_AD_RESOLUTIONS as readonly unknown[]).includes(v.resolution) ? (v.resolution as ImageAdsState["resolution"]) : INITIAL_IMAGE_ADS.resolution,
+    medias, productStill: stillOf(v.productStill),
+    styleId: setupIdOr(v.styleId), brandKitId: setupIdOr(v.brandKitId),
+    quality: (DTC_QUALITIES as readonly unknown[]).includes(v.quality) ? (v.quality as ImageAdsState["quality"]) : INITIAL_IMAGE_ADS.quality,
+    batch: typeof v.batch === "number" && Number.isInteger(v.batch) && v.batch >= DTC_BATCH.min && v.batch <= DTC_BATCH.max ? v.batch : INITIAL_IMAGE_ADS.batch,
+    productIds: (Array.isArray(v.productIds) ? v.productIds : []).flatMap((id) => (setupIdOr(id) ? [id as string] : [])).slice(0, DTC_PRODUCTS_MAX),
+  };
 }
 
 /** The setup reads a page holds, by type (lib/shell/use-business.ts). */

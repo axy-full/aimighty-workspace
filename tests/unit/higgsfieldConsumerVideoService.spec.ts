@@ -92,7 +92,9 @@ async function serviceFixture() {
     collectorError: undefined as unknown,
     completeFailure: false as false | "before" | "after",
     originals: new Map<string, ConsumerVideoOriginal>(),
+    guardCalls: 0,
   };
+  const records = await import("../../lib/higgsfield-consumer/marketing-records");
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
     "@/lib/tenant": tenant,
@@ -146,6 +148,19 @@ async function serviceFixture() {
       },
     },
     "./video-contract": contract,
+    "./marketing-records": records,
+    /* The standalone guard with the account's presets faked: one preset avatar is listed. */
+    "./marketing-setup": {
+      refuseForeignMarketingSetup: (
+        userId: string,
+        wanted: Parameters<typeof records.refuseForeignSetup>[1],
+      ) => {
+        state.guardCalls++;
+        return records.refuseForeignSetup(userId, wanted, async () => ({
+          avatar: new Set(["av_preset"]),
+        }));
+      },
+    },
     "./oauth": {
       ConsumerOAuthError: oauth.ConsumerOAuthError,
       getConsumerAccess: async (
@@ -252,6 +267,36 @@ async function serviceFixture() {
   );
   return { service: loaded.exports, state, workspace, tenant, database, jobs };
 }
+
+test("standalone: a marketing quote naming a setup item Particl may not send is refused before the account is asked", async () => {
+  await fixture(async ({ service, state, jobs }) => {
+    for (const extra of [
+      { productIds: ["p_acct"] },
+      { adReferenceId: "r_acct" },
+      { avatars: [{ id: "av_custom", type: "custom" as const }] },
+    ])
+      await expect(
+        service.quoteConsumerMarketingVideo(
+          identity.userId,
+          identity.draftId,
+          { ...prompt, ...extra },
+          randomUUID(),
+        ),
+        JSON.stringify(extra),
+      ).rejects.toMatchObject({ code: "setup_not_particl", status: 409 });
+    expect([state.quoteCount, state.paidCount, state.accessCount]).toEqual([0, 0, 0]);
+    expect((await jobs.listConsumerJobs(identity)).items).toHaveLength(0);
+    /* The engine's preset avatar is priced as before. */
+    await service.quoteConsumerMarketingVideo(
+      identity.userId,
+      identity.draftId,
+      { ...prompt, avatars: [{ id: "av_preset", type: "preset" }] },
+      randomUUID(),
+    );
+    expect(state.quoteCount).toBe(1);
+    expect(state.guardCalls).toBe(4);
+  });
+});
 
 test("quote retry and concurrent first quotes reuse one saved job; changed input conflicts", async () => {
   await fixture(async ({ service, state, jobs }) => {

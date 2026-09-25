@@ -153,8 +153,7 @@ test("when the account lists nothing Particl may use, the pickers step aside —
   test.skip(info.project.name !== "workbench-1440x900", "one viewport");
   await open(page, "ads", { setupAvailable: false });
   await expect(page.getByTestId("ads-product-choose")).toBeVisible();
-  for (const id of ["ads-hook", "ads-adref"]) await expect(page.getByTestId(id)).toHaveCount(0);
-  await expect(page.getByTestId("ads-avatar-cast")).toBeVisible();
+  for (const id of ["ads-avatar", "ads-hook", "ads-adref"]) await expect(page.getByTestId(id)).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Hook id" })).toHaveCount(0);
   expect(await page.locator("body").innerText()).not.toContain("higgsfield marketing-studio");
 });

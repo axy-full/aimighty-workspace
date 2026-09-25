@@ -26,7 +26,8 @@ import {
   pollConsumerGeneration,
 } from "@/lib/higgsfield-consumer/generation-service";
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
-import { ConsumerSetupError, refuseForeignSetup, setupIdsOfParameters } from "@/lib/higgsfield-consumer/marketing-records";
+/* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
+import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -174,8 +175,6 @@ export const POST = withTenant(async (req: Request) => {
     }
     if (body.action === "status")
       return Response.json(await pollConsumerGeneration({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
-    /* Standalone: an account avatar, product, brand kit or ad reference Particl did not make never reaches a quote. */
-    await refuseForeignSetup(owner.user.id, setupIdsOfParameters(body.input.parameters));
     return Response.json(
       { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey) },
       { headers },

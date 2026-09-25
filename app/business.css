@@ -16,7 +16,18 @@
 .bz-row-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bz-detail { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); position: sticky; top: 0; }
 @media (max-width: 1023px) { .bz-setup { grid-template-columns: minmax(0, 1fr); padding: 12px; } .bz-detail { position: static; } }
-@media (max-width: 767px), (pointer: coarse) { .bz-role { height: 28px; min-width: 44px; } }
+.bz-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+/* On a phone the picked item rises as a sheet just above the floating tab bar (glass.css: bottom 22 + 66), so its action is always in reach,
+   however little of the stage shows under the header. The list keeps room to scroll clear of it. */
+@media (max-width: 767px) {
+  .bz-detail { position: fixed; top: auto; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 40; max-height: min(50vh, 320px); overflow-y: auto; overscroll-behavior: contain;
+    padding: 12px 14px 14px; border-radius: 24px; background: rgba(28, 28, 34, .97); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 18px 50px rgba(0, 0, 0, .6); animation: gx-in .2s var(--gx-ease) both; }
+  .bz-setup[data-detail] { padding-bottom: 220px; }
+  /* The list fades in without a transform: a transformed ancestor would pin the sheet to the list instead of the screen. */
+  .bz-setup.gx-enter { animation-name: bz-fade; }
+}
+@keyframes bz-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 767px), (pointer: coarse) { .bz-role { height: 28px; min-width: 44px; } .bz .gx-seg--sm .gx-seg-btn { height: auto; min-height: 44px; } .bz-detail-x { width: 44px; height: 44px; margin: -8px -8px -8px 0; } }
 
 /* Named slots (Product, Setting): one still from this project — picked, dropped or uploaded. */
 .bz-slot { flex-wrap: nowrap; min-height: 56px; padding: 6px; gap: 10px; }
@@ -39,14 +50,13 @@
 .bz-skel-tile { animation: gx-pulse 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .bz-skel, .bz-skel-tile { animation: none; } }
 .bz-make { align-self: flex-start; }
-.bz-done { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .bz-done-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.bz-sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.bz-sources li { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name act" "from act"; column-gap: 12px; row-gap: 2px; align-items: center; padding: 10px 0; border-top: 1px solid var(--gx-hair); }
-.bz-sources li:first-child { border-top: 0; }
-.bz-source-name { grid-area: name; font-size: 13px; font-weight: 600; }
-.bz-sources .cw-dim { grid-area: from; font-size: 12px; }
-.bz-sources .gx-hbtn { grid-area: act; }
+/* The finished take beside the composer (below it on a phone). */
+.bz-latest-media { width: 100%; max-width: 420px; border-radius: 8px; overflow: hidden; background: var(--gx-input); border: 1px solid var(--gx-card-border); }
+.bz-latest-media .gx-lazy, .bz-latest-media img, .bz-latest-media video { width: 100%; height: auto; max-height: 60vh; object-fit: contain; display: block; }
+/* A catalogue chip with its preview (avatars). */
+.bz-chip-face { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.bz-chip-face > img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; flex: none; background: var(--gx-input); }
 .bz-setup-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .bz-empty { align-items: flex-start; gap: 12px; padding: 18px 16px; }
 .bz-empty-title { font-size: 15px; font-weight: 600; }
@@ -54,4 +64,6 @@
   .bz-slot-plus { width: 36px; height: 36px; }
   .bz-pick { max-height: 240px; }
   .bz-skel { height: 44px; }
+  .bz-chip-face { padding-left: 6px; }
+  .bz-chip-face > img { width: 30px; height: 30px; }
 }

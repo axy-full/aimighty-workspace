@@ -39,7 +39,6 @@ async function fixture() {
   const wrapped = {} as Pick<typeof auth, "withTenant">;
   new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", compile(declaration.getText(ast)))(wrapped, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler);
   const calls: { name: string; args: unknown[]; workspace: string }[] = [], limits: unknown[][] = [], connections: unknown[] = [];
-  const guarded: { userId: string; wanted: records.SetupIds; workspace: string }[] = [];
   let failure: unknown, limited = false;
   const connection = { status: "connected", connected: true };
   const job = { id: key, draftId: "draft-1", workflow: "generation", status: "quoted", quoteCredits: 9, creditUnit: "higgsfield_credits", model: { id: "nano_banana_2", name: "Nano Banana 2", outputType: "image" } };
@@ -58,11 +57,8 @@ async function fixture() {
     "@/lib/higgsfield-consumer/oauth": { ConsumerOAuthError, getConsumerConnection: async (identity: unknown) => { connections.push(identity); return connection; } },
     "@/lib/higgsfield-consumer/mcp": { ConsumerDiscoveryError },
     "@/lib/higgsfield-consumer/jobs": { ConsumerJobError },
-    /* The standalone guard: real id extraction; the record read is isolated — an `acct_` id is one Particl did not make. */
-    "@/lib/higgsfield-consumer/marketing-records": { ...records, refuseForeignSetup: async (userId: string, wanted: records.SetupIds) => {
-      guarded.push({ userId, wanted, workspace: tenant.requireTenant().id });
-      if (Object.values(wanted).flat().some((id) => id.startsWith("acct_"))) throw new records.ConsumerSetupError();
-    } },
+    /* The standalone guard runs inside the quote service (tests/unit/generationConsumerService.spec.ts); the route maps its refusal. */
+    "@/lib/higgsfield-consumer/marketing-records": { ConsumerSetupError: records.ConsumerSetupError },
     "@/lib/higgsfield-consumer/video-contract": { ConsumerVideoError },
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
@@ -100,7 +96,7 @@ async function fixture() {
     return deps[name];
   }, output, output.exports);
   return {
-    calls, limits, connections, connection, job, models, guarded, store: () => store, setStore: (value: tenant.TenantStore) => { store = value; },
+    calls, limits, connections, connection, job, models, store: () => store, setStore: (value: tenant.TenantStore) => { store = value; },
     fail: (value: unknown) => { failure = value; }, limit: () => { limited = true; },
     request: async (method: "GET" | "POST", body: unknown = quote, options: { scope?: string | null; origin?: string; query?: string; raw?: string | Uint8Array; contentLength?: string; empty?: boolean } = {}) => {
       const captured = options.scope === undefined ? scope : options.scope;
@@ -303,21 +299,14 @@ test("reference elements: the list is an owner read; the create needs render, ca
   expect(f.calls).toHaveLength(2);
 });
 
-test("a quote naming a connected-account avatar, product, brand kit or ad reference Particl did not make is refused before it is priced", async () => {
+test("the quote service's standalone refusal answers 409 setup_not_particl with its own safe words", async () => {
   const f = await fixture();
-  for (const parameters of [{ product_ids: ["acct_p1"] }, { avatar_ids: ["acct_a1"] }, { brand_kit_id: "acct_bk" }, { ad_reference_id: "acct_r1" }]) {
-    const response = await f.request("POST", { ...quote, input: { ...input, parameters: { ...input.parameters, ...parameters } } }, { origin: "https://particl.example" });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ code: "setup_not_particl", error: new records.ConsumerSetupError().message });
-  }
-  expect(f.calls).toEqual([]);
-  /* What Particl made passes on to the quote, and the guard read the resolved member and workspace. */
-  const made = await f.request("POST", { ...quote, input: { ...input, parameters: { ...input.parameters, product_ids: ["made_p1"], avatar_ids: ["soul_a"] } } }, { origin: "https://particl.example" });
-  expect(made.status).toBe(200);
+  const input_ = { ...input, parameters: { ...input.parameters, product_ids: ["acct_p1"] } };
+  f.fail(Object.assign(new records.ConsumerSetupError(), { cause: new Error("PRIVATE_ACCOUNT_DETAIL") }));
+  const response = await f.request("POST", { ...quote, input: input_ }, { origin: "https://particl.example" });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ code: "setup_not_particl", error: new records.ConsumerSetupError().message });
+  /* The route hands the whole input to the service, which runs the guard before anything is priced. */
   expect(f.calls.map((call) => call.name)).toEqual(["quote"]);
-  expect(f.guarded.at(-1)).toEqual({ userId: "owner", workspace: "workspace", wanted: { product: ["made_p1"], avatar: ["soul_a"], brand_kit: [], ad_reference: [] } });
-  /* Status, submit and the catalogue are never guarded: they name no setup item. */
-  const before = f.guarded.length;
-  for (const body of [listing, submit, status]) expect((await f.request("POST", body, { origin: "https://particl.example" })).status).toBe(200);
-  expect(f.guarded.length).toBe(before);
+  expect(JSON.stringify(f.calls[0].args)).toContain("acct_p1");
 });

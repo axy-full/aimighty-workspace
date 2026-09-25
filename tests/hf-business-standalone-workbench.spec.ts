@@ -5,12 +5,14 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Business, standalone (owner's rule, 23 September): every pick comes from
- * Particl. Avatars are the identities built in Cast, a product or a setting
- * is a still from this project's Library, and nothing asks for an id from a
- * command line. Setup's Use in Ads / Use in Image ads lands on the page it
- * names once and is then spent; a finished job re-reads the project's
- * Library. Connected-account replies are route mocks; nothing is billed.
+ * Business, standalone (owner's rule, 23 September): nothing of the connected
+ * account's own library is listed or sent. A product or a setting is a still
+ * from this project's Library, avatars, hooks and settings are the engine's
+ * presets, and nothing asks for an id from a command line. Setup's Use in Ads
+ * / Use in Image ads is added to the ad being built, once; the composer keeps
+ * its draft across the trip; a finished job sits beside the composer and
+ * re-reads the project's Library. Connected-account replies are route mocks;
+ * nothing is billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -19,17 +21,19 @@ const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-
 const VIDEO_MODEL = { id: "marketing_studio_video", name: "Marketing Studio", outputType: "video", aspectRatios: ["auto", "16:9", "1:1", "9:16"], durationRange: { min: 4, max: 20 }, medias: [{ name: "medias", roles: ["image", "start_image", "end_image"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }, { name: "mode" }, { name: "hook_id" }, { name: "setting_id" }, { name: "avatar_ids" }, { name: "generate_audio" }] };
 const IMAGE_MODEL = { id: "marketing_studio_image", name: "Marketing Studio Image", outputType: "image", aspectRatios: ["auto", "1:1", "9:16"], medias: [{ name: "medias", roles: ["image"] }], parameters: [{ name: "resolution", options: ["1k", "2k", "4k"] }] };
 const DTC_MODEL = { id: "ms_image", name: "DTC Ads", outputType: "image", aspectRatios: ["1:1", "9:16", "auto"], medias: [{ name: "medias", roles: ["image"], max: 14 }], parameters: [{ name: "style_id" }, { name: "brand_kit_id" }, { name: "resolution", options: ["1k", "2k", "4k"] }, { name: "quality", options: ["low", "medium", "high"] }, { name: "batch_size" }, { name: "product_ids" }] };
-/** What the setup route answers for a standalone workspace: one identity built in Cast, the engine's presets, nothing of the account's own. */
-const STANDALONE: Record<string, { id: string; name: string; meta: string }[]> = {
-  avatar: [{ id: "soul_mira", name: "Mira", meta: "Soul ID · Soul 2" }],
+/** What the setup route answers for a standalone workspace: the engine's presets, nothing of the account's own. */
+type Item = { id: string; name: string; meta: string; previewUrl?: string };
+const STANDALONE: Record<string, Item[]> = {
+  avatar: [{ id: "av_ava", name: "Ava", meta: "avatar · preset", previewUrl: "/campaign/hero.webp" }],
   product: [], brand_kit: [], ad_reference: [],
   hook: [{ id: "h1", name: "Stop scrolling", meta: "hook · preset" }],
   setting: [{ id: "s1", name: "Sunlit kitchen", meta: "setting · preset" }],
   image_style: [{ id: "st_bold", name: "Bold launch", meta: "image style" }],
 };
-const NOTHING: Record<string, { id: string; name: string; meta: string }[]> = { avatar: [], product: [], brand_kit: [], ad_reference: [], hook: [], setting: [], image_style: [] };
+const NOTHING: Record<string, Item[]> = { avatar: [], product: [], brand_kit: [], ad_reference: [], hook: [], setting: [], image_style: [] };
 
-async function open(page: Page, sp: "ads" | "dtc" | "setup", options: { reads?: typeof STANDALONE; init?: string } = {}) {
+const TAKE = `gen_hfc_${"a".repeat(40)}`;
+async function open(page: Page, sp: "ads" | "dtc" | "setup", options: { reads?: typeof STANDALONE; init?: string; setupStatus?: number } = {}) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -53,7 +57,13 @@ async function open(page: Page, sp: "ads" | "dtc" | "setup", options: { reads?: 
     const job = (status: string) => ({ id: "9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d", draftId: "ws-biz", workflow: "generation", status, model: input?.model === "marketing_studio_video" ? VIDEO_MODEL : IMAGE_MODEL, input, workspaceId: "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b", workspaceName: "Connected wallet", quoteCredits: 40, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, createdAt: Date.now(), providerJobId: status === "quoted" ? null : "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", tool: null, result: null, originalAvailable: false, sources: [] });
     if (body.action === "quote") return route.fulfill({ json: { job: job("quoted") } });
     if (body.action === "submit") return body.credits === 40 ? route.fulfill({ json: { job: job("accepted") } }) : route.fulfill({ status: 409, json: { error: "Review the quote again." } });
-    if (body.action === "status") return route.fulfill({ json: { job: job("completed") } });
+    /* A finished image job carries its filed original (Particl's copy, at /api/media); the video one is filed without a preview here. */
+    if (body.action === "status") {
+      const done = job("completed"), image = done.model.outputType === "image";
+      const original = { generationId: TAKE, providerJobId: done.providerJobId, creditUnit: "higgsfield_credits", credits: 40, sha256: "b".repeat(64), bytes: 2048,
+        asset: { generationId: TAKE, mime: "image/webp", url: `/api/media/${TAKE}`, kind: "image" } };
+      return route.fulfill({ json: { job: image ? { ...done, originalAvailable: true, originalAvailability: "available", result: { original } } : done } });
+    }
     return route.fulfill({ status: 400, json: { error: "unexpected" } });
   });
   await page.route("**/api/higgsfield/consumer/marketing-templates**", async (route) => {
@@ -61,11 +71,14 @@ async function open(page: Page, sp: "ads" | "dtc" | "setup", options: { reads?: 
     return route.fulfill({ json: { catalogue: { templates: [], matched: 0, total: 0, loaded: 0, complete: true, fetchedAt: Date.now(), categories: [], costsVersion: "v1" } } });
   });
   const reads = options.reads ?? STANDALONE;
+  const setupReads: string[][] = [];
   await page.route("**/api/higgsfield/consumer/video", async (route) => {
     const body = route.request().postDataJSON() as { action: string; types?: string[] };
     if (body.action !== "setup") return route.fulfill({ status: 400, json: { error: "unexpected" } });
     const types = body.types ?? Object.keys(reads);
-    return route.fulfill({ json: { connected: true, reads: types.map((type) => ({ type, available: true, items: reads[type].map((i) => ({ ...i, type, previewUrl: null })) })) } });
+    setupReads.push(types);
+    if (options.setupStatus) return route.fulfill({ status: options.setupStatus, json: { error: "The connected account could not be read. Try again in a moment." } });
+    return route.fulfill({ json: { connected: true, reads: types.map((type) => ({ type, available: true, items: reads[type].map((i) => ({ previewUrl: null, ...i, type })) })) } });
   });
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   if (options.init) await page.addInitScript(options.init);
@@ -75,7 +88,7 @@ async function open(page: Page, sp: "ads" | "dtc" | "setup", options: { reads?: 
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 200)); });
   await page.goto(`/suites?suite=moleculr&page=marketing&sp=${sp}`);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  return { errors, requests, libraryReads: () => libraryReads };
+  return { errors, requests, libraryReads: () => libraryReads, setupReads };
 }
 
 const lastQuote = (requests: Record<string, unknown>[]) => [...requests].reverse().find((r) => r.action === "quote") as { input: { model: string; parameters: Record<string, unknown>; medias: unknown[] } } | undefined;
@@ -88,12 +101,12 @@ async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 }
 async function shot(page: Page, name: string, project: string) {
-  if (!SHOTS || !["workbench-1440x900", "workbench-390x844"].includes(project)) return;
+  if (!SHOTS || !["workbench-1440x900", "workbench-390x844"].includes(project) && !name.startsWith("setup-detail")) return;
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${project.replace("workbench-", "")}.png`, fullPage: false });
 }
 
-test("Ads: the avatar is a Cast identity, product and setting are stills from this project, and the finished ad re-reads the Library", async ({ page }, info) => {
+test("Ads: product and setting are stills from this project, the avatar an engine preset, and the finished ad sits beside the composer and re-reads the Library", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, requests, libraryReads } = await open(page, "ads");
   await expect(page.getByTestId("ads-view")).toBeVisible();
@@ -101,10 +114,14 @@ test("Ads: the avatar is a Cast identity, product and setting are stills from th
   /* Standalone: no command line, no id boxes, and a type with nothing of Particl's is not shown at all. */
   await noCommandLine(page);
   await expect(page.getByTestId("ads-adref")).toHaveCount(0);
-  await expect(page.getByTestId("business-sources")).toContainText("Built in Cast");
+  await expect(page.getByTestId("business-sources")).toHaveCount(0);
 
-  await page.getByTestId("ads-avatar").getByRole("button", { name: "Mira" }).click();
-  await expect(page.getByTestId("ads-avatar").getByRole("button", { name: "Mira" })).toHaveAttribute("aria-pressed", "true");
+  /* The avatar chip wears its preview. */
+  const ava = page.getByTestId("ads-avatar").getByRole("button", { name: "Ava" });
+  await expect(ava.locator("img")).toHaveAttribute("src", "/campaign/hero.webp");
+  await ava.click();
+  await expect(ava).toHaveAttribute("aria-pressed", "true");
+  if (PHONES.includes(info.project.name)) expect((await ava.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
   /* Product: pick a still from this project's Library (pictures only). */
   const choose = page.getByTestId("ads-product-choose");
@@ -129,7 +146,7 @@ test("Ads: the avatar is a Cast identity, product and setting are stills from th
   await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
   const quote = lastQuote(requests)!;
   expect(quote.input.model).toBe("marketing_studio_video");
-  expect(quote.input.parameters).toEqual({ mode: "ugc", aspect_ratio: "9:16", duration: 15, resolution: "720p", generate_audio: true, avatar_ids: ["soul_mira"] });
+  expect(quote.input.parameters).toEqual({ mode: "ugc", aspect_ratio: "9:16", duration: 15, resolution: "720p", generate_audio: true, avatar_ids: ["av_ava"] });
   expect(quote.input.medias).toEqual([{ role: "image", source: { uploadId: "up_plate" } }, { role: "image", source: { uploadId: "up_room" } }]);
   await noSideScroll(page);
   await page.getByTestId("ads-product").evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -139,8 +156,14 @@ test("Ads: the avatar is a Cast identity, product and setting are stills from th
   await page.getByTestId("ads-generate").click();
   await expect(page.getByTestId("ads-done")).toContainText("Rendered and filed to this project.", { timeout: 15_000 });
   await expect(page.getByTestId("ads-done").getByRole("button", { name: "Open Takes" })).toBeVisible();
+  /* One message, not two: the toast is gone. */
+  await expect(page.getByText("Rendered and filed to this project.")).toHaveCount(1);
   /* Takes and the Library read one store: it is re-read once the job finishes. */
   await expect.poll(libraryReads).toBeGreaterThan(before);
+  /* The same input is priced again at once: Generate is the rerun. */
+  await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
+  await expect(page.getByTestId("ads-generate")).toBeEnabled();
+  await expect(page.getByTestId("ads-done")).toBeVisible();
   await page.getByTestId("ads-done").evaluate((el) => el.scrollIntoView({ block: "center" }));
   await shot(page, "ads-done", info.project.name);
   expect(errors).toEqual([]);
@@ -150,8 +173,8 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, requests } = await open(page, "setup");
   await expect(page.getByTestId("setup-view")).toBeVisible();
-  await expect(page.getByTestId("setup-avatar")).toContainText("Mira");
-  await expect(page.getByTestId("setup-avatar")).toContainText("Built in Cast");
+  await expect(page.getByTestId("setup-avatar")).toContainText("Ava");
+  await expect(page.getByTestId("setup-avatar")).toContainText("Engine presets");
   await expect(page.getByTestId("setup-image_style")).toContainText("Bold launch");
   for (const type of ["product", "brand_kit", "ad_reference"]) await expect(page.getByTestId(`setup-${type}`)).toHaveCount(0);
   await noCommandLine(page);
@@ -164,6 +187,9 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   await page.getByTestId("setup-detail").getByRole("button", { name: "Use in Image ads" }).click();
   await expect(page.getByTestId("image-ads-view")).toBeVisible();
   await expect(page.getByTestId("dtc-engine-ms_image")).toHaveAttribute("aria-selected", "true");
+  /* The engine switch is a phone target too. */
+  if (info.project.name === "workbench-390x844")
+    for (const id of ["dtc-engine-marketing_studio_image", "dtc-engine-ms_image"]) expect((await page.getByTestId(id).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await expect(page.getByTestId("dtc-style").getByRole("button", { name: "Bold launch" })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("particl-business-preset"))).toBeNull();
 
@@ -180,6 +206,14 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   expect(quote.input.medias).toEqual([{ role: "image", source: { genId: "g_bottle" } }]);
   await noSideScroll(page);
   await shot(page, "image-ads", info.project.name);
+  /* The finished still sits beside the composer, from Particl's own copy. */
+  await page.getByTestId("dtc-generate").click();
+  await expect(page.getByTestId("dtc-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("dtc-done")).toContainText("Rendered and filed to this project.");
+  await expect(page.getByTestId("dtc-generate")).toContainText("40 cr");
+  await page.getByTestId("dtc-done").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await noSideScroll(page);
+  await shot(page, "image-ads-done", info.project.name);
   expect(errors).toEqual([]);
 });
 
@@ -192,7 +226,7 @@ test("a pick older than two minutes is spent on arrival, not applied", async ({ 
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("particl-business-preset"))).toBeNull();
 });
 
-test("when nothing is Particl's yet, Setup points at Cast and the Ads pickers step aside", async ({ page }, info) => {
+test("when there is nothing to set up, Setup says so with a way on, and the Ads pickers step aside", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors } = await open(page, "setup", { reads: NOTHING });
   await expect(page.getByTestId("setup-empty")).toContainText("Nothing to set up yet");
@@ -201,13 +235,10 @@ test("when nothing is Particl's yet, Setup points at Cast and the Ads pickers st
   await shot(page, "setup-empty", info.project.name);
   await page.getByTestId("setup-empty").getByRole("button", { name: "Open Ads" }).click();
   await expect(page.getByTestId("ads-view")).toBeVisible();
-  await expect(page.getByTestId("ads-avatar-cast")).toBeVisible();
-  for (const id of ["ads-hook", "ads-adref"]) await expect(page.getByTestId(id)).toHaveCount(0);
   /* The product slot is always there: this project's Library is the source. */
   await expect(page.getByTestId("ads-product-choose")).toBeVisible();
+  for (const id of ["ads-avatar", "ads-hook", "ads-adref"]) await expect(page.getByTestId(id)).toHaveCount(0);
   await noCommandLine(page);
-  await page.getByTestId("ads-avatar-cast").click();
-  await expect(page).toHaveURL(/page=cast/);
   expect(errors).toEqual([]);
 });
 
@@ -235,7 +266,8 @@ test("the server refuses a quote naming a connected-account item Particl did not
     action: "quote", draftId: "ws-biz", idempotencyKey: crypto.randomUUID(),
     input: { type: "video", model: "marketing_studio_video", prompt: "A bottle on the sill.", parameters: { mode: "ugc", ...parameters }, medias: [] },
   } });
-  for (const parameters of [{ product_ids: ["acct_product_1"] }, { avatar_ids: ["acct_avatar_1"] }, { ad_reference_id: "acct_ref_1" }]) {
+  /* Owned types and backend assets refuse from Particl's record alone (a preset type would first read the account, which this server does not hold). */
+  for (const parameters of [{ product_ids: ["acct_product_1"] }, { brand_kit_id: "acct_kit_1" }, { ad_reference_id: "acct_ref_1" }, { assets: ["acct_asset_1"] }]) {
     const response = await quote(parameters);
     expect(response.status(), JSON.stringify(parameters)).toBe(409);
     expect(await response.json()).toMatchObject({ code: "setup_not_particl" });
@@ -246,4 +278,83 @@ test("the server refuses a quote naming a connected-account item Particl did not
   } });
   expect(video.status()).toBe(409);
   expect(await video.json()).toMatchObject({ code: "setup_not_particl" });
+});
+
+test("a setup read that fails is asked once, the error stays with Try again, and nothing loops", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { setupReads } = await open(page, "ads", { setupStatus: 502 });
+  const error = page.getByTestId("ads-setup-error");
+  await expect(error).toContainText("could not be read");
+  await page.waitForTimeout(2500);
+  expect(setupReads).toHaveLength(1);
+  await expect(error).toBeVisible();
+  /* No pickers wait forever: the skeletons are gone once the read has failed. */
+  await expect(page.locator('[data-testid="ads-view"] [aria-busy="true"]')).toHaveCount(0);
+  await error.getByRole("button", { name: "Try again" }).click();
+  await expect.poll(() => setupReads.length).toBe(2);
+  await page.waitForTimeout(1500);
+  expect(setupReads).toHaveLength(2);
+  /* Setup: the same — one read on arrival, the error with its own Try again, no endless skeleton. */
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Setup/ }).click();
+  const setupError = page.getByTestId("setup-error");
+  await expect(setupError).toBeVisible();
+  await page.waitForTimeout(2000);
+  expect(setupReads.length).toBeLessThanOrEqual(3);
+  await expect(page.getByTestId("setup-loading")).toHaveCount(0);
+  const reads = setupReads.length;
+  await setupError.getByRole("button", { name: "Try again" }).click();
+  await expect.poll(() => setupReads.length).toBe(reads + 1);
+  await noSideScroll(page);
+  await shot(page, "setup-error", info.project.name);
+});
+
+test("phone: a picked Setup row brings its action into reach, clear of the tab bar", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "phones");
+  const { errors } = await open(page, "setup");
+  await page.getByTestId("setup-setting").getByRole("button", { name: /Sunlit kitchen/ }).tap().catch(() => page.getByTestId("setup-setting").getByRole("button", { name: /Sunlit kitchen/ }).click());
+  const use = page.getByTestId("setup-detail").getByRole("button", { name: "Use in Ads" });
+  await expect(use).toBeVisible();
+  /* Once the scroll settles, the point at the button's centre is the button — not the tab bar, not off screen. */
+  await expect.poll(async () => use.evaluate((button) => {
+    const box = button.getBoundingClientRect();
+    const x = box.left + box.width / 2, y = box.top + box.height / 2;
+    if (y < 0 || y > innerHeight) return "off screen";
+    const hit = document.elementFromPoint(x, y);
+    return hit && (hit === button || button.contains(hit)) ? "reachable" : hit?.className?.toString() ?? "nothing";
+  }), { timeout: 5000 }).toBe("reachable");
+  expect((await use.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await page.waitForTimeout(400);
+  await shot(page, "setup-detail", info.project.name);
+  await use.click();
+  await expect(page.getByTestId("ads-setting").getByRole("button", { name: "Sunlit kitchen" })).toHaveAttribute("aria-pressed", "true");
+  expect(errors).toEqual([]);
+});
+
+test("a trip to Setup and back keeps the ad being built; the pick is added to it", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { errors, requests } = await open(page, "ads");
+  await page.getByTestId("ads-prompt").fill("Morning routine with the bottle on the sill.");
+  await page.getByTestId("ads-product-choose").click();
+  await page.getByTestId("ads-product-stills").getByRole("button", { name: "harbour-plate.webp" }).click();
+  await page.getByTestId("ads-avatar").getByRole("button", { name: "Ava" }).click();
+  await page.getByTestId("ads-mode").getByRole("button", { name: "TV spot" }).click();
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Setup/ }).click();
+  await page.getByTestId("setup-hook").getByRole("button", { name: /Stop scrolling/ }).click();
+  await page.getByTestId("setup-detail").getByRole("button", { name: "Use in Ads" }).click();
+  await expect(page.getByTestId("ads-view")).toBeVisible();
+  await expect(page.getByTestId("ads-prompt")).toHaveValue("Morning routine with the bottle on the sill.");
+  await expect(page.getByTestId("ads-product-name")).toHaveText("harbour-plate.webp");
+  await expect(page.getByTestId("ads-avatar").getByRole("button", { name: "Ava" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("ads-hook").getByRole("button", { name: "Stop scrolling" })).toHaveAttribute("aria-pressed", "true");
+  /* A hook needs the UGC family, so the mode moved there rather than dropping the pick. */
+  await expect(page.getByTestId("ads-mode").getByRole("button", { name: "UGC", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
+  expect(lastQuote(requests)!.input.parameters).toMatchObject({ mode: "ugc", avatar_ids: ["av_ava"], hook_id: "h1" });
+  /* The draft outlives a reload of the tab, too; the spent pick does not come back. */
+  await page.reload();
+  await expect(page.getByTestId("ads-prompt")).toHaveValue("Morning routine with the bottle on the sill.");
+  await expect(page.getByTestId("ads-product-name")).toHaveText("harbour-plate.webp");
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("particl-business-preset"))).toBeNull();
+  await shot(page, "ads-roundtrip", info.project.name);
+  expect(errors).toEqual([]);
 });

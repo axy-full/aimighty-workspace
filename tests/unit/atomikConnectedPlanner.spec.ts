@@ -120,6 +120,7 @@ async function plannerService() {
     steps: new Map<string, FakeStep>(),
     jobs: new Map<string, { id: string; workflow: string; status: string; quoteCredits: number; quoteExpiresAt: number }>(),
     quotes: 0, submits: 0, polls: 0, batchSubmits: [] as { ids: string[]; approval: unknown }[], batchStates: null as null | string[], submitError: null as null | Error, pollView: null as null | Record<string, unknown>, price: 42,
+    quoteError: null as null | Error,
   };
   const view = (job: { id: string; status: string; quoteCredits: number; quoteExpiresAt: number }, extra: Record<string, unknown> = {}) =>
     ({ id: job.id, status: job.status, quoteCredits: job.quoteCredits, workspaceId: wallet, workspaceName: "Wallet", quoteExpiresAt: job.quoteExpiresAt, result: null, failureCode: null, ...extra });
@@ -152,6 +153,7 @@ async function plannerService() {
       connectedGenerationCatalogue: async () => catalogue,
       consumerGenerationView: async (job: { id: string; status: string; quoteCredits: number; quoteExpiresAt: number }) => view(job),
       quoteConsumerGeneration: async () => {
+        if (state.quoteError) throw state.quoteError;
         state.quotes++;
         const job = { id: randomUUID(), workflow: "generation", status: "quoted", quoteCredits: state.price, quoteExpiresAt: Date.now() + 300_000 };
         state.jobs.set(job.id, job);
@@ -240,6 +242,17 @@ test("A2: an expired quote is re-priced for a fresh approval, a refusal before s
   const planner = (await g.service.connectedPlanner("owner", null))!;
   expect(await planner.quote({ kind: "video", title: "Push in", prompt: "x", model: "connected:kling3_0" }, [])).toMatchObject({ ok: false });
   expect(g.state.quotes).toBe(0);
+});
+
+test("A2: a proposal naming an account avatar or product is refused by the quote service's standalone guard and never becomes a step", async () => {
+  const f = await plannerService();
+  const { ConsumerSetupError } = await import("../../lib/higgsfield-consumer/marketing-records");
+  f.state.quoteError = new ConsumerSetupError();
+  const planner = (await f.service.connectedPlanner("owner", "production"))!;
+  const quote = await planner.quote({ kind: "video", title: "Ad", prompt: "A bottle.", model: "connected:marketing_studio_video", settings: { mode: "ugc", avatar_ids: ["acct_avatar_1"], product_ids: ["acct_product_1"] } }, []);
+  expect(quote).toMatchObject({ ok: false, title: "Ad", reason: new ConsumerSetupError().message });
+  expect([f.state.quotes, f.state.submits]).toEqual([0, 0]);
+  expect(f.state.steps.size).toBe(0);
 });
 
 test("A4: a batch is ONE approval for the exact sum of its waiting steps; each step settles on its own and a refused item is not billed", async () => {

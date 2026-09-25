@@ -64,6 +64,8 @@ import { collectConsumerVideoOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
 import { requireConnectedPreset } from "./presets";
+import { setupIdsOfParameters } from "./marketing-records";
+import { refuseForeignMarketingSetup } from "./marketing-setup";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 type Snapshot = {
@@ -148,6 +150,8 @@ const sameInput = (a: unknown, b: ConsumerGenerationInput) =>
 const PLACEHOLDER_MEDIA = "00000000-0000-4000-8000-000000000000";
 export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string) {
   const normalized = parseConsumerGenerationInput(input);
+  // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
+  await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
