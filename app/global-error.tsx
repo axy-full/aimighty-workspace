@@ -38,7 +38,7 @@ const CSS = `
   .primary { background: #007AFF; color: #fff; }
   .plain { background: rgba(255,255,255,.09); color: #F5F6F8; }
   .ref {
-    margin-top: 18px; font-size: 11.5px; color: #767A82; word-break: break-word;
+    margin-top: 18px; font-size: 12px; color: #767A82; word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 `;

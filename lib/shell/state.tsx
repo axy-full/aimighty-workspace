@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { popUndo, pushUndo, type UndoEntry } from "./undo";
+import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 
 /**
@@ -101,7 +102,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const [libTab, setLibTab] = useState<LibTab>("tools");
   const [libOpen, setLibOpen] = useState(false);
   const [inspOpen, setInspOpen] = useState(false);
-  const [palette, setPaletteOpen] = useState(false);
+  /* `?find=1` (the 404's and the error page's Search) lands with ⌘K open. */
+  const [palette, setPaletteOpen] = useState(() => typeof window !== "undefined" && findRequested(window.location.search));
   const [ctx, setCtx] = useState<CtxState | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
@@ -146,6 +148,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       ws.go(target.legacy.suite, target.legacy.page);
       writeParams({ ...params, sp: target.id }, "replace");
     }
+    /* One shot: a reload of this URL should not reopen search. */
+    if (findRequested(window.location.search)) window.history.replaceState(null, "", window.location.pathname + withoutFind(window.location.search) + window.location.hash);
     // Run once, against the URL the page was opened with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

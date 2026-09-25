@@ -23,6 +23,8 @@ import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generat
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
+import Boundary from "@/components/Boundary";
+import { FaultIcon, PanelFault } from "./PanelFault";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -318,6 +320,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
+        {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
+        <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
           className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
@@ -333,6 +337,15 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           ) : null}
           </>}
           renderItem={(entry) => (
+            <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => (
+              <div className="gx-asset" data-faulted="true" data-testid="take-fault" role="alert">
+                <button type="button" className="gx-asset-thumb gx-fault-tile" onClick={fault.retry} aria-label={`Try ${entry.take.name} again`} title={`ref ${fault.ref}`}>
+                  <FaultIcon /><span>Try again</span>
+                </button>
+                <span className="gx-asset-name">{entry.take.name}</span>
+                <span className="gx-asset-meta">ref {fault.ref}</span>
+              </div>
+            )}>
             <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
               <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
@@ -342,9 +355,11 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-name">{entry.take.name}</span>
               <span className="gx-asset-meta">{entry.take.meta}</span>
             </div>
+            </Boundary>
           )}
         />
         {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        </Boundary>
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`

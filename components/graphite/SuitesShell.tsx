@@ -45,6 +45,9 @@ import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
+import Boundary from "@/components/Boundary";
+import { throwIfArmed } from "@/lib/shell/fault";
+import { FaultAside, PanelFault } from "./PanelFault";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
@@ -55,6 +58,8 @@ import { WorkspaceView } from "./WorkspaceView";
  * provider as the shell it replaces, so every page body works from day one.
  */
 export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
+  /* A throw out here (the chrome itself) is app/suites/error.tsx's; everything below has its own boundary. */
+  throwIfArmed("shell");
   const ws = useWorkspace();
   const shell = useShell();
   const { state, dispatch, selectProject, toast } = ws;
@@ -184,6 +189,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector : shell.inspOpen);
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
+  /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
+     Moving to another page, project or selection gives it a fresh go. */
+  const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
+  const stageProbe = `stage:${shell.page.id}`;
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
@@ -195,10 +204,22 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
+        {shell.view === "crew" ? <><CrewStrip room={crew} />
+          <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
+            <CrewView project={project} room={crew} scope={scope} />
+          </Boundary></> : shell.view === "workspace" ? (
+          <Boundary what="Workspace" probe="workspace" resetKey={`workspace:${shell.wsTab}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="workspace" /></div>}>
+            <WorkspaceView account={account} />
+          </Boundary>
+        ) : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
+            {showLibrary ? (
+              <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`}
+                fallback={(fault) => <FaultAside kind="library" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : undefined} />}>
+                <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
+              </Boundary>
+            ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"}
                 onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
@@ -223,7 +244,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     </>) : null}
                   </div>
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
+                      <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    </Boundary>
                   </div>
                 </>
               ) : (
@@ -231,6 +254,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
                   {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
+                    <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
                     {shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
@@ -272,17 +296,38 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
                     )}
+                    </Boundary>
                   </div>
                 </>
               )}
-              <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}><GenerationStrip /></div>
+              <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}>
+                <Boundary what="The run strip" probe="strip" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="strip" variant="inline" /></div>}><GenerationStrip /></Boundary>
+              </div>
             </main>
-            {showInspector ? <Inspector scope={scope} project={project} overlay={overlay} /> : null}
+            {showInspector ? (
+              <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
+                fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
+                <Inspector scope={scope} project={project} overlay={overlay} />
+              </Boundary>
+            ) : null}
           </div>
         )}
-        <Palette items={items} onAsk={() => shell.goSuite("atomik", "agent")} />
+        <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
+          <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
+            <div className="gx-sheet" role="dialog" aria-label="Search" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="palette" actions={<button type="button" className="gx-hbtn" onClick={() => shell.setPalette(false)}>Close</button>} />
+            </div>
+          </div>
+        )}>
+          <Palette items={items} onAsk={() => shell.goSuite("atomik", "agent")} />
+        </Boundary>
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
-          <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
+          <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => (
+            <div className="gx-fault-dock"><PanelFault fault={fault} name="composer" variant="inline"
+              actions={state.composer ? <button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { composer: false } })}>Close</button> : null} /></div>
+          )}>
+            <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
+          </Boundary>
         </div>
         <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (

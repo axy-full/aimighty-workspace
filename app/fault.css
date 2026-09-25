@@ -1,0 +1,62 @@
+/* ── Faults (components/graphite/PanelFault.tsx, FaultPage.tsx) — a panel that
+   threw, the Suites error page and the 404, in the shell's material. Scoped
+   under `.gx` like the rest of the Suites CSS; nothing here reaches another
+   shell. 12px is the floor; every target is 44px on a coarse pointer (the
+   .gx-hbtn / .gx-primary rules in graphite.css already say so). ─────────── */
+.gx .gx-fault { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; width: min(460px, 100%); margin: 40px auto; padding: 28px 24px 22px; border-radius: 18px; background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .03)); border: 1px solid rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10); animation: gx-in .3s var(--gx-ease) both; }
+.gx .gx-fault-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--gx-waiting); background: rgba(255, 159, 10, .12); border: 1px solid rgba(255, 159, 10, .32); box-shadow: 0 0 22px rgba(255, 159, 10, .18); }
+.gx .gx-fault-icon[data-tone="info"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); box-shadow: 0 0 22px rgba(10, 132, 255, .22); }
+.gx .gx-fault-title { margin: 4px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.gx .gx-fault-sub { margin: 0; max-width: 40ch; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); }
+.gx .gx-fault-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.gx .gx-fault-actions > a { text-decoration: none; }
+.gx .gx-fault-ref { margin: 6px 0 0; max-width: 100%; font-family: var(--gx-mono); font-size: 12px; line-height: 1.5; color: var(--gx-text-3); overflow-wrap: anywhere; }
+.gx .gx-fault-msg { color: var(--gx-text-3); }
+
+/* In a 280/320px side panel: the card fills the column. */
+.gx .gx-fault-host { flex: 1; min-height: 0; overflow: auto; padding: 0 0 12px; }
+.gx .gx-fault-host[data-kind="inspector"] { padding: 14px 16px; }
+.gx .gx-fault-host .gx-fault { margin: 0; padding: 22px 16px 18px; }
+/* A whole view (Crew, Workspace) that threw: the card on the wallpaper. */
+.gx .gx-fault-view { flex: 1; min-height: 0; overflow: auto; padding: 10px 16px 40px; }
+
+/* One row: a tile, the strip, the composer dock. */
+.gx .gx-fault[data-variant="inline"] { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; text-align: left; width: 100%; margin: 0; padding: 10px 12px; gap: 10px; border-radius: 12px; border-style: dashed; animation: none; }
+.gx .gx-fault[data-variant="inline"] .gx-fault-icon { width: 32px; height: 32px; box-shadow: none; }
+.gx .gx-fault[data-variant="inline"] .gx-fault-icon svg { width: 16px; height: 16px; }
+.gx .gx-fault-line { flex: 1 1 140px; min-width: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.gx .gx-fault-line strong { font-weight: 600; }
+.gx .gx-fault-ref-inline { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); white-space: nowrap; }
+.gx .gx-fault-dock { padding: 8px 10px; }
+
+/* ── Outside the live shell: the Suites error page and the 404 ─────────── */
+.gx.gx-outside a { color: inherit; text-decoration: none; }
+.gx .gx-outside-body { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 24px 16px max(40px, env(safe-area-inset-bottom)); }
+.gx .gx-outside-body .gx-fault { margin: 0; width: min(520px, 100%); padding: 36px 28px 26px; gap: 12px; border-radius: 24px; }
+.gx .gx-fault-eyebrow { font-family: var(--gx-mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gx-text-3); }
+.gx .gx-outside-body .gx-fault-title { font-size: 24px; letter-spacing: -.02em; }
+.gx .gx-outside-body .gx-fault-sub { font-size: 14px; }
+.gx .gx-outside-body .gx-fault-icon { width: 52px; height: 52px; }
+.gx .gx-outside .gx-header .gx-seg-btn > span.gx-seg-label { color: var(--gx-text-2); font-weight: 500; }
+.gx .gx-outside .gx-header .gx-seg-btn:hover::before { opacity: .6; }
+.gx .gx-fault-kbd { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); }
+.gx .gx-primary .gx-fault-kbd { color: rgba(255, 255, 255, .75); }
+
+@media (max-width: 767px) {
+  .gx .gx-fault { margin: 20px auto; padding: 24px 18px 20px; }
+  .gx .gx-outside-body { place-items: start center; padding-top: 18px; }
+  .gx .gx-outside-body .gx-fault { padding: 28px 18px 22px; }
+  .gx .gx-outside-body .gx-fault-title { font-size: 21px; }
+  .gx .gx-fault-actions { width: 100%; }
+  .gx .gx-fault-actions > * { flex: 1 1 140px; justify-content: center; }
+  .gx .gx-fault-kbd { display: none; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-fault[data-variant="inline"] .gx-hbtn { height: 44px; }
+}
+
+/* A take that threw keeps its tile, at its size, so the grid does not jump. */
+.gx .gx-fault-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--gx-text-2); border: 1px dashed rgba(255, 159, 10, .35); }
+.gx .gx-fault-tile .gx-fault-icon { width: 32px; height: 32px; box-shadow: none; }
+.gx .gx-fault-tile .gx-fault-icon svg { width: 16px; height: 16px; }
+.gx .gx-fault-tile:hover { color: var(--gx-text); }
