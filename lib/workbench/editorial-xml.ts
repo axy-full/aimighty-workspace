@@ -154,29 +154,44 @@ ${tracks.join("\n")}
  *
  * Edit points are converted, not lengths: each shot runs between its converted
  * start and end on the timeline, so the cut's length is the converted length
- * and a clip that ended with the cut still does. A clip's fades stay inside it,
- * and nothing reads past the end of its source after rounding.
+ * and a clip that started inside the cut still ends by its end. A clip's fades
+ * stay inside it.
+ *
+ * Nothing reads past the end of its source after rounding. The old out point
+ * may be the file's last frame, so the new out point is it rounded DOWN (or the
+ * file's measured whole frames, when longer): the in point moves earlier to fit,
+ * and a part that starts at the top of its file is shortened instead. A shot
+ * shortened that way hands the frame to the next shot's edit point.
  */
 export function retimeProject(p: Project, fps: 24 | 25 | 30): Project {
   if (fps === p.fps) return p;
   const f = (frames: number) => Math.round((frames * fps) / p.fps);
-  /* The converted in point, moved earlier by the rounding (never before 0) so in + length stays inside the source. */
-  const sourceIn = (from: number, length: number, converted: number) => Math.max(0, Math.min(f(from), f(from + length) - converted));
+  const assets = new Map(p.assets.map((a) => [a.id, a]));
+  const fit = (assetId: string, from: number, length: number, duration: number) => {
+    const seconds = assets.get(assetId)?.seconds;
+    const end = Math.max(Math.floor(((from + length) * fps) / p.fps), seconds ? Math.floor(seconds * fps + 1e-6) : 0);
+    const sourceIn = Math.max(0, Math.min(f(from), end - duration));
+    return { sourceIn, duration: Math.max(1, Math.min(duration, end - sourceIn)) };
+  };
   let old = 0, at = 0;
   const shots = p.shots.map((s) => {
     old += s.duration;
-    const end = Math.max(at + 1, f(old)), duration = end - at;
-    at = end;
-    return { ...s, sourceIn: sourceIn(s.sourceIn, s.duration, duration), duration };
+    const duration = Math.max(at + 1, f(old)) - at;
+    // A still has no end to read past.
+    const next = assets.get(s.assetId)?.kind === "image" ? { sourceIn: f(s.sourceIn), duration } : fit(s.assetId, s.sourceIn, s.duration, duration);
+    at += next.duration;
+    return { ...s, ...next };
   });
-  const total = at;
+  const total = at, oldTotal = old;
   const audio = p.audioClips?.map((c) => {
-    const startFrame = f(c.startFrame);
+    // A clip that started inside the cut still does, and ends by the cut's end.
+    const inside = c.startFrame < oldTotal;
+    const startFrame = inside ? Math.min(f(c.startFrame), total - 1) : f(c.startFrame);
     let duration = Math.max(1, f(c.startFrame + c.duration) - startFrame);
-    // A clip that started inside the cut ends by the cut's end.
-    if (startFrame < total) duration = Math.min(duration, total - startFrame);
-    const fadeIn = Math.min(f(c.fadeIn), duration);
-    return { ...c, startFrame, sourceIn: sourceIn(c.sourceIn, c.duration, duration), duration, fadeIn, fadeOut: Math.min(f(c.fadeOut), duration - fadeIn) };
+    if (inside) duration = Math.min(duration, total - startFrame);
+    const next = fit(c.assetId, c.sourceIn, c.duration, duration);
+    const fadeIn = Math.min(f(c.fadeIn), next.duration);
+    return { ...c, startFrame, ...next, fadeIn, fadeOut: Math.min(f(c.fadeOut), next.duration - fadeIn) };
   });
   return { ...p, fps, shots, ...(audio ? { audioClips: audio } : {}) };
 }
