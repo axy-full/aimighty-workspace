@@ -1,4 +1,5 @@
 import { acceptRecoveryJobTx } from "./recovery";
+import type { InStatement } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
@@ -49,13 +50,45 @@ export function generationFingerprint(value: unknown): string {
 }
 
 export type GenerationRequest = { userId: string; key: string };
+/** The bind as a statement, to commit in the same transaction or batch as the job row it names. */
+export function bindGenerationRequestStatement(claim: GenerationRequest, genId: string): InStatement {
+  return { sql: `UPDATE generation_requests SET generation_id=?, updated_at=? WHERE user_id=? AND request_key=?`, args: [genId, now(), claim.userId, claim.key] };
+}
+/** The bind statements for an admitted row (none without a claim), with the claims table in place. Call before opening the write. */
+export async function claimBinding(claim: GenerationRequest | null | undefined, genId: string): Promise<InStatement[]> {
+  if (!claim) return [];
+  await generationRequestsReady();
+  return [bindGenerationRequestStatement(claim, genId)];
+}
 export async function bindGenerationRequest(claim: GenerationRequest, genId: string): Promise<void> {
   await generationRequestsReady();
-  await db().execute({ sql: `UPDATE generation_requests SET generation_id=?, updated_at=? WHERE user_id=? AND request_key=?`, args: [genId, now(), claim.userId, claim.key] });
+  await db().execute(bindGenerationRequestStatement(claim, genId));
+}
+
+/** `atomicBinding`: every job this request can create binds its claim in the same write as the row. */
+export type GenerationRequestOptions = { atomicBinding?: boolean };
+
+const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
+
+/**
+ * With atomic binding, a claim that names no job proves no job exists — so
+ * nothing was reserved or sent. The claim is completed with that answer
+ * instead of answering "still being accepted" for ever. Null when a job was
+ * bound after all (its ordinary replay then answers).
+ */
+async function completeUnadmitted(userId: string, key: string): Promise<Response | null> {
+  const json = JSON.stringify({ error: UNADMITTED });
+  const done = await db().execute({
+    sql: `UPDATE generation_requests SET response_json=?,response_status=409,updated_at=?
+          WHERE user_id=? AND request_key=? AND generation_id IS NULL AND response_json IS NULL`,
+    args: [json, now(), userId, key],
+  });
+  if (!done.rowsAffected) return null;
+  return new Response(json, { status: 409, headers: { "Content-Type": "application/json", "Idempotency-Status": "complete" } });
 }
 
 /** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
-export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>): Promise<Response> {
+export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
   const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
   if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
   const expectedActor = req.headers.get("X-Actor-Email");
@@ -68,7 +101,7 @@ export async function withGenerationRequest(req: Request, userId: string, run: (
   }
   const key = supplied ?? randomUUID();
   const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
-  return withGenerationRequestData({ userId, key, fingerprint }, run);
+  return withGenerationRequestData({ userId, key, fingerprint }, run, options);
 }
 
 /** Server-side admission uses the same durable claim without making an HTTP request.
@@ -76,6 +109,7 @@ export async function withGenerationRequest(req: Request, userId: string, run: (
 export async function withGenerationRequestData(
   input: { userId: string; key: string; fingerprint: string },
   run: (claim: GenerationRequest) => Promise<Response>,
+  options: GenerationRequestOptions = {},
 ): Promise<Response> {
   const { userId, key, fingerprint } = input;
   if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
@@ -107,6 +141,10 @@ export async function withGenerationRequestData(
   } catch (error) {
     // Keep the durable claim: a provider might have accepted an interrupted request.
     console.error("Generation request interrupted:", (error as Error).message);
+    if (options.atomicBinding) {
+      const settled = await completeUnadmitted(userId, key).catch(() => null);
+      if (settled) return settled;
+    }
     return Response.json({ error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." }, { status: 503 });
   }
 }

@@ -26,7 +26,7 @@ import { GROK_TTS_MODEL, GROK_VOICE_ID, audioVendor, grokSpeechUsd, grokVoiceCon
 import { findStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "@/lib/mediaSource.server";
 import { getShot } from "@/lib/shots";
 import {
-  bindGenerationRequest,
+  claimBinding,
   reserveGenerationSpend,
   SpendReservationError,
 } from "@/lib/generationRequests";
@@ -374,7 +374,9 @@ export async function executeAudioAdmission(
   );
   if (stopped) return stopped;
   const ts = now();
-  await db().execute({
+  // The claim is bound in the same write: a claim naming no job proves there is none.
+  const binding = await claimBinding(requestClaim, genId);
+  await db().batch([{
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
            created_at, updated_at, token_id, provider, task, title, billed_to, shot_id)
@@ -403,8 +405,7 @@ export async function executeAudioAdmission(
       vendor,
       shotId,
     ],
-  });
-  await bindGenerationRequest(requestClaim!, genId);
+  }, ...binding], "write");
   invalidate(PROJECTS_KEY);
   if (hold) {
     if (hold.why === "slots") {

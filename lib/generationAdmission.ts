@@ -92,7 +92,7 @@ import { approvedTakeOf } from "@/lib/shots";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 import {
-  bindGenerationRequest,
+  claimBinding,
   reserveGenerationSpend,
   SpendReservationError,
 } from "@/lib/generationRequests";
@@ -1144,8 +1144,8 @@ export async function executeGenerationAdmission(
           version: stillVersion,
           createdBy: got.user.id,
           tokenId: got.token?.id ?? null,
+          requestClaim,
         });
-        await bindGenerationRequest(requestClaim, started.genId);
         try {
           await reserveGenerationSpend(
             {
@@ -1262,8 +1262,10 @@ export async function executeGenerationAdmission(
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
 
-      await withMediaSources(stillParams, (tx) =>
-        tx.execute({
+      // The claim is bound in the same write: a claim naming no job proves there is none.
+      const stillBinding = await claimBinding(requestClaim, genId);
+      await withMediaSources(stillParams, async (tx) => {
+        await tx.execute({
           sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
              created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
@@ -1289,9 +1291,9 @@ export async function executeGenerationAdmission(
             model.stillTask ?? "generate",
             billedTo(model.provider),
           ],
-        }),
-      );
-      await bindGenerationRequest(requestClaim, genId);
+        });
+        for (const bind of stillBinding) await tx.execute(bind);
+      });
       invalidate(PROJECTS_KEY);
       if (holdStill) {
         if (holdStill.why === "slots") {
@@ -1800,8 +1802,10 @@ export async function executeGenerationAdmission(
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
-    await withMediaSources(storedParams, (tx) =>
-      tx.execute({
+    // The claim is bound in the same write: a claim naming no job proves there is none.
+    const binding = await claimBinding(requestClaim, genId);
+    await withMediaSources(storedParams, async (tx) => {
+      await tx.execute({
         sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
@@ -1831,10 +1835,9 @@ export async function executeGenerationAdmission(
           refineMs,
           billedTo(model.provider ?? "byteplus"),
         ],
-      }),
-    );
-
-    await bindGenerationRequest(requestClaim, genId);
+      });
+      for (const bind of binding) await tx.execute(bind);
+    });
 
     /* What made this take, written once and never afterwards (brief 3, 1c).
      Additive and best-effort: it happens after the row exists, it cannot

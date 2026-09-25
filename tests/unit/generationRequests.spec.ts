@@ -239,3 +239,42 @@ test("public job payloads preserve creative parameters without exposing paid-ste
   const result = rowToGeneration({id:"gen_public",kind:"image",model:"mock",params:JSON.stringify({ratio:"16:9",references:[{uploadId:"ref"}],paidClaim:123,producedOutcome:{cost:1.23,storedUrl:"internal-recovery-path"}})});
   expect(result.params).toEqual({ratio:"16:9",references:[{uploadId:"ref"}]});
 });
+
+test("with atomic binding, a request interrupted before its job existed completes its claim instead of pending forever", async () => {
+  const { withGenerationRequest, bindGenerationRequestStatement, generationRequestsReady } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("atomic-claims"), async () => {
+    await ready();
+    await generationRequestsReady();
+    let calls = 0;
+    // A database hiccup before any job row was written (getShot, listCast, checkCap…).
+    const interrupted = await withGenerationRequest(request("atomic-before-row"), "u_test", async () => { calls++; throw new Error("database briefly unavailable"); }, { atomicBinding: true });
+    expect(interrupted.status).toBe(409);
+    expect(interrupted.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await interrupted.json()).error).toContain("Nothing was charged");
+    // The same key replays that answer (complete), so the client clears it and can start a new request.
+    const replay = await withGenerationRequest(request("atomic-before-row"), "u_test", async () => { calls++; return Response.json({}); }, { atomicBinding: true });
+    expect(replay.status).toBe(409);
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await replay.json()).pending).toBeUndefined();
+    expect(calls).toBe(1);
+
+    // Once the row and its binding committed together, the claim is kept for recovery.
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at) VALUES('gen_atomic_bound','video','mock','x','{}','queued',1,1)" });
+    const bound = await withGenerationRequest(request("atomic-after-row"), "u_test", async (claim) => {
+      await db().execute(bindGenerationRequestStatement(claim, "gen_atomic_bound"));
+      throw new Error("lost after the row was written");
+    }, { atomicBinding: true });
+    expect(bound.status).toBe(503);
+    const recovered = await withGenerationRequest(request("atomic-after-row"), "u_test", async () => { throw new Error("must not run again"); }, { atomicBinding: true });
+    expect(await recovered.json()).toMatchObject({ id: "gen_atomic_bound", status: "queued" });
+
+    // Routes whose jobs are not bound atomically keep the conservative pending claim.
+    const legacy = await withGenerationRequest(request("non-atomic"), "u_test", async () => { throw new Error("interrupted"); });
+    expect(legacy.status).toBe(503);
+    const pending = await withGenerationRequest(request("non-atomic"), "u_test", async () => Response.json({}));
+    expect(pending.status).toBe(409);
+    expect((await pending.json()).pending).toBe(true);
+  });
+});
