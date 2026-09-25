@@ -141,11 +141,14 @@ export function shotFromAsset(project: Project, asset: Asset, engine: string): {
   return { project: next, id: shot.id };
 }
 
-/** "Send to Rig" from another stage: the asset travels by session, and the Rig builds the shot when it opens — one editor writes the project. */
+/** "Send to Rig" from another stage: the asset travels by session, and the Rig builds the shot when it is on screen — one editor writes the project. */
 export const RIG_INTENT_KEY = "particl:rig-intent:v1";
+/** Tells a Rig that is already open (it lives above the pages) that an intent is waiting. */
+export const RIG_INTENT_EVENT = "particl:rig-intent";
 export type RigIntent = { projectId: string; asset: Asset };
 export function sendToRig(intent: RigIntent) {
   try { sessionStorage.setItem(RIG_INTENT_KEY, JSON.stringify(intent)); } catch { /* the Rig simply opens without it */ }
+  try { window.dispatchEvent(new Event(RIG_INTENT_EVENT)); } catch { /* no window: nothing is open to tell */ }
 }
 export function takeRigIntent(projectId: string): Asset | null {
   try {

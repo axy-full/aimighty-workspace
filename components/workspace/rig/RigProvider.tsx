@@ -10,12 +10,13 @@ import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { connectNodes } from "@/lib/workspace/rig-graph";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
 import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, shotReferenceAssets, shotReferenceRole } from "@/lib/workspace/rig";
 import { ENGINE_PROMPT_LIMIT, renderPromptFor } from "@/lib/production/rig-prompt";
-import { RigBuildError, removeShots, restoreShots, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
+import { RIG_INTENT_EVENT, RigBuildError, removeShots, restoreShots, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
 import { rigUndoSink, setRigDeleteHandler } from "@/lib/shell/rig-commands";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
@@ -51,7 +52,7 @@ import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 /** `base` is the project exactly as the server holds it at `revision`: what the Rig's edits are merged from. */
 type Draft = { project: Project; revision: number; base: Project };
 type Quote = { key: string; credits: number | null; state: "loading" | "ready" | "unavailable"; reason: string | null };
-type Run = { shotId: string; name: string; meta: string; jobId: string | null };
+type Run = { shotId: string; name: string; meta: string; jobId: string | null; projectId: string };
 
 export type RigContext = {
   status: "idle" | "loading" | "ready" | "error";
@@ -419,7 +420,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
           shown,
           /* A claimed attempt is replayed from storage; `input` is only read when there is none. */
           request: { endpoint: "/api/generate", input: request },
-          onClaim: (credits) => setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId: null }),
+          onClaim: (credits) => setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId: null, projectId: draftId }),
         });
         if (outcome.state === "repriced") {
           setRepriced({ key: live.current.quote?.key ?? "", credits: outcome.credits });
@@ -442,11 +443,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     })();
 
     function accepted(jobId: string, credits: number) {
-      setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId });
+      setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId, projectId: draftId });
       setRepriced(null);
       /* The node renders this kind now (GenerationDialog's onQueued does the same). */
       update((p) => ({ ...p, nodes: p.nodes.map((n) => (n.id === shot.id && !n.locked ? { ...n, mode: kind === "video" ? "Video" : "Image" } : n)) }));
-      void flush({ force: true }).then(() => refreshJobs.current());
+      /* Takes and the Library show the take as rendering straight away. */
+      void flush({ force: true }).then(() => { refreshJobs.current(); void refreshProjectLibrary(scope, draftId); });
     }
   }, [scope, flush, update]);
 
@@ -470,12 +472,14 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       if (phase.tone === "green") {
         const billed = runJob?.creditsBilled;
         toast(`${run.name} rendered${typeof billed === "number" ? ` · ${formatCredits(billed)} settled` : ""}. Filed in Takes for review.`);
+        /* Takes and the Library may already be loaded; re-read so the take shows as it says. */
+        void refreshProjectLibrary(scope, run.projectId);
       }
       if (holdTimer.current) clearTimeout(holdTimer.current);
       const id = run.jobId;
       holdTimer.current = setTimeout(() => setRun((r) => (r?.jobId === id ? null : r)), phase.tone === "green" ? DONE_HOLD_MS : FAILED_HOLD_MS);
     }
-  }, [run, phase, runJob, dispatch, toast]);
+  }, [run, phase, runJob, dispatch, toast, scope]);
   useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
 
   /* ── Selection and editing ─────────────────────────────────────────── */
@@ -544,25 +548,39 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     try { out = removeShots(current.project, [id]); }
     catch (err) { if (err instanceof RigBuildError) return err.message; throw err; }
     const name = out.removed.removed.find((n) => n.id === id)?.title || "The shot";
+    const draftId = current.project.id, draftName = current.project.name || "that project";
     update(() => out.project);
     if (state.selKind === "shot" && state.selId === id) dispatch({ type: "patch", patch: { selKind: "page", selId: null } });
     const sink = rigUndoSink();
-    sink?.({ label: `${name} is back in the Rig`, undo: () => update((p) => restoreShots(p, out.removed)) });
+    sink?.({
+      label: `${name} is back in the Rig`,
+      /* The shell's undo stack outlives a project switch: the shot only ever goes back into its own project. */
+      undo: () => {
+        if (draftRef.current?.project.id !== draftId) throw new Error(`Open ${draftName} to bring ${name} back.`);
+        update((p) => restoreShots(p, out.removed));
+      },
+    });
     toast(`${name} deleted${sink ? " · ⌘Z brings it back" : ""}`);
     return null;
   }, [update, state.selKind, state.selId, dispatch, toast]);
   /* The shell's Delete (menu, ⌫) reaches the Rig through this slot while it is on screen. */
   useEffect(() => { setRigDeleteHandler(removeShot); return () => setRigDeleteHandler(null); }, [removeShot]);
-  /* An asset sent from Astra or Edit becomes a shot here, once, when the Rig has the project. */
-  const intentDone = useRef<string | null>(null);
+  /* An asset sent from Astra or Edit ("Build a rig from this take") becomes a shot once the Rig is on
+     screen with its project — every time one is sent, not only when the project first loads. */
+  const [intents, setIntents] = useState(0);
   useEffect(() => {
-    if (!project || intentDone.current === project.id) return;
-    intentDone.current = project.id;
-    const asset = takeRigIntent(project.id);
+    const waiting = () => setIntents((n) => n + 1);
+    window.addEventListener(RIG_INTENT_EVENT, waiting);
+    return () => window.removeEventListener(RIG_INTENT_EVENT, waiting);
+  }, []);
+  const openId = project?.id ?? null, onRigPage = state.page === "rig";
+  useEffect(() => {
+    if (!openId || !onRigPage) return;
+    const asset = takeRigIntent(openId);
     if (!asset) return;
     const why = apply((p) => shotFromAsset(p, asset, shotEngines()[0].id), true);
     toast(why ?? `${asset.name} is a new shot in the Rig`);
-  }, [project, apply, toast]);
+  }, [openId, onRigPage, intents, apply, toast]);
 
   const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence }), [team.mode, team.peers, team.presence]);
   const value = useMemo<RigContext>(() => ({

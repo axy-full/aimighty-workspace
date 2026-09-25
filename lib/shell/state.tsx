@@ -188,8 +188,14 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       const popped = popUndo(undoRef.current);
       if (!popped) { ws.toast("Nothing to undo."); return; }
       setUndoStack(popped.rest);
-      await popped.entry.undo();
-      ws.toast(popped.entry.label);
+      try {
+        await popped.entry.undo();
+        ws.toast(popped.entry.label);
+      } catch (error) {
+        /* It did not happen, so it stays undoable (another project open, a network drop), and says why. */
+        setUndoStack((stack) => pushUndo(stack, popped.entry));
+        ws.toast(error instanceof Error && error.message ? error.message : "That could not be undone.");
+      }
     },
   }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack.length, goSuite, apply, ws]);
 
