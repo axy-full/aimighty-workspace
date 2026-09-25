@@ -99,7 +99,7 @@ export function branchFromTake(project: Project, shotId: string, take: Asset): {
   if (!shot) throw new RigBuildError("Choose a shot first.");
   roomFor(project, 2);
   const title = `${shot.title} · from ${take.name}`.slice(0, 300);
-  const node: CanvasNode = { ...shot, id: uid("node"), title, x: shot.x, y: shot.y + 320, linked: [], versions: undefined, status: "draft", locked: false, condensed: undefined, firstFrameId: undefined, boardShotId: undefined };
+  const node: CanvasNode = { ...shot, id: uid("node"), title, x: shot.x, y: shot.y + 320, linked: [], versions: undefined, status: "draft", locked: false, condensed: undefined, firstFrameId: undefined, boardShotId: undefined, wiredJobId: undefined };
   let next: Project = { ...project, nodes: [...project.nodes, node] };
   next = addInput(next, node.id, take, `Take · ${take.name}`);
   if (take.kind === "image") next = setFirstFrame(next, node.id, take.id);
