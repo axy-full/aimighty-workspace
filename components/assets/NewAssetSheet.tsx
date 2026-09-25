@@ -16,6 +16,7 @@ import { usePhone } from "@/lib/usePhone";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
+import { trainApproval, trainingPhotos, trainPrice, type TrainTerms } from "@/lib/identityTraining";
 
 /**
  * The New asset sheet (design/particl-v2/README.md §12; boards 3a, 3b):
@@ -122,6 +123,8 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const paid=usePaidAction("/api/identities/train:new-asset");
   const recovery=paid.pending?.context;
   const alive=useRef(true);
+  /* The identity an earlier press made, so a retry after a refused training trains that one rather than clashing with its name. */
+  const made=useRef<{id:string;name:string}|null>(null);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[]);
   const { current } = useProject();
   const money = useMoney();
@@ -141,7 +144,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const phone = usePhone();
   const picker = useRef<HTMLInputElement>(null);
   const nameField = useRef<HTMLInputElement>(null);
-  const { data: terms } = useApi<{ terms: { configured: boolean; minPhotos: number; trainCostUsd: number } }>(signedIn ? "/api/identities" : null, 0);
+  const { data: terms } = useApi<{ terms: TrainTerms }>(signedIn ? "/api/identities" : null, 0);
   /* §13 · Train on create: "ask" shows the switch off, "always" on, "never" hides the row. */
   const { data: ws } = useApi<{ settings: Record<string, string> }>(signedIn ? "/api/settings" : null, 0);
   const trainRule = ws?.settings.trainOnCreate === "always" ? "always" : ws?.settings.trainOnCreate === "never" ? "never" : "ask";
@@ -160,13 +163,18 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const ports = useMemo(() => portsFor(kind, refs), [kind, refs]);
   const stills = refs.filter((r) => r.kind === "image");
   const trainable = kind === "character";
-  const trainCost = trainable && terms?.terms.trainCostUsd != null ? terms.terms.trainCostUsd : null;
-  const enoughPhotos = stills.length >= (terms?.terms.minPhotos ?? 5);
-  const trainOn = !!paid.pending || trainable && train && enoughPhotos && consent && Boolean(terms?.terms.configured);
+  /* The price in the unit this workspace pays in: credits, or the vendor's dollars on its own keys. */
+  const trainCost = trainable ? trainPrice(terms?.terms, money.inCredits) : null;
+  const photos = trainingPhotos(refs);
+  const enoughPhotos = photos.length >= (terms?.terms.minPhotos ?? 5);
+  const wantsTraining = trainable && train && enoughPhotos && consent && Boolean(terms?.terms.configured);
+  /* No price, no training: Create waits for the quote (or for the switch to go off). */
+  const pricePending = !paid.pending && wantsTraining && trainCost == null;
+  const trainOn = !!paid.pending || wantsTraining && trainCost != null;
   const cost = typeof recovery?.cost==="number"?recovery.cost:trainOn&&trainCost!=null?trainCost:0;
   const trainLabel = kind === "character" ? "Train the face now" : kind === "prop" ? "Make a turntable later" : kind === "location" ? "Fill the missing hour later" : kind === "look" ? "Apply to existing keyframes later" : "Train the voice later";
   const trainNote = kind === "character"
-    ? (!terms?.terms.configured ? "No trainer is connected to this workspace yet." : !enoughPhotos ? `Needs ${terms?.terms.minPhotos ?? 5} stills of the same person; ${stills.length} so far. Off, the character carries a still and trains later in Rig.` : "A likeness that holds across shots. Off, the character carries a still and trains later in Rig.")
+    ? (!terms?.terms.configured ? "No trainer is connected to this workspace yet." : trainCost == null ? "No training price yet." : !enoughPhotos ? `Needs ${terms?.terms.minPhotos ?? 5} uploaded stills of the same person; ${photos.length} so far. Off, the character carries a still and trains later in Rig.` : "A likeness that holds across shots. Off, the character carries a still and trains later in Rig.")
     : "No engine is connected for this yet. It will be priced from the engine when one is, from Rig.";
   const note = trainOn
     ? `Creates ${tag} · trains the face now · ${money.price(cost)} · renders with the still while it trains`
@@ -179,7 +187,8 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
     setUploading(true);
     try {
       for (const f of list) {
-        const up = await uploadFile(f, "reference");
+        /* A clip for a voice is a file, not a reference still: the reference intake reads pictures and video only. */
+        const up = await uploadFile(f, f.type.startsWith("audio/") ? "chat" : "reference");
         setRefs((prev) => prev.some((r) => r.uploadId === up.id) ? prev : [...prev, { uploadId: up.id, url: up.url, label: up.filename, kind: up.kind === "video" ? "video" : up.kind === "file" || up.kind === "audio" ? "audio" : "image" }]);
       }
     } catch (e) { toast((e as Error).message); }
@@ -191,7 +200,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   }));
 
   const create = async () => {
-    if (!signedIn || busy || paid.error) return;
+    if (!signedIn || busy || paid.error || pricePending) return;
     const clean = name.trim();
     if (!clean) { toast("Name it first — you'll type it as @Name."); nameField.current?.focus(); return; }
     setBusy(true);
@@ -202,13 +211,19 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
       if (trainOn) {
         /* A trained face is an identity: the trainer's own table, with consent on record. */
         if(!identityId){
-        const r = await fetch("/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: clean, description: initial?.description ?? "", photos: stills.map((s) => s.uploadId).filter(Boolean), projectId: null }) });
+        const prior = made.current?.name.toLowerCase() === clean.toLowerCase() ? made.current.id : null;
+        const r = prior
+          ? await fetch(`/api/identities/${encodeURIComponent(prior)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: initial?.description ?? "", photos }) })
+          : await fetch("/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: clean, description: initial?.description ?? "", photos, projectId: null, reuseDraft: true }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "The identity wasn't made.");
         identityId = j.identity?.id ?? null;
+        if (identityId) made.current = { id: identityId, name: clean };
         }
         if(!identityId)throw new Error('The identity was not returned.');
-        const trained=await paid.run(`/api/identities/${identityId}/train`,{consent:true},{keepPending:true,context:{name:clean,kind,refs,description:initial?.description??'',identityId,cost}});
+        /* The price shown is the price approved: the route refuses a run that now costs more. A saved request replays its own body. */
+        const trainBody = paid.pending ? JSON.parse(paid.pending.body) as Record<string, unknown> : { consent: true, ...trainApproval(cost, money.inCredits) };
+        const trained=await paid.run(`/api/identities/${identityId}/train`,trainBody,{keepPending:true,context:{name:clean,kind,refs,description:initial?.description??'',identityId,cost}});
         trainingKey=trained.request.key;
       } else if (CAST_KIND[kind]) {
         /* A name the prompt can cite, carrying its still. */
@@ -257,7 +272,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
         footer={
           <span className="flex w-full flex-col gap-[8px]">
             <Mono cost className="text-center !leading-[1.4]">{paid.error??(paid.pending?"Recover the saved training request to finish this asset.":note)}</Mono>
-            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} data-create=""
+            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error || pricePending} data-create=""
               className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
               <span className="flex items-center gap-[10px]">{busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}</span>
               <span className="ui-mono ui-mono-cost !text-[12px] text-on-primary-cost">{money.price(cost)}</span>
@@ -407,7 +422,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <Mono className="max-w-[380px] !leading-[1.5]">{note}</Mono>
           <span className="ml-auto flex gap-[8px]">
             <button type="button" onClick={onClose} className="h-[46px] rounded-card border border-border-mid px-[14px] text-[14px] font-medium leading-none text-ink">Cancel</button>
-            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} className="flex h-[46px] items-center gap-[12px] rounded-card bg-action hover:bg-action-hover px-[16px] text-[14px] font-semibold leading-none text-on-action disabled:opacity-60" data-create="">
+            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error || pricePending} className="flex h-[46px] items-center gap-[12px] rounded-card bg-action hover:bg-action-hover px-[16px] text-[14px] font-semibold leading-none text-on-action disabled:opacity-60" data-create="">
               {busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(cost)}</span>
             </button>
           </span>
