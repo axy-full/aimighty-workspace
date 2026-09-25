@@ -26,6 +26,7 @@ import {
   pollConsumerGeneration,
 } from "@/lib/higgsfield-consumer/generation-service";
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
+import { ConsumerSetupError, refuseForeignSetup, setupIdsOfParameters } from "@/lib/higgsfield-consumer/marketing-records";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,7 +92,7 @@ function problem(error: unknown) {
         : error.code === "capacity" ? "Four connected-account jobs are already active or awaiting reconciliation."
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
-  if (error instanceof ConsumerVideoError)
+  if (error instanceof ConsumerVideoError || error instanceof ConsumerSetupError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
     return Response.json({ error: "Too many requests. Try again shortly." }, { status: 429, headers });
@@ -173,6 +174,8 @@ export const POST = withTenant(async (req: Request) => {
     }
     if (body.action === "status")
       return Response.json(await pollConsumerGeneration({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
+    /* Standalone: an account avatar, product, brand kit or ad reference Particl did not make never reaches a quote. */
+    await refuseForeignSetup(owner.user.id, setupIdsOfParameters(body.input.parameters));
     return Response.json(
       { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey) },
       { headers },

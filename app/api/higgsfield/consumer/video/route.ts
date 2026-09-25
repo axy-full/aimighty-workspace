@@ -9,6 +9,7 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError, consumerVideoInputSchema } from "@/lib/higgsfield-consumer/video-contract";
 import { SETUP_TYPE_IDS, connectedMarketingSetup } from "@/lib/higgsfield-consumer/marketing-setup";
+import { ConsumerSetupError, refuseForeignSetup, setupIdsOfVideoInput } from "@/lib/higgsfield-consumer/marketing-records";
 import {
   MARKETING_VIDEO_REHEARSAL, ConsumerVideoServiceError, ensureConsumerRehearsal,
   consumerMarketingJobs, quoteConsumerMarketingVideo, submitConsumerMarketingVideo,
@@ -37,7 +38,7 @@ function problem(error: unknown) {
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerJobError)
     return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? "Four connected-account jobs are already active or awaiting reconciliation." : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
-  if (error instanceof ConsumerVideoError)
+  if (error instanceof ConsumerVideoError || error instanceof ConsumerSetupError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
     return Response.json({ error: "Too many requests. Try again shortly." }, { status: 429, headers });
@@ -71,6 +72,8 @@ export const POST = withTenant(async (req: Request) => {
     if (body.action === "setup") return Response.json(await connectedMarketingSetup(owner.user.id, body.types ?? undefined), { headers });
     const draftId = body.action === "quote-rehearsal" ? await ensureConsumerRehearsal(owner.user.id) : body.draftId;
     const input = body.action === "quote-rehearsal" ? MARKETING_VIDEO_REHEARSAL : body.input;
+    /* Standalone: an account avatar, product or ad reference Particl did not make never reaches a quote. */
+    if (body.action === "quote") await refuseForeignSetup(owner.user.id, setupIdsOfVideoInput(body.input));
     return Response.json({ job: await quoteConsumerMarketingVideo(owner.user.id, draftId, input, body.idempotencyKey) }, { headers });
   } catch (error) { return problem(error); }
 }, { requireRequestScope: true });

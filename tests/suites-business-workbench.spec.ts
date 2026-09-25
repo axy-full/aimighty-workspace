@@ -7,8 +7,8 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects, upload } from "./
  * Business = Marketing Studio (FINAL_SPEC §2), in the browser against the
  * real shell and route-mocked connected-account replies: the three pages,
  * the two server rules as disabled chips with their reason, the price on the
- * button from a quote, submit with that exact price, and Setup's honesty
- * about what the account lists.
+ * button from a quote, submit with that exact price, and Setup's pick
+ * carried into Ads. (Standalone sourcing: hf-business-standalone-workbench.)
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-biz", productionProjectId: "prod-ws", shotMappings: {} });
@@ -60,7 +60,7 @@ async function open(page: Page, cp: "ads" | "dtc" | "setup", options: { setupAva
       hook: [{ id: "h1", name: "Stop scrolling", meta: "hook · prepended to the prompt", previewUrl: null }],
       setting: [{ id: "s1", name: "Sunlit kitchen", meta: "setting · scene context", previewUrl: null }],
       ad_reference: [{ id: "r1", name: "Founder unboxing.mp4", meta: "ad reference · 18 s", previewUrl: null }],
-      brand_kit: [{ id: "bk1", name: "Skoda kit", meta: "brand kit · completed", previewUrl: null }],
+      brand_kit: [{ id: "bk1", name: "House kit", meta: "brand kit · completed", previewUrl: null }],
       image_style: [{ id: "st_bold", name: "Bold launch", meta: "image style", previewUrl: null }, { id: "st_clean", name: "Clean studio", meta: "image style", previewUrl: null }],
     };
     return route.fulfill({ json: { connected: true, reads: types.map((type) => ({ type, available: options.setupAvailable ?? true, items: options.setupAvailable === false ? [] : items[type].map((i) => ({ ...(i as object), type })) })) } });
@@ -111,7 +111,7 @@ test("Ads: the rules are disabled chips with a reason, the button wears the acco
   expect(quote.input.parameters).toEqual({ mode: "ugc", aspect_ratio: "9:16", duration: 20, resolution: "720p", generate_audio: true, product_ids: ["p1"], hook_id: "h1" });
 
   await page.getByTestId("ads-generate").click();
-  await expect(page.getByTestId("ads-done")).toContainText("Rendered.", { timeout: 15_000 });
+  await expect(page.getByTestId("ads-done")).toContainText("Rendered and filed to this project.", { timeout: 15_000 });
   expect(requests.find((r) => r.action === "submit")).toMatchObject({ action: "submit", credits: 40, workspaceId: "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b" });
   expect(errors).toEqual([]);
 });
@@ -136,12 +136,12 @@ test("Image ads runs on Marketing Studio Image by default; aspect auto needs a s
   expect(quote.input).toMatchObject({ model: "marketing_studio_image", parameters: { aspect_ratio: "9:16", resolution: "2k" } });
 });
 
-test("Setup lists what the account lists, says what it does not, and Use in Ads pre-selects", async ({ page }, info) => {
+test("Setup lists what Particl may use, and Use in Ads pre-selects", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page, "setup");
   await expect(page.getByTestId("setup-view")).toBeVisible();
   await expect(page.getByTestId("setup-hook")).toContainText("Stop scrolling");
-  await expect(page.getByTestId("setup-brand_kit")).toContainText("Skoda kit");
+  await expect(page.getByTestId("setup-brand_kit")).toContainText("House kit");
   await page.getByTestId("setup-hook").getByRole("button", { name: /Stop scrolling/ }).click();
   await expect(page.getByTestId("setup-detail")).toContainText("Stop scrolling");
   await page.getByTestId("setup-detail").getByRole("button", { name: "Use in Ads" }).click();
@@ -149,13 +149,14 @@ test("Setup lists what the account lists, says what it does not, and Use in Ads 
   await expect(page.getByTestId("ads-hook").getByRole("button", { name: "Stop scrolling" })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("when the account does not list setup items, the pages say so and take an id from the CLI", async ({ page }, info) => {
+test("when the account lists nothing Particl may use, the pickers step aside — no command line, no id boxes", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one viewport");
   await open(page, "ads", { setupAvailable: false });
-  await expect(page.getByTestId("ads-hook")).toContainText("does not list hooks through its tools");
-  await page.getByTestId("ads-hook").getByRole("textbox", { name: "Hook id" }).fill("c0ffee00-0000-4000-8000-000000000001");
-  await page.getByTestId("ads-hook").getByRole("textbox", { name: "Hook id" }).blur();
-  await expect(page.getByTestId("ads-hook").getByRole("button", { name: /^c0ffee00/ })).toBeVisible();
+  await expect(page.getByTestId("ads-product-choose")).toBeVisible();
+  for (const id of ["ads-hook", "ads-adref"]) await expect(page.getByTestId(id)).toHaveCount(0);
+  await expect(page.getByTestId("ads-avatar-cast")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Hook id" })).toHaveCount(0);
+  expect(await page.locator("body").innerText()).not.toContain("higgsfield marketing-studio");
 });
 
 test("DTC Ads: the ms_image engine needs a style (the ad format); brand kit, products, quality and batch go into the quote", async ({ page }, info) => {
@@ -167,7 +168,7 @@ test("DTC Ads: the ms_image engine needs a style (the ad format); brand kit, pro
   await expect(page.getByTestId("dtc-blocked")).toHaveText("Pick a style — the ad format. DTC Ads has no default.");
   await page.getByTestId("dtc-style").getByRole("button", { name: "Bold launch" }).click();
   await expect(page.getByTestId("dtc-blocked")).toHaveCount(0);
-  await page.getByTestId("dtc-brand-kit").getByRole("button", { name: "Skoda kit" }).click();
+  await page.getByTestId("dtc-brand-kit").getByRole("button", { name: "House kit" }).click();
   await page.getByTestId("dtc-products").getByRole("button", { name: "Sneaker Runner" }).click();
   await page.getByTestId("dtc-quality").getByRole("button", { name: "high" }).click();
   await page.getByTestId("dtc-batch").getByRole("button", { name: "More" }).click();

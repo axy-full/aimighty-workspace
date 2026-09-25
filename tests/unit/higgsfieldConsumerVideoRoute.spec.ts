@@ -12,6 +12,7 @@ import { ConsumerDiscoveryError } from '../../lib/higgsfield-consumer/mcp';
 import { ConsumerJobError } from '../../lib/higgsfield-consumer/jobs';
 import * as contract from '../../lib/higgsfield-consumer/video-contract';
 import { ConsumerOriginalError } from '../../lib/higgsfield-consumer/video-original';
+import * as records from '../../lib/higgsfield-consumer/marketing-records';
 
 const key = '11111111-1111-4111-8111-111111111111';
 const wallet = '22222222-2222-4222-8222-222222222222';
@@ -36,6 +37,7 @@ async function fixture() {
   );
   const calls: { name: string; args: unknown[]; workspace: string }[] = [];
   const limits: unknown[][] = [];
+  const guarded: { userId: string; wanted: records.SetupIds; workspace: string }[] = [];
   let limited = false, failure: unknown;
   class ServiceError extends Error { constructor(readonly code: string, message: string, readonly status = 409) { super(message); } }
   const service = (name: string, result: unknown) => async (...args: unknown[]) => {
@@ -57,6 +59,11 @@ async function fixture() {
     '@/lib/higgsfield-consumer/jobs': { ConsumerJobError },
     '@/lib/higgsfield-consumer/video-contract': contract,
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
+    /* The standalone guard: real id extraction; the record read is isolated — an `acct_` id is one Particl did not make. */
+    '@/lib/higgsfield-consumer/marketing-records': { ...records, refuseForeignSetup: async (userId: string, wanted: records.SetupIds) => {
+      guarded.push({ userId, wanted, workspace: tenant.requireTenant().id });
+      if (Object.values(wanted).flat().some((id) => id.startsWith('acct_'))) throw new records.ConsumerSetupError();
+    } },
     '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
@@ -73,7 +80,7 @@ async function fixture() {
     return deps[name];
   }, output, output.exports);
   return {
-    calls, limits, job, store: () => store, setStore: (value: tenant.TenantStore) => { store = value; },
+    calls, limits, job, guarded, store: () => store, setStore: (value: tenant.TenantStore) => { store = value; },
     fail: (value: unknown) => { failure = value; }, limit: () => { limited = true; },
     request: (method: 'GET' | 'POST', body: unknown = quote, options: { scope?: string | null; origin?: string; query?: string; raw?: string | Uint8Array; contentLength?: string; empty?: boolean } = {}) => {
       const captured = options.scope === undefined ? scope : options.scope;
@@ -213,4 +220,21 @@ test('original collection errors remain recoverable and expose only fixed safe c
     expect(await response.json()).toEqual({ code: `original_${code}`, error: error.message });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   }
+});
+
+test('a marketing quote naming an account product, avatar or ad reference Particl did not make is refused before it is priced', async () => {
+  const f = await fixture();
+  for (const extra of [{ productIds: ['acct_p1'] }, { avatars: [{ id: 'acct_a1', type: 'preset' }] }, { adReferenceId: 'acct_r1', mode: 'ugc' }]) {
+    const response = await f.request('POST', { ...quote, input: { ...input, mode: 'ugc', ...extra } }, { origin: 'https://particl.example' });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: 'setup_not_particl', error: new records.ConsumerSetupError().message });
+  }
+  expect(f.calls).toEqual([]);
+  const made = await f.request('POST', { ...quote, input: { ...input, mode: 'ugc', productIds: ['made_p1'], avatars: [{ id: 'soul_a', type: 'custom' }] } }, { origin: 'https://particl.example' });
+  expect(made.status).toBe(200);
+  expect(f.guarded.at(-1)).toEqual({ userId: 'owner', workspace: 'workspace', wanted: { product: ['made_p1'], avatar: ['soul_a'], brand_kit: [], ad_reference: [] } });
+  /* The fixed rehearsal names no setup item and is never guarded. */
+  const before = f.guarded.length;
+  expect((await f.request('POST', { action: 'quote-rehearsal', idempotencyKey: key }, { origin: 'https://particl.example' })).status).toBe(200);
+  expect(f.guarded.length).toBe(before);
 });

@@ -48,13 +48,20 @@ export const WHY = {
   webProduct: "Choose a saved product or a web product, not both.",
 };
 
+/** A still from this project's Library, by its Library id (`upload:<id>` or `generation:<id>`). */
+export type AdStill = { id: string; name: string; sourceId: string; origin: "upload" | "generation"; url: string };
+
 export type AdsState = {
   prompt: string;
   mode: AdMode;
   productId: string | null;
+  /** The product as a still from this project's Library: rides first among the reference stills. */
+  productStill: AdStill | null;
   avatarId: string | null;
   hookId: string | null;
   settingId: string | null;
+  /** The setting as a still from this project's Library, instead of a preset setting. */
+  settingStill: AdStill | null;
   adReferenceId: string | null;
   aspect: (typeof AD_ASPECTS)[number];
   duration: number;
@@ -63,7 +70,7 @@ export type AdsState = {
   medias: { id: string; role: AdMediaRole; name: string; sourceId: string; origin: "upload" | "generation"; url: string }[];
 };
 export const INITIAL_ADS: AdsState = {
-  prompt: "", mode: "ugc", productId: null, avatarId: null, hookId: null, settingId: null, adReferenceId: null,
+  prompt: "", mode: "ugc", productId: null, productStill: null, avatarId: null, hookId: null, settingId: null, settingStill: null, adReferenceId: null,
   aspect: "9:16", duration: 15, resolution: "720p", audio: true, medias: [],
 };
 
@@ -75,7 +82,24 @@ export function withAdReference(state: AdsState, adReferenceId: string | null): 
   return adReferenceId ? { ...state, adReferenceId, hookId: null, settingId: null } : { ...state, adReferenceId: null };
 }
 export function withSetup(state: AdsState, patch: { hookId?: string | null; settingId?: string | null }): AdsState {
-  return { ...state, ...patch, adReferenceId: patch.hookId || patch.settingId ? null : state.adReferenceId };
+  return { ...state, ...patch, adReferenceId: patch.hookId || patch.settingId ? null : state.adReferenceId, settingStill: patch.settingId ? null : state.settingStill };
+}
+/** A named still (product or setting) from the Library: one of each, never the same still twice across the slots and the reference well. */
+export function withStill(state: AdsState, slot: "product" | "setting", still: AdStill | null): AdsState {
+  const other = slot === "product" ? state.settingStill : state.productStill;
+  const next = { ...state, medias: still ? state.medias.filter((m) => m.id !== still.id) : state.medias };
+  if (slot === "product") return { ...next, productStill: still, productId: still ? null : state.productId, settingStill: still && other?.id === still.id ? null : state.settingStill };
+  return { ...next, settingStill: still, settingId: still ? null : state.settingId, productStill: still && other?.id === still.id ? null : state.productStill };
+}
+/** A product Particl made on the account, instead of a product still. */
+export function withProductId(state: AdsState, productId: string | null): AdsState {
+  return { ...state, productId, productStill: productId ? null : state.productStill };
+}
+/** Every still the ad sends, in order: the product, the setting, then the reference well — each once. */
+export function adsMedias(state: AdsState): AdsState["medias"] {
+  const named = [state.productStill, state.settingStill].filter((m): m is AdStill => Boolean(m)).map((m) => ({ ...m, role: "image" as AdMediaRole }));
+  const seen = new Set<string>();
+  return [...named, ...state.medias].filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
 }
 
 /** Which chips are off, and why — shown at 40 % with the reason, never hidden. */
@@ -97,7 +121,7 @@ export function adsBlock(state: AdsState, extra: { connected: boolean; hasProjec
   if (!state.prompt.trim()) return "Write the prompt.";
   if ((state.hookId || state.settingId) && !takesSetup(state.mode)) return WHY.hookMode;
   if ((state.hookId || state.settingId) && state.adReferenceId) return WHY.adReference;
-  if (state.medias.length > AD_MEDIA_MAX) return `Up to ${AD_MEDIA_MAX} reference stills.`;
+  if (adsMedias(state).length > AD_MEDIA_MAX) return `Up to ${AD_MEDIA_MAX} reference stills.`;
   return null;
 }
 
@@ -144,18 +168,32 @@ export const DTC_PRODUCTS_MAX = 4;
 export type ImageAdsState = {
   engine: (typeof IMAGE_AD_ENGINES)[number][0];
   prompt: string; aspect: string; resolution: (typeof IMAGE_AD_RESOLUTIONS)[number]; medias: { id: string; name: string }[];
+  /** The product as a still from this project's Library: rides first among the references. */
+  productStill: AdStill | null;
   /** DTC only. */
   styleId: string | null; brandKitId: string | null; quality: (typeof DTC_QUALITIES)[number]; batch: number; productIds: string[];
 };
-export const INITIAL_IMAGE_ADS: ImageAdsState = { engine: IMAGE_ADS_MODEL, prompt: "", aspect: "1:1", resolution: "1k", medias: [], styleId: null, brandKitId: null, quality: "low", batch: 1, productIds: [] };
+export const INITIAL_IMAGE_ADS: ImageAdsState = { engine: IMAGE_ADS_MODEL, prompt: "", aspect: "1:1", resolution: "1k", medias: [], productStill: null, styleId: null, brandKitId: null, quality: "low", batch: 1, productIds: [] };
 export const isDtc = (state: Pick<ImageAdsState, "engine">) => state.engine === DTC_ADS_MODEL;
-export function imageAdsBlock(state: ImageAdsState, extra: { connected: boolean; hasProject: boolean }): string | null {
+/** Every reference the image ad sends: the product still first, then the well — each once. */
+export function imageAdsMedias(state: Pick<ImageAdsState, "medias" | "productStill">): { id: string; name: string }[] {
+  const seen = new Set<string>();
+  return [...(state.productStill ? [{ id: state.productStill.id, name: state.productStill.name }] : []), ...state.medias].filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+}
+/** The product still for an image ad: never also in the reference well. */
+export function withImageStill(state: ImageAdsState, still: AdStill | null): ImageAdsState {
+  return { ...state, productStill: still, medias: still ? state.medias.filter((m) => m.id !== still.id) : state.medias };
+}
+/** `styles`: how many ad styles the account lists, once read (DTC cannot run without one). */
+export function imageAdsBlock(state: ImageAdsState, extra: { connected: boolean; hasProject: boolean; styles?: number | null }): string | null {
   if (!extra.hasProject) return "Open a project first.";
   if (!extra.connected) return "Connect the account in Workspace › Engines.";
-  if (!state.prompt.trim() && !state.medias.length) return "Write the prompt or add a reference.";
-  if (state.aspect === "auto" && !state.medias.length) return "Aspect auto needs a reference still.";
-  if (state.medias.length > AD_MEDIA_MAX) return `Up to ${AD_MEDIA_MAX} reference stills.`;
+  const medias = imageAdsMedias(state);
+  if (!state.prompt.trim() && !medias.length) return "Write the prompt or add a reference.";
+  if (state.aspect === "auto" && !medias.length) return "Aspect auto needs a reference still.";
+  if (medias.length > AD_MEDIA_MAX) return `Up to ${AD_MEDIA_MAX} reference stills.`;
   if (isDtc(state)) {
+    if (!state.styleId && extra.styles === 0) return "The connected account lists no ad styles, so DTC Ads cannot run.";
     if (!state.styleId) return "Pick a style — the ad format. DTC Ads has no default.";
     if (!Number.isInteger(state.batch) || state.batch < DTC_BATCH.min || state.batch > DTC_BATCH.max) return `Batch is ${DTC_BATCH.min}–${DTC_BATCH.max} images per job.`;
     if (state.productIds.length > DTC_PRODUCTS_MAX) return `Up to ${DTC_PRODUCTS_MAX} products.`;
@@ -168,14 +206,108 @@ export const DTC_COPY = "DTC Ads runs on the account’s ms_image engine: a styl
 export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Marketing Studio templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
 
 /* ── Setup ───────────────────────────────────────────────────────────── */
+/**
+ * The setup item types, and whose they are. `owned` items are the connected
+ * account's own library (its avatars, products, brand kits, ad references):
+ * Particl is a standalone platform, so only what Particl made or chose there
+ * is ever listed or sent — avatars are the Soul IDs built in Cast
+ * (lib/higgsfield-consumer/marketing-records.ts). `catalogue` items are the
+ * account's shared building blocks (hooks, settings, ad styles), listed
+ * unless the account marks one as its user's own.
+ */
 export const SETUP_TYPES = [
-  ["product", "Products", "products fetch --url · products create"],
-  ["avatar", "Avatars", "avatars list · avatars create"],
-  ["hook", "Hooks", "hooks list"],
-  ["setting", "Settings", "settings list"],
-  ["ad_reference", "Ad references", "ad-references create --video-input"],
-  ["brand_kit", "Brand kits", "brand-kits fetch --url"],
-  ["image_style", "Image styles", "ad-formats list"],
+  ["avatar", "Avatars", "owned"],
+  ["product", "Products", "owned"],
+  ["brand_kit", "Brand kits", "owned"],
+  ["ad_reference", "Ad references", "owned"],
+  ["hook", "Hooks", "catalogue"],
+  ["setting", "Settings", "catalogue"],
+  ["image_style", "Image styles", "catalogue"],
 ] as const;
 export type SetupType = (typeof SETUP_TYPES)[number][0];
 export type SetupItem = { id: string; type: SetupType; name: string; meta: string; previewUrl: string | null };
+export const OWNED_SETUP_TYPES: readonly SetupType[] = SETUP_TYPES.filter((t) => t[2] === "owned").map((t) => t[0]);
+export const isOwnedSetup = (type: SetupType) => OWNED_SETUP_TYPES.includes(type);
+
+/* ── Setup → Ads / Image ads ─────────────────────────────────────────── */
+/**
+ * Use in Ads / Use in Image ads: Setup leaves the pick in sessionStorage for
+ * the page it names, which reads it once and clears it. A pick for the other
+ * page is left for that page, and any pick older than two minutes is spent,
+ * so a stale one never pre-selects anything later.
+ */
+export const PRESET_KEY = "particl-business-preset";
+export const PRESET_TTL_MS = 120_000;
+export type BusinessPage = "ads" | "dtc";
+export type SetupPreset = { page: BusinessPage; type: SetupType; id: string; name: string; at: number };
+/** What each page can take from Setup. */
+export const PRESET_TYPES: Record<BusinessPage, readonly SetupType[]> = {
+  ads: ["avatar", "product", "hook", "setting", "ad_reference"],
+  dtc: ["product", "brand_kit", "image_style"],
+};
+const PRESET_ID = /^[A-Za-z0-9_-]{1,200}$/;
+export function presetFor(item: SetupItem, page: BusinessPage, now: number): SetupPreset {
+  return { page, type: item.type, id: item.id, name: item.name, at: now };
+}
+/** The pick waiting for this page, or null (wrong page, stale, malformed or a type the page cannot take). */
+export function parsePreset(raw: string | null, page: BusinessPage, now: number): SetupPreset | null {
+  if (!raw) return null;
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { return null; }
+  if (!value || typeof value !== "object") return null;
+  const p = value as Partial<SetupPreset>;
+  if (p.page !== page || typeof p.at !== "number" || !Number.isFinite(p.at) || now - p.at > PRESET_TTL_MS || p.at - now > 5_000) return null;
+  if (typeof p.type !== "string" || !PRESET_TYPES[page].includes(p.type as SetupType)) return null;
+  if (typeof p.id !== "string" || !PRESET_ID.test(p.id)) return null;
+  return { page, type: p.type as SetupType, id: p.id, name: typeof p.name === "string" ? p.name.slice(0, 160) : p.id, at: p.at };
+}
+/** Whether this page should clear what is stored: its own pick (read now), a stale pick, or junk. Another page's fresh pick stays. */
+export function presetSpent(raw: string | null, page: BusinessPage, now: number): boolean {
+  if (!raw) return false;
+  if (parsePreset(raw, page, now)) return true;
+  const other: BusinessPage = page === "ads" ? "dtc" : "ads";
+  return !parsePreset(raw, other, now);
+}
+export function adsFromPreset(preset: SetupPreset | null): AdsState {
+  if (!preset || preset.page !== "ads") return INITIAL_ADS;
+  if (preset.type === "product") return { ...INITIAL_ADS, productId: preset.id };
+  if (preset.type === "avatar") return { ...INITIAL_ADS, avatarId: preset.id };
+  if (preset.type === "hook") return withSetup(INITIAL_ADS, { hookId: preset.id });
+  if (preset.type === "setting") return withSetup(INITIAL_ADS, { settingId: preset.id });
+  if (preset.type === "ad_reference") return withAdReference(INITIAL_ADS, preset.id);
+  return INITIAL_ADS;
+}
+/** Products, brand kits and ad styles ride on the DTC Ads engine, so a pick from Setup opens it. */
+export function imageAdsFromPreset(preset: SetupPreset | null): ImageAdsState {
+  if (!preset || preset.page !== "dtc") return INITIAL_IMAGE_ADS;
+  const dtc = { ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL } as ImageAdsState;
+  if (preset.type === "product") return { ...dtc, productIds: [preset.id] };
+  if (preset.type === "brand_kit") return { ...dtc, brandKitId: preset.id };
+  if (preset.type === "image_style") return { ...dtc, styleId: preset.id };
+  return INITIAL_IMAGE_ADS;
+}
+
+/** The setup reads a page holds, by type (lib/shell/use-business.ts). */
+export type SetupReads = Partial<Record<SetupType, { items: readonly SetupItem[] }>>;
+const listed = (reads: SetupReads, type: SetupType, id: string | null) => !id || !reads[type] || reads[type]!.items.some((item) => item.id === id);
+/**
+ * Once a type has been read, a pick Setup no longer lists — the account
+ * dropped it, or it is not Particl's — is cleared rather than sent. Answers
+ * the same object when nothing changed.
+ */
+export function pruneAds(state: AdsState, reads: SetupReads): AdsState {
+  const next = {
+    productId: listed(reads, "product", state.productId) ? state.productId : null,
+    avatarId: listed(reads, "avatar", state.avatarId) ? state.avatarId : null,
+    hookId: listed(reads, "hook", state.hookId) ? state.hookId : null,
+    settingId: listed(reads, "setting", state.settingId) ? state.settingId : null,
+    adReferenceId: listed(reads, "ad_reference", state.adReferenceId) ? state.adReferenceId : null,
+  };
+  return (Object.keys(next) as (keyof typeof next)[]).every((key) => next[key] === state[key]) ? state : { ...state, ...next };
+}
+export function pruneImageAds(state: ImageAdsState, reads: SetupReads): ImageAdsState {
+  const styleId = listed(reads, "image_style", state.styleId) ? state.styleId : null;
+  const brandKitId = listed(reads, "brand_kit", state.brandKitId) ? state.brandKitId : null;
+  const productIds = state.productIds.filter((id) => listed(reads, "product", id));
+  return styleId === state.styleId && brandKitId === state.brandKitId && productIds.length === state.productIds.length ? state : { ...state, styleId, brandKitId, productIds };
+}

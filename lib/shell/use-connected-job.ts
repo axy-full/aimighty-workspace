@@ -5,12 +5,15 @@ import {
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
 
 /**
  * One connected-account job from a Business composer (FINAL_SPEC §2), on the
  * existing catalogue-generation route: quote → the exact price on the
  * button → submit with that price → poll to completion. Nothing here prices
  * anything; a moved price refuses at the server and comes back as an error.
+ * A finished job is filed to the project by the server; the project's Library
+ * is re-read once so Takes and the Library show it without a reload.
  */
 export type ConnectedJobState =
   | { phase: "idle" }
@@ -23,7 +26,7 @@ export type ConnectedJobState =
 
 const POLL_MS = 4000;
 
-export function useConnectedJob(draftId: string | null) {
+export function useConnectedJob(draftId: string | null, scope?: string) {
   const scoped = useScopedFetch();
   const [state, setState] = useState<ConnectedJobState>({ phase: "idle" });
   const [quotedFor, setQuotedFor] = useState<string | null>(null);
@@ -79,6 +82,15 @@ export function useConnectedJob(draftId: string | null) {
       setState({ phase: "failed", job: now.job, error: error instanceof Error ? error.message : "The job could not be submitted." });
     }
   }, [call, draftId]);
+
+  /* Once per finished job: Takes and the Library sidebar read one shared store. */
+  const refreshed = useRef<string | null>(null);
+  const doneId = state.phase === "done" ? state.job.id : null;
+  useEffect(() => {
+    if (!doneId || !draftId || !scope || refreshed.current === doneId) return;
+    refreshed.current = doneId;
+    void refreshProjectLibrary(scope, draftId);
+  }, [doneId, draftId, scope]);
 
   const reset = useCallback(() => { setState({ phase: "idle" }); setQuotedFor(null); }, []);
   return { state, quotedFor, quote, submit, reset };
