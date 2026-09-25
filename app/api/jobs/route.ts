@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { listGenerations, syncActive } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
@@ -6,7 +7,9 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { assetCursor, assetPageQuery, AssetQueryError } from "@/lib/assetPagination";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+/* The list answers at once; this is the budget for the reconciliation it
+   leaves running after the response, which may store a finished master. */
+export const maxDuration = 300;
 
 const PAGE = 60;
 
@@ -36,11 +39,14 @@ export const GET = withTenant(async function GET(req: Request) {
   const before = Number(url.searchParams.get("before") ?? 0) || null;
   const limit = page ? page.limit : Math.min(Number(url.searchParams.get("limit") ?? PAGE), 500);
 
-  // Reconcile anything actually in flight before answering. This is a no-op —
-  // one indexed lookup — whenever nothing is rendering, which is most of the
-  // time; the cron owns repairs and janitorial work.
+  // Reconcile anything actually in flight — after answering, never before: a
+  // render that lands may start a master download of up to 200 MB, and the
+  // list must not wait on it. The next poll shows what landed. A no-op (one
+  // indexed lookup) whenever nothing is rendering; the cron owns repairs.
   if (url.searchParams.get("sync") !== "0") {
-    try { await syncActive(); } catch { /* listing still works */ }
+    try {
+      after(await reserveRecoveryContinuation("after-response", () => syncActive().catch(() => { /* the next poll tries again */ })));
+    } catch { /* listing still works */ }
   }
 
   const rows = await listGenerations({
