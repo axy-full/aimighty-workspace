@@ -19,6 +19,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { AgentAction } from "./AgentAction";
 import { useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
+import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision } from "@/lib/shell/rig-wire";
 
 /** A shot's prompt boxes take media: pictures and videos become the shot's inputs (the render follows them); the rest stays in the Library. */
 export function ShotAttach({ shot, testId, children }: { shot: RigShot; testId: string; children: React.ReactNode }) {
@@ -306,21 +307,25 @@ export function WireShot({ shot }: { shot: RigShot }) {
   const agent = useAgentChoice(runs.models);
   const jobs = runs.jobs.filter((j) => j.kind === "rig" && j.nodeId === shot.id);
   const active = jobs.find((j) => j.status === "queued" || j.status === "running");
+  /* The newest finished wiring, applied once: the shot records the run it took (a new tab or a teammate never re-applies it). */
+  const latest = jobs.find((j) => j.status === "succeeded");
+  const done = latest?.result?.rig ? latest : undefined;
+  const node = rig.project?.nodes.find((n) => n.id === shot.id);
+  const activeId = active?.id ?? null;
+  useEffect(() => { if (activeId) watchWiring(activeId); }, [activeId]);
+  const decision = done ? wiringDecision(node, done.id, watchedWiring(done.id)) : "applied";
   const taken = useRef(new Set<string>());
+  const applyWiring = useCallback((job: NonNullable<typeof done>) => {
+    const wired = job.result!.rig!;
+    let inputs = 0;
+    const why = rig.apply((p) => { const out = wireShot(p, shot.id, job.id, wired); inputs = out.inputs; return out.project; });
+    toast(why ?? `The agent wired ${shot.name}: ${inputs} ${inputs === 1 ? "input" : "inputs"}`);
+  }, [rig, shot.id, shot.name, toast]);
   useEffect(() => {
-    const done = jobs.find((j) => j.status === "succeeded");
-    const wired = done?.result?.rig;
-    if (!done || !wired || taken.current.has(done.id) || rig.selectedNode?.id !== shot.id) return;
+    if (!done || decision !== "apply" || taken.current.has(done.id) || rig.selectedNode?.id !== shot.id) return;
     taken.current.add(done.id);
-    try { if (sessionStorage.getItem(`particl:rig-wired:${done.id}`)) return; sessionStorage.setItem(`particl:rig-wired:${done.id}`, "1"); } catch { /* applies once per session either way */ }
-    rig.patchShot(shot.id, { prompt: wired.prompt, note: wired.notes.slice(0, 5000) });
-    for (const id of wired.inputs) {
-      const asset = rig.project!.assets.find((a) => a.id === id);
-      if (asset) rig.apply((p) => (p.nodes.find((n) => n.id === shot.id)?.linked.some((l) => p.nodes.find((m) => m.id === l)?.assetId === id) ? p : addInput(p, shot.id, asset)));
-    }
-    if (wired.firstFrame) rig.apply((p) => setFirstFrame(p, shot.id, wired.firstFrame));
-    toast(`The agent wired ${shot.name}: ${wired.inputs.length} inputs`);
-  }, [jobs, rig, shot.id, shot.name, toast]);
+    applyWiring(done);
+  }, [done, decision, rig.selectedNode?.id, shot.id, applyWiring]);
   const model = agent.model;
   const q = runs.quote && runs.quote.input.kind === "rig" && runs.quote.input.nodeId === shot.id && runs.quote.input.model === model?.id ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed." : active ? "The agent is wiring this shot." : !model ? "Choose an agent in Brief & Script." : null;
@@ -329,6 +334,12 @@ export function WireShot({ shot }: { shot: RigShot }) {
       <AgentAction id="rig-wire" secondary estimateLabel="Let the agent wire this shot" startLabel={(c) => `Wire it · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
         describe={(qq) => `Prompt, notes and inputs from the beat, the frame and the cast · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
         onEstimate={() => void runs.estimate({ kind: "rig", model: model!.id, effort: agent.effort, nodeId: shot.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
+      {done && decision === "offer" ? (
+        <p className="pxw-inspector-note" data-testid="rig-wire-offer">
+          <button type="button" className="pxw-link-button" onClick={() => applyWiring(done)} data-testid="rig-wire-apply">Apply the agent’s last wiring</button> (replaces the prompt and notes) or{" "}
+          <button type="button" className="pxw-link-button" onClick={() => { const why = rig.apply((p) => keepWiring(p, shot.id, done.id)); if (why) toast(why); }} data-testid="rig-wire-keep">keep this shot as it is</button>.
+        </p>
+      ) : null}
       {runs.error ? <p className="pxw-insp-error" role="alert">{runs.error}</p> : null}
     </div>
   );

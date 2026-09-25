@@ -101,7 +101,7 @@ export function branchFromTake(project: Project, shotId: string, take: Asset): {
   const title = `${shot.title} · from ${take.name}`.slice(0, 300);
   // Below its parent while the column has room; near the canvas floor, the column placer finds a spot.
   const spot = shot.y + 320 <= COLUMN_FLOOR ? { x: shot.x, y: shot.y + 320 } : place(project);
-  const node: CanvasNode = { ...shot, id: uid("node"), title, ...spot, linked: [], versions: undefined, status: "draft", locked: false, condensed: undefined, firstFrameId: undefined, boardShotId: undefined };
+  const node: CanvasNode = { ...shot, id: uid("node"), title, ...spot, linked: [], versions: undefined, status: "draft", locked: false, condensed: undefined, firstFrameId: undefined, boardShotId: undefined, wiredJobId: undefined };
   let next: Project = { ...project, nodes: [...project.nodes, node] };
   next = addInput(next, node.id, take, `Take · ${take.name}`);
   if (take.kind === "image") next = setFirstFrame(next, node.id, take.id);

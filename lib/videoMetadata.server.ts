@@ -11,12 +11,24 @@ export type VideoMetadata = {
 export const VIDEO_INSPECTION_LIMIT = 200 * 1024 * 1024;
 const METADATA_READ_LIMIT = 16 * 1024 * 1024;
 
-/** Inspect the retained original, with a hard read/latency budget and no decoder or external media references. */
+/** The longest clip the video tools (Astra and the rest) take, and so the default ceiling. */
+export const VIDEO_TOOL_MAX_SECONDS = 300;
+
+/**
+ * Inspect the retained original, with a hard read/latency budget and no decoder or external media references.
+ *
+ * `maxSeconds` is the caller's own ceiling. The video tools keep the default
+ * five minutes; the sound tools price long interviews and edits per minute,
+ * so they pass their own and get a neutral refusal instead of another
+ * tool's limit.
+ */
 export async function inspectOriginalVideo(
   ref: Reference,
   bytes: number,
   includeFrameRate = false,
+  options: { maxSeconds?: number } = {},
 ): Promise<VideoMetadata> {
+  const maxSeconds = options.maxSeconds ?? VIDEO_TOOL_MAX_SECONDS;
   if (
     ref.kind !== "video" ||
     !Number.isSafeInteger(bytes) ||
@@ -109,12 +121,14 @@ export async function inspectOriginalVideo(
       height = track.displayHeight;
     if (
       ![seconds, width, height].every((n) => Number.isFinite(n) && n > 0) ||
-      seconds > 300 ||
+      seconds > maxSeconds ||
       width > 16384 ||
       height > 16384
     )
       throw new Error(
-        "Astra accepts video clips up to five minutes with valid source dimensions.",
+        options.maxSeconds === undefined
+          ? "Astra accepts video clips up to five minutes with valid source dimensions."
+          : `Use a video up to ${formatLimit(maxSeconds)} long with valid picture dimensions.`,
       );
     const fps = includeFrameRate
       ? (await track.computePacketStats()).averagePacketRate
@@ -136,4 +150,10 @@ export async function inspectOriginalVideo(
     abort.abort();
     input.dispose();
   }
+}
+
+function formatLimit(seconds: number): string {
+  if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}`;
+  if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
 }
