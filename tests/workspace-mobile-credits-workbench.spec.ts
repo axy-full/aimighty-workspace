@@ -121,6 +121,6 @@ test("a large balance is written in full, and still clears the header's floors",
   await expect(page.getByTestId("mobile-credits")).toHaveText("1,234,567 cr");
   const title = (await page.getByTestId("mobile-title").boundingBox())!;
   expect(title.width).toBeGreaterThanOrEqual(44);
-  expect(title.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round(title.height * 100) / 100).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 });

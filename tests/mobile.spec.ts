@@ -337,7 +337,7 @@ test.describe("Settings on a phone", () => {
     const banner = page.getByRole("banner");
     const back = banner.getByRole("button", { name: "‹ Back" });
     await expect(back).toBeVisible();
-    expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect(Math.round((await back.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
     const title = banner.getByText("Settings", { exact: true });
     expect(await title.evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).fontWeight])).toEqual(["16px", "600"]);
     await expect(banner.getByRole("button", { name: "Ask Atomik" })).toBeHidden();

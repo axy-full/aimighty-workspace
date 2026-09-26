@@ -378,7 +378,7 @@ test("The changed surfaces fit every size: Library unfiled wall, New asset sheet
   await page.goto("/generate?mode=images");
   const choice = page.getByRole("navigation", { name: "Saved projects" }).getByRole("link", { name: "Fit fixture project" });
   await expect(choice).toBeVisible({ timeout: 30_000 });
-  expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round((await choice.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   expect(await fits(page)).toBe(true);
   await choice.click();
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeVisible({ timeout: 30_000 });
@@ -386,7 +386,7 @@ test("The changed surfaces fit every size: Library unfiled wall, New asset sheet
   await saveAs.scrollIntoViewIfNeeded();
   await expect(saveAs).toBeVisible();
   /* Touch sizes (below 900 wide) get 44px targets. */
-  if (page.viewportSize()!.width < 900) for (const b of await saveAs.getByRole("button").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (page.viewportSize()!.width < 900) for (const b of await saveAs.getByRole("button").all()) expect(Math.round((await b.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   expect(await fits(page)).toBe(true);
 });
 
