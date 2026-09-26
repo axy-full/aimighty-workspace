@@ -21,7 +21,8 @@ import type { ProductionRow, ProjectRow } from "@/lib/productions";
  * PICKED`); `228 of 400 cr` over the 110px bar; the stepper as 8px dots
  * joined by 16px hairlines with only the current step named (M2; M3 leaves
  * it out — `phoneStepper`), the `3 need you` pill after it; then the
- * `Shots · Boards · Approve · Media` segmented, full width. The dock stays.
+ * `Shots · Media` segmented, full width (Boards and Approve wait for their
+ * pages). The dock stays.
  */
 export default function ProductionHeader({ production, project, runtime, phoneLine, phoneStepper = true }: {
   production: ProductionRow; project: ProjectRow; runtime?: string; phoneLine?: string; phoneStepper?: boolean;
@@ -57,8 +58,9 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
             {project.needYou > 0 && <Chip variant="need" className="ml-auto max-md:text-[12px]">{project.needYou} need you</Chip>}
           </div>
         )}
-        <Segmented label="Project" fill value={tab} onChange={(t) => { if (t === "shots") router.push(`${base}/shots`); else if (t === "media") router.push(`${base}/media`); }}
-          options={[{ value: "shots", label: "Shots" }, { value: "boards", label: "Boards" }, { value: "approve", label: "Approve" }, { value: "media", label: "Media" }]} />
+        {/* Only the pages that exist: Boards and Approve had no page behind them, and did nothing. */}
+        <Segmented label="Project" fill value={tab} onChange={(t) => router.push(`${base}/${t}`)}
+          options={[{ value: "shots", label: "Shots" }, { value: "media", label: "Media" }]} />
       </div>
     );
   }

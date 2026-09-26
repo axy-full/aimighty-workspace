@@ -64,3 +64,37 @@ test("storyboards build one shot per framed shot, once", () => {
   expect(shot.firstFrameId).toBeUndefined();
   expect(() => buildFromBoards(first.project, "dreamina-seedance-2-5-260628")).toThrow("Every framed shot is already in the Rig.");
 });
+
+test("a frame's own look decides the first frame, not the board's", () => {
+  const at = new Date().toISOString();
+  const beats = { scriptSha256: "a".repeat(64), updatedAt: at, scenes: [{ id: "sc", heading: "EXT. HARBOUR", summary: "", beats: [], shots: ["sh1", "sh2", "sh3"].map((id) => ({ id, description: id, framing: "", movement: "", lighting: "", sound: "" })), characters: [], locations: [], props: [] }] };
+  const p: Project = { ...project([], [img("a1"), img("a2"), img("a3")]), production: { beats, boards: { style: "color-sketch", model: "gemini-3.1-flash-image", frames: {
+    // A line drawing converted as live action on a sketch board: the take is a photographic first frame.
+    sh1: { prompt: "Converted", style: "live", takes: [{ genId: "a1", style: "live", at }] },
+    // A pencil frame on a board later switched to live: the take stays a reference.
+    sh2: { prompt: "Pencil", style: "bw-sketch", takes: [{ genId: "a2", style: "bw-sketch", at }] },
+    // No take record for the selected picture: the frame's own look decides.
+    sh3: { prompt: "Own look", style: "live", takes: [], selected: "a3" },
+  } } } };
+  const built = buildFromBoards(p, "dreamina-seedance-2-5-260628").project;
+  const shot = (id: string) => built.nodes.find((n) => n.boardShotId === id)!;
+  expect(shot("sh1").firstFrameId).toBe("a1");
+  expect(shot("sh3").firstFrameId).toBe("a3");
+  const onLive = buildFromBoards({ ...p, production: { ...p.production, boards: { ...p.production!.boards!, style: "live" } } }, "dreamina-seedance-2-5-260628").project;
+  expect(onLive.nodes.find((n) => n.boardShotId === "sh2")!.firstFrameId).toBeUndefined();
+  expect(shot("sh2").firstFrameId).toBeUndefined();
+});
+
+test("a branch near the canvas floor stays inside the saved bounds", () => {
+  const p = project([scene("s1", { x: 100, y: 19_900 })]);
+  const out = branchFromTake(p, "s1", img("a2", "Take 2"));
+  for (const n of out.project.nodes) {
+    expect(n.y).toBeLessThanOrEqual(20_000);
+    expect(n.x).toBeLessThanOrEqual(20_000);
+  }
+  const made = out.project.nodes.find((n) => n.id === out.id)!;
+  expect(made.y).toBeLessThan(19_900);
+  // Higher up the column, the branch still sits right below its parent.
+  const mid = branchFromTake(project([scene("s1", { x: 100, y: 400 })]), "s1", img("a2"));
+  expect(mid.project.nodes.find((n) => n.id === mid.id)).toMatchObject({ x: 100, y: 720 });
+});

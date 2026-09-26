@@ -328,7 +328,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
           <AgentAction id="beats-redraft" estimateLabel="Estimate the redraft" startLabel={(c) => `Redraft the script · up to ${c} credits`} quote={redraftQuote} busy={runs.busy}
             blocked={blocked ?? (stale ? "Break the current script down first, or it is redrafted from beats of an older draft." : null)} secondary
             onEstimate={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromBeats: true, ...(notes.trim() ? { instructions: notes.trim() } : {}), ...attach.input })}
-            onStart={() => void runs.start().then(() => setNotes(""))} onChange={runs.clearQuote} />
+            onStart={() => void runs.start().then((held) => { if (held) setNotes(""); })} onChange={runs.clearQuote} />
           {lastRedraft && !activeWrite ? <button type="button" className="gx-hbtn" onClick={onBrief} data-testid="beats-review-redraft">A new draft is ready · review it in Brief & Script ›</button> : null}
         </section>
       ) : null}

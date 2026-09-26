@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
-import { fmtCredits } from "@/lib/price";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
 import {
-  frameLine, durationLine, seedLine, producedBy, repeatNote, canRepeatExactly, NOT_RECORDED,
+  frameLine, durationLine, seedLine, producedBy, repeatNote, makeAnotherHref, NOT_RECORDED,
 } from "@/lib/provenanceCard";
 import type { Provenance } from "@/lib/provenance";
 
@@ -17,11 +16,15 @@ type Take = {
 /**
  * Exactly what produced a finished take (brief 3, surface 1c).
  *
- * The card's one promise is "make another from exactly this", and that makes
- * exactness its only real requirement. So where something was not recorded it
- * says so, in the same weight as everything else: a take made before this
- * record existed has no seed and no rule ids, and dressing that up as zero or
- * none would make the promise a lie in the one place it must not be.
+ * Exactness is the card's only real requirement. So where something was not
+ * recorded it says so, in the same weight as everything else: a take made
+ * before this record existed has no seed and no rule ids, and dressing that
+ * up as zero or none would be a lie in the one place it must not be.
+ *
+ * "Make another from this" opens Generate with the take's prompt, where the
+ * new take is priced. An exact repeat (same versions, Setup and seed) is not
+ * built yet, so the card no longer offers one — the button used to promise
+ * it at "0 cr" and do nothing.
  */
 export default function ProvenanceCard({ takeId }: { takeId: string }) {
   const { data, error } = useApi<{ take: Take; provenance: Provenance | null }>(
@@ -35,6 +38,7 @@ export default function ProvenanceCard({ takeId }: { takeId: string }) {
   const rows = producedBy(rec);
   const setup = rec ? Object.entries(rec.setup).filter(([, v]) => v) : [];
   const frame = rec ? frameLine(rec.conditions) : null;
+  const another = makeAnotherHref(take);
 
   return (
     <div className="prv">
@@ -114,11 +118,16 @@ export default function ProvenanceCard({ takeId }: { takeId: string }) {
       </div>
 
       <div className="prv-foot">
-        <button className="prv-primary" disabled={!rec}>
-          <span>Make another from {canRepeatExactly(rec) ? "exactly this" : "this"}</span>
-          <span className="prv-primary-cost">{fmtCredits(0)}</span>
-        </button>
-        <span className="prv-note">{repeatNote(rec)}</span>
+        {another ? (
+          <>
+            {/* Priced where it is made: Generate quotes the new take on its own button. */}
+            <Link className="prv-primary" href={another}>
+              <span>Make another from this</span>
+              <span className="prv-primary-cost" aria-hidden="true">→</span>
+            </Link>
+            <span className="prv-note">{repeatNote(rec)}</span>
+          </>
+        ) : null}
       </div>
     </div>
   );
