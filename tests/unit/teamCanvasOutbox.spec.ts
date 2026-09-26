@@ -36,6 +36,48 @@ test("a kept edit rides under the edits made since, and the newer write of a nod
   expect(merged.at).toBe(2);
 });
 
+test("an older send that fails after a newer one went out is never re-sent over it", () => {
+  const outbox = new TeamOutbox();
+  /* Send 1 carries a1 and a2 and is still in flight (a keepalive PATCH can take up to 20 s). */
+  outbox.add("prod-a", patch([node("a1", "Old"), node("a2", "Two")], 1, { order: ["a1", "a2"] }));
+  const [[pid, first]] = outbox.take();
+  /* The person edits a1 again and the draft save's flush sends it at once: send 2 lands. */
+  outbox.add("prod-a", patch([node("a1", "New")], 2, { order: ["a2", "a1"] }));
+  outbox.take();
+  /* Send 1 then fails. Only what no later send carried goes back: a2, not the old a1 or the old order. */
+  outbox.keep(pid, first);
+  const [[, retried]] = outbox.take();
+  expect(retried.upsertNodes.map((n) => [n.id, n.title])).toEqual([["a2", "Two"]]);
+  expect(retried.order).toBeNull();
+});
+
+test("the same holds while the newer send is still in flight: it lands or is kept itself", () => {
+  const outbox = new TeamOutbox();
+  outbox.add("prod-a", patch([node("a1", "Old")], 1));
+  const [[, first]] = outbox.take();
+  outbox.add("prod-a", patch([node("a1", "New")], 2));
+  const [[, second]] = outbox.take();
+  /* The older send fails first: nothing of it is newer than the send behind it. */
+  outbox.keep("prod-a", first);
+  expect(outbox.size).toBe(0);
+  /* Then the newer one fails too: it is the one retried. */
+  outbox.keep("prod-a", second);
+  const [[, retried]] = outbox.take();
+  expect(retried.upsertNodes.map((n) => n.title)).toEqual(["New"]);
+});
+
+test("send numbers are per production: a later send to B takes nothing off A's retry", () => {
+  const outbox = new TeamOutbox();
+  outbox.add("prod-a", patch([node("x", "A's x")], 1));
+  const [[, first]] = outbox.take();
+  outbox.add("prod-b", patch([node("x", "B's x")], 2));
+  outbox.take();
+  outbox.keep("prod-a", first);
+  const [[pid, retried]] = outbox.take();
+  expect(pid).toBe("prod-a");
+  expect(retried.upsertNodes.map((n) => n.title)).toEqual(["A's x"]);
+});
+
 test("merging keeps removals and re-additions straight", () => {
   const removed = mergePatches(patch([node("x")], 1), patch([], 2, { removeNodes: ["x"] }));
   expect(removed.upsertNodes).toEqual([]);

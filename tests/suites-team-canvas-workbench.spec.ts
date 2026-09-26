@@ -224,7 +224,7 @@ test("an edit waiting for one production is only ever sent there, and a refused 
   await expect(page.getByTestId("shot-duration")).toHaveText("5s");
   await page.getByRole("button", { name: "Longer" }).click();
   await expect.poll(() => refused).toBe(1);
-  await expect(page.getByText(/Teammates will not see your last Rig edit/)).toBeVisible();
+  await expect(page.getByText(/Your last Rig edit did not reach the team/)).toBeVisible();
   /* ...and the next edit, on another shot, reaches the team on its own. */
   await page.locator('.pxw-rig-row[data-shot-id="b2"]').click();
   await page.getByRole("button", { name: "Longer" }).click();

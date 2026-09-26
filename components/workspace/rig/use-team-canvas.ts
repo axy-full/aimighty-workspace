@@ -108,11 +108,14 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
         await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
       } catch (error) {
         if (sendFailure(error) === "refused") {
-          /* It would be refused again, and riding along it would sink every later edit: dropped. The draft keeps it. */
-          toast(`Teammates will not see your last Rig edit: ${error instanceof Error ? error.message : "the team canvas refused it."}`);
+          /* It would be refused again, and riding along it would sink every later edit: dropped.
+             The draft holds it only until the production next opens, when the team canvas wins
+             for every node it knows (joinTeamCanvas). A 401 is dropped too: draftRequest carries
+             no status to tell it apart, and its message says to save the work before signing in. */
+          toast(`Your last Rig edit did not reach the team, and the team's version replaces it when this production next opens. ${error instanceof Error ? error.message : ""}`.trim());
           return;
         }
-        /* Keep it for its own production and try again; a later edit rides along. */
+        /* Keep it for its own production and try again, less anything a later send carried; a later edit rides along. */
         outbox.keep(pid, patch);
         again = true;
       }

@@ -89,8 +89,11 @@ const staleJob = () => ({
 
 type State = { paid: string[]; project: Project; revision: number; quotes: Record<string, unknown>[]; jobs: ReturnType<typeof staleJob>[] };
 
-/** `quotes`: the transform endpoint answers its `quote` action (it prices, it never submits). */
-async function open(page: Page, options: { quotes?: boolean } = {}): Promise<State> {
+/**
+ * `quotes`: the transform endpoint answers its `quote` action (it prices, it never submits);
+ * "uncertain" answers it as the route does when an earlier original copy cannot be confirmed.
+ */
+async function open(page: Page, options: { quotes?: boolean | "uncertain" } = {}): Promise<State> {
   const state: State = { paid: [], project: fixture(), revision: 1, quotes: [], jobs: [] };
   await signInLocally(page.request);
   await page.route("**/api/**", async (route: Route) => {
@@ -138,6 +141,11 @@ async function open(page: Page, options: { quotes?: boolean } = {}): Promise<Sta
     if (path === "/api/higgsfield/consumer/genjutsu") {
       if (method !== "GET") {
         const body = request.postDataJSON() as Record<string, unknown> | null;
+        if (options.quotes === "uncertain" && body?.action === "quote") {
+          state.quotes.push(body);
+          /* ConsumerGenjutsuError("import_uncertain"), as app/api/higgsfield/consumer/genjutsu/route.ts answers it. */
+          return json({ code: "import_uncertain", error: "An earlier media transfer could not be confirmed. It will not be retried automatically. No video was submitted." }, 409);
+        }
         if (options.quotes && body?.action === "quote") {
           state.quotes.push(body);
           const job = { ...staleJob(), id: "00000000-0000-4000-8000-000000000002", input: body.input as typeof STALE_INPUT, quoteCredits: 150, quoteExpiresAt: Date.now() + 10 * 60_000 };
@@ -432,6 +440,37 @@ test("the form takes its own live estimate on the phone, and still submits only 
   await expect(page.getByTestId("mobile-primary")).toContainText("150");
   await floors(page, "form with an estimate");
   /* Taking an estimate is not a submission. */
+  expect(state.paid).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("an estimate the route cannot confirm keeps its request: the next press reuses the key, and only a discard lets it go", async ({ page }, info) => {
+  test.skip(!PHONE.includes(info.project.name), "phone viewports");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const state = await open(page, { quotes: "uncertain" });
+  const records = () =>
+    page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.endsWith(":attempts:quote")).map(([, value]) => JSON.parse(value) as { key: string }));
+
+  await goTo(page, "motion", "subatomik");
+  await page.getByTestId("mobile-form-source").click();
+  await page.locator(`[data-pick="upload:${CLIP.id}"]`).click();
+  const take = page.getByTestId("mobile-form-estimate");
+  await expect(take).toHaveText("Copy originals · get estimate");
+  await take.click();
+  await expect(page.getByTestId("mobile-form-estimate-error")).toContainText("could not be confirmed");
+  /* Originals may already be copied: the record (the desktop's own) survives, and the control finishes the SAME request. */
+  expect((await records()).map((r) => r.key)).toEqual([state.quotes[0].idempotencyKey]);
+  await expect(take).toHaveText("Finish the last estimate");
+  await take.click();
+  await expect.poll(() => state.quotes.length).toBe(2);
+  expect(state.quotes[1].idempotencyKey).toBe(state.quotes[0].idempotencyKey);
+  await expect(take).toHaveText("Finish the last estimate");
+  await floors(page, "form with a request to finish");
+  /* Only the person's discard lets it go; after it, a new estimate is a new request. */
+  await page.getByTestId("mobile-form-estimate-discard").click();
+  expect(await records()).toEqual([]);
+  await expect(take).toHaveText("Copy originals · get estimate");
   expect(state.paid).toEqual([]);
   expect(errors).toEqual([]);
 });

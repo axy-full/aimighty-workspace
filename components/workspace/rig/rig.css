@@ -185,6 +185,8 @@
   .pxw .pxw-graph-foot { font-size: 12px; }
   .pxw .pxw-graph-node .pxw-graph-port,
   .gx .pxw .pxw-graph-node .pxw-graph-port { width: 44px; height: 44px; margin-top: -22px; border: 16.5px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1.5px var(--pxw-hover-border); }
+  /* The glass port's blur (app/glass.css) paints the whole border box: over a 44px target it is a frosted halo, not a dot. */
+  .gx .pxw .pxw-graph-node .pxw-graph-port { backdrop-filter: none; }
   .pxw .pxw-graph-node .pxw-graph-port--in { left: -22px; }
   .pxw .pxw-graph-node .pxw-graph-port--out { right: -22px; }
   .pxw .pxw-graph-node .pxw-graph-port:hover,

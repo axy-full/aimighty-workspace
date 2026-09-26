@@ -17,18 +17,19 @@ import {
   formInput,
   formQuote,
   formQuoteAttemptKey,
-  formQuoteBody,
   formQuoteLabel,
   formSummary,
   readFormCreative,
   readQuoteAttempt,
   refFromTake,
+  takeEstimate,
   withoutReference,
   withReference,
   writeFormCreative,
   type FormJob,
   type FormResolution,
   type QuoteAttempt,
+  type StoredAttempt,
 } from "@/lib/workspace/mobile-form";
 import { usePublishPrimary } from "@/lib/workspace/mobile-primary";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -109,7 +110,8 @@ function useTransformJobs(scope: string, projectId: string | null) {
 /**
  * Taking the live estimate: the desktop's quote step (ConsumerGenjutsu `act("quote")`), with
  * its recovery record, so a lost answer is finished with the same key rather than copying
- * the originals twice. It prices; it never submits.
+ * the originals twice. The record goes only when an estimate is in, or when the person
+ * discards it, as on the desktop. It prices; it never submits.
  */
 function useEstimate(scope: string, projectId: string | null, refresh: () => Promise<void>) {
   const request = useScopedFetch(scope);
@@ -119,46 +121,47 @@ function useEstimate(scope: string, projectId: string | null, refresh: () => Pro
     subscribeAttempts,
     () => {
       if (!storageKey) return null;
-      try { return window.localStorage.getItem(storageKey); } catch { return UNREADABLE; }
+      try { return window.localStorage.getItem(storageKey); } catch { return STORAGE_OFF; }
     },
     () => null,
   );
-  const stored = useMemo(() => readQuoteAttempt(raw), [raw]);
+  const stored: StoredAttempt = useMemo(() => (raw === STORAGE_OFF ? "unavailable" : readQuoteAttempt(raw)), [raw]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const save = useCallback((value: QuoteAttempt | null) => {
+    if (!storageKey) throw new Error("No project is open.");
+    if (value) window.localStorage.setItem(storageKey, JSON.stringify(value));
+    else window.localStorage.removeItem(storageKey);
+    window.dispatchEvent(new Event(ATTEMPT_EVENT));
+  }, [storageKey]);
   const take = useCallback(async (attempt: QuoteAttempt) => {
     if (!projectId || !storageKey || busy) return;
     setError(null);
-    const write = (value: QuoteAttempt | null) => {
-      if (value) window.localStorage.setItem(storageKey, JSON.stringify(value));
-      else window.localStorage.removeItem(storageKey);
-      window.dispatchEvent(new Event(ATTEMPT_EVENT));
-    };
-    try { write(attempt); }
-    catch { setError("Allow this browser to keep site data, so the estimate can be finished if the answer is lost."); return; }
     setBusy(true);
-    try {
-      const response = await request(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formQuoteBody(projectId, attempt)) });
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) {
-        /* A refusal is final for this key and input; a busy account or a fault is finished later with the same key. */
-        if (response.status >= 400 && response.status < 500 && ![408, 423, 429].includes(response.status)) write(null);
-        throw new Error(body?.error ?? "The estimate could not be taken.");
-      }
-      write(null);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The estimate could not be taken.");
-    } finally {
-      setBusy(false);
-    }
-  }, [projectId, storageKey, busy, request, refresh]);
-  return { stored, busy, error, take };
+    const result = await takeEstimate(projectId, attempt, {
+      save,
+      post: async (body) => {
+        const response = await request(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const data = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        return { ok: response.ok, error: typeof data?.error === "string" ? data.error : null };
+      },
+    });
+    setBusy(false);
+    if (result.ok) await refresh();
+    else setError(result.error);
+  }, [projectId, storageKey, busy, save, request, refresh]);
+  /* The desktop's "Discard unsubmitted quote request": the person lets the lock go, knowing a new estimate may copy again. */
+  const discard = useCallback(() => {
+    if (busy) return;
+    try { save(null); setError(null); }
+    catch { setError("This browser would not clear the saved request. It stays locked."); }
+  }, [busy, save]);
+  return { stored, busy, error, take, discard };
 }
 
 const ATTEMPT_EVENT = "particl-form-quote-attempt";
-/** Anything JSON cannot read: `readQuoteAttempt` answers "unreadable" for it. */
-const UNREADABLE = "\u0000";
+/** The snapshot when this browser refuses site data: not a record, and not "none". */
+const STORAGE_OFF = "\u0000storage-off";
 function subscribeAttempts(listener: () => void) {
   window.addEventListener("storage", listener);
   window.addEventListener(ATTEMPT_EVENT, listener);
@@ -337,13 +340,29 @@ export function FormPage({ page, project, scope }: MobilePageProps) {
         </div>
         {/* The card explains the price; the pinned bar says what to do. */}
         <p className="pxm-quote-note" data-testid="mobile-form-quote-note">{FORM_QUOTE_NOTE[quote.state]}</p>
-        {connected && (action.kind === "take" || action.kind === "recover") ? (
+        {connected && action.kind === "take" ? (
           <div className="pxm-pair">
             {/* The label says what pressing it does: the chosen originals go to the connected account to be priced. */}
-            <button type="button" className="pxm-control" data-testid="mobile-form-estimate" disabled={estimate.busy} onClick={() => void estimate.take(action.kind === "recover" ? action.attempt : { key: crypto.randomUUID(), input: action.input })}>
-              {estimate.busy ? "Copying originals…" : action.kind === "recover" ? "Finish the last estimate" : "Copy originals · get estimate"}
+            <button type="button" className="pxm-control" data-testid="mobile-form-estimate" disabled={estimate.busy} onClick={() => void estimate.take({ key: crypto.randomUUID(), input: action.input })}>
+              {estimate.busy ? "Copying originals…" : "Copy originals · get estimate"}
             </button>
           </div>
+        ) : null}
+        {action.kind === "recover" || action.kind === "unreadable" ? (
+          <>
+            {action.kind === "unreadable" ? <p className="pxm-quote-note" role="note">The saved estimate request could not be read.</p> : null}
+            <div className="pxm-pair" data-testid="mobile-form-estimate-recovery">
+              {connected && action.kind === "recover" ? (
+                <button type="button" className="pxm-control" data-testid="mobile-form-estimate" disabled={estimate.busy} onClick={() => void estimate.take(action.attempt)}>
+                  {estimate.busy ? "Copying originals…" : "Finish the last estimate"}
+                </button>
+              ) : null}
+              <button type="button" className="pxm-control" data-testid="mobile-form-estimate-discard" disabled={estimate.busy} onClick={estimate.discard}>
+                Discard it
+              </button>
+            </div>
+            <p className="pxm-quote-note" role="note">Originals already copied stay in the connected account; after discarding, a new estimate may copy them again.</p>
+          </>
         ) : null}
         {connected && action.kind === "blocked" ? <p className="pxm-quote-note" role="note">{action.reason}</p> : null}
         {estimate.error ? <p className="pxm-note" role="alert" data-testid="mobile-form-estimate-error">{estimate.error}</p> : null}

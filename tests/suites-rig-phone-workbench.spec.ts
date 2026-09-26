@@ -102,6 +102,9 @@ test("phone: the graph's wiring ports are 44px targets and its labels keep the f
   await expect(ports.first()).toBeVisible();
   const sizes = await ports.evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height)); }));
   expect(Math.min(...sizes)).toBeGreaterThanOrEqual(44);
+  /* No frosted halo: the glass port's blur would paint the whole 44px target, not the dot. */
+  const blurs = await ports.evaluateAll((els) => els.map((el) => getComputedStyle(el).getPropertyValue("backdrop-filter")));
+  expect([...new Set(blurs)]).toEqual(["none"]);
   const labels = await page.locator(".pxw-graph-kicker, .pxw-graph-foot, .pxw-graph-readouts > span").evaluateAll((els) => els.map((el) => Number.parseFloat(getComputedStyle(el).fontSize)));
   expect(Math.min(...labels)).toBeGreaterThanOrEqual(12);
   /* Wiring still works through the bigger target: out of the approach, into the departure. */
@@ -118,6 +121,23 @@ test("with no project open the Rig asks for one instead of loading forever", asy
   await page.route("**/api/workbench/projects**", (route) => route.fulfill({ json: { projects: [], productions: [], project: null, revision: 0, shared: null } }));
   await mockLibrary(page, { uploads: [], generations: [] });
   await page.goto("/workspace?suite=particl&page=rig");
+  await expect(page.getByTestId("rig-list")).toContainText("Open or create a project to see its shots.");
+  await expect(page.getByTestId("rig-list")).not.toContainText("Loading shots");
+});
+
+test("a shared link to a draft this person cannot open asks for a project instead of loading forever", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  /* A new teammate with no projects of their own: the named draft is not theirs, so the route answers project: null. */
+  const asked: string[] = [];
+  await page.route("**/api/workbench/projects**", (route) => {
+    asked.push(new URL(route.request().url()).searchParams.get("id") ?? "");
+    return route.fulfill({ json: { projects: [], productions: [], project: null, revision: 0, shared: null } });
+  });
+  await mockLibrary(page, { uploads: [], generations: [] });
+  await page.goto("/workspace?project=someone-elses-draft&suite=particl&page=rig");
+  await expect.poll(() => asked.includes("someone-elses-draft")).toBe(true);
   await expect(page.getByTestId("rig-list")).toContainText("Open or create a project to see its shots.");
   await expect(page.getByTestId("rig-list")).not.toContainText("Loading shots");
 });
