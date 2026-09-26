@@ -26,9 +26,10 @@ export type GenAssetLibraryProps = {
   controller?: Ref<GenAssetLibraryHandle>;
   search: string;
   onUseAsset: (asset: DraggedAsset) => void;
-  onEdit: (asset: LibraryAsset) => void;
-  onUpscale: (asset: LibraryAsset) => void;
-  onUsePrompt: (take: Generation) => void;
+  /* Each action is offered only where the host wires it: a card never shows a button that does nothing. */
+  onEdit?: (asset: LibraryAsset) => void;
+  onUpscale?: (asset: LibraryAsset) => void;
+  onUsePrompt?: (take: Generation) => void;
   workbenchProjectId?: string;
   projectName?: string;
   allowWorkspaceBrowse?: boolean;
@@ -231,11 +232,11 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
               ...(visual ? [
                 ...(kind==='image'&&onUseFirstFrame?[{label:'Use as first frame',run:()=>onUseFirstFrame(asset),disabled:!ready}]:[]),
                 { label: "Use as reference", run: () => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset)), disabled: !ready },
-                { label: kind === "video" ? "Edit clip" : "Edit image", run: () => onEdit(asset), disabled: !ready },
-                { label: kind === "video" ? "Upscale video" : "Upscale image", run: () => onUpscale(asset), disabled: !ready },
+                ...(onEdit ? [{ label: kind === "video" ? "Edit clip" : "Edit image", run: () => onEdit(asset), disabled: !ready }] : []),
+                ...(onUpscale ? [{ label: kind === "video" ? "Upscale video" : "Upscale image", run: () => onUpscale(asset), disabled: !ready }] : []),
               ] : []),
               ...(kind === "audio" && audioReference && onUseReference ? [{ label: "Use as reference", run: () => onUseReference(asset), disabled: !ready }] : []),
-              ...(gen ? [{ label: "Use prompt", run: () => onUsePrompt(gen) }, { label: "File to shot", run: () => setFiling(gen), disabled: !ready }] : []),
+              ...(gen ? [...(onUsePrompt ? [{ label: "Use prompt", run: () => onUsePrompt(gen) }] : []), { label: "File to shot", run: () => setFiling(gen), disabled: !ready }] : []),
               ...(workbenchProjectId&&asset.origin==='upload'&&asset.value.projectFiled?[{label:'Remove project filing',run:()=>void removeFiling(asset.value)}]:[]),
             ];
             return <ActionMenu key={id} label={`Actions for ${name}`} actions={actions}><article className={styles.takeCard} data-library-id={id} tabIndex={0}
@@ -254,7 +255,7 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
               </div>
               <div className={styles.takeActions} data-expanded-actions={onAddToProject || (kind==='image'&&onUseFirstFrame) ? '' : undefined}>
                 {onAddToProject && <button type="button" disabled={!ready} onClick={()=>onAddToProject(asset)}>Add to project</button>}
-                {visual ? <>{kind==='image'&&onUseFirstFrame&&<button type="button" disabled={!ready} onClick={()=>onUseFirstFrame(asset)}>Use as first frame</button>}<button type="button" disabled={!ready} onClick={() => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset))}>Use as reference</button><button type="button" disabled={!ready} onClick={() => onEdit(asset)}>{kind === "video" ? "Edit clip" : "Edit image"}</button></>
+                {visual ? <>{kind==='image'&&onUseFirstFrame&&<button type="button" disabled={!ready} onClick={()=>onUseFirstFrame(asset)}>Use as first frame</button>}<button type="button" disabled={!ready} onClick={() => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset))}>Use as reference</button>{onEdit && <button type="button" disabled={!ready} onClick={() => onEdit(asset)}>{kind === "video" ? "Edit clip" : "Edit image"}</button>}</>
                   : <>{kind === "audio" && audioReference && onUseReference && <button type="button" disabled={!ready} onClick={() => onUseReference(asset)}>Use as reference</button>}<button type="button" disabled={!ready} onClick={() => setSelected(asset)}>Preview</button></>}
                 {ready && <a href={libraryUrl(asset).split("?")[0] + "?download=1"} download={asset.origin === "upload" ? asset.value.filename : true} aria-label={`Download ${name}`}><Download size={15}/></a>}
               </div>

@@ -111,7 +111,8 @@ export type ComposerAction =
   | { type: "billing"; value: BillingSource }
   | { type: "model"; value: string }
   | { type: "prompt"; value: string }
-  | { type: "seconds"; value: number }
+  /** `task` is the current model's audio task: the length is held to what that task bills. */
+  | { type: "seconds"; value: number; task?: NodeAudioTask }
   | { type: "instrumental"; value: boolean }
   | { type: "voice"; value: string }
   | { type: "pick"; value: ComposerPicks }
@@ -124,6 +125,27 @@ export type ComposerAction =
   | { type: "reset" };
 
 const SOUND_SECONDS = 10;
+
+/**
+ * The lengths the audio route takes, per task: music has a ten-second floor
+ * and runs to five minutes, a sound effect runs 1–30 s. The composer holds
+ * its seconds inside these, so the length it shows is the length it bills.
+ */
+export const AUDIO_SECONDS: Record<"sound" | "music", { min: number; max: number }> = {
+  sound: { min: 1, max: 30 },
+  music: { min: 10, max: 300 },
+};
+
+/** `value` in whole seconds, inside the task's range (unchanged for a task with no length). */
+export function audioSeconds(task: NodeAudioTask | null | undefined, value: number): number {
+  if (task !== "sound" && task !== "music") return value;
+  const { min, max } = AUDIO_SECONDS[task];
+  const whole = Number.isFinite(value) ? Math.round(value) : min;
+  return Math.min(max, Math.max(min, whole));
+}
+
+/** The workspace's own audio models (workspaceModels below), so choosing one holds the length to its range. */
+const AUDIO_MODEL_TASK: Record<string, NodeAudioTask> = { eleven_sfx: "sound", eleven_music: "music" };
 
 export function composerReducer(state: ComposerState, action: ComposerAction): ComposerState {
   switch (action.type) {
@@ -142,11 +164,16 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       /* The switch changes the model list and the price source. */
       return { ...state, billing: action.value, notice: null };
     case "model":
-      return { ...state, chosen: { ...state.chosen, [chosenKey(state.billing, state.type)]: action.value }, notice: null };
+      return {
+        ...state,
+        chosen: { ...state.chosen, [chosenKey(state.billing, state.type)]: action.value },
+        seconds: audioSeconds(AUDIO_MODEL_TASK[action.value], state.seconds),
+        notice: null,
+      };
     case "prompt":
       return { ...state, prompt: action.value.slice(0, 5000), notice: null };
     case "seconds":
-      return { ...state, seconds: action.value, notice: null };
+      return { ...state, seconds: audioSeconds(action.task, action.value), notice: null };
     case "instrumental":
       return { ...state, instrumental: action.value, notice: null };
     case "voice":
