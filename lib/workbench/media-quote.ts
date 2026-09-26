@@ -59,13 +59,14 @@ export async function referencePrices(refs: QuoteReference[], extraImages = 0): 
   const videos = resolved.filter(ref => ref.kind === 'video').length;
   return { images: extraImages + resolved.filter(ref => ref.kind === 'image').length, videos, inputSeconds, hasVideoInput: videos > 0 };
 }
-export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number }, refs: ReferencePrices) {
+/** One take's price in credits. `audio` prices sound where the engine bills for it (per-second engines); absent, the take is silent. */
+export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean }, refs: ReferencePrices) {
   if (!model.resolutions.includes(params.resolution) || !model.ratios.includes(params.ratio) || (model.kind === 'video' && !model.durations.includes(params.duration))) throw new MediaQuoteError('Choose a size, aspect and duration supported by this engine.');
   if (refs.images > model.maxReferenceImages) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceImages} reference images.`);
   if (refs.videos > model.maxReferenceVideos || (model.kind === 'image' && refs.videos)) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceVideos} reference videos.`);
   if (refs.inputSeconds > model.maxVideoSecondsTotal) throw new MediaQuoteError(`Reference videos total ${refs.inputSeconds.toFixed(1)}s; ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`);
   const estimate = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)
-    : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: false, task: 'generate' });
+    : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' });
   return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput };
 }
 

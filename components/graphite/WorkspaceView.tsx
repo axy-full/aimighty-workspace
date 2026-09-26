@@ -16,6 +16,8 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
 import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
+import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
+import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
@@ -99,7 +101,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
         </div>
         {shell.wsTab === "general" ? <><General name={name} onRenamed={onRenamed} /><Rules /></> : null}
         {shell.wsTab === "people" ? <People /> : null}
-        {shell.wsTab === "credits" ? <Plans credits={credits} /> : null}
+        {shell.wsTab === "credits" ? <Plans credits={credits} balance={account?.credits?.balance ?? null} /> : null}
         {shell.wsTab === "usage" ? <Usage /> : null}
         {shell.wsTab === "dashboard" ? <ManagementDashboard /> : null}
         {shell.wsTab === "engines" ? <Engines /> : null}
@@ -370,8 +372,8 @@ function People() {
 }
 
 /* ── Plans & credits ─────────────────────────────────────────────────── */
-type Billing = { canManage: boolean; plans?: BillingPlan[]; subscription?: BillingSubscription | null };
-function Plans({ credits }: { credits: { text: string; title: string } }) {
+type Billing = { canManage: boolean; plans?: BillingPlan[]; subscription?: BillingSubscription | null; reach?: WorkspaceReach | null; rates?: RateGroup[] | null };
+function Plans({ credits, balance }: { credits: { text: string; title: string }; balance: number | null }) {
   const session = useSession();
   const write = useWrite();
   const admin = session.role === "admin" || session.role === "owner";
@@ -384,6 +386,10 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
   const months = statementMonthsOf(statements.data);
   const packs = topups.data?.applies ? topups.data.packs : [];
   const open = (topups.data?.requests ?? []).filter((r) => r.status === "requested");
+  /* The balance as takes, counted from the balance shown above (it refreshes
+     on its own). The route sends none to a workspace billed in dollars. */
+  const inCredits = session.credits != null;
+  const reach = data?.reach ?? null;
   const request = async (packId: string) => {
     setBusy(packId); setNote(null);
     const { json, error: refused } = await write<{ checkout?: { kind: string; url?: string } }>("/api/workspaces/topups", "POST", { packId });
@@ -408,8 +414,24 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
     <div className="wsx-card" data-testid="ws-plans">
       <span className="gx-eyebrow">Balance</span>
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
+      {inCredits && !data && !error ? <span className="cw-dim" role="status" data-testid="workspace-reach-loading">Counting what that buys…</span> : null}
+      {reach ? (
+        <div className="wsx-reach">
+          <ReachPair
+            testId="workspace-reach"
+            video={reach.video ? <ReachTile kind="video" count={leftFrom(balance, reach.video)} take={reach.video} suffix={leftAt(reach.video.basis)} testId="workspace-reach-video" /> : null}
+            image={reach.image ? <ReachTile kind="image" count={leftFrom(balance, reach.image)} take={reach.image} suffix={leftAt(reach.image.basis)} testId="workspace-reach-image" /> : null}
+          />
+        </div>
+      ) : null}
       <span className="cw-dim" data-testid="ws-plan-line">{planLine(data?.plans, data?.subscription)}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
+      {data?.rates ? (
+        <details className="wsx-rates" data-testid="workspace-rates">
+          <summary><span>Credits per take</span><svg className="wsx-rates-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></summary>
+          <RateCard groups={data.rates} reference={reach} legend="Your balance is counted at the outlined prices." testId="workspace-rate-card" />
+        </details>
+      ) : null}
       {packs.length ? (
         <>
           <span className="gx-eyebrow">Add credits</span>
