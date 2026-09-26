@@ -23,6 +23,8 @@ export const SUITES_PATH = "/suites";
 export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
+/** How long a toast that carries an Undo stays up. */
+export const UNDO_TOAST_MS = 6000;
 
 export type LibTab = "tools" | "assets";
 export type Clip = { mode: "copy" | "cut"; target: Exclude<CtxTarget, { kind: "empty" }>; name: string; /** What the paste needs to know about it (lib/shell/use-asset-actions). */ payload?: unknown };
@@ -218,7 +220,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       const stamped = { ...entry, projectId: entry.projectId ?? projectRef.current };
       setUndoStack((stack) => pushUndo(stack, stamped));
       setUndoOffer(say ? { entry: stamped, text: say } : null);
-      if (say) ws.toast(say);
+      /* Long enough to reach the Undo on a phone. */
+      if (say) ws.toast(say, UNDO_TOAST_MS);
     },
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
