@@ -12,6 +12,9 @@ import { shotCostUsd } from "@/lib/shotCost";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest } from "@/lib/generationRequests";
+import { textRunCost } from "@/lib/textRunCost";
+import { creditsApply } from "@/lib/credits";
+import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -67,12 +70,17 @@ export const POST = withTenant(async function POST(req: Request) {
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
   const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
   const text = result.text;
-  const costUsd = result.costUsd;
   const shots = shotsFromReply(text, castNames);
   if (!shots) return NextResponse.json({ error: `${model} answered, but not with shots. Try once more, or another model.` }, { status: 502 });
 
+  /* A workspace on credits prices the proposals off its own rate table and is
+     told the writing as the ledger billed it; the vendor's dollars beside a
+     credit price would give the margin away. One on its own keys pays its
+     vendors in dollars and still gets them. */
+  const cost = await textRunCost(result);
+  if (creditsApply(currentTenant()?.workspace)) return NextResponse.json({ scene: n, shots, model, effort: effort ?? "auto", ...cost });
   const priced = shots.map((s) => ({ ...s, takeUsd: shotCostUsd(s.engine, s.planned) }));
-  return NextResponse.json({ scene: n, shots: priced, sceneUsd: Math.round(priced.reduce((a, s) => a + s.takeUsd, 0) * 1000) / 1000, model, effort: effort ?? "auto", costUsd });
+  return NextResponse.json({ scene: n, shots: priced, sceneUsd: Math.round(priced.reduce((a, s) => a + s.takeUsd, 0) * 1000) / 1000, model, effort: effort ?? "auto", ...cost });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);

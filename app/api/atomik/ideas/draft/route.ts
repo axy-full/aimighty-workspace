@@ -7,6 +7,7 @@ import { requestEffort, resolveModel } from "@/lib/atomik";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest } from "@/lib/generationRequests";
+import { textRunCost } from "@/lib/textRunCost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -73,11 +74,11 @@ export const POST = withTenant(async function POST(req: Request) {
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
   const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
   const text = result.text;
-  const costUsd = result.costUsd;
   const out = extract(text);
   if (!out) return NextResponse.json({ error: `${model} answered, but not with a logline. Try once more, or another model.` }, { status: 502 });
 
-  return NextResponse.json({ ...out, model, effort: effort ?? "auto", costUsd });
+  /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
+  return NextResponse.json({ ...out, model, effort: effort ?? "auto", ...(await textRunCost(result)) });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);

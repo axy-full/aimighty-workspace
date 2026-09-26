@@ -22,9 +22,10 @@ import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { usd } from "@/lib/format";
 import { specToPhrase, CATEGORIES } from "@/lib/studio";
 import { takeCost } from "@/lib/breakdownCost";
+import { listEstimate, takeEstimate } from "@/lib/shotListCost";
+import { textCostLabel, type TextRunReply } from "@/lib/textCostLabel";
 import QuotedAtomikAction from "@/components/atomik/QuotedAtomikAction";
 import type { PaidTextQuote } from "@/lib/paidText";
 import { mentionsIn } from "@/lib/mentions";
@@ -34,8 +35,7 @@ import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
-import { ENGINE_LABEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
-type ShotProposal = BaseShotProposal & { takeUsd?: number };
+import { ENGINE_LABEL, type ShotProposal } from "@/lib/shotBuilder";
 import { useMoney } from "@/lib/price";
 
 type Loaded = { treatment: Treatment | null; cast: CastMember[] };
@@ -76,7 +76,8 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const billable = shots.filter((s) => s.kind !== "type");
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
   const target = runtimeTarget ?? scenes.reduce((a, s) => a + s.secs, 0);
-  const estimate = billable.reduce((a, s) => a + takeCost(rates, s.planned, s.engine), 0);
+  /* In the unit this workspace pays in, each take rounded as it bills. */
+  const estimate = listEstimate(rates, billable);
 
   async function patch(s: Shot, body: Record<string, unknown>) {
     const res = await fetch(`/api/shots/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -96,15 +97,16 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   }
   /* The shot builder (brief 1.8): a scene's shots proposed with every row filled, cast tagged, an engine and its credits each — added one by one, never over what is here. */
   const [drafting, setDrafting] = useState<number | null>(null);
-  const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; sceneUsd: number; model: string; costUsd: number } | null>(null);
+  const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; model: string; writing: string | null } | null>(null);
   async function draftShots(currentScene: Scene, quote?: PaidTextQuote) {
     if (!paid.pending && !quote) return;
     const pending=paid.pending?JSON.parse(paid.pending.body):null;
     const scene=pending?scenes.find(item=>item.n===pending.scene):currentScene;if(!scene)return;
     setDrafting(scene.n); setProposals(null);
     try {
-      const {data:j}=await paid.run<{shots:ShotProposal[];sceneUsd?:number;model:string;costUsd?:number}>("/api/atomik/shots/draft",pending ?? {projectId,scene:scene.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
-      setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], sceneUsd: Number(j.sceneUsd ?? 0), model: String(j.model), costUsd: Number(j.costUsd ?? 0) });
+      const {data:j}=await paid.run<{shots:ShotProposal[];model:string}&TextRunReply>("/api/atomik/shots/draft",pending ?? {projectId,scene:scene.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
+      /* The shots are priced here, off this workspace's own rate table; the writing is what the ledger billed. */
+      setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], model: String(j.model), writing: textCostLabel(money, j) });
     } catch (e) { await appAlert("No shots drafted", (e as Error).message); }
     finally { setDrafting(null); }
   }
@@ -130,7 +132,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
       <div className="ak-bar">
         {(paid.error||paid.pending)&&<p role={paid.error?"alert":"status"} className="ak-sub">{paid.error||"A shot draft awaits confirmation. Recover it from that scene."}</p>}
         <span className="text-[14px] font-semibold">Breakdown</span>
-        <span className="mono-s">{shots.length} SHOT{shots.length === 1 ? "" : "S"} · {mmss(runtime)} OF {mmss(target)} · EST. {usd(estimate, 2)} AT ONE TAKE EACH</span>
+        <span className="mono-s">{shots.length} SHOT{shots.length === 1 ? "" : "S"} · {mmss(runtime)} OF {mmss(target)} · EST. {money.price(estimate).toUpperCase()} AT ONE TAKE EACH</span>
         <div className="cv-bar !h-1.5 w-[220px]">
           {scenes.map((sc) => <span key={sc.n} className={inScene(sc.n).filter((s) => s.kind !== "type").reduce((a, s) => a + (s.planned ?? 0), 0) > sc.secs ? "is-over" : "is-picked"} style={{ flex: Math.max(1, sc.secs) }} />)}
         </div>
@@ -171,12 +173,12 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
                 </div>
                 {proposals && proposals.scene === sc.n && (
                   <div className="ak-proposal">
-                    <span className="mono-s">PROPOSED BY {proposals.model.split("/").pop()} · {proposals.shots.length} SHOT{proposals.shots.length === 1 ? "" : "S"} · SCENE {money.inCredits ? money.approx(proposals.sceneUsd) : `≈ ${usd(proposals.sceneUsd, 2)}`} AT ONE TAKE EACH · WRITING {money.price(proposals.costUsd, "text")}</span>
+                    <span className="mono-s">PROPOSED BY {proposals.model.split("/").pop()} · {proposals.shots.length} SHOT{proposals.shots.length === 1 ? "" : "S"} · SCENE ≈ {money.price(listEstimate(rates, proposals.shots))} AT ONE TAKE EACH{proposals.writing ? ` · WRITING ${proposals.writing.toUpperCase()}` : ""}</span>
                     {proposals.shots.map((p, i) => (
                       <div key={`${sc.n}-${i}`} className="ak-prop-shot">
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className="font-medium">{p.title || "Untitled"}</span>
-                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(p.takeUsd ?? takeCost(rates, p.planned, p.engine))}</span>
+                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(takeEstimate(rates, p))}</span>
                           {p.cast.length > 0 && <span className="mono-s">{p.cast.map((c) => `@${c}`).join(" ")}</span>}
                         </div>
                         <p className="text-[13px] leading-relaxed text-dim">{p.description}</p>
@@ -223,7 +225,7 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
      session is the same for every one of them. */
   const money = useMoney();
   const { rates } = useSession();
-  const priceOf = (planned: number | null) => money.price(takeCost(rates, planned));
+  const price = money.price(takeEstimate(rates, shot));
   const [desc, setDesc] = useState(shot.description);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* The patch waiting on the timer, so unmounting sends it instead of
@@ -282,7 +284,7 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
           <span className="flex items-center gap-2.5">
             <button type="button" className="ak-act is-muted" onClick={() => onPatch({ kind: type ? "render" : "type" })} title={type ? "Type only — click to make it a rendered shot" : "Renders — click to make it type only, which never renders and never costs"}>{type ? "TYPE ONLY" : "RENDERS"}</button>
             <button type="button" className="ak-act is-muted" onClick={onRemove} title="Remove">×</button>
-            <span className="mono-s !font-medium">{type ? "0" : priceOf(shot.planned)}</span>
+            <span className="mono-s !font-medium">{type ? money.price(0) : price}</span>
           </span>
         </div>
       </div>
