@@ -24,7 +24,8 @@ function KindMark({ kind }: { kind: ReachKind }) {
 
 /**
  * One kind's figure: "≈ 72" / "videos left at your usual settings" /
- * "Seedance 2.5 · 720p · 5 s · 18 cr each". `suffix` finishes the noun.
+ * "Seedance 2.5 · 720p · 5 s · 18 cr each". `suffix` finishes the noun. The
+ * count is whole takes, rounded down; nought is exact, so it carries no "≈".
  */
 export function ReachTile({ kind, count, take, suffix, testId }: {
   kind: ReachKind; count: number | null; take: PricedTake | null; suffix?: string; testId?: string;
@@ -33,8 +34,8 @@ export function ReachTile({ kind, count, take, suffix, testId }: {
   const noun = `${nounFor(kind, count)}${suffix ? ` ${suffix}` : ""}`;
   const settings = `${takeSettings(take)} · ${eachLine(take)}`;
   return (
-    <div className="mr-tile" role="group" data-kind={kind} data-testid={testId} aria-label={`About ${grouped(count)} ${noun}: ${settings}`}>
-      <span className="mr-tile-head" aria-hidden="true"><KindMark kind={kind} /><span className="mr-num">≈&nbsp;{grouped(count)}</span></span>
+    <div className="mr-tile" role="group" data-kind={kind} data-testid={testId} aria-label={`${count > 0 ? "About " : ""}${grouped(count)} ${noun}: ${settings}`}>
+      <span className="mr-tile-head" aria-hidden="true"><KindMark kind={kind} /><span className="mr-num">{count > 0 ? <>≈&nbsp;</> : null}{grouped(count)}</span></span>
       <span className="mr-noun" aria-hidden="true">{noun}</span>
       <span className="mr-set" aria-hidden="true">{settings}</span>
     </div>
@@ -48,7 +49,7 @@ export function ReachPair({ video, image, testId }: { video: ReactNode; image: R
     <div className="mr-reach" data-testid={testId}>
       <div className="mr-tiles" data-pair={Boolean(video && image)}>
         {video}
-        {video && image ? <span className="mr-or" aria-hidden="true">or</span> : null}
+        {video && image ? <span className="mr-or">or</span> : null}
         {image}
       </div>
     </div>

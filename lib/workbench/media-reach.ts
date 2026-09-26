@@ -151,25 +151,26 @@ export async function usualTakes(configured: Configured = modelConfigured): Prom
             ORDER BY created_at DESC, id DESC LIMIT ?`,
       args: [kind, ...ids, USUAL_WINDOW],
     });
-    const tallies = new Map<string, { n: number; order: number; model: ModelDef; settings: TakeSettings }>();
+    /* Tallied by what a tile shows and a take is charged — engine, size,
+       length, sound and credits — so the same priced setting at two aspects
+       is one habit, not two; a setting that can no longer be priced is
+       skipped, not guessed. */
+    const tallies = new Map<string, { n: number; order: number; take: PricedTake }>();
     rows.forEach((row, order) => {
       const model = engines.get(String(row.model));
       if (!model) return;
       const p = parse(row.params);
-      const settings: TakeSettings = {
+      const take = priceTake(model, {
         resolution: String(p.resolution ?? ''), ratio: String(p.ratio ?? ''),
-        durationS: kind === 'video' ? Number(p.duration) : null, audio: billedSound(model, p.generateAudio === true),
-      };
-      const key = [model.id, settings.resolution, settings.ratio, settings.durationS ?? '', settings.audio ? 1 : 0].join('|');
+        durationS: kind === 'video' ? Number(p.duration) : null, audio: p.generateAudio === true,
+      });
+      if (!take) return;
+      const key = [take.engine, take.resolution, take.durationS ?? '', take.audio ? 1 : 0, take.credits].join('|');
       const tally = tallies.get(key);
-      if (tally) tally.n += 1; else tallies.set(key, { n: 1, order, model, settings });
+      if (tally) tally.n += 1; else tallies.set(key, { n: 1, order, take });
     });
-    /* Most-made first; a setting that can no longer be priced is skipped, not guessed. */
-    for (const t of [...tallies.values()].sort((a, b) => b.n - a.n || a.order - b.order)) {
-      const take = priceTake(t.model, t.settings);
-      if (take) return take;
-    }
-    return null;
+    /* Most-made first; a tie goes to the most recent. */
+    return [...tallies.values()].sort((a, b) => b.n - a.n || a.order - b.order)[0]?.take ?? null;
   };
   const [video, image] = await Promise.all([usualOf('video'), usualOf('image')]);
   return { video, image };

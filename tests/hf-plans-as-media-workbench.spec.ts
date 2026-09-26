@@ -1,4 +1,4 @@
-import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { test, expect, type Page, type Route, type TestInfo } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -234,6 +234,17 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   await expect(tiles.locator(".mr-or")).toHaveText("or");
   await expect(page.getByTestId("workspace-reach-loading")).toHaveCount(0);
 
+  /* The balance above refreshes on its own (every 30 s, on focus, on request); the counts follow it, never a stale read. */
+  let billingReads = 0;
+  page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/billing") billingReads += 1; });
+  await grant(workspace.id, 540);
+  const balance = billing.credits.balance + 540;
+  await page.evaluate(() => window.dispatchEvent(new Event("particl-account-refresh")));
+  await expect(page.getByTestId("workspace-balance")).toContainText(n(balance));
+  await expect(page.getByTestId("workspace-reach-video")).toContainText(`≈\u00a0${n(Math.floor(balance / video.credits))}videos left`);
+  await expect(page.getByTestId("workspace-reach-image")).toContainText(`≈\u00a0${n(Math.floor(balance / image.credits))}images left`);
+  expect(billingReads).toBe(0);
+
   /* The rate card folds under the balance; the cells the balance is counted at are outlined. */
   const rates = page.getByTestId("workspace-rates");
   await expect(page.getByTestId("workspace-rate-card")).toBeHidden();
@@ -308,23 +319,30 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
   await expect(page.getByTestId("workspace-reach")).toHaveCount(0);
   await page.unroute("**/api/billing");
 
-  /* Long figures and names: a large balance and a long engine name stay inside a phone. */
-  const big = { ...real.reach!.video!, label: "Seedance 2.5 Cinematic Extended Preview", left: 1_234_567 };
+  /* Long figures and names: a very large balance and a long engine name stay inside a phone. The
+     count follows the balance the page shows (GET /api/me), so that is the balance raised here. */
+  const huge = 22_222_206;
+  const raise = async (route: Route) => {
+    const json = await (await route.fetch()).json();
+    return route.fulfill({ json: { ...json, credits: { ...json.credits, balance: huge } } });
+  };
+  await page.route("**/api/me", raise);
   await page.route("**/api/billing", async (route) => {
-    const response = await route.fetch();
-    const json = await response.json();
-    return route.fulfill({ json: { ...json, credits: { ...json.credits, balance: 22_222_206 }, reach: { video: big, image: { ...real.reach!.image!, left: 7_407_402 } } } });
+    const json = await (await route.fetch()).json();
+    return route.fulfill({ json: { ...json, credits: { ...json.credits, balance: huge }, reach: { video: { ...real.reach!.video!, label: "Seedance 2.5 Cinematic Extended Preview" }, image: real.reach!.image } } });
   });
   await page.reload();
-  await expect(page.getByTestId("workspace-reach-video")).toContainText("≈ 1,234,567");
+  await expect(page.getByTestId("workspace-reach-video")).toContainText(`≈\u00a0${n(Math.floor(huge / real.reach!.video!.credits))}`);
+  await expect(page.getByTestId("workspace-reach-image")).toContainText(`≈\u00a0${n(Math.floor(huge / real.reach!.image!.credits))}`);
   await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
   await shot(page, info, "workspace-long");
+  await page.unroute("**/api/me");
   await page.unroute("**/api/billing");
 
   /* Pricing without the translation still sells the plans, and says less. */
   await page.route("**/api/plans", async (route) => {
     const json = await (await route.fetch()).json();
-    return route.fulfill({ json: { ...json, reference: null, rates: null, plans: json.plans.map(({ reach: _reach, ...plan }: { reach?: unknown }) => plan) } });
+    return route.fulfill({ json: { ...json, reference: null, rates: null, plans: json.plans.map((plan: object) => ({ ...plan, reach: undefined })) } });
   });
   await page.goto("/pricing");
   await expect(page.locator(".plan-card")).toHaveCount(3);

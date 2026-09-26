@@ -37,6 +37,7 @@
 .mr-tile-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
@@ -56,9 +57,8 @@
   letter-spacing: -.02em;
   line-height: 1.15;
   color: var(--graphite-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* A figure wraps before it is ever cut short: a truncated count misstates it. */
+  overflow-wrap: anywhere;
 }
 .mr-noun {
   font-size: 13px;

@@ -7,7 +7,7 @@ import { MODELS } from '../../lib/models';
 import { DEFAULT_PLANS } from '../../lib/plans';
 import { DEFAULT_MODELS } from '../../lib/platformLayer';
 import { quoteWorkbenchMedia } from '../../lib/workbench/media-quote';
-import { byQuality, eachLine, isTakeCell, optionLabel, reachFor, sortOptions, takeSettings, takesWithin } from '../../lib/mediaReach';
+import { byQuality, eachLine, isTakeCell, leftFrom, optionLabel, reachFor, sortOptions, takeSettings, takesWithin } from '../../lib/mediaReach';
 import { paidFromBalance, plansWithReach, rateCard, referenceTakes, reachEngines, usualTakes, workspaceReach, RATE_CARD_SECONDS, USUAL_WINDOW } from '../../lib/workbench/media-reach';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { db, ready } from '../../lib/db';
@@ -72,6 +72,10 @@ test('the arithmetic: whole takes, rounded down, unknowns stay unknown', () => {
   expect(takeSettings({ label: 'Kling 3.0', resolution: '1080p', durationS: 5, audio: true })).toBe('Kling 3.0 · 1080p · 5 s · sound');
   expect(takeSettings({ label: 'Nano Banana Pro', resolution: '1K', durationS: null, audio: false })).toBe('Nano Banana Pro · 1K');
   expect(eachLine({ credits: 1300 })).toBe('1,300 cr each');
+  /* The count follows the balance the page shows; the server's count is only the fallback. */
+  expect(leftFrom(1257, { credits: 18, left: 72 })).toBe(69);
+  expect(leftFrom(null, { credits: 18, left: 72 })).toBe(72);
+  expect(leftFrom(10, { credits: 18, left: 72 })).toBe(0);
 });
 
 test("plans are counted at the platform's default engines, 5 s 720p 16:9, by the composer's own quote", () => {
@@ -89,7 +93,7 @@ test("plans are counted at the platform's default engines, 5 s 720p 16:9, by the
   /* Invite's credits are a one-off grant, not a month: no "≈ 0 a month". */
   expect(plans.find((p) => p.id === 'invite')!.reach).toEqual({ videos: null, images: null });
   /* The plan itself is untouched: price and credits come through as the layer holds them. */
-  expect(plans.map(({ reach: _reach, ...plan }) => plan)).toEqual(DEFAULT_PLANS);
+  expect(plans.map((plan) => ({ ...plan, reach: undefined }))).toEqual(DEFAULT_PLANS);
 
   /* An engine the deployment cannot run is not a figure anyone can buy. */
   expect(referenceTakes(DEFAULT_MODELS, () => false)).toEqual({ video: null, image: null });
@@ -176,6 +180,20 @@ test("a balance is counted at the workspace's usual settings: most-made first; d
     /* A balance under one take is zero takes, not a negative or a fraction. */
     expect((await workspaceReach(1, DEFAULT_MODELS, everywhere)).video!.left).toBe(0);
     expect((await workspaceReach(-40, DEFAULT_MODELS, everywhere)).video!.left).toBe(0);
+  });
+});
+
+test('a habit is what a take shows and costs: the same priced setting at two aspects counts once', async () => {
+  /* Seedance prices 720p the same whichever way up the frame is. */
+  expect(quote(SEEDANCE, '720p', '9:16', 5)).toBe(quote(SEEDANCE, '720p', '16:9', 5));
+  await runInTenant(workspace(), async () => {
+    await ready();
+    for (let i = 0; i < 2; i++) await take('video', SEEDANCE, { resolution: '720p', ratio: '16:9', duration: 5 });
+    for (let i = 0; i < 3; i++) await take('video', KLING, { resolution: '1080p', ratio: '16:9', duration: 5 });
+    for (let i = 0; i < 2; i++) await take('video', SEEDANCE, { resolution: '720p', ratio: '9:16', duration: 5 });
+    const usual = await usualTakes(everywhere);
+    /* Four Seedance 720p takes beat three Kling ones; the figure is the most recent of the four. */
+    expect(usual.video).toMatchObject({ engine: SEEDANCE, resolution: '720p', ratio: '9:16', durationS: 5, credits: quote(SEEDANCE, '720p', '9:16', 5) });
   });
 });
 

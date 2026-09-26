@@ -10,7 +10,7 @@ import ManagementPage, {
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
 import { PlanReach, ReachPair, ReachTile, leftAt } from "./MediaReach";
-import type { WorkspaceReach } from "@/lib/mediaReach";
+import { leftFrom, type WorkspaceReach } from "@/lib/mediaReach";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRateLine } from "@/lib/creditTerms";
 
@@ -423,8 +423,8 @@ export default function BillingClient({
               {!direct && data.reach ? (
                 <ReachPair
                   testId="billing-balance-reach"
-                  video={data.reach.video ? <ReachTile kind="video" count={data.reach.video.left} take={data.reach.video} suffix={leftAt(data.reach.video.basis)} /> : null}
-                  image={data.reach.image ? <ReachTile kind="image" count={data.reach.image.left} take={data.reach.image} suffix={leftAt(data.reach.image.basis)} /> : null}
+                  video={data.reach.video ? <ReachTile kind="video" count={leftFrom(creditBalance, data.reach.video)} take={data.reach.video} suffix={leftAt(data.reach.video.basis)} /> : null}
+                  image={data.reach.image ? <ReachTile kind="image" count={leftFrom(creditBalance, data.reach.image)} take={data.reach.image} suffix={leftAt(data.reach.image.basis)} /> : null}
                 />
               ) : null}
               {!direct && (

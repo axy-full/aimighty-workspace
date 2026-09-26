@@ -64,6 +64,16 @@ export function takesWithin(credits: number | null | undefined, perTake: number 
   return Math.max(0, Math.floor(credits / perTake + 1e-9));
 }
 
+/**
+ * Takes left from the balance the page is showing right now. The server's
+ * `left` was counted from the balance when it answered; the page's balance
+ * refreshes on its own (lib/workspace/data.ts), so the count follows it and
+ * the two can never disagree on screen. The server's figure is the fallback.
+ */
+export function leftFrom(balance: number | null | undefined, take: Pick<WorkspaceTake, "credits" | "left">): number {
+  return takesWithin(balance, take.credits) ?? take.left;
+}
+
 /** A plan's monthly credits as takes at the reference settings. */
 export function reachFor(credits: number, reference: ReferenceTakes): TakeReach {
   return {

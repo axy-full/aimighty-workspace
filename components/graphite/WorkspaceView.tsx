@@ -16,7 +16,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
 import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
-import type { RateGroup, WorkspaceReach } from "@/lib/mediaReach";
+import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
@@ -101,7 +101,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
         </div>
         {shell.wsTab === "general" ? <><General name={name} onRenamed={onRenamed} /><Rules /></> : null}
         {shell.wsTab === "people" ? <People /> : null}
-        {shell.wsTab === "credits" ? <Plans credits={credits} /> : null}
+        {shell.wsTab === "credits" ? <Plans credits={credits} balance={account?.credits?.balance ?? null} /> : null}
         {shell.wsTab === "usage" ? <Usage /> : null}
         {shell.wsTab === "dashboard" ? <ManagementDashboard /> : null}
         {shell.wsTab === "engines" ? <Engines /> : null}
@@ -373,7 +373,7 @@ function People() {
 
 /* ── Plans & credits ─────────────────────────────────────────────────── */
 type Billing = { canManage: boolean; plans?: BillingPlan[]; subscription?: BillingSubscription | null; reach?: WorkspaceReach | null; rates?: RateGroup[] | null };
-function Plans({ credits }: { credits: { text: string; title: string } }) {
+function Plans({ credits, balance }: { credits: { text: string; title: string }; balance: number | null }) {
   const session = useSession();
   const write = useWrite();
   const admin = session.role === "admin" || session.role === "owner";
@@ -386,8 +386,9 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
   const months = statementMonthsOf(statements.data);
   const packs = topups.data?.applies ? topups.data.packs : [];
   const open = (topups.data?.requests ?? []).filter((r) => r.status === "requested");
-  /* The balance as takes. The route sends none to a workspace billed in dollars. */
-  const inCredits = session.rates.unit !== "usd";
+  /* The balance as takes, counted from the balance shown above (it refreshes
+     on its own). The route sends none to a workspace billed in dollars. */
+  const inCredits = session.credits != null;
   const reach = data?.reach ?? null;
   const request = async (packId: string) => {
     setBusy(packId); setNote(null);
@@ -418,8 +419,8 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
         <div className="wsx-reach">
           <ReachPair
             testId="workspace-reach"
-            video={reach.video ? <ReachTile kind="video" count={reach.video.left} take={reach.video} suffix={leftAt(reach.video.basis)} testId="workspace-reach-video" /> : null}
-            image={reach.image ? <ReachTile kind="image" count={reach.image.left} take={reach.image} suffix={leftAt(reach.image.basis)} testId="workspace-reach-image" /> : null}
+            video={reach.video ? <ReachTile kind="video" count={leftFrom(balance, reach.video)} take={reach.video} suffix={leftAt(reach.video.basis)} testId="workspace-reach-video" /> : null}
+            image={reach.image ? <ReachTile kind="image" count={leftFrom(balance, reach.image)} take={reach.image} suffix={leftAt(reach.image.basis)} testId="workspace-reach-image" /> : null}
           />
         </div>
       ) : null}
