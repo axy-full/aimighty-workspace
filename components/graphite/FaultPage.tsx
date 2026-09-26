@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { TRAIL } from "@/components/ui/Mark";
 import { HEADER_SEGMENT } from "@/lib/shell/ia";
 import { signInHrefFor } from "@/lib/session";
@@ -47,7 +47,7 @@ export function StaticHeader({ member = true }: { member?: boolean }) {
       {member ? (<>
         <nav className="gx-seg" aria-label="Suites">
           {HEADER_SEGMENT.map((s) => (
-            <a key={s.id} className="gx-seg-btn" href={segmentHref(s.id)} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}>
+            <a key={s.id} className="gx-seg-btn" href={segmentHref(s.id)} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as CSSProperties} data-suite-tab={s.id}>
               <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
               <span className="gx-seg-label">{s.label}</span>
               <span className="gx-sig" aria-hidden="true" />
@@ -75,15 +75,49 @@ type PageError = Error & { digest?: string };
  * (app/suites/error.tsx) or the link leads nowhere (app/not-found.tsx). Both
  * keep the header, so every suite is still one click away.
  */
-export function FaultPage(props: { kind: "error"; error: PageError; onRetry: () => void } | { kind: "missing"; member: boolean }) {
-  const member = props.kind === "error" || props.member;
+export function FaultPage(props: { kind: "error"; error: PageError; onRetry: () => void } | { kind: "missing" }) {
+  if (props.kind === "missing") return <MissingPage />;
   return (
-    <div className="gx gx-outside" data-view="suite" data-suite="studio" data-testid={props.kind === "error" ? "suites-error" : "not-found"}>
+    <Frame testId="suites-error" member>
+      <ShellFault error={props.error} onRetry={props.onRetry} />
+    </Frame>
+  );
+}
+
+function Frame({ testId, member, children }: { testId: string; member: boolean; children: ReactNode }) {
+  return (
+    <div className="gx gx-outside" data-view="suite" data-suite="studio" data-testid={testId} data-member={member}>
       <StaticHeader member={member} />
-      <main className="gx-outside-body">
-        {props.kind === "error" ? <ShellFault error={props.error} onRetry={props.onRetry} /> : <Missing member={member} />}
-      </main>
+      <main className="gx-outside-body">{children}</main>
     </div>
+  );
+}
+
+/**
+ * Member or visitor, decided in the browser: app/not-found.tsx must not read
+ * the request (it would make every static route dynamic). The page is the
+ * member's Suites 404 — the one the shell's dead links land on — until
+ * /api/me answers 401, which only a visitor gets. Anything else (a network
+ * error, a 5xx) keeps it: its links still lead in, through sign-in if need be.
+ */
+function useMember(): boolean {
+  const [member, setMember] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/me", { cache: "no-store", signal: controller.signal })
+      .then((response) => { if (response.status === 401) setMember(false); })
+      .catch(() => { /* aborted or offline: stay on the member page */ });
+    return () => controller.abort();
+  }, []);
+  return member;
+}
+
+function MissingPage() {
+  const member = useMember();
+  return (
+    <Frame testId="not-found" member={member}>
+      <Missing member={member} />
+    </Frame>
   );
 }
 

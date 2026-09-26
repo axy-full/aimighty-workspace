@@ -93,6 +93,27 @@ async function reachable(page: Page, target: Locator) {
   expect(hit, "the next step is on screen and uncovered").toEqual({ inView: true, onTop: true });
 }
 
+/*
+ * A step that must happen within one page load. On a cold webpack dev server (the handoff's local scripts)
+ * each route compiles on first use and Fast Refresh can then reload the page under the step, resetting the
+ * Try again count. That reload is the dev server's, not the app's: the step runs again on the reloaded page.
+ * A failure within one page load still fails, and Turbopack (CI) showed no such reload on a cold server.
+ */
+async function withinOneLoad(page: Page, step: () => Promise<void>) {
+  const loadedAt = () => page.evaluate(() => performance.timeOrigin).catch(() => -1);
+  for (let attempt = 1; ; attempt++) {
+    const loaded = await loadedAt();
+    try {
+      await step();
+    } catch (error) {
+      if (attempt < 3 && (await loadedAt()) !== loaded) continue;
+      throw error;
+    }
+    if ((await loadedAt()) === loaded) return;
+    if (attempt >= 3) throw new Error("the dev server kept reloading the page under the step");
+  }
+}
+
 test("a stage that throws keeps the shell: its own card, the strip still moves, and Try again is Next's retry", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites", ["stage:brief"]);
@@ -127,34 +148,44 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
      the button says so and ignores presses; when it fails again the attempt is counted, Reload is offered and
      focus is on the new Try again. */
   await strip.getByRole("button", { name: /Brief/ }).click();
-  await expect(fault).toBeVisible();
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => { release = resolve; });
-  const refreshes: string[] = [];
-  const refresh = (url: URL) => url.pathname === "/suites" && url.searchParams.has("_rsc");
-  await page.route(refresh, async (route) => {
-    refreshes.push(route.request().url());
-    await held;
-    await route.continue();
+  await withinOneLoad(page, async () => {
+    await expect(fault).toBeVisible();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const refreshes: string[] = [];
+    const refresh = (url: URL) => url.pathname === "/suites" && url.searchParams.has("_rsc");
+    await page.route(refresh, async (route) => {
+      /* The dev server's own refresh after a compile is not a Try again: let it through. */
+      if (route.request().headers()["next-hmr-refresh"]) return route.continue();
+      refreshes.push(route.request().url());
+      await held;
+      await route.continue().catch(() => { /* the page was reloaded under it */ });
+    });
+    try {
+      const retry = fault.getByTestId("fault-retry");
+      await retry.click();
+      await expect(retry).toHaveText("Trying…");
+      await expect(retry).toHaveAttribute("aria-disabled", "true");
+      /* A second press while it is on its way is ignored (forced: Playwright waits out aria-disabled itself). */
+      await retry.click({ force: true });
+      expect(refreshes, "one Try again, one refresh of the route").toHaveLength(1);
+      release();
+      await expect(fault).toHaveAttribute("data-attempts", "1");
+      await expect(fault.getByTestId("fault-reload")).toBeVisible();
+      await expect(fault.getByTestId("fault-retry")).toBeFocused();
+    } finally {
+      release();
+      await page.unroute(refresh);
+    }
   });
-  await fault.getByTestId("fault-retry").click();
-  const retry = fault.getByTestId("fault-retry");
-  await expect(retry).toHaveText("Trying…");
-  await expect(retry).toHaveAttribute("aria-disabled", "true");
-  /* A second press while it is on its way is ignored (forced: Playwright waits out aria-disabled itself). */
-  await retry.click({ force: true });
-  expect(refreshes, "one Try again, one refresh of the route").toHaveLength(1);
-  release();
-  await expect(fault).toHaveAttribute("data-attempts", "1");
-  await expect(fault.getByTestId("fault-reload")).toBeVisible();
-  await expect(fault.getByTestId("fault-retry")).toBeFocused();
-  await page.unroute(refresh);
 
   /* Fixed underneath: Try again renders the stage. */
-  await arm(page, []);
-  await fault.getByTestId("fault-retry").click();
-  await expect(page.getByTestId("panel-fault")).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await withinOneLoad(page, async () => {
+    await arm(page, []);
+    await fault.getByTestId("fault-retry").click();
+    await expect(page.getByTestId("panel-fault")).toHaveCount(0);
+    await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  });
   expect(errors, "a caught throw never reaches the window").toEqual([]);
 });
 
@@ -424,10 +455,14 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Takes and �
   await open(page, "/suites");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
 
+  const me = page.waitForResponse((reply) => new URL(reply.url()).pathname === "/api/me");
   const response = await page.goto("/productions/no-such-thing-here");
   expect(response?.status()).toBe(404);
   const screen = page.getByTestId("not-found");
   await expect(screen.getByRole("heading", { name: "Nothing here" })).toBeVisible();
+  /* The 404 is static; signed in, /api/me answers and the member page stays. */
+  expect((await me).status()).toBe(200);
+  await expect(screen).toHaveAttribute("data-member", "true");
   await expect(screen.getByTestId("missing-studio")).toHaveAttribute("href", "/suites");
   await expect(screen.getByTestId("missing-takes")).toHaveAttribute("href", "/suites?page=takes&sp=takes");
   await expect(screen.getByTestId("missing-search")).toHaveAttribute("href", "/suites?find=1");
@@ -468,6 +503,8 @@ test("a visitor on a dead link gets the front page and Sign in, not the suites",
   expect(response?.status()).toBe(404);
   const screen = page.getByTestId("not-found");
   await expect(screen.getByRole("heading", { name: "Nothing here" })).toBeVisible();
+  /* The 404 is static; the browser asks /api/me, and its 401 turns it into the visitor page. */
+  await expect(screen).toHaveAttribute("data-member", "false");
   await expect(screen.getByTestId("missing-home")).toHaveAttribute("href", "/");
   await expect(screen.getByTestId("header-sign-in")).toHaveAttribute("href", "/login");
   /* No suite links, no Search, no Studio: each would only send a visitor to sign in. */

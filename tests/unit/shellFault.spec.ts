@@ -250,11 +250,23 @@ test.describe("the shell's walls, in source", () => {
     expect(faultPage).toContain("Open Takes");
   });
 
-  test("the 404 knows a member from a visitor the way proxy.ts does", () => {
-    const notFound = read("app/not-found.tsx");
-    expect(notFound).toContain("(await cookies()).has(SESSION_COOKIE)");
-    expect(notFound).toContain('<FaultPage kind="missing" member={member} />');
-    expect(read("proxy.ts")).toContain("request.cookies.has(SESSION_COOKIE)");
+  test("the 404 stays static and light: it never reads the request, and its page loads only with a 404", () => {
+    /* Next renders app/not-found.tsx into every page's tree: one request read makes /login, /pricing, /signup
+       and the 404 itself render on demand, and a direct import preloads its stylesheets on every page. */
+    const code = read("app/not-found.tsx").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    expect(code).not.toMatch(/next\/headers|\bcookies\(|\bheaders\(|\bconnection\(|\bdraftMode\(|searchParams/);
+    expect(code).toContain("<NotFoundView />");
+    expect(code).not.toContain("FaultPage");
+    const view = read("components/graphite/NotFoundView.tsx");
+    expect(view).toMatch(/^"use client";/);
+    expect(view).toContain('dynamic(() => import("./FaultPage")');
+    /* Member or visitor is asked in the browser, and only a 401 from /api/me makes it the visitor page. */
+    const page = read("components/graphite/FaultPage.tsx");
+    expect(page).toContain('fetch("/api/me", { cache: "no-store"');
+    expect(page).toContain("response.status === 401");
+    expect(page).toMatch(/const \[member, setMember\] = useState\(true\);/);
+    /* The Suites error page keeps a direct import: it must show when code failed to load. */
+    expect(read("app/suites/error.tsx")).toContain('import { FaultPage } from "@/components/graphite/FaultPage";');
   });
 });
 
