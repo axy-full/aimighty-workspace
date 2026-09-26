@@ -122,18 +122,23 @@ export default function PreviewLayer() {
     };
   }, [place, show]);
 
+  /* Focus goes back to what opened the preview once the viewer has left the
+     page, and only if it is still resting on <body> (the viewer's Close
+     button left with it). Checked after the unmount, not on a timer: on a
+     slow machine a timer can run while the viewer is still mounted, or after
+     a tile was focused in the meantime, and either way the wrong thing won. */
+  const closing = useRef(false);
   const close = useCallback(() => {
+    closing.current = true;
     setOpen(null);
-    const back = returnFocus.current;
-    /* Focus goes back to what opened the preview only if nothing has taken it
-       since: the viewer's Close button leaves with the viewer, so focus rests
-       on <body>. A tile focused in that moment (a quick Tab, or Space on the
-       next tile) keeps its focus instead of being yanked back. */
-    if (back?.isConnected) setTimeout(() => {
-      const now = document.activeElement;
-      if (!now || now === document.body || !now.isConnected) back.focus?.();
-    }, 0);
   }, []);
+  useEffect(() => {
+    if (open || !closing.current) return;
+    closing.current = false;
+    const back = returnFocus.current;
+    const now = document.activeElement;
+    if (back?.isConnected && (!now || now === document.body)) back.focus?.();
+  }, [open]);
 
   return (
     <>
