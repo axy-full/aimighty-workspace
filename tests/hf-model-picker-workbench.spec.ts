@@ -377,10 +377,15 @@ test("the connected catalogue is never quoted from the sheet; a quote the compos
   await expect(price).toHaveAttribute("title", "Last quoted in this browser: 43 connected cr at 4 s");
   await expect(sheet.getByRole("option", { name: /^Seedance 2\.5/ }).getByTestId("gen-sheet-price")).toHaveText("priced on Generate");
   await shot(page, info, "connected-last-quote");
-  /* Opening the sheet and browsing asked for nothing. */
+  /* Opening the sheet and browsing asked for nothing: away to Studio engines until the composer has
+     priced a Studio take there, then back, lands on the figure already given for this exact body. */
   await sheet.getByRole("tab", { name: "Studio engines" }).click();
+  await expect(page.getByTestId("gen-generate")).toHaveText(/^Generate · \d+ cr$/, { timeout: 30_000 });
   await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 43 connected cr");
   await closeSheet(page);
+  /* A re-quote would go out one debounce (260 ms) after the switch back: count well after it. */
+  await page.waitForTimeout(1_000);
   expect(quotes.length).toBe(asked);
   expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);
