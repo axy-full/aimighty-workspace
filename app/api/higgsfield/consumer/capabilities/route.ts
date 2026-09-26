@@ -6,7 +6,7 @@ import {
   getConsumerAccessToken,
 } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
-import { discoverConsumerCapabilities } from "@/lib/higgsfield-consumer/discovery";
+import { discoverAtomikReach, discoverConsumerCapabilities } from "@/lib/higgsfield-consumer/discovery";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,12 +16,16 @@ const headers = {
   "X-Content-Type-Options": "nosniff",
 };
 
-/** Owner review only: this endpoint never calls any discovered tool. */
+/** Owner review only: this endpoint never calls any discovered tool.
+ * `{ "view": "reach" }` returns only Atomik's per-capability flags
+ * (Atomik › Tools & connections) instead of the whole catalogue. */
 export const POST = withTenant(
   async (req: Request) => {
     const owner = await requireOwner();
     if (owner.response) return owner.response;
     const workspace = requireTenant();
+    const body = (await req.json().catch(() => null)) as { view?: unknown } | null;
+    const reach = body?.view === "reach";
     try {
       await takeAccountLimit(
         `higgsfield-consumer-discovery:${workspace.id}:${owner.user.id}`,
@@ -34,12 +38,16 @@ export const POST = withTenant(
           {
             status: "unavailable",
             code: "not_connected",
-            error: "Connect your account before discovering tools.",
+            error: reach
+              ? "Connect the owner’s account in Workspace › Engines."
+              : "Connect your account before discovering tools.",
           },
           { status: 409, headers },
         );
       return Response.json(
-        await discoverConsumerCapabilities(token, req.signal),
+        reach
+          ? await discoverAtomikReach(token, req.signal)
+          : await discoverConsumerCapabilities(token, req.signal),
         { headers },
       );
     } catch (error) {

@@ -70,7 +70,7 @@
 .gx-gen-go.gx-primary { height: 44px; border-radius: 10px; }
 
 /* Cards, grounds, titles. */
-.gx-gen-card, .gx-asset, .gx-enhanced, .gx-insp-card, .wsx-card, .bz-group, .bz-detail, .bz-rolecard, .cw-goal, .cw-msg, .cw-member, .cw-solution, .sk-row, .vr-job, .gx-sheet, .gx-popover { background: linear-gradient(180deg, #1B1B20, #141417); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 8px 20px rgba(0, 0, 0, .3); }
+.gx-gen-card, .gx-asset, .gx-enhanced, .gx-insp-card, .wsx-card, .bz-group, .bz-detail, .bz-rolecard, .cw-goal, .cw-msg, .cw-member, .cw-solution, .tc-card, .vr-job, .gx-sheet, .gx-popover { background: linear-gradient(180deg, #1B1B20, #141417); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 8px 20px rgba(0, 0, 0, .3); }
 .cw-msg[data-phase="converge"] { background: linear-gradient(180deg, rgba(10, 132, 255, .14), rgba(10, 132, 255, .07)); }
 .gx-h1 { font-size: 26px; font-weight: 700; letter-spacing: -.035em; background: linear-gradient(180deg, #FFFFFF, rgba(235, 235, 245, .72)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .gx-strip { background: linear-gradient(180deg, rgba(255, 255, 255, .025), transparent); }
@@ -164,7 +164,7 @@
   .gx-gen-go { position: relative; height: 52px; border-radius: 16px; font-size: 16px; box-shadow: 0 8px 24px rgba(10, 132, 255, .35), inset 0 1px 0 rgba(255, 255, 255, .28); }
   .gx-gen-go:disabled { opacity: .45; box-shadow: none; }
   /* Cards round to 14–16 and chips to pills. */
-  .gx-gen-card, .gx-asset, .wsx-card, .bz-group, .cw-goal, .cw-msg, .sk-row, .vr-job { border-radius: 14px; }
+  .gx-gen-card, .gx-asset, .wsx-card, .bz-group, .cw-goal, .cw-msg, .tc-card, .vr-job { border-radius: 14px; }
   .gx-chip { border-radius: 999px; padding: 0 12px; }
   .gx-chip[aria-pressed="true"] { background: linear-gradient(180deg, rgba(10, 132, 255, .32), rgba(10, 132, 255, .16)); border-color: rgba(10, 132, 255, .55); box-shadow: 0 4px 14px rgba(10, 132, 255, .25), inset 0 1px 0 rgba(255, 255, 255, .15); }
   .gx-h1 { font-size: 28px; }

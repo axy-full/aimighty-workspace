@@ -922,6 +922,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       for (const col of [`sent_at INTEGER`, `send_count INTEGER NOT NULL DEFAULT 0`]) {
         await addColumn("invites", col);
       }
+      /* A token's monthly ceiling in the workspace's unit: credits for a
+         workspace on the platform's keys, beside the older dollar one. */
+      await addColumn("api_tokens", `cap_credits INTEGER`);
       for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
                          // What kind of job this is — the axis R2 calls
                          // genre/category-level performance.

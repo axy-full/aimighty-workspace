@@ -25,7 +25,7 @@ export type ShellPage = {
   legacy: { suite: Suite; page: PageId };
   /** A hairline gap sits before this tab (the start of a group). */
   gapBefore: boolean;
-  /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3, Atomik › Skills from step 5); the legacy mapping only feeds state. */
+  /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3, Atomik › Tools & connections); the legacy mapping only feeds state. */
   own?: boolean;
   /** Reached from the phone's tab bar, never from the stage strip (Studio home). */
   phoneOnly?: boolean;
@@ -104,14 +104,15 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
-  /* Skills is the shell's own view (step 5: the higgsfield-ai/skills packs); the rest stay legacy bodies for now. */
+  /* Tools & connections is the shell's own view (it replaced the step-5 pack list): what Atomik can
+     reach, with live status, and Particl's own MCP server and tokens. The page id stays `skills`. */
   own(build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
-    ["skills", "Skills", "Skills", "Tool packs the agent can reach", "skills"],
+    ["skills", "Tools", "Tools & connections", "What Atomik reaches, and what reaches Particl", "skills"],
   ]), ["skills"]),
 ];
 

@@ -36,7 +36,7 @@ import {
   TEXT_FREE_TOKENS,
   hasFreeTier,
 } from "@/lib/enhance";
-import { tokenSpendThisMonth } from "@/lib/auth";
+import { tokenCreditsThisMonth, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { ceilingProblem } from "@/lib/refLimits";
 import { videoReferenceProblem } from "@/lib/generationReferences";
@@ -196,6 +196,20 @@ export async function executeGenerationAdmission(
             error:
               `The token "${got.token.name}" has reached its ${got.token.capUsd.toFixed(2)} USD monthly ceiling ` +
               `(${spent.toFixed(2)} spent). Raise or remove the cap in Settings.`,
+          },
+          { status: 429 },
+        );
+      }
+    }
+    // The same wall in credits, for a token made in a credits workspace.
+    if (got.token?.capCredits != null) {
+      const spent = await tokenCreditsThisMonth(got.token.id);
+      if (spent >= got.token.capCredits) {
+        return admissionReply(
+          {
+            error:
+              `The token "${got.token.name}" has reached its ${got.token.capCredits.toLocaleString("en-US")} cr monthly ceiling ` +
+              `(${spent.toLocaleString("en-US")} cr spent). Make a new token in Atomik › Tools, or wait for the month to turn.`,
           },
           { status: 429 },
         );

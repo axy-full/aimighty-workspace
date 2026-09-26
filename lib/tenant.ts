@@ -60,7 +60,8 @@ export type TenantUser = {
   lastSeen: number | null; createdAt: number;
 };
 
-export type TenantToken = { id: string; name: string; scope: "read" | "render"; capUsd: number | null };
+/** `capCredits`: the monthly ceiling in credits (a workspace on the platform's keys); `capUsd`: the older dollar one. Either or both may be set. */
+export type TenantToken = { id: string; name: string; scope: "read" | "render"; capUsd: number | null; capCredits?: number | null };
 
 export type TenantStore = {
   workspace: TenantWorkspace | null;

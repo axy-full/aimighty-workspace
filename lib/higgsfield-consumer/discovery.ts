@@ -1,4 +1,5 @@
 import { discoverConsumerTools, type DiscoveredConsumerTool } from "./mcp";
+import { CONNECTED_REACH, reachFromTools } from "./reach";
 
 /** Lexical hints help inspect a catalogue; they do not verify usable features. */
 export function summarizeConsumerTools(tools: DiscoveredConsumerTool[]) {
@@ -37,5 +38,26 @@ export async function discoverConsumerCapabilities(
     capabilitiesVerified: false as const,
     ...catalogue,
     summary: summarizeConsumerTools(catalogue.tools),
+  };
+}
+
+/**
+ * Atomik › Tools & connections: the same free tools/list read, reduced to one
+ * available/missing flag per capability row. Tool names, descriptions and
+ * schemas stay on the server; only ids, flags and counts are returned.
+ */
+export async function discoverAtomikReach(
+  accessToken: string,
+  signal?: AbortSignal,
+  now = Date.now(),
+) {
+  const catalogue = await discoverConsumerTools(accessToken, { signal });
+  const reach = reachFromTools(catalogue.tools.map((tool) => tool.name));
+  return {
+    status: "checked" as const,
+    checkedAt: now,
+    reach,
+    available: reach.filter((row) => row.available).length,
+    total: CONNECTED_REACH.length,
   };
 }

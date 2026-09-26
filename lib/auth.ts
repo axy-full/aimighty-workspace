@@ -4,6 +4,7 @@ import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { db, ready, now } from "./db";
+import { billedCreditsSum } from "./creditSql";
 import {
   platformDb, platformReady, sessionLookup, createPlatformSession, destroyPlatformSession,
   findAccountByEmail, accountCount, createAccount, getWorkspace, legacyWorkspace,
@@ -166,7 +167,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
   return runInTenant(ws, async () => {
     await ready();
     const rs = await db().execute({
-      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.last_used, u.*
+      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, u.*
             FROM api_tokens t JOIN users u ON u.id = t.user_id
             WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0 AND u.deleted_at IS NULL
             LIMIT 1`,
@@ -199,6 +200,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
         id: String(row.tid), name: String(row.tname),
         scope: row.scope === "read" ? "read" : "render",
         capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
+        capCredits: row.cap_credits == null ? null : Number(row.cap_credits),
       },
     };
   });
@@ -325,6 +327,24 @@ export async function requireRender(): Promise<
 }
 
 /** Month-to-date spend charged to one token, for its optional ceiling. */
+/** Midnight on the 1st, local time: where a token's monthly ceiling resets. */
+export function monthStart(at = new Date()): number {
+  const start = new Date(at);
+  start.setDate(1); start.setHours(0, 0, 0, 0);
+  return start.getTime();
+}
+
+/** What a token has billed this month, in whole credits — the same rounding
+ *  per job the ledger uses. The ceiling a credits workspace sets is read
+ *  against this, never against the engine's dollars. */
+export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
+  const rs = await db().execute({
+    sql: `SELECT ${billedCreditsSum()} AS spend FROM generations WHERE token_id = ? AND created_at >= ?`,
+    args: [tokenId, monthStart()],
+  });
+  return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
+}
+
 export async function tokenSpendThisMonth(tokenId: string): Promise<number> {
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);

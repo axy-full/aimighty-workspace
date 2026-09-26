@@ -44,6 +44,8 @@ test("actual token POST and DELETE refuse read and render bearers before databas
       id: forbiddenDb,
     },
     "@/lib/securityAudit": { securityAuditStatement: forbiddenDb },
+    "@/lib/credits": { creditsApply: forbiddenDb },
+    "@/lib/creditSql": { billedCreditsSum: forbiddenDb },
   };
   for (const [file, method] of [
     ["app/api/tokens/route.ts", "POST"],
