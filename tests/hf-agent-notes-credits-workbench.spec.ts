@@ -97,7 +97,8 @@ async function setup(page: Page, project: Project, stage: "brief" | "beats") {
   const url = `/suites?suite=studio&page=brief${stage === "beats" ? "&sp=beats" : ""}&project=${project.id}`;
   await page.goto(url);
   await expect(page.getByTestId(`${stage}-stage`)).toBeVisible();
-  const saved = async () => (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as Project;
+  /* A read-only check: a keep-alive socket the dev server closed between polls is retried, never counted as the app's failure. */
+  const saved = async () => (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers, maxRetries: 2 }).then((r) => r.json())).project as Project;
   return { agent, errors, saved, url };
 }
 
