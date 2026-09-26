@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { GEN_PRESET_KEY, type GenPreset } from "@/lib/shell/assets";
+import type { GenPreset } from "@/lib/shell/assets";
+import { stashGenPreset } from "@/lib/shell/gen-preset";
 import { APP_HREF, SIGN_IN_HREF } from "@/lib/marketing/links";
 import { cr } from "@/lib/marketing/format";
 
@@ -10,8 +11,8 @@ const GEN_HREF = `${APP_HREF}?view=gen`;
 
 /**
  * The hero's prompt bar. Nothing renders here and nothing is charged: the
- * prompt goes to Gen through the shell's own preset handoff
- * (GEN_PRESET_KEY, read once by GenView) with the engine and settings this
+ * prompt goes to Gen through the shell's own preset letterbox
+ * (lib/shell/gen-preset, stashed for the page load) with the engine and settings this
  * bar quoted, and Gen shows the live quote before anything runs. Only a
  * visitor sees this bar (a member at / gets the app), so the prompt is kept
  * in this tab and opens in Gen after sign-in.
@@ -29,7 +30,7 @@ export default function HeroPrompt({ model, label, short, credits }: {
       picks: { ratio: "16:9", resolution: "1080p", duration: 5 },
       note: `From the site · ${label} · 16:9 · 5 s · 1080p`,
     };
-    try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify(preset)); } catch { /* Gen then opens empty */ }
+    stashGenPreset(preset);
     if (!prompt.trim()) setPrompt(text);
     setSaved(true);
   }

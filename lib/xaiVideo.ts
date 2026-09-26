@@ -5,6 +5,7 @@ import { refPayload } from "./gemini";
 import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
 import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId, mockStartedAt } from "./mock";
+import { preflight } from "./preflight";
 
 /**
  * xAI's Grok Imagine Video (owner, 23 September: Grok APIs wherever
@@ -40,18 +41,32 @@ export async function xaiVideoBody(model: ModelDef, prompt: string, params: Vide
   return body;
 }
 
+/** A reply xAI actually sent: its status says whether the request was refused or its fate is unknown. */
+export class XaiHttpError extends Error {
+  constructor(public readonly status: number, message: string) { super(message); this.name = "XaiHttpError"; }
+}
+
+/** A definite refusal of the submit itself: nothing was accepted, so nothing is charged. */
+export function xaiSubmissionRejected(error: unknown): boolean {
+  return error instanceof XaiHttpError && [400, 401, 402, 403, 404, 405, 413, 415, 422, 429].includes(error.status);
+}
+
 export async function submitXaiVideo(model: ModelDef, prompt: string, params: VideoParams, references: Reference[]): Promise<string> {
   if (engineMock()) return mockJobId("xai", `${params.resolution}-${params.duration}`);
-  const body = await xaiVideoBody(model, prompt, params, references);
+  // Everything up to the POST: a failure here was never sent.
+  const { body, authorization } = await preflight(async () => ({
+    body: await xaiVideoBody(model, prompt, params, references),
+    authorization: `Bearer ${key()}`,
+  }));
   const res = await recoveryFetch(`${BASE()}/videos/generations`, {
-    method: "POST", headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+    method: "POST", headers: { Authorization: authorization, "Content-Type": "application/json" },
     body: JSON.stringify(body), signal: AbortSignal.timeout(120_000), redirect: "error",
   });
   const text = await res.text();
   if (!res.ok) {
     let message = text.slice(0, 400);
     try { const parsed = JSON.parse(text); message = parsed?.error?.message ?? parsed?.error ?? parsed?.message ?? message; } catch { /* raw */ }
-    throw Object.assign(new Error(`Grok Imagine Video refused the request (${res.status}): ${message}`), { status: res.status });
+    throw new XaiHttpError(res.status, `Grok Imagine Video refused the request (${res.status}): ${message}`);
   }
   const id = (JSON.parse(text) as { request_id?: string }).request_id;
   if (!id) throw new Error("Grok Imagine Video returned no request id.");

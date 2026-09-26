@@ -179,3 +179,40 @@ export const SETUP_TYPES = [
 ] as const;
 export type SetupType = (typeof SETUP_TYPES)[number][0];
 export type SetupItem = { id: string; type: SetupType; name: string; meta: string; previewUrl: string | null };
+
+/* ── Setup → a composer ──────────────────────────────────────────────── */
+/**
+ * What Setup's "Use in Ads" / "Use in Image ads" hands over, one slot per
+ * composer so a pick for one never lands in the other. Image ads takes
+ * products, brand kits and styles only on the DTC engine, so a pick of one
+ * of those switches to it; avatars ride with Ads only.
+ */
+export type SetupPreset = { type: SetupType; id: string };
+export type PresetPage = "ads" | "dtc";
+export const PRESET_TYPES: Record<PresetPage, readonly SetupType[]> = {
+  ads: ["product", "avatar", "hook", "setting", "ad_reference"],
+  dtc: ["product", "brand_kit", "image_style"],
+};
+export const presetKey = (page: PresetPage) => `particl-business-preset:${page}`;
+export function readPreset(raw: string | null, page: PresetPage): SetupPreset | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { type?: unknown; id?: unknown };
+    return typeof parsed.id === "string" && parsed.id && PRESET_TYPES[page].includes(parsed.type as SetupType) ? { type: parsed.type as SetupType, id: parsed.id } : null;
+  } catch { return null; }
+}
+export function adsFromPreset(preset: SetupPreset | null): AdsState {
+  if (preset?.type === "product") return { ...INITIAL_ADS, productId: preset.id };
+  if (preset?.type === "avatar") return { ...INITIAL_ADS, avatarId: preset.id };
+  if (preset?.type === "hook") return { ...INITIAL_ADS, hookId: preset.id };
+  if (preset?.type === "setting") return { ...INITIAL_ADS, settingId: preset.id };
+  if (preset?.type === "ad_reference") return { ...INITIAL_ADS, adReferenceId: preset.id };
+  return INITIAL_ADS;
+}
+export function imageAdsFromPreset(preset: SetupPreset | null): ImageAdsState {
+  const dtc = { ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL } satisfies ImageAdsState;
+  if (preset?.type === "product") return { ...dtc, productIds: [preset.id] };
+  if (preset?.type === "brand_kit") return { ...dtc, brandKitId: preset.id };
+  if (preset?.type === "image_style") return { ...dtc, styleId: preset.id };
+  return INITIAL_IMAGE_ADS;
+}

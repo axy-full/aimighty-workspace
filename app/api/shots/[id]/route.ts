@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
-import { archiveAndDelete } from "@/lib/archive";
+import { archiveDeleteStatements, archiveTransaction } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
 
@@ -72,12 +72,19 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   await ready();
   // Renders outlive the shot they were filed under — unfile them, never
   // delete work because a slate was tidied away.
-  await db().execute({ sql: `UPDATE generations SET shot_id = NULL WHERE shot_id = ?`, args: [shotId] });
   /* What this shot pointed at goes with it. A binding is not work and holds
      nothing anyone would miss, and one left behind keeps voting on what a
      change costs: a shot nobody can open would still be counted, and priced,
-     every time a version it named was swapped. */
-  await archiveAndDelete(db(), "bindings", `shot_id = ?`, [shotId]);
-  await archiveAndDelete(db(), "shots", `id = ?`, [shotId]);
+     every time a version it named was swapped. One write, so the renders are
+     never unfiled from a shot that then fails to go. */
+  await archiveTransaction(async (tx) => {
+    await tx.batch([
+      { sql: `UPDATE generations SET shot_id = NULL WHERE shot_id = ?`, args: [shotId] },
+      ...(await archiveDeleteStatements(tx, [
+        { table: "bindings", where: `shot_id = ?`, args: [shotId] },
+        { table: "shots", where: `id = ?`, args: [shotId] },
+      ])),
+    ]);
+  });
   return NextResponse.json({ ok: true });
 });

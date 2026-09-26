@@ -35,6 +35,7 @@ import type { GenerationProject } from "@/lib/generationProject";
 import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useGenAssetInput, inputAsReference, referenceIdentity, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import type { CastMember } from "@/lib/cast";
+import { unknownMentions } from "@/lib/mentions";
 import { appPrompt } from "@/components/dialog";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
@@ -126,9 +127,6 @@ const TRACKS: { id: Track; label: string; placeholder: string }[] = [
 const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
-
-/** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
-const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
 export type ComposerHandle = GenAssetInputHandle & {
   usePrompt: (text: string) => boolean;
@@ -443,24 +441,20 @@ function ScopedComposer({
   }>(signedIn && kind !== "audio" ? "/api/rig/elements" : null, 60_000);
   /* 3b: a name the prompt cites that nobody has made yet. */
   const known = useMemo(
-    () =>
-      new Set([
-        ...cast.map((m) => m.name.toLowerCase()),
-        ...(elsData?.elements ?? []).map((e) => e.name.toLowerCase()),
-      ]),
+    () => [
+      ...cast.map((m) => m.name),
+      ...(elsData?.elements ?? []).map((e) => e.name),
+    ],
     [cast, elsData],
   );
+  /* One word per name unless a known name is longer, and never an address
+     or an engine's own @Image1 (lib/mentions), so a sentence after a name
+     cannot grey out Generate. */
   const unknown = useMemo(
     () =>
       kind === "audio" || !signedIn || !!pendingBatch
         ? []
-        : [
-            ...new Set(
-              [...prompt.matchAll(NAME_RE)]
-                .map((m) => m[1])
-                .filter((n) => !known.has(n.toLowerCase())),
-            ),
-          ],
+        : unknownMentions(prompt, known),
     [prompt, known, kind, signedIn, pendingBatch],
   );
   const [sheetFor, setSheetFor] = useState<string | null>(null);
@@ -1128,8 +1122,8 @@ function ScopedComposer({
                   <span>{kind === "video" ? "…or a clip for motion" : "Drop a composition reference"}</span>
                 </button>}
               </div>
-              <div className={styles.referenceHint}>
-                {kind === "video" ? (
+              {kind === "video" && (
+                <div className={styles.referenceHint}>
                   <label>First frame
                     <select aria-label="First frame" value={refs.find(ref => ref.role === "first_frame") ? referenceKey(refs.find(ref => ref.role === "first_frame")!) : ""}
                       disabled={locked} onChange={event => chooseFirstFrame(event.target.value || null)}>
@@ -1138,30 +1132,8 @@ function ScopedComposer({
                     </select>
                     <span> Right-click an image to choose its role. Reference images do not set the opening frame.</span>
                   </label>
-                ) : (
-                  <div
-                    className={styles.trackTabs}
-                    role="group"
-                    aria-label="Reference use"
-                  >
-                    {(
-                      [
-                        { id: "loose", label: "Loose" },
-                        { id: "first", label: "Exact" },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        aria-pressed={useAs === item.id}
-                        onClick={() => setUseAs(item.id)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
               {referenceProblem && <p className={styles.notice} role="alert">{referenceProblem}</p>}
             </div>
           )}
@@ -1206,6 +1178,34 @@ function ScopedComposer({
                   )}
                   {setting("Variations", "count", `×${count}`)}
                 </div>
+                {kind === "image" && (
+                  /* The new still's role on the production (params.useAs, the
+                     takes wall's First frames / Loose filter). An output
+                     setting, not a reference role: it does not change how
+                     closely the engine follows the references. */
+                  <div className={styles.toggle} role="group" aria-label="Save still as" style={{ flexWrap: "wrap" }}>
+                    <span style={{ whiteSpace: "nowrap" }}>Save still as</span>
+                    <div className={styles.trackTabs} style={{ margin: 0, flexWrap: "nowrap" }}>
+                      {(
+                        [
+                          { id: "loose", label: "Loose" },
+                          { id: "first", label: "First frame" },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          aria-pressed={useAs === item.id}
+                          disabled={locked}
+                          onClick={() => setUseAs(item.id)}
+                          style={{ whiteSpace: "nowrap" }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {kind === "video" && model.supportsAudio && (
                   <label className={styles.toggle}>
                     <span>

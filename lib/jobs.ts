@@ -6,7 +6,7 @@ import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
-import { costUsd } from "./models";
+import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
@@ -24,10 +24,9 @@ import {
 } from "./generationSettlement";
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { loadJob, producedOutcome, seal, reconcileTopazImage, reconcileHiggsfieldImage } from "./renderWork";
-import { restoreHiggsfieldGenerationReceipts } from "./higgsfieldGenerationReceipts";
+import { restoreHiggsfieldGenerationReceipts, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
-import { releaseHeldJobs } from "./held";
 import { engineFor } from "./engines";
 import { notify } from "./push";
 import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
@@ -129,10 +128,13 @@ export function rowToGeneration(r: any): Generation {
   delete params.higgsfieldVendorCostUsd;
   delete params.higgsfieldStillHandle;
   delete params.higgsfieldStillPollUntil;
+  delete params.higgsfieldStillCollection;
   delete params.higgsfieldVideoHandle;
   delete params.higgsfieldVideoPollUntil;
   delete params.higgsfieldVideoPollToken;
   delete params.genjutsuOriginal;
+  delete params.storeUntil;
+  delete params.settledBy;
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -297,6 +299,19 @@ export async function getGeneration(genId: string): Promise<Generation | null> {
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
+/** Long enough for storeVideo's two-minute download budget, short enough to recover a crash. */
+const STORE_LEASE_MS = 180_000;
+/** A connected-account still sent with no acknowledgement: its receipt is written the moment the POST answers. */
+const HIGGSFIELD_UNCONFIRMED_MS = 2 * 60 * 60_000;
+/** A connected-account still whose collection has failed, without a break, for a day will not be collected. */
+const HIGGSFIELD_COLLECTION_MS = 24 * 60 * 60_000;
+type StillCollection = { since?: number; last?: number; failures?: number };
+/** Failing for a day and failing still: three or more tries, the latest within the hour. Time alone never gives up on a take. */
+function collectionAbandoned(run: StillCollection | undefined, at: number): boolean {
+  if (!run) return false;
+  const since = Number(run.since), last = Number(run.last), failures = Number(run.failures);
+  return since > 0 && since < at - HIGGSFIELD_COLLECTION_MS && last > at - 60 * 60_000 && failures >= 3;
+}
 
 /**
  * Poll Ark for one generation and reconcile our row.
@@ -352,208 +367,249 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
   }
 
   let storedUrl = gen.storedUrl;
-  let cost = savedCosts.cost;
-  let storageFailed = false;
-  let rate: number | null = null;
-  /* Where the tail of a video render actually goes. The vendor's own clock,
-     when it gives one, is the only way to tell its working time apart from
-     our waiting: everything else we can see is "how long until a poll
-     noticed". storeMs is ours either way — it is the file coming down from
-     ModelArk and going up to our storage, which happens between the vendor
-     finishing and the tile flipping. */
-  let engineMs: number | null = null;
-  let noticeMs: number | null = null;
-  let storeMs: number | null = null;
-  /** How much of the store this render occupies — rent, not a one-off charge. */
-  let storedBytes: number | null = null;
-  /* The DELIVERED length of the clip we just stored, in seconds, which is the
-     column every per-second tool prices from. `params.duration` is only what was
-     ASKED for; a vendor that trims or pads a render makes the two differ, and the
-     library has to carry the length of the file it actually holds. Measured from
-     the stored bytes with the same bounded inspector the lazy backfill uses, so
-     the first reframe/Shorts quote is a column read instead of a storage read. */
-  let deliveredSeconds: number | null = null;
-  if (
-    task.vendorStartedAt &&
-    task.vendorEndedAt &&
-    task.vendorEndedAt >= task.vendorStartedAt
-  ) {
-    engineMs = task.vendorEndedAt - task.vendorStartedAt;
-    noticeMs = Math.max(0, now() - task.vendorEndedAt);
-  }
+  let storeLease: number | null = null;
+  try {
+    let cost = savedCosts.cost;
+    let storageFailed = false;
+    let rate: number | null = null;
+    /* Where the tail of a video render actually goes. The vendor's own clock,
+       when it gives one, is the only way to tell its working time apart from
+       our waiting: everything else we can see is "how long until a poll
+       noticed". storeMs is ours either way — it is the file coming down from
+       ModelArk and going up to our storage, which happens between the vendor
+       finishing and the tile flipping. */
+    let engineMs: number | null = null;
+    let noticeMs: number | null = null;
+    let storeMs: number | null = null;
+    /** How much of the store this render occupies — rent, not a one-off charge. */
+    let storedBytes: number | null = null;
+    /* The DELIVERED length of the clip we just stored, in seconds, which is the
+       column every per-second tool prices from. `params.duration` is only what was
+       ASKED for; a vendor that trims or pads a render makes the two differ, and the
+       library has to carry the length of the file it actually holds. Measured from
+       the stored bytes with the same bounded inspector the lazy backfill uses, so
+       the first reframe/Shorts quote is a column read instead of a storage read. */
+    let deliveredSeconds: number | null = null;
+    if (
+      task.vendorStartedAt &&
+      task.vendorEndedAt &&
+      task.vendorEndedAt >= task.vendorStartedAt
+    ) {
+      engineMs = task.vendorEndedAt - task.vendorStartedAt;
+      noticeMs = Math.max(0, now() - task.vendorEndedAt);
+    }
 
-  if (task.status === "succeeded") {
-    if (task.videoUrl && !storedUrl) {
-      const storeStart = now();
-      try {
-        const put = await storeVideo(gen.id, task.videoUrl);
-        storedUrl = put.url;
-        storedBytes = put.bytes;
-        storeMs = now() - storeStart;
-        /* BEST EFFORT, and deliberately so: a length we cannot read is not a
-           reason to unsettle a render that is safely stored and about to be
-           billed. It leaves duration_s NULL exactly as before, and
-           resolveStoredDuration measures it on first read instead. */
+    if (task.status === "succeeded") {
+      if (task.videoUrl && !storedUrl) {
+        /* One download per master. Every open tab, teammate and the cron polls
+           the same render; the first to see it finish holds a short lease and
+           the rest leave it to them rather than pulling up to 200 MB again. */
+        const lease = now() + STORE_LEASE_MS;
+        const leased = await db().execute({
+          sql: `UPDATE generations SET params=json_set(params,'$.storeUntil',?)
+                WHERE id=? AND stored_url IS NULL AND COALESCE(json_extract(params,'$.storeUntil'),0) < ? RETURNING id`,
+          args: [lease, gen.id, now()],
+        });
+        if (!leased.rows.length) return (await getGeneration(gen.id)) ?? gen;
+        storeLease = lease;
+        const storeStart = now();
         try {
-          const measured = await inspectOriginalVideo(
-            { id: gen.id, kind: "video", role: "reference_video", mime: "video/mp4", ext: "mp4", storedUrl: put.url, fromGeneration: true },
-            put.bytes,
-          );
-          if (Number.isFinite(measured.seconds) && measured.seconds > 0)
-            deliveredSeconds = Math.round(measured.seconds * 1000) / 1000;
+          const put = await storeVideo(gen.id, task.videoUrl);
+          storedUrl = put.url;
+          storedBytes = put.bytes;
+          storeMs = now() - storeStart;
+          /* BEST EFFORT, and deliberately so: a length we cannot read is not a
+             reason to unsettle a render that is safely stored and about to be
+             billed. It leaves duration_s NULL exactly as before, and
+             resolveStoredDuration measures it on first read instead. */
+          try {
+            const measured = await inspectOriginalVideo(
+              { id: gen.id, kind: "video", role: "reference_video", mime: "video/mp4", ext: "mp4", storedUrl: put.url, fromGeneration: true },
+              put.bytes,
+            );
+            if (Number.isFinite(measured.seconds) && measured.seconds > 0)
+              deliveredSeconds = Math.round(measured.seconds * 1000) / 1000;
+          } catch (e) {
+            console.warn(`duration measurement failed for ${gen.id}:`, (e as Error).message);
+          }
         } catch (e) {
-          console.warn(`duration measurement failed for ${gen.id}:`, (e as Error).message);
+          // Keep the (expiring) Ark URL as a fallback rather than losing the render.
+          // Loud in the logs: a silent failure here cost us two near-lost videos.
+          console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
+          storedUrl = null;
+          storageFailed = true;
         }
-      } catch (e) {
-        // Keep the (expiring) Ark URL as a fallback rather than losing the render.
-        // Loud in the logs: a silent failure here cost us two near-lost videos.
-        console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
-        storedUrl = null;
-        storageFailed = true;
+      }
+      // Snapshot the cost exactly ONCE — a storeVideo retry must not recompute
+      // it at whatever the rate happens to be later; history stays truthful.
+      /* Per-second engines that state their own charge (Grok Imagine Video):
+         the vendor's figure when it is within half to three times the quote
+         (xAI's tick unit is not published), else the quote itself. */
+      if (cost == null && gen.provider === "xai") {
+        const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
+        const quote = estimateCostUsd(gen.model, String(p.resolution ?? "720p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 5), 0, false)?.net ?? null;
+        const stated = task.costUsd;
+        cost = quote != null && typeof stated === "number" && Number.isFinite(stated) && stated >= quote * 0.5 && stated <= quote * 3 ? stated : quote;
+      }
+      if (cost == null && task.totalTokens != null) {
+        const p = gen.params as { resolution?: string; hasVideoInput?: boolean };
+        rate = effectiveRate(
+          gen.model,
+          String(p.resolution ?? "720p"),
+          Boolean(p.hasVideoInput),
+        );
+        cost = rate == null ? null : costUsd(task.totalTokens, rate);
       }
     }
-    // Snapshot the cost exactly ONCE — a storeVideo retry must not recompute
-    // it at whatever the rate happens to be later; history stays truthful.
-    /* Per-second engines that state their own charge (Grok Imagine Video):
-       the vendor's figure when it is within half to three times the quote
-       (xAI's tick unit is not published), else the quote itself. */
-    if (cost == null && gen.provider === "xai") {
-      const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
-      const quote = estimateCostUsd(gen.model, String(p.resolution ?? "720p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 5), 0, false)?.net ?? null;
-      const stated = task.costUsd;
-      cost = quote != null && typeof stated === "number" && Number.isFinite(stated) && stated >= quote * 0.5 && stated <= quote * 3 ? stated : quote;
-    }
-    if (cost == null && task.totalTokens != null) {
-      const p = gen.params as { resolution?: string; hasVideoInput?: boolean };
-      rate = effectiveRate(
-        gen.model,
-        String(p.resolution ?? "720p"),
-        Boolean(p.hasVideoInput),
-      );
-      cost = rate == null ? null : costUsd(task.totalTokens, rate);
-    }
-  }
 
-  const ts = now();
-  // How long the render actually took, recorded once when it reaches a
-  // terminal state. Analytics reads this to answer "where do shots get
-  // stuck" without having to guess from timestamps that keep moving.
-  const durationMs = TERMINAL.has(task.status)
-    ? Math.max(0, ts - gen.createdAt)
-    : null;
-  const outcomeWrite = {
-    sql: `UPDATE generations
-          SET status=?, source_url=?, stored_url=?, total_tokens=?,
-              cost_usd=COALESCE(?, cost_usd),
-              rate_usd_per_m=COALESCE(?, rate_usd_per_m),
-              duration_ms=COALESCE(duration_ms, ?),
-              engine_ms=COALESCE(?, engine_ms),
-              notice_ms=COALESCE(?, notice_ms),
-              store_ms=COALESCE(?, store_ms),
-              bytes=COALESCE(?, bytes),
-              duration_s=COALESCE(?, duration_s),
-              error=?, updated_at=?
-          WHERE id=? AND (status IN ('queued','running') OR (?='succeeded' AND status!='cancelled'))`,
-    args: [
-      task.status,
-      task.videoUrl,
-      storedUrl,
-      task.totalTokens,
-      cost,
-      rate,
-      durationMs,
-      engineMs,
-      noticeMs,
-      storeMs,
-      storedBytes,
-      deliveredSeconds,
-      task.error,
-      ts,
-      gen.id,
-      task.status,
-    ],
-  };
-  const event: MeterEvent = {
-    id: gen.id,
-    kind: "video",
-    engine: billedTo(gen.provider),
-    model: gen.model,
-    status:
-      task.status === "succeeded"
-        ? "succeeded"
-        : TERMINAL.has(task.status)
-          ? "failed"
-          : "running",
-    engineCostUsd:
-      cost != null
-        ? cost + savedCosts.refinement
-        : TERMINAL.has(task.status) && !getProvider(gen.provider).billsFailures
-          ? 0
-          : null,
-    durationMs,
-    projectId: gen.projectId,
-    shotId: gen.shotId,
-  };
-  if (TERMINAL.has(task.status)) {
-    const changed = await writeGenerationOutcome(outcomeWrite, event);
-    await deliverGenerationSettlement(gen.id);
-    if (!changed) return (await getGeneration(gen.id)) ?? gen;
-  } else {
-    const changed = await db().execute(outcomeWrite);
-    if (!changed.rowsAffected) return (await getGeneration(gen.id)) ?? gen;
-    if (cost != null) await meter(event);
-  }
-
-  if (TERMINAL.has(task.status)) {
-    // A slot just freed: whatever waited for one may start.
-    void releaseHeldJobs().catch(() => {});
-    /* The take is done, one way or the other: tell whoever asked for it, if
-       they asked to be told (brief 2.7). Their own takes only — the wall is
-       for watching everyone else's. */
-    if (gen.createdBy && gen.status !== task.status) {
-      const where = gen.shotCode
-        ? `${gen.shotCode} v${gen.version ?? 1}`
-        : "Your take";
-      void notify(
-        "takeDone",
-        [gen.createdBy],
+    const ts = now();
+    // How long the render actually took, recorded once when it reaches a
+    // terminal state. Analytics reads this to answer "where do shots get
+    // stuck" without having to guess from timestamps that keep moving.
+    const durationMs = TERMINAL.has(task.status)
+      ? Math.max(0, ts - gen.createdAt)
+      : null;
+    /* Which poller moved the row out of queued/running. SET reads the row as it
+       was before the update, so only the one real transition writes its token;
+       a repair write on an already-finished row leaves it alone. */
+    const settledBy = `${ts}:${Math.random().toString(36).slice(2)}`;
+    const outcomeWrite = {
+      sql: `UPDATE generations
+            SET status=?, source_url=?, stored_url=?, total_tokens=?,
+                cost_usd=COALESCE(?, cost_usd),
+                rate_usd_per_m=COALESCE(?, rate_usd_per_m),
+                duration_ms=COALESCE(duration_ms, ?),
+                engine_ms=COALESCE(?, engine_ms),
+                notice_ms=COALESCE(?, notice_ms),
+                store_ms=COALESCE(?, store_ms),
+                bytes=COALESCE(?, bytes),
+                duration_s=COALESCE(?, duration_s),
+                params=CASE WHEN ? AND status IN ('queued','running') THEN json_set(params,'$.settledBy',?) ELSE params END,
+                error=?, updated_at=?
+            WHERE id=? AND (status IN ('queued','running') OR (?='succeeded' AND status!='cancelled'))`,
+      args: [
+        task.status,
+        task.videoUrl,
+        storedUrl,
+        task.totalTokens,
+        cost,
+        rate,
+        durationMs,
+        engineMs,
+        noticeMs,
+        storeMs,
+        storedBytes,
+        deliveredSeconds,
+        TERMINAL.has(task.status) ? 1 : 0,
+        settledBy,
+        task.error,
+        ts,
+        gen.id,
+        task.status,
+      ],
+    };
+    const event: MeterEvent = {
+      id: gen.id,
+      kind: "video",
+      engine: billedTo(gen.provider),
+      model: gen.model,
+      status:
         task.status === "succeeded"
-          ? {
-              title: `${where} is ready`,
-              body: gen.prompt.slice(0, 120),
-              url: "/",
-            }
-          : {
-              title: `${where} didn't render`,
-              body: (task.error ?? "The engine refused it.").slice(0, 120),
-              url: "/",
-            },
-      ).catch(() => {
-        /* a take stands whether or not the nudge lands */
-      });
+          ? "succeeded"
+          : TERMINAL.has(task.status)
+            ? "failed"
+            : "running",
+      /* Only a failure is known to be free. A success whose usage has not
+         arrived yet keeps its reservation (null) until the cost is known;
+         zeroing it here handed the credits back while the clip was delivered. */
+      engineCostUsd:
+        cost != null
+          ? cost + savedCosts.refinement
+          : task.status !== "succeeded" && TERMINAL.has(task.status) && !getProvider(gen.provider).billsFailures
+            ? 0
+            : null,
+      durationMs,
+      projectId: gen.projectId,
+      shotId: gen.shotId,
+    };
+    if (TERMINAL.has(task.status)) {
+      const changed = await writeGenerationOutcome(outcomeWrite, event);
+      await deliverGenerationSettlement(gen.id);
+      if (!changed) return (await getGeneration(gen.id)) ?? gen;
+    } else {
+      const changed = await db().execute(outcomeWrite);
+      if (!changed.rowsAffected) return (await getGeneration(gen.id)) ?? gen;
+      if (cost != null) await meter(event);
     }
+
+    if (TERMINAL.has(task.status)) {
+      /* A freed slot releases held takes from the settlement itself
+         (lib/generationSettlement.ts), for every engine.
+         The take is done, one way or the other: tell whoever asked for it, if
+         they asked to be told (brief 2.7). Their own takes only — the wall is
+         for watching everyone else's. Once: only the poll that moved the row
+         sends it, never a second tab or the cron repairing it later. */
+      const moved = gen.createdBy
+        ? (await db().execute({ sql: "SELECT json_extract(params,'$.settledBy') AS by FROM generations WHERE id=?", args: [gen.id] })).rows[0]?.by === settledBy
+        : false;
+      if (gen.createdBy && moved) {
+        const where = gen.shotCode
+          ? `${gen.shotCode} v${gen.version ?? 1}`
+          : "Your take";
+        void notify(
+          "takeDone",
+          [gen.createdBy],
+          task.status === "succeeded"
+            ? {
+                title: `${where} is ready`,
+                body: gen.prompt.slice(0, 120),
+                url: "/",
+              }
+            : {
+                title: `${where} didn't render`,
+                body: (task.error ?? "The engine refused it.").slice(0, 120),
+                url: "/",
+              },
+        ).catch(() => {
+          /* a take stands whether or not the nudge lands */
+        });
+      }
+    }
+    if (storageFailed && options.strict)
+      throw new Error("The completed master could not be stored.");
+    return {
+      ...gen,
+      status: task.status,
+      sourceUrl: task.videoUrl,
+      storedUrl,
+      totalTokens: task.totalTokens,
+      durationS: deliveredSeconds ?? gen.durationS,
+      costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
+      creditsBilled: creditsApply(currentTenant()?.workspace)
+        ? billCredits(
+            (cost ?? 0) + savedCosts.refinement,
+            marginKeyOf(gen.kind, gen.model),
+          )
+        : null,
+      error: task.error,
+      updatedAt: ts,
+    };
+  } finally {
+    if (storeLease != null)
+      await db().execute({
+        sql: "UPDATE generations SET params=json_remove(params,'$.storeUntil') WHERE id=? AND json_extract(params,'$.storeUntil')=?",
+        args: [gen.id, storeLease],
+      }).catch(() => {});
   }
-  if (storageFailed && options.strict)
-    throw new Error("The completed master could not be stored.");
-  return {
-    ...gen,
-    status: task.status,
-    sourceUrl: task.videoUrl,
-    storedUrl,
-    totalTokens: task.totalTokens,
-    durationS: deliveredSeconds ?? gen.durationS,
-    costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
-    creditsBilled: creditsApply(currentTenant()?.workspace)
-      ? billCredits(
-          (cost ?? 0) + savedCosts.refinement,
-          marginKeyOf(gen.kind, gen.model),
-        )
-      : null,
-    error: task.error,
-    updatedAt: ts,
-  };
 
 });
+}
+
+/** Whether anything is in flight: one indexed read, so an idle list poll costs nothing more. */
+export async function hasActiveGenerations(): Promise<boolean> {
+  await ready();
+  const rs = await db().execute(`SELECT 1 FROM generations WHERE status IN ('queued','running') AND deleted = 0 LIMIT 1`);
+  return rs.rows.length > 0;
 }
 
 /**
@@ -667,6 +723,40 @@ export async function syncPending(
             );
             return;
           }
+          /* A connected-account still that was sent but never collected: no
+             acknowledgement after two hours (the POST was lost), or a day in
+             which every attempt to collect it failed and it is failing still
+             (the account was rotated). A vendor still working on it, or a
+             storage failure with the image in hand, is never given up on.
+             It stops holding a render slot and can be hidden. The charge
+             stays — the request may well have been accepted — at its
+             verified price when the handle is known, so its receipt settles
+             and is not reopened. */
+          if (gen.kind === "image" && gen.provider === "higgsfield" && params.paidClaim != null && !TERMINAL.has(gen.status)) {
+            const handle = Boolean(params.higgsfieldStillHandle);
+            const since = Number(params.paidClaim) || gen.createdAt;
+            if (handle ? collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
+              const price = gen.model === SOUL_CHARACTER_MODEL_ID ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
+              const known = handle && typeof price === "number" && Number.isFinite(price) && price > 0 ? price : null;
+              await writeGenerationOutcome(
+                {
+                  sql: `UPDATE generations SET status='failed',error=?,cost_usd=COALESCE(cost_usd,?),params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+                    WHERE id=? AND status IN ('queued','running') AND deleted=0`,
+                  args: [
+                    handle
+                      ? "The connected account stopped answering about this request, so its result could not be collected. Its cost stays charged; it will not be sent again."
+                      : "The connected account never confirmed this request. Its estimated cost stays charged; it will not be sent again.",
+                    known, now(), gen.id,
+                  ],
+                },
+                { id: gen.id, kind: "image", engine: billedTo(gen.provider), model: gen.model, status: "failed",
+                  engineCostUsd: known, projectId: gen.projectId, shotId: gen.shotId },
+              );
+              await deliverGenerationSettlement(gen.id);
+              await settleHiggsfieldGenerationReceipt(gen.id).catch(() => false);
+              return;
+            }
+          }
           const orphan =
             !gen.arkTaskId &&
             !params.falRequestId &&
@@ -679,18 +769,32 @@ export async function syncPending(
               now() - (params.worker ? 2 * 60 * 60_000 : 15 * 60_000);
           const expired = Boolean(gen.arkTaskId && gen.createdAt < horizon);
           if ((orphan || expired) && !TERMINAL.has(gen.status)) {
+            /* Every paid path (claimRender, the video submit's paidClaim) claims
+               the row before a vendor is called. No claim and nothing produced
+               proves nothing was sent: the take ends and its reservation is
+               released. The guard is in the write, so a worker that claims it
+               at this very moment keeps it. */
+            const unsent = orphan && params.paidClaim == null && !params.producedOutcome;
             // An expired function/handle does not prove the vendor refunded anything.
             // Keep its reservation, end the execution slot, and retain the permanent paid claim.
             await writeGenerationOutcome(
-              {
-                sql: `UPDATE generations SET status='failed',error=?,params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+              unsent
+                ? {
+                    sql: `UPDATE generations SET status='failed',error=?,cost_usd=0,updated_at=?
+                WHERE id=? AND status IN ('queued','running') AND deleted=0
+                  AND json_extract(params,'$.paidClaim') IS NULL AND json_extract(params,'$.producedOutcome') IS NULL
+                  AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL`,
+                    args: ["This take never started, so nothing was charged. Generate it again.", now(), gen.id],
+                  }
+                : {
+                    sql: `UPDATE generations SET status='failed',error=?,params=json_set(params,'$.outcomeUncertain',1),updated_at=?
             WHERE id=? AND status IN ('queued','running') AND deleted=0`,
-                args: [
-                  "This attempt was interrupted and its provider outcome is unconfirmed. Its reserved credits remain pending reconciliation; it will not be submitted again automatically.",
-                  now(),
-                  gen.id,
-                ],
-              },
+                    args: [
+                      "This attempt was interrupted after it was sent, and the provider never confirmed the outcome. Its estimated cost stays charged; it will not be sent again.",
+                      now(),
+                      gen.id,
+                    ],
+                  },
               {
                 id: gen.id,
                 // Retained connected-account originals are never queued here;
@@ -699,7 +803,7 @@ export async function syncPending(
                 engine: billedTo(gen.provider),
                 model: gen.model,
                 status: "failed",
-                engineCostUsd: null,
+                engineCostUsd: unsent ? 0 : null,
                 projectId: gen.projectId,
                 shotId: gen.shotId,
               },

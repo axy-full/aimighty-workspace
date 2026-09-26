@@ -481,7 +481,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
         <label className={styles.search}>Search assets<input aria-label="Search project assets" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
         <GenAssetLibrary workbenchProjectId={project.id} projectName={project.name} allowWorkspaceBrowse initialBrowseScope="project" search={search} audioReference={!voiceTool && roles.some((r) => mediaKindForRole(r) === "audio")}
           onUseAsset={(asset) => void addReference(asset)} onUseReference={(asset) => void addReference(libraryInput(asset))}
-          onUsePrompt={(take) => change({ prompt: take.prompt.slice(0, 5000) })} onEdit={() => {}} onUpscale={() => {}} />
+          onUsePrompt={(take) => change({ prompt: take.prompt.slice(0, 5000) })} />
       </aside>
     </div>
     {capability?.owner && <ExplainerStyles disabled={!capability.connected} load={async (refresh) => {

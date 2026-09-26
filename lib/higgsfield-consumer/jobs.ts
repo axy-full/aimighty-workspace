@@ -389,9 +389,11 @@ export async function getConsumerJobByKey(
 }
 export type ConsumerJobCursor = { createdAt: number; id: string };
 /** Pin every admitted recoverable job (workspace capacity is four), so quote
- * history cannot hide a paid operation that still needs reconciliation. */
+ * history cannot hide a paid operation that still needs reconciliation.
+ * `submittedOnly` leaves read-only quotes out, so estimates never push
+ * finished results off a history's page. */
 export async function listConsumerRecoveryJobs(
-  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number },
+  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; submittedOnly?: boolean },
 ): Promise<ConsumerJob[]> {
   scope(input);
   const limit = input.limit ?? 25;
@@ -399,7 +401,7 @@ export async function listConsumerRecoveryJobs(
       !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
   await consumerJobsReady();
   const rows = await workbenchTransaction(tx => tx.execute({
-    sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?
+    sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?${input.submittedOnly ? " AND status<>'quoted'" : ""}
       ORDER BY CASE WHEN status IN ('dispatching','accepted','uncertain') AND dispatch_claim_hash IS NOT NULL THEN 0
         WHEN status IN ('dispatching','accepted','uncertain') THEN 1 ELSE 2 END,created_at DESC,id DESC LIMIT ?`,
     args: [input.userId, input.draftId, input.workflow, limit],

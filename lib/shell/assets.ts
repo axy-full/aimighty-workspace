@@ -72,23 +72,77 @@ export const SAY = {
     : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
-  retry: (name: string) => `Retry ${name} — same inputs, new seed. Quoted before it runs.`,
+  retry: (name: string, kept: RetryScope = "same inputs") => `Retry ${name} — ${kept}, new seed. Quoted before it runs.`,
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
-/** What Retry hands to Gen: the render's own inputs, priced again before anything runs. */
-/** A prompt handed to Gen. `picks` are the settings it was quoted at (the public site's hero), kept only where the model allows them. */
-export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string; picks?: { ratio?: string; resolution?: string; duration?: number } };
-export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
-  const raw = typeof generation.params?.rawPrompt === "string" ? generation.params.rawPrompt : "";
-  const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
-  return { prompt: raw || generation.prompt, model: generation.model, type, note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same inputs · new seed` };
+/**
+ * What Gen is handed from elsewhere in the shell (lib/shell/gen-preset): a
+ * Retry carries the render's own inputs — its prompt, engine, catalogue,
+ * settings, identity and references — priced again before anything runs;
+ * Soul ID's Use in Gen carries the identity; Crew's Open in Gen only the
+ * words.
+ */
+export type GenPresetReference = { genId: string; role?: string } | { uploadId: string; role?: string };
+export type GenPreset = {
+  prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string;
+  /** Which catalogue the model is on; the composer switches to it before it picks the model. */
+  billing?: "workspace" | "connected";
+  /** A Soul model's trained identity (`soul_id`). */
+  soulId?: string;
+  /** Present on a Retry: the inputs replace whatever the composer held. */
+  references?: GenPresetReference[];
+  /** A Retry's ratio, resolution and length; the composer keeps only what the model offers. */
+  picks?: { ratio?: string; resolution?: string; duration?: number };
+};
+/** How much of a render a Retry in Gen can bring back — said on the toast and on Gen's note. */
+export type RetryScope = "same inputs" | "same inputs, frames as references" | "prompt only";
+const REFERENCES_MAX = 10;
+function presetReferences(value: unknown): GenPresetReference[] {
+  if (!Array.isArray(value)) return [];
+  const out: GenPresetReference[] = [];
+  for (const item of value) {
+    if (out.length >= REFERENCES_MAX) break;
+    if (!item || typeof item !== "object") continue;
+    const { genId, uploadId, role } = item as Record<string, unknown>;
+    const named = typeof role === "string" && role ? { role } : {};
+    if (typeof genId === "string" && genId) out.push({ genId, ...named });
+    else if (typeof uploadId === "string" && uploadId) out.push({ uploadId, ...named });
+  }
+  return out;
 }
-export const GEN_PRESET_KEY = "particl-gen-preset";
-export function readGenPreset(raw: string | null): GenPreset | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as GenPreset;
-    return parsed && typeof parsed === "object" && typeof parsed.prompt === "string" ? parsed : { prompt: raw };
-  } catch { return { prompt: raw }; }
+const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {});
+function storedPicks(stored: Record<string, unknown>, ratioKey: "ratio" | "aspect_ratio"): GenPreset["picks"] {
+  const ratio = stored[ratioKey], resolution = stored.resolution, duration = Number(stored.duration);
+  const picks = {
+    ...(typeof ratio === "string" && ratio ? { ratio } : {}),
+    ...(typeof resolution === "string" && resolution ? { resolution } : {}),
+    ...(Number.isFinite(duration) && duration > 0 ? { duration } : {}),
+  };
+  return Object.keys(picks).length ? picks : undefined;
+}
+export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null; task?: string | null }): GenPreset & { kept: RetryScope } {
+  const params = generation.params ?? {};
+  const raw = typeof params.rawPrompt === "string" ? params.rawPrompt : "";
+  const prompt = raw || generation.prompt;
+  const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
+  const title = generation.title || generation.prompt.slice(0, 40);
+  /* A catalogue render (lib/higgsfield-consumer/original-identity) keeps its settings, identity and media under params. */
+  const connected = params.task === "connected-generation" && (params.workflow === undefined || params.workflow === "generation");
+  const task = params.task ?? generation.task ?? undefined;
+  const workspace = !connected && (task === undefined || task === "generate");
+  /* Made by another tool (an edit, extend or upscale of a clip, an Ads template, a voice tool, Shorts,
+     Viral): Gen takes its words and clears the well, and says it could not bring back the rest. */
+  if (!connected && !workspace) return { prompt, type, references: [], kept: "prompt only", note: `Retry · ${title} · prompt only` };
+  const settings = connected ? record(params.settings) : params;
+  const soulId = connected && typeof settings.soul_id === "string" && settings.soul_id ? settings.soul_id : undefined;
+  const references = presetReferences(params.references);
+  const picks = storedPicks(settings, connected ? "aspect_ratio" : "ratio");
+  /* This workspace's composer sets a reference's role from its kind, so a first or last frame comes back as a plain reference. */
+  const kept: RetryScope = !connected && references.some((r) => r.role === "first_frame" || r.role === "last_frame") ? "same inputs, frames as references" : "same inputs";
+  return {
+    prompt, model: generation.model, type, billing: connected ? "connected" : "workspace",
+    ...(soulId ? { soulId } : {}), references, ...(picks ? { picks } : {}), kept,
+    note: `Retry · ${title} · ${kept} · new seed`,
+  };
 }

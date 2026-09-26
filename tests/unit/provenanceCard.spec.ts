@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   frameLine, durationLine, seedLine, rulesLine, producedBy,
-  canRepeatExactly, repeatNote, NOT_RECORDED,
+  canRepeatExactly, repeatNote, makeAnotherHref, NOT_RECORDED,
 } from "../../lib/provenanceCard";
 import type { Recorded } from "../../lib/provenance";
 
@@ -54,14 +54,23 @@ test("produced by lists what it was made of, then how", () => {
   expect(producedBy(null)).toEqual([]);
 });
 
-/* "Make another from exactly this" is the card's one promise, and without a
-   seed it cannot be kept. The button stays, the footnote tells the truth. */
-test("exactly means exactly, and says when it cannot be", () => {
+/* Without a seed a take cannot be repeated exactly, and an exact repeat is
+   not built at all: "Make another" starts from the prompt in Generate, where
+   it is priced, and the footnote says so rather than promising the same seed. */
+test("exactly means exactly, and the card promises only what it does", () => {
   expect(canRepeatExactly(rec({ conditions: { ...rec().conditions, seed: 41822 } }))).toBe(true);
   expect(canRepeatExactly(rec())).toBe(false);
   expect(canRepeatExactly(null)).toBe(false);
 
-  expect(repeatNote(rec({ conditions: { ...rec().conditions, seed: 41822 } }))).toContain("Same seed");
-  expect(repeatNote(rec())).toContain("New seed, because none was recorded");
-  expect(repeatNote(null)).toContain("cannot be repeated exactly");
+  expect(repeatNote(rec({ conditions: { ...rec().conditions, seed: 41822 } }))).not.toContain("Same seed");
+  expect(repeatNote(rec())).toContain("seed are set again");
+  expect(repeatNote(null)).toContain("Nothing else was recorded");
+});
+
+test("make another opens Generate in the take's own mode with its prompt", () => {
+  expect(makeAnotherHref({ id: "gen_1", kind: "video" })).toBe("/generate?mode=video&promptFrom=gen_1");
+  expect(makeAnotherHref({ id: "gen_2", kind: "image" })).toBe("/generate?mode=images&promptFrom=gen_2");
+  expect(makeAnotherHref({ id: "gen_3", kind: "audio" })).toBe("/generate?mode=audio&promptFrom=gen_3");
+  // Generate does not make 3D models, so there is no door to offer.
+  expect(makeAnotherHref({ id: "gen_4", kind: "model" })).toBeNull();
 });

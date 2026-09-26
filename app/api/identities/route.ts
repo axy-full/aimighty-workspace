@@ -4,13 +4,14 @@ import { NextResponse } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
 import { requireUser, withTenant } from "@/lib/auth";
 import {
-  listIdentities, createIdentity, syncIdentity,
+  listIdentities, createIdentity, updateIdentity, syncIdentity,
   MIN_PHOTOS, MAX_PHOTOS, RECOMMENDED_PHOTOS, TRAIN_STEPS, trainCostUsd, RENDER_USD_PER_MP, TRAINER,
 } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
 import { creditsApply } from "@/lib/credits";
 import { billCredits } from "@/lib/creditTerms";
 import { currentTenant } from "@/lib/tenant";
+import { db, ready } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,17 @@ export const GET = withTenant(async function GET(req: Request) {
   });
 });
 
+/** Which of these identities a Rig asset already carries (as one of its versions), in this workspace's own database. */
+async function identitiesInAssets(ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT DISTINCT identity_id FROM attribute_versions WHERE identity_id IN (${ids.map(() => "?").join(",")})`,
+    args: ids,
+  });
+  return new Set(rs.rows.map((r) => String(r.identity_id)));
+}
+
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
@@ -66,6 +78,32 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const body = await req.json().catch(() => ({}));
   try {
+    /* The New asset sheet creates the identity and then trains it. When the
+       training was refused (credits, a rate limit, too few photos), the
+       identity it made is still here, untrained, under the name the person
+       wants. `reuseDraft` hands that one back with the photos now chosen,
+       instead of a name clash that could never be cleared from the sheet.
+       Only the caller's own, never-trained draft or failed identity that no
+       Rig asset is built on yet: one an asset already carries belongs to
+       that asset, and retraining it here would make a second asset on the
+       same face. The name clash stands for that one, before any charge. */
+    if (body.reuseDraft === true) {
+      const name = String(body.name ?? "").trim().toLowerCase();
+      const projectId = body.projectId ? String(body.projectId) : null;
+      const drafts = (await listIdentities(projectId)).filter((i) =>
+        i.name.toLowerCase() === name && i.createdBy === got.user.id && i.projectId === projectId &&
+        (i.status === "draft" || i.status === "failed") && !i.loraUrl && !i.castId);
+      const carried = await identitiesInAssets(drafts.map((i) => i.id));
+      const own = drafts.find((i) => !carried.has(i.id));
+      if (own) {
+        const description = typeof body.description === "string" && body.description.trim() ? body.description : undefined;
+        const identity = await updateIdentity(own.id, {
+          ...(description !== undefined ? { description } : {}),
+          photos: Array.isArray(body.photos) ? body.photos.map(String) : [],
+        });
+        return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined } });
+      }
+    }
     const identity = await createIdentity({
       name: String(body.name ?? ""),
       description: String(body.description ?? ""),
