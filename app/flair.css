@@ -137,7 +137,9 @@
   .gx-project { padding: 6px 12px; min-height: 46px; flex-wrap: nowrap; }
   .gx-project-btn { height: 44px; max-width: 62%; gap: 8px; padding: 0 12px 0 5px; border-radius: 999px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .12); }
   .gx-project-btn .gx-project-tile { width: 34px; height: 24px; border-radius: 5px; font-size: 12px; box-shadow: 0 3px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12); }
-  .gx-project-name { font-size: 13.5px; }
+  .gx-project-name { font-size: 13.5px; min-width: 0; }
+  /* A long name ends in an ellipsis inside the pill; it never spills over the header. */
+  .gx-project-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .gx-project-btn, .gx-project-btn > span:last-child { position: static; }
   .gx-project-meta { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; white-space: nowrap; }
   .gx-tabbar { display: grid; grid-template-columns: repeat(5, 1fr); flex: none; min-height: 64px; padding: 6px 8px max(10px, env(safe-area-inset-bottom)); background: linear-gradient(180deg, rgba(20, 20, 24, .86), rgba(0, 0, 0, .96)); backdrop-filter: blur(18px) saturate(160%); border-top: 1px solid rgba(255, 255, 255, .10); box-shadow: 0 -12px 30px rgba(0, 0, 0, .5); position: relative; z-index: 30; }
@@ -191,7 +193,8 @@
 .gx-home-card[data-status="progress"] .gx-home-card-glow { background: rgba(10, 132, 255, .35); }
 .gx-home-card[data-status="done"] .gx-home-card-glow { background: rgba(48, 209, 88, .18); }
 .gx-home-card-head { position: relative; display: flex; align-items: center; justify-content: space-between; width: 100%; }
-.gx-home-card-n { font-family: var(--gx-mono); font-size: 11px; font-weight: 600; color: #6EB4FF; }
+/* 12px at every width: the 844×390 landscape phone is a phone too (the 12px floor), and a desktop loses nothing. */
+.gx-home-card-n { font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: #6EB4FF; }
 .gx-home-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(235, 235, 245, .35); }
 .gx-home-card[data-status="progress"] .gx-home-dot { background: #0A84FF; box-shadow: 0 0 10px rgba(10, 132, 255, .9); }
 .gx-home-card[data-status="done"] .gx-home-dot { background: #30D158; box-shadow: 0 0 8px rgba(48, 209, 88, .7); }
@@ -212,6 +215,58 @@
   .gx-back span { font-size: 24px; line-height: 1; color: var(--gx-text-2); }
   .gx-header:has(.gx-back) .gx-brand { display: none; }
   .gx-home-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Studio's first run (components/graphite/FirstRun.tsx): the card a stage shows with no project open, and the
+   Studio home's without one. New project, the starter production, the four stages in order, the recent projects. ── */
+.gx-first { flex: none; display: flex; flex-direction: column; gap: 14px; margin: 16px 20px 24px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, #1B1B20, #141417); border: 1px solid rgba(255, 255, 255, .10); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 10px 24px rgba(0, 0, 0, .35); }
+.gx-home .gx-first { margin: 0; }
+.gx-first-lead { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.gx-first-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.gx-first-actions > .gx-primary, .gx-first-actions > .gx-hbtn { height: 44px; padding: 0 18px; font-size: 14px; font-weight: 600; border-radius: 999px; justify-content: center; }
+.gx-first-starter[aria-disabled="true"] { opacity: .7; cursor: progress; }
+.gx-first-actions > .gx-project-new { flex: 1 1 100%; max-width: 560px; padding: 0; grid-template-columns: minmax(0, 1fr) auto auto; }
+.gx-first-actions .gx-project-new .gx-field { height: 44px; font-size: 15px; }
+.gx-first-actions .gx-project-new .gx-primary, .gx-first-actions .gx-project-new .gx-hbtn { height: 44px; padding: 0 16px; justify-content: center; }
+.gx-first-note { margin: -4px 0 0; font-size: 13px; color: var(--gx-text-2); }
+.gx-first .gx-gen-error { margin: 0; scroll-margin: 16px; }
+.gx-first-how, .gx-recent { display: flex; flex-direction: column; gap: 8px; }
+.gx-first-how-title, .gx-recent-title { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #6EB4FF; }
+.gx-first-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.gx-first-steps > li { position: relative; display: flex; min-width: 0; }
+.gx-first-steps > li + li::before { content: "→"; position: absolute; left: -10px; top: 50%; transform: translate(-50%, -50%); font-size: 14px; color: var(--gx-text-2); pointer-events: none; }
+.gx-first-step { flex: 1; min-width: 0; min-height: 76px; padding: 10px 12px; border-radius: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .10); }
+.gx-first-step:hover { background: rgba(255, 255, 255, .08); }
+.gx-first-step[aria-current="step"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-first-step-n { font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: #6EB4FF; }
+.gx-first-step-label { font-size: 15px; font-weight: 600; }
+.gx-first-step-line { font-size: 12.5px; line-height: 1.35; color: var(--gx-text-2); }
+.gx-recent-list, .gx-home-runs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+.gx-recent-row, .gx-home-run { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; border-radius: 12px; }
+.gx-recent-row { padding: 6px 12px 6px 6px; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .10); }
+.gx-recent-row:hover { background: rgba(255, 255, 255, .08); }
+.gx .gx-recent-row .gx-project-tile { width: 52px; height: 36px; flex: none; font-size: 12px; }
+.gx-recent-name, .gx-home-run-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-recent-age, .gx-home-run-meta { flex: none; max-width: 45%; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The Studio home's Running list: the project's takes generating, the strip's own job, a plan waiting for its gate. */
+.gx-home-running { display: flex; flex-direction: column; gap: 8px; }
+.gx-home-running > .gx-home-row-head { margin-top: 0; }
+.gx-home-run { padding: 8px 14px; background: rgba(10, 132, 255, .08); border: 1px solid var(--gx-tint-border); }
+.gx-home-run > .gx-jobs-dot { flex: none; }
+.gx-jobs-dot.gx-jobs-dot--wait { background: var(--gx-waiting); box-shadow: 0 0 8px var(--gx-waiting); }
+.gx-home-idle { padding: 0; margin: 0; }
+/* A desktop's Studio home is the overview the mark opens: roomier than the phone's. */
+.gx-home[data-wide] { padding: 24px 28px 32px; gap: 18px; }
+@media (max-width: 767px) {
+  .gx-first { margin: 12px 12px 16px; padding: 16px; }
+  /* Brought into view above the floating tab bar (22px up, 66px tall), not under it. */
+  .gx-first .gx-gen-error { scroll-margin-bottom: 104px; }
+  .gx-first-actions > .gx-primary, .gx-first-actions > .gx-hbtn { flex: 1 1 100%; }
+  .gx-first-actions > .gx-project-new { grid-template-columns: 1fr 1fr; }
+  .gx-first-actions > .gx-project-new .gx-field { grid-column: 1 / -1; }
+  .gx-first-steps { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gx-first-steps > li + li::before { display: none; }
+  .gx-recent-list, .gx-home-runs { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ── The phone's Home (GLASS_SPEC §3 › "Where to?"): the suite tiles and the Assets row. Layout here; the material is the glass layer's. ── */

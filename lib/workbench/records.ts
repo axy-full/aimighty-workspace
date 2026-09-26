@@ -91,7 +91,8 @@ export async function linkProduction(owner: string, project: Project): Promise<s
   return workbenchTransaction(async(tx)=>{
     const exists=(await tx.execute({sql:'SELECT id FROM projects WHERE id=?',args:[pid]})).rows.length;
     if(!exists) {
-      const count=Number((await tx.execute('SELECT COUNT(*) AS n FROM projects')).rows[0].n);
+      /* The starter production (lib/starter.ts) is a sample the person asked to explore: it never uses up the plan's productions. */
+      const count=Number((await tx.execute('SELECT COUNT(*) AS n FROM projects WHERE starter = 0')).rows[0].n);
       if(ceiling!=null && count>=ceiling) throw new Error(ceilingMessage(plan!,'productions',ceiling));
       await tx.execute({sql:'INSERT INTO productions (id,name,created_at) VALUES (?,?,?)',args:[prod,project.name,now()]});
       await tx.execute({sql:'INSERT INTO projects (id,name,description,created_at,cap_credits,production_id,format) VALUES (?,?,?,?,?,?,?)',args:[pid,project.name,project.description,now(),defaultCap??null,prod,project.aspect]});
