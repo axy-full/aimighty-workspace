@@ -6,13 +6,15 @@ import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
 import { gatewayReachable } from "./gateway";
 import { catalog, findModel, videoCostUsd, imageCostUsd } from "./catalog";
-import { MODELS } from "./models";
+import { MODELS, type ModelDef } from "./models";
 import { getSetting } from "./settings";
+import { generationRequestsReady } from "./generationRequests";
+import type { Transaction } from "@libsql/client";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
 import { meter } from "./meter";
 import { getPlatformLayer, platformDb, platformReady } from "./platform";
-import { currentTenant } from "./tenant";
+import { currentTenant, requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { musicCredits, sfxCredits, usdForCredits } from "./elevenlabs";
@@ -287,7 +289,8 @@ export async function deleteChat(chatId: string): Promise<void> {
 export async function claimStep(stepId: string): Promise<Step | null> {
   await ready();
   const rs = await db().execute({
-    sql: `UPDATE atomik_steps SET status = 'running', updated_at = ?
+    /* A step settled back to proposed carries why; approving it again clears that. */
+    sql: `UPDATE atomik_steps SET status = 'running', error = NULL, updated_at = ?
           WHERE id = ? AND status = 'proposed'`,
     args: [now(), stepId],
   });
@@ -301,6 +304,182 @@ export async function getStep(stepId: string): Promise<Step | null> {
   await ready();
   const rs = await db().execute({ sql: `SELECT * FROM atomik_steps WHERE id = ?`, args: [stepId] });
   return rs.rows.length ? toStep(rs.rows[0]) : null;
+}
+
+/** The Idempotency-Key the approval sends with a step's render, so the render can be found from the step. */
+export const stepRequestKey = (stepId: string) => `atomik-step:${stepId}`;
+
+/** A claim whose render request never reached the server by now was dropped by the browser. */
+export const STRANDED_CLAIM_MS = 2 * 60_000;
+/** A render request with no reply by now was cut off: longer than /api/generate or /api/audio may run (300 s). */
+export const INTERRUPTED_REQUEST_MS = 15 * 60_000;
+
+/* The render lookup is by the step's key alone (the claims table is keyed by
+   person first), so the key gets its own index rather than a scan per poll. */
+const keyIndexed = new Map<string, Promise<void>>();
+async function requestKeyIndexReady(): Promise<void> {
+  await generationRequestsReady();
+  const workspace = requireTenant().id;
+  if (!keyIndexed.has(workspace))
+    keyIndexed.set(workspace, db().execute(`CREATE INDEX IF NOT EXISTS generation_requests_request_key ON generation_requests(request_key)`)
+      .then(() => {}).catch((error) => { keyIndexed.delete(workspace); throw error; }));
+  await keyIndexed.get(workspace);
+}
+
+type Settled = { status: StepStatus; genId: string | null; error: string | null };
+const INTERRUPTED = "The render request was interrupted before a take was recorded.";
+
+/**
+ * What became of a step's render, from the route's own record of it, or null
+ * while it cannot be told yet.
+ *
+ * The stored reply decides first. A job id alone is not a render: admission
+ * files the job, and binds it to the request, before it reserves the spend,
+ * so a refused reservation (not enough credits, a production or token cap)
+ * answers 4xx with a job that is failed and was never charged. Only a 2xx
+ * reply that is not a failure is a render — a held take included, since it
+ * starts once credits or a slot free up.
+ *
+ * With no reply the request is still being accepted, or was cut off; it is
+ * left alone until no route could still be running it. Then a job it filed
+ * speaks for itself: failed is a failed step, anything else ran.
+ */
+async function renderOutcome(request: Row, at: number): Promise<Settled | null> {
+  const jobId = request.generation_id ? String(request.generation_id) : null;
+  if (request.response_json) {
+    const reply = jsonOr<{ id?: unknown; status?: unknown; error?: unknown }>(request.response_json, {});
+    const code = Number(request.response_status ?? 0);
+    const id = typeof reply.id === "string" && reply.id ? reply.id : jobId;
+    if (code >= 200 && code < 300 && reply.status !== "failed" && id) return { status: "done", genId: id, error: null };
+    return { status: "failed", genId: null, error: typeof reply.error === "string" && reply.error ? reply.error.slice(0, 400) : `Failed (${code || "no answer"})` };
+  }
+  if (at - Number(request.created_at ?? at) <= INTERRUPTED_REQUEST_MS) return null;
+  if (!jobId) return { status: "failed", genId: null, error: INTERRUPTED };
+  const job = (await db().execute({ sql: `SELECT status, error FROM generations WHERE id = ?`, args: [jobId] })).rows[0] as Row | undefined;
+  if (job && String(job.status) !== "failed") return { status: "done", genId: jobId, error: null };
+  return { status: "failed", genId: null, error: job?.error ? String(job.error).slice(0, 400) : INTERRUPTED };
+}
+
+/**
+ * Settle the steps the browser claimed but never reported back on.
+ *
+ * Approval is claim, render, record — three requests from the browser, so a
+ * closed tab or a dropped network between them left a step `running` with no
+ * take for ever: the rail's ring spun, the plan never finished, and the
+ * claim answered "already running". The render request carries the step's
+ * own Idempotency-Key, so what became of it is on record, and this reads it
+ * (renderOutcome): a render was made → the step is done and points at it;
+ * the request was refused → the step failed with the reason; no request
+ * ever arrived → the step goes back to proposed, because nothing was sent
+ * and it may be approved again. A request still being accepted is left alone.
+ *
+ * Connected steps are settled by their own route, which records as it goes.
+ */
+export async function reconcileRunningSteps(chatId: string, at = now()): Promise<number> {
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT * FROM atomik_steps WHERE chat_id = ? AND status = 'running' AND gen_id IS NULL`,
+    args: [chatId],
+  });
+  const stranded = rs.rows.map((r: Row) => ({ step: toStep(r), updatedAt: Number(r.updated_at ?? 0) }))
+    .filter(({ step }) => !isConnectedModelId(step.model) && !connectedMeta(step.params));
+  if (!stranded.length) return 0;
+  await requestKeyIndexReady();
+  let settled = 0;
+  for (const { step, updatedAt } of stranded) {
+    const found = await db().execute({
+      sql: `SELECT generation_id, response_json, response_status, created_at FROM generation_requests
+            WHERE request_key = ? ORDER BY created_at DESC LIMIT 1`,
+      args: [stepRequestKey(step.id)],
+    });
+    const request = found.rows[0] as Row | undefined;
+    let outcome: Settled | null = null;
+    if (request) {
+      outcome = await renderOutcome(request, at);
+    } else if (at - updatedAt > STRANDED_CLAIM_MS) {
+      outcome = { status: "proposed", genId: null, error: "The approval did not reach the renderer, so nothing was sent. Approve it again." };
+    }
+    if (!outcome) continue;
+    const { status, error } = outcome;
+    const write = (genId: string | null) => (tx: Pick<Transaction, "execute">) => tx.execute({
+      sql: `UPDATE atomik_steps SET status = ?, gen_id = ?, error = ?, updated_at = ?
+            WHERE id = ? AND status = 'running' AND gen_id IS NULL AND updated_at = ?`,
+      args: [status, genId, error, at, step.id, updatedAt],
+    });
+    try {
+      const done = outcome.genId ? await withMediaSources({ genId: outcome.genId }, write(outcome.genId)) : await write(null)(db());
+      settled += Number(done.rowsAffected ?? 0);
+    } catch (error) {
+      /* The take was made and has since been archived: the step still ran. */
+      if (!(error instanceof MediaSourceError)) throw error;
+      settled += Number((await write(null)(db())).rowsAffected ?? 0);
+    }
+  }
+  if (settled) await db().execute({ sql: `UPDATE atomik_chats SET updated_at = ? WHERE id = ?`, args: [at, chatId] });
+  return settled;
+}
+
+/** An edit to a step that cannot be made: a person's mistake, answered with a 400. */
+export class StepEditError extends Error {
+  readonly status = 400;
+}
+
+/* Sizes read as numbers so an engine that lacks one can offer the nearest:
+   `1080p` 1080, `4k` 4000, `2K` 2000, `512` 512. Tiers such as `High` have none. */
+const sizeOf = (value: string): number | null => {
+  const m = /^(\d+(?:\.\d+)?)\s*(p|k)?$/i.exec(value.trim());
+  return m ? Number(m[1]) * (m[2]?.toLowerCase() === "k" ? 1000 : 1) : null;
+};
+const aspectOf = (value: string): number | null => {
+  const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(value.trim());
+  return m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : null;
+};
+function nearestOf(options: readonly string[], measure: (value: string) => number | null, want: string): string | undefined {
+  const target = measure(want);
+  if (target === null) return undefined;
+  let best: string | undefined, gap = Infinity;
+  for (const option of options) {
+    const size = measure(option);
+    if (size !== null && Math.abs(size - target) < gap) { best = option; gap = Math.abs(size - target); }
+  }
+  return best;
+}
+
+/**
+ * A step's render settings on one engine: every axis filled, and filled from
+ * that engine's own lists. A value the engine offers is kept; one it does not
+ * is moved to the nearest it does (the nearest length, size or shape), and
+ * anything with no nearest takes the engine's first option — which is what
+ * the renderer would otherwise have picked silently, so the price describes
+ * the render that will actually be made.
+ */
+export function fitStepParams(
+  def: Pick<ModelDef, "ratios" | "resolutions" | "durations">,
+  want: { ratio?: unknown; resolution?: unknown; seconds?: unknown },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const ratio = typeof want.ratio === "string" ? want.ratio : "";
+  out.ratio = def.ratios.includes(ratio) ? ratio : (nearestOf(def.ratios, aspectOf, ratio) ?? def.ratios[0]);
+  const resolution = typeof want.resolution === "string" ? want.resolution : "";
+  out.resolution = def.resolutions.find((x) => x.toLowerCase() === resolution.toLowerCase())
+    ?? nearestOf(def.resolutions, sizeOf, resolution) ?? def.resolutions[0];
+  if (def.durations.length) {
+    const seconds = Number(want.seconds);
+    out.seconds = Number.isFinite(seconds) && seconds > 0
+      ? def.durations.reduce((best, d) => (Math.abs(d - seconds) < Math.abs(best - seconds) ? d : best), def.durations[0])
+      : def.durations[0];
+  }
+  return out;
+}
+
+/** Particl's own engines that make a shot from a prompt (Topaz only upscales), less any the workspace switched off. */
+export function ownGenerateEngines(off: readonly string[] = []): ModelDef[] {
+  return MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate") && !off.includes(m.id));
+}
+
+/** The engines switched off under Settings › Engines & rates (§13: `ATOMIK MAY PROPOSE`). */
+async function enginesOff(): Promise<string[]> {
+  try { const raw = JSON.parse(await getSetting("atomikEngines")); return Array.isArray(raw) ? raw.map(String) : []; } catch { return []; }
 }
 
 /**
@@ -322,7 +501,22 @@ export async function patchStep(stepId: string, patch: {
     throw new MediaSourceError("That step has already run. Ask for a new version instead.");
 
   const model = patch.model ?? cur.model;
-  const params = patch.params ? { ...cur.params, ...patch.params } : cur.params;
+  const connected = isConnectedModelId(cur.model) || connectedMeta(cur.params) !== null;
+  /* A different engine must be one the planner could have proposed for
+     this step: the same kind, able to make a shot, and not switched off. */
+  if (patch.model !== undefined && patch.model !== cur.model) {
+    if (connected) throw new StepEditError("A connected step keeps the engine it was quoted on. Ask Atomik for a new version instead.");
+    const def = cur.kind === "video" || cur.kind === "image"
+      ? ownGenerateEngines(await enginesOff()).find((m) => m.id === patch.model) : undefined;
+    if (!def || def.kind !== cur.kind) throw new StepEditError(`That engine cannot make this ${cur.kind} step here. Choose another.`);
+  }
+  let params = patch.params ? { ...cur.params, ...patch.params } : cur.params;
+  /* The settings follow the engine. Carried over as they were, a 20s 480p
+     shot moved to an engine without either was priced at 20s 480p and then
+     rendered at that engine's first options — a price for a render nobody
+     makes. Snapped here, the price below is the render's. */
+  const def = connected ? undefined : MODELS.find((m) => m.id === model);
+  if (def && (patch.model !== undefined || patch.params)) params = { ...params, ...fitStepParams(def, params) };
   const repriced = (patch.model || patch.params)
     ? await estimateStepUsd(cur.kind, model, params)
     : cur.estCostUsd;
@@ -432,9 +626,7 @@ export async function engines(connected?: Pick<ConnectedPlanner, "models"> | nul
      shot from a prompt, so the planner is never offered it. Nor is one the
      workspace switched off under Settings › Engines & rates (§13:
      `ATOMIK MAY PROPOSE`). */
-  let off: string[] = [];
-  try { const raw = JSON.parse(await getSetting("atomikEngines")); if (Array.isArray(raw)) off = raw.map(String); } catch { off = []; }
-  const own = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate") && !off.includes(m.id));
+  const own = ownGenerateEngines(await enginesOff());
   const out: Engine[] = own.map((m) => ({
     id: m.id, label: m.label, kind: m.kind as StepKind, own: true,
     note: m.kind === "video"
@@ -562,6 +754,8 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   const model = await resolveModel(opts.model ?? chat.model, "shot");
   const effort = opts.effort;
   const list = await engines();
+  /* What the reply is checked against: the same list the planner was shown. */
+  const allowed = list.filter((e) => !e.connected);
   const engineText = list.map((e) => `  ${e.id} — ${e.label} (${e.kind}). ${e.note}`).join("\n");
   const connected = opts.connected ?? null;
 
@@ -625,7 +819,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   const result = await runPaidText({ model, effort, maxCredits: opts.maxCredits, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
     projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false });
   const costUsd = result.costUsd;
-  const turn = extractTurn(result.text, Boolean(connected)) ?? {
+  const turn = extractTurn(result.text, Boolean(connected), allowed) ?? {
     say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,
     activity: [], propose: [], ask: null, title: null,
   };
@@ -726,8 +920,9 @@ type ParsedTurn = {
 };
 
 /** Pull the object out of whatever the model wrapped it in, and make every
- *  proposal executable or drop it. */
-export function extractTurn(text: string, allowConnected = false): ParsedTurn | null {
+ *  proposal executable or drop it. `allowed` is the engine list the planner
+ *  was given; by default, every own engine that makes a shot from a prompt. */
+export function extractTurn(text: string, allowConnected = false, allowed?: readonly Pick<Engine, "id" | "kind">[]): ParsedTurn | null {
   if (!text) return null;
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const tryParse = (s: string): any | null => {
@@ -750,9 +945,11 @@ export function extractTurn(text: string, allowConnected = false): ParsedTurn | 
   const say = String(raw.say ?? "").trim();
   if (!say && !Array.isArray(raw.propose)) return null;
 
-  const defaultFor = (k: StepKind) =>
-    k === "audio" ? "elevenlabs"
-      : (MODELS.find((m) => !m.hidden && m.kind === k)?.id ?? MODELS[0].id);
+  /* Only an engine the planner was offered: switched off under Settings ›
+     Engines means off here too, and an upscaler cannot make a shot. */
+  const pool = allowed ?? ownGenerateEngines().map((m) => ({ id: m.id, kind: m.kind as StepKind }));
+  const defaultFor = (k: StepKind) => pool.find((e) => e.kind === k && e.id !== "elevenlabs")?.id ?? null;
+  const unmade: string[] = [];
 
   const propose: ParsedTurn["propose"] = [];
   for (const r of (Array.isArray(raw.propose) ? raw.propose : []).slice(0, 12)) {
@@ -778,10 +975,10 @@ export function extractTurn(text: string, allowConnected = false): ParsedTurn | 
        against one set and the kind against another let a "video" step be
        filed against a stills engine: it passed validation here and was
        priced as video, then rendered as whatever the engine actually is. */
-    let model = named;
-    const own = MODELS.find((m) => !m.hidden && m.id === model);
+    let model: string | null = named;
     if (kind === "audio") model = "elevenlabs";
-    else if (!own || own.kind !== kind) model = defaultFor(kind);
+    else if (!pool.some((e) => e.id === named && e.kind === kind)) model = defaultFor(kind);
+    if (!model) { unmade.push(String(s.title ?? "").slice(0, 60) || `a ${kind} step`); continue; }
 
     /* Every axis is FILLED, and filled from the engine's own lists.
        Leaving one out meant two different defaults decided it: this file
@@ -791,21 +988,9 @@ export function extractTurn(text: string, allowConnected = false): ParsedTurn | 
        render nobody was going to make. Anything the engine does not offer
        is snapped to the nearest thing it does. */
     const def = MODELS.find((m) => m.id === model);
-    const params: Record<string, unknown> = {};
+    let params: Record<string, unknown> = {};
     if (def && kind !== "audio") {
-      const wantRatio = typeof s.ratio === "string" ? s.ratio : "";
-      params.ratio = def.ratios.includes(wantRatio) ? wantRatio : def.ratios[0];
-      const wantRes = typeof s.resolution === "string" ? s.resolution : "";
-      params.resolution = def.resolutions.find(
-        (x) => x.toLowerCase() === wantRes.toLowerCase()
-      ) ?? def.resolutions[0];
-      if (def.durations.length) {
-        const want = Number(s.seconds);
-        params.seconds = Number.isFinite(want) && want > 0
-          ? def.durations.reduce((best, d) =>
-            Math.abs(d - want) < Math.abs(best - want) ? d : best, def.durations[0])
-          : def.durations[0];
-      }
+      params = fitStepParams(def, { ratio: s.ratio, resolution: s.resolution, seconds: s.seconds });
     } else {
       const want = Number(s.seconds);
       if (Number.isFinite(want) && want > 0) params.seconds = Math.min(60, Math.round(want));
@@ -827,9 +1012,10 @@ export function extractTurn(text: string, allowConnected = false): ParsedTurn | 
     }
     : null;
 
+  const note = unmade.length ? `\n\nNot proposed, because no engine for it is switched on here: ${unmade.join(", ")}.` : "";
   return {
     title: raw.title ? String(raw.title).slice(0, 80) : null,
-    say: say || "Here's what I'd do.",
+    say: `${say || "Here's what I'd do."}${note}`.slice(0, 8000),
     activity: (Array.isArray(raw.activity) ? raw.activity : [])
       .map((a: unknown) => String(a).slice(0, 90)).filter(Boolean).slice(0, 8),
     ask, propose,
@@ -865,15 +1051,25 @@ export async function addUserMessage(
   return messageId;
 }
 
-/** What the project already holds, as a line the planner can read. */
+/** What the project already holds, as a line the planner can read: its own
+ *  cast and the workspace-wide cast, which a render resolves just the same.
+ *  A production's own @Name comes first and wins over a shared one. */
 export async function projectContext(projectId: string | null): Promise<string> {
-  if (!projectId) return "";
   await ready();
-  const cast = await db().execute({
-    sql: `SELECT name, kind, description FROM cast_members WHERE project_id = ? LIMIT 30`,
-    args: [projectId],
-  });
-  const lines = cast.rows.map((r: Row) =>
+  const cast = projectId
+    ? await db().execute({
+      sql: `SELECT name, kind, description FROM cast_members WHERE project_id = ? OR project_id IS NULL
+            ORDER BY (project_id IS NULL), LOWER(name) LIMIT 30`,
+      args: [projectId],
+    })
+    : await db().execute(`SELECT name, kind, description FROM cast_members WHERE project_id IS NULL ORDER BY LOWER(name) LIMIT 30`);
+  const seen = new Set<string>();
+  const lines = cast.rows.filter((r: Row) => {
+    const key = String(r.name).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((r: Row) =>
     `  @${String(r.name)} (${String(r.kind)})${r.description ? ` — ${String(r.description)}` : ""}`);
   if (!lines.length) return "";
   return ["Named cast and locations you can refer to by name:", ...lines].join("\n");

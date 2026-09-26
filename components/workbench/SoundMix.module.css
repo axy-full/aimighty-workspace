@@ -199,20 +199,23 @@
   .panel button { min-height: 44px; height: auto; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
   .add { gap: 8px; margin-top: 12px; }
   .add select { width: 100%; }
-  .inline { min-height: 36px; font-size: 13px; color: var(--graphite-body); }
+  .inline { min-height: 44px; font-size: 13px; color: var(--graphite-body); }
   .panel input[type="checkbox"] { width: 20px; height: 20px; }
   .clips { gap: 12px; margin-top: 12px; }
   .clip { padding: 12px; border-radius: 8px; background: transparent; }
   .clip legend { font-size: 12px; color: var(--graphite-muted); font-weight: 400; line-height: 1.5; }
   .track { gap: 8px; }
   .track select { font-size: 14px; }
-  .track label { min-height: 36px; }
-  .track label input { width: 16px; height: 16px; }
-  .track button { font-size: 11px; }
+  .track span { font-size: 12px; }
+  .track label { min-height: 44px; }
+  .track label input { width: 20px; height: 20px; }
+  .track button { min-height: 44px; font-size: 12px; }
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 8px; margin-top: 12px; }
-  .controls label { font-size: 10px; line-height: 1.4; letter-spacing: .03em; }
+  .controls label { font-size: 12px; line-height: 1.4; letter-spacing: .03em; }
   .controls input { padding: 8px; font-family: var(--graphite-mono); font-size: 16px; }
   .placement { height: 18px; margin-top: 12px; }
+  .placement small { font-size: 12px; }
+  .panel :global(.eyebrow) { font-size: 12px; }
   .actions { gap: 8px; }
   .actions button { flex: 1 1 auto; }
   .actions :global(.primary) { border-radius: 10px; }

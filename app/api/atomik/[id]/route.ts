@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
-  getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext, requestEffort,
+  getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
   type AgentMode,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
@@ -22,6 +22,8 @@ export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
+  /* Reading the plan settles any step whose approval was cut off mid-way. */
+  await reconcileRunningSteps(id);
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
   return NextResponse.json(loaded);

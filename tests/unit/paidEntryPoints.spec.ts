@@ -132,6 +132,42 @@ test("an answer the caller refuses is paid to the provider but settles at zero f
     expect(String(job.response_json)).toContain("without the citation");
   }));
 
+test("an empty answer is paid to the provider but settles at zero, like a refused one", async () =>
+  scope("text_blank", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const { db } = await import("../../lib/db");
+    for (const [id, content] of [["text_blank_empty", ""], ["text_blank_space", "  \n "], ["text_blank_missing", undefined]] as const) {
+      await expect(
+        runPaidText({ ...call, id }, {
+          model,
+          submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: content === undefined ? {} : { content } }], usage: { cost: 0.01 } }) }),
+        }),
+      ).rejects.toThrow(/no usable text\. Nothing was charged\./);
+      const event = (await metered("text_blank")).find((row) => row.id === id)!;
+      expect(event.status).toBe("failed");
+      expect(Number(event.billed_credits)).toBe(0);
+      const job = (await db().execute({ sql: `SELECT status,cost_usd,response_json FROM paid_text_jobs WHERE id=?`, args: [id] })).rows[0];
+      expect(job.status).toBe("refused");
+      expect(Number(job.cost_usd)).toBeCloseTo(0.01, 6);
+      expect(String(job.response_json)).toContain("choices");
+      const spend = (await db().execute({ sql: `SELECT cost_usd FROM atomik_spend WHERE id=?`, args: [id] })).rows[0];
+      expect(Number(spend.cost_usd)).toBeCloseTo(0.01, 6);
+    }
+  }));
+
+test("a settled answer reports what the ledger billed, in credits", async () =>
+  scope("text_credits", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const out = await runPaidText(call, {
+      model,
+      submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A usable logline." } }], usage: { cost: 0.4 } }) }),
+    });
+    const event = (await metered("text_credits"))[0];
+    expect(Number(event.billed_credits)).toBe(6);
+    expect(out.credits).toBe(6);
+    expect(out.costUsd).toBeCloseTo(0.4, 6);
+  }));
+
 test("unknown text prices and empty balances fail before provider submission", async () =>
   scope(
     "text_empty",

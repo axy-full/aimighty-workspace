@@ -9,6 +9,7 @@ import { useRig } from "@/components/workspace/rig/RigProvider";
 import { addInput, branchFromTake, buildFromBoards, removeInput, setFirstFrame } from "@/lib/production/rig-build";
 import { ENGINE_PROMPT_LIMIT, RIG_PROMPT_LIMIT, renderPromptFor, shotRenderPrompt, textKey } from "@/lib/production/rig-prompt";
 import { entryAsset } from "@/lib/production/sequence";
+import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { shotEngines } from "@/lib/workspace/engines";
@@ -312,8 +313,19 @@ export function WireShot({ shot }: { shot: RigShot }) {
   const active = jobs.find((j) => j.status === "queued" || j.status === "running");
   /* The newest finished wiring, applied once: the shot records the run it took (a new tab or a teammate never re-applies it). */
   const latest = jobs.find((j) => j.status === "succeeded");
-  const done = latest?.result?.rig ? latest : undefined;
   const node = rig.project?.nodes.find((n) => n.id === shot.id);
+  /* The run list leaves wirings off (a production can wire hundreds of shots): the one this shot has not taken is read by its id. */
+  const { load } = runs;
+  const [read, setRead] = useState<DevelopmentJob | null>(null);
+  const latestId = latest?.id ?? null, listed = Boolean(latest?.result?.rig);
+  const untaken = latest ? wiringDecision(node, latest.id, watchedWiring(latest.id)) !== "applied" : false;
+  useEffect(() => {
+    if (!latestId || listed || !untaken || read?.id === latestId) return;
+    let alive = true;
+    void load(latestId).then((job) => { if (alive) setRead(job); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [latestId, listed, untaken, read?.id, load]);
+  const done = latest?.result?.rig ? latest : read?.id === latestId && read?.result?.rig ? read : undefined;
   const activeId = active?.id ?? null;
   useEffect(() => { if (activeId) watchWiring(activeId); }, [activeId]);
   const decision = done ? wiringDecision(node, done.id, watchedWiring(done.id)) : "applied";

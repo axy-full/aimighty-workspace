@@ -55,8 +55,14 @@ async function once(body: string, key: string): Promise<GrokAnswer> {
   }
 }
 
-/** 45 s, one retry — and the retry only for a timeout, a network failure or a 5xx/429. */
-export async function askGrok(input: { system: string; user: string; phase: CrewPhase; effort: CrewEffort; mock: () => string }): Promise<GrokAnswer> {
+/**
+ * 45 s, one retry — and the retry only for a timeout, a network failure or a 5xx/429.
+ *
+ * `model` is the room's own (session.model): the model it was priced and
+ * reserved at. Sending XAI_MODEL instead let a room priced for one model run
+ * on whatever the deployment switched to since, past its approved ceiling.
+ */
+export async function askGrok(input: { system: string; user: string; phase: CrewPhase; effort: CrewEffort; mock: () => string; model?: string }): Promise<GrokAnswer> {
   if (engineMock()) {
     const text = input.mock();
     return { ok: true, text, promptTokens: Math.ceil((input.system.length + input.user.length) / 4), completionTokens: Math.ceil(text.length / 4) };
@@ -64,7 +70,7 @@ export async function askGrok(input: { system: string; user: string; phase: Crew
   const key = vendorKey("xai");
   if (!key) return { ok: false, status: 503, reason: "Add key in Workspace › Engines." };
   const body = JSON.stringify({
-    model: xaiModel(),
+    model: input.model?.trim() || xaiModel(),
     messages: [{ role: "system", content: input.system }, { role: "user", content: input.user }],
     temperature: TEMPERATURE[input.phase],
     max_tokens: MEMBER_MAX_TOKENS,

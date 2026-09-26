@@ -166,6 +166,20 @@ test("deleting a production archives everything filed under it in one write, and
   });
 });
 
+test("a row whose column is named by a keyword is archived too (a workspace rule's \"on\")", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { addRule, deleteRule, listWorkspaceRules } = await import("../../lib/rules");
+  await runInTenant(workspace("rules"), async () => {
+    await ready();
+    const rule = await addRule({ text: "No logos in the first frame.", scope: "video", apply: "prompt" }, "owner");
+    expect(await deleteRule(rule.id)).toBe(true);
+    expect(await listWorkspaceRules()).toEqual([]);
+    const archived = (await db().execute({ sql: "SELECT body FROM archived_rows WHERE table_name = 'workspace_rules' AND row_id = ?", args: [rule.id] })).rows;
+    expect(JSON.parse(String(archived[0].body))).toMatchObject({ id: rule.id, text: "No logos in the first frame.", scope: "video", on: 1 });
+  });
+});
+
 test("deleting an upload archives its row and leaves the file in storage", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");

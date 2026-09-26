@@ -97,9 +97,9 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
 }
 
-export function ShellProvider({ children }: { children: ReactNode }) {
+export function ShellProvider({ children, initialSearch }: { children: ReactNode; initialSearch?: string }) {
   const ws = useWorkspace();
-  const [params, setParams] = useState<Params>(() => readParams(typeof window === "undefined" ? "" : window.location.search));
+  const [params, setParams] = useState<Params>(() => readParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
   const [memory, setMemory] = useState<Partial<Record<ShellSuiteId, string>>>({});
   const [wide, setWide] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= WIDE_FROM));
   const [libTab, setLibTab] = useState<LibTab>("tools");
