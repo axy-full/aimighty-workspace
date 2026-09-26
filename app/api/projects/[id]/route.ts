@@ -63,11 +63,13 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
      partway never leaves a production still standing with its renders
      already unfiled and its cast already archived. */
   const deleted = await archiveTransaction(async (tx) => {
-    const [found, elements] = await tx.batch([
+    const [found, elements, library] = await tx.batch([
       { sql: `SELECT id FROM projects WHERE id = ?`, args: [id] },
       /* Versions and attributes go through their element, which is why the
          element ids are read first. */
       { sql: `SELECT id FROM elements WHERE project_id = ?`, args: [id] },
+      /* The Library's filings table exists once a project library was used. */
+      { sql: `SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_library_uploads'`, args: [] },
     ]);
     if (!found.rows.length) return false;
     const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
@@ -87,6 +89,10 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
       { table: "shots", where: `project_id = ?`, args: [id] },
       { table: "canvas_items", where: `project_id = ?`, args: [id] },
       { table: "shot_presets", where: `project_id = ?`, args: [id] },
+      /* Originals filed in its library go back to the workspace's uploads, as its renders fall back
+         to Unfiled: a filing left pointing at a project that is gone would keep the original from
+         ever being deleted ("Remove its project filing first" needs the project). */
+      ...(library.rows.length ? [{ table: "project_library_uploads", where: `project_id = ?`, args: [id] }] : []),
       { table: "projects", where: `id = ?`, args: [id] },
     ];
     // Every write in one batch: a few round trips hold the write lock, not dozens.

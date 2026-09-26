@@ -147,3 +147,22 @@ test('a stale revision is a conflict the client can merge over, with its code',a
   expect(other).not.toBeInstanceOf(DraftConflictError);
  });
 });
+
+test('a draft whose project was deleted still saves its edits, and only its own link survives',async()=>{
+ const {saveDraft,readDraft,mapNodeShot}=await import('../../lib/workbench/records');
+ const {newProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');const {db}=await import('../../lib/db');
+ await runInTenant(workspace('deleted-project'),async()=>{
+  const p={...newProject('Deleted under me'),nodes:[{id:'node-one',title:'An arrival',type:'scene' as const,x:0,y:0,width:200,linked:[]}]};
+  const first=await saveDraft('owner',p,0);
+  await db().execute({sql:'DELETE FROM projects WHERE id=?',args:[first.productionProjectId]});
+  const saved=(await readDraft('owner',p.id))!;
+  const again=await saveDraft('owner',{...saved.project,brief:'Written after the project was deleted'},saved.revision);
+  expect(again.productionProjectId).toBe(first.productionProjectId);
+  expect((await readDraft('owner',p.id))?.project.brief).toBe('Written after the project was deleted');
+  /* What needs the project itself says it is gone; nothing re-creates it behind the team's back. */
+  await expect(mapNodeShot('owner',(await readDraft('owner',p.id))!.project,'node-one')).rejects.toThrow(/no longer exists/);
+  expect(Number((await db().execute({sql:'SELECT COUNT(*) AS n FROM projects WHERE id=?',args:[first.productionProjectId]})).rows[0].n)).toBe(0);
+  /* A new draft naming that id was never linked here: refused, as before. */
+  await expect(saveDraft('other',{...newProject('Claims it'),productionProjectId:first.productionProjectId},0)).rejects.toThrow(/no longer exists/);
+ });
+});

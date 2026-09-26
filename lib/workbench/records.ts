@@ -127,7 +127,12 @@ export async function saveDraft(owner:string, project:Project, revision:number) 
   if((current?.revision??0)!==revision)throw new DraftConflictError('This project changed in another window. Download your work before reloading.');
   if(current?.project.productionProjectId && project.productionProjectId && current.project.productionProjectId!==project.productionProjectId)
     throw new Error('A draft cannot change its project. Open a separate space.');
-  const pid=await linkProduction(owner,{...project,productionProjectId:current?.project.productionProjectId||project.productionProjectId});
+  const stored=current?.project.productionProjectId;
+  /* A project deleted under a saved draft never costs the draft its edits: it still saves, naming the
+     project this workspace linked it to, and what needs the project itself (mapping a shot to render)
+     says it is gone. An id the client names that this workspace never linked is still refused. */
+  const gone=!!stored && !(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[stored]})).rows.length;
+  const pid=gone?stored!:await linkProduction(owner,{...project,productionProjectId:stored||project.productionProjectId});
   return workbenchTransaction(async(tx)=>{
     await validateStoredMedia(tx,project);
     const mappings=Object.fromEntries((await tx.execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
