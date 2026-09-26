@@ -36,12 +36,13 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
     if (!name?.trim()) return;
     /* A token that can generate is made only once its ceiling is settled, in
        the workspace's unit: Cancel makes nothing, and anything that does not
-       read as credits (or dollars, on a workspace's own keys) asks again. */
-    const unit: Unit | null = data?.unit
-      ?? (await scopedFetch("/api/tokens", { cache: "no-store" }).then((r) => r.json()).then((j: { unit?: Unit }) => j.unit ?? "usd").catch(() => null));
-    if (!unit) { await appAlert("Couldn't create the token", "Your tokens could not be read. Reload the page and try again."); return; }
-    let ceiling: { capUsd: number | null } | { capCredits: number | null } = unit === "credits" ? { capCredits: null } : { capUsd: null };
+       read as credits (or dollars, on a workspace's own keys) asks again. A
+       read-only token cannot spend, so it carries no ceiling and waits on nothing. */
+    let ceiling: { capUsd: number | null } | { capCredits: number | null } | Record<string, never> = {};
     if (scope === "render") {
+      const unit: Unit | null = data?.unit
+        ?? (await scopedFetch("/api/tokens", { cache: "no-store" }).then((r) => r.json()).then((j: { unit?: Unit }) => j.unit ?? "usd").catch(() => null));
+      if (!unit) { await appAlert("Couldn't create the token", "Your tokens could not be read. Reload the page and try again."); return; }
       let typed = unit === "credits" ? "500" : "20", problem: string | undefined;
       for (;;) {
         const answer = await appPrompt("Monthly ceiling", typed, unit === "credits" ? "Credits — blank for no limit" : "USD — blank for no limit", problem);

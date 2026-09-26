@@ -41,6 +41,11 @@ export async function discoverConsumerCapabilities(
   };
 }
 
+/** Analyse video stays off until the platform turns it on: the same switch
+ * lib/higgsfield-consumer/voice-tool-service reads (VIDEO_ANALYSIS_ENABLED),
+ * read here so owner review never loads the paid voice-tool service. */
+export const analysisSwitchedOn = () => process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED === "1";
+
 /**
  * Atomik › Tools & connections: the same free tools/list read, reduced to one
  * flag per capability row. Tool names, descriptions and schemas stay on the
@@ -52,7 +57,8 @@ export async function discoverAtomikReach(
   options: { signal?: AbortSignal; off?: readonly ConnectedReachId[]; now?: number } = {},
 ) {
   const catalogue = await discoverConsumerTools(accessToken, { signal: options.signal });
-  const reach = reachFromTools(catalogue.tools.map((tool) => tool.name), { off: options.off });
+  const off = options.off ?? (analysisSwitchedOn() ? [] : (["analysis"] as const));
+  const reach = reachFromTools(catalogue.tools.map((tool) => tool.name), { off });
   return {
     status: "checked" as const,
     checkedAt: options.now ?? Date.now(),

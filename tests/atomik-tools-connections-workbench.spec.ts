@@ -278,6 +278,9 @@ test("a token is made with a ceiling in the workspace's unit, shown once, filled
   const secret = page.getByTestId("token-secret");
   await expect(secret).toHaveText(/^(pk_[a-z0-9]+_|aw_)[0-9a-f]{48}$/);
   const token = (await secret.textContent())!;
+  /* Shown once, so it comes to the person: in view, with focus on its Copy, wherever the form was scrolled. */
+  await expect(page.getByTestId("token-copy")).toBeFocused();
+  await expect(page.getByTestId("token-copy")).toBeInViewport();
   await expect(page.getByTestId("token-row")).toHaveCount(1);
   await expect(page.getByTestId("token-facts")).toHaveText("Can generate · 0 cr of 500 cr this month · never used");
   await page.getByTestId("token-copy").click();
@@ -298,6 +301,7 @@ test("a token is made with a ceiling in the workspace's unit, shown once, filled
   await checkLayout(page, PHONES.includes(info.project.name));
   await page.getByTestId("token-revoke-confirm").click();
   await expect(page.getByTestId("toast")).toContainText("revoked. Anything using it is refused from its next call.");
+  await expect(page.locator("#tc-tokens")).toBeFocused();
   await expect(page.getByTestId("token-row")).toHaveCount(0);
   await expect(page.getByTestId("token-fresh")).toHaveCount(0);
   await expect(page.getByTestId("setup-step").nth(1)).toContainText("PARTICL_TOKEN=YOUR_TOKEN");

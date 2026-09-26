@@ -255,7 +255,16 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
   const [rowError, setRowError] = useState<{ id: string; text: string } | null>(null);
   const live = useRef(true);
   const loads = useRef(0);
+  const freshBox = useRef<HTMLDivElement | null>(null);
+  const copyButton = useRef<HTMLButtonElement | null>(null);
+  const heading = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  /* The secret is shown once: bring it into view and put focus on its Copy, wherever the form was scrolled to. */
+  useEffect(() => {
+    if (!fresh) return;
+    freshBox.current?.scrollIntoView({ block: "nearest" });
+    copyButton.current?.focus({ preventScroll: true });
+  }, [fresh]);
 
   const load = useCallback(async () => {
     const mine = ++loads.current;
@@ -263,11 +272,11 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
       const response = await scoped("/api/tokens", { cache: "no-store" });
       const json = await response.json().catch(() => null);
       const parsed = response.ok ? parseTokens(json) : null;
-      if (!parsed) throw new Error((json as { error?: string } | null)?.error ?? "Your tokens could not be read.");
+      if (!parsed) throw new Error((json as { error?: string } | null)?.error ?? "Your tokens could not be read. Try again.");
       /* Only the newest read lands: a slow first read never overwrites the list after a make or a revoke. */
       if (live.current && mine === loads.current) { setData(parsed); setLoadError(null); }
     } catch (caught) {
-      if (live.current && mine === loads.current) setLoadError(caught instanceof Error ? caught.message : "Your tokens could not be read.");
+      if (live.current && mine === loads.current) setLoadError(caught instanceof Error ? caught.message : "Your tokens could not be read. Try again.");
     }
   }, [scoped]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
@@ -311,11 +320,13 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
       const json = await response.json().catch(() => null) as { error?: string } | null;
       if (!response.ok) throw new Error(json?.error ?? "The token could not be revoked. Try again.");
       if (!live.current) return;
-      loads.current++;
+      /* Gone from the list at once; then a fresh read, so a token made a moment ago is not lost to an older read. */
       setData((current) => (current ? { ...current, tokens: current.tokens.filter((x) => x.id !== t.id) } : current));
+      void load();
       setConfirming(null);
       /* A revoked secret is useless: it leaves the screen and the setup steps. */
       if (fresh?.id === t.id) { setFresh(null); onFresh(""); }
+      heading.current?.focus();
       toast(`“${t.name}” revoked. Anything using it is refused from its next call.`);
     } catch (caught) {
       if (live.current) setRowError({ id: t.id, text: caught instanceof Error ? caught.message : "The token could not be revoked. Try again." });
@@ -334,15 +345,15 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
   return (
     <section className="tc-card" aria-labelledby="tc-tokens" data-testid="connect-tokens">
       <div className="tc-head">
-        <h3 className="tc-title" id="tc-tokens"><span className="tc-n" aria-hidden="true">1</span>Make a token</h3>
+        <h3 className="tc-title" id="tc-tokens" tabIndex={-1} ref={heading}><span className="tc-n" aria-hidden="true">1</span>Make a token</h3>
         <span className="tc-summary">Acts as you · revoke any time</span>
       </div>
       {fresh ? (
-        <div className="tc-fresh" role="status" data-testid="token-fresh">
+        <div className="tc-fresh" role="status" ref={freshBox} data-testid="token-fresh">
           <span className="tc-name">Copy “{fresh.name}” now. It is shown once; step 2 has it filled in.</span>
           <code className="tc-secret" data-testid="token-secret">{fresh.token}</code>
           <span className="wsx-actions">
-            <button type="button" className="gx-primary" onClick={() => void copyFresh()} data-testid="token-copy">{copied ? "Copied" : "Copy token"}</button>
+            <button type="button" className="gx-primary" ref={copyButton} onClick={() => void copyFresh()} data-testid="token-copy">{copied ? "Copied" : "Copy token"}</button>
             <button type="button" className="gx-hbtn" onClick={() => setFresh(null)} data-testid="token-done">Done</button>
           </span>
         </div>
@@ -389,7 +400,7 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
         </div>
         {scope === "render" ? (
           <label className="tc-ceiling">
-            <input className="gx-field" inputMode="numeric" aria-label={`Monthly ceiling, ${suffix}`} aria-describedby={unbounded ? "tc-unbounded" : undefined} placeholder={unit ? "No ceiling" : "Reading…"} value={typed} disabled={!unit} onChange={(e) => { setCeiling(e.target.value); setProblem(null); }} data-testid="token-ceiling" />
+            <input className="gx-field" inputMode="numeric" aria-label={unit === "usd" ? "Monthly ceiling in dollars" : "Monthly ceiling in credits"} aria-describedby={unbounded ? "tc-unbounded" : undefined} placeholder={unit ? "No ceiling" : "Reading…"} value={typed} disabled={!unit} onChange={(e) => { setCeiling(e.target.value); setProblem(null); }} data-testid="token-ceiling" />
             <span className="cw-dim">{suffix}</span>
           </label>
         ) : null}

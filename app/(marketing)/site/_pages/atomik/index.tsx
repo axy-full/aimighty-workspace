@@ -43,7 +43,7 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
   { tag: "05 Builds", name: "Builds", badge: "Not yet runnable",
     body: "The plan: describe a tool and the agent builds it, with interface, data, sign-in and generation models wired in, running on the viewer’s own credits. There is no build service yet." },
   { tag: "06 Tools", name: "Tools & connections",
-    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D, then the connected account’s catalogue, characters, voice, dubbing, social cuts and ad templates, each checked live against the tools the account offers. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT, with a monthly ceiling on anything that can spend." },
+    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D, then the connected account’s catalogue, characters, voice, dubbing, social cuts and ad templates, each checked live against the tools the account offers. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT; a token that can spend starts with a monthly ceiling." },
   { tag: "07 Models", name: "Models",
     body: "Claude, OpenAI and Gemini planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer, under per-request and per-production ceilings. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
   { tag: "08 Approvals", name: "Approvals",

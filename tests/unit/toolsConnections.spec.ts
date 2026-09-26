@@ -80,6 +80,22 @@ test("the live check reads the account's own tools: our client, another client, 
   for (const row of off) expect(Object.keys(row).sort()).toEqual(row.off ? ["available", "id", "off"] : ["available", "id"]);
 });
 
+test("the reach check reads the same video-analysis switch as the voice tools, without loading that paid service", async () => {
+  expect(readFileSync("lib/higgsfield-consumer/voice-tool-service.ts", "utf8")).toContain('VIDEO_ANALYSIS_ENABLED = process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED === "1"');
+  const { analysisSwitchedOn } = await import("../../lib/higgsfield-consumer/discovery");
+  const before = process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED;
+  try {
+    delete process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED;
+    expect(analysisSwitchedOn()).toBe(false);
+    process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED = "1";
+    expect(analysisSwitchedOn()).toBe(true);
+  } finally {
+    if (before === undefined) delete process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED; else process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED = before;
+  }
+  const route = readFileSync("app/api/higgsfield/consumer/capabilities/route.ts", "utf8");
+  expect(route).not.toContain("voice-tool-service");
+});
+
 test("a reach reply is read defensively and becomes one state, each with a next step", () => {
   const full = reachFromTools(fixture("connected-tools-91.json"));
   expect(parseReach(full)).toEqual(full);

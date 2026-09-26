@@ -7,7 +7,6 @@ import {
 } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
 import { discoverAtomikReach, discoverConsumerCapabilities } from "@/lib/higgsfield-consumer/discovery";
-import { VIDEO_ANALYSIS_ENABLED } from "@/lib/higgsfield-consumer/voice-tool-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,7 +47,7 @@ export const POST = withTenant(
         );
       return Response.json(
         reach
-          ? await discoverAtomikReach(token, { signal: req.signal, off: VIDEO_ANALYSIS_ENABLED ? [] : ["analysis"] })
+          ? await discoverAtomikReach(token, { signal: req.signal })
           : await discoverConsumerCapabilities(token, req.signal),
         { headers },
       );
