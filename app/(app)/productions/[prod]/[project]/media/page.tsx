@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { downloadHref } from "@/lib/format";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
@@ -20,10 +21,11 @@ import type { Gen } from "@/components/GenCard";
 /**
  * Project › Media (design/particl-v2/README.md §6; board 7b), value for
  * value. Under the production header: a 52px sub-bar, `0 24px`, 14 apart —
- * the `Shots · Boards · Approve · Media` segmented (`8px 14px`), the kind
- * pills (`All · 41`, `Takes · 22`, `Stills · 12`, `Audio · 5`, `Masters ·
- * 2`), and from the right the search (36px, 220 wide, `--card`, .08),
- * `BY SHOT ▾` in mono, and the one filled primary, `Download N masters ·
+ * the `Shots · Media` segmented (`8px 14px`; the board's Boards and Approve
+ * had no view behind them and are left out), the kind pills (`All · 41`,
+ * `Takes · 22`, `Stills · 12`, `Audio · 5`, `Masters · 2`), and from the
+ * right the search (36px, 220 wide, `--card`, .08), `BY SHOT` in mono (the
+ * grouping, which is fixed), and the one filled primary, `Download N masters ·
  * 0 CR`. The body (`0 24px 24px`, groups 20 apart): one group per shot —
  * its id in mono, its title 600 14/1.2, `N items · N cr` 400 12.5, a .07
  * hairline, `OPEN SHOT →` — over six columns of media tiles 10 apart.
@@ -38,7 +40,6 @@ import type { Gen } from "@/components/GenCard";
  * masters · 0 CR` pinned above the dock. No search, no `BY SHOT`.
  */
 type Kind = "all" | "take" | "still" | "audio" | "master";
-type Tab = "shots" | "boards" | "approve" | "media";
 
 const KIND_WORD: Record<Exclude<Kind, "all">, string> = { take: "Takes", still: "Stills", audio: "Audio", master: "Masters" };
 
@@ -68,7 +69,6 @@ export default function ProjectMediaPage() {
   const { data: jobs } = useApi<{ generations: Gen[] }>(signedIn ? `/api/jobs?projectId=${encodeURIComponent(projectId)}&limit=500` : null, 15_000);
   const [kind, setKind] = useState<Kind>("all");
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<Tab>("media");
 
   const production = prods?.productions.find((p) => p.id === prod) ?? null;
   const project = production?.projects.find((j) => j.id === projectId) ?? null;
@@ -110,15 +110,27 @@ export default function ProjectMediaPage() {
   if (!prods || !jobs) return <PageLoader what={`Opening · ${project?.name ?? "project"}`} />;
   if (!production || !project) return <div className="p-[24px] text-[13px] text-ink-body">No such project. <Link href="/productions" className="text-ink">← Projects</Link></div>;
 
-  const fmt = (n: number) => money.inCredits ? money.price(n) : money.price(n);
-  const download = () => { for (const m of masters) window.open(m.url!, "_blank", "noopener"); };
+  const fmt = (n: number) => money.price(n);
+  /* One anchor per master, a beat apart: a browser lets one download through
+     per click without a gap, and window.open was both blocked after the first
+     and opened the file instead of saving it. */
+  const download = () => {
+    masters.forEach((m, i) => {
+      setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = downloadHref(m.url!); a.download = ""; a.rel = "noopener";
+        document.body.appendChild(a); a.click(); a.remove();
+      }, i * 400);
+    });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <ProductionHeader production={production} project={project} />
       <div className="flex h-[52px] flex-none items-center gap-[14px] px-[24px] max-md:hidden">
-        <Segmented label="Project" placement="toolbar" value={tab} onChange={(t) => { setTab(t); if (t === "shots") router.push(`/productions/${prod}/${projectId}/shots`); }}
-          options={[{ value: "shots", label: "Shots" }, { value: "boards", label: "Boards" }, { value: "approve", label: "Approve" }, { value: "media", label: "Media" }]} />
+        {/* Shots and Media are the project's two views; Boards and Approve had nothing behind them. */}
+        <Segmented label="Project" placement="toolbar" value="media" onChange={(t) => { if (t === "shots") router.push(`/productions/${prod}/${projectId}/shots`); }}
+          options={[{ value: "shots", label: "Shots" }, { value: "media", label: "Media" }]} />
         <span className="flex gap-[6px]">
           <Chip variant="filter" active={kind === "all"} onClick={() => setKind("all")}>All · {counts.all}</Chip>
           {(["take", "still", "audio", "master"] as const).map((k) => (
@@ -131,7 +143,7 @@ export default function ProjectMediaPage() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search this project…" aria-label="Search this project"
               className="min-w-0 flex-1 bg-transparent text-[13px] text-ink placeholder:text-ink-muted max-md:text-[16px]" />
           </label>
-          <Mono>By shot ▾</Mono>
+          <Mono>By shot</Mono>
           <Button variant="primary" placement="header" cost={0} disabled={!masters.length} onClick={download}>
             Download {masters.length} {masters.length === 1 ? "master" : "masters"}
           </Button>

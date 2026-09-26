@@ -16,10 +16,10 @@ export default function NotFound() {
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Link href="/" className="btn-render inline-flex h-[38px] items-center px-5 text-[14px]">
-            Go to Video
+            Go to Studio
           </Link>
           <Link href="/productions" className="chip">Projects</Link>
-          <Link href="/all" className="chip">All takes</Link>
+          <Link href="/library?all=1" className="chip">All assets</Link>
         </div>
       </div>
     </main>

@@ -21,6 +21,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { isAssetDrag, readDrag, type DraggedAsset } from "@/lib/dnd";
 import { GEN_ASSETS_CHANGED, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { libraryId, libraryInput, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
+import { clearComposeHandoff, readComposeHandoff } from "@/lib/composeHandoff";
 import Composer, { type ComposerHandle, type ComposerKind } from "./Composer";
 import GenAssetLibrary from "./GenAssetLibrary";
 import SeedanceEdit from "./SeedanceEdit";
@@ -192,6 +193,26 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       composer.current.usePrompt(String(take.params.rawPrompt || take.prompt));
     }
   }, [mode.kind, toolOpen]);
+  /* The shot builder's hand-off (lib/composeHandoff.ts): taken once, and cleared
+     only after the composer has it — a composer holding a paid request to
+     recover refuses it, and the hand-off waits. It also waits while the page is
+     still settling its project: the composer is keyed by the project, so a
+     prompt given to the one about to be replaced would be lost with it. */
+  useEffect(() => {
+    if (toolOpen || !composer.current || (mode.kind !== "video" && mode.kind !== "image")) return;
+    if (!workbenchProjectId && requestScope) {
+      if (!projectResult.data) return;
+      let remembered: string | null = null;
+      try { remembered = localStorage.getItem(requestScope); } catch {}
+      if (remembered && projectResult.data.projects.some((item) => item.id === remembered)) return;
+    }
+    let store: Storage | null = null;
+    try { store = window.sessionStorage; } catch { return; }
+    const handoff = readComposeHandoff(store, workspace?.id, email);
+    if (!handoff) { clearComposeHandoff(store, workspace?.id, email); return; }
+    if (handoff.kind !== mode.kind) return;
+    if (composer.current.usePrompt(handoff.prompt)) clearComposeHandoff(store, workspace?.id, email);
+  }, [mode.kind, toolOpen, workspace?.id, email, scope, workbenchProjectId, requestScope, projectResult.data]);
   const receiver = () => toolOpen ? specialized.current : composer.current;
   async function addAsset(asset: DraggedAsset) {
     const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";

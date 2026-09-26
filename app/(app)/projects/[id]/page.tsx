@@ -84,6 +84,18 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   }
 
   usePageTitle(project?.name ?? "Project");
+  /* A project that is not in the list — archived, or an old link — is said to
+     be gone. The analytics route answers zeros for any id, so without this the
+     page drew an empty dashboard whose every control then failed. */
+  if (projects && !project) {
+    return (
+      <div className="screen">
+        <p className="mx-auto w-full max-w-[1120px] pt-6 text-[14px] text-dim">
+          No such project. <Link href="/productions" className="text-blue">← Projects</Link>
+        </p>
+      </div>
+    );
+  }
   if (!data) return error ? <Trouble label="The project didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the project" />;
 
   const t = data.totals;
@@ -126,10 +138,11 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         {project && <BurnDown project={project} totals={t} byShot={data.byShot} shotCount={shots.length} />}
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Link href="/" className="chip bg-action text-on-action">Open in Generate</Link>
+          {/* This project's own views. "/" is the Suites home and "/all" every
+              unfiled take in the workspace; neither knew this project. */}
+          <Link href={productionId ? `/productions/${productionId}/${id}/shots` : "/productions"} className="chip bg-action text-on-action">Render in Shots</Link>
           <Link href={`/projects/${id}/canvas`} className="chip">Canvas</Link>
-          <Link href="/all" className="chip">All takes</Link>
-          <Link href="/dashboard" className="chip">Project dashboard</Link>
+          <Link href={productionId ? `/productions/${productionId}/${id}/media` : "/productions"} className="chip">Takes</Link>
           <button type="button" onClick={remove} className="chip !text-lift">Delete project</button>
         </div>
 
@@ -285,7 +298,8 @@ function ReviewLinks({ projectId, isAdmin }: { projectId: string; isAdmin: boole
   }
   async function revoke(id: string) {
     if (!(await appConfirm("Withdraw this link?", "Anyone holding it loses the page at once. The takes are untouched.", { confirmLabel: "Withdraw", danger: true }))) return;
-    await fetch(`/api/shares?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await fetch(`/api/shares?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); await appAlert("Not withdrawn", j.error ?? `The server answered ${res.status}.`); return; }
     setMinted(null); refresh();
   }
   const when = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
