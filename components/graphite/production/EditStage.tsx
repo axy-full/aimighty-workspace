@@ -14,7 +14,9 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryBatch, findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { groupSiblings, isVariation, stripLabel, takeLabel } from "@/lib/variations";
+import { TakeStrip } from "../TakeStrip";
 import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
@@ -66,6 +68,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   useStageFacts("takes", project);
   /* Every generation first; then every asset, each in one group — its production category, else its kind. */
   const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
+  const generationCells = useMemo(() => groupSiblings(generations, entryBatch), [generations]);
   const groups = useMemo(() => assetGroups(items, project), [items, project]);
   /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
@@ -162,6 +166,17 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     catch (cause) { toast(cause instanceof Error ? cause.message : "It could not go on the timeline."); }
   };
   const sourceKey = entry ? `${entry.asset.origin === "generation" ? "generation" : "upload"}:${entry.take.sourceId}` : null;
+  /* A take of a batch is named by its number too: the strip's siblings share one prompt. */
+  const selectedBatch = entry ? entryBatch(entry) : undefined;
+  const selectedTake = selectedBatch && typeof selectedBatch.batchId === "string" && isVariation(selectedBatch.variation) ? selectedBatch.variation : null;
+  /* One generation to pick; inside a strip it is named by its take number, the strip carries the prompt. */
+  const takeButton = (e: LibraryEntry, label?: string) => (
+    <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} aria-label={label ? `${label} · ${e.take.name}` : undefined} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
+      {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
+      <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
+      <span className="pd-take-name">{label ?? e.take.name}</span>
+    </button>
+  );
   const blocked = !entry ? "Choose a take." : !project.productionProjectId ? "Save the project first." : !instruction.trim() ? "Write what should change." : null;
 
   return (
@@ -174,12 +189,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         </div>
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
-            {generations.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
-                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
-                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
-                <span className="pd-take-name">{e.take.name}</span>
-              </button>
+            {generationCells.map((cell) => cell.kind === "one" ? takeButton(cell.take) : (
+              <TakeStrip key={`batch:${cell.batchId}`} batchId={cell.batchId} testId="takes-batch" state="done" plain name={cell.takes[0].take.name}
+                label={stripLabel(cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return isVariation(v) ? v : i + 1; }))}>
+                {cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return takeButton(e, takeLabel(isVariation(v) ? v : i + 1)); })}
+              </TakeStrip>
             ))}
           </div>
         ) : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
@@ -187,7 +201,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
 
       {entry ? (
         <>
-          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
+          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {selectedTake ? `${takeLabel(selectedTake)} · ` : ""}{entry.take.name}</span></div>
           <div className="gx-gen-enhance">
             {entry.media === "audio" ? null : <>
               <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>

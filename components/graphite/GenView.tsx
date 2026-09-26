@@ -21,12 +21,14 @@ import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
-import type { LibraryEntry } from "@/lib/workspace/library";
+import { entryBatch, type LibraryEntry } from "@/lib/workspace/library";
+import { groupSiblings, stripLabel, takeLabel, isVariation, type Strip } from "@/lib/variations";
+import { TakeStrip } from "./TakeStrip";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
-import { useComposer } from "@/lib/workspace/use-composer";
+import { useComposer, type BatchView } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
@@ -47,6 +49,16 @@ type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
 const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
+/** What a batch's takes that went were approved at: this workspace's credits, or the connected account's own. */
+const approvedTotal = (batch: BatchView) => {
+  const went = batch.takes.filter((take) => take.state !== "refused" && take.state !== "not-sent");
+  if (!went.length) return null;
+  const total = went.reduce((sum, take) => sum + take.credits, 0).toLocaleString("en-US");
+  return batch.source === "connected" ? `${total} connected cr` : `${total} cr`;
+};
+/** A landed batch's settled cost, when every take of it is billed in this workspace's credits. */
+const settledTotal = (entries: readonly LibraryEntry[]) =>
+  entries.every((entry) => typeof entry.take.credits === "number") ? `${entries.reduce((sum, entry) => sum + (entry.take.credits ?? 0), 0).toLocaleString("en-US")} cr settled` : null;
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -228,16 +240,23 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   };
 
 
+  /* A batch still being followed is drawn from the composer (below) until it is over; its takes are not drawn twice. */
+  const liveBatches = composer.batches;
+  const liveIds = useMemo(() => new Set(liveBatches.map((batch) => batch.id)), [liveBatches]);
   const results = useMemo(() => {
     const media = FILTER_MEDIA[filter];
-    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
-  }, [items, filter]);
-  const running = ws.state.gen;
+    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media) && !liveIds.has(String(entryBatch(entry)?.batchId ?? "")));
+  }, [items, filter, liveIds]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
+  const cells = useMemo(() => groupSiblings(results, entryBatch), [results]);
+  const byGeneration = useMemo(() => new Map(items.map((entry) => [entry.take.sourceId, entry])), [items]);
+  /* The strip's own run; a batch draws its own strip instead of one running card. */
+  const running = ws.state.gen && !ws.state.gen.id.startsWith("batch:") ? ws.state.gen : null;
   /* Takes still on the connected account from an earlier visit, as the shell's collector reads them until
      they land (it announces each one and re-reads the Library). The one the composer is running now is the
      composer's alone. Collection files a take into Takes on the server; nothing here writes the draft. */
   const resumed = useResumedConnectedJobs({
-    draftId: project?.id ?? null, owned: [running?.id],
+    draftId: project?.id ?? null, owned: [running?.id, ...composer.batchJobIds],
     accept: (job) => job.composer === "gen",
   });
   const pickedUp = resumed.jobs;
@@ -258,6 +277,14 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, takesReferences ? "references are pictures and video." : `${model?.label ?? "this model"} takes a prompt only.`) ?? ""].filter(Boolean).join(" ") || null;
   };
   const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
+  /* A take's picture: opens it in the Inspector, and drags anywhere a take is taken. */
+  const thumb = (entry: LibraryEntry) => (
+    <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
+      onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
+      onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
+      {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}
+    </button>
+  );
 
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
   const tabs = (
@@ -437,7 +464,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           </div>
         </div>
         <VirtualItems
-          className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
+          className="gx-gen-grid" items={cells} getKey={(cell: Strip<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
@@ -452,30 +479,56 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
                 {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
-                <span className="gx-asset-name" title={job.input.prompt}>{takeName(job)}</span>
+                <span className="gx-asset-name" title={job.input.prompt}>{job.batch ? `${takeLabel(job.batch.variation)} · ${takeName(job)}` : takeName(job)}</span>
                 <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
                 {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
                 {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
               </div>
             );
           })}
+          {liveBatches.map((batch) => (
+            <TakeStrip key={batch.id} batchId={batch.id} testId="gen-batch" state={batch.phase.done ? "done" : "live"}
+              label={stripLabel(batch.takes.map((take) => take.variation))} name={batch.name}
+              meta={[batch.model, approvedTotal(batch), batch.phase.label].filter(Boolean).join(" · ")}>
+              {batch.views.map((view) => {
+                const entry = view.generationId ? byGeneration.get(view.generationId) : undefined;
+                return (
+                  <div className="gx-asset gx-batch-take" role="listitem" key={view.variation} data-tone={view.tone} data-status={view.status} data-done={view.done} data-variation={view.variation} data-testid="gen-batch-take">
+                    {entry ? thumb(entry) : <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[view.tone] }} aria-hidden="true" /></span>}
+                    <span className="gx-asset-name">{view.label}</span>
+                    <span className="gx-asset-meta" data-testid="gen-batch-take-status">{view.status}</span>
+                  </div>
+                );
+              })}
+            </TakeStrip>
+          ))}
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
           </>}
-          renderItem={(entry) => (
-            <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
-              <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
-                onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
-                onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
-                {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}
-              </button>
-              <span className="gx-asset-name">{entry.take.name}</span>
-              <span className="gx-asset-meta">{entry.take.meta}</span>
+          renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? (
+            <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === cell.take.take.id}>
+              {thumb(cell.take)}
+              <span className="gx-asset-name">{cell.take.take.name}</span>
+              <span className="gx-asset-meta">{cell.take.take.meta}</span>
             </div>
+          ) : (
+            <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
+              label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
+              {cell.takes.map((entry, i) => {
+                const v = entryBatch(entry)?.variation;
+                return (
+                  <div className="gx-asset gx-batch-take" role="listitem" key={entry.take.id} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} data-testid="gen-batch-take">
+                    {thumb(entry)}
+                    <span className="gx-asset-name">{takeLabel(isVariation(v) ? v : i + 1)}</span>
+                    <span className="gx-asset-meta">{entry.take.meta}</span>
+                  </div>
+                );
+              })}
+            </TakeStrip>
           )}
         />
-        {!running && !pickedUp.length && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !pickedUp.length && !results.length && !liveBatches.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`

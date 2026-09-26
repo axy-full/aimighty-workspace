@@ -11,6 +11,7 @@ import { MARKETING_TEMPLATE_PRODUCT_ROLE } from "./marketing-template-sources";
 import { parseConsumerVoiceToolInput } from "./voice-tools";
 import { VOICE_TOOL_SOURCE_ROLE } from "./voice-tool-sources";
 import { SHORTS_SOURCE_ROLE, parseConsumerShortsInput } from "./shorts-studio";
+import { isBatchId } from "../variations";
 export type ConsumerOriginalKind = "video" | "image" | "audio" | "model";
 export const CONSUMER_ORIGINAL_MIMES: Record<ConsumerOriginalKind, readonly string[]> = {
   video: ["video/mp4"],
@@ -66,6 +67,11 @@ export function consumerVideoIdentity(job: ConsumerJob) {
           role: media.role,
           kind: mediaKindForRole(media.role),
         })),
+        /* One take of a batch: its siblings share the id, so Takes shows them as one strip (lib/variations.ts). */
+        ...(object(payload.batch) && isBatchId(payload.batch.id) && Number.isInteger(payload.batch.variation) &&
+          Number(payload.batch.variation) >= 1 && Number(payload.batch.variation) <= 8
+          ? { batchId: payload.batch.id, variation: payload.batch.variation }
+          : {}),
       } as Record<string, unknown>,
     };
   }

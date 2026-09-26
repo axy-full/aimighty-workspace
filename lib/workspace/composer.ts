@@ -89,7 +89,7 @@ export type ComposerState = {
   picks: ComposerPicks;
   /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
   enhance: boolean;
-  /** Takes per Generate (the prototype's stepper, 1–4): each take is its own quoted job at the price shown. */
+  /** Takes per Generate (the stepper, 1–4). Two or more go as one batch at the total on the button (lib/workspace/take-batch.ts). */
   count: number;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
@@ -384,6 +384,8 @@ export type ComposerQuote = {
   credits: number | null;
   state: QuoteState;
   reason: string | null;
+  /** A batch's own fresh per-take figures (a Generate of takes 2–4 re-quoted them and they moved): their sum is the button's total. */
+  takes?: number[];
 };
 
 /** The connected account's readiness, as /api/me and the connection route report it. */
@@ -418,6 +420,27 @@ export function quoteKeyFor(input: {
 export function liveCredits(quote: ComposerQuote | null, quoteKey: string): number | null {
   if (!quote || quote.key !== quoteKey || quote.state !== "ready" || quote.credits === null) return null;
   return quote.credits;
+}
+
+/**
+ * The total for `count` takes: the batch's own fresh per-take figures when the
+ * last Generate re-quoted exactly `count` of them, else `count` times one
+ * take's price. Summed take by take — the arithmetic the fresh total it is
+ * compared with uses — so an unchanged price always compares equal.
+ */
+export function batchTotal(credits: number | null, count: number, takes?: readonly number[] | null): number | null {
+  if (takes && takes.length === count && takes.every((c) => Number.isFinite(c))) return takes.reduce((sum, c) => sum + c, 0);
+  if (credits === null || !Number.isFinite(credits)) return null;
+  let total = 0;
+  for (let i = 0; i < Math.max(1, count); i++) total += credits;
+  return total;
+}
+
+/** The figure on the button, which is what a Generate approves: one take's price, or the batch's total. */
+export function shownTotal(quote: ComposerQuote | null, quoteKey: string, count: number): number | null {
+  const credits = liveCredits(quote, quoteKey);
+  if (credits === null) return null;
+  return count > 1 ? batchTotal(credits, count, quote?.takes) : credits;
 }
 
 /** The two reasons that mean "still loading", not "refused" — the model sheet draws them as a loading list. */
@@ -467,13 +490,13 @@ export function composerButtonLabel(input: {
   count?: number;
 }): string {
   if (input.submitting) return "Submitting…";
-  const credits = liveCredits(input.quote, input.quoteKey);
   const count = Math.max(1, input.count ?? 1);
-  if (credits === null) return count > 1 ? `Generate ${count} takes` : "Generate";
+  const total = shownTotal(input.quote, input.quoteKey, count);
+  if (total === null) return count > 1 ? `Generate ${count} takes` : "Generate";
   const unit = input.billing === "connected" ? "connected cr" : "cr";
   return count > 1
-    ? `Generate ${count} takes · ${(credits * count).toLocaleString("en-US")} ${unit}`
-    : `Generate · ${credits.toLocaleString("en-US")} ${unit}`;
+    ? `Generate ${count} takes · ${total.toLocaleString("en-US")} ${unit}`
+    : `Generate · ${total.toLocaleString("en-US")} ${unit}`;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */
