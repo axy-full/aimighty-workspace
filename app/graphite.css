@@ -256,6 +256,10 @@
 .gx-gen-foot { margin: 0; font-size: 12px; color: var(--gx-text-2); text-align: center; }
 .gx-gen-note { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
 .gx-gen-error { margin: 0; font-size: 12.5px; color: var(--gx-failed, #FF6B6B); }
+/* A read that failed, and Try again beside it (it wraps under the words on a narrow screen). */
+.gx-retry { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0; font-size: 12.5px; color: var(--gx-failed, #FF6B6B); }
+.gx-retry > span { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.gx-retry > .gx-hbtn { color: var(--gx-text); }
 .gx-gen-results { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx-gen-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .gx-gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }

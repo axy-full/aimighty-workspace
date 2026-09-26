@@ -6,11 +6,13 @@ import { nodeAudioBody, type NodeAudioSetup } from "../workbench/generation-audi
 import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media-reference-input";
 import { pendingGenerationKey } from "../workbench/pending-generation";
 import { newProject, type Asset, type Project } from "../workbench/studio";
-import type { MediaJob } from "../workbench/job-recovery";
+import { activeMediaJob, type MediaJob } from "../workbench/job-recovery";
+import { poll, pollAfter } from "../poll";
 import {
   CONNECTED_GENERATION_ENDPOINT,
   connectedEnhancedPrompt, connectedOriginal,
   connectedQuoteRequest,
+  connectedRecoverable,
   connectedStatusRequest,
   connectedSubmitRequest,
   parseConnectedJob,
@@ -73,7 +75,6 @@ const API = "/api/workbench";
 const DONE_HOLD_MS = 1800;
 const FAILED_HOLD_MS = 6000;
 const QUOTE_DEBOUNCE_MS = 260;
-const CONNECTED_POLL_MS = 6000;
 
 type Run = {
   source: "workspace" | "connected";
@@ -495,35 +496,35 @@ export function useComposer(options: {
   const [read, setRead] = useState<{ id: string; job: MediaJob } | null>(null);
   const workspaceJobId = run?.source === "workspace" ? run.jobId : null;
   const mediaJob = read && read.id === workspaceJobId ? read.job : null;
+  /* Read at lib/poll's pace until the job is in its terminal set; a missed read backs off. */
   useEffect(() => {
     if (!workspaceJobId) return;
-    let live = true;
-    const controller = new AbortController();
-    const read = () => studioRequest<{ generation: MediaJob }>(`/api/jobs/${encodeURIComponent(workspaceJobId)}`, { signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" })
-      .then((data) => { if (live) setRead({ id: workspaceJobId, job: data.generation }); })
-      .catch(() => {});
-    void read();
-    const timer = setInterval(() => void read(), CONNECTED_POLL_MS);
-    return () => { live = false; clearInterval(timer); controller.abort(); };
+    const poller = poll({
+      immediate: true,
+      read: (signal) => studioRequest<{ generation: MediaJob }>(`/api/jobs/${encodeURIComponent(workspaceJobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      done: (data) => !activeMediaJob(data.generation),
+      onValue: (data) => setRead({ id: workspaceJobId, job: data.generation }),
+    });
+    return () => poller.stop();
   }, [workspaceJobId, scope]);
 
   const connectedJobId = run?.source === "connected" ? run.jobId : null;
+  const connectedSettled = connectedJob ? !connectedRecoverable(connectedJob) : false;
+  const targetId = target?.id ?? null;
   useEffect(() => {
-    if (!connectedJobId || !target) return;
-    if (connectedJob && (connectedJob.status === "completed" || connectedJob.status === "failed")) return;
-    let live = true;
-    const controller = new AbortController();
-    const timer = setInterval(() => {
-      void studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
-        method: "POST", signal: controller.signal,
+    if (!connectedJobId || !targetId || connectedSettled) return;
+    const poller = poll({
+      read: (signal) => studioRequest<{ job?: unknown; pollAfterSeconds?: number }>(CONNECTED_GENERATION_ENDPOINT, {
+        method: "POST", signal,
         headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-        body: JSON.stringify(connectedStatusRequest(target.id, connectedJobId)),
-      })
-        .then((data) => { if (live) setConnectedJob(parseConnectedJob(data.job, target.id)); })
-        .catch(() => {});
-    }, CONNECTED_POLL_MS);
-    return () => { live = false; clearInterval(timer); controller.abort(); };
-  }, [connectedJobId, connectedJob, scope, target]);
+        body: JSON.stringify(connectedStatusRequest(targetId, connectedJobId)),
+      }),
+      hint: pollAfter,
+      done: (data) => !connectedRecoverable(parseConnectedJob(data.job, targetId)),
+      onValue: (data) => setConnectedJob(parseConnectedJob(data.job, targetId)),
+    });
+    return () => poller.stop();
+  }, [connectedJobId, connectedSettled, scope, targetId]);
 
   /* A completed connected original is filed into the project so it reaches Takes. */
   const filed = useRef<string>("");

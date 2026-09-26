@@ -4,6 +4,8 @@ import {
   CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
+import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { poll, pollAfter } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 /**
@@ -17,6 +19,8 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * either way, and Particl settles it only on a status read. While that read
  * is out the composer is `resuming` and prices nothing, so no newer job can
  * be submitted underneath it; and an id is only ever cleared by its own job.
+ * A running job is read at lib/poll's pace (the account's own when it gives
+ * one); a read that fails says so on the job while it keeps being asked after.
  */
 export type ConnectedJobState =
   | { phase: "idle" }
@@ -24,14 +28,16 @@ export type ConnectedJobState =
   | { phase: "quoting" }
   | { phase: "quoted"; job: ConnectedJob }
   | { phase: "submitting"; job: ConnectedJob }
-  | { phase: "running"; job: ConnectedJob }
+  /** `problem`: the last status read failed, in the product's words; cleared by the next good read. */
+  | { phase: "running"; job: ConnectedJob; problem?: string }
   | { phase: "done"; job: ConnectedJob }
   | { phase: "failed"; job: ConnectedJob | null; error: string };
 
-const POLL_MS = 4000;
+/** The first wait before a missed resume read is asked again. */
+const RESUME_RETRY_MS = 4000;
 /** A failed quote is read again after this long (the route allows six a minute), or at once from Price again. */
 export const QUOTE_RETRY_MS = 30_000;
-/** Missed resume reads before the composer is handed back (the id stays remembered); the waits between them back off from POLL_MS to a minute. */
+/** Missed resume reads before the composer is handed back (the id stays remembered); the waits between them back off from RESUME_RETRY_MS to a minute. */
 export const RESUME_TRIES = 8;
 const NOT_SENT = "The job did not reach the connected account, so nothing was billed.";
 const UNCHECKED = "The last take could not be checked. It is checked again when this page next opens.";
@@ -84,7 +90,7 @@ export function resumeLands(now: ConnectedJobState, next: ConnectedJobState): Co
 export function resumeRetry(status: number, tries: number): "forget" | "stop" | number {
   if (status === 400 || status === 404) return "forget";
   if (status === 401 || status === 403 || tries >= RESUME_TRIES) return "stop";
-  return Math.min(POLL_MS * 2 ** Math.max(0, tries - 1), 60_000);
+  return Math.min(RESUME_RETRY_MS * 2 ** Math.max(0, tries - 1), 60_000);
 }
 
 /** A 4xx submit was refused before anything was sent; anything else (a 5xx, a lost reply) may have reached the account. */
@@ -100,12 +106,14 @@ export function useConnectedJob(draftId: string | null, slot = "business") {
   const resuming = useRef<string | null>(null);
   const key = draftId ? connectedJobKey(slot, draftId) : null;
 
-  const call = useCallback(async (body: unknown) => {
-    const response = await scoped(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const json = await response.json().catch(() => null) as { job?: unknown; error?: string; code?: string } | null;
-    if (!response.ok || !json?.job) throw Object.assign(new Error(json?.error ?? "The connected account could not complete this request."), { status: response.status });
-    return parseConnectedJob(json.job, draftId!);
+  /** One POST on the route: the job, and the account's own pacing when it is a status read. */
+  const post = useCallback(async (body: unknown, signal?: AbortSignal) => {
+    const response = await scoped(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+    const json = await response.json().catch(() => null) as { job?: unknown; pollAfterSeconds?: number; error?: string; code?: string } | null;
+    if (!response.ok || !json?.job) throw Object.assign(new Error(json?.error ?? "The connected account could not complete this request."), { status: response.status, code: json?.code });
+    return { job: parseConnectedJob(json.job, draftId!), pollAfterSeconds: pollAfter(json) };
   }, [scoped, draftId]);
+  const call = useCallback(async (body: unknown) => (await post(body)).job, [post]);
 
   /* A job submitted from this composer before a page switch or a reload: read back (the composer prices
      nothing meanwhile), then polled below until it settles. */
@@ -167,22 +175,35 @@ export function useConnectedJob(draftId: string | null, slot = "business") {
     return () => clearTimeout(timer);
   }, [state]);
 
-  /* Poll a submitted job until the account settles it. */
+  /* Poll a submitted job until the account settles it, at lib/poll's pace; keyed by the job, so a read
+     that lands does not restart the pace. A missed read backs off and is said on the job. */
+  const runningId = state.phase === "running" ? state.job.id : null;
   useEffect(() => {
-    if (state.phase !== "running" || !draftId) return;
-    const id = state.job.id;
-    let stop = false;
-    const tick = async () => {
-      try {
-        const job = await call(connectedStatusRequest(draftId, id));
-        if (stop) return;
+    if (!runningId || !draftId) return;
+    const id = runningId;
+    const mine = (now: ConnectedJobState): now is Extract<ConnectedJobState, { phase: "running" }> => now.phase === "running" && now.job.id === id;
+    const poller = poll({
+      read: (signal) => post(connectedStatusRequest(draftId, id), signal),
+      hint: (reply) => reply.pollAfterSeconds,
+      done: (reply) => !connectedRecoverable(reply.job),
+      onValue: ({ job }) => {
         if (!connectedRecoverable(job)) forgetJob(store(), key, id);
-        setState((now) => (now.phase === "running" && now.job.id === id ? settledState(job) : now));
-      } catch { /* a missed poll is retried on the next tick */ }
-    };
-    const timer = setInterval(() => void tick(), POLL_MS);
-    return () => { stop = true; clearInterval(timer); };
-  }, [state, call, draftId, key]);
+        setState((now) => (mine(now) ? settledState(job) : now));
+      },
+      onError: (error) => {
+        const problem = resumeProblem(error);
+        /* Gone, or never this person's to read: asking again cannot help, so the composer is handed back
+           (an id the server does not know is forgotten; one it will not show this person is kept for its owner). */
+        if (resumeGivesUp(error)) {
+          if (resumeRetry(Number((error as { status?: number }).status), 1) === "forget") forgetJob(store(), key, id);
+          setState((now) => (mine(now) ? { phase: "failed", job: now.job, error: problem } : now));
+          return "stop";
+        }
+        setState((now) => (mine(now) && now.problem !== problem ? { ...now, problem } : now));
+      },
+    });
+    return () => poller.stop();
+  }, [runningId, post, draftId, key]);
 
   /** Approve exactly the quoted price and submit. The job is remembered first, so even a lost reply is resumed. */
   const submit = useCallback(async () => {

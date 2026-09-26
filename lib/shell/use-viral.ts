@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { poll, pollAfter, turnHint } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfterStatus, type ViralRun } from "./viral";
 
@@ -12,7 +13,8 @@ import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfter
  * current input (the *live estimate* the primary requires), submit at that
  * exact price, and polling. Nothing here invents a price. A status read
  * that fails for a job still on the account is said plainly on its row
- * (reconnect, storage, an outage) while it keeps being asked after.
+ * (reconnect, storage, an outage) while it keeps being asked after, at
+ * lib/poll's pace.
  */
 export type GenjutsuJob = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
@@ -25,7 +27,6 @@ export type GenjutsuJob = {
 export type ViralCapabilities = { resolutions: string[]; minSeconds: number; maxSeconds: number; maxImages: number; maxMediaBytes: number };
 export type Estimate = { key: string; credits: number | null; expiresAt: number; error: string | null; job: GenjutsuJob | null };
 const ENDPOINT = "/api/higgsfield/consumer/genjutsu";
-const POLL_MS = 4000;
 
 export function useViral(draftId: string | null, ready: boolean) {
   const scoped = useScopedFetch();
@@ -38,12 +39,14 @@ export function useViral(draftId: string | null, ready: boolean) {
   /** A failed status read for a job still in flight, in the product's words; cleared by its next good read. */
   const [problems, setProblems] = useState<Record<string, string>>({});
 
-  const call = useCallback(async (body: unknown) => {
-    const response = await scoped(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const json = await response.json().catch(() => null) as { job?: GenjutsuJob; error?: string; code?: string } | null;
-    if (!response.ok || !json?.job) throw Object.assign(new Error(json?.error ?? "The connected account could not complete this request."), { code: json?.code });
-    return json.job;
+  /** One POST on the route: the job, and the account's own pacing when it is a status read. */
+  const post = useCallback(async (body: unknown, signal?: AbortSignal) => {
+    const response = await scoped(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+    const json = await response.json().catch(() => null) as { job?: GenjutsuJob; pollAfterSeconds?: number; error?: string; code?: string } | null;
+    if (!response.ok || !json?.job) throw Object.assign(new Error(json?.error ?? "The connected account could not complete this request."), { code: json?.code, status: response.status });
+    return { job: json.job, pollAfterSeconds: pollAfter(json) };
   }, [scoped]);
+  const call = useCallback(async (body: unknown) => (await post(body)).job, [post]);
 
   const refresh = useCallback(async () => {
     if (!draftId) return;
@@ -94,31 +97,33 @@ export function useViral(draftId: string | null, ready: boolean) {
   }, [call, draftId, refresh]);
 
   /* Every job the account still holds is polled until it settles — the one submitted here and any
-     listed (another page, a reload, another tab) — one status read per tick, so a paid job is never stranded. */
+     listed (another page, a reload, another tab) — one status read at a time, in turn, at lib/poll's
+     pace, so a paid job is never stranded. The set changing (a job settles) starts the pace again. */
   const pending = pendingJobIds(jobs, run.phase === "running" ? run.job.id : null).join(",");
   const turn = useRef(0);
   useEffect(() => {
     if (!pending || !draftId) return;
     const ids = pending.split(",");
-    let stop = false;
-    const timer = setInterval(async () => {
-      const id = ids[turn.current++ % ids.length];
-      try {
-        const job = await call({ action: "status", draftId, id });
-        if (stop) return;
+    let asked = ids[0];
+    const poller = poll({
+      read: (signal) => { asked = ids[turn.current++ % ids.length]; return post({ action: "status", draftId, id: asked }, signal); },
+      hint: (reply) => turnHint(reply.pollAfterSeconds, ids.length),
+      /* The list decides: a settled job leaves `pending`, which starts a poll over the rest. */
+      done: () => false,
+      onValue: ({ job }) => {
         setJobs((list) => list.map((j) => (j.id === job.id ? job : j)));
         setProblems((all) => { if (!(job.id in all)) return all; const next = { ...all }; delete next[job.id]; return next; });
         setRun((current) => runAfterStatus(current, job));
         if (job.status === "completed") void refresh();
-      } catch (error) {
-        /* Retried on its next turn; meanwhile the row says what is wrong and who can fix it. */
-        if (stop) return;
-        const problem = resumeProblem(error);
+      },
+      onError: (error) => {
+        /* Asked again after a longer wait; meanwhile the row says what is wrong and who can fix it. */
+        const id = asked, problem = resumeProblem(error);
         setProblems((all) => (all[id] === problem ? all : { ...all, [id]: problem }));
-      }
-    }, POLL_MS);
-    return () => { stop = true; clearInterval(timer); };
-  }, [pending, call, draftId, refresh]);
+      },
+    });
+    return () => poller.stop();
+  }, [pending, post, draftId, refresh]);
 
   return { connection, capabilities, jobs, problems, estimate, run, listError, quote, submit, refresh, reset: () => setRun({ phase: "idle" }) };
 }

@@ -149,6 +149,23 @@ function takePreset(page: PresetPage) {
   } catch { return null; }
 }
 
+/** A read that failed: what went wrong, and Try again. It is also tried again on its own a few times (lib/shell/use-business). */
+function ReadProblem({ error, busy, onRetry, testId }: { error: string; busy: boolean; onRetry: () => void; testId: string }) {
+  return (
+    <div className="gx-retry" role="alert" data-testid={testId}>
+      <span>{error}</span>
+      <button type="button" className="gx-hbtn" disabled={busy} onClick={onRetry}>{busy ? "Reading…" : "Try again"}</button>
+    </div>
+  );
+}
+
+/** A running job whose last status read failed: said plainly while it is asked again, later. */
+function RunProblem({ state, testId }: { state: ConnectedJobState; testId: string }) {
+  if (state.phase !== "running" || !state.problem) return null;
+  const again = /trying again/i.test(state.problem) ? "" : " Checking again shortly.";
+  return <p className="gx-reason" role="status" data-testid={testId}>{state.problem}{again}</p>;
+}
+
 /** After a failed price, a failed job or a finished take: the same input, priced again. */
 function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnectedJob>; blocked: string | null; testId: string }) {
   if (blocked || (job.state.phase !== "failed" && job.state.phase !== "done")) return null;
@@ -186,6 +203,9 @@ const AD_DONE = "Ad rendered. Filed in Takes for review.";
 const IMAGE_AD_DONE = "Image ad rendered. Filed in Takes for review.";
 const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
 
+/** Why the composer waits on the catalogue: still reading it, or it did not load (Try again is above). */
+const catalogueWait = (business: Business) => (business.catalogueError && !business.catalogueReading ? "The connected catalogue did not load." : "Reading the connected catalogue…");
+
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
   if (state.phase === "resuming") return "Checking the last take…";
@@ -207,13 +227,14 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
   const enhancer = useEnhancer({ prompt: s.prompt, mode: "video", model: ADS_MODEL, anchored: s.medias.some((m) => m.role === "start_image"), editing: false });
-  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading;
-  useEffect(() => { if (connected && !hasSetup && !setupLoading) void readSetup(["product", "avatar", "hook", "setting", "ad_reference"]); }, [connected, hasSetup, setupLoading, readSetup]);
+  /* A failed read is never asked again from here: use-business retries it with a back-off, and Try again reads it now. */
+  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
+  useEffect(() => { if (connected && !hasSetup && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.ads]); }, [connected, hasSetup, setupLoading, setupFailed, readSetup]);
 
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
   const range = model?.durationRange ?? null;
-  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? catalogueWait(business) : null);
   const clamped = clampedDuration(s, range);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
@@ -236,7 +257,8 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <p className="bz-intro">Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode. Quoted before it runs; saved to your takes.</p>
         {!connected && business.connection ? <p className="gx-reason" data-testid="ads-connect">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
-        {business.catalogueError ? <p className="gx-gen-error" role="alert">{business.catalogueError}</p> : null}
+        {business.catalogueError ? <ReadProblem error={business.catalogueError} busy={business.catalogueReading} onRetry={business.retryCatalogue} testId="ads-catalogue-error" /> : null}
+        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.ads])} testId="ads-setup-error" /> : null}
         <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <div className="gx-gen-row" data-testid="ads-product">
@@ -282,6 +304,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
+        <RunProblem state={job.state} testId="ads-problem" />
         <PriceAgain job={job} blocked={blocked} testId="ads-requote" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit()} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
@@ -308,11 +331,11 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
   /* DTC needs the account's styles (the ad formats), brand kits and products; read once the engine is chosen. */
-  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading;
-  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading) void readSetup(["image_style", "brand_kit", "product"]); }, [dtc, connected, hasStyles, setupLoading, readSetup]);
+  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
+  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.dtc]); }, [dtc, connected, hasStyles, setupLoading, setupFailed, readSetup]);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? catalogueWait(business) : null);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "image", model: s.engine, prompt: s.prompt.trim(),
     parameters: {
@@ -333,6 +356,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
         <p className="bz-intro">A branded ad image from the prompt and up to 14 reference stills.</p>
+        {business.catalogueError ? <ReadProblem error={business.catalogueError} busy={business.catalogueReading} onRetry={business.retryCatalogue} testId="dtc-catalogue-error" /> : null}
+        {business.setup.error && dtc ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.dtc])} testId="dtc-setup-error" /> : null}
         <ResumedJobRows rows={earlier.rows} label="Image ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="dtc-earlier" />
         <div className="gx-gen-row" data-testid="dtc-engine">
           <span className="gx-eyebrow" data-functional-label="">Engine</span>
@@ -377,6 +402,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="dtc-error">{job.state.error}</p> : null}
+        <RunProblem state={job.state} testId="dtc-problem" />
         <PriceAgain job={job} blocked={blocked} testId="dtc-requote" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit()} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
@@ -410,8 +436,8 @@ function SetupView({ business }: { business: Business }) {
   const shell = useShell();
   const { dispatch } = useWorkspace();
   const connected = business.connection?.connected ?? false;
-  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length;
-  useEffect(() => { if (connected && !setupLoading && setupEmpty) void readSetup(); }, [connected, setupLoading, setupEmpty, readSetup]);
+  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length, setupFailed = Boolean(business.setup.error);
+  useEffect(() => { if (connected && !setupLoading && setupEmpty && !setupFailed) void readSetup(); }, [connected, setupLoading, setupEmpty, setupFailed, readSetup]);
   const [selected, setSelected] = useState<SetupItem | null>(null);
   const rows = SETUP_TYPES.flatMap(([type]) => business.setup.reads[type]?.items ?? []);
   const sendTo = (item: SetupItem, page: PresetPage) => {
@@ -423,13 +449,13 @@ function SetupView({ business }: { business: Business }) {
     <div className="bz-setup gx-enter" data-testid="setup-view">
       <div className="bz-setup-list">
         {!connected && business.connection ? <p className="gx-reason">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
-        {business.setup.error ? <p className="gx-gen-error" role="alert">{business.setup.error}</p> : null}
+        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup()} testId="setup-error" /> : null}
         {SETUP_TYPES.map(([type, label]) => {
           const read = business.setup.reads[type];
           return (
             <div className="bz-group" key={type} data-testid={`setup-${type}`}>
               <div className="bz-group-head"><span className="gx-eyebrow" data-functional-label="">{label}</span></div>
-              {!read ? <span className="cw-dim">{business.setup.loading ? "Reading…" : connected ? "Not read yet." : "Connect the account to read these."}</span>
+              {!read ? <span className="cw-dim">{business.setup.loading ? "Reading…" : business.setup.error ? "Not read." : connected ? "Not read yet." : "Connect the account to read these."}</span>
                 : !read.available ? <span className="cw-dim">The connected account does not list {label.toLowerCase()} here.</span>
                 : !read.items.length ? <span className="cw-dim">None on the account yet.</span>
                 : read.items.map((item) => (
@@ -440,7 +466,7 @@ function SetupView({ business }: { business: Business }) {
             </div>
           );
         })}
-        {connected ? <button type="button" className="gx-hbtn" disabled={business.setup.loading} onClick={() => void business.readSetup()}>{business.setup.loading ? "Reading…" : "Read again"}</button> : null}
+        {connected && !business.setup.error ? <button type="button" className="gx-hbtn" disabled={business.setup.loading} onClick={() => void business.readSetup()}>{business.setup.loading ? "Reading…" : "Read again"}</button> : null}
         <p className="cw-dim">{rows.length} {rows.length === 1 ? "item" : "items"} · every row opens the Inspector with Use in Ads / Use in Image ads.</p>
       </div>
       {selected ? (

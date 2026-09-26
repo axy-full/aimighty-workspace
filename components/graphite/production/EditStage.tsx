@@ -4,17 +4,19 @@ import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/compon
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { dragAttrs } from "@/lib/drop";
-import { studioRequest } from "@/components/workbench/GenerationDialog";
+import { StudioRequestError, studioRequest } from "@/components/workbench/GenerationDialog";
 import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boards";
 import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
+import { poll } from "@/lib/poll";
 import { useShell } from "@/lib/shell/state";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { TranscribePanel } from "./TranscribePanel";
@@ -94,18 +96,26 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
-  /* A re-edit in flight: read until it lands, then the Library shows it. */
+  /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {
     if (!pending) return;
-    const timer = setInterval(() => {
-      void studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { headers: { "X-Workbench-Scope": scope } }).then(({ generation }) => {
-        if (!alive.current || !["succeeded", "failed", "cancelled"].includes(generation.status)) return;
+    const poller = poll({
+      read: (signal) => studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      done: ({ generation }) => !activeMediaJob(generation),
+      onValue: ({ generation }) => {
+        if (!alive.current || activeMediaJob(generation)) return;
         setPending(null);
         if (generation.status === "succeeded") { setMade({ genId: generation.id, from: pending.from }); void refreshProjectLibrary(scope, projectId); toast("The re-edit is in the library"); }
         else setError(generation.error || "The re-edit did not render. A failed render is not billed.");
-      }).catch(() => undefined);
-    }, 3000);
-    return () => clearInterval(timer);
+      },
+      /* No longer on record for this person: asking again cannot help. Anything else is asked again, later. */
+      onError: (cause) => {
+        if (!(cause instanceof StudioRequestError) || (cause.status !== 404 && cause.status !== 403)) return;
+        if (alive.current) { setPending(null); setError("This re-edit can no longer be checked from here."); }
+        return "stop";
+      },
+    });
+    return () => poller.stop();
   }, [pending, scope, projectId, toast]);
 
   if (!project) return <p className="gx-empty" role="status">{draft.state.error ?? "Opening the takes…"}</p>;
