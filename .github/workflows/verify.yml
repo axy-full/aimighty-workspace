@@ -93,7 +93,12 @@ jobs:
           cat dev-ci.log
           exit 1
       - name: Browser suite
-        run: npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --shard=${{ matrix.shard }}/8 --output=ci-results/${{ matrix.suite }}
+        # Memory, disk and the largest processes every 30 s, in this step's own
+        # log: a runner that is shut down leaves no artifacts, so this is the
+        # only record of what grew before it went.
+        run: |
+          ( while true; do echo "[resources] $(date -u +%T) $(free -m | awk '/Mem:/{print "mem "$3"/"$2" MB"}') $(df -m . | awk 'NR==2{print "disk free "$4" MB"}') | $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s %d MB; ", $2, $1/1024}')"; sleep 30; done ) &
+          npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --shard=${{ matrix.shard }}/8 --output=ci-results/${{ matrix.suite }}
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
