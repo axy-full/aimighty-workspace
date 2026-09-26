@@ -6,7 +6,7 @@ import type { JSONObject } from '@ai-sdk/provider';
 import { db, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { atomikModels, getAtomikProject } from './atomik-server';
-import { atomikReasoningRequest } from '../atomik-reasoning';
+import { atomikReasoningAllowance, atomikReasoningRequest } from '../atomik-reasoning';
 import { gatewayReachable } from '../gateway';
 import { languageAuth, languageModel } from '../language-provider';
 import { allowanceCheck } from '../allowance';
@@ -27,7 +27,7 @@ import { ENGINE_PROMPT_LIMIT, shotRenderPrompt, textKey } from '../production/ri
 import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
-import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
+import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
 export class DevelopmentError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'DevelopmentError'; }
@@ -195,6 +195,43 @@ function promptForSource(snapshot: Snapshot, input: DevelopmentRequest, chunk: D
       text: (script ?? '').slice(segment.start, segment.end),
     })) }), ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
 }
+/**
+ * The pictures the Rig agent may wire, most relevant first, in tiers so one
+ * long take history never crowds out the rest: what the shot already uses and
+ * its board frame's pick; every cast entry's and every place's chosen picture
+ * and references; the frame's other takes; then every entry's remaining takes
+ * and plates, each entry's newest before any entry's older (takes and plates
+ * are stored newest first); then the newest of the rest (assets are appended
+ * as they are made, so the oldest are the least likely to belong to this shot).
+ */
+export function rigAssetChoices(project: Pick<Project, 'assets' | 'nodes' | 'production'>, node: Project['nodes'][number], cap = 150): Project['assets'] {
+  const pictures = project.assets.filter((a) => a.kind === 'image' || a.kind === 'video');
+  const byId = new Map<string, Project['assets'][number]>();
+  for (const a of pictures) { if (a.generationId && !byId.has(a.generationId)) byId.set(a.generationId, a); }
+  for (const a of pictures) byId.set(a.id, a);
+  const cast = project.production?.cast?.entries ?? [], places = project.production?.environment?.entries ?? [];
+  const frame = node.boardShotId ? project.production?.boards?.frames[node.boardShotId] : undefined;
+  const linked = node.linked.map((id) => project.nodes.find((n) => n.id === id));
+  const history = [...cast.map((e) => e.takes.map((t) => t.genId)), ...places.map((e) => e.plates.map((p) => p.assetId))];
+  const tiers: (string | undefined)[][] = [
+    [node.firstFrameId, node.assetId, ...linked.flatMap((n) => [n?.assetId, n?.firstFrameId]), frame?.selected],
+    [...cast.map((e) => e.selected), ...places.map((e) => e.selected), ...cast.map((e) => e.referenceAssetId), ...places.flatMap((e) => [...(e.references ?? [])].reverse())],
+    [...(frame?.takes ?? []).map((t) => t.genId), frame?.sketch?.assetId],
+    Array.from({ length: Math.max(0, ...history.map((list) => list.length)) }, (_, depth) => history.map((list) => list[depth])).flat(),
+  ];
+  const out: Project['assets'] = [], seen = new Set<string>();
+  const add = (a: Project['assets'][number] | undefined) => { if (a && !seen.has(a.id) && out.length < cap) { seen.add(a.id); out.push(a); } };
+  for (const tier of tiers) for (const id of tier) if (id) add(byId.get(id));
+  for (let i = pictures.length - 1; i >= 0 && out.length < cap; i--) add(pictures[i]);
+  return out;
+}
+/** The script the cast and environment agents read when there is no beat sheet: all of it, or a refusal, never a silent first part. */
+function agentScript(project: Pick<Project, 'script'>, hasBeats: boolean): string {
+  if (hasBeats) return '';
+  const script = project.script ?? '';
+  if (script.length > AGENT_SCRIPT_CHARS) throw new DevelopmentError('This script is longer than the agent reads in one pass. Break it into beats first, so it reads every scene.');
+  return script;
+}
 async function compile(input: DevelopmentRequest, owner: string, deps: DevelopmentDependencies) {
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new DevelopmentError('Save the project to link its production budget.', 409);
@@ -241,7 +278,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   } else if (input.kind === 'rig') {
     const node = project.nodes.find((value) => value.id === input.nodeId);
     if (!node) throw new DevelopmentError('Choose a shot in the Rig.', 404);
-    const assets = project.assets.filter((a) => a.kind === 'image' || a.kind === 'video').slice(0, 150)
+    const assets = rigAssetChoices(project, node)
       .map((a) => ({ id: a.id, name: a.name, kind: a.kind, category: a.category, about: (a.description || a.prompt || '').slice(0, 300) }));
     const beat = node.boardShotId ? boardSource(project).find((shot) => shot.id === node.boardShotId) : undefined;
     const inputs = node.linked.flatMap((id) => { const n = project.nodes.find((x) => x.id === id); return n?.assetId ? [n.assetId] : []; });
@@ -259,7 +296,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [{ id: node.id, heading: textKey(full), start: 0, end: 1 }] }];
   } else if (input.kind === 'cast') {
     const sheet = project.production?.beats;
-    const script = (project.script ?? '').slice(0, 40_000);
+    const script = agentScript(project, Boolean(sheet?.scenes.length));
     if (!sheet?.scenes.length && !script.trim()) throw new DevelopmentError('Write the script or break it into beats first.');
     canonical = JSON.stringify({ kind: 'cast', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect,
       ...(sheet?.scenes.length ? { beatSheet: compactBeatSheet(sheet) } : { script }), existingCast: (project.production?.cast?.entries ?? []).map((e) => e.name) });
@@ -272,7 +309,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [] }];
   } else if (input.kind === 'environment') {
     const sheet = project.production?.beats;
-    const script = (project.script ?? '').slice(0, 40_000);
+    const script = agentScript(project, Boolean(sheet?.scenes.length));
     if (!sheet?.scenes.length && !script.trim() && !project.brief.trim()) throw new DevelopmentError('Write the brief or the script, or break it into beats, first.');
     const env = project.production?.environment;
     canonical = JSON.stringify({ kind: 'environment', name: project.name, brief: project.brief, direction: project.direction, aspect: project.aspect,
@@ -306,6 +343,15 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can read the drawing.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
+  /* A redraft returns the whole script: one too long for the answer would fail only after it is paid for.
+     Reasoning shares the answer's ceiling, so the script can count only on what the reasoning allowance leaves. */
+  if (input.kind === 'write' && base.trim()) {
+    const room = Math.min(answer, reasoning.maxTokens - atomikReasoningAllowance(model, input.effort));
+    const tooLong = redraftTooLong(base.length, room);
+    if (tooLong && !redraftTooLong(base.length, Math.min(answer, reasoning.maxTokens)))
+      throw new DevelopmentError(`This script is too long for ${model.name} to redraft whole at this effort: about ${tooLong.pages} pages. Choose a lower effort, or edit it in Brief & Script.`, 422);
+    if (tooLong) throw new DevelopmentError(`This script is too long to redraft in one pass: about ${tooLong.pages} pages, and ${model.name} returns up to about ${tooLong.maxPages}. Edit it in Brief & Script instead.`, 422);
+  }
   /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
   const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
   const resultBytes = developmentResultBytes(input.kind);
@@ -334,15 +380,18 @@ export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: stri
     sourceCharacters: input.kind === 'screenplay' || input.kind === 'adfilm' ? compiled.project.script?.length ?? 0 : input.kind === 'beatsheet' ? compiled.project.production?.beatSource?.text.length ?? 0 : compiled.canonical.length };
 }
 type Row = Record<string, unknown>;
+/** A job's steps and its result section, read for many jobs at once by a list poll. */
+type Preloaded = { progress: Row[]; result: unknown };
 /** `withResult` false leaves an older writer draft's full script off a list poll; it is read by its id when opened. */
-async function publicJob(row: Row, offset = 0, withResult = true): Promise<DevelopmentJob> {
+async function publicJob(row: Row, offset = 0, withResult = true, preloaded?: Preloaded): Promise<DevelopmentJob> {
   const input = JSON.parse(String(row.request_body)) as DevelopmentRequest;
-  const progress = await db().execute({ sql: 'SELECT status,stage,chunk_index FROM workbench_development_steps WHERE job_id=? ORDER BY step_index', args: [String(row.id)] });
+  const progress = { rows: preloaded?.progress ?? (await db().execute({ sql: 'SELECT status,stage,chunk_index FROM workbench_development_steps WHERE job_id=? ORDER BY step_index', args: [String(row.id)] })).rows as Row[] };
   const completedSteps = progress.rows.filter(step => step.status === 'succeeded').length;
   const completedChunks = progress.rows.filter(step => step.stage === 'refine' && step.status === 'succeeded').length;
   const next = progress.rows.find(step => step.status !== 'succeeded');
   const totalChunks = JSON.parse(String(row.chunks)).length;
-  const result = row.status === 'succeeded' && withResult ? (await db().execute({ sql: "SELECT result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND stage='refine' AND status='succeeded'", args: [String(row.id), offset] })).rows[0] : null;
+  const result = preloaded ? (preloaded.result == null ? null : { result: preloaded.result })
+    : row.status === 'succeeded' && withResult ? (await db().execute({ sql: "SELECT result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND stage='refine' AND status='succeeded'", args: [String(row.id), offset] })).rows[0] : null;
   return { id: String(row.id), requestId: input.requestId, projectId: input.projectId,
     productionProjectId: String(row.production_project_id), kind: input.kind, model: input.model, effort: input.effort,
     ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
@@ -358,6 +407,31 @@ async function publicJob(row: Row, offset = 0, withResult = true): Promise<Devel
     ...(result?.result ? { resultPage: { offset, totalChunks, hasMore: offset + 1 < totalChunks } } : {}), error: row.error ? String(row.error) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) };
 }
+/** Many jobs in two reads, not two per job: a list poll runs every few seconds. */
+async function publicJobs(rows: Row[], offset: number, withResult: (row: Row) => boolean): Promise<DevelopmentJob[]> {
+  const progress = new Map<string, Row[]>(), results = new Map<string, unknown>();
+  for (let i = 0; i < rows.length; i += 100) {
+    const part = rows.slice(i, i + 100), ids = part.map((row) => String(row.id));
+    const steps = (await db().execute({ sql: `SELECT job_id,status,stage,chunk_index FROM workbench_development_steps WHERE job_id IN (${ids.map(() => '?').join(',')}) ORDER BY job_id,step_index`, args: ids })).rows;
+    for (const step of steps) { const list = progress.get(String(step.job_id)) ?? []; list.push(step as Row); progress.set(String(step.job_id), list); }
+    const wanted = part.filter((row) => row.status === 'succeeded' && withResult(row)).map((row) => String(row.id));
+    if (!wanted.length) continue;
+    const found = (await db().execute({ sql: `SELECT job_id,result FROM workbench_development_steps WHERE job_id IN (${wanted.map(() => '?').join(',')}) AND chunk_index=? AND stage='refine' AND status='succeeded'`, args: [...wanted, offset] })).rows;
+    for (const row of found) if (row.result != null) results.set(String(row.job_id), row.result);
+  }
+  return Promise.all(rows.map((row) => publicJob(row, offset, withResult(row), { progress: progress.get(String(row.id)) ?? [], result: results.get(String(row.id)) ?? null })));
+}
+/**
+ * How much history a list poll carries. Every Production stage reads its own
+ * kind from one list, so the newest runs of EACH kind are kept (ten Rig shots
+ * wired in a row must not push the Brief's draft out), with anything still
+ * running, and the newest run and newest finished run of every Rig shot and
+ * storyboard shot. Past the cap, targeted runs give way first: a production
+ * with hundreds of wired shots still lists its Brief draft and its cast.
+ */
+export const DEVELOPMENT_LIST_PER_KIND = 10;
+export const DEVELOPMENT_LIST_MAX = 200;
+const JOB_COLUMNS = 'id,owner,project_id,production_project_id,request_id,request_body,source_hash,chunks,status,estimate_usd,estimate_credits,cost_usd,credits,error,funded_by_platform,settled,created_at,updated_at';
 function eventFor(row: Row, status: MeterEvent['status'], cost?: number): MeterEvent {
   const model = (JSON.parse(String(row.request_body)) as DevelopmentRequest).model;
   return { id: String(row.id), kind: 'text', engine: textVendor(model) === 'openai' ? 'openai' : 'vercel', model,
@@ -676,11 +750,32 @@ export async function listDevelopmentJobs(owner: string, projectId: string, requ
   const args = [owner, projectId, ...(requestId ? [requestId] : []), ...(jobId ? [jobId] : [])];
   // Polling does not need the complete screenplay or model snapshot. Keep
   // those large immutable columns off the database-to-function response.
-  const rows = (await db().execute({ sql: 'SELECT id,owner,project_id,production_project_id,request_id,request_body,source_hash,chunks,status,estimate_usd,estimate_credits,cost_usd,credits,error,funded_by_platform,settled,created_at,updated_at FROM workbench_development_jobs WHERE owner=? AND project_id=?' + (requestId ? ' AND request_id=?' : '') + (jobId ? ' AND id=?' : '') + ' ORDER BY created_at DESC LIMIT 10', args })).rows;
+  const kind = "json_extract(request_body,'$.kind')", target = "COALESCE(json_extract(request_body,'$.nodeId'),json_extract(request_body,'$.shotId'))";
+  const listed = !requestId && !jobId;
+  const rows = (!listed
+    ? await db().execute({ sql: `SELECT ${JOB_COLUMNS} FROM workbench_development_jobs WHERE owner=? AND project_id=?` + (requestId ? ' AND request_id=?' : '') + (jobId ? ' AND id=?' : '') + ' ORDER BY created_at DESC LIMIT 10', args })
+    /* Kept by rank, cut by priority, returned newest first. with_result marks the results a poll carries:
+       the newest draft, the Studio panel's saved runs, and the newest finished run of each kind and target.
+       Rig wirings are read by id when the selected shot applies one; the rest load by id when opened. */
+    : await db().execute({ sql: `WITH ranked AS (SELECT ${JOB_COLUMNS}, ${kind} AS job_kind, ${target} AS target,
+        ROW_NUMBER() OVER (PARTITION BY ${kind} ORDER BY created_at DESC, id DESC) AS kind_rank,
+        ROW_NUMBER() OVER (PARTITION BY ${kind}, ${target} ORDER BY created_at DESC, id DESC) AS target_rank,
+        ROW_NUMBER() OVER (PARTITION BY ${kind}, ${target}, status='succeeded' ORDER BY created_at DESC, id DESC) AS outcome_rank
+        FROM workbench_development_jobs WHERE owner=?1 AND project_id=?2),
+      kept AS (SELECT * FROM ranked
+        WHERE kind_rank<=?3 OR status IN ('queued','running') OR (target IS NOT NULL AND (target_rank=1 OR (status='succeeded' AND outcome_rank=1)))
+        ORDER BY kind_rank<=?3 DESC, status IN ('queued','running') DESC, target_rank=1 DESC, created_at DESC, id DESC LIMIT ?4)
+      SELECT ${JOB_COLUMNS}, CASE
+          WHEN job_kind='write' THEN kind_rank=1
+          WHEN job_kind='rig' THEN 0
+          WHEN job_kind IN ('idea','screenplay','adfilm') THEN kind_rank<=?3
+          ELSE status='succeeded' AND outcome_rank=1 END AS with_result
+        FROM kept ORDER BY created_at DESC, id DESC`, args: [owner, projectId, DEVELOPMENT_LIST_PER_KIND, DEVELOPMENT_LIST_MAX] })).rows as Row[];
   for (const row of rows) if (['succeeded', 'failed', 'uncertain'].includes(String(row.status))) await settleDevelopment(row, deps);
   if (jobId && rows.length && offset >= JSON.parse(String(rows[0].chunks)).length) throw new DevelopmentError('This result section does not exist.', 404);
   const newestDraft = rows.find(row => (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'write')?.id;
-  const jobs = await Promise.all(rows.map(row => publicJob(row, offset, Boolean(jobId) || row.id === newestDraft || (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind !== 'write')));
+  const jobs = await publicJobs(rows, offset, (row) => listed ? Number(row.with_result) === 1
+    : Boolean(jobId) || row.id === newestDraft || (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind !== 'write');
   // Present reserved jobs waiting between calls as resumable. Admission rows
   // retain queued but have no runnable provider phases until reservation commits.
   for (let index = 0; index < jobs.length; index++) if (jobs[index].status === 'running') {

@@ -9,6 +9,7 @@ import { applyDevelopment } from "@/lib/workbench/development-apply";
 import { developmentSourceHash } from "@/lib/workbench/development-client";
 import { sourceCanonical } from "@/lib/workbench/development-types";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
+import { pricedAgentText } from "./agent-price";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { sha256Hex } from "@/lib/production/hash";
 import type { DevelopmentJob } from "@/lib/workbench/development-types";
@@ -133,7 +134,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
     } catch (error) { toast(error instanceof Error ? error.message : "Could not build these scenes."); }
   }
 
-  const quoteLine = (q: NonNullable<typeof quote>) => `${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${q.value.estimateCredits.toLocaleString()} credits${q.value.estimateUsd != null ? ` · $${q.value.estimateUsd.toFixed(4)} ceiling` : ""}`;
+  const quoteLine = (q: NonNullable<typeof quote>) => pricedAgentText(`${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${q.value.estimateCredits.toLocaleString()} credits`, q.value, true);
 
   return (
     <div className="pd-stage gx-enter" data-testid="brief-stage">
@@ -184,7 +185,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             <div className="gx-gen-enhance">
               {writeQuote ? (
                 <>
-                  <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} onClick={() => void runs.start()} data-testid="brief-write">{runs.busy || `Write the script · up to ${writeQuote.value.estimateCredits.toLocaleString()} credits`}</button>
+                  <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} onClick={() => void runs.start()} data-testid="brief-write">{runs.busy || pricedAgentText(`Write the script · up to ${writeQuote.value.estimateCredits.toLocaleString()} credits`, writeQuote.value)}</button>
                   <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                   <span className="gx-hint" data-testid="brief-quote">{quoteLine(writeQuote)}</span>
                 </>
@@ -244,7 +245,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
               <div className="gx-gen-enhance">
                 {redraftQuote ? (
                   <>
-                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then((held) => { if (held) setNotes(""); })} data-testid="brief-redraft">{runs.busy || `Redraft · up to ${redraftQuote.value.estimateCredits.toLocaleString()} credits`}</button>
+                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then((held) => { if (held) setNotes(""); })} data-testid="brief-redraft">{runs.busy || pricedAgentText(`Redraft · up to ${redraftQuote.value.estimateCredits.toLocaleString()} credits`, redraftQuote.value)}</button>
                     <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                     <span className="gx-hint" data-testid="brief-redraft-quote">{quoteLine(redraftQuote)}</span>
                   </>
