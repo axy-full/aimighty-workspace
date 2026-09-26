@@ -25,6 +25,11 @@ const PROMPT = "A slow dolly push across the wet harbour at blue hour";
 const fixture = (): Project => ({ ...newProject("Harbour batch study"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
 const uuid = (n: number) => `9d2b3c4e-5f60-4a7b-8c9d-${String(n).padStart(12, "0")}`;
 const original = (n: number) => `gen_hfc_${String(n % 10).repeat(40)}`;
+/* Test fixtures: one Studio video engine and one still engine, as GET /api/workbench/engines lists them. */
+const ENGINES = [
+  { id: "dreamina-seedance-2-5-260628", kind: "video", resolutions: ["480p", "720p", "1080p"], ratios: ["16:9", "9:16", "1:1"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12], use: "Cinematic motion from a prompt or references.", rate: { credits: PRICE, resolution: "480p", ratio: "16:9", duration: 5 } },
+  { id: "gemini-3.1-flash-image", kind: "image", resolutions: ["1K", "2K"], ratios: ["1:1", "16:9", "9:16"], durations: [], use: "Stills and quick frames.", rate: { credits: 1, resolution: "1K", ratio: "1:1", duration: null } },
+];
 const CATALOGUE = [
   { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", aspectRatios: ["16:9", "9:16"], durationRange: { min: 4, max: 12 }, medias: [{ name: "medias", roles: ["start_image", "image_references"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }] },
 ];
@@ -38,12 +43,11 @@ async function open(page: Page, options: { owner?: boolean; library?: LibraryRou
   const library = options.library ?? { uploads: [], generations: [] };
   await mockLibrary(page, library);
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
-  /* One take's live price, where the composer stands: a fixed figure so the batch arithmetic is plain. */
-  await page.route(/\/api\/workbench\/engines(\?.*)?$/, async (route) => {
-    const url = new URL(route.request().url());
-    const real = await route.fetch();
-    const json = await real.json();
-    return route.fulfill({ json: url.searchParams.has("model") ? { ...json, credits: PRICE } : json });
+  /* This workspace's engines, and one take's live price where the composer stands: fixed, so the batch arithmetic is plain
+     and nothing waits on the engines route compiling. */
+  await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) => {
+    const priced = new URL(route.request().url()).searchParams.has("model");
+    return route.fulfill({ json: { models: ENGINES, audio: null, credits: priced ? PRICE : null } });
   });
   if (options.owner) {
     const me = await page.request.get("/api/me").then((r) => r.json());
