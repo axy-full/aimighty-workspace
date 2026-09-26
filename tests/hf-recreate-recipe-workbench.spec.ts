@@ -253,6 +253,39 @@ test("× hides the card, and a recipe still being read keeps Generate waiting al
   expect(errors).toEqual([]);
 });
 
+test("a model picked in ⌘K while the recipe is still read keeps its card and its wait; Undo takes both back", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "the palette is a desktop key");
+  const { errors, release, priced } = await open(page, { holdPlate: true });
+  const inspector = await inspect(page, "gen_harbour");
+  await inspector.getByTestId("inspector-recreate").click();
+  const refs = page.getByTestId("gen-recipe-refs");
+  await expect(refs).toHaveText("2 refs…");
+  /* ⌘K hands Gen a model and no words: a change made here, not a new recipe. */
+  const palette = page.getByRole("dialog", { name: "Search" });
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+  await expect(palette).toBeVisible();
+  await palette.getByRole("textbox").fill("Kling 3.0 Pro");
+  await palette.getByRole("option").filter({ hasText: "MODEL" }).first().click();
+  await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
+  await expect(page.getByTestId("gen-prompt")).toHaveValue(RAW);
+  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText("Seedance 2.0 → Kling 3.0 Pro");
+  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Changed here");
+  /* The take's references are still on their way: nothing is priced without them. */
+  await expect(refs).toHaveText("2 refs…");
+  await expect(page.getByTestId("gen-blocked")).toHaveText("Reading the take’s references…");
+  await expect(page.getByTestId("gen-generate")).toBeDisabled();
+  release();
+  await expect(page.getByTestId("gen-well")).toContainText("@Image1 · Plate still");
+  await expect(refs).toHaveText("1 of 2 refs");
+  /* Undo puts the composer back as it was before the recipe, the model picked since included. */
+  await page.getByTestId("gen-recipe-undo").click();
+  await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
+  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("gen-well")).not.toContainText("Plate still");
+  expect(priced).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("a gone first reference: the words are renumbered to the well, the gap keeps its own citation, and Generate waits for it", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, { generations: [pier(), plate()] });

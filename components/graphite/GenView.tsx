@@ -192,12 +192,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const autoWas = useRef(autoNow);
   useEffect(() => { autoWas.current = autoNow; });
   const applyPreset = useCallback((next: GenPreset) => {
-    const epoch = ++recipeEpoch.current;
     setMode("compose");
     setWellError(null);
-    /* New words replace the old: an enhancement of the old words must not be what Generate sends. */
-    if (next.from ? !next.settingsOnly : next.prompt) dismissEnhanced();
     if (!next.from) {
+      /* New words replace the old, an enhancement of them and any recipe that brought them. A model or
+         settings alone are a change made here: a recipe's card stays, says so, and still waits for its references. */
+      if (next.prompt) { recipeEpoch.current++; dismissEnhanced(); setRecipe(null); }
       if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
       if (next.type) dispatchComposer({ type: "type", value: next.type });
       if (next.model) dispatchComposer({ type: "model", value: next.model });
@@ -206,10 +206,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
       if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
       if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
-      setRecipe(null);
       setPreset(next);
       return;
     }
+    const epoch = ++recipeEpoch.current;
+    /* New words replace the old: an enhancement of the old words must not be what Generate sends. */
+    if (!next.settingsOnly) dismissEnhanced();
     const previous = latest.current;
     const settingsOnly = Boolean(next.settingsOnly);
     const type = next.type ?? previous.type;
@@ -271,6 +273,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     dismissEnhanced();
     if (recipe.autoBefore !== null) setAuto(recipe.autoBefore);
     setRecipe(null);
+    /* A model or settings handed over since are undone with it, and so is their note. */
+    setPreset(null);
   };
   /* The card comes into view where the composer is. On a phone it rises to the top of the page, clear of
      the sticky Generate band and the tab bar below it; wider, the least scroll that shows it. */
