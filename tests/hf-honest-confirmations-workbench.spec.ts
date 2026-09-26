@@ -32,6 +32,24 @@ async function shot(page: Page, name: string, project: string) {
 async function settle(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => !(a.effect instanceof KeyframeEffect && a.effect.getComputedTiming().iterations === Infinity)).map((a) => a.finished.catch(() => undefined))));
 }
+/**
+ * The target has stopped moving: every finite animation is done, and its place holds for ten frames running
+ * (a scroll that brings it into view included). A frame count, never a sleep.
+ */
+async function stopped(page: Page, target: Locator) {
+  await settle(page);
+  await target.evaluate((el) => new Promise<void>((done, fail) => {
+    let last = Number.NaN, still = 0;
+    const give = setTimeout(() => fail(new Error("still moving after 5 s")), 5_000);
+    const frame = () => {
+      const y = el.getBoundingClientRect().top;
+      still = y === last ? still + 1 : 0;
+      last = y;
+      if (still >= 10) { clearTimeout(give); done(); } else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }));
+}
 /** React has attached to the element: a fill or click before that is lost on a cold server. */
 async function hydrated(target: Locator) {
   await expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
@@ -164,11 +182,14 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await expect(row).toContainText("Cut on the drop");
-  /* …in view, and clear of a phone's tab bar. */
-  await settle(page);
+  /* …in view, and, once the page and its scroll have stopped, wholly above what floats over a phone's foot: the tab bar and the Uploads chip. */
+  await stopped(page, row);
   await expect(row).toBeInViewport();
+  const landed = (await row.boundingBox())!;
   const bar = page.locator(".gx-tabbar");
-  if (await bar.isVisible()) expect((await row.boundingBox())!.y + (await row.boundingBox())!.height).toBeLessThanOrEqual((await bar.boundingBox())!.y);
+  if (await bar.isVisible()) expect(landed.y + landed.height, "the row clears the tab bar").toBeLessThanOrEqual((await bar.boundingBox())!.y);
+  const chip = uploadsChip(page);
+  if (PHONES.includes(info.project.name) && await chip.isVisible()) expect(landed.y + landed.height, "the row clears the Uploads chip").toBeLessThanOrEqual((await chip.boundingBox())!.y);
   await noSideScroll(page);
   await shot(page, "rig-opened", info.project.name);
   expect(errors).toEqual([]);
@@ -239,6 +260,27 @@ test("Crew › Open in Gen while the browser refuses to store anything for the s
   await noSideScroll(page);
   await settle(page);
   await shot(page, "gen-storage-refused", info.project.name);
+  expect(errors).toEqual([]);
+});
+
+test("Crew › Open Rig on a phone whose page head stands taller: the shot still lands wholly above the tab bar", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-360x640", "the smallest phone");
+  const { errors, solutions } = await roomWithSolutions(page);
+  /* The Rig's scroll frame starts 53px lower, as it did on CI's fonts: the middle of the frame then falls behind the tab bar,
+     so a shot centred in the frame (not in what can be seen of it) would sit under the bar. */
+  await page.addStyleTag({ content: ".gx .gx-stage { margin-top: 53px !important; }" });
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
+  await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string };
+  await page.getByTestId("toast-open").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await stopped(page, row);
+  await expect(row).toBeInViewport();
+  const landed = (await row.boundingBox())!;
+  expect(landed.y + landed.height, "the row clears the tab bar").toBeLessThanOrEqual((await page.locator(".gx-tabbar").boundingBox())!.y);
+  await noSideScroll(page);
   expect(errors).toEqual([]);
 });
 

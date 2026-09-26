@@ -48,8 +48,10 @@ function hereOf(shell: Shell): Here {
 }
 
 /**
- * Scroll the first match to the middle of the list that scrolls it, once it is
- * on the page — for a few seconds at most, then let it be. Only vertically: a
+ * Scroll the first match to the middle of what can be seen of the list that
+ * scrolls it, once it is on the page — for a few seconds at most, then let it
+ * be. What can be seen ends where the fixed foot of the page begins (a phone's
+ * tab bar, the Uploads chip), which floats over the list. Only vertically: a
  * phone's shot table is wider than the screen, and must not be slid sideways.
  */
 function reveal(selector: string, within = 3000) {
@@ -57,11 +59,38 @@ function reveal(selector: string, within = 3000) {
   const look = () => {
     const found = document.querySelector<HTMLElement>(selector);
     if (!found) { if (performance.now() < until) requestAnimationFrame(look); return; }
-    let scroller: HTMLElement | null = found.parentElement;
-    while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
-    const box = found.getBoundingClientRect(), frame = scroller?.getBoundingClientRect() ?? { top: 0, height: window.innerHeight };
-    const by = box.top - frame.top - (frame.height - box.height) / 2;
-    if (scroller) scroller.scrollBy({ top: by }); else window.scrollBy({ top: by });
+    centre(found);
+    /* A page still animating in moves under that measurement: once it has landed (or at the deadline), a row it carried out of the clear is put back. */
+    const entering = document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity);
+    if (!entering.length) return;
+    void Promise.race([
+      Promise.all(entering.map((a) => a.finished.catch(() => undefined))),
+      new Promise((done) => setTimeout(done, Math.max(0, until - performance.now()))),
+    ]).then(() => requestAnimationFrame(() => centre(found, true)));
   };
   requestAnimationFrame(look);
+}
+
+/** Centre the row in the clear part of its scroller (`onlyIfOut`: leave it where it is when it is already wholly in the clear). */
+function centre(found: HTMLElement, onlyIfOut = false) {
+  if (!found.isConnected) return;
+  let scroller: HTMLElement | null = found.parentElement;
+  while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
+  const box = found.getBoundingClientRect(), frame = scroller?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+  const top = Math.max(frame.top, 0);
+  let bottom = Math.min(frame.bottom, window.innerHeight);
+  /* The fixed foot covers the list's end: the row is centred above it (one too high to leave room for the row is not a foot). */
+  for (const over of footOver()) {
+    const at = over.getBoundingClientRect().top;
+    if (at >= top + box.height && at < bottom) bottom = at;
+  }
+  if (onlyIfOut && box.top >= top && box.bottom <= bottom) return;
+  const by = box.top - top - Math.max(0, (bottom - top - box.height) / 2);
+  if (scroller) scroller.scrollBy({ top: by }); else window.scrollBy({ top: by });
+}
+
+/** What floats, fixed, over the foot of the page when shown: a phone's tab bar, and the Uploads chip once anything was uploaded (components/UploadRecovery). */
+function footOver(): HTMLElement[] {
+  const chip = document.querySelector('section[aria-label="Upload recovery"]')?.closest("details") ?? null;
+  return [document.querySelector<HTMLElement>(".gx-tabbar"), chip].filter((el): el is HTMLElement => el instanceof HTMLElement && el.getClientRects().length > 0);
 }
