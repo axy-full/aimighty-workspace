@@ -138,7 +138,7 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   await shot(page, info, "gen-cards", tile(results, "Night swim"));
   const refresh = gone.getByTestId("take-refresh");
   if (PHONES.includes(info.project.name)) {
-    expect((await refresh.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect(await smallTargets(page, ".gx-gen-results .gx-tile-over"), "Refresh under 44×44").toEqual([]);
     expect(await smallTargets(page, ".gx-gen-results"), "targets under 44×44").toEqual([]);
   }
   state.restored = true;
@@ -172,7 +172,7 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
   const takesBanner = page.getByTestId("takes-error");
   await expect(takesBanner).toContainText("The library is offline for a moment.");
   await expect(page.getByTestId("edit-takes")).not.toContainText("Nothing generated yet");
-  if (PHONES.includes(info.project.name)) expect((await takesBanner.getByRole("button", { name: "Try again" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="takes-error"]'), "Try again under 44×44").toEqual([]);
   await shot(page, info, "takes-error", takesBanner);
   state.mode = "ok";
   await takesBanner.getByRole("button", { name: "Try again" }).click();
@@ -227,7 +227,7 @@ test("a project list that will not load says so, and Try again opens the project
   await expect(page.getByTestId("project-name")).toHaveText("Not loaded");
   /* Not "Open a project": nothing is known about the projects yet. */
   await expect(page.getByTestId("gen-results-empty")).toHaveCount(0);
-  if (PHONES.includes(info.project.name)) expect((await banner.getByRole("button", { name: "Try again" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="projects-error"]'), "Try again under 44×44").toEqual([]);
   await noSideScroll(page);
   await shot(page, info, "projects-error");
   fail = false;
