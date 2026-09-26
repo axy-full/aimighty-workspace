@@ -94,5 +94,6 @@ test("the hero keeps a visitor's prompt and opens it in Gen, quoted as the site 
   await expect(page.getByTestId("gen-preset-note")).toContainText("From the site");
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
-  await expect(page.getByTestId("gen-generate")).toContainText(`${quoted} cr`);
+  /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
+  await expect(page.getByTestId("gen-generate")).toContainText(`${quoted} cr`, { timeout: 30_000 });
 });
