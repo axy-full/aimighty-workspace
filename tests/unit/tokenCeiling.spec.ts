@@ -30,6 +30,8 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture" }) },
     "@/lib/tokenCeiling": { parseCeiling },
+    "@/lib/credits": { creditsApply: () => true },
+    "@/lib/creditSql": { billedCreditsExpr: () => "0" },
     "@/lib/db": {
       db: () => ({ batch: async (statements: { args: unknown[] }[]) => { inserted.push(statements[0].args); } }),
       ready: async () => {}, now: () => 1, id: () => "tok_fixture",

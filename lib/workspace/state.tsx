@@ -86,6 +86,11 @@ export function useWorkspace(): Workspace {
   return value;
 }
 
+/** The shell's toast where there is a shell (a draft editor can be mounted outside one): null otherwise. */
+export function useOptionalToast(): ((text: string) => void) | null {
+  return useContext(WorkspaceContext)?.toast ?? null;
+}
+
 /**
  * Where this provider writes the URL. The Suites shell mounts the same state
  * layer at its own path and owns a few search params of its own (`keep`),

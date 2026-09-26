@@ -22,6 +22,7 @@ import { generationReferenceIds } from "@/lib/workbench/node-graph";
 import { referenceAdBinding, validateReferenceAdBinding, type ReferenceAdBinding } from "@/lib/workbench/reference-ad";
 import { uid, type Asset, type Project, type Stage } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
+import { stableId } from "@/lib/workbench/stable-id";
 
 /**
  * Marketing Studio's whole flow, in one place: the four sections
@@ -226,8 +227,8 @@ export default function MarketingStudioFlow({
   function buildStoryboard() {
     if (!draft.live()) return;
     try {
-      const next = buildMoleculrStoryboard(draft.latest(), () => uid("campaign"));
-      draft.change(() => next);
+      /* Built on the draft as the host holds it now, never on a copy a render older. */
+      draft.change((current) => buildMoleculrStoryboard(current, () => uid("campaign")));
       onPage("variants");
       toast.success("Editable storyboard shots prepared. Review each generation before rendering.");
     } catch (error) {
@@ -238,8 +239,7 @@ export default function MarketingStudioFlow({
   function prepareVariants(kind: "image" | "video") {
     if (!draft.live()) return;
     try {
-      const next = prepareMoleculrVariants(draft.latest(), kind, () => uid("campaign"));
-      draft.change(() => next);
+      draft.change((current) => prepareMoleculrVariants(current, kind, () => uid("campaign")));
       toast.success("Variations prepared. Review each engine and credit quote before rendering.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The variations could not be prepared.");
@@ -334,7 +334,9 @@ export default function MarketingStudioFlow({
       toast.error("This project has reached its variant or node limit. Start another project to continue.");
       return;
     }
-    const nodeId = existing?.nodeId ?? uid("variant");
+    /* A new variant's node takes its id from what it is, so the same variant bound in two windows at once is one node, one variant. */
+    const madeId = stableId("variant", kind, hook, castId ?? "", brief.activeProductId ?? "", template?.id ?? "", JSON.stringify(referenceVideo ?? null), JSON.stringify(generation), request);
+    const nodeId = existing?.nodeId ?? (current.nodes.some((node) => node.id === madeId) ? uid("variant") : madeId);
     const planned = moleculrNode(nodeId, request, `${brief.productName || current.name} · ${hook}`, current.nodes.length, kind);
     try {
       const base = existing ? { ...current.nodes.find((item) => item.id === nodeId)!, text: request, mode: planned.mode } : planned;
@@ -346,35 +348,42 @@ export default function MarketingStudioFlow({
       if (options?.referenceAssetIds && chosenRefs.length !== options.referenceAssetIds.length)
         throw new Error("A selected product or cast reference is no longer available.");
       if (referenceVideo) chosenRefs.push(current.assets.find((asset) => asset.id === referenceVideo!.assetId)!);
-      const binding = bindMoleculrReferences(current, base, chosenRefs, () => uid("reference"), referenceVideo?.assetId);
+      let source = 0;
+      const sourceId = () => {
+        const value = stableId("variant-source", nodeId, source++);
+        return current.nodes.some((node) => node.id === value) ? uid("reference") : value;
+      };
+      const binding = bindMoleculrReferences(current, base, chosenRefs, sourceId, referenceVideo?.assetId);
       const nextNodes = [
         ...(existing ? current.nodes.map((item) => (item.id === nodeId ? binding.node : item)) : [...current.nodes, binding.node]),
         ...binding.sources,
       ];
-      draft.change((old) => ({
-        ...old,
-        nodes: nextNodes,
-        moleculr: {
-          ...brief,
-          variants: existing
-            ? brief.variants
-            : [
-                ...brief.variants,
-                {
-                  id: uid("campaign"),
-                  nodeId,
-                  hook,
-                  castAssetId: castId,
-                  kind,
-                  productId: brief.activeProductId,
-                  templateId: template?.id,
-                  ...(referenceVideo ? { referenceVideo } : {}),
-                  createdAt: new Date().toISOString(),
-                  generation,
-                },
-              ],
-        },
-      }));
+      const variant = {
+        /* One variant per bound node: bound in two windows at once, it is still one variant (one id), not two. */
+        id: stableId("campaign", "variant", nodeId),
+        nodeId,
+        hook,
+        castAssetId: castId,
+        kind,
+        productId: brief.activeProductId,
+        templateId: template?.id,
+        ...(referenceVideo ? { referenceVideo } : {}),
+        createdAt: new Date().toISOString(),
+        generation,
+      };
+      /* Laid over the draft as the host holds it now: the variant's node, its sources and its entry, nothing else. */
+      draft.change((old) => {
+        const known = new Set(old.nodes.map((item) => item.id));
+        const was = old.moleculr ?? brief;
+        return {
+          ...old,
+          nodes: [
+            ...(known.has(nodeId) ? old.nodes.map((item) => (item.id === nodeId ? binding.node : item)) : [...old.nodes, binding.node]),
+            ...binding.sources.filter((source) => !known.has(source.id)),
+          ],
+          moleculr: { ...was, variants: existing || was.variants.some((item) => item.nodeId === nodeId) ? was.variants : [...was.variants, variant] },
+        };
+      });
       const targetRefs = generationReferenceIds(binding.node, { ...current, nodes: nextNodes });
       setTarget({
         node: binding.node,
