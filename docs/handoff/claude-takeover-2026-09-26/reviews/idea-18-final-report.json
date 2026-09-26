@@ -1,0 +1,120 @@
+{
+ "idea": 18,
+ "branch": "feat/hf-honest-confirmations",
+ "commits": [
+  "650f1939 Confirmations say what happened and open where it is",
+  "3c94dcf7 A landed plate opens the Library; the spec waits for hydration",
+  "a4f8f593 Review fixes: the Rig never drops an edit quietly, toasts clear the Uploads chip"
+ ],
+ "built": "I fixed every issue from both reviews in one commit on top (a4f8f593). None of the review points was wrong. A previous correction attempt had left most of the fixes uncommitted. I checked that work, kept it, finished it and verified it. The dev server on port 4846 was restarted with ENGINE_MOCK=1 and is still running.\n\nWhat the branch does (unchanged from before): each toast says what actually happened and has one Open button that goes to where the result is. There is no Open when you are already there. The wording and destinations live in lib/shell/confirmations.ts, and lib/shell/use-confirm.ts shows the toast and handles Open. Crew's \"Board it\" became \"\u2192 Rig\". It says \"Added to Rig \u00b7 <shot>\" and Open Rig selects that shot. Open in Gen fills Gen's prompt and asks for no paste. Cast counts what was actually added. Retry and held takes no longer overstate. Business's Open in Takes opens that take.\n\nReview fixes in this pass:\n- **Rig re-read (code major).** The re-read of a draft written elsewhere could silently replace an edit made while it was running. It now waits behind any save in progress and is only applied if nothing changed on the Rig in the meantime. An edit made during the re-read goes through the old path: its save is refused as stale, the Rig reloads, and it shows \"This project changed elsewhere\". A new browser spec holds the re-read and edits during it. It passes with the fix. I swapped the old listener back in to check, and the spec failed there with no toast.\n- **Uploads chip over the Open (UX major).** On phones, once anything has been uploaded, the toast now sits above the Uploads chip (122px instead of 98px). On screens up to 900px, while the chip is showing, the toast is layered above it (z-index 91 over 90). This only applies while the chip is on screen, so the context menu and other layers are unchanged. The spec now files minutes first, which is an upload, and hit-tests the whole Open button. The earlier attempt ran that hit-test against the old CSS, and it failed because the chip's summary covered part of the Open.\n- **Tapping a toast no longer holds it.** Only a mouse over it or keyboard focus (:focus-visible) holds it, so a tap lets it time out.\n- **A toast's Open uses where you are now.** It reads the shell when you press it, through a new ShellProvider.live(), instead of a snapshot from the page that raised the toast. The \"am I already there\" check uses it too.\n- **Open in Gen and Retry only confirm when the prompt was carried.** If the browser refuses to store it, the toast says \"The solution could not be carried to Gen\" (or \"<take> could not be carried to Gen\"). A browser spec blocks storage and checks this at 360x640 and 1440x900.\n- **Long shot names.** A long Crew shot is named up to a word boundary and ends with \"\u2026\" (solutionShot in lib/crew/room.ts). Toast text is limited to two lines.\n- **Retry's toast is one line:** \"Retry \u00b7 <name> loaded in Gen\".\n- **One name for the minutes' place:** the button now reads \"File minutes in the Library \u00b7 free\", matching the toast.\n- **Repeat sends are labelled.** A solution already sent shows \"\u2192 Rig again\" or \"\u2192 Brief again\".\n- **Spec fix.** The browser spec now waits for the shell's URL to settle (cp=room) before typing the Crew goal, and types again if the goal is lost. On a cold dev server the room reset after hydration and dropped the typed goal. That was the repeated 360x640 failure.\n\nI edited components/workspace/rig/RigProvider.tsx, which the audit-fix track owns. The edit is only inside the DRAFT_WRITTEN listener this branch added. The commit message and deferred[0] both flag it.",
+ "files": [
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/shell/confirmations.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/shell/use-confirm.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/shell/use-open-take.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/shell/state.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/shell/assets.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/shell/use-asset-actions.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/workspace/draft-written.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/workspace/state.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/workspace/rig.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/production/cast.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/workbench/job-recovery.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/crew/room.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/lib/crew/use-crew.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/app/api/crew/solutions/[id]/route/route.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/app/graphite.css",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/SuitesShell.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/crew/CrewView.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/business/BusinessView.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/viral/ViralView.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/production/CastStage.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/production/BriefStage.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/graphite/production/EnvironmentStage.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/components/workspace/rig/RigProvider.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/design/particl-suites/CREW_ADDENDUM.md",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/docs/handoff/status.md",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/unit/hfHonestConfirmations.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/hf-honest-confirmations-workbench.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/crew-workbench.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/crew-workbench-api.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/suites-assets-workbench.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/hf-business-standalone-workbench.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/unit/suitesAssets.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-connected/tests/unit/workspaceRig.spec.ts"
+ ],
+ "deferred": [
+  {
+   "what": "components/workspace/rig/RigProvider.tsx is owned by the audit-fix change, and this branch edits it. The edit is the DRAFT_WRITTEN listener only, about 15 lines: it re-reads a draft written elsewhere after any save in flight, and applies it only if nothing changed on the Rig meanwhile. reload() and flush() are untouched.",
+   "reason": "Without it, Open Rig from Crew or Brief lands on a Rig that has not read the new shot, and the Rig's next save is refused as stale. The review asked for the re-check to stay inside this block, and it does. Whoever merges the audit-fix branch needs to keep the listener."
+  },
+  {
+   "what": "Crew \u2192 Rig still sends the wire value 'boards' to /api/crew/solutions/:id/route",
+   "reason": "Existing clients and the CREW_ADDENDUM contract use 'boards'. The addendum and the route now say it writes a Rig scene node, and the reply names the node (nodeId, title). Renaming the wire value would be a separate API change."
+  },
+  {
+   "what": "The Crew solution does not become a real Storyboards frame",
+   "reason": "Storyboards frames come from the beat sheet, and there is no backend for requesting a frame for a single loose solution. The idea allows either option; this branch takes 'says Added to Rig and opens Rig'."
+  },
+  {
+   "what": "Only unit specs cover the Cast agent-list toast, the Cast and Environment build-landed toasts, and Retry's storage-blocked toast. Retry's normal toast is also checked in suites-assets-workbench.",
+   "reason": "Reaching the Cast and Environment toasts in a browser needs a finished agent job or a finished paid build, and these flows have no mock fixture here. Retry's blocked case uses the same code as Crew's Open in Gen, whose blocked case is covered in a browser."
+  },
+  {
+   "what": "A solution's status holds only its latest destination, so after \u2192 Brief then \u2192 Rig the Brief button reads plain '\u2192 Brief' again",
+   "reason": "The crew_solutions status column holds one value. Tracking both destinations would be a schema change, which is outside a copy-and-routing idea."
+  }
+ ],
+ "tests": [
+  {
+   "command": "npx tsc --noEmit -p .",
+   "result": "pass (clean)"
+  },
+  {
+   "command": "npx eslint <the 30 .ts/.tsx files changed since 39f2b8ba>",
+   "result": "pass (clean)"
+  },
+  {
+   "command": "PW_BASE_URL=http://localhost:1 npx playwright test --config=playwright.config.ts --project=unit tests/unit/ --output /private/tmp/particl-suites/hf-connected/pw-unit-corr-all",
+   "result": "2011 passed, 3 skipped (includes hfHonestConfirmations: new checks for notCarried, the one-line Retry toast, and solutionShot's word-boundary names)"
+  },
+  {
+   "command": "PW_CHANNEL=chrome PW_BASE_URL=http://localhost:4846 PW_PLATFORM_DATABASE_URL=file:/private/tmp/particl-suites/hf-connected/platform.db npx playwright test --config=playwright.workbench.config.ts tests/hf-honest-confirmations-workbench.spec.ts --output /private/tmp/particl-suites/hf-connected/pw-honest-corr1",
+   "result": "11 passed, 1 failed: at 360x640 on the freshly restarted server the Crew goal was lost after hydration because the shell rewrote the URL and the room reset. The spec now waits for cp=room and types again if needed."
+  },
+  {
+   "command": "same spec --output .../pw-honest-corr2",
+   "result": "12 passed, 13 skipped by design. \u2192 Rig passed at all 5 viewports, with the minutes toast and the Uploads chip on screen first."
+  },
+  {
+   "command": "same spec, --project=workbench-1440x900 -g 'still reading the saved draft', run against the OLD DRAFT_WRITTEN listener (temporarily swapped in, then restored byte-identical) --output .../pw-honest-oldrig",
+   "result": "failed as expected: no 'This project changed elsewhere' toast, because the edit was silently replaced. This proves the new spec catches the review's major."
+  },
+  {
+   "command": "same spec -g 'will not store' --output .../pw-honest-corr3",
+   "result": "2 passed (360x640, 1440x900): Gen opens empty, and the toast says the solution could not be carried"
+  },
+  {
+   "command": "same config: hf-honest-confirmations, crew-workbench, crew-workbench-api, suites-assets, suites-shell, suites-dragdrop, suites-rig-canvas-drop, suites-soul-id, suites-cast, suites-environment, suites-brief-writer, suites-business, suites-viral, workspace-rig, workspace-takes, hf-business-standalone, hf-viral-real-runs, workspace-mobile-shell (all 5 viewports) --output .../pw-honest-corr-surfaces",
+   "result": "186 passed, 125 skipped, 0 failed (23.8m), run on the final committed code"
+  }
+ ],
+ "pr_title": "Confirmations say what happened and open where it is",
+ "pr_body": "**Before:** several confirmations described something that did not happen.\n- Crew's \"Board it\" wrote a Rig shot, but said \"A draft frame is on Boards\" and opened Storyboards, where nothing appeared.\n- \"Open in Gen\" asked for a paste, even though Gen fills the prompt itself.\n- The Cast toast counted the agent's proposals, not the entries actually added.\n- Retry claimed \"same inputs, new seed\".\n- Held takes read \"Held for approval\".\n- Business's \"Open Takes\" opened the list, not the take.\n\n**Now:** each toast says what was done and has one **Open** button to where the result is. There is no Open when you are already there.\n- Crew **\u2192 Rig** says \"Added to Rig \u00b7 <shot>\", and Open Rig selects that shot. A long shot name is cut at a word and ends with \"\u2026\".\n- A solution already sent reads **\u2192 Rig again** or **\u2192 Brief again**.\n- **\u2192 Brief** confirms with Open Brief.\n- **Open in Gen** fills Gen's prompt and nothing touches the clipboard. If the browser will not store the prompt, the toast says \"The solution could not be carried to Gen\" rather than claiming it was.\n- **File minutes in the Library** confirms with Open Library.\n- Cast counts what was actually added, and says how many were already listed or left out. Cast builds and Environment plates confirm with Open Library.\n- Retry says \"Retry \u00b7 <name> loaded in Gen\". Held takes say \"Held \u00b7 top up to release\" or \"Waiting for a slot\".\n- Business's **Open in Takes** opens that take, selected.\n\n**Toast layout:**\n- The toast is centred and at most two lines.\n- On phones it sits above the tab bar, the home indicator and the Uploads chip, and its Open is a 44px target that nothing covers.\n- Only a mouse or keyboard focus holds it on screen. A tap lets it time out.\n- Its Open acts on the page you are on when you press it.\n\n**Rig:** the Rig re-reads a draft saved elsewhere, so the new shot is there when Open Rig lands. The re-read never replaces an edit made while it runs. That edit's save is refused as stale, and the Rig says \"This project changed elsewhere\", as it did before this branch.\n\n**Notes for review:**\n- The wording and destinations live in `lib/shell/confirmations.ts`. A unit spec checks that each Open goes to a real page, the one its words name.\n- The Crew route's reply names the node it wrote (`nodeId`, `title`). The wire value stays `boards`.\n- **`components/workspace/rig/RigProvider.tsx` belongs to the audit-fix track.** This branch changes only the `DRAFT_WRITTEN` listener it added, so please keep that listener when merging.\n\n**Tested:**\n- tsc and eslint are clean, and all 2011 unit specs pass.\n- `tests/hf-honest-confirmations-workbench.spec.ts` passes at 360x640, 390x844, 844x390, 1440x900 and 1920x1080 against the ENGINE_MOCK dev server. It includes new checks for the Uploads chip hit-test, the storage-blocked Open in Gen, long shot names, and an edit made while the Rig re-reads. The last one fails against the old listener.\n- The touched surfaces pass: Crew, assets, shell, drag-and-drop, Rig canvas drop, Soul ID, Cast, Environment, Brief writer, Business, Viral, Rig, Takes, mobile shell, and ideas 11 and 17. That is 186 passed and 0 failed.\n- No real generation or paid call was made.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+ "screenshots": [
+  "/private/tmp/particl-suites/hf-connected/shots/honest-minutes-toast-360x640.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-minutes-toast-390x844.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-minutes-toast-1440x900.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-crew-rig-toast-360x640.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-crew-rig-toast-390x844.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-crew-rig-toast-1440x900.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-rig-opened-360x640.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-rig-opened-390x844.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-rig-opened-1440x900.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-long-rig-toast-360x640.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-long-rig-toast-1440x900.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-gen-not-carried-360x640.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-gen-not-carried-1440x900.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-gen-from-crew-390x844.png",
+  "/private/tmp/particl-suites/hf-connected/shots/honest-gen-from-crew-1440x900.png"
+ ]
+}

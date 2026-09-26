@@ -1,0 +1,17 @@
+{
+ "n": 22,
+ "title": "Chat-first phone Gen with bottom sheets, and a real Suites picker",
+ "area": "Mobile",
+ "gap": "On a phone, GenView is the desktop column stacked: aspect, resolution, length and takes are full-width rows above the sticky button. TabBar.tsx:28 'Suites' jumps straight to Business instead of offering a choice. The Gen tile and the Gen page hint promise 3D (lib/shell/studio-home.ts:76, SuitesShell.tsx:218), but Gen has no 3D output.",
+ "target": "Below 768px, Gen is one composer card: textarea, '+' attach, a model chip, a settings icon, and the cost on the send button. Settings open a bottom sheet with a grabber (Aspect, Resolution, Length, Takes, Enhance) and an Apply button. Results sit below in a 2-column grid. The 'Suites' tab opens a sheet listing Business, Viral, Atomik and Crew with live facts. The 44px target and 12px text floors are kept.",
+ "files": [
+  "components/graphite/GenView.tsx",
+  "components/graphite/TabBar.tsx",
+  "components/graphite/mobile/SuiteHome.tsx",
+  "lib/shell/studio-home.ts",
+  "app/graphite.css"
+ ],
+ "priority": "P1",
+ "effort": "medium",
+ "respects_rules": "Price stays on the send button. Phone floors are respected."
+}

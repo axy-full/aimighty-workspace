@@ -7,6 +7,7 @@ import {
   CONSUMER_GENJUTSU_RESOLUTIONS,
 } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { ConsumerVideoServiceError } from "@/lib/higgsfield-consumer/video-service";
+import { GENJUTSU_VARIANTS, type GenjutsuVariant } from "@/lib/genjutsuTypes";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
@@ -17,6 +18,7 @@ import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original"
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import {
   consumerGenjutsuJobs,
+  consumerGenjutsuRuns,
   quoteConsumerGenjutsu,
   submitConsumerGenjutsuJob,
   pollConsumerGenjutsu,
@@ -34,6 +36,11 @@ const id = z
   .min(1)
   .max(200)
   .regex(/^[A-Za-z0-9_-]+$/);
+const runCursor = z
+  .string()
+  .max(240)
+  .regex(/^\d{1,16}\.[A-Za-z0-9-]{1,200}$/);
+const runVariant = z.enum(GENJUTSU_VARIANTS);
 const quote = z
   .object({
     action: z.literal("quote"),
@@ -136,20 +143,40 @@ export const GET = withTenant(
     if (owner.response) return owner.response;
     const query = new URL(req.url).searchParams;
     const draftId = query.get("draftId") ?? "";
-    /* `results=submitted`: the Viral pages list what ran, not every estimate they read. */
+    /* `results=submitted`: submitted jobs only, never the estimates read on
+       the way (the unpaged list). `view=runs` below pages them. */
     const submittedOnly = query.get("results") === "submitted";
     if (!id.safeParse(draftId).success)
       return Response.json(
         { error: "Choose a valid project." },
         { status: 400, headers },
       );
+    /* `view=runs` is Viral's Recent and History: runs only (never
+       estimates), paged by the cursor the last page ended on, and — for
+       Recent beside one page — only that page's variant. Without it the
+       saved jobs, quotes included, are listed as before. */
+    const view = query.get("view"), cursor = query.get("cursor"), variant = query.get("variant");
+    if (
+      (view !== null && view !== "runs") ||
+      (cursor !== null && (view !== "runs" || !runCursor.safeParse(cursor).success)) ||
+      (variant !== null && (view !== "runs" || !runVariant.safeParse(variant).success))
+    )
+      return Response.json(
+        { error: "Choose a valid page of runs." },
+        { status: 400, headers },
+      );
     try {
+      const connection = await getConsumerConnection({
+        workspaceId: requireTenant().id,
+        userId: owner.user.id,
+      });
+      const runs =
+        view === "runs"
+          ? await consumerGenjutsuRuns(owner.user.id, draftId, cursor, variant as GenjutsuVariant | null)
+          : null;
       return Response.json(
         {
-          connection: await getConsumerConnection({
-            workspaceId: requireTenant().id,
-            userId: owner.user.id,
-          }),
+          connection,
           capabilities: {
             resolutions: CONSUMER_GENJUTSU_RESOLUTIONS,
             minSeconds: 4,
@@ -159,9 +186,13 @@ export const GET = withTenant(
             presetsAvailable: false,
             importsMediaForQuote: true,
           },
-          jobs: submittedOnly
-            ? await consumerGenjutsuJobs(owner.user.id, draftId, { submittedOnly })
-            : await consumerGenjutsuJobs(owner.user.id, draftId),
+          ...(runs
+            ? { jobs: runs.jobs, nextCursor: runs.nextCursor }
+            : {
+                jobs: submittedOnly
+                  ? await consumerGenjutsuJobs(owner.user.id, draftId, { submittedOnly })
+                  : await consumerGenjutsuJobs(owner.user.id, draftId),
+              }),
         },
         { headers },
       );
