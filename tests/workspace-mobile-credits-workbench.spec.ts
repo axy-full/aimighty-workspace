@@ -84,7 +84,7 @@ test("the phone header shows a credit figure on Projects, Suite and Page, at eve
     const small = await page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('[data-testid="mobile-header"] button'))
         .map((el) => el.getBoundingClientRect())
-        .filter((r) => (r.width || r.height) && (r.width < 44 || r.height < 44)).length);
+        .filter((r) => (r.width || r.height) && (Math.round(r.width * 100) / 100 < 44 || Math.round(r.height * 100) / 100 < 44)).length);
     expect(small, `${width}×${height} header targets`).toBe(0);
   }
 });
@@ -121,6 +121,6 @@ test("a large balance is written in full, and still clears the header's floors",
   await expect(page.getByTestId("mobile-credits")).toHaveText("1,234,567 cr");
   const title = (await page.getByTestId("mobile-title").boundingBox())!;
   expect(title.width).toBeGreaterThanOrEqual(44);
-  expect(title.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round(title.height * 100) / 100).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 });

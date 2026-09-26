@@ -2,6 +2,7 @@
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { useShell } from "@/lib/shell/state";
+import { useFreshProject } from "@/lib/shell/use-fresh-project";
 import { recentTakes, stageCards, upNext } from "@/lib/shell/studio-home";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -14,8 +15,10 @@ import { Glyph } from "../icons";
  * the eight stages as cards with a live line and a status dot, and the recent
  * takes. Every card routes to its page; every figure is the project's own.
  */
-export function StudioHome({ project, items }: { project: Project | null; items: LibraryEntry[] }) {
+export function StudioHome({ project: loaded, items }: { project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
+  /* The stages edit their own drafts: the grid counts the project as saved now, not as first loaded. */
+  const project = useFreshProject(loaded);
   const { dispatch } = useWorkspace();
   const cards = stageCards(project, items);
   const next = upNext(project);

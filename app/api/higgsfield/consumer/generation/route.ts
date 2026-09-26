@@ -26,6 +26,8 @@ import {
   pollConsumerGeneration,
 } from "@/lib/higgsfield-consumer/generation-service";
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
+/* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
+import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,7 +38,7 @@ const catalogue = z
   .object({ action: z.literal("catalogue"), refresh: z.boolean().optional(), type: z.enum(CONNECTED_OUTPUT_TYPES).optional() })
   .strict();
 const quote = z
-  .object({ action: z.literal("quote"), draftId: id, input: consumerGenerationInputSchema, idempotencyKey: z.uuid() })
+  .object({ action: z.literal("quote"), draftId: id, input: consumerGenerationInputSchema, idempotencyKey: z.uuid(), composer: z.literal("gen").optional() })
   .strict();
 const submit = z
   .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) })
@@ -75,6 +77,9 @@ const neutral = (message: string) =>
     .replace(/\bthe connected account account\b/g, "the connected account")
     .replace(/^the connected/, "The connected");
 function problem(error: unknown) {
+  // A Soul ID or element build already sent (build-records): never sent twice.
+  if (error instanceof Error && error.name === "BuildInFlightError")
+    return Response.json({ code: "build_in_flight", error: error.message }, { status: 409, headers });
   if (error instanceof CatalogueError || error instanceof ConsumerGenjutsuError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
@@ -88,10 +93,10 @@ function problem(error: unknown) {
     return Response.json({
       code: error.code,
       error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating."
-        : error.code === "capacity" ? "Four connected-account jobs are already active or awaiting reconciliation."
+        : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
-  if (error instanceof ConsumerVideoError)
+  if (error instanceof ConsumerVideoError || error instanceof ConsumerSetupError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
     return Response.json({ error: "Too many requests. Try again shortly." }, { status: 429, headers });
@@ -174,7 +179,7 @@ export const POST = withTenant(async (req: Request) => {
     if (body.action === "status")
       return Response.json(await pollConsumerGeneration({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
     return Response.json(
-      { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey) },
+      { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey, { composer: body.composer ?? null }) },
       { headers },
     );
   } catch (error) {

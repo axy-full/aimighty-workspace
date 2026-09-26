@@ -240,20 +240,47 @@ test("actual MP4 inspection measures original packets and rejects invalid or ove
     await expect(
       originals.inspectConsumerVideoOriginal(bytes),
     ).rejects.toMatchObject({ code: "invalid_video" });
-  const long = Buffer.from(original);
-  for (let from = 0; ;) {
-    const at = long.indexOf("stts", from);
-    if (at < 0) break;
-    const entries = long.readUInt32BE(at + 8);
-    for (let index = 0; index < entries; index++) {
-      const delta = at + 16 + index * 8;
-      long.writeUInt32BE(long.readUInt32BE(delta) * 60, delta);
+  const stretched = (factor: number) => {
+    const long = Buffer.from(original);
+    for (let from = 0; ;) {
+      const at = long.indexOf("stts", from);
+      if (at < 0) break;
+      const entries = long.readUInt32BE(at + 8);
+      for (let index = 0; index < entries; index++) {
+        const delta = at + 16 + index * 8;
+        long.writeUInt32BE(long.readUInt32BE(delta) * factor, delta);
+      }
+      from = at + 4;
     }
-    from = at + 4;
-  }
+    return long;
+  };
+  // A 90 s result (Marketing Video runs to 120 s; tools return their
+  // source's length) is kept; one past the ten-minute limit is not.
+  expect((await originals.inspectConsumerVideoOriginal(stretched(60))).seconds).toBeCloseTo(90, 0);
+  expect(originals.CONSUMER_ORIGINAL_SECONDS).toBe(600);
   await expect(
-    originals.inspectConsumerVideoOriginal(long),
+    originals.inspectConsumerVideoOriginal(stretched(500)),
   ).rejects.toMatchObject({ code: "invalid_video" });
+  // Only a real inspection verdict is "invalid" (which settles a job for good).
+  expect(originals.uncollectableOriginal(new originals.ConsumerOriginalError("invalid_video"))).toBe(true);
+  expect(originals.uncollectableOriginal(new originals.ConsumerOriginalError("too_large"))).toBe(true);
+  for (const code of ["quota", "timeout", "busy", "storage_unavailable", "deleted", "conflict"] as const)
+    expect(originals.uncollectableOriginal(new originals.ConsumerOriginalError(code))).toBe(false);
+  expect(originals.uncollectableOriginal(new Error("invalid_video"))).toBe(false);
+});
+
+test("a result over the collection limit is refused as too large, not as a retryable storage problem, and nothing is stored", async () => {
+  const m = await modules();
+  const { CONSUMER_VIDEO_BYTES } = await import("../../lib/workbench/product-fetch");
+  await m.tenant.runInTenant(workspace(), async () => {
+    const { job } = await accepted(m);
+    await expect(
+      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
+        fetchDependencies: transport([{ headers: { "content-length": String(CONSUMER_VIDEO_BYTES + 1) } }]).deps,
+      }),
+    ).rejects.toMatchObject({ code: "too_large" });
+    expect((await m.database.db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n).toBe(0);
+  });
 });
 
 test("collection preserves original bytes, records exact consumer credits and exposes one authenticated library generation", async () => {

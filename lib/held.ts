@@ -1,15 +1,18 @@
-import { assertRecoveryOpen } from "./recovery";
+import { after } from "next/server";
+import type { Transaction } from "@libsql/client";
+import { assertRecoveryOpen, reserveRecoveryContinuation } from "./recovery";
 import { db, ready, now } from "./db";
+import { meter } from "./meter";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
-import { reserveGenerationSpend } from "./generationRequests";
+import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendMail, mailConfigured } from "./mail";
-import { workspaceAdmins } from "./platform";
+import { membershipRole, workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
 
@@ -21,13 +24,58 @@ import { notify } from "./push";
  * is asked and nothing is billed. The moment credits arrive — a grant, a
  * top-up, or the cron finding the balance restored — held takes are
  * released oldest first, and the first one that does not fit stops the
- * line, so the balance is never spent out of order. The owner and admins
- * hear once, when the first take is held.
+ * line of takes held for credits, so the balance is never spent out of
+ * order. The owner and admins hear once, when the first take is held.
  */
 export const HELD_LIMIT = 20;
 export type HeldWhy = "credits" | "slots";
 export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy };
-type Defer = (fn: () => Promise<void>) => void;
+type Defer = (fn: () => Promise<void>) => void | Promise<void>;
+
+/**
+ * Keep a released take's paid submission alive past the response that
+ * released it: reserved as a recovery continuation, then run in Next's
+ * `after`. Outside a request (a script, a test) there is no response to
+ * outlive, so it runs to the end here — never as a floating promise.
+ */
+export function continueAfterResponse(kind = "held-release"): Defer {
+  return async (fn) => {
+    const run = await reserveRecoveryContinuation(kind, fn);
+    try {
+      after(run);
+    } catch {
+      await run();
+    }
+  };
+}
+
+/** A take reached its end — a slot, or the reservation, came back: start what waited. */
+export async function releaseAfterSettlement(): Promise<void> {
+  try {
+    await releaseHeldJobs();
+  } catch (error) {
+    console.error("release after settlement:", (error as Error).message);
+  }
+}
+
+const DISCARDED = "Discarded before it started. Nothing was charged.";
+
+/**
+ * Take a held take out of the line. Nothing was reserved or sent for it, so
+ * nothing is charged or refunded: it becomes a cancelled take. False when it
+ * is no longer held (it was released a moment ago, or has already ended).
+ */
+export async function discardHeldJob(id: string, tx?: Transaction): Promise<boolean> {
+  const t = now();
+  const out = await (tx ?? db()).execute({
+    sql: `UPDATE generations SET status='cancelled', error=?, cost_usd=0, updated_at=?,
+            params=json_set(params, '$.discardedAt', ?)
+          WHERE id=? AND status='held'`,
+    args: [DISCARDED, t, t, id],
+  });
+  if (out.rowsAffected) invalidate(PROJECTS_KEY);
+  return out.rowsAffected > 0;
+}
 
 export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits"): HeldInfo {
   return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why };
@@ -64,6 +112,24 @@ type HeldRow = {
   estUsd: number; needs: number; why: HeldWhy;
   token?: { id: string; capUsd: number | null };
 };
+
+/**
+ * Whether a released take skips the shot's credit cap. That is its author's
+ * standing (an admin's take was never capped), or an admin pressing Release
+ * on it — never whoever's poll happened to settle another take and start
+ * the line. An author who has left the workspace is capped.
+ */
+function shotCapExemption(adminReleasing: boolean): (author: string | null) => Promise<boolean> {
+  const roles = new Map<string, Promise<boolean>>();
+  return async (author) => {
+    if (adminReleasing) return true;
+    const ws = currentTenant()?.workspace;
+    if (!author || !ws) return false;
+    if (!roles.has(author))
+      roles.set(author, membershipRole(ws.id, author).then((role) => role === "owner" || role === "admin").catch(() => false));
+    return roles.get(author)!;
+  };
+}
 
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
@@ -106,7 +172,13 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
 /**
  * Release what the balance now covers. `only` releases one take (a person
  * pressing Release); `defer` is how the caller keeps the render alive past
- * its response (Next's `after` inside a request).
+ * its response (by default, Next's `after` behind a recovery continuation).
+ *
+ * Takes held for credits keep their order among themselves: the first the
+ * balance does not cover stops that line. A take that only waited for a
+ * slot, or one that cannot start for a reason of its own (a project, shot
+ * or token cap), spends nothing and holds up nobody: the reason is written
+ * on it, and the line is measured again without it.
  */
 export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {}): Promise<{ released: string[]; short: number }> {
   await assertRecoveryOpen();
@@ -115,35 +187,63 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
   const state = await creditState();
   /* Credits are checked for the takes held for credits; a slot is needed by
      every release, whatever it was held for. */
-  const plan = planRelease(rows.filter((r) => r.why === "credits"), state ? state.balance : null);
+  const credits = rows.filter((r) => r.why === "credits");
+  const balance = state ? state.balance : null;
+  const refused = new Set<string>();
+  let plan = planRelease(credits, balance);
   const [limits, st] = await Promise.all([workspaceLimits(), standing()]);
   let running = st.running;
-  const defer: Defer = opts.defer ?? ((fn) => { void fn().catch((e) => console.error("release:", (e as Error).message)); });
+  const defer: Defer = opts.defer ?? continueAfterResponse();
+  const exempt = shotCapExemption(opts.only ? currentTenant()?.user?.role === "admin" : false);
   const released: string[] = [];
+  let creditsStalled = false;
   for (const r of rows) {
     if (running >= limits.concurrency) break;
-    if (r.why === "credits" && !plan.release.includes(r.id)) break;
+    if (r.why === "credits" && (creditsStalled || !plan.release.includes(r.id))) {
+      creditsStalled = true;
+      continue;
+    }
     // The meter first: work the platform cannot bill does not start.
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
-                    engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy }, { token: r.token });
+                    engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
+                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
     } catch (e) {
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
-      break;
+      // A workspace-wide stop (every slot reserved, the hourly limit, a paused workspace) ends the pass.
+      if (!(e instanceof SpendReservationError) || !(e.perJob || e.status === 402)) break;
+      await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held'",
+        args: [e.message.slice(0, 600), now(), r.id] }).catch(() => {});
+      if (r.why === "credits") {
+        // Only the balance stops the line. A take its own cap refuses spent
+        // nothing, so the takes behind it are measured without it.
+        if (e.status === 402) creditsStalled = true;
+        else {
+          refused.add(r.id);
+          plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
+        }
+      }
+      continue;
     }
     const t = now();
     const next = r.kind === "video" ? "queued" : "running";
     // The clock restarts: the janitor measures a take from when it was sent, and it is sent now.
     const upd = await db().execute({
       sql: `UPDATE generations
-            SET status = ?, created_at = ?, updated_at = ?,
+            SET status = ?, created_at = ?, updated_at = ?, error = NULL,
                 params = json_remove(json_set(params, '$.releasedAt', ?), '$.held')
             WHERE id = ? AND status = 'held'`,
       args: [next, t, t, t, r.id],
     });
-    if (!upd.rowsAffected) continue;
-    if (r.kind === "video") defer(async () => { await submitVideoRow(r.id); });
-    else if (!(await enqueueRender(r.id, r.kind))) defer(() => runInline(r.id));
+    if (!upd.rowsAffected) {
+      // Discarded between its reservation and its release: nothing may stay reserved for it.
+      const row = (await db().execute({ sql: "SELECT json_extract(params,'$.discardedAt') AS discarded FROM generations WHERE id=?", args: [r.id] })).rows[0];
+      if (row?.discarded != null)
+        await meter({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "failed", engineCostUsd: 0 }, { critical: false });
+      continue;
+    }
+    if (r.kind === "video") await defer(async () => { await submitVideoRow(r.id); });
+    else if (!(await enqueueRender(r.id, r.kind))) await defer(() => runInline(r.id));
     released.push(r.id);
     running += 1;
   }

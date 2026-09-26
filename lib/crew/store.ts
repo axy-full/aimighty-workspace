@@ -152,8 +152,9 @@ export async function readSession(owner: string, id: string): Promise<CrewSessio
   const row = (await db().execute({ sql: "SELECT * FROM crew_sessions WHERE id=? AND owner=?", args: [id, owner] })).rows[0];
   return row ? session(row as Row) : null;
 }
-export async function updateSessionBrief(owner: string, id: string, patch: { goal?: string; context?: CrewContext }): Promise<void> {
+export async function updateSessionBrief(owner: string, id: string, patch: { goal?: string; context?: CrewContext; model?: string }): Promise<void> {
   await crewReady();
+  if (patch.model !== undefined) await db().execute({ sql: "UPDATE crew_sessions SET model=? WHERE id=? AND owner=?", args: [patch.model, id, owner] });
   if (patch.goal !== undefined) await db().execute({ sql: "UPDATE crew_sessions SET goal=? WHERE id=? AND owner=?", args: [patch.goal, id, owner] });
   if (patch.context !== undefined) await db().execute({ sql: "UPDATE crew_sessions SET context=? WHERE id=? AND owner=?", args: [JSON.stringify(patch.context), id, owner] });
 }

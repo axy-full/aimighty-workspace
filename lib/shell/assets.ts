@@ -49,7 +49,7 @@ export function assetCapabilities(input: {
 }): CtxCapabilities {
   const { asset, clip, projectId } = input;
   const can: CtxCapabilities["can"] = { copy: true, cut: true, "open-in-inspector": true, delete: true };
-  const why: CtxCapabilities["why"] = { bypass: "Open Rig to bypass a node.", unplug: "Open Rig to unplug a node." };
+  const why: CtxCapabilities["why"] = {};
   if (asset) {
     if (asset.media === "image" || asset.media === "video") can["use-as-reference"] = true;
     else why["use-as-reference"] = "References are images and videos.";
@@ -89,13 +89,5 @@ export const SAY = {
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
-/* Crew › Open in Gen and Soul ID leave words for Gen in session storage; Recreate posts a recipe (lib/shell/reference-inbox.ts). */
+/* What Gen is handed from elsewhere in the shell, through its one letterbox (lib/shell/gen-preset.ts). */
 export type { GenPreset };
-export const GEN_PRESET_KEY = "particl-gen-preset";
-export function readGenPreset(raw: string | null): GenPreset | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as GenPreset;
-    return parsed && typeof parsed === "object" && typeof parsed.prompt === "string" ? parsed : { prompt: raw };
-  } catch { return { prompt: raw }; }
-}

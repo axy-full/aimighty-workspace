@@ -26,7 +26,7 @@ export async function signInLocally(api: APIRequestContext) {
   test.skip(!health.mock, "requires a local ENGINE_MOCK=1 server");
   const code = randomBytes(18).toString("base64url");
   const email = `workbench-${code}@example.test`;
-  const db = createClient({ url: localPlatformDbUrl(), timeout: 2_000 });
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
     await db.execute({
       sql: "INSERT INTO signup_invites(code,email,name,note,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",

@@ -80,6 +80,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     "@/lib/shots": {},
     "@/lib/push": {},
     "@/lib/cache": { invalidate: () => {} },
+    "@/lib/held": await import("../../lib/held"),
   };
   const file = path.resolve(`app/api/${kind}/[id]/route.ts`);
   const compiled = ts.transpileModule(readFileSync(file, "utf8"), {
@@ -154,6 +155,7 @@ test("generation DELETE preserves active provider jobs and media referenced by p
         sql: "INSERT INTO generations(id,model,prompt,params,status,stored_url,created_at,updated_at) VALUES(?,'fixture','','{}',?,'original',0,0)",
         args: [status, status],
       });
+    // Active renders stay; a held take is someone else's to discard (it has no author here).
     for (const status of ["queued", "running", "held"])
       expect((await route.remove(status)).status).toBe(409);
     await db().execute({
@@ -184,6 +186,19 @@ test("generation DELETE preserves active provider jobs and media referenced by p
         )
       ).rows[0],
     ).toMatchObject({ deleted: 1, stored_url: "original" });
+    // A held take never ends on its own: its author may delete it. It ends as
+    // cancelled at no charge, and is hidden like any other take.
+    await db().execute(
+      "INSERT INTO generations(id,model,prompt,params,status,created_by,created_at,updated_at) VALUES('held-mine','fixture','','{}','held','owner',0,0)",
+    );
+    expect((await route.remove("held-mine")).status).toBe(200);
+    expect(
+      (
+        await db().execute(
+          "SELECT status,deleted,cost_usd FROM generations WHERE id='held-mine'",
+        )
+      ).rows[0],
+    ).toMatchObject({ status: "cancelled", deleted: 1, cost_usd: 0 });
   });
 });
 

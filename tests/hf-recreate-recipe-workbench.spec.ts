@@ -142,6 +142,8 @@ async function shot(page: Page, info: TestInfo, name: string) {
   const dir = process.env.RECREATE_SHOTS;
   if (!dir || !SHOTS.includes(info.project.name)) return;
   await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect && Number(a.effect.getTiming().iterations) !== Infinity).map((a) => a.finished)));
+  /* Two frames: a card the test has just scrolled into view is painted before it is captured. */
+  await page.evaluate(() => new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(() => painted(null)))));
   await page.screenshot({ path: `${dir}/${name}-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
 }
 
@@ -243,6 +245,39 @@ test("× hides the card, and a recipe still being read keeps Generate waiting al
   await expect(page.getByTestId("gen-well")).toContainText("@Image1 · Plate still");
   await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
   await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
+  expect(priced).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("a model picked in ⌘K while the recipe is still read keeps its card and its wait; Undo takes both back", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "the palette is a desktop key");
+  const { errors, release, priced } = await open(page, { holdPlate: true });
+  const inspector = await inspect(page, "gen_harbour");
+  await inspector.getByTestId("inspector-recreate").click();
+  const refs = page.getByTestId("gen-recipe-refs");
+  await expect(refs).toHaveText("2 refs…");
+  /* ⌘K hands Gen a model and no words: a change made here, not a new recipe. */
+  const palette = page.getByRole("dialog", { name: "Search" });
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+  await expect(palette).toBeVisible();
+  await palette.getByRole("textbox").fill("Kling 3.0 Pro");
+  await palette.getByRole("option").filter({ hasText: "MODEL" }).first().click();
+  await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
+  await expect(page.getByTestId("gen-prompt")).toHaveValue(RAW);
+  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText("Seedance 2.0 → Kling 3.0 Pro");
+  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Changed here");
+  /* The take's references are still on their way: nothing is priced without them. */
+  await expect(refs).toHaveText("2 refs…");
+  await expect(page.getByTestId("gen-blocked")).toHaveText("Reading the take’s references…");
+  await expect(page.getByTestId("gen-generate")).toBeDisabled();
+  release();
+  await expect(page.getByTestId("gen-well")).toContainText("@Image1 · Plate still");
+  await expect(refs).toHaveText("1 of 2 refs");
+  /* Undo puts the composer back as it was before the recipe, the model picked since included. */
+  await page.getByTestId("gen-recipe-undo").click();
+  await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
+  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("gen-well")).not.toContainText("Plate still");
   expect(priced).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -367,7 +402,8 @@ test("a take from a tool Gen does not have — an edit, a dub — cannot be recr
   if (info.project.name !== "workbench-1440x900" && await close.isVisible()) await close.click();
   inspector = await inspect(page, "gen_dub");
   await expect(inspector.getByTestId("inspector-recreate")).toBeDisabled();
-  await expect(inspector.getByTestId("inspector-recreate-why")).toHaveText(why);
+  /* Made from a source clip: the reason says where to run it again. */
+  await expect(inspector.getByTestId("inspector-recreate-why")).toHaveText("This take was made from a source clip. Run that tool again from Takes.");
   expect(errors).toEqual([]);
 });
 

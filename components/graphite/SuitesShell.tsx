@@ -1,7 +1,7 @@
 "use client";
-import { rigDeleteHandler, setRigUndoSink } from "@/lib/shell/rig-commands";
+import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
@@ -12,9 +12,13 @@ import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { PAGE_BODIES } from "@/components/workspace/pages/registry";
 import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
-import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
+import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
+import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { boundUndo } from "@/lib/shell/undo";
+import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
+import { AtomikGate } from "./AtomikGate";
 import { BusinessView } from "./business/BusinessView";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
@@ -43,6 +47,7 @@ import { EnvironmentStage } from "./production/EnvironmentStage";
 import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
+import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -122,8 +127,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       default: toast(caps.why[cmd] ?? "Not available for this selection.");
     }
   };
+  /* A Rig step undoes only into the draft it was made in. Coming back to a project, the Rig still holds the
+     previous project's draft until the new one loads: the step then refuses and stays on the stack. */
+  const rigProjectId = useRig().project?.id ?? null;
+  const rigProject = useRef(rigProjectId);
+  useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
+  const sinkRigUndo = (entry: RigUndo) =>
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
-  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink((entry) => shell.pushUndo(entry)); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
+  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
   /* A file dropped where no target took it (components/DragLayer) is kept in this project's Library. */
   const projectId = project?.id ?? null;
@@ -141,6 +153,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     return () => window.removeEventListener(FILES_EVENT, onFiles);
   }, [scope, projectId, toast]);
 
+  /* Where the last press landed: a clicked tile leaves focus on the page in Safari and Firefox on macOS, so the keymap asks this instead. */
+  const pressedInSurface = useRef(false);
+  useEffect(() => {
+    const onPress = (event: PointerEvent) => { pressedInSurface.current = inSelectionSurface(event.target); };
+    window.addEventListener("pointerdown", onPress, true);
+    return () => window.removeEventListener("pointerdown", onPress, true);
+  }, []);
+
   /* One keymap: ⌘K, ⌘J, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -151,16 +171,20 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       if (event.key === "Escape") {
         if (shell.ctx) shell.closeCtx();
         else if (shell.palette) shell.setPalette(false);
+        else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (state.composer) dispatch({ type: "patch", patch: { composer: false } });
+        else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (shell.libOpen || shell.inspOpen) shell.closePanels();
         return;
       }
-      if (shell.palette || state.composer || inField(event.target)) return;
+      if (shell.palette || state.composer || state.agentOpen || inField(event.target)) return;
       const cmd = shortcutCommand(event);
       if (!cmd) return;
       const target = selection();
       if (cmd !== "undo" && cmd !== "paste" && target.kind === "empty") return;
       if (cmd === "paste" && !shell.clip) return;
+      /* A selection lingers after its click: selected text keeps the browser's ⌘C/⌘X, and ⌫/⌘R/⌘D act only from where the selection is shown. */
+      if (!shortcutApplies(cmd, { target: event.target, textSelected: Boolean(window.getSelection()?.toString()), selection: target.kind, pressedInSurface: pressedInSurface.current })) return;
       event.preventDefault();
       command(cmd, target);
     };
@@ -179,6 +203,24 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
 
 
+  /* ⌘K › "Ask Atomik: …": the words land in the Agent's request box (still to be read and planned), not lost on the way.
+     With no project open yet they wait in this tab and land as soon as one resolves. */
+  const ask = (text: string) => {
+    if (project) prefillAgentRequest(session.requestScope, "atomik", project.id, text);
+    else if (holdAgentRequest(session.requestScope, text) && data.status !== "loading") toast("Your request goes into Agent once a project is open.");
+    shell.goSuite("atomik", "agent");
+  };
+  const openProjectId = project?.id ?? null;
+  const requestScope = session.requestScope;
+  useEffect(() => {
+    if (!openProjectId) return;
+    const held = takeHeldAgentRequest(requestScope);
+    if (held) prefillAgentRequest(requestScope, "atomik", openProjectId, held);
+  }, [openProjectId, requestScope]);
+  /* The project list or this project's library failed to read: said, with Retry, instead of an empty shell. */
+  const projectsError = data.status === "error" ? data.error ?? "Projects could not be loaded." : null;
+  const libraryError = library.state.status === "error" ? library.state.error ?? "The project library could not be loaded." : null;
+
   const overlay = !shell.wide;
   const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
   const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector : shell.inspOpen);
@@ -195,12 +237,13 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
+        <AtomikGate />
+        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
+            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"}
+              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
                 onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
                 onCreate={async (name) => {
                   const created = newProject(name.slice(0, 120));
@@ -215,7 +258,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 <>
                   <div className="gx-pagehead" data-row="page">
                     <h1 className="gx-h1" data-testid="page-title">Generate</h1>
-                    <span className="gx-hint">Video · Images · Audio · 3D</span>
+                    <span className="gx-hint">Video · Images · Audio</span>
                     <span className="gx-spacer" />
                     {!shell.wide ? (<>
                       <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button>
@@ -231,7 +274,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
                   {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    {shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
+                    {projectsError && !project ? (
+                      <div className="gx-empty" role="alert" data-testid="projects-error">
+                        <p className="gx-gen-error">{projectsError}</p>
+                        <button type="button" className="gx-hbtn" onClick={data.retry}>Retry</button>
+                      </div>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
                       <StudioHome key="stages" project={project} items={items} />
@@ -280,10 +328,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             {showInspector ? <Inspector scope={scope} project={project} overlay={overlay} /> : null}
           </div>
         )}
-        <Palette items={items} onAsk={() => shell.goSuite("atomik", "agent")} />
+        <Palette items={items} onAsk={ask} />
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
           <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
         </div>
+        {/* The page's Atomik plan: "Run stage" and the Inspector's Approve open it; its gate approves. */}
+        <AtomikSheet />
         <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (
           <div className="gx-veil" onClick={() => setMoving(null)} data-testid="move-veil">

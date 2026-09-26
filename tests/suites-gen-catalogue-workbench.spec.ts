@@ -132,9 +132,12 @@ test("a Soul model carries a trained character: the account's list is read, a pi
   expect((quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters).not.toHaveProperty("soul_id");
   await page.getByTestId("gen-identity-pick").selectOption("soul_9f2a");
   await expect.poll(() => (quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters.soul_id).toBe("soul_9f2a");
-  /* Prompt only again: the identity leaves the request. */
+  /* Prompt only again: the identity leaves the request. That exact body was quoted first and its
+     quote is held until it expires, so it is not asked for twice; the next words go out without soul_id. */
   await page.getByTestId("gen-identity-pick").selectOption("");
-  await expect.poll(() => (quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters.soul_id).toBeUndefined();
+  await page.getByTestId("gen-prompt").fill("Mira on the mirrored dunes at dawn");
+  await expect.poll(() => (quotes.at(-1) as { input: { prompt: string } }).input.prompt).toBe("Mira on the mirrored dunes at dawn");
+  expect((quotes.at(-1) as { input: { parameters: Record<string, unknown> } }).input.parameters).not.toHaveProperty("soul_id");
   await page.getByTestId("gen-identity-note").getByRole("button", { name: "Build identity in Cast" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Cast & Elements");
   expect(errors).toEqual([]);

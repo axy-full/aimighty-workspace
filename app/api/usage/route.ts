@@ -7,7 +7,7 @@ import { prettyModel } from "@/lib/models";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/elevenlabs";
 import { requireUser, withTenant } from "@/lib/auth";
-import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
+import { listChecks, spendSince, computedSpendUpTo, renderSpendByPayer, atomikTextSpend, PROMPT_LEDGER } from "@/lib/reconcile";
 import { storageLedger } from "@/lib/storageCost";
 import { billedCreditsSum } from "@/lib/creditSql";
 import {creditUsage} from "@/lib/creditUsage";
@@ -30,23 +30,11 @@ export const GET = withTenant(async function GET() {
 
   const label = (m: string) => modelLabel(m);
 
-  /* WHOSE BALANCE THE THINKING CAME OUT OF.
-     Every gateway model is named vendor/model — "anthropic/claude-opus-5",
-     "google/gemini-3-flash" — and every one of them is paid for in Vercel
-     AI Gateway credit, whoever built the model. ByteDance's own text
-     models are bare ids and are paid for on the ModelArk key.
-
-     This used to read the vendor out of the model's PREFIX and charge
-     Claude's thinking to Google, which is a company that was never
-     involved. Google's ledger could not agree with Google's console, and
-     Vercel's spend was invisible because Vercel was not a vendor here at
-     all. */
-  const LEDGER = `CASE WHEN refine_model LIKE '%/%' THEN 'vercel' ELSE 'byteplus' END`;
-  /* Renders are charged where the money actually left, which for stills is
-     not always the vendor that made them — see billed_to in lib/db.ts.
-     Older rows have no value and fall back to provider, which is exactly
-     what this sum assumed before the column existed. */
-  const PAID_BY = `COALESCE(billed_to, provider)`;
+  /* WHOSE BALANCE THE THINKING CAME OUT OF, and where a render's money
+     left: lib/reconcile.ts holds both rules (PROMPT_LEDGER, PAID_BY), because
+     the reading-anchored figures below must attribute exactly as this does.
+     It used to read the vendor out of the model's PREFIX and charge Claude's
+     thinking to Google, which is a company that was never involved. */
 
   const [totals, topups, byModel, byProject, byPerson, byMonth, recent, stages, refines,
          byVendor, promptByLedger, topupsByVendor, topupList, atomikText] = await Promise.all([
@@ -118,13 +106,13 @@ export const GET = withTenant(async function GET() {
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS spend
       FROM generations WHERE refine_model IS NOT NULL
       GROUP BY refine_model ORDER BY spend DESC, in_tokens DESC`),
+    /* Every render, hidden ones included: a deleted take hides it, and the
+       vendor has still charged for it. Leaving them out raised "remaining"
+       every time somebody tidied up, and a balance could run dry while the
+       ledger showed money left. */
+    renderSpendByPayer(),
     db().execute(`
-      SELECT ${PAID_BY} AS provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
-             COALESCE(SUM(COALESCE(cost_usd,0)),0) AS render_spend,
-             COALESCE(SUM(total_tokens),0) AS tokens
-      FROM generations WHERE deleted = 0 OR deleted IS NULL GROUP BY ${PAID_BY}`),
-    db().execute(`
-      SELECT ${LEDGER} AS ledger, COUNT(*) AS prompts,
+      SELECT ${PROMPT_LEDGER} AS ledger, COUNT(*) AS prompts,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend
       FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
     db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total, COALESCE(SUM(credits),0) AS credits FROM topups GROUP BY provider`),
@@ -132,15 +120,12 @@ export const GET = withTenant(async function GET() {
     /* Atomik's thinking. It is the only spend in this app that is not
        attached to a render — a conversation costs money whether or not
        anything is ever approved out of it — so it has to be summed from
-       its own table or it simply would not appear on any ledger. */
-    db().execute(`SELECT COALESCE(SUM(COALESCE(text_cost_usd,0)),0)
-                         + (SELECT COALESCE(SUM(cost_usd),0) FROM atomik_spend) AS spend,
-                         COUNT(*) AS chats
-                  FROM atomik_chats WHERE deleted = 0`),
+       its own tables or it simply would not appear on any ledger. A hidden
+       conversation was still paid for. */
+    atomikTextSpend(),
   ]);
-  const atomikRow = atomikText.rows[0] as Record<string, unknown> | undefined;
-  const atomikUsd = Number(atomikRow?.spend ?? 0);
-  const atomikChats = Number(atomikRow?.chats ?? 0);
+  const atomikUsd = atomikText.usd;
+  const atomikChats = atomikText.chats;
 
   /* The only cost here that is rent rather than a purchase. */
   const storage = await storageLedger().catch(() => null);
@@ -177,14 +162,14 @@ export const GET = withTenant(async function GET() {
       driftCredits: check.spendCredits == null ? null : computedThen.credits - check.spendCredits,
     });
   }
-  const renderBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), r]));
+  const renderBy = new Map(byVendor.map((r) => [r.provider, r]));
   const promptBy = new Map(promptByLedger.rows.map((r: any) => [String(r.ledger), r]));
   const addedBy = new Map(topupsByVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.total)]));
   const creditsBy = new Map(topupsByVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.credits ?? 0)]));
   const vendors = PROVIDERS.map((p) => {
-    const r: any = renderBy.get(p.id) ?? {};
+    const r = renderBy.get(p.id);
     const pr: any = promptBy.get(p.id) ?? {};
-    const renderSpend = Number(r.render_spend ?? 0);
+    const renderSpend = r?.usd ?? 0;
     /* Atomik's conversations are gateway text, so they land on the gateway's
        own line beside the prompt writer's. */
     const promptSpend = Number(pr.prompt_spend ?? 0) + (p.id === "vercel" ? atomikUsd : 0);
@@ -200,7 +185,7 @@ export const GET = withTenant(async function GET() {
     // its credits into total_tokens, so the ledger counts those exactly.
     const unit = p.id === "elevenlabs" ? "credits" : "usd";
     const addedCredits = creditsBy.get(p.id) ?? 0;
-    const computedCredits = Number(r.tokens ?? 0);
+    const computedCredits = r?.tokens ?? 0;
     const spentCredits = anchor && anchor.check.spendCredits != null
       ? anchor.check.spendCredits + anchor.sinceCredits
       : computedCredits;
@@ -245,8 +230,8 @@ export const GET = withTenant(async function GET() {
         driftUsd: anchor.driftUsd,
         driftCredits: anchor.driftCredits,
       } : null,
-      renders: Number(r.n ?? 0), attempts: Number(r.n_all ?? 0), prompts: Number(pr.prompts ?? 0),
-      tokens: Number(r.tokens ?? 0),
+      renders: r?.succeeded ?? 0, attempts: r?.attempts ?? 0, prompts: Number(pr.prompts ?? 0),
+      tokens: r?.tokens ?? 0,
       /* The gateway is the one vendor here that will simply tell us what is
          left, so its line needs no top-ups recorded by hand. It reads under
          Vercel now rather than under Google: it is Vercel's balance, and

@@ -1,11 +1,9 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DevelopmentPanel } from "@/components/workbench/DevelopmentPanel";
 import { ScriptPanel } from "@/components/workbench/ScriptPanel";
-import { suiteHref } from "@/lib/suites";
 import { applyDevelopment } from "@/lib/workbench/development-apply";
 import { developmentSourceHash } from "@/lib/workbench/development-client";
 import { sourceCanonical, type DevelopmentJob } from "@/lib/workbench/development-types";
@@ -37,15 +35,17 @@ export default function BriefTool({
   scope,
   onProject,
   onRig,
+  onAgent,
 }: {
   tool: string;
   projectId: string;
   scope: string;
   onProject: (project: Project) => void;
   onRig: () => void;
+  /** The shell's own Atomik conversation (Atomik › Agent). */
+  onAgent: () => void;
 }) {
   const editor = useDraftEditor(scope, projectId);
-  const router = useRouter();
   const latest = useRef<Project | null>(null);
   useEffect(() => {
     latest.current = editor.project;
@@ -55,10 +55,13 @@ export default function BriefTool({
   if (editor.status !== "ready" || !editor.project) return <DraftGate editor={editor} label="the brief" />;
   const p = editor.project;
   const { change, ensureSaved } = editor;
+  /* The conversation reads the saved project, so the brief is saved first; an unsaved brief stays here with its edits. */
   const studioAgent = async () => {
-    await ensureSaved();
-    /* Scene coverage and the crew run in Studio's agent, which owns those flows. */
-    router.push(`${suiteHref("particl", p.id, "brief")}&atomik=open`);
+    if (!(await ensureSaved())) {
+      toast.error("The brief is not saved yet. Your edits are still here; try again.");
+      return;
+    }
+    onAgent();
   };
 
   /* Studio.tsx applyDevelopmentResult */
@@ -70,8 +73,11 @@ export default function BriefTool({
       throw new Error("The source changed after this development run. Review the saved result or run development again.");
     if (!latest.current || latest.current.id !== current.id || sourceCanonical(latest.current, job.kind) !== source)
       throw new Error("The project changed while checking the result. Try again.");
-    const next = applyDevelopment(latest.current, job, choice);
-    change(() => next);
+    /* Worked out from the draft as the editor holds it now, never from a copy a render older. */
+    change((p) => {
+      if (p.id !== current.id || sourceCanonical(p, job.kind) !== source) throw new Error("The project changed while checking the result. Try again.");
+      return applyDevelopment(p, job, choice);
+    });
     if (!(await ensureSaved())) throw new Error("The result was added locally, but is not saved yet. Keep this project open and retry saving.");
     toast.success("idea" in choice ? "Idea added to creative direction." : "Scene breakdown added to the canvas.");
   }

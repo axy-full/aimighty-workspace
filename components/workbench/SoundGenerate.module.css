@@ -181,6 +181,8 @@
   .fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .actions button { flex: 1 1 auto; }
   .panel input[type="checkbox"] { width: 20px; height: 20px; }
+  .fields .check, .panel input[type="range"] { min-height: 44px; }
   .panel :global(.primary) { border-radius: 10px; }
 }
 .panel :global(.eyebrow) { font-size: 10px; letter-spacing: .1em; font-weight: 500; }
+@media (max-width: 759px) { .panel :global(.eyebrow) { font-size: 12px; } }

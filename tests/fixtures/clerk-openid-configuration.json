@@ -1,0 +1,63 @@
+{
+  "issuer": "https://clerk.higgsfield.ai",
+  "authorization_endpoint": "https://clerk.higgsfield.ai/oauth/authorize",
+  "token_endpoint": "https://clerk.higgsfield.ai/oauth/token",
+  "revocation_endpoint": "https://clerk.higgsfield.ai/oauth/token/revoke",
+  "introspection_endpoint": "https://clerk.higgsfield.ai/oauth/token_info",
+  "userinfo_endpoint": "https://clerk.higgsfield.ai/oauth/userinfo",
+  "device_authorization_endpoint": "https://clerk.higgsfield.ai/oauth/device_authorization",
+  "jwks_uri": "https://clerk.higgsfield.ai/.well-known/jwks.json",
+  "scopes_supported": [
+    "email",
+    "profile",
+    "public_metadata",
+    "private_metadata",
+    "openid",
+    "offline_access",
+    "user:org:read"
+  ],
+  "response_types_supported": [
+    "code"
+  ],
+  "response_modes_supported": [
+    "form_post",
+    "query"
+  ],
+  "grant_types_supported": [
+    "authorization_code",
+    "refresh_token",
+    "urn:ietf:params:oauth:grant-type:device_code"
+  ],
+  "subject_types_supported": [
+    "public"
+  ],
+  "id_token_signing_alg_values_supported": [
+    "RS256"
+  ],
+  "token_endpoint_auth_methods_supported": [
+    "client_secret_basic",
+    "none",
+    "client_secret_post"
+  ],
+  "claims_supported": [
+    "name",
+    "picture",
+    "sub",
+    "aud",
+    "email",
+    "given_name",
+    "preferred_username",
+    "iss",
+    "exp",
+    "iat",
+    "email_verified",
+    "family_name",
+    "org_id"
+  ],
+  "code_challenge_methods_supported": [
+    "S256"
+  ],
+  "backchannel_logout_supported": false,
+  "frontchannel_logout_supported": false,
+  "authorization_response_iss_parameter_supported": true
+}

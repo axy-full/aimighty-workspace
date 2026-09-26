@@ -6,15 +6,17 @@ import type { ProjectSummary } from "@/lib/workspace/data";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { NOT_GENERATED, SAY, assetRef, referenceRole, type AssetRef } from "./assets";
+import { sendGenPreset } from "./gen-preset";
 import { recreateBlock, recreatePreset } from "./recipe";
-import { sendRecipe, sendReference } from "./reference-inbox";
+import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
 
 /**
- * Recreate (and Use settings only): the take's recipe goes to Gen by letter,
- * so a Gen that is already open takes it too. Nothing is quoted or sent here;
- * Gen prices it on the button. The right-click menu, ⌘R and the Inspector
- * all come through this one function.
+ * Recreate (and Use settings only): the take's recipe goes to Gen through its
+ * letterbox (lib/shell/gen-preset.ts), so a Gen that is already open takes it
+ * at once and one that is not takes it when it opens. Nothing is quoted or
+ * sent here; Gen prices it on the button. The right-click menu, ⌘R and the
+ * Inspector all come through this one function.
  */
 export function useRecreate() {
   const shell = useShell();
@@ -23,7 +25,7 @@ export function useRecreate() {
     if (entry.asset.origin !== "generation") { ws.toast(NOT_GENERATED); return; }
     const blocked = recreateBlock(entry.asset.value);
     if (blocked) { ws.toast(blocked); return; }
-    sendRecipe(recreatePreset(entry.asset.value, { name: entry.take.name, settingsOnly }));
+    sendGenPreset(recreatePreset(entry.asset.value, { name: entry.take.name, settingsOnly }));
     /* Already in Gen: only the overlays close, so the composer is what the person sees. */
     if (shell.view === "gen") shell.closePanels(); else shell.goGen();
     ws.toast(settingsOnly ? SAY.settingsOnly(entry.take.name) : SAY.recreate(entry.take.name));

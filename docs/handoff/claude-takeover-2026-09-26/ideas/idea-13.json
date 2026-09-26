@@ -1,0 +1,17 @@
+{
+ "n": 13,
+ "title": "Film vocabulary as prompt tokens with Auto defaults and preview loops",
+ "area": "Gen / prompt helpers",
+ "gap": "lib/studio.ts CATEGORIES already holds shot size, angle, camera move (with long anti-confusion modules), lens, light, time, look, technique, mood and pace. lib/previews.ts and GET /api/platform/previews serve neutral preview loops made on the platform. Only the legacy components/make/Composer.tsx uses them; GenView's Direction box is a bare textarea. Admission already stores body.shotSpec (generationAdmission.ts:1712-1745).",
+ "target": "Under Direction, add chips 'Shot \u00b7 Angle \u00b7 Camera \u00b7 Lens \u00b7 Light \u00b7 Look', each defaulting to Auto. Each chip opens a popover grid in which every option shows its preview loop (muted, preload='none', plays only while visible or hovered), its label and its aka. Typing '#' in the textarea opens a typeahead of moves. Selections are sent as shotSpec and appended the way lib/studio.ts specifies, and Recreate restores them.",
+ "files": [
+  "components/graphite/GenView.tsx",
+  "lib/workspace/composer.ts",
+  "lib/workspace/use-composer.ts",
+  "lib/studio.ts",
+  "lib/previews.ts"
+ ],
+ "priority": "P1",
+ "effort": "medium",
+ "respects_rules": "The previews are Particl's own platform assets, not Higgsfield media. The price is re-quoted whenever the prompt changes. No serif fonts are introduced."
+}

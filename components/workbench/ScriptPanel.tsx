@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Project } from "@/lib/workbench/studio";
+import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 import {
   MAX_SCRIPT_CHARS,
   parseScreenplay,
@@ -99,7 +100,7 @@ export function ScriptPanel({
   function setPage(update: (prior: number) => number) {
     setPageState({ signature, value: update(page) });
   }
-  const room = Math.max(0, 250 - project.nodes.length);
+  const room = Math.max(0, PROJECT_LIMITS.nodes - project.nodes.length);
   const visible = scenes.slice(page * 12, page * 12 + 12);
   const chosen = scenes.filter((s) => selected.has(s.id));
   useEffect(() => () => controller.current?.abort(), []);
@@ -454,7 +455,7 @@ export function ScriptPanel({
             <span>{scenes.length} scenes</span>
           </div>
           <p className={styles.hint}>
-            Select scenes for the canvas. {room} node spaces available. Beat
+            Select scenes for the canvas. {limitText(room)} node spaces available. Beat
             notes are editorial decisions and stay with this script version.
           </p>
           <div className={styles.actions}>

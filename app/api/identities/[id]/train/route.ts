@@ -3,6 +3,8 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { startTraining, trainCostUsd } from "@/lib/identities";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
+import { billCredits } from "@/lib/creditTerms";
+import { trainApprovalProblem } from "@/lib/identityTraining";
 
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
 
@@ -45,6 +47,11 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
      queue to wait in and no take to release, so it refuses outright and says
      what it would cost. */
   const usd = trainCostUsd();
+  /* The price the sheet showed comes back as the approval (`maxCredits`, or
+     `maxUsd` for a workspace on its own keys); a run that now costs more is
+     refused rather than charged. */
+  const approval = trainApprovalProblem(body, { credits: billCredits(usd, "identity-training"), usd });
+  if (approval) return NextResponse.json({ error: approval }, { status: 409 });
   const wall = await allowanceCheck("fal", usd, "identity-training");
   if (!wall.ok) {
     return NextResponse.json({ error: wall.error }, { status: wall.status });

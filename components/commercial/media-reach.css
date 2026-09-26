@@ -1,0 +1,266 @@
+/* Credits said as takes: the reach tiles and the per-engine rate card.
+   Global graphite tokens, so the same markup sits in Pricing, Billing and
+   the Suites shell's Workspace › Plans & credits. Sans for words, mono for
+   figures; nothing under 12px, and secondary text on --graphite-body, which
+   stays lighter than #7C7C84 on every ground these sit on. */
+
+/* ── Reach tiles ─────────────────────────────────────────────────────── */
+.mr-reach {
+  container: mr-reach / inline-size;
+  min-width: 0;
+}
+.mr-tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+.mr-tiles[data-pair="true"] {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+.mr-or {
+  align-self: center;
+  justify-self: center;
+  font-size: 12px;
+  color: var(--graphite-body);
+}
+.mr-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--graphite-control);
+  border: 1px solid var(--graphite-line);
+}
+.mr-tile-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.mr-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--mr-kind, var(--graphite-accent));
+}
+.mr-mark svg { display: block; }
+.mr-mark[data-kind="video"] { --mr-kind: var(--graphite-success); }
+.mr-mark[data-kind="image"] { --mr-kind: var(--graphite-accent-text); }
+.mr-num {
+  font-family: var(--graphite-mono);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  color: var(--graphite-ink);
+  /* A figure wraps before it is ever cut short: a truncated count misstates it. */
+  overflow-wrap: anywhere;
+}
+.mr-noun {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--graphite-ink);
+}
+.mr-set {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--graphite-body);
+  overflow-wrap: anywhere;
+}
+/* Too narrow for two tiles side by side: stack them, "or" between. */
+@container mr-reach (max-width: 340px) {
+  .mr-tiles[data-pair="true"] { grid-template-columns: minmax(0, 1fr); }
+  .mr-or { justify-self: start; padding-left: 12px; }
+}
+
+/* ── The rate card ───────────────────────────────────────────────────── */
+.mr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  container: mr-card / inline-size;
+}
+.mr-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--graphite-line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--graphite-card);
+}
+.mr-group-head,
+.mr-row {
+  display: grid;
+  grid-template-columns: minmax(128px, 1.4fr) repeat(var(--mr-cols), minmax(0, 1fr));
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  min-width: 0;
+}
+.mr-group-head {
+  min-height: 44px;
+  background: var(--graphite-control);
+  border-bottom: 1px solid var(--graphite-line);
+}
+.mr-group-label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.mr-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--graphite-ink);
+}
+.mr-group-per,
+.mr-col {
+  font-family: var(--graphite-mono);
+  font-size: 12px;
+  color: var(--graphite-body);
+}
+.mr-col { text-align: right; padding-right: 9px; }
+.mr-row {
+  min-height: 44px;
+  border-top: 1px solid var(--graphite-line);
+}
+.mr-group-head + .mr-row { border-top: 0; }
+.mr-engine {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--graphite-ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mr-sound { color: var(--graphite-body); font-weight: 400; }
+.mr-cell {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  justify-self: end;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+.mr-cell-opt {
+  display: none;
+  font-size: 12px;
+  color: var(--graphite-body);
+  white-space: nowrap;
+}
+.mr-cell-cr {
+  font-family: var(--graphite-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--graphite-ink);
+  white-space: nowrap;
+}
+.mr-cell[data-empty] .mr-cell-cr { color: var(--graphite-body); font-weight: 400; }
+.mr-cell[data-reference] {
+  border-color: var(--graphite-accent);
+  background: rgba(10, 132, 255, .14);
+}
+.mr-cell[data-reference] .mr-cell-cr { color: var(--graphite-accent-text); }
+.mr-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--graphite-body);
+}
+.mr-legend-key {
+  width: 14px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid var(--graphite-accent);
+  background: rgba(10, 132, 255, .14);
+}
+.mr-empty {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--graphite-edge);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--graphite-body);
+}
+.mr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Narrow (a phone, or a narrow panel): the engine takes its own line and
+   its prices sit under it, each naming its size, so nothing scrolls
+   sideways. The column headers stay in the accessibility tree. */
+@container mr-card (max-width: 520px) {
+  .mr-group-head { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
+  .mr-col {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .mr-row {
+    grid-template-columns: repeat(var(--mr-narrow-cols, 4), minmax(0, 1fr));
+    padding: 10px 12px;
+    row-gap: 6px;
+  }
+  .mr-engine { grid-column: 1 / -1; }
+  .mr-cell {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    justify-self: stretch;
+    gap: 0;
+    padding: 4px 8px;
+    background: var(--graphite-control);
+    border-color: var(--graphite-line);
+  }
+  .mr-cell-opt { display: inline; }
+  .mr-cell[data-empty] { background: transparent; border-style: dashed; }
+}
+
+/* ── Workspace › Plans & credits ─────────────────────────────────────── */
+.wsx-reach { max-width: 560px; }
+.wsx-rates { border-top: 1px solid var(--graphite-line); padding-top: 4px; min-width: 0; }
+.wsx-rates > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--graphite-ink);
+}
+.wsx-rates > summary::-webkit-details-marker { display: none; }
+.wsx-rates-chev { display: block; flex: none; color: var(--graphite-body); transition: transform .15s ease; }
+.wsx-rates[open] .wsx-rates-chev { transform: rotate(180deg); }
+.wsx-rates[open] > summary { margin-bottom: 8px; }
+
+/* Billing › Available credits: the tiles between the balance and its breakdown. */
+.management-balance-card .mr-reach { margin: 14px 0 18px; }

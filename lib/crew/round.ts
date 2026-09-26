@@ -11,8 +11,8 @@ import {
   PARALLEL_CAP, callCostUsd, chairOf, memberNamed, parseChallenge, parseSolutions, roleCard, roundCeilingUsd, settleRound, userMessage,
   type CrewPhase, type Rate, type TranscriptLine,
 } from "./room";
-import { addMessage, addSolution, listMessages, type CrewMember, type CrewSession, type CrewSolution, type StoredMessage } from "./store";
-import { askGrok, xaiModel } from "./xai";
+import { CrewError, addMessage, addSolution, listMessages, type CrewMember, type CrewSession, type CrewSolution, type StoredMessage } from "./store";
+import { askGrok, xaiModel, xaiRate } from "./xai";
 
 /**
  * One round (CREW_ADDENDUM.md): Propose in parallel, Challenge in parallel
@@ -34,13 +34,28 @@ export type RoundEvent =
 
 export type RoundQuote = { model: string; calls: number; ceilingUsd: number; estimateCredits: number };
 
+/**
+ * The rate a room's rounds are priced at. A room keeps the engine it was
+ * opened on; if the deployment has since moved to another and the room's can
+ * no longer be priced, the room says so and its owner moves it on (PATCH
+ * `{ model: "current" }`), to be priced again at the new engine's rate.
+ */
+export async function roomRate(model: string, read: (model: string) => Promise<Rate | null> = xaiRate): Promise<Rate> {
+  const rate = await read(model);
+  if (rate) return rate;
+  const current = xaiModel();
+  if (model && model !== current) throw new CrewError(`This room runs on ${model}, which can no longer be priced. Move it to ${current} to run.`, 409);
+  throw new CrewError("This engine cannot be priced right now, so the room will not run.", 503);
+}
+
 export function quoteRound(input: { session: CrewSession; project: Project; active: CrewMember[]; transcriptChars: number; rate: Rate }): RoundQuote {
   const context = projectContext(input.project, input.session.context);
   const ceilingUsd = roundCeilingUsd({
     seated: input.active.length, goalChars: input.session.goal.length, contextChars: context.length, transcriptChars: input.transcriptChars,
     stanceChars: Math.max(0, ...input.active.map((m) => m.stance.length + m.name.length + m.department.length)),
   }, input.rate);
-  return { model: xaiModel(), calls: input.active.length * 2 + 1, ceilingUsd, estimateCredits: paidByPlatform("xai") ? billCredits(ceilingUsd, "text") : 0 };
+  /* The room's model: the one its rate was read for and its rounds are sent to. */
+  return { model: input.session.model || xaiModel(), calls: input.active.length * 2 + 1, ceilingUsd, estimateCredits: paidByPlatform("xai") ? billCredits(ceilingUsd, "text") : 0 };
 }
 
 async function pooled<T>(items: readonly T[], run: (item: T) => Promise<void>) {
@@ -72,7 +87,7 @@ export async function runRound(input: {
       emit({ event: "thinking", data: { memberId: member.id, phase } });
       const answer = await askGrok({
         system: roleCard(member, context, phase), user: userMessage(session.goal, snapshot, phase === "challenge" ? others : undefined),
-        phase, effort: member.effort, mock: () => mockAnswer(member.presetId, phase, others),
+        phase, effort: member.effort, mock: () => mockAnswer(member.presetId, phase, others), model: session.model,
       });
       if (!answer.ok) { emit({ event: "failed", data: { memberId: member.id, phase, reason: answer.reason } }); return null; }
       spentUsd += callCostUsd(answer, rate);

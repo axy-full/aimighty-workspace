@@ -21,12 +21,35 @@ export const DEVELOPMENT_BEATSHEET_BYTES = 120_000;
 export const developmentResultBytes = (kind: DevelopmentKind) => (kind === 'write' ? DEVELOPMENT_WRITE_BYTES : kind === 'beatsheet' ? DEVELOPMENT_BEATSHEET_BYTES : DEVELOPMENT_RESULT_BYTES);
 /** Visible answer tokens a breakdown phase may use: room for the whole saved result (48,000 bytes), not a planner's 4,000. */
 export const DEVELOPMENT_BREAKDOWN_TOKENS = 16_000;
-/** The visible answer ceiling per kind; the reasoning allowance comes on top. */
+/**
+ * The visible answer ceiling per kind; the reasoning allowance comes on top.
+ * Rig wiring may write a 20,000-character prompt with 5,000 of notes, and the
+ * cast lists up to 40 entries with a reference prompt each: both need a
+ * breakdown's room, or a paid answer is cut off before it is complete.
+ */
 export function developmentAnswerTokens(kind: DevelopmentKind): number {
   if (kind === 'write' || kind === 'beatsheet') return DEVELOPMENT_WRITE_TOKENS;
-  if (kind === 'screenplay' || kind === 'adfilm' || kind === 'frames' || kind === 'environment') return DEVELOPMENT_BREAKDOWN_TOKENS;
+  if (kind === 'screenplay' || kind === 'adfilm' || kind === 'frames' || kind === 'environment' || kind === 'rig' || kind === 'cast') return DEVELOPMENT_BREAKDOWN_TOKENS;
   return 4000;
 }
+/** Characters of screenplay one visible answer token carries, counted on the low side so a redraft that passes is not cut off. */
+export const WRITER_CHARS_PER_TOKEN = 3.5;
+/** The script schema's ceiling, less room for the redraft to grow. */
+export const WRITER_REDRAFT_MAX_CHARS = 140_000;
+/** About how many characters a screenplay page holds, for the refusal's page counts. */
+export const SCREENPLAY_PAGE_CHARS = 1_800;
+/**
+ * Whether the writer can return this script whole in one answer: a redraft
+ * sends back the complete script, so a base longer than the answer (or the
+ * schema) can only fail after it is paid for. Null when it fits.
+ */
+export function redraftTooLong(baseChars: number, answerTokens: number): { pages: number; maxPages: number } | null {
+  const maxChars = Math.min(WRITER_REDRAFT_MAX_CHARS, Math.floor(answerTokens * WRITER_CHARS_PER_TOKEN));
+  if (baseChars <= maxChars) return null;
+  return { pages: Math.ceil(baseChars / SCREENPLAY_PAGE_CHARS), maxPages: Math.max(1, Math.floor(maxChars / SCREENPLAY_PAGE_CHARS)) };
+}
+/** The most script the cast and environment agents read without a beat sheet. */
+export const AGENT_SCRIPT_CHARS = 40_000;
 /**
  * Reads an agent's JSON answer. Models sometimes wrap it in a code fence or
  * leave a trailing comma; both are repaired here, outside strings only. Any

@@ -20,7 +20,7 @@ test("Storyboards: pick frames and storyboard them together, revise one with a f
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Boards batch test", "admin", "test", Date.now()] }); }
   finally { platform.close(); }
   const sha256 = createHash("sha256").update(SCRIPT).digest("hex");

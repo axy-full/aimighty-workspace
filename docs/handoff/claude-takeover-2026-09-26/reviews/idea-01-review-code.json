@@ -1,0 +1,54 @@
+{
+ "verdict": "fix-first",
+ "issues": [
+  {
+   "severity": "major",
+   "file": "lib/jobsTray.server.ts",
+   "problem": "The tray uses generations.updated_at as the moment a take finished, for three things: which settled rows it lists (updatedSince, line 30), their order, and the pill's \"N done since the tray was opened\" count (lib/jobsTray.ts:289, job.updatedAt > seenAt). Many routine writes bump updated_at on takes that finished long ago:\n- PATCH /api/jobs/:id for pick/approve/changes, rename, move project, file under a shot, useAs, or restore from trash\n- the mediaSource duration backfill when a tool is quoted on an old take\n- the cron's backfillSizes\n- syncPending on succeeded rows still missing stored_url or cost (every 10 min, for 3 days)\n\nReproduced with a throwaway workbench spec against :4842. I seeded two succeeded takes made two days ago by the signed-in user, loaded /suites, and the pill stayed hidden. I then approved one (PATCH reviewState=approved) and renamed the other (PATCH title). At the next tray read the header pill said \"Jobs: 2 done\" and the tray listed both as \"Complete \u00b7 2 d \u00b7 18 cr\" at the top of the finished section. Nothing had rendered. In a team, one approval pass by a director lights up every author's pill with finished jobs that do not exist.",
+   "fix": "Record a real settle time when a row turns succeeded, failed or cancelled: a settled_at column or params.settledAt written by the status transition, falling back to created_at + duration_ms for old rows. Use it for the 6-hour window, the ordering of finished rows and the done/failed count. Alternatively track seen job ids instead of a timestamp. Add a spec where an old take is approved or renamed and the pill must stay hidden.",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "file": "lib/jobsTray.server.ts",
+   "problem": "The \"approved price\" on queued and running rows is not the approved price. pricing() (line 47) recomputes it with lib/jobCost.ts estimateForRow, which passes inputSeconds = 0 (jobCost.ts:22). generationAdmission quotes and reserves using the reference videos' seconds, and params.inputSeconds is stored on the row.\n\nReproduced (running Seedance 2.5 take, params exactly as admission writes them):\n- 1080p, 5 s output, 5 s video reference: admission's formula gives 52 cr; GET /api/jobs?view=tray returns price {amount: 26, unit: \"cr\"}, drawn as \"Rendering \u00b7 \u2026 \u00b7 26 cr\".\n- 720p, 5 s output, 12 s input: approved 36 cr, tray 11 cr.\n\nSo Seedance edit, extend and reference-video jobs show a half to a third of what was approved, reserved and will be billed. Platform-key Genjutsu takes show no price at all: rowToGeneration deletes params.higgsfieldVendorCostUsd, which is what admission priced from, and estimateForRow then returns null. This contradicts the claim that in-flight rows show \"the same estimate the quote on the button was taken from\".",
+   "fix": "Price in-flight engine rows from the reservation actually made: meter_events.billed_credits for this workspace and job id, the ledger's own figure. At minimum, pass Number(p.inputSeconds ?? 0) into estimateCostUsd in estimateForRow, and read the Genjutsu vendor estimate before rowToGeneration strips it. Add a spec with a video-input row whose tray price must equal the admission quote.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "app/api/jobs/[id]/release/route.ts",
+   "problem": "When a Release starts nothing, releaseRefusal prefers latest.error over the slot message (line 29). releaseHeldJobs clears error only when a release succeeds, so the error can be left over from an earlier refused release: a cap that has since been lifted, or a reservation-time 402 (\"This job needs N credits; M are available after reserved jobs.\"). Trace: the balance now covers the take and every slot is busy. The loop breaks before writing anything, and the route returns the old message as a 409 instead of \"Every render slot is busy\u2026\", with no Top up. The tray row's reason line shows the same stale text.",
+   "fix": "Only report an error written by this attempt (compare updated_at before and after the release), or clear error on the held row when a release attempt starts.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "lib/shell/use-jobs-tray.tsx",
+   "problem": "seenAt comes from the browser's Date.now() (lines 68 and 132) but is compared with updatedAt from the server's clock. With a client clock ahead of the server, jobs that finish within the skew after the tray is opened are never counted as done. With a client clock behind, jobs the person already saw keep counting until the skew passes. Separately, seen is only stamped when the tray opens, so a job that finishes while the tray is open, in plain view, still counts as \"1 done\" after it closes.",
+   "fix": "Stamp seen in server time (return the server's now in the tray reply and store that), or keep the ids already seen. Also mark seen when the tray closes.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "lib/jobsTray.server.ts",
+   "problem": "The settled-rows read (line 30) has no usable index. EXPLAIN QUERY PLAN shows \"SEARCH g USING INDEX idx_gen_library (deleted=?)\", with created_by, status and updated_at filtered row by row. For anyone with fewer than 20 settled takes in the last 6 h, it walks every non-deleted take in the workspace. That happens on every tray read, per tab: about every 11 s while their jobs run and about every 65 s when idle.",
+   "fix": "Add an index covering the tray query, e.g. (created_by, status, updated_at) or (created_by, updated_at), or bound the scan by created_at.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "lib/jobsTray.ts",
+   "problem": "traySummary counts only in-flight, held, and complete/failed rows. The \"unconfirmed\" stage (Not confirmed \u00b7 never sent twice, Can't be checked, set aside) is counted nowhere. When a person's only jobs are unconfirmed connected jobs, the pill is hidden, so the tray that lists them cannot be opened.",
+   "fix": "Count unconfirmed rows in the summary (e.g. \"1 to check\"), or keep the pill visible while any row is not settled.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "lib/jobsTray.ts",
+   "problem": "reasonFor uses failureCopy for the vendor kind: \"The engine hit an error; nothing was charged for a failure.\" That sentence also appears on failed rows with creditsBilled > 0. Those rows are labelled \"Failed\" (without \"not billed\") and show a price, so the reason contradicts the price shown beside it.",
+   "fix": "Pick the reason sentence from the same unbilled flag the label uses, and never say \"nothing was charged\" on a billed row.",
+   "reproduced": false
+  }
+ ]
+}

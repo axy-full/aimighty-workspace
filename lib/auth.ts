@@ -1,4 +1,5 @@
 import { recoveryRoute } from "./recovery";
+import { SESSION_COOKIE } from "./sessionCookie";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
@@ -28,7 +29,7 @@ import {
  * as SHA-256 hashes, so a database copy hands over neither.
  */
 
-export const SESSION_COOKIE = "aw_session";
+export { SESSION_COOKIE };
 export const SUPER_ADMIN_EMAIL = PLATFORM_SUPER_ADMIN_EMAIL;
 export const isSuperAdmin = platformIsSuperAdmin;
 

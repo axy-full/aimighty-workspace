@@ -18,7 +18,12 @@ export type RecipeReference = { origin: "upload" | "generation"; id: string; rol
 /** Sound takes: the length, the instrumental switch and the voice. */
 export type RecipeSound = { seconds?: number; instrumental?: boolean; voiceId?: string };
 
-/** What the shell hands Gen. Crew and Soul ID send words (and a model); Recreate sends a recipe (`from`). */
+/**
+ * What the shell hands Gen, through its one letterbox (lib/shell/gen-preset.ts).
+ * Crew, Soul ID, ⌘K and the public site's hero send words, a model and
+ * settings (an empty prompt leaves Gen's words as they are); Recreate sends a
+ * take's recipe (`from`), applied in one step that Undo reverses.
+ */
 export type GenPreset = {
   prompt: string;
   model?: string;
@@ -54,27 +59,39 @@ export function recipePrompt(g: Pick<Generation, "prompt" | "params">): string {
   return text(g.params?.rawPrompt) ?? g.prompt ?? "";
 }
 
-/** What Gen itself writes as `params.task`: sound, music and a line (the audio route), and the connected catalogue's plain generation. */
-const GEN_TASKS: ReadonlySet<unknown> = new Set(["sound", "music", "speech", "connected-generation"]);
+/**
+ * What Gen itself writes as `params.task`: sound, music and a line (the audio route), the connected
+ * catalogue's plain generation, and a plain generation named as one (the generate route leaves it out).
+ */
+const GEN_TASKS: ReadonlySet<unknown> = new Set(["generate", "sound", "music", "speech", "connected-generation"]);
+/** The tasks that work on a source clip (lib/tasks.ts TaskId, lib/dubbing.ts, the audio route's voiceChange). */
+const SOURCE_TASKS: ReadonlySet<unknown> = new Set(["edit", "extend", "motion", "upscale", "reframe", "genjutsu", "dub", "voiceChange"]);
+/** Marketing Studio renders carry Business setup (products, avatars, styles) that Gen's composer has no place for. */
+const BUSINESS_MODELS: ReadonlySet<string> = new Set(["marketing_studio_video", "marketing_studio_image", "ms_image", "marketing_studio_v2"]);
 
 /**
  * Why Gen cannot recreate this take, or null. Gen makes images, video and
  * sound from words and references; a take from a tool (an edit, a dub, a
- * campaign template, a motion transfer, a trained identity's still, the
- * account's marketing video) or an engine Gen does not offer is run again
- * where it was made. `params.task` is read as an allow-list, so a tool added
- * later is blocked until Gen can make it.
+ * dialogue, a campaign template, a motion transfer, a trained identity's
+ * still, the account's marketing video) or an engine Gen does not offer is
+ * run again where it was made, and the reason names that place when it is
+ * known. `params.task` is read as an allow-list, so a tool added later is
+ * blocked until Gen can make it.
  */
 export function recreateBlock(g: Pick<Generation, "kind" | "model" | "params" | "task">): string | null {
   if (!composerType(g.kind)) return "Gen makes images, video and sound, not 3D.";
   const p = g.params ?? {};
-  /* Every original the connected account delivered is receipted in these credits (lib/higgsfield-consumer/video-original.ts). */
+  if (p.task === "dialogue" || Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
+  if (p.sourceGenId || p.sourceUploadId || SOURCE_TASKS.has(p.task)) return "This take was made from a source clip. Run that tool again from Takes.";
+  if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Gen. Run that tool again.";
+  if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business, with its product and setup. Make it again from Ads.";
+  /* Anything else Gen did not make itself. Every original the connected account delivered is receipted
+     in these credits (lib/higgsfield-consumer/video-original.ts). */
   const onAccount = p.consumerCreditUnit === "higgsfield_credits";
   const fromTool = (g.task && g.task !== "generate")
     || (p.task !== undefined && !GEN_TASKS.has(p.task))
     || typeof p.workflow === "string"
     || (onAccount && p.task !== "connected-generation")
-    || g.model === "marketing_studio_video"
     || Boolean(p.marketing) || Boolean(p.soulIdentityId) || record(p.identity);
   return fromTool ? "Made with a tool Gen does not have. Run it again from that tool." : null;
 }

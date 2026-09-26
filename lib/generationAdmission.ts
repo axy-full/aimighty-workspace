@@ -82,7 +82,7 @@ import {
   identityForCast,
   startIdentityStill,
   runIdentityRender,
-  RENDER_USD_PER_MP,
+  renderUsdForRatio,
   RENDER_RATIOS,
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
@@ -92,7 +92,7 @@ import { approvedTakeOf } from "@/lib/shots";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 import {
-  bindGenerationRequest,
+  claimBinding,
   reserveGenerationSpend,
   SpendReservationError,
 } from "@/lib/generationRequests";
@@ -334,7 +334,7 @@ export async function executeGenerationAdmission(
     if (!allowance.ok && (await heldCount()) >= HELD_LIMIT) {
       return admissionReply(
         {
-          error: `${HELD_LIMIT} takes are already held for credits. Top up to release them before adding more.`,
+          error: `${HELD_LIMIT} takes are already held. Top up, or discard some, before adding more.`,
         },
         { status: 402 },
       );
@@ -947,7 +947,7 @@ export async function executeGenerationAdmission(
     const afterCast = ceilingProblem(references, model, castUsed);
     if (afterCast) return admissionReply({ error: afterCast }, { status: 400 });
     if (model.kind === "video" && task.id === "generate") {
-      const rolesProblem = videoReferenceProblem(model, references);
+      const rolesProblem = videoReferenceProblem(model, references, params.resolution);
       if (rolesProblem) return admissionReply({ error: rolesProblem }, { status: 400 });
     }
 
@@ -1069,7 +1069,7 @@ export async function executeGenerationAdmission(
         marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
       }
       const estStillUsd = marketingUsd ?? (trained
-        ? RENDER_USD_PER_MP
+        ? renderUsdForRatio(ratio)
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
       if (
@@ -1160,8 +1160,8 @@ export async function executeGenerationAdmission(
           version: stillVersion,
           createdBy: got.user.id,
           tokenId: got.token?.id ?? null,
+          requestClaim,
         });
-        await bindGenerationRequest(requestClaim, started.genId);
         try {
           await reserveGenerationSpend(
             {
@@ -1280,8 +1280,10 @@ export async function executeGenerationAdmission(
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
 
-      await withMediaSources(stillParams, (tx) =>
-        tx.execute({
+      // The claim is bound in the same write: a claim naming no job proves there is none.
+      const stillBinding = await claimBinding(requestClaim, genId);
+      await withMediaSources(stillParams, async (tx) => {
+        await tx.execute({
           sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
              created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
@@ -1307,9 +1309,9 @@ export async function executeGenerationAdmission(
             model.stillTask ?? "generate",
             billedTo(model.provider),
           ],
-        }),
-      );
-      await bindGenerationRequest(requestClaim, genId);
+        });
+        for (const bind of stillBinding) await tx.execute(bind);
+      });
       invalidate(PROJECTS_KEY);
       if (holdStill) {
         if (holdStill.why === "slots") {
@@ -1807,8 +1809,10 @@ export async function executeGenerationAdmission(
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
-    await withMediaSources(storedParams, (tx) =>
-      tx.execute({
+    // The claim is bound in the same write: a claim naming no job proves there is none.
+    const binding = await claimBinding(requestClaim, genId);
+    await withMediaSources(storedParams, async (tx) => {
+      await tx.execute({
         sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
@@ -1838,10 +1842,9 @@ export async function executeGenerationAdmission(
           refineMs,
           billedTo(model.provider ?? "byteplus"),
         ],
-      }),
-    );
-
-    await bindGenerationRequest(requestClaim, genId);
+      });
+      for (const bind of binding) await tx.execute(bind);
+    });
 
     /* What made this take, written once and never afterwards (brief 3, 1c).
      Additive and best-effort: it happens after the row exists, it cannot

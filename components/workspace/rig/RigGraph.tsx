@@ -8,10 +8,11 @@ import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
+import { rigLoadState } from "@/lib/workspace/rig-load-state";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import type { Drag, Peer } from "./use-team-canvas";
-import { DEFAULT_VIEW, distance, fitView, loadView, midpoint, panBy, pinchView, resetZoom, saveView, stepZoom, viewKey, wheelFactor, zoomAround, type View } from "@/lib/viewport";
+import { DEFAULT_VIEW, boardHeight, distance, fitView, loadView, midpoint, panBy, pinchView, resetZoom, saveView, stepZoom, viewKey, wheelFactor, zoomAround, type View } from "@/lib/viewport";
 
 /** A take's or reference's preview, else the flat bands that stand in for media. */
 function Media({ id, asset, height, badge }: { id: string; asset: Asset | undefined; height: number; badge?: boolean }) {
@@ -77,6 +78,18 @@ function Card({ node, shot, asset, selected, wiring, onSelect, onWireFrom, onWir
 
 /** The height of the zoom cluster's strip at the bottom of the board (cluster 44 + inset 12). */
 const ZOOM_STRIP = 56;
+
+/** The pane the board scrolls in: the nearest ancestor that really scrolls (a wrapper that grows with its content computes overflow-y:auto too), else the outermost one that could. */
+function boardPane(el: HTMLElement): HTMLElement | null {
+  let outer: HTMLElement | null = null;
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY !== "auto" && overflowY !== "scroll") continue;
+    if (node.scrollHeight > node.clientHeight + 1) return node;
+    outer = node;
+  }
+  return outer;
+}
 
 /** Rig — node graph (the advanced view of the same shots). */
 export function RigGraph() {
@@ -164,6 +177,8 @@ export function RigGraph() {
     pointers.current.set(e.pointerId, surfacePoint(e));
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
+      /* A second finger turns a take's drag into a pinch: the take goes back where it was, for teammates too. */
+      if (press.current?.moved) { setDrag(null); presence({ drag: null }); }
       press.current = null;
       gesture.current = { kind: "pinch", view: viewRef.current, dist: distance(a, b), mid: midpoint(a, b) };
       return;
@@ -189,23 +204,34 @@ export function RigGraph() {
     if (pointers.current.size < 2 && gesture.current?.kind === "pinch") gesture.current = null;
     if (!pointers.current.size) gesture.current = null;
   };
-  /* The board fills what is left of the window below it (never under 420px), so its bottom edge
-     and the zoom cluster are on screen without scrolling the page first. */
-  const [boardHeight, setBoardHeight] = useState<number | null>(null);
+  /* The board fills what is left of its pane below it, and no more than the pane shows above a phone's tab
+     bar (lib/viewport.ts boardHeight). The pane keeps that bar clear with bottom padding, which does not
+     scroll content that overflows the page's own wrapper, so the graph carries the same clearance under
+     itself: the zoom controls always scroll clear of the bar. */
+  const [sized, setSized] = useState<{ height: number; clearance: number } | null>(null);
+  const statusShown = Boolean(wireFrom || message);
   useLayoutEffect(() => {
     const size = () => {
       const el = surface.current;
       if (!el) return;
-      let scroller: HTMLElement | null = el.parentElement;
-      while (scroller && !(["auto", "scroll"].includes(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight + 1)) scroller = scroller.parentElement;
-      const top = el.getBoundingClientRect().top + (scroller ? scroller.scrollTop : window.scrollY);
-      const next = Math.max(420, Math.round(window.innerHeight - top - 24));
-      setBoardHeight((h) => (h === next ? h : next));
+      const pane = boardPane(el);
+      const box = pane?.getBoundingClientRect();
+      const clearance = pane ? Number.parseFloat(getComputedStyle(pane).paddingBottom) || 0 : 0;
+      const height = boardHeight(
+        box ? { top: box.top, bottom: box.bottom, padBottom: clearance } : { top: 0, bottom: window.innerHeight, padBottom: 0 },
+        el.getBoundingClientRect().top + (pane ? pane.scrollTop : window.scrollY),
+        window.innerHeight,
+      );
+      setSized((was) => (was && was.height === height && was.clearance === clearance ? was : { height, clearance }));
     };
     size();
     window.addEventListener("resize", size);
-    return () => window.removeEventListener("resize", size);
-  }, [project?.id]);
+    /* The pane moves and resizes as the rows above it settle (a price arriving in the page head). */
+    const pane = surface.current ? boardPane(surface.current) : null;
+    const observer = pane && typeof ResizeObserver !== "undefined" ? new ResizeObserver(size) : null;
+    if (pane) observer?.observe(pane);
+    return () => { window.removeEventListener("resize", size); observer?.disconnect(); };
+  }, [project?.id, statusShown]);
   /* ⌘0 fits every node, ⌘= / ⌘- step; typing in a field keeps the browser's own keys. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -255,7 +281,10 @@ export function RigGraph() {
       if (!p?.moved) return;
       const z = viewRef.current.zoom;
       const dx = Math.round((e.clientX - p.x) / z), dy = Math.round((e.clientY - p.y) / z);
+      /* The click the browser fires for this release is the drag's own; a release off the card (or a finger's)
+         fires none on it, so the flag goes after this task and the next click is the person's. */
       justDragged.current = true;
+      window.setTimeout(() => { justDragged.current = false; }, 0);
       setDrag(null);
       presence({ drag: null });
       const refusal = rig.apply((proj) => ({ ...proj, nodes: proj.nodes.map((n) => (n.id === p.id ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
@@ -311,7 +340,12 @@ export function RigGraph() {
     return () => window.removeEventListener("keydown", onKey);
   }, [wireFrom]);
 
-  if (!project) return <p className="pxw-rig-empty" style={{ margin: 24 }}>{rig.status === "loading" ? "Loading the graph…" : "Open a project to see its graph."}</p>;
+  if (!project) {
+    const load = rigLoadState({ status: rig.status, hasProject: false, projectId: state.projectId });
+    return load === "error"
+      ? <p className="pxw-rig-empty" role="alert" style={{ margin: 24 }}>{rig.error}</p>
+      : <p className="pxw-rig-empty" role="status" style={{ margin: 24 }}>{load === "loading" ? "Loading the graph…" : "Open or create a project to see its graph."}</p>;
+  }
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const shotCount = rig.shots.length;
@@ -325,7 +359,7 @@ export function RigGraph() {
   return (
     /* contain: inline-size keeps the wide canvas out of main's min-content: the content pane scrolls, the shell does not widen. */
     <div className="pxw-graph-scroll">
-      <div className="pxw-graph-wrap" data-testid="rig-graph">
+      <div className="pxw-graph-wrap" data-testid="rig-graph" style={sized?.clearance ? { paddingBottom: 24 + sized.clearance } : undefined}>
         {wireFrom || message ? (
           <p className="pxw-graph-status" role="status">
             {message ?? `Connecting from ${byId.get(wireFrom!)?.title ?? "a node"}. Choose an input port, or press Esc.`}
@@ -336,7 +370,7 @@ export function RigGraph() {
           ref={attachSurface}
           data-testid="rig-graph-surface"
           data-zoom={Math.round(view.zoom * 100)}
-          style={{ height: boardHeight ?? undefined, backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px`, backgroundPosition: `${view.pan.x}px ${view.pan.y}px` }}
+          style={{ height: sized?.height ?? undefined, backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px`, backgroundPosition: `${view.pan.x}px ${view.pan.y}px` }}
           onPointerDown={onSurfaceDown}
           onPointerMove={onSurfaceMove}
           onPointerUp={onSurfaceUp}

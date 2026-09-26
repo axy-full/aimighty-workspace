@@ -89,24 +89,32 @@ test("what Gen cannot recreate says so, and the menu and the Inspector block it"
   expect(recreateBlock(made("audio", { task: "speech", voiceId: "v1" }))).toBeNull();
   expect(recreateBlock(made("model", {}))).toBe("Gen makes images, video and sound, not 3D.");
   const tool = "Made with a tool Gen does not have. Run it again from that tool.";
-  for (const blocked of [
-    made("video", {}, "edit"),
-    made("video", { task: "genjutsu" }),
-    made("video", { task: "connected-generation", workflow: "shorts" }),
-    made("image", { marketing: { campaign: "c" } }),
-    made("image", { soulIdentityId: "id_1" }),
-    made("audio", { task: "voiceChange" }),
-    made("audio", { task: "dialogue", lines: [] }),
+  /* Where the take was made is named when it is known (the Suites recovery's reasons). */
+  const source = "This take was made from a source clip. Run that tool again from Takes.";
+  const connectedTool = "This take came from a connected tool, not Gen. Run that tool again.";
+  const business = "This ad was made in Business, with its product and setup. Make it again from Ads.";
+  const dialogue = "A dialogue is made in Edit & Sound, not Gen.";
+  for (const [blocked, why] of [
+    [made("video", {}, "edit"), tool],
+    [made("video", { task: "genjutsu" }), source],
+    [made("video", { task: "connected-generation", workflow: "shorts" }), connectedTool],
+    [made("image", { marketing: { campaign: "c" } }), tool],
+    [made("image", { soulIdentityId: "id_1" }), tool],
+    [made("audio", { task: "voiceChange" }), source],
+    [made("audio", { task: "dialogue", lines: [] }), dialogue],
     /* A dub (lib/dubbing.ts): the task column says "generate", params say "dub". */
-    made("audio", { task: "dub", dubbingStatus: "dubbed", dubbingJobId: "dub_1", sourceUploadId: "up_clip", targetLang: "fr" }, "generate", "eleven_dubbing_v1"),
+    [made("audio", { task: "dub", dubbingStatus: "dubbed", dubbingJobId: "dub_1", sourceUploadId: "up_clip", targetLang: "fr" }, "generate", "eleven_dubbing_v1"), source],
     /* A trained identity's still (app/api/identities/[id]/render). */
-    made("image", { ratio: "1:1", resolution: "1K", rawPrompt: "on the pier", identity: { id: "idn_1", name: "Mara" }, cast: ["Mara"] }),
+    [made("image", { ratio: "1:1", resolution: "1K", rawPrompt: "on the pier", identity: { id: "idn_1", name: "Mara" }, cast: ["Mara"] }), tool],
     /* The account's marketing video (lib/higgsfield-consumer/original-identity.ts): no task, receipted in account credits. */
-    made("video", { resolution: "720p", aspectRatio: "9:16", ratio: "9:16", generateAudio: true, consumerJobId: "j", consumerCreditUnit: "higgsfield_credits", duration: 8.04 }, "generate", "marketing_studio_video"),
-    made("video", { ratio: "16:9" }, "generate", "marketing_studio_video"),
+    [made("video", { resolution: "720p", aspectRatio: "9:16", ratio: "9:16", generateAudio: true, consumerJobId: "j", consumerCreditUnit: "higgsfield_credits", duration: 8.04 }, "generate", "marketing_studio_video"), business],
+    [made("video", { ratio: "16:9" }, "generate", "marketing_studio_video"), business],
+    [made("video", { task: "upscale" }), source],
     /* Any tool added later is blocked until Gen can make it. */
-    made("video", { task: "upscale" }),
-  ]) expect(recreateBlock(blocked), JSON.stringify(blocked)).toBe(tool);
+    [made("video", { task: "lipsync" }), tool],
+  ] as const) expect(recreateBlock(blocked), JSON.stringify(blocked)).toBe(why);
+  /* A plain generation named as one is Gen's own. */
+  expect(recreateBlock(made("image", { task: "generate" }))).toBeNull();
 
   const entry = (params: Record<string, unknown>, task = "generate") => ({
     take: { id: "generation:g1", sourceId: "g1", name: "Wide" }, media: "video",

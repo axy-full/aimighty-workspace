@@ -1,0 +1,17 @@
+{
+ "n": 3,
+ "title": "Takes 2-4 submit as one priced batch and appear as one strip",
+ "area": "Gen / money",
+ "gap": "use-composer.ts:397-433 submits takes in a loop. On the connected path, setRun/setConnectedJob are overwritten on each iteration, so only the last take is polled and filed although every take is charged. A price that moves mid-loop stops the loop after earlier takes have already been sent. On the workspace path no batchId/variation is sent, even though admission stores them (lib/generationAdmission.ts:1735-1741) and lib/variations.ts already groups batches into strips. submitConsumerGenerationBatchJobs (generation-service.ts:325: one approval for the summed price of 2-4 quoted jobs, then one paid call) is reachable only from the planner.",
+ "target": "Connected: quote N jobs, and the button shows their sum ('Generate 4 takes \u00b7 72 cr'). Add a 'submit-batch' action to the existing /api/higgsfield/consumer/generation route that calls submitConsumerGenerationBatchJobs, and track every returned id in the jobs map. Workspace credits: send one batchId plus variation 1..N. Render Gen Results and Takes as lib/variations.ts strips labelled 'take 1-4'.",
+ "files": [
+  "lib/workspace/use-composer.ts",
+  "app/api/higgsfield/consumer/generation/route.ts",
+  "lib/higgsfield-consumer/generation-client.ts",
+  "lib/variations.ts",
+  "components/graphite/GenView.tsx"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "The summed price is on the button and is re-quoted on click. The existing batch service is reused rather than rebuilt."
+}

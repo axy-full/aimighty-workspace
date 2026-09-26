@@ -188,7 +188,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
       if (outcome.state === "repriced") { setQuotes((all) => ({ ...all, [shot.id]: { key: quoteKey(frame), credits: outcome.credits } })); setErrors((e) => ({ ...e, [shot.id]: outcome.reason })); return; }
       if (outcome.state === "refused") { setErrors((e) => ({ ...e, [shot.id]: outcome.reason })); return; }
       setQuotes((all) => { const next = { ...all }; delete next[shot.id]; return next; });
-      setFrame(shot.id, (f) => ({ ...f, pending: [...(f.pending ?? []), { jobId: outcome.jobId, style: boards.style, at: new Date().toISOString() }].slice(-5) }));
+      setFrame(shot.id, (f) => ({ ...f, pending: [...(f.pending ?? []), { jobId: outcome.jobId, style: frame.style ?? boards.style, at: new Date().toISOString() }].slice(-5) }));
       void editor.ensureSaved();
     } catch (error) { setErrors((e) => ({ ...e, [shot.id]: error instanceof Error ? error.message : "The frame could not be sent." })); }
     finally { setWorking((w) => ({ ...w, [shot.id]: "" })); }
@@ -563,7 +563,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         })}
       </section>
       {onRig ? <div className="pd-next"><button type="button" className="gx-primary" disabled={!rendered} onClick={onRig} data-testid="boards-to-rig">Take the frames to Rig ›</button></div> : null}
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

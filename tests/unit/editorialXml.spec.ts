@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { escapeXml, makeFCPXML, makeXMEML, retimeProject } from "../../lib/workbench/editorial-xml";
 import { assetFilename, newProject, type Asset, type Project } from "../../lib/workbench/studio";
+import { validateAudio } from "../../lib/workbench/audio";
 
 /** Production › Delivery: the cut as FCPXML and Final Cut Pro 7 XML, beside the EDL. */
 const asset = (id: string, kind: Asset["kind"], name: string, mime: string): Asset => ({ id, name, kind, mime, category: "Shot", url: `/api/media/${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
@@ -72,11 +73,111 @@ test("XMEML v4: one video track as cut, one audio track per lane, files defined 
 test("a changed frame rate keeps the cut's real time; an empty cut is refused, as for the EDL; text is escaped", () => {
   const p = retimeProject(project(), 25);
   expect(p.fps).toBe(25);
-  expect(p.shots.map((s) => [s.sourceIn, s.duration])).toEqual([[13, 50], [0, 75]]);
+  // The take's out point (60/24 s) may be the end of its file, so the in point moves back half a frame rather than read past it.
+  expect(p.shots.map((s) => [s.sourceIn, s.duration])).toEqual([[12, 50], [0, 75]]);
   expect(p.audioClips!.map((c) => [c.startFrame, c.duration])).toEqual([[63, 25], [0, 125]]);
+  // When the file is known to run longer, the in point converts as it is.
+  const measured = project();
+  measured.assets[0] = { ...measured.assets[0], seconds: 10 };
+  expect(retimeProject(measured, 25).shots.map((s) => [s.sourceIn, s.duration])).toEqual([[13, 50], [0, 75]]);
   const same = project();
   expect(retimeProject(same, 24)).toBe(same);
   expect(() => makeFCPXML({ ...project(), shots: [] })).toThrow("Add a shot before exporting.");
   expect(() => makeXMEML({ ...project(), shots: [] })).toThrow("Add a shot before exporting.");
   expect(escapeXml(`a & b < "c" 'd'\u0001`)).toBe("a &amp; b &lt; &quot;c&quot; &apos;d&apos; ");
+});
+
+test("a video's own sound on a Sound lane travels audio-only in both XML formats", () => {
+  const p = project();
+  p.assets.push(asset("gen-take", "video", "Production sound take", "video/mp4"));
+  p.audioClips!.push({ id: "c3", assetId: "gen-take", lane: "dialogue", startFrame: 24, sourceIn: 6, duration: 30, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false });
+  // The same take can also be a shot and a sound source at once.
+  p.audioClips!.push({ id: "c4", assetId: "gen-wide", lane: "sfx", startFrame: 0, sourceIn: 12, duration: 48, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false });
+  const fcp = makeFCPXML(p);
+  expect(wellFormed(fcp)).toEqual([]);
+  expect(fcp).toMatch(/<asset id="a\d+" name="Production sound take" start="0s" duration="36\/24s" hasVideo="1" hasAudio="1" format="r1"/);
+  expect(fcp).toContain('lane="-1" name="Production sound take" offset="36/24s" start="6/24s" duration="30/24s" audioRole="dialogue" srcEnable="audio"');
+  expect(fcp).toContain('lane="-3" name="Wide on the ice" offset="12/24s" start="12/24s" duration="48/24s" audioRole="effects" srcEnable="audio"');
+  const xml = makeXMEML(p);
+  expect(wellFormed(xml)).toEqual([]);
+  expect(xml).toContain("<!-- Effects -->");
+  expect(xml).toMatch(/<clipitem id="clip-dialogue-1"><name>Production sound take<\/name>.*<start>24<\/start><end>54<\/end><in>6<\/in><out>36<\/out><file id="file-gen-take">.*<sourcetrack><mediatype>audio<\/mediatype>/);
+  expect(xml).toMatch(/<clipitem id="clip-sfx-1"><name>Wide on the ice<\/name>.*<file id="file-gen-wide"\/><sourcetrack><mediatype>audio<\/mediatype>/);
+  expect(xml.match(/<file id="file-gen-wide">/g)).toHaveLength(1);
+  expect(xml.match(/<file id="file-gen-take">/g)).toHaveLength(1);
+});
+
+test("a new frame rate converts edit points: clips stay inside the cut and their sources, fades inside clips", () => {
+  const base = project();
+  base.assets[0] = { ...base.assets[0], seconds: 10 };
+  // Three 38-frame shots of a 10 s take at 30 fps with a music clip across the whole cut: 30 → 24.
+  const thirty: Project = { ...base, fps: 30, shots: [0, 1, 2].map((i) => ({ id: "s" + i, name: "Shot " + i, assetId: "gen-wide", duration: 38, sourceIn: 0, note: "" })),
+    audioClips: [{ id: "m", assetId: "up-score", lane: "music", startFrame: 0, sourceIn: 0, duration: 114, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false }] };
+  const at24 = retimeProject(thirty, 24);
+  const cut = at24.shots.reduce((n, s) => n + s.duration, 0);
+  expect(cut).toBe(91);
+  expect(at24.audioClips![0].startFrame + at24.audioClips![0].duration).toBe(cut);
+  expect(() => validateAudio(at24)).not.toThrow();
+  // A 12-frame clip whose fades fill it: 24 → 30 keeps fadeIn + fadeOut within its 15 frames.
+  const faded: Project = { ...base, audioClips: [{ id: "f", assetId: "up-voice", lane: "dialogue", startFrame: 0, sourceIn: 0, duration: 12, gainDb: 0, pan: 0, fadeIn: 6, fadeOut: 6, muted: false, solo: false }] };
+  const at30 = retimeProject(faded, 30);
+  const clip = at30.audioClips![0];
+  expect(clip.duration).toBe(15);
+  expect(clip.fadeIn + clip.fadeOut).toBeLessThanOrEqual(clip.duration);
+  expect(() => validateAudio(at30)).not.toThrow();
+  // Round trips and every rate pair keep the edit valid and the clip inside the cut and its source.
+  for (const [from, to] of [[24, 25], [25, 30], [30, 25], [25, 24], [24, 30], [30, 24]] as const) {
+    const start = { ...thirty, fps: from };
+    const next = retimeProject(start, to);
+    const total = next.shots.reduce((n, s) => n + s.duration, 0);
+    expect(total).toBe(Math.round((114 * to) / from));
+    for (const c of next.audioClips!) {
+      expect(c.startFrame + c.duration).toBeLessThanOrEqual(total);
+      // The score's old out point (114 frames) may be its file's end: never past it in real time.
+      expect((c.sourceIn + c.duration) / to).toBeLessThanOrEqual(114 / from);
+    }
+    expect(() => validateAudio(next)).not.toThrow();
+  }
+  // Rounding never reads past a clip's source: 12 frames from frame 12 of a 24-frame file, 24 → 25.
+  const edge = retimeProject({ ...base, audioClips: [{ id: "e", assetId: "up-voice", lane: "dialogue", startFrame: 0, sourceIn: 12, duration: 12, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false }] }, 25).audioClips![0];
+  expect(edge.sourceIn + edge.duration).toBeLessThanOrEqual(25);
+  expect(edge.duration).toBe(13);
+  // One-frame shots never collapse.
+  const tiny = retimeProject({ ...base, fps: 30, shots: [1, 1, 1].map((d, i) => ({ id: "t" + i, name: "t", assetId: "gen-wide", duration: d, sourceIn: 0, note: "" })), audioClips: [] }, 24);
+  expect(tiny.shots.every((s) => s.duration >= 1)).toBe(true);
+});
+
+test("a clip or shot that plays its file to the end never reads past it at a new rate", () => {
+  const base = project();
+  const long = { id: "long", name: "Long", assetId: "gen-still", duration: 240, sourceIn: 0, note: "" };
+  // Generated effects come in half-second steps; placement makes each one its file's whole frames.
+  for (const seconds of [2.5, 4.5, 7.5])
+    for (const [from, to] of [[24, 25], [30, 25], [24, 30], [25, 24], [30, 24], [25, 30]] as const)
+      for (const measured of [true, false]) {
+        const sfx = { ...asset("sfx", "audio", "Door", "audio/wav"), ...(measured ? { seconds } : {}) };
+        const start: Project = { ...base, fps: from, assets: [...base.assets, sfx], shots: [{ ...long, duration: 12 * from }],
+          audioClips: [{ id: "x", assetId: "sfx", lane: "sfx", startFrame: 0, sourceIn: 0, duration: Math.floor(seconds * from + 1e-6), gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false }] };
+        const clip = retimeProject(start, to).audioClips![0];
+        // The mix refuses a clip that ends past its source by more than a millisecond.
+        expect((clip.sourceIn + clip.duration) / to, `${seconds} s, ${from} → ${to}`).toBeLessThanOrEqual(seconds + 0.001);
+        expect(clip.duration).toBeGreaterThanOrEqual(Math.floor(seconds * to + 1e-6) - 1);
+      }
+  // The reviewer's case: a whole 2.5 s effect, 60 frames at 24 fps, is 62 frames at 25 fps, not 63.
+  const sfx = { ...asset("sfx", "audio", "Door", "audio/wav"), seconds: 2.5 };
+  const at25 = retimeProject({ ...base, assets: [...base.assets, sfx], shots: [{ ...long }],
+    audioClips: [{ id: "x", assetId: "sfx", lane: "sfx", startFrame: 24, sourceIn: 0, duration: 60, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 6, muted: false, solo: false }] }, 25);
+  expect(at25.audioClips![0]).toMatchObject({ startFrame: 25, sourceIn: 0, duration: 62 });
+  expect(() => validateAudio(at25)).not.toThrow();
+  // Three shots that each play a whole 38-frame take at 30 fps: at 24 fps each is 30 frames, and the render's source check holds.
+  const take = { ...asset("take", "video", "Take", "video/mp4"), seconds: 38 / 30 };
+  const whole = retimeProject({ ...base, fps: 30, assets: [...base.assets, take], audioClips: [],
+    shots: [0, 1, 2].map((i) => ({ id: "w" + i, name: "Shot " + i, assetId: "take", duration: 38, sourceIn: 0, note: "" })) }, 24);
+  for (const s of whole.shots) expect((s.sourceIn + s.duration) / 24).toBeLessThanOrEqual(38 / 30 + 0.001);
+  expect(whole.shots.map((s) => s.duration)).toEqual([30, 30, 30]);
+  // A one-frame clip on the last frame of an 8-frame cut at 30 fps stays inside the 6-frame cut at 24.
+  const last = retimeProject({ ...base, fps: 30, shots: [{ ...long, duration: 8 }],
+    audioClips: [{ id: "l", assetId: "up-voice", lane: "dialogue", startFrame: 7, sourceIn: 0, duration: 1, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false }] }, 24);
+  expect(last.shots[0].duration).toBe(6);
+  expect(last.audioClips![0]).toMatchObject({ startFrame: 5, duration: 1 });
+  expect(() => validateAudio(last)).not.toThrow();
 });
