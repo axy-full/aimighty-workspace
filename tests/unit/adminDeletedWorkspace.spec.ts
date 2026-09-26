@@ -73,20 +73,27 @@ function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean }) {
   };
 }
 
-test("a deleted workspace takes no credits, plan or limits from the desk; it can only be restored", async () => {
+test("a deleted workspace takes no credits, plan or limits from the desk; it can be marked, and restored", async () => {
   for (const body of [
     { grantCredits: 500 },
+    { grantCredits: 500, note: "goodwill" },
     { planId: "studio" },
     { allowanceUsd: 20 },
     { mode: "platform" },
-    { suspended: true },
+    { suspended: true, limits: { concurrency: 2 } },
     { limits: { concurrency: 2 } },
+    { internalTest: true },
   ]) {
     const route = adminRoute({ deletedAt: 1 });
     const response = await route.patch(body);
     expect(response.status).toBe(409);
     expect(route.calls).toEqual([]);
   }
+  // Suspending and flagging mark it for the desk before any restore.
+  const marked = adminRoute({ deletedAt: 1 });
+  expect((await marked.patch({ suspended: true, reason: "Abuse" })).status).toBe(200);
+  expect((await marked.patch({ flagged: true, note: "Review" })).status).toBe(200);
+  expect(marked.calls).toEqual(["suspended", "flag"]);
   const deleted = adminRoute({ deletedAt: 1 });
   const restored = await deleted.patch({ restore: true });
   expect(restored.status).toBe(200);

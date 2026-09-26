@@ -21,16 +21,18 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   const ws = await getWorkspace(id);
   if (!ws) return NextResponse.json({ error: "No such workspace." }, { status: 404 });
   const body = await req.json().catch(() => ({}));
-  /* A deleted workspace keeps its database and files, so the one change it
-     takes is being restored. Credits, plans and limits wait until then: a
-     grant to a workspace nobody can open is money on a closed door. */
+  /* A deleted workspace keeps its database and files, so it can be restored,
+     and marked (suspended, flagged) before it is. Credits, plans and limits
+     wait until then: a grant to a workspace nobody can open is money on a
+     closed door. */
   if (body.restore === true) {
     if (!ws.deletedAt) return NextResponse.json({ error: "This workspace is not deleted." }, { status: 400 });
-    try { await restoreDeletedWorkspace(id); }
+    try { await restoreDeletedWorkspace(id, got.user.id); }
     catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 409 }); }
     return NextResponse.json({ ok: true, restored: true });
   }
-  if (ws.deletedAt) return NextResponse.json({ error: "This workspace was deleted. Restore it before changing it." }, { status: 409 });
+  const markKeys = ["suspended", "reason", "flagged", "note"];
+  if (ws.deletedAt && Object.keys(body).some((k) => !markKeys.includes(k))) return NextResponse.json({ error: "This workspace was deleted. Restore it before changing it." }, { status: 409 });
   /* The studio's own workspace pays its vendors directly, so an allowance, a
      mode or a credit grant means nothing there. Everything else — suspending
      it, its limits, its flags, and whether it is the platform's test

@@ -334,22 +334,31 @@ function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged
     await patch({ restore: true });
   }
   if (w.legacy) return <span className="mono-s text-right">THE PLATFORM</span>;
+  // Suspending and flagging mark a workspace, so they apply to a deleted one too.
+  const marks = (
+    <>
+      {w.suspended
+        ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
+        : <button type="button" className="chip !py-0.5 !text-[11.5px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
+      {w.flagged
+        ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
+        : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+    </>
+  );
   if (w.deletedAt) return (
     <span className="flex flex-col items-end gap-1">
-      <span className="mono-s text-lift">DELETED {timeAgo(w.deletedAt).toUpperCase()}</span>
-      <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={restore}>Restore</button>
+      <span className="mono-s text-lift" title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>DELETED {timeAgo(w.deletedAt).toUpperCase()}{w.suspended ? " · SUSPENDED" : w.flagged ? " · FLAGGED" : ""}</span>
+      <span className="flex gap-1.5">
+        {marks}
+        <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={restore}>Restore</button>
+      </span>
     </span>
   );
   return (
     <span className="flex flex-col items-end gap-1">
       <span className={`mono-s ${w.suspended ? "text-lift" : ""}`} title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>{w.suspended ? "SUSPENDED" : w.flagged ? "FLAGGED" : "ACTIVE"}</span>
       <span className="flex gap-1.5">
-        {w.suspended
-          ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
-          : <button type="button" className="chip !py-0.5 !text-[11.5px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
-        {w.flagged
-          ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
-          : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+        {marks}
         <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
         <button type="button" className={`chip !py-0.5 !text-[11.5px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
         <PlanChip w={w} plans={plans} busy={busy} patch={patch} />

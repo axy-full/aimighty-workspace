@@ -44,6 +44,7 @@ const labels: Record<string, string> = {
   "workspace.mode_changed": "Changed model access",
   "workspace.mfa_required": "Required workspace two-step sign-in",
   "workspace.mfa_optional": "Made workspace two-step sign-in optional",
+  "workspace.restored": "Restored the workspace",
   "api_token.created": "Created API token",
   "api_token.revoked": "Revoked API token",
   "review_link.created": "Created review link",

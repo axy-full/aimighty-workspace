@@ -99,17 +99,24 @@ export async function prepareWorkspace(
     })
   ).rows[0] as unknown as ProvisionRow | undefined;
   if (previous && !input.requestKey && previous.state === "ready") {
-    /* A name-keyed request only repeats while the workspace it made is still
-       live under that exact name. Once that workspace is deleted or renamed,
-       or the new name differs in case, this is a new workspace: the old
-       request's key is retired (suffixed with its own id, never removed). */
-    const made = (
+    /* A name-keyed request repeats while the owner still has a live workspace
+       of their own by that name, whichever of their requests made it and
+       ignoring case, exactly as the key does. Once none is left (deleted or
+       renamed), this is a new workspace: the old request's key is retired
+       (suffixed with its own id, never removed). */
+    const live = (
       await tx.execute({
-        sql: "SELECT name FROM workspaces WHERE id=? AND deleted_at IS NULL",
-        args: [previous.workspace_id],
+        sql: `SELECT p.request_id,w.name FROM workspace_provisioning p
+          JOIN workspaces w ON w.id=p.workspace_id AND w.deleted_at IS NULL
+          JOIN memberships m ON m.workspace_id=w.id AND m.account_id=p.owner_id AND m.role='owner'
+          WHERE p.owner_id=? AND p.state='ready' ORDER BY p.created_at DESC`,
+        args: [input.owner.id],
       })
-    ).rows[0];
-    if (made && String(made.name) === name) return previous.request_id;
+    ).rows;
+    const same =
+      live.find((r) => String(r.name) === name) ??
+      live.find((r) => String(r.name).toLowerCase() === name.toLowerCase());
+    if (same) return String(same.request_id);
     await tx.execute({
       sql: "UPDATE workspace_provisioning SET request_key=request_key||':'||request_id,updated_at=? WHERE request_id=?",
       args: [now(), previous.request_id],
