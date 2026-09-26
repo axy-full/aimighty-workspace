@@ -21,7 +21,8 @@ const KIND_TAG: Record<TrayJob["kind"], string> = { video: "VID", image: "IMG", 
 export function JobsPill() {
   const tray = useJobsTray();
   const anchor = useRef<HTMLButtonElement>(null);
-  if (!tray || (!tray.summary && !tray.open)) return null;
+  /* Stopped (the account changed in another tab): the last count is not this account's to show. */
+  if (!tray || ((!tray.summary || tray.stopped) && !tray.open)) return null;
   const summary = tray.summary;
   const text = summary?.text ?? "Jobs";
   return (
@@ -52,6 +53,7 @@ function useAnchor(anchor: RefObject<HTMLElement | null>) {
 }
 
 function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTMLButtonElement | null> }) {
+  const shell = useShell();
   const at = useAnchor(anchor);
   const panel = useRef<HTMLDivElement>(null);
   const close = () => { tray.setOpen(false); anchor.current?.focus(); };
@@ -74,16 +76,19 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
             <ul className="gx-jobs-rows" aria-label="Jobs">
               {jobs.map((job) => <JobRow key={job.id} job={job} tray={tray} problem={tray.problems[job.id] ?? null} onDone={() => tray.setOpen(false)} />)}
             </ul>
-          ) : tray.error ? null : (
-            <p className="gx-empty gx-jobs-empty" data-testid={tray.status === "loading" ? "jobs-loading" : "jobs-empty"} aria-busy={tray.status === "loading"}>
-              {tray.status === "loading" ? "Reading your jobs…" : "Nothing rendering. What you generate shows here until it lands in Takes."}
-            </p>
+          ) : tray.error ? null : tray.status === "loading" ? (
+            <p className="gx-empty gx-jobs-empty" data-testid="jobs-loading" aria-busy="true">Reading your jobs…</p>
+          ) : (
+            <div className="gx-empty gx-jobs-empty" data-testid="jobs-empty">
+              <p>Nothing rendering. What you generate shows here until it lands in Takes.</p>
+              <button type="button" className="gx-hbtn gx-jobs-act--primary" onClick={() => { tray.setOpen(false); shell.goGen(); }} data-testid="jobs-generate">Generate</button>
+            </div>
           )}
           {/* A failed read keeps the last rows (or says so over none) and is asked again on its own; Try now asks at once. */}
           {tray.error ? (
             <div className="gx-jobs-note" role="alert" data-testid="jobs-error">
               <span>{tray.error}</span>
-              <button type="button" className="gx-hbtn gx-jobs-retry" onClick={tray.refresh} data-testid="jobs-retry">Try now</button>
+              {tray.stopped ? null : <button type="button" className="gx-hbtn gx-jobs-retry" onClick={tray.refresh} data-testid="jobs-retry">Try now</button>}
             </div>
           ) : null}
           {tray.partial ? <p className="gx-jobs-note" role="status" data-testid="jobs-partial">Connected-account jobs could not be read just now.</p> : null}
@@ -146,7 +151,7 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
         <span className="gx-jobs-name" title={where ? `${job.name} · ${where}` : job.name}>{job.name}</span>
         <span className="gx-jobs-meta">
           <span className="gx-jobs-stage" data-testid="jobs-stage">{job.label}</span>
-          {meta ? <span className="gx-jobs-when" title={job.price?.unit === "account-cr" ? "Approved on the connected account" : undefined}> · {meta}</span> : null}
+          {meta ? <span className="gx-jobs-when"> · {meta}</span> : null}
         </span>
         {where ? <span className="gx-jobs-where" data-testid="jobs-where">{where}</span> : null}
         {job.progress != null ? (

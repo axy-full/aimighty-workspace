@@ -24,6 +24,8 @@ export type JobsTrayState = {
   error: string | null;
   /** The connected account's jobs could not be read this time. */
   partial: boolean;
+  /** Reading stopped for good (signed out, or another workspace in another tab): nothing here asks again. */
+  stopped: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
   refresh: () => void;
@@ -35,6 +37,8 @@ export type JobsTrayState = {
 };
 
 const READ_FAILED = "Jobs could not be read. Trying again shortly.";
+/* Said plainly, with no Reload: this tab may hold work the changed account cannot save. */
+const READ_STOPPED = "Jobs stopped: this tab's account or workspace changed.";
 const seenKey = (scope: string) => `particl:jobs-seen:${scope}`;
 function readSeen(scope: string | null, now: number): number {
   if (!scope) return now;
@@ -58,31 +62,46 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
   const scope = session.signedIn ? session.requestScope ?? null : null;
   const scoped = useScopedFetch();
   const { state: ws, toast } = useWorkspace();
-  const [read, setRead] = useState<{ status: "loading" | "ready" | "error"; jobs: TrayJob[]; error: string | null; partial: boolean }>({ status: "loading", jobs: [], error: null, partial: false });
+  const [read, setRead] = useState<{ status: "loading" | "ready" | "error"; jobs: TrayJob[]; error: string | null; partial: boolean; stopped: boolean }>({ status: "loading", jobs: [], error: null, partial: false, stopped: false });
   const [open, setOpenState] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [seenAt, setSeenAt] = useState(() => (typeof window === "undefined" ? 0 : readSeen(scope, Date.now())));
   const [releasing, setReleasing] = useState<ReadonlySet<string>>(new Set());
   const [problems, setProblems] = useState<Record<string, RowProblem>>({});
   const poller = useRef<Poller | null>(null);
+  /* A read is out, and something asked for a fresh one meanwhile (a job started after it was sent). */
+  const reading = useRef(false);
+  const again = useRef(false);
+  /* Read now; if a read is already out, read once more the moment it is back, so a job started during it is not left for the next turn. */
+  const readNow = useCallback(() => {
+    if (reading.current) { again.current = true; return; }
+    poller.current?.now();
+  }, []);
 
   useEffect(() => {
     if (!scope) return;
     const next = poll<TrayReply>({
       read: async (signal) => {
-        const response = await scoped("/api/jobs?view=tray", { cache: "no-store", signal });
-        const json = await response.json().catch(() => null) as unknown;
-        const reply = response.ok ? parseTrayReply(json) : null;
-        if (!reply) throw Object.assign(new Error(READ_FAILED), { status: response.status });
-        return reply;
+        reading.current = true;
+        try {
+          const response = await scoped("/api/jobs?view=tray", { cache: "no-store", signal });
+          const json = await response.json().catch(() => null) as unknown;
+          const reply = response.ok ? parseTrayReply(json) : null;
+          if (!reply) throw Object.assign(new Error(READ_FAILED), { status: response.status });
+          return reply;
+        } finally {
+          reading.current = false;
+          /* After lib/poll has taken this reply in: its next turn is replaced by this read. */
+          if (again.current) { again.current = false; setTimeout(() => poller.current?.now(), 0); }
+        }
       },
       done: () => false,
       hint: (reply) => reply.pollAfterSeconds,
-      onValue: (reply) => { setRead({ status: "ready", jobs: reply.jobs, error: null, partial: Boolean(reply.partial) }); setNow(Date.now()); },
+      onValue: (reply) => { setRead({ status: "ready", jobs: reply.jobs, error: null, partial: Boolean(reply.partial), stopped: false }); setNow(Date.now()); },
       onError: (error) => {
         const status = (error as { status?: number }).status;
         /* Signed out, or this tab is not the signed-in workspace any more: asking again cannot help. */
-        if (status === 401 || status === 403 || status === 409) { setRead((r) => ({ ...r, status: r.status === "ready" ? "ready" : "error", error: READ_FAILED })); return "stop"; }
+        if (status === 401 || status === 403 || status === 409) { setRead((r) => ({ ...r, status: r.status === "ready" ? "ready" : "error", error: READ_STOPPED, stopped: true })); return "stop"; }
         setRead((r) => ({ ...r, status: r.status === "ready" ? "ready" : "error", error: READ_FAILED }));
       },
       immediate: true,
@@ -91,11 +110,11 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
     return () => { next.stop(); if (poller.current === next) poller.current = null; };
   }, [scope, scoped]);
 
-  const refresh = useCallback(() => poller.current?.now(), []);
+  const refresh = readNow;
   /* A job started anywhere in the app, or the composer's own slot moving: read now, not on the next turn. */
-  useEffect(() => onJobAnnounced(() => poller.current?.now()), []);
+  useEffect(() => onJobAnnounced(readNow), [readNow]);
   const slotId = ws.gen?.id ?? null;
-  useEffect(() => { if (slotId && !slotId.startsWith("pending:")) poller.current?.now(); }, [slotId]);
+  useEffect(() => { if (slotId && !slotId.startsWith("pending:")) readNow(); }, [slotId, readNow]);
   /* Ages move while the tray is open. */
   useEffect(() => {
     if (!open) return;
@@ -112,8 +131,8 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
     /* Opening the tray is seeing what finished. */
     setSeenAt(at);
     try { if (scope) localStorage.setItem(seenKey(scope), String(at)); } catch { /* the pill clears for this visit only */ }
-    poller.current?.now();
-  }, [scope]);
+    readNow();
+  }, [scope, readNow]);
 
   const release = useCallback(async (id: string) => {
     setReleasing((s) => new Set(s).add(id));
@@ -126,7 +145,7 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
         return false;
       }
       toast("Released. It renders now.");
-      poller.current?.now();
+      readNow();
       return true;
     } catch {
       setProblems((p) => ({ ...p, [id]: { message: "The connection dropped. Try Release again.", topUp: false } }));
@@ -134,12 +153,12 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
     } finally {
       setReleasing((s) => { const next = new Set(s); next.delete(id); return next; });
     }
-  }, [scoped, toast]);
+  }, [scoped, toast, readNow]);
 
   const jobs = useMemo(() => trayOrder(withComposerSlot(read.jobs, ws.gen, now)), [read.jobs, ws.gen, now]);
   const summary = useMemo(() => traySummary(jobs, seenAt), [jobs, seenAt]);
   const value = useMemo<JobsTrayState>(() => ({
-    status: read.status, jobs, summary, error: read.error, partial: read.partial, open, setOpen, refresh, release, releasing, problems, now,
-  }), [read.status, jobs, summary, read.error, read.partial, open, setOpen, refresh, release, releasing, problems, now]);
+    status: read.status, jobs, summary, error: read.error, partial: read.partial, stopped: read.stopped, open, setOpen, refresh, release, releasing, problems, now,
+  }), [read.status, jobs, summary, read.error, read.partial, read.stopped, open, setOpen, refresh, release, releasing, problems, now]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -301,11 +301,11 @@ export function traySummary(jobs: readonly TrayJob[], seenAt: number): TraySumma
 
 export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", business: "Open Business", viral: "Open Viral" };
 
-/** "13 cr", "$0.84"; a connected job's figure is the account's own credits. */
+/** "13 cr", "$0.84"; a connected job's figure is the account's own credits, said so ("40 connected cr"), never the workspace's. */
 export function priceLabel(price: TrayPrice | null): string | null {
   if (!price) return null;
   if (price.unit === "usd") return `$${price.amount.toFixed(2)}`;
-  return `${Math.round(price.amount).toLocaleString("en-US")} cr`;
+  return `${Math.round(price.amount).toLocaleString("en-US")} ${price.unit === "account-cr" ? "connected cr" : "cr"}`;
 }
 
 /** "just now", "4 min", "2 h", "3 d" since it was made (the resumed rows' own clock). */

@@ -150,6 +150,9 @@
   .gx .gx-veil.gx-jobs-veil { grid-template-columns: minmax(0, 1fr); }
   .gx .gx-sheet-list.gx-jobs-list { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
   .gx-jobs-row { border: 1px solid var(--gx-hair); border-radius: 14px; background: var(--gx-card); }
+  /* Beside a phone-width action the age and price wrap under the stage rather than being cut off. */
+  .gx-jobs-meta { white-space: normal; }
+  .gx-jobs-stage { white-space: nowrap; }
 }
 .gx-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid rgba(255, 255, 255, .12); flex: none; }
 .gx-avatar:hover { background: var(--gx-input-hover); }

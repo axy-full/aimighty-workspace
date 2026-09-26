@@ -3,6 +3,7 @@ import { listGenerations, type Generation } from "./jobs";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { estimateForRow } from "./jobCost";
+import { heldNeeds, type HeldInfo } from "./held";
 import { currentTenant } from "./tenant";
 import { CONSUMER_CAPACITY_WINDOW_MS, consumerJobsReady } from "./higgsfield-consumer/jobs";
 import {
@@ -45,10 +46,9 @@ function pricing(g: Generation, inCredits: boolean): EnginePricing {
   if (ENGINE_SETTLED.includes(g.status)) return { unit, inFlight: null, heldNeeds: null };
   const usd = estimateForRow({ status: g.status, params: g.params, kind: g.kind, model: g.model });
   const inFlight = usd == null ? null : inCredits ? billCredits(usd, marginKeyOf(g.kind, g.model)) : usd;
-  /* What the release is measured against now (lib/held heldRows), else what the person was told. */
-  const told = Number((g.params.held as { needs?: number } | undefined)?.needs ?? 0);
-  const heldNeeds = g.status === "held" && inCredits ? (inFlight || told || null) : null;
-  return { unit, inFlight, heldNeeds };
+  /* What the release is measured against now, the same figure a refused Release names (lib/held heldNeeds). */
+  const needs = g.status === "held" && inCredits ? heldNeeds(g.params.held as Partial<HeldInfo> | undefined, g.kind, g.model) || null : null;
+  return { unit, inFlight, heldNeeds: needs };
 }
 
 /** Which of this person's projects each take's production is open in, so Open in Takes lands there. */

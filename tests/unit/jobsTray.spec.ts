@@ -3,6 +3,7 @@ import {
   ACTION_LABEL, TRAY_LIMIT, accountTrayJob, active, engineTrayJob, inFlight, parseTrayReply, priceLabel, statusFilter,
   trayOrder, traySummary, withComposerSlot, type AccountRow, type EngineRow, type TrayJob,
 } from "../../lib/jobsTray";
+import { heldNeeds, releaseRefusal } from "../../lib/held";
 
 /**
  * The header's jobs tray (lib/jobsTray): stored rows from both engines become
@@ -150,7 +151,7 @@ test("the pill says what runs and what waits on you, then what finished since th
 test("prices read in credits, dollars on a workspace's own keys, and the account's credits for a connected job", () => {
   expect(priceLabel({ amount: 1250, unit: "cr" })).toBe("1,250 cr");
   expect(priceLabel({ amount: 0.84, unit: "usd" })).toBe("$0.84");
-  expect(priceLabel({ amount: 40, unit: "account-cr" })).toBe("40 cr");
+  expect(priceLabel({ amount: 40, unit: "account-cr" })).toBe("40 connected cr");
   expect(priceLabel(null)).toBeNull();
   expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Business", "Open Viral"]);
 });
@@ -171,4 +172,21 @@ test("a reply is checked row by row before the tray draws it", () => {
   expect(reply?.jobs).toHaveLength(1);
   expect(reply?.jobs[0]).toMatchObject({ id: "ok", mediaUrl: null, action: null, tone: "blue", kind: "other", price: null, progress: null });
   expect(parseTrayReply({ jobs: [] })?.pollAfterSeconds).toBe(60);
+});
+
+test("a held take needs what its kept estimate costs now, and a refused Release says why without sending anyone to top up needlessly", () => {
+  /* Re-derived from the estimate at today's terms (what the release measures), not the figure told when it was held. */
+  const now = heldNeeds({ needs: 40, estUsd: 2.86 }, "video", "dreamina-seedance-2-5-260628");
+  expect(now).toBeGreaterThan(40);
+  expect(heldNeeds({ needs: 40 }, "video", "dreamina-seedance-2-5-260628")).toBe(40);
+  expect(heldNeeds(undefined, "video", "m")).toBe(0);
+
+  expect(releaseRefusal({ needs: 43, balance: 5, reason: null, slotsFull: true })).toEqual({ status: 402, error: "Still short: this needs 43 credits and 5 are left." });
+  expect(releaseRefusal({ needs: 6000, balance: 1250.7, reason: null, slotsFull: false }).error).toBe("Still short: this needs 6,000 credits and 1,250 are left.");
+  /* Covered, but refused for a reason of its own, or waiting for room: never "short", never Top up. */
+  expect(releaseRefusal({ needs: 43, balance: 250, reason: "The shot is at its cap.", slotsFull: true })).toEqual({ status: 409, error: "The shot is at its cap." });
+  expect(releaseRefusal({ needs: 43, balance: 250, reason: null, slotsFull: true })).toEqual({ status: 409, error: "Every render slot is busy. It starts on its own when one frees up." });
+  expect(releaseRefusal({ needs: 43, balance: 250, reason: null, slotsFull: false })).toEqual({ status: 409, error: "It cannot start just now. It starts on its own when the workspace can run it." });
+  /* A workspace on its own keys has no balance to be short of. */
+  expect(releaseRefusal({ needs: 43, balance: null, reason: null, slotsFull: true }).status).toBe(409);
 });

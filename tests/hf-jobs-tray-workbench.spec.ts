@@ -41,15 +41,17 @@ function busyTray(): TrayJob[] {
   ];
 }
 
-type Tray = { reads: number; reply: () => { status?: number; json: unknown } };
+type Tray = { reads: number; reply: () => { status?: number; json: unknown }; gate?: Promise<void> | null };
 async function open(page: Page, tray: Tray, url = "/suites?suite=studio&page=rig") {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture(), list: [{ id: DRAFT, name: "Harbour launch spot" }, { id: "ws-other", name: "Trail bottle ads" }] });
   await mockLibrary(page, { uploads: [], generations: [] });
-  await page.route(/\/api\/jobs\?view=tray/, (route) => {
+  await page.route(/\/api\/jobs\?view=tray/, async (route) => {
     tray.reads++;
+    /* A spec can hold a read out, to see what is asked meanwhile. */
+    if (tray.gate) await tray.gate;
     const { status, json } = tray.reply();
     return route.fulfill({ status: status ?? 200, json });
   });
@@ -118,8 +120,8 @@ test("the pill counts what renders and what is held, and opens a tray with each 
   await expect(rows.getByTestId("jobs-stage")).toHaveText(["Held · needs 43 cr", "Rendering", "Rendering", "Failed · not billed", "Complete"]);
   await expect(rows.nth(0).locator(".gx-jobs-meta")).toHaveText("Held · needs 43 cr · 12 min");
   await expect(rows.nth(2).locator(".gx-jobs-meta")).toHaveText("Rendering · 4 min · 13 cr");
-  await expect(rows.nth(1)).toContainText("2 min · 40 cr");
-  await expect(rows.nth(1).locator(".gx-jobs-when")).toHaveAttribute("title", "Approved on the connected account");
+  /* A connected job's figure is the account's own credits, and says so: never mistaken for the workspace's. */
+  await expect(rows.nth(1).locator(".gx-jobs-meta")).toHaveText("Rendering · 2 min · 40 connected cr");
   /* Made in another project: named, so the row says where Open would go. */
   await expect(rows.nth(1).getByTestId("jobs-where")).toHaveText("Trail bottle ads");
   await expect(rows.nth(2).getByTestId("jobs-where")).toHaveCount(0);
@@ -246,20 +248,39 @@ test("the tray reads at the server's pace, not while the tab is hidden, and at o
   await page.waitForTimeout(250);
 
   /* A job started anywhere (the shared dispatch, Business, Viral) is read for at once. */
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent("particl:jobs", { detail: { id: "gen_new" } })));
+  const announce = (id: string) => page.evaluate((job) => window.dispatchEvent(new CustomEvent("particl:jobs", { detail: { id: job } })), id);
+  await announce("gen_new");
   await expect.poll(() => tray.reads).toBe(4);
   await page.waitForTimeout(250);
 
+  /* Another is announced while that read is still out: one more read the moment it is back, not on the next turn. */
+  let letGo: () => void = () => {};
+  tray.gate = new Promise<void>((resolve) => { letGo = resolve; });
+  await announce("gen_a");
+  await expect.poll(() => tray.reads).toBe(5);
+  await announce("gen_b");
+  await page.waitForTimeout(250);
+  expect(tray.reads).toBe(5);
+  tray.gate = null;
+  letGo();
+  await page.waitForTimeout(250);
+  await page.clock.runFor(50);
+  await expect.poll(() => tray.reads).toBe(6);
+  await page.waitForTimeout(250);
+  await page.clock.runFor(2_000);
+  await page.waitForTimeout(250);
+  expect(tray.reads).toBe(6);
+
   /* Opening the tray reads it fresh. */
   await page.getByTestId("running-jobs").click();
-  await expect.poll(() => tray.reads).toBe(5);
+  await expect.poll(() => tray.reads).toBe(7);
   await page.waitForTimeout(250);
 
   /* Nothing left: the open tray says so plainly (the pill stays while it is open). */
   tray.reply = () => reply([], 60);
   await page.getByTestId("jobs-close").click();
   await page.getByTestId("running-jobs").click();
-  await expect(page.getByTestId("jobs-empty")).toHaveText("Nothing rendering. What you generate shows here until it lands in Takes.");
+  await expect(page.getByTestId("jobs-empty").locator("p")).toHaveText("Nothing rendering. What you generate shows here until it lands in Takes.");
   await expect(page.getByTestId("jobs-summary")).toHaveText("Nothing running");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs");
 
@@ -276,11 +297,62 @@ test("the tray reads at the server's pace, not while the tab is hidden, and at o
   await expect(page.getByTestId("jobs-error")).toHaveCount(0);
   await expect(page.getByTestId("jobs-row")).toHaveCount(5);
 
-  /* Closed, with nothing running: the pill goes. */
-  tray.reply = () => reply([], 60);
-  await page.getByTestId("jobs-close").click();
+  await page.waitForTimeout(250);
+
+  /* This tab is no longer the signed-in workspace: it stops asking and says why, keeping the rows. */
+  tray.reply = () => ({ status: 409, json: { error: "Reload this page" } });
+  const stoppedAt = tray.reads;
+  await page.clock.runFor(13_000);
+  await expect.poll(() => tray.reads).toBe(stoppedAt + 1);
+  await expect(page.getByTestId("jobs-error")).toHaveText("Jobs stopped: this tab's account or workspace changed.");
+  await expect(page.getByTestId("jobs-retry")).toHaveCount(0);
+  await expect(page.getByTestId("jobs-row")).toHaveCount(5);
+  await page.clock.runFor(5 * 60_000);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("particl:jobs", { detail: { id: "x" } })));
+  await page.waitForTimeout(500);
+  expect(tray.reads).toBe(stoppedAt + 1);
+  /* Closed, the pill goes: the last count is not the changed account's. */
+  await page.getByTestId("jobs-close").click();
   await expect(page.getByTestId("running-jobs")).toHaveCount(0);
+  expect(tray.reads).toBe(stoppedAt + 1);
+});
+
+test("an open tray says when everything has cleared, and when a read fails, without dropping what it last read", async ({ page }, info) => {
+  test.skip(![...DESKTOP, ...PHONES].includes(info.project.name), "desktop and phones");
+  const tray: Tray = { reads: 0, reply: () => reply(busyTray()) };
+  const errors = await open(page, tray);
+  await page.getByTestId("running-jobs").click();
+  const panel = page.getByRole("dialog", { name: "Jobs" });
+  await expect(panel.getByTestId("jobs-row")).toHaveCount(5);
+  const say = () => page.evaluate(() => window.dispatchEvent(new CustomEvent("particl:jobs", { detail: { id: "gen_new" } })));
+
+  /* A failed read keeps the rows it had and says so, with Try now. */
+  tray.reply = () => ({ status: 503, json: { error: "down" } });
+  const failedAt = tray.reads;
+  await say();
+  await expect.poll(() => tray.reads).toBe(failedAt + 1);
+  await expect(panel.getByTestId("jobs-error")).toContainText("Jobs could not be read. Trying again shortly.");
+  await expect(panel.getByTestId("jobs-row")).toHaveCount(5);
+  await expect(panel.getByTestId("jobs-retry")).toBeVisible();
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
+  await noOverflow(page);
+  await shoot(page, info.project.name, "jobs-tray-read-failed");
+
+  /* Everything cleared: the open tray says so plainly, and the pill waits until it closes to go. */
+  tray.reply = () => reply([], 60);
+  await panel.getByTestId("jobs-retry").click();
+  await expect(panel.getByTestId("jobs-error")).toHaveCount(0);
+  await expect(panel.getByTestId("jobs-empty").locator("p")).toHaveText("Nothing rendering. What you generate shows here until it lands in Takes.");
+  await expect(panel.getByTestId("jobs-summary")).toHaveText("Nothing running");
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
+  await noOverflow(page);
+  await shoot(page, info.project.name, "jobs-tray-empty");
+  /* Its one way on is to make something: Generate opens Gen and the tray closes (and, empty, the pill goes). */
+  await panel.getByTestId("jobs-generate").click();
+  await expect(page.getByRole("dialog", { name: "Jobs" })).toHaveCount(0);
+  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await expect(page.getByTestId("running-jobs")).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
 
 test("with nothing running, the pill says what finished since the tray was last opened, then goes", async ({ page }, info) => {
@@ -345,6 +417,8 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, p
     await gen("gen_t_queued", "queued");
     await gen("gen_t_running", "running");
     await gen("gen_t_held", "held", { params: { resolution: "1080p", ratio: "16:9", duration: 5, held: { why: "credits", needs: 40, estUsd: 2.86, at: now } } });
+    /* Held at a figure the terms have since moved from: far more than any local balance covers, so Release is refused and nothing starts. */
+    await gen("gen_t_held_big", "held", { params: { resolution: "1080p", ratio: "16:9", duration: 5, held: { why: "credits", needs: 10, estUsd: 400, at: now } } });
     await gen("gen_t_done", "succeeded", { stored: "https://blob.invalid/x.mp4", cost: 1.16 });
     await gen("gen_t_failed", "failed", { error: "fal.ai returned 503 upstream", cost: 0 });
     await gen("gen_t_old", "succeeded", { stored: "https://blob.invalid/y.mp4", cost: 1.16, updatedAt: now - 10 * 3_600_000 });
@@ -380,7 +454,7 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, p
   expect(body.pollAfterSeconds).toBe(10);
   expect(body.partial).toBeUndefined();
   const byId = new Map(body.jobs.map((j) => [j.id, j]));
-  expect([...byId.keys()].sort()).toEqual(["c-accepted", "c-done", "c-failed", "gen_t_done", "gen_t_failed", "gen_t_held", "gen_t_queued", "gen_t_running"]);
+  expect([...byId.keys()].sort()).toEqual(["c-accepted", "c-done", "c-failed", "gen_t_done", "gen_t_failed", "gen_t_held", "gen_t_held_big", "gen_t_queued", "gen_t_running"]);
   expect(byId.get("gen_t_held")).toMatchObject({ stage: "held", tone: "amber", action: "release", label: expect.stringMatching(/^Held · needs \d+ cr$/), price: { unit: "cr" }, draftId: DRAFT });
   expect(byId.get("gen_t_held")!.label).toBe(`Held · needs ${byId.get("gen_t_held")!.price!.amount} cr`);
   expect(byId.get("gen_t_running")).toMatchObject({ stage: "rendering", price: { unit: "cr" } });
@@ -398,9 +472,19 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, p
 
   /* The list route's status filter takes a comma list. */
   const listed = await page.request.get("/api/jobs?status=queued,running,held&mine=1&sync=0", { headers }).then((r) => r.json()) as { generations: { id: string }[] };
-  expect(listed.generations.map((g) => g.id).sort()).toEqual(["gen_t_held", "gen_t_queued", "gen_t_running"]);
+  expect(listed.generations.map((g) => g.id).sort()).toEqual(["gen_t_held", "gen_t_held_big", "gen_t_queued", "gen_t_running"]);
   const single = await page.request.get("/api/jobs?status=held&sync=0", { headers }).then((r) => r.json()) as { generations: { id: string }[] };
-  expect(single.generations.map((g) => g.id)).toEqual(["gen_t_held"]);
+  expect(single.generations.map((g) => g.id).sort()).toEqual(["gen_t_held", "gen_t_held_big"]);
+
+  /* A refused Release names the figure the row's label says (what the release is measured against now), not the one told when it was held. */
+  const big = byId.get("gen_t_held_big")!;
+  expect(big.label).toBe(`Held · needs ${big.price!.amount.toLocaleString("en-US")} cr`);
+  expect(big.price!.amount).toBeGreaterThan(1_000);
+  const refused = await page.request.post("/api/jobs/gen_t_held_big/release", { headers });
+  expect(refused.status()).toBe(402);
+  const said = ((await refused.json()) as { error: string }).error;
+  expect(said).toMatch(/^Still short: this needs [\d,]+ credits and [\d,]+ are left\.$/);
+  expect(Number(/needs ([\d,]+) credits/.exec(said)![1].replace(/,/g, ""))).toBe(big.price!.amount);
 
   /* Another workspace sees none of it. */
   await signInLocally(page.request);
