@@ -1,0 +1,17 @@
+{
+ "n": 8,
+ "title": "Model picker with search, spec chips and a price on every Studio engine",
+ "area": "Gen / model choice",
+ "gap": "The GenView.tsx model sheet rows show label, description, aspect count and durations. They show no price, no maximum resolution and no audio capability, and there is no search, so the user picks without knowing the cost and then reads it off the button. Members also see the 'Higgsfield catalogue' tab and are blocked only after choosing it (use-composer.ts:383).",
+ "target": "Add a search field and a 'Recent' section (the last three models used). Rows show spec chips (maximum resolution, duration range, references, audio, enhance). Studio engines show 'from N cr \u00b7 5 s 720p', computed server-side by extending GET /api/workbench/engines so each model carries fromCredits = quoteWorkbenchMedia(model, defaults, []), which reserves nothing. Connected models show 'last quoted N cr' from this browser's own earlier quotes and are never auto-quoted, because consumer quotes create job rows. Hide the connected tab for non-owners.",
+ "files": [
+  "components/graphite/GenView.tsx",
+  "app/api/workbench/engines/route.ts",
+  "lib/workbench/media-quote.ts",
+  "lib/workspace/composer.ts",
+  "lib/workspace/use-composer.ts"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "Extends the existing engines route with a read-only figure. Every model shows a price before any spend."
+}
