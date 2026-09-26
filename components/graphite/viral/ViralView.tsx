@@ -13,6 +13,8 @@ import {
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { resumeLine, resumePhase } from "@/lib/higgsfield-consumer/resume";
+import { useClock } from "../ResumedJobs";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on the existing genjutsu-service:
@@ -152,7 +154,7 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
       </section>
       <section className="gx-gen-results" aria-label="Recent">
         <div className="gx-gen-results-head"><span className="gx-panel-title">Recent</span><button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "history")}>Open History</button></div>
-        {viral.jobs.filter((j) => j.input.variant === (page === "motion" ? "motion-transfer" : "object-swap")).slice(0, 4).map((job) => <JobRow key={job.id} job={job} />)}
+        {viral.jobs.filter((j) => j.input.variant === (page === "motion" ? "motion-transfer" : "object-swap")).slice(0, 4).map((job) => <JobRow key={job.id} job={job} problem={viral.problems[job.id]} now={now} />)}
         {!viral.jobs.length ? <p className="cw-dim">Nothing run in this project yet.</p> : null}
         {ws.state.projectId ? null : <p className="cw-dim">Open a project to see its results.</p>}
       </section>
@@ -160,12 +162,14 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
   );
 }
 
-function JobRow({ job }: { job: GenjutsuJob }) {
+/** One job: its state in one word and how long it has been going; a problem says what to do. */
+function JobRow({ job, problem, now }: { job: GenjutsuJob; problem?: string; now: number }) {
   return (
-    <div className="vr-job" data-status={job.status}>
-      <span className="cw-dot cw-dot--sm" style={{ background: job.status === "completed" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#0A84FF" }} aria-hidden="true" />
+    <div className="vr-job gx-resumed-row" data-status={job.status} data-tone={resumePhase(job).tone} data-testid="viral-job">
+      <span className="gx-resumed-dot" aria-hidden="true" />
       <span className="vr-job-name">{job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"} · {job.input.resolution}</span>
-      <span className="cw-dim">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? "Failed · not billed" : job.status}</span>
+      <span className="gx-resumed-state">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : resumeLine(job, now)}</span>
+      {problem ? <p className="gx-resumed-problem" role="status">{problem}</p> : null}
     </div>
   );
 }
@@ -177,6 +181,7 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
   const [compare, setCompare] = useState<GenjutsuJob | null>(null);
   const finished = viral.jobs.filter((j) => j.status === "completed");
   const others = viral.jobs.filter((j) => j.status !== "completed");
+  const now = useClock(others.length ? 30_000 : 0);
   const resultUrl = (job: GenjutsuJob) => (job.originalAvailable && typeof job.result?.original?.asset?.url === "string" ? job.result.original.asset.url : null);
   const sourceMedia = (job: GenjutsuJob) => { const id = job.input.source.genId ? `generation:${job.input.source.genId}` : `upload:${job.input.source.uploadId}`; return findMedia(items, id); };
   const recreate = (job: GenjutsuJob) => {
@@ -216,7 +221,7 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
           );
         })}
       </div>
-      {others.length ? <div className="vr-others">{others.map((job) => <JobRow key={job.id} job={job} />)}</div> : null}
+      {others.length ? <div className="vr-others">{others.map((job) => <JobRow key={job.id} job={job} problem={viral.problems[job.id]} now={now} />)}</div> : null}
       {compare ? <CompareSheet job={compare} source={sourceMedia(compare)?.url ?? null} result={resultUrl(compare)} onClose={() => setCompare(null)} /> : null}
     </div>
   );

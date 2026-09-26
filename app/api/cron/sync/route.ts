@@ -21,6 +21,7 @@ import { retireDeletedWorkspaces } from "@/lib/purge";
 import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
+import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -115,6 +116,12 @@ export async function GET(req: Request) {
             await stage("soul_training", async () => {
               const report = await syncSoulIdentities(2, { deadlineAt });
               if (report.failed) throw new Error("SOUL_RECONCILIATION_FAILED");
+            });
+            // Connected-account jobs finish with no page open: read the
+            // due ones (free reads, one-time collection, never a re-send).
+            await stage("connected_jobs", async () => {
+              const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
+              deferred ||= report.deferred;
             });
             await stage("storage_sizes", () => backfillSizes(8));
             await stage("expired_uploads", async () => {

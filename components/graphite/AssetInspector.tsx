@@ -3,11 +3,12 @@ import { useRef, useState } from "react";
 import { referenceRole } from "@/lib/shell/assets";
 import { useShell } from "@/lib/shell/state";
 import type { Project } from "@/lib/workbench/studio";
-import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryFace, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { takeStatusWord } from "@/lib/workspace/takes";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { openPreview } from "@/components/PreviewLayer";
+import { LoadBanner } from "./TakeTile";
 
 /**
  * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
@@ -24,7 +25,14 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const library = useProjectLibrary(scope, project?.id ?? null);
   const entry = library.items.find((item) => item.take.id === id) ?? null;
   if (!entry) {
-    return <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" /><p className="gx-empty">{library.state.status === "ready" ? "This asset is no longer in the project." : library.state.status === "error" ? "The project library did not load." : "Reading this project…"}</p></div>;
+    const failed = library.state.status === "error";
+    return (
+      <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
+        {failed
+          ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={library.refresh} testId="inspector-library-error" compact />
+          : <p className="gx-empty">{library.state.status === "ready" ? "This asset is no longer in the project." : "Reading this project…"}</p>}
+      </div>
+    );
   }
   const { take, asset } = entry;
   const generation = asset.origin === "generation" ? asset.value : null;
@@ -82,7 +90,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
         <video ref={player} src={entry.url} playsInline preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
       ) : entry.url && entry.media === "audio" ? (
         <><audio ref={player} src={entry.url} preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} /><span className="gx-badge">AUDIO</span></>
-      ) : <span className="gx-badge">{entry.take.status === "rendering" ? takeStatusWord(entry.take).toUpperCase() : entry.take.status === "failed" ? "FAILED" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
+      ) : <span className="gx-badge">{entry.take.status === "rendering" ? takeStatusWord(entry.take).toUpperCase() : entry.take.status === "failed" ? "FAILED" : entryFace(entry) === "unavailable" ? "PREVIEW UNAVAILABLE" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
       {timed ? <button type="button" className="gx-play" aria-pressed={playing} onClick={toggle}>{playing ? "Pause" : "Play"}</button> : null}
     </div>
   );

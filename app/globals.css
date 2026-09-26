@@ -2678,8 +2678,15 @@ html, body { overflow-x: clip; }
 
 /* ── Statements: a page on paper, printable ──────────────────────────── */
 .statement { min-height: 100dvh; padding: 24px clamp(16px, 4vw, 48px) 48px; background: var(--color-desk); color: var(--color-ink); }
-.statement-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.statement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+.statement-actions > span { flex-wrap: wrap; }
+/* A thumb's reach: the way back, the filter, the CSV and Print. */
+@media (max-width: 767px), (pointer: coarse) {
+  .statement-actions > a { display: inline-flex; align-items: center; min-height: 44px; }
+  .statement-actions .chip-dd, .statement-actions .btn-primary, .statement-actions .btn-secondary { min-height: 44px; }
+}
 .statement-head { margin-bottom: 20px; }
+.statement-head .h1 { overflow-wrap: anywhere; }
 .statement-project { margin-top: 22px; }
 .st-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; min-width: 520px; color: var(--color-ink); }
 .st-th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-mute); padding: 6px 8px 6px 0; border-bottom: 1px solid var(--color-line); font-weight: 500; }

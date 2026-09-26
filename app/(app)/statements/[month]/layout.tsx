@@ -1,15 +1,14 @@
 /**
  * A statement's browser chrome.
  *
- * Same reason as atomik's (`app/(app)/atomik/layout.tsx`): particl is dark and
- * says so document-wide, but a statement renders inside `.theme-light` because
- * it is a document before it is a screen — printed, or sent to the person who
- * pays. A dark status bar sitting on a white page reads as a rendering bug.
+ * The statement renders on the app's dark ground (`.statement` in globals.css
+ * reads var(--color-desk)) and turns white only for print. Its status bar says
+ * the same ground: a light bar over a dark page reads as a rendering bug.
  *
  * A layout rather than the page's own export: the page is a client component,
  * and `viewport` may only be exported from a server one.
  */
-export const viewport = { themeColor: "#ECEDEF" };
+export const viewport = { themeColor: "#000000" };
 
 export default function StatementLayout({ children }: { children: React.ReactNode }) {
   return children;

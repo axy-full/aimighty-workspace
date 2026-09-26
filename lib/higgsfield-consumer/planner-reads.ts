@@ -155,10 +155,14 @@ export function summarizePlannerReads(results: PlannerReadResult[]): PlannerCont
       context.presets = presets;
       if (presets.length) lines.push(`Motion presets: ${presets.map((p) => `${p.id}${p.name ? ` “${p.name}”` : ""}`).join("; ")}`);
     } else if (result.name === "voices") {
+      // Preset voices only, named as such — the same rule as the voice
+      // pickers (parseConnectedVoices): an "element" voice is one the owner
+      // made on the account, and a voice of no stated kind is not assumed safe.
       const voices = itemsOf(value, LIST_KEYS, 20)
-        .map((item) => ({ id: idOf(item, ["voice_id", "id"]), name: plannerText(item.name, 30), type: item.voice_type === "element" ? "element" : "preset" }))
+        .filter((item) => (item.voice_type ?? item.type) === "preset")
+        .map((item) => ({ id: idOf(item, ["voice_id", "id"]), name: plannerText(item.name, 30) }))
         .filter((item) => item.id);
-      if (voices.length) lines.push(`Voices: ${voices.map((v) => `${v.id} (${v.type}${v.name ? `, ${v.name}` : ""})`).join("; ")}`);
+      if (voices.length) lines.push(`Voices: ${voices.map((v) => `${v.id} (preset${v.name ? `, ${v.name}` : ""})`).join("; ")}`);
     } else if (result.name === "balance") {
       context.balance = numberAt(value, ["credits", "balance", "available_credits", "total"]);
       const plan = textAt(value, ["plan", "subscription", "plan_name"]);

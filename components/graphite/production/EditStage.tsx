@@ -13,7 +13,8 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { libraryView, refreshProjectLibrary, type LibraryEntry, type LibraryLoad } from "@/lib/workspace/library";
+import { libraryView, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
@@ -55,8 +56,10 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  * re-edited from an instruction with the take as its reference, priced before
  * it renders; any take goes to the Timeline in one press.
  */
-export function EditStage({ scope, projectId, items, load, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; load?: LibraryLoad; onTimeline: () => void }) {
+export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
+  /* The same store the shell reads `items` from: Load more and Try again here fill Takes and the Library together. */
+  const library = useProjectLibrary(scope, projectId);
   const { toast, state } = useWorkspace();
   const shell = useShell();
   const project = draft.project;
@@ -114,7 +117,9 @@ export function EditStage({ scope, projectId, items, load, onTimeline }: { scope
     return () => clearInterval(timer);
   }, [pending, scope, projectId, toast]);
 
-  const view = libraryView(load ?? null, items.length);
+  /* The card contract (components/graphite/TakeTile.tsx): skeletons while the first read is out, a banner if it failed. */
+  const view = libraryView(library.state, items.length);
+  const failed = view.banner?.tone === "error" ? view.banner : null;
   if (!project) return <p className="gx-empty" role="status">{draft.state.error ?? "Opening the takes…"}</p>;
   const key = entry ? JSON.stringify([entry.take.id, instruction.trim(), model, project.aspect, extras.map((x) => x.id)]) : "";
   const shown = quote && quote.key === key ? quote : null;
@@ -147,21 +152,21 @@ export function EditStage({ scope, projectId, items, load, onTimeline }: { scope
 
   return (
     <div className="pd-stage gx-enter" data-testid="edit-stage">
-      {view.banner && load ? <LoadBanner banner={view.banner} onRetry={load.refresh} testId="takes-error" /> : null}
+      {failed ? <LoadBanner banner={failed} onRetry={library.refresh} testId="takes-error" /> : null}
       <section className="gx-gen-card" aria-label="Generations" data-testid="edit-takes" data-section="takes">
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">Generations</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{view.skeletons ? "Reading this project…" : view.banner?.tone === "error" ? `${project.shots.length} in the cut` : `${generations.length} made in this project · ${project.shots.length} in the cut`}</span>
+          <span className="gx-hint">{view.skeletons ? "Reading this project…" : failed ? `${project.shots.length} in the cut` : `${generations.length}${library.hasMore ? "+" : ""} made in this project · ${project.shots.length} in the cut`}</span>
         </div>
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
             {generations.map((e: LibraryEntry) => (
-              <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={() => load?.refresh() ?? refreshProjectLibrary(scope, projectId)} />
+              <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={library.refresh} />
             ))}
           </div>
         ) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
-          : view.banner?.tone === "error" ? null
+          : failed ? null
           : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
       </section>
 
@@ -221,20 +226,22 @@ export function EditStage({ scope, projectId, items, load, onTimeline }: { scope
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">All assets</span>
           <span className="gx-spacer" />
-          {view.banner?.tone === "error" ? null : <span className="gx-hint">{view.skeletons ? "Reading this project…" : `${items.length} in this project`}</span>}
+          {failed ? null : <span className="gx-hint">{view.skeletons ? "Reading this project…" : `${items.length}${library.hasMore ? "+" : ""} in this project`}</span>}
         </div>
         {groups.length ? groups.map((group) => (
           <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
             <div className="pd-row-head"><span className="pd-asset-group-name">{group.label}</span><span className="gx-hint">{group.items.length}</span></div>
             <div className="pd-take-grid" role="radiogroup" aria-label={group.label}>
               {group.items.map((e: LibraryEntry) => (
-                <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={() => load?.refresh() ?? refreshProjectLibrary(scope, projectId)} />
+                <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={library.refresh} />
               ))}
             </div>
           </div>
         )) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
-          : view.banner?.tone === "error" ? null
+          : failed ? null
           : <p className="gx-empty">No assets yet.</p>}
+        {/* A first read that failed is the banner at the top; a later one is said here, beside Load more. */}
+        {failed ? null : <LibraryMore library={library} testId="takes-more" />}
       </section>
     </div>
   );

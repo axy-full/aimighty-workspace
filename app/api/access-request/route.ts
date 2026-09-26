@@ -96,7 +96,7 @@ export const POST = recoveryRoute(async function POST(req: NextRequest) {
   /* The send is best-effort. The row above is the record that matters, and
      an admin who cannot receive mail can still read the requests. */
   let mailed = false;
-  if (mailConfigured()) {
+  if (mailConfigured() && SUPER_ADMIN_EMAIL) {
     try {
       const who = name ? `${name} <${email}>` : email;
       await sendMail({

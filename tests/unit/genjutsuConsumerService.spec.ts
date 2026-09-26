@@ -140,6 +140,8 @@ async function serviceFixture() {
       },
     },
     "./video-original": {
+      uncollectableOriginal: (await import("../../lib/higgsfield-consumer/video-original")).uncollectableOriginal,
+      CONSUMER_ORIGINAL_SECONDS: 600,
       collectConsumerVideoOriginal: async (
         job: Parameters<typeof jobs.getConsumerJob>[0] & {
           providerJobId: string;

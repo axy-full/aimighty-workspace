@@ -224,7 +224,7 @@ test("a project list that will not load says so, and Try again opens the project
   await page.goto("/suites?view=gen");
   const banner = page.getByTestId("projects-error");
   await expect(banner).toContainText("Projects are not answering right now.");
-  await expect(page.getByTestId("project-name")).toHaveText("Not loaded");
+  await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
   /* Not "Open a project": nothing is known about the projects yet. */
   await expect(page.getByTestId("gen-results-empty")).toHaveCount(0);
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="projects-error"]'), "Try again under 44×44").toEqual([]);

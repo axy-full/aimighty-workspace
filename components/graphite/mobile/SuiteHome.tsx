@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { displayModelName } from "@/lib/models";
+import { DEFAULT_MODEL_ID, displayModelName } from "@/lib/models";
+import { useSession } from "@/lib/session";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
 import { useFreshProject } from "@/lib/shell/use-fresh-project";
@@ -12,8 +13,6 @@ import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Glyph, SUITE_LOOK } from "../icons";
 
-const VIDEO_ENGINE = "dreamina-seedance-2-5-260628";
-
 /**
  * The phone's Home (GLASS_SPEC §3 › "Where to?"): the project's name as the
  * eyebrow, the display title, six suite tiles with a live fact each, and one
@@ -24,7 +23,8 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   const shell = useShell();
   /* The stages edit their own drafts: every fact is the project as saved now, not as first loaded. */
   const project = useFreshProject(loaded);
-  const { state } = useWorkspace();
+  const { state, dispatch } = useWorkspace();
+  const session = useSession();
   const scoped = useScopedFetch();
   /* The roster is one free read per project; the count is keyed to the project it answered for. */
   const [roster, setRoster] = useState<{ projectId: string; seats: number } | null>(null);
@@ -39,19 +39,22 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
     return () => { live = false; };
   }, [projectId, scoped]);
   const seats = roster && roster.projectId === projectId ? roster.seats : null;
+  const awaiting = state.run && state.run.status === "waiting" && !state.run.approved ? 1 : 0;
   const tiles = suiteTiles(stageCards(project, items), {
     rendering: state.gen ? 1 : 0,
-    videoEngine: displayModelName(VIDEO_ENGINE),
+    videoEngine: displayModelName(session.models?.video ?? DEFAULT_MODEL_ID),
     adMode: AD_MODES.find(([id]) => id === INITIAL_ADS.mode)?.[1] ?? "UGC",
     adSeconds: INITIAL_ADS.duration,
     viralResolution: INITIAL_VIRAL.resolution,
-    awaiting: state.run && state.run.status === "waiting" && !state.run.approved ? 1 : 0,
+    awaiting,
     seats,
   });
   const go = (id: (typeof tiles)[number]["id"]) => {
     if (id === "studio") shell.goSuite("studio", "stages");
     else if (id === "gen") shell.goGen();
     else if (id === "crew") shell.goCrew();
+    /* A plan waiting on approval opens its gate (the Atomik panel), not a page that cannot approve it. */
+    else if (id === "atomik" && awaiting) dispatch({ type: "patch", patch: { agentOpen: true } });
     else shell.goSuite(id);
   };
   return (

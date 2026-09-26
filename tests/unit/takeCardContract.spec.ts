@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { LibraryAsset } from "../../lib/genLibrary";
 import type { Generation } from "../../lib/jobs";
-import { entryFace, entryKind, libraryEntries, libraryView, mergeNewest, settling, tileAspect } from "../../lib/workspace/library";
+import { entryFace, entryKind, libraryEntries, libraryView, mergeNewest, pageMoved, settleWait, settling, tileAspect } from "../../lib/workspace/library";
 import { failureReason, heldReason, projectTakes, takeChip, takeReasonLine, takeStage, takeStatusWord } from "../../lib/workspace/takes";
 
 /**
@@ -138,12 +138,27 @@ test("skeletons hold the project's frame, clamped so a tile stays a tile", () =>
   expect(tileAspect("0:9")).toBeNull();
 });
 
-test("a grid with a take in flight keeps re-reading; one held for credits waits on a top-up instead", () => {
+test("a grid with a take in flight keeps re-reading, less often while nothing moves", () => {
   expect(settling([gen("a"), gen("b", { status: "failed" })])).toBe(false);
   expect(settling([gen("a"), gen("b", { status: "queued" })])).toBe(true);
   expect(settling([gen("a", { status: "running" })])).toBe(true);
   expect(settling([gen("a", { status: "held", params: { held: { why: "slots" } } })])).toBe(true);
-  expect(settling([gen("a", { status: "held", params: { held: { why: "credits", needs: 3 } } })])).toBe(false);
+  /* Held for credits moves when a top-up lands, wherever it was made: the chip must follow it. */
+  expect(settling([gen("a", { status: "held", params: { held: { why: "credits", needs: 3 } } })])).toBe(true);
+  expect(settling([])).toBe(false);
+
+  /* Soon while takes move; then further apart, never more than a minute. */
+  expect([0, 1, 2, 3, 4, 9].map(settleWait)).toEqual([6_000, 6_000, 12_000, 24_000, 60_000, 60_000]);
+  expect(settleWait(-1)).toBe(6_000);
+
+  /* Only a real change counts as movement (a new row, a status, a stored copy, a later update). */
+  const a = gen("a", { status: "running", storedUrl: null, updatedAt: 5 });
+  expect(pageMoved([a], [{ ...a }])).toBe(false);
+  expect(pageMoved([a], [{ ...a, status: "succeeded" }])).toBe(true);
+  expect(pageMoved([a], [{ ...a, storedUrl: "/api/media/a" }])).toBe(true);
+  expect(pageMoved([a], [{ ...a, updatedAt: 6 }])).toBe(true);
+  expect(pageMoved([a], [{ ...a }, gen("new")])).toBe(true);
+  expect(pageMoved([a, gen("old")], [{ ...a }])).toBe(false);
 
   const loaded = [gen("b", { status: "running", createdAt: 9 }), gen("a", { createdAt: 8 }), gen("old", { createdAt: 1 })];
   const newest = [gen("c", { createdAt: 11 }), gen("b", { status: "succeeded", createdAt: 9 }), gen("a", { createdAt: 8 })];

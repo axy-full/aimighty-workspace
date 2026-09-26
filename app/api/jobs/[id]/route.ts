@@ -11,6 +11,21 @@ import { getShot, nextVersion } from "@/lib/shots";
 import { notify } from "@/lib/push";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
+import { discardHeldJob } from "@/lib/held";
+import type { Transaction } from "@libsql/client";
+
+const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
+
+/**
+ * A held take was never reserved or sent, and it will not finish on its own.
+ * Its author or an admin may take it out of the line: it becomes a cancelled
+ * take and nothing is charged. Returns the refusal, or null once discarded.
+ */
+async function discardHeld(tx: Transaction, id: string, row: Record<string, unknown>, user: { id: string; role: string }): Promise<string | null> {
+  if (user.role !== "admin" && String(row.created_by ?? "") !== user.id)
+    return "Only the person who made this take, or an admin, can discard it.";
+  return (await discardHeldJob(id, tx)) ? null : ACTIVE;
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -43,6 +58,16 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* Discard a held take without hiding it: it stays in the list as cancelled. */
+  if (body.discard === true) {
+    const problem = await workbenchTransaction(async (tx) => {
+      const row = (await tx.execute({ sql: "SELECT status, created_by FROM generations WHERE id=? AND deleted=0", args: [id] })).rows[0];
+      if (!row) return "No such render.";
+      if (String(row.status) !== "held") return "Only a held take can be discarded.";
+      return discardHeld(tx, id, row, got.user);
+    });
+    if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+  }
   /* Trash and restore (FINAL_SPEC §1 step 1: delete is soft). A trashed
      render is hidden — `deleted=1` — and keeps its bytes for good: nothing a
      team makes is ever erased (owner, 2026-09-24), so `{ trashed: false }`
@@ -52,12 +77,16 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     await workbenchReady();
     await mediaDeletionReady();
     const problem = await workbenchTransaction(async (tx) => {
-      const row = (await tx.execute({ sql: "SELECT status, deleted, stored_url, bytes FROM generations WHERE id=?", args: [id] })).rows[0];
+      const row = (await tx.execute({ sql: "SELECT status, deleted, stored_url, bytes, created_by FROM generations WHERE id=?", args: [id] })).rows[0];
       if (!row) return "No such render.";
       if (body.trashed === true) {
-        if (["queued", "running", "held"].includes(String(row.status))) return "This generation is still active. Wait for it to finish before deleting it.";
+        if (["queued", "running"].includes(String(row.status))) return ACTIVE;
         const binding = await mediaBindingProblem(tx, "generation", id);
         if (binding) return binding;
+        if (String(row.status) === "held") {
+          const refused = await discardHeld(tx, id, row, got.user);
+          if (refused) return refused;
+        }
         await markGenerationDeletion(tx, id, Date.now());
         return null;
       }
@@ -176,10 +205,14 @@ export const DELETE = withTenant(async function DELETE(req: Request, { params }:
   await workbenchReady();
   await mediaDeletionReady();
   const problem = await workbenchTransaction(async tx => {
-    const row = (await tx.execute({ sql: "SELECT status FROM generations WHERE id=?", args: [id] })).rows[0];
-    if (row && ["queued", "running", "held"].includes(String(row.status))) return "This generation is still active. Wait for it to finish before deleting it.";
+    const row = (await tx.execute({ sql: "SELECT status, created_by FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (row && ["queued", "running"].includes(String(row.status))) return ACTIVE;
     const binding = await mediaBindingProblem(tx, "generation", id);
     if (binding) return binding;
+    if (row && String(row.status) === "held") {
+      const refused = await discardHeld(tx, id, row, got.user);
+      if (refused) return refused;
+    }
     // Keep the cost row for accounting. Source validation in draft saves shares this lock.
     await markGenerationDeletion(tx, id);
     return null;

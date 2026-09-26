@@ -3,8 +3,9 @@ import { useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import { entryKind, libraryView, type LibraryEntry, type LibraryLoad } from "@/lib/workspace/library";
+import { entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
+import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
@@ -50,10 +51,10 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ project = null, items, load, projects = "ready", overlay, now, onUseAsReference, cutId }: {
+export function Library({ project = null, items, library, projects = "ready", overlay, now, onUseAsReference, cutId }: {
   project?: Project | null; items: LibraryEntry[];
-  /** The project library's read; `projects` is the project list's own read. */
-  load?: LibraryLoad; projects?: "loading" | "ready" | "error";
+  /** The shell's library store for the open project (one per scope and project): its read, its next page. `projects` is the project list's own read. */
+  library: ProjectLibrary; projects?: "loading" | "ready" | "error";
   overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null;
 }) {
   const shell = useShell();
@@ -68,10 +69,12 @@ export function Library({ project = null, items, load, projects = "ready", overl
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
-  const view = libraryView(project ? load ?? null : null, items.length, projects);
+  const view = libraryView(project ? library.state : null, items.length, projects);
   /* A count only once the read has answered: never "0 assets" while reading or after a failed read. */
   const counted = project ? !view.skeletons && view.banner?.tone !== "error" : projects === "ready";
   const assetCount = counted ? items.length.toLocaleString("en-US") : view.skeletons ? "…" : "—";
+  /* A first read that failed is the banner above the grid; a later one is said at the list's end, beside Load more. */
+  const failed = view.banner?.tone === "error" ? view.banner : null;
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();
@@ -121,14 +124,18 @@ export function Library({ project = null, items, load, projects = "ready", overl
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
-          {view.banner && load ? <LoadBanner banner={view.banner} onRetry={load.refresh} testId="library-error" compact /> : null}
+          {failed ? <LoadBanner banner={failed} onRetry={library.refresh} testId="library-error" compact /> : null}
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
             before={view.skeletons ? <TakeSkeletons count={4} variant="library" /> : null}
-            after={!shown.length && !view.skeletons && view.banner?.tone !== "error" && (project || view.empty) ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!project ? "Open a project to see what it has made." : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+            after={<>
+              {!shown.length && (project ? !view.skeletons && !failed : view.empty)
+                ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!project ? "Open a project to see what it has made." : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+              {project && !failed ? <LibraryMore library={library} /> : null}
+            </>}
             renderItem={(entry) => (
-              <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={() => load?.refresh()}
+              <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={library.refresh}
                 selected={state.selKind === "take" && state.selId === entry.take.id} cut={cutId === entry.take.id}
                 fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && now - entry.take.createdAt < FRESH_MS}
                 /* `+` sends the asset into the composer as a reference; the toast names the role. */

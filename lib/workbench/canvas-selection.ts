@@ -1,5 +1,6 @@
 import { type CanvasNode, uid } from "./studio";
 import { nodeHeight } from "./node-graph";
+import { PROJECT_LIMITS } from "./project-limits";
 
 export type CanvasPoint = { x: number; y: number };
 export const CANVAS_ZOOM_MIN = 0.25;
@@ -191,7 +192,7 @@ export function removeSelectedNodes(nodes: CanvasNode[], ids: string[]) {
 /** Copy internal edges to their copies, retaining references from outside the selection. */
 export function duplicateSelectedNodes(nodes: CanvasNode[], ids: string[], offset = 40) {
   const originals = nodes.filter((n) => ids.includes(n.id) && !n.locked);
-  if (!originals.length || nodes.length + originals.length > 250)
+  if (!originals.length || nodes.length + originals.length > PROJECT_LIMITS.nodes)
     return { nodes, ids: [] as string[] };
   const mapping = new Map(originals.map((n) => [n.id, uid("node")]));
   const copies = originals.map((n) => ({

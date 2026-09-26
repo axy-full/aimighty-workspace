@@ -34,14 +34,26 @@ const EMPTY: LibraryState = {
   pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, uploading: null,
 };
 
-type Entry = { state: LibraryState; listeners: Set<() => void>; busy: Promise<void> | null };
+type Entry = {
+  state: LibraryState;
+  listeners: Set<() => void>;
+  busy: Promise<void> | null;
+  /** A read asked for while one was in flight: it runs once that one lands, so it sees every change made before it was asked for. */
+  rerun: Promise<void> | null;
+  /** A first read that failed is tried again on its own, a few times, further apart each time. */
+  retry: { attempts: number; timer: ReturnType<typeof setTimeout> | null };
+  /** Counts full reads that landed: a settle poll that began before one does not overwrite it. */
+  epoch: number;
+};
 const entries = new Map<string, Entry>();
 const keyOf = (scope: string, projectId: string) => JSON.stringify([scope, projectId]);
+/** Waits before re-reading a library whose first read failed; then it waits for Try again. */
+export const LIBRARY_RETRY_MS = [2_000, 8_000, 30_000] as const;
 
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, listeners: new Set(), busy: null };
+    found = { state: EMPTY, listeners: new Set(), busy: null, rerun: null, retry: { attempts: 0, timer: null }, epoch: 0 };
     entries.set(key, found);
   }
   return found;
@@ -65,10 +77,15 @@ async function readPage(scope: string, projectId: string, source: Source, cursor
 }
 
 /** Re-read the loaded range of both sources, first page onwards. */
-async function load(scope: string, projectId: string) {
+async function load(scope: string, projectId: string): Promise<void> {
   const key = keyOf(scope, projectId);
   const e = entry(key);
-  if (e.busy) return e.busy;
+  /* A read already in flight may have started before the change this refresh is for: read once more after it. */
+  if (e.busy) {
+    e.rerun ??= e.busy.then(() => { e.rerun = null; return load(scope, projectId); });
+    return e.rerun;
+  }
+  if (e.retry.timer) { clearTimeout(e.retry.timer); e.retry.timer = null; }
   /* A retry after a failed first read shows the skeletons again, not the stale error. */
   if (e.state.status === "idle" || e.state.status === "error") set(key, { status: "loading", error: null });
   e.busy = (async () => {
@@ -86,6 +103,8 @@ async function load(scope: string, projectId: string) {
         return { items, next: cursor, pages };
       };
       const [uploads, generations] = await Promise.all([read("uploads"), read("generations")]);
+      e.retry.attempts = 0;
+      e.epoch++;
       set(key, {
         status: "ready", error: null,
         uploads: uploads.items as LibraryUpload[], generations: generations.items as Generation[],
@@ -93,12 +112,27 @@ async function load(scope: string, projectId: string) {
         pages: { uploads: uploads.pages, generations: generations.pages },
       });
     } catch (error) {
-      set(key, { status: e.state.status === "ready" ? "ready" : "error", error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      const first = e.state.status !== "ready";
+      set(key, { status: first ? "error" : "ready", error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      /* A blip on the first read is not left on screen for the session: try again, a few times, further apart. */
+      const wait = first ? LIBRARY_RETRY_MS[e.retry.attempts] : undefined;
+      if (wait !== undefined && e.listeners.size) {
+        e.retry.attempts++;
+        e.retry.timer = setTimeout(() => { e.retry.timer = null; if (e.listeners.size) void load(scope, projectId); }, wait);
+      }
     } finally {
       e.busy = null;
     }
   })();
   return e.busy;
+}
+
+/** Read (or re-read) a project's library outside a component, and what the store holds for it. */
+export function loadProjectLibrary(scope: string, projectId: string) {
+  return load(scope, projectId);
+}
+export function projectLibraryState(scope: string, projectId: string): LibraryState {
+  return entry(keyOf(scope, projectId)).state;
 }
 
 /**
@@ -137,34 +171,50 @@ async function more(scope: string, projectId: string) {
 
 /* ── Settling ─────────────────────────────────────────────────────────── */
 
-/** How often a grid with a take in flight re-reads its newest page. */
-export const SETTLE_MS = 6_000;
-
 /**
- * A take the engine is still working on: queued, running, or held for a
- * free slot. A take held for credits waits on a top-up, not on time, so it
- * does not keep the grid polling.
+ * How long a grid with a take in flight waits before it re-reads its newest
+ * page: soon while takes are moving, then less often while nothing changes
+ * (a render can sit on the engine for minutes, a take held for credits waits
+ * on a top-up), never more than a minute apart.
  */
-export function settling(generations: readonly Pick<Generation, "status" | "params">[]): boolean {
-  return generations.some((g) => g.status === "queued" || g.status === "running"
-    || (g.status === "held" && (g.params as { held?: { why?: unknown } } | null)?.held?.why === "slots"));
+export const SETTLE_MS = [6_000, 6_000, 12_000, 24_000, 60_000] as const;
+export const settleWait = (quiet: number) => SETTLE_MS[Math.min(Math.max(0, quiet), SETTLE_MS.length - 1)];
+
+/** A take that has not settled: queued, running, or held (for a free slot, or until credits arrive). */
+export function settling(generations: readonly Pick<Generation, "status">[]): boolean {
+  return generations.some((g) => g.status === "queued" || g.status === "running" || g.status === "held");
+}
+
+/** Whether the newest page says anything moved: a row not loaded yet, or one whose status, stored copy or last change differs. */
+export function pageMoved(loaded: readonly Pick<Generation, "id" | "status" | "storedUrl" | "updatedAt">[], newest: readonly Pick<Generation, "id" | "status" | "storedUrl" | "updatedAt">[]): boolean {
+  const known = new Map(loaded.map((g) => [g.id, g]));
+  return newest.some((g) => {
+    const old = known.get(g.id);
+    return !old || old.status !== g.status || old.storedUrl !== g.storedUrl || old.updatedAt !== g.updatedAt;
+  });
 }
 
 /**
  * The newest generations page, merged into what is loaded: rows it carries
- * replace their old copies, new rows join. The Queued / Rendering chips move
- * on their own and a finished take lands without a reload. A failed poll is
- * not a failed library — the next tick tries again.
+ * replace their old copies, new rows join. The Queued / Rendering / Held
+ * chips move on their own and a finished take lands without a reload. A
+ * failed poll is not a failed library — the next tick tries again. Answers
+ * whether anything moved.
  */
-async function settle(scope: string, projectId: string) {
+async function settle(scope: string, projectId: string): Promise<boolean> {
   const key = keyOf(scope, projectId);
   const e = entry(key);
-  if (e.busy || e.state.status !== "ready") return;
+  if (e.busy || e.state.status !== "ready") return false;
+  const epoch = e.epoch;
   try {
     const page = await readPage(scope, projectId, "generations", null);
-    if (e.busy || e.state.status !== "ready") return;
-    set(key, { generations: mergeNewest(e.state.generations, page.items as Generation[]) });
-  } catch { /* the next tick */ }
+    /* A full read that started or landed meanwhile is newer than this page: it stands. */
+    if (e.busy || e.epoch !== epoch || e.state.status !== "ready") return false;
+    const newest = page.items as Generation[];
+    if (!pageMoved(e.state.generations, newest)) return false;
+    set(key, { generations: mergeNewest(e.state.generations, newest) });
+    return true;
+  } catch { return false; /* the next tick */ }
 }
 
 /** Rows in `newest` replace their loaded copies; rows not loaded yet join at the front. */
@@ -174,23 +224,28 @@ export function mergeNewest<T extends { id: string }>(loaded: readonly T[], newe
   return [...newest.filter((g) => !known.has(g.id)), ...loaded.map((g) => fresh.get(g.id) ?? g)];
 }
 
-/* One timer per project, however many grids read it; only while the tab is on screen. */
-const pollers = new Map<string, { count: number; timer: ReturnType<typeof setInterval> }>();
+/* One timer per project, however many grids read it; it reads only while the tab is on screen. */
+type Poller = { count: number; quiet: number; timer: ReturnType<typeof setTimeout> | null };
+const pollers = new Map<string, Poller>();
 function watch(scope: string, projectId: string): () => void {
   const key = keyOf(scope, projectId);
   const found = pollers.get(key);
   if (found) found.count++;
-  else pollers.set(key, {
-    count: 1,
-    timer: setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      if (settling(entry(key).state.generations)) void settle(scope, projectId);
-    }, SETTLE_MS),
-  });
+  else {
+    const poller: Poller = { count: 1, quiet: 0, timer: null };
+    const tick = async () => {
+      poller.timer = null;
+      const visible = typeof document === "undefined" || document.visibilityState !== "hidden";
+      if (visible && settling(entry(key).state.generations)) poller.quiet = (await settle(scope, projectId)) ? 0 : poller.quiet + 1;
+      if (pollers.get(key) === poller) poller.timer = setTimeout(() => void tick(), settleWait(poller.quiet));
+    };
+    poller.timer = setTimeout(() => void tick(), settleWait(0));
+    pollers.set(key, poller);
+  }
   return () => {
     const poller = pollers.get(key);
     if (!poller || --poller.count > 0) return;
-    clearInterval(poller.timer);
+    if (poller.timer) clearTimeout(poller.timer);
     pollers.delete(key);
   };
 }
@@ -231,39 +286,48 @@ export async function uploadToProject(scope: string, projectId: string, files: F
  * refuses it (too small, a format the engines do not read), it is still kept
  * as the file it is, and the note says why. Filed to the project, the Library
  * reloaded; answers the new Library ids in order.
+ *
+ * One file failing does not lose the others: it is named in `notes` and the
+ * rest still upload and are answered, so a prompt box attaches what arrived
+ * instead of leaving it in the Library with only an error to show.
  */
 export async function uploadFilesToProject(scope: string, projectId: string, files: File[]): Promise<{ ids: string[]; uploads: UploadedFile[]; notes: string[] }> {
   const key = keyOf(scope, projectId);
   if (files.length > 20) throw new Error("Choose up to 20 files at a time.");
   const ids: string[] = [], notes: string[] = [], uploads: UploadedFile[] = [];
+  const failed = new Map<string, string[]>();
   try {
     for (const file of files) {
       set(key, { uploading: `Uploading ${file.name}` });
       const progress = (pct: number) => set(key, { uploading: `${file.name} · ${pct}%` });
       const media = file.type.startsWith("image/") || file.type.startsWith("video/");
-      let stored: UploadedFile;
-      if (media) {
-        try { stored = await uploadFile(file, "reference", progress, { scope }); }
-        catch (error) {
-          stored = await uploadFile(file, "chat", progress, { scope });
-          notes.push(`${file.name} is kept in the Library; engines may not take it as a reference (${error instanceof Error ? error.message.replace(/\.$/, "") : "the reference check refused it"}).`);
-        }
-      } else stored = await uploadFile(file, "chat", progress, { scope });
-      await fileProjectUpload(projectId, stored.id, scope);
-      ids.push(`upload:${stored.id}`);
-      uploads.push(stored);
+      try {
+        let stored: UploadedFile;
+        if (media) {
+          try { stored = await uploadFile(file, "reference", progress, { scope }); }
+          catch (error) {
+            stored = await uploadFile(file, "chat", progress, { scope });
+            notes.push(`${file.name} is kept in the Library; engines may not take it as a reference (${error instanceof Error ? error.message.replace(/\.$/, "") : "the reference check refused it"}).`);
+          }
+        } else stored = await uploadFile(file, "chat", progress, { scope });
+        await fileProjectUpload(projectId, stored.id, scope);
+        ids.push(`upload:${stored.id}`);
+        uploads.push(stored);
+      } catch (error) {
+        const why = error instanceof Error && error.message ? error.message.replace(/\.$/, "") : "the upload failed";
+        failed.set(why, [...(failed.get(why) ?? []), file.name]);
+      }
     }
   } finally {
     set(key, { uploading: null });
     if (ids.length) await load(scope, projectId);
   }
+  // The same reason once, with every file it stopped.
+  for (const [why, names] of failed) notes.push(`${names.join(", ")} could not be uploaded (${why}).`);
   return { ids, uploads, notes };
 }
 
 /* ── What a grid of takes shows ───────────────────────────────────────── */
-
-/** The library's load state, as every grid of takes reads it (Gen › Results, Library › Assets, Takes). */
-export type LibraryLoad = Pick<LibraryState, "status" | "error"> & { refresh: () => Promise<void> };
 
 export type LibraryView = {
   /** Aspect-true placeholders while the first read is in flight. */
@@ -346,6 +410,9 @@ export function entryKind(entry: Pick<LibraryEntry, "asset">): "image" | "video"
   return kind === "image" || kind === "video" || kind === "audio" ? kind : "file";
 }
 
+/** One project's library store, as a grid of takes holds it (Gen › Results, Library › Assets, Takes, the Rig). */
+export type ProjectLibrary = ReturnType<typeof useProjectLibrary>;
+
 export function useProjectLibrary(scope: string, projectId: string | null) {
   const key = projectId ? keyOf(scope, projectId) : null;
   const subscribe = useCallback((listener: () => void) => {
@@ -356,7 +423,11 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
   }, [key]);
   const state = useSyncExternalStore(subscribe, () => (key ? entry(key).state : EMPTY), () => EMPTY);
   useEffect(() => {
-    if (projectId && entry(keyOf(scope, projectId)).state.status === "idle") void load(scope, projectId);
+    if (!projectId) return;
+    const e = entry(keyOf(scope, projectId));
+    /* Opening a project whose last read failed reads it again, from the top of the retries. */
+    if (e.state.status === "error" && !e.busy && !e.retry.timer) e.retry.attempts = 0;
+    if (e.state.status === "idle" || (e.state.status === "error" && !e.busy && !e.retry.timer)) void load(scope, projectId);
   }, [scope, projectId]);
   const inFlight = state.status === "ready" && settling(state.generations);
   useEffect(() => (projectId && inFlight ? watch(scope, projectId) : undefined), [scope, projectId, inFlight]);
@@ -364,7 +435,14 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
   return {
     state,
     items,
-    refresh: useCallback(() => (projectId ? load(scope, projectId) : Promise.resolve()), [scope, projectId]),
+    /** True while a cursor says the project has more than is loaded. */
+    hasMore: Boolean(state.next.uploads || state.next.generations),
+    /** Try again after a failed read: resets the automatic retries. */
+    refresh: useCallback(() => {
+      if (!projectId) return Promise.resolve();
+      entry(keyOf(scope, projectId)).retry.attempts = 0;
+      return load(scope, projectId);
+    }, [scope, projectId]),
     more: useCallback(() => (projectId ? more(scope, projectId) : Promise.resolve()), [scope, projectId]),
     upload: useCallback((files: File[]) => (projectId ? uploadToProject(scope, projectId, files) : Promise.reject(new Error("Open a saved project first."))), [scope, projectId]),
   };

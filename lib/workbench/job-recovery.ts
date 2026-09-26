@@ -8,7 +8,7 @@ export type MediaJob = {
   title?:string|null;
   /** The stored original's own length in seconds, when the server read it. */
   durationS?:number|null;
-  params?:{ratio?:string; references?:Array<{uploadId?:string;genId?:string}>; task?:string; dubbingStatus?:string};
+  params?:{ratio?:string; references?:Array<{uploadId?:string;genId?:string}>; task?:string; dubbingStatus?:string; held?:{why?:string}};
 };
 /** Sound tools file their output under the name the server gave it (source · dubbed (Language)), not the lane node's title. */
 const SOURCE_NAMED_TASKS=new Set(['dub','voiceChange']);

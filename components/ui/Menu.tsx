@@ -11,6 +11,7 @@ import { usePhone } from "@/lib/usePhone";
  * 500 13.5 with the shortcut in mono, a hairline, a submenu that opens in
  * place with 34px rows — and, below 768 (design/particl-v2-mobile, M3),
  * the same items as a sheet: 48px rows, the submenu as a second sheet.
+ * Choosing an item closes the menu, on a desk as on a phone.
  */
 export type MenuItem =
   | { kind: "item"; label: string; keys?: string; disabled?: boolean; onSelect: () => void }
@@ -51,7 +52,7 @@ function MenuDesktop({ x, y, title, items, onClose }: { x: number; y: number; ti
             {it.open && (
               <div className="flex flex-col py-[2px] pl-[10px]">
                 {it.items.map((s, k) => (
-                  <button key={`${k}-${s.label}`} type="button" role="menuitem" onClick={s.onSelect}
+                  <button key={`${k}-${s.label}`} type="button" role="menuitem" onClick={() => { s.onSelect(); onClose(); }}
                     className="flex h-[34px] w-full items-center justify-between rounded-ctl px-[10px] text-left text-[13px] font-medium leading-none hover:bg-[rgba(245,246,248,.08)]">
                     {s.label}{s.note && <Mono cost>{s.note}</Mono>}
                   </button>
@@ -61,7 +62,7 @@ function MenuDesktop({ x, y, title, items, onClose }: { x: number; y: number; ti
           </div>
         );
         return (
-          <button key={i} type="button" role="menuitem" disabled={it.disabled} onClick={it.onSelect}
+          <button key={i} type="button" role="menuitem" disabled={it.disabled} onClick={() => { it.onSelect(); onClose(); }}
             className={`${row} ${it.disabled ? "text-ink-muted" : "text-ink"}`}>
             {it.label}{it.keys && <Mono cost>{it.keys}</Mono>}
           </button>
