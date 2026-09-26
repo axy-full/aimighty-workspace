@@ -2816,8 +2816,7 @@ export default function Studio({
                                   : "Build in my space"}
                               </Button>
                               <span className="plan-meta">
-                                {thinkingModelName(plan.model,jobs.models)} · {plan.depth} exploration · Sample
-                                workflow
+                                {thinkingModelName(plan.model,jobs.models)} · {plan.depth} exploration
                               </span>
                             </div>
                           </div>

@@ -5,6 +5,7 @@ import { previewAttrs } from "@/lib/preview";
 import { Download, Film, Loader2 } from "lucide-react";
 import { audioClips } from "@/lib/workbench/audio";
 import { safeName, type Project } from "@/lib/workbench/studio";
+import { movieScopeFor } from "@/lib/workbench/movie-handoff";
 import {
   defaultMovieOptions,
   movieDimensions,
@@ -112,10 +113,10 @@ export function MovieExport({
         signal: abort.signal,
         cache: "no-store",
       });
-      let activeScope = "particl-active-visitor-visitor";
+      let activeScope = movieScopeFor(null);
       if (account.ok) {
         const me = await account.json();
-        activeScope = `particl-active-${me.workspace?.id || "visitor"}-${me.id || "visitor"}`;
+        activeScope = movieScopeFor({ id: String(me.id), workspaceId: me.workspace?.id });
       } else if (account.status !== 401)
         throw new Error("Your account could not be verified. Try again.");
       if (activeScope !== scope)

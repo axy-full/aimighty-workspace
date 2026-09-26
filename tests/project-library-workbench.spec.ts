@@ -188,6 +188,13 @@ test('project library separates sources, retains original downloads and private 
   await expect(privateOriginal).toHaveAttribute('href',`/api/workbench/media/${f.privateId}?download=1`);
   const downloaded=await page.request.get((await privateOriginal.getAttribute('href'))!);
   expect(downloaded.ok()).toBe(true);expect(await downloaded.body()).toEqual(f.bytes);expect(downloaded.headers()['content-disposition']).toContain('attachment');
+  /* Open opens that file itself; nothing on the card just jumps to the project's Takes. */
+  const openPrivate=library.getByRole('link',{name:'Open Historical camera original',exact:true});
+  await expect(openPrivate).toHaveAttribute('href',`/api/workbench/media/${f.privateId}`);
+  await expect(openPrivate).toHaveAttribute('target','_blank');
+  const opened=await page.request.get((await openPrivate.getAttribute('href'))!);
+  expect(opened.ok()).toBe(true);expect(await opened.body()).toEqual(f.bytes);
+  await expect(library.getByRole('button',{name:/^(Use in project|Open asset)$/})).toHaveCount(0);
   const finished=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/uploads/finish'&&response.request().method()==='POST');
   await library.getByLabel('Upload library assets',{exact:true}).setInputFiles({name:'New project source.png',mimeType:'image/png',buffer:f.bytes});
   const stored=await(await finished).json();

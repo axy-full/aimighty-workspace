@@ -6,7 +6,7 @@ import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { legacyShell } from "./helpers/legacyShell";
 
 const modelId = "higgsfield/marketing-studio-image";
-async function fixture(page: Page, brokenMapping = false, campaign = false) {
+async function fixture(page: Page, brokenMapping = false, campaign = false, plainEngineOnly = false) {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
@@ -79,7 +79,9 @@ async function fixture(page: Page, brokenMapping = false, campaign = false) {
       },
     ],
     ...(campaign ? { moleculr: { ...EMPTY_MOLECULR, productAssetIds: ['product'], castAssetIds: ['cast'], hooks: ['Campaign still'],
-      variants: [{ id: 'marketing-variant', nodeId: 'marketing-node', hook: 'Campaign still', kind: 'image' as const }] } } : {}),
+      variants: [{ id: 'marketing-variant', nodeId: 'marketing-node', hook: 'Campaign still', kind: 'image' as const,
+        /* A variant set up for the Marketing Studio engine. */
+        ...(plainEngineOnly ? { generation: { modelId, marketing: { quality: 'high' as const, enhancePrompt: false }, ratio: '3:4' } } : {}) }] } } : {}),
   };
   let revision = 1,
     maps = 0,
@@ -137,6 +139,11 @@ async function fixture(page: Page, brokenMapping = false, campaign = false) {
         projects: [{ id: project.id, name: project.name }],
         productions: [],
       });
+    }
+    if (endpoint === "/api/workbench/engines" && plainEngineOnly) {
+      /* A workspace without the Marketing Studio engine: one ordinary image engine, priced by its own quote. */
+      if (url.searchParams.has("model")) return json({ credits: 2 });
+      return json({ models: [{ id: "image-plain", label: "Plain image", kind: "image", family: "nano-banana", resolutions: ["1k"], ratios: ["3:4", "16:9"], durations: [], maxReferenceImages: 4, maxReferenceVideos: 0 }] });
     }
     if (endpoint === "/api/workbench/engines") {
       expect(url.searchParams.has("model")).toBe(false); // This engine cannot use a static reference-count price.
@@ -421,4 +428,19 @@ test("invalid project mapping cannot quote or submit and explicit preparation re
   ).toBeEnabled();
   expect(f.quotes).toHaveLength(1);
   expect(f.submissions).toHaveLength(0);
+});
+
+test("a preset whose engine is not connected here opens on a connected engine, says so, and loads its price", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "bounded engine fallback");
+  const f = await fixture(page, false, true, true);
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&suite=moleculr&page=variants"));
+  await page.getByRole("button", { name: "Review generation", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Generate a new take", exact: true });
+  await expect(dialog.getByLabel("Generation engine")).toHaveValue("image-plain");
+  await expect(dialog.getByLabel("Generation aspect")).toHaveValue("3:4");
+  await expect(dialog.getByRole("note")).toContainText("isn’t connected in this workspace, so this take uses Plain image.");
+  await expect(dialog.getByRole("button", { name: "Generate · 2 cr estimated", exact: true })).toBeEnabled();
+  await expect(dialog).not.toContainText("No generation engine is configured");
+  expect(f.submissions).toHaveLength(0);
+  expect(f.errors).toEqual([]);
 });

@@ -776,3 +776,19 @@ test("movie snapshot does not reveal the outgoing production after an account sw
     "worker-src 'self' blob:",
   );
 });
+
+test("a signed-out visitor opens the movie renderer on the sample's cut", async ({ page }, testInfo) => {
+  test.skip(
+    !["workbench-360x640", "workbench-1440x900"].includes(testInfo.project.name),
+    "One visitor handoff check per form factor.",
+  );
+  /* /workbench writes the handoff under 'particl-visitor'; the renderer must read it under the same scope. */
+  await page.goto(await legacyShell(page, "/workbench"));
+  await goWorkbenchStage(page, "export");
+  await page.getByRole("button", { name: "Open movie renderer", exact: true }).click();
+  await expect(page).toHaveURL(/\/workbench\/movie\?snapshot=/);
+  await expect(page.getByRole("heading", { name: "Final movie", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Movie format", { exact: true })).toBeEnabled();
+  await expect(page.getByText(/unavailable|another account or workspace/)).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});

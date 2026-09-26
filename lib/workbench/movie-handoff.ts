@@ -1,9 +1,19 @@
 import { projectSchema } from "./studio-schema";
 import type { Project } from "./studio";
+import { accountScopeFor, workbenchScopeFor } from "./request-scope";
 
 const limit = 3_500_000;
 const lifetime = 10 * 60 * 1000;
-const visitor = "particl-active-visitor-visitor";
+const visitor = "particl-visitor";
+/**
+ * The scope a handoff is written and read under: the one /workbench renders
+ * with (a workspace, an account without one, or a signed-out visitor), so a
+ * snapshot made there opens here.
+ */
+export function movieScopeFor(account: { id: string; workspaceId?: string | null } | null): string {
+  if (!account) return visitor;
+  return account.workspaceId ? workbenchScopeFor(account.workspaceId, account.id) : accountScopeFor(account.id);
+}
 export function movieHandoffKey(token: string, scope: string) {
   if (!/^[a-f0-9-]{36}$/.test(token))
     throw new Error("Open the movie renderer from Delivery.");

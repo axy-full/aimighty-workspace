@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
 import nextConfig from "../../next.config";
 import { seedProject } from "../../lib/workbench/studio";
-import { readMovieHandoff } from "../../lib/workbench/movie-handoff";
+import { movieHandoffKey, movieScopeFor, readMovieHandoff } from "../../lib/workbench/movie-handoff";
+import { accountScopeFor, workbenchScopeFor } from "../../lib/workbench/request-scope";
 import { defaultMovieOptions, moviePlan } from "../../lib/workbench/movie";
 
 test("movie snapshots reject another account in the same workspace and expire before loading content", () => {
@@ -31,6 +32,21 @@ test("movie snapshots reject another account in the same workspace and expire be
       scope,
     ),
   ).toThrow();
+});
+
+test("the renderer reads a handoff under the same scope /workbench wrote it with, visitors and workspace-less accounts included", () => {
+  /* app/workbench/page.tsx: a workspace, an account without one, or 'particl-visitor'. */
+  expect(movieScopeFor(null)).toBe("particl-visitor");
+  expect(movieScopeFor({ id: "user-one", workspaceId: "workspace-a" })).toBe(workbenchScopeFor("workspace-a", "user-one"));
+  expect(movieScopeFor({ id: "user-one", workspaceId: null })).toBe(accountScopeFor("user-one"));
+  const project = seedProject();
+  for (const scope of [movieScopeFor(null), movieScopeFor({ id: "user-one" })]) {
+    const raw = JSON.stringify({ scope, project, createdAt: Date.now() });
+    expect(readMovieHandoff(raw, scope).name).toBe(project.name);
+  }
+  const token = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  expect(movieHandoffKey(token, movieScopeFor(null))).toBe(`particl-movie-visitor:${token}`);
+  expect(movieHandoffKey(token, movieScopeFor({ id: "user-one" }))).toBe(`particl-movie-private:${token}`);
 });
 
 test("movie planning keeps cumulative frame time and refuses unbounded edits", () => {
