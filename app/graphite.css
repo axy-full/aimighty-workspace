@@ -182,8 +182,6 @@
    inside the new chrome until each stage is rebuilt (build steps 2–6). */
 .gx .gx-legacy.pxw { height: auto; min-height: 100%; display: block; overflow: visible; background: transparent; flex: 1; }
 .gx .gx-legacy--fill.pxw { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-/* The Atomik gate (components/workspace/AtomikPanel) inside the Suites shell: never wider than a phone. */
-.gx .gx-atomik-host.pxw .pxw-atomik-panel { width: min(396px, calc(100vw - 28px)); }
 
 /* ── ⌘K palette ────────────────────────────────────────────────────────── */
 .gx-veil { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .6); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }

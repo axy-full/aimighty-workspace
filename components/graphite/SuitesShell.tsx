@@ -13,7 +13,6 @@ import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { PAGE_BODIES } from "@/components/workspace/pages/registry";
 import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
-import { AtomikPanel } from "@/components/workspace/AtomikPanel";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
 import { AtomikSheet } from "./AtomikSheet";
@@ -319,8 +318,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </div>
         )}
         <Palette items={items} onAsk={ask} />
-        {/* The Atomik gate: every "+ Run stage" and Inspector plan opens it; a paid plan waits here for Approve or Not now. */}
-        <div className="pxw gx-legacy gx-atomik-host" style={{ minHeight: 0, flex: "none" }}><AtomikPanel /></div>
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
           <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
         </div>
