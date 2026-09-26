@@ -78,6 +78,8 @@ test("every Library asset previews: ⤢ on hover, double-click, Space; ← / →
   await expect(dialog).toHaveAttribute("data-kind", "document");
   await expect(page.getByTestId("preview-document").locator("img.pv-page")).toHaveCount(2, { timeout: 20_000 });
   await page.keyboard.press("Escape");
+  /* Esc hands focus back to the script's tile on the next tick; wait for it, or it lands after the next focus. */
+  await expect(tile(page, "upload:up_script")).toBeFocused();
 
   /* Space on a focused tile, like Quick Look; Esc gives focus back to it. */
   await tile(page, "generation:gen_wide").focus();
