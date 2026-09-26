@@ -45,7 +45,6 @@ import {
 } from "./composer";
 import { formatCredits } from "./cost";
 import { releaseConnectedJob, watchConnectedJob } from "../shell/connected-collector";
-import { composeForSend } from "./film-vocabulary";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration } from "./generate-submit";
 import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig";
@@ -308,6 +307,12 @@ export function useComposer(options: {
    * only where it starts differs.
    */
   initialType?: ComposerType;
+  /**
+   * How the words go out with the composer's `shot` (Gen's film vocabulary, lib/workspace/film-vocabulary.ts
+   * › composeForSend). Handed in by the one composer that has the chips, so the camera bank stays out of
+   * the others; without it the words go as typed.
+   */
+  compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -412,7 +417,8 @@ export function useComposer(options: {
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
   /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts). */
-  const sent = useMemo(() => composeForSend(state.prompt, state.shot, state.type), [state.prompt, state.shot, state.type]);
+  const compose = options.compose;
+  const sent = useMemo(() => (compose ? compose(state.prompt, state.shot, state.type) : { prompt: state.prompt, shotSpec: null }), [compose, state.prompt, state.shot, state.type]);
 
   const quoteKey = quoteKeyFor({
     billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
@@ -524,6 +530,7 @@ export function useComposer(options: {
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
       : { loading: engines.loading, error: engines.error },
+    sentPrompt: connectedInput?.prompt,
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */

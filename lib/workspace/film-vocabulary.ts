@@ -9,7 +9,8 @@ import type { ComposerType } from "./composer";
  * `shotSpec`, and written into the words the way the shot composer always
  * wrote it (lib/studio.ts › composePrompt), so the engine reads a camera
  * module rather than a bare word. Recreate hands the data back to the chips
- * and takes the written setup back out of the words.
+ * and takes the written setup back out of the words (or, for a take that kept
+ * no data, reads it back from them).
  *
  * Pure: nothing here fetches or renders.
  */
@@ -63,7 +64,7 @@ const labelOf = (row: string, value: string | undefined) =>
 /**
  * The chip's face: "Auto", or what is picked. A technique that travels
  * replaces the move (lib/studio.ts › cameraModule drops it), so the face names
- * the technique alone; one that does not ("Rack focus") rides with the move.
+ * the technique alone; one that does not ("One-shot") rides with the move.
  */
 export function chipValue(chip: FilmChip, setup: FilmSetup): { text: string; set: boolean } {
   if (chip.key === "camera") {
@@ -79,10 +80,14 @@ export function chipValue(chip: FilmChip, setup: FilmSetup): { text: string; set
 /** True when this entry is what the setup holds. */
 export const isPicked = (setup: FilmSetup, o: Pick<FilmOption, "row" | "value">) => setup[o.row] === o.value;
 
+/** A rack focus holds the frame: its module locks the camera off, so it rides with no move but Locked off. */
+const HOLDS_STILL: ReadonlySet<string> = new Set(["rackfocus"]);
+
 /**
  * Pick an entry, or Auto (null) for the whole chip. Picking what is already
- * held puts that row back to Auto. On Camera a travelling technique and a
- * move exclude each other, the way the bank composes them.
+ * held puts that row back to Auto. On Camera a move and a technique that
+ * travels, or one that holds the frame, exclude each other, so the camera
+ * block never asks for two things at once.
  */
 export function pickOption(setup: FilmSetup, chip: FilmChip, picked: Pick<FilmOption, "row" | "value"> | null): FilmSetup {
   const next = { ...setup };
@@ -91,7 +96,9 @@ export function pickOption(setup: FilmSetup, chip: FilmChip, picked: Pick<FilmOp
   next[picked.row] = picked.value;
   if (chip.key === "camera") {
     if (picked.row === "technique" && MOVEMENT_TECHNIQUES.has(picked.value)) delete next.move;
+    if (picked.row === "technique" && HOLDS_STILL.has(picked.value) && next.move !== "static") delete next.move;
     if (picked.row === "move" && MOVEMENT_TECHNIQUES.has(next.technique ?? "")) delete next.technique;
+    if (picked.row === "move" && picked.value !== "static" && HOLDS_STILL.has(next.technique ?? "")) delete next.technique;
   }
   return next;
 }
@@ -133,12 +140,18 @@ const sameSetup = (a: FilmSetup, b: FilmSetup) => {
   return rows.length === Object.keys(b).length && rows.every((row) => b[row] === a[row]);
 };
 
+/** What a still leaves out, by the name a person would give it. */
+const STILL_DROPS: Record<string, string> = { move: "camera move", technique: "camera technique", pace: "motion", sound: "sound", titles: "subtitles" };
+
+/** "a, b or c" */
+const either = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names.at(-1)}` : names[0] ?? "");
+
 /**
  * The Recreate card's setup: what the take carried (as far as its own output
  * used it), and whether the chips still hold exactly that for the output Gen
  * is on now. When they do not, why, the way the card's other rows say it: the
- * output Gen is on cannot use part of it (a still has no camera travel, sound
- * no setup at all), or it was changed here.
+ * output Gen is on cannot use part of it (a still names what it leaves out,
+ * sound takes no setup at all), or it was changed here.
  */
 export function recipeSetup(taken: unknown, takenType: ComposerType, held: FilmSetup, type: ComposerType): { labels: string[]; kept: boolean; why?: string } {
   const was = applicableSetup(cleanSetup(taken), takenType);
@@ -146,7 +159,12 @@ export function recipeSetup(taken: unknown, takenType: ComposerType, held: FilmS
   const labels = setupLabels(was);
   if (sameSetup(was, now)) return { labels, kept: true };
   /* The chips hold all the output can use of it: what is missing is what this output drops. */
-  if (sameSetup(applicableSetup(was, type), now)) return { labels, kept: false, why: type === "audio" ? "Sound takes no setup" : "A still has no camera move" };
+  const usable = applicableSetup(was, type);
+  if (sameSetup(usable, now)) {
+    if (type === "audio") return { labels, kept: false, why: "Sound takes no setup" };
+    const dropped = Object.keys(was).filter((row) => !(row in usable)).map((row) => STILL_DROPS[row] ?? (CATEGORIES.find((c) => c.key === row)?.label ?? row).toLowerCase());
+    return { labels, kept: false, why: `A still has no ${either(dropped)}` };
+  }
   return { labels, kept: false, why: "Changed here" };
 }
 
@@ -172,27 +190,100 @@ export function composeForSend(prompt: string, setup: FilmSetup, type: ComposerT
   return { prompt: composePrompt(prompt, used), shotSpec: used };
 }
 
-/**
- * A recreated take's words without the setup that was written into them, so
- * the box holds the person's words and the chips hold the setup. Only an
- * intact setup comes out: words edited after composing are left as they are.
- */
-export function withoutSetup(prompt: string, setup: FilmSetup): string {
-  const clean = cleanSetup(setup);
-  if (!setupWords(clean).length) return prompt;
+/** The words before a setup that ends `prompt` exactly as composePrompt writes it, or null. */
+function beforeSetup(prompt: string, clean: FilmSetup): string | null {
   const scene = sceneLine(clean), camera = craftModules(clean);
   let rest = prompt;
   if (camera) {
     if (rest === camera) rest = "";
     else if (rest.endsWith(`\n\n${camera}`)) rest = rest.slice(0, -(camera.length + 2));
-    else return prompt;
+    else return null;
   }
   if (scene) {
     if (rest === `${scene}.`) rest = "";
     else if (rest.endsWith(` ${scene}.`)) rest = rest.slice(0, -(scene.length + 2));
-    else return prompt;
+    else return null;
   }
-  return composePrompt(rest, clean) === prompt ? rest : prompt;
+  return composePrompt(rest, clean) === prompt ? rest : null;
+}
+
+/**
+ * A recreated take's words without the setup that was written into them, so
+ * the box holds the person's words and the chips hold the setup. Only an
+ * intact setup comes out: words edited after composing are left as they are.
+ * Gen writes the setup last, so a stored text with more after it has the
+ * server's own paragraphs there (a camera move it chose for an Auto camera,
+ * the platform's rules): they go too, and the next Generate writes its own.
+ */
+export function withoutSetup(prompt: string, setup: FilmSetup): string {
+  const clean = cleanSetup(setup);
+  if (!setupWords(clean).length) return prompt;
+  for (let at = prompt.length; at > 0; at = prompt.lastIndexOf("\n\n", at - 1)) {
+    const words = beforeSetup(prompt.slice(0, at), clean);
+    if (words !== null) return words;
+  }
+  return prompt;
+}
+
+/* The bank's own sentences, for reading a setup back out of words: each camera block (a move, a
+   technique, or a move with a technique that neither travels nor holds the frame), light and look
+   module, and each scene-line part as composePrompt capitalises it. Built once, on first use. */
+type Rows = Record<string, string>;
+let bankText: { camera: Map<string, Rows>; light: Map<string, Rows>; look: Map<string, Rows>; scene: { rows: Rows; text: string }[][] } | null = null;
+function bank() {
+  if (bankText) return bankText;
+  const of = (row: string) => CATEGORIES.find((c) => c.key === row)?.options ?? [];
+  const modules = (row: string) => new Map(of(row).filter((o) => o.module).map((o) => [o.module!, { [row]: o.value }] as const));
+  const camera = new Map<string, Rows>();
+  for (const m of of("move")) if (m.module) camera.set(m.module, { move: m.value });
+  for (const t of of("technique")) {
+    if (!t.module) continue;
+    camera.set(t.module, { technique: t.value });
+    if (MOVEMENT_TECHNIQUES.has(t.value)) continue;
+    for (const m of of("move")) if (m.module) camera.set(`${m.module} ${t.module}`, { move: m.value, technique: t.value });
+  }
+  const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
+  const one = (row: string) => of(row).map((o) => ({ rows: { [row]: o.value }, text: cap(o.phrase) }));
+  const pair = (a: string, b: string) => [
+    ...one(a), ...one(b),
+    ...of(a).flatMap((x) => of(b).map((y) => ({ rows: { [a]: x.value, [b]: y.value }, text: cap(`${x.phrase}, ${y.phrase}`) }))),
+  ];
+  /* The scene line's parts, last first, as sceneLine orders them: framing, lens, hour, feel, sound, titles. */
+  const scene = [one("titles"), one("sound"), pair("mood", "pace"), one("time"), one("lens"), pair("shot", "angle")]
+    .map((parts) => parts.sort((a, b) => b.text.length - a.text.length));
+  bankText = { camera, light: modules("light"), look: modules("look"), scene };
+  return bankText;
+}
+
+/**
+ * A take that keeps no setup as data (one made on the connected account,
+ * which stores only the words) may still carry one written in, the bank's
+ * way. It is read back only when Gen, holding those words and that setup,
+ * would send exactly the take's words again for its output, so nothing the
+ * person wrote is lost or taken for a setup.
+ */
+export function recoverSetup(prompt: string, type: ComposerType): { setup: FilmSetup; words: string } | null {
+  if (type === "audio") return null;
+  const { camera, light, look, scene } = bank();
+  const paragraphs = prompt.split("\n\n");
+  const setup: FilmSetup = {};
+  for (const modules of [look, light, camera]) {
+    const found = paragraphs.length ? modules.get(paragraphs[paragraphs.length - 1]) : undefined;
+    if (found) { Object.assign(setup, found); paragraphs.pop(); }
+  }
+  let line = paragraphs.join("\n\n");
+  if (line.endsWith(".")) {
+    line = line.slice(0, -1);
+    for (const parts of scene) {
+      const part = parts.find((p) => line === p.text || line.endsWith(`. ${p.text}`));
+      if (!part) continue;
+      Object.assign(setup, part.rows);
+      line = line === part.text ? "" : line.slice(0, -(part.text.length + 2));
+    }
+  }
+  if (!Object.keys(setup).length) return null;
+  const words = beforeSetup(prompt, setup);
+  return words !== null && composeForSend(words, setup, type).prompt === prompt ? { setup, words } : null;
 }
 
 /* ── # in the words: a typeahead of the bank ─────────────────────────────── */
@@ -230,9 +321,10 @@ export function optionMatches(o: Pick<FilmOption, "label" | "aka" | "phrase">, q
 }
 
 /**
- * Entries whose name, other name or words begin with what was typed — a
- * name's start first, then a word's, then anywhere in its phrase. With
- * nothing typed yet, the camera moves (video) or shot sizes (a still).
+ * Entries whose name or other name begins with what was typed, a name's
+ * start first, then a word's: never a fragment inside a word, since a `#`
+ * in the words is as often a hashtag or a number. With nothing typed yet,
+ * the camera moves (video) or shot sizes (a still).
  */
 export function vocabularyMatches(query: string, type: ComposerType, limit = 8): FilmHit[] {
   const chips = chipsFor(type);
@@ -242,10 +334,8 @@ export function vocabularyMatches(query: string, type: ComposerType, limit = 8):
   if (!q) return all.slice(0, limit);
   const words = (s: string) => norm(s).split(/[\s,/]+/).filter(Boolean);
   const score = (o: FilmHit) => {
-    const label = norm(o.label);
-    if (label.startsWith(q)) return 0;
-    if (words(o.label).some((w) => w.startsWith(q)) || (o.aka && (norm(o.aka).startsWith(q) || words(o.aka).some((w) => w.startsWith(q))))) return 1;
-    if (norm(o.phrase).includes(q) || (o.aka && norm(o.aka).includes(q))) return 2;
+    if (norm(o.label).startsWith(q)) return 0;
+    if (startsName(o, q) || words(o.label).some((w) => w.startsWith(q)) || (o.aka && words(o.aka).some((w) => w.startsWith(q)))) return 1;
     return -1;
   };
   return all
@@ -254,4 +344,19 @@ export function vocabularyMatches(query: string, type: ComposerType, limit = 8):
     .sort((a, b) => a.s - b.s || a.i - b.i)
     .slice(0, limit)
     .map((x) => x.o);
+}
+
+/** What was typed begins the entry's name, or one of its other names. */
+const startsName = (o: Pick<FilmOption, "label" | "aka">, q: string) =>
+  norm(o.label).startsWith(q) || (o.aka ?? "").split(",").some((a) => norm(a).startsWith(q));
+
+/**
+ * The hit Enter or Tab takes before any arrow key has moved: the first, and
+ * only when what was typed has two letters or more and begins its name or
+ * other name. Otherwise (a hashtag, a number, a bare `#`) Enter is a new line
+ * and Tab moves on, as they would without the list.
+ */
+export function hashDefault(query: string, hits: readonly FilmHit[]): number {
+  const q = norm(query);
+  return hits.length && (q.match(/[a-z]/g) ?? []).length >= 2 && startsName(hits[0], q) ? 0 : -1;
 }

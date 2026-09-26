@@ -1,10 +1,11 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
-import { composePrompt } from "../lib/studio";
+import { composePrompt, craftModules } from "../lib/studio";
 
 /**
  * Gen's film vocabulary (idea 13): under Direction, six chips — Shot · Angle ·
@@ -31,10 +32,16 @@ const craned = () => generation({
   params: { rawPrompt: composePrompt("harbour at dusk, a boat drifts", SETUP), ratio: "16:9", resolution: "720p", duration: 5, shotSpec: SETUP },
 });
 
-type Options = { previews?: "ok" | "fail-once"; generations?: ReturnType<typeof generation>[] };
+type Options = { previews?: "ok" | "fail-once"; generations?: ReturnType<typeof generation>[]; member?: boolean };
 
 async function open(page: Page, options: Options = {}) {
-  await signInLocally(page.request);
+  const { workspace } = await signInLocally(page.request);
+  if (options.member) {
+    /* The session's role is read per request: this account is now a member of its own workspace. */
+    const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+    try { await db.execute({ sql: "UPDATE memberships SET role='member' WHERE workspace_id=?", args: [workspace.id] }); }
+    finally { db.close(); }
+  }
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
@@ -127,12 +134,14 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
     await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished.catch(() => null))));
     const box = await sheet.boundingBox();
     expect(Math.round(box!.y + box!.height)).toBeLessThanOrEqual(page.viewportSize()!.height);
+    /* On its side the phone gives the grid its height, not a strip under a gap. */
+    if (info.project.name === "workbench-844x390") expect(box!.height).toBeGreaterThan(page.viewportSize()!.height - 40);
   }
   await shot(page, info, "film-camera");
 
   /* The search narrows the bank by name, other name or phrase. */
   await sheet.getByTestId("gen-film-search").fill("dolly");
-  await expect(sheet.locator(".gx-fv-tile .gx-fv-name")).toHaveText(["Push in", "Pull out", "Dolly zoom"]);
+  await expect(sheet.locator(".gx-fv-tile .gx-fv-name")).toHaveText(["Push in", "Pull out", "Tracking", "Dolly zoom"]);
   await sheet.getByTestId("gen-film-search").fill("zzz");
   await expect(sheet.getByTestId("gen-film-none")).toContainText("Nothing matches “zzz”.");
   await sheet.getByRole("button", { name: "Clear search" }).click();
@@ -149,7 +158,8 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
   await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Close-up");
   expect(lists).toHaveLength(1);
 
-  /* # in the words: the bank as a typeahead; Enter picks, and the #word leaves the words. */
+  /* # in the words: the bank as a typeahead. A number chooses nothing by itself (it may be a rank or a
+     count); an arrow chooses, Enter picks, and the #word leaves the words. */
   await prompt.click();
   await prompt.press("End");
   await prompt.pressSequentially(" #35");
@@ -157,6 +167,8 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
   await expect(hash).toBeVisible();
   await expect(hash.getByRole("option").first()).toContainText("Lens");
   await expect(hash.getByRole("option").first()).toContainText("35mm");
+  await expect(hash.getByRole("option", { selected: true })).toHaveCount(0);
+  await prompt.press("ArrowDown");
   await expect(hash.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
   await prompt.press("Enter");
   await expect(hash).toHaveCount(0);
@@ -178,11 +190,25 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
       return hit && !list.contains(hit) ? `${hit.tagName}.${hit.className}` : null;
     });
     expect(under, "typeahead's last row covered").toBeNull();
+    const list = (await hash.boundingBox())!;
+    expect(Math.round(list.y + list.height), "typeahead past the screen's foot").toBeLessThanOrEqual(page.viewportSize()!.height);
   }
   await shot(page, info, "film-hash");
   await prompt.press("Escape");
   await expect(hash).toHaveCount(0);
   await expect(prompt).toHaveValue(`${WORDS} #pan`);
+  /* A hashtag or a rank is the person's own: nothing is offered for #ad, nothing is chosen for #1, and Enter is a new line. */
+  await prompt.fill(`${WORDS} #ad`);
+  await expect(hash).toHaveCount(0);
+  await prompt.press("Enter");
+  await expect(prompt).toHaveValue(`${WORDS} #ad\n`);
+  await prompt.fill(`${WORDS}, the world's #1`);
+  await expect(hash).toBeVisible();
+  await expect(hash.getByRole("option", { selected: true })).toHaveCount(0);
+  await prompt.press("Enter");
+  await expect(prompt).toHaveValue(`${WORDS}, the world's #1\n`);
+  await expect(chip(page, "lens")).toHaveAttribute("aria-label", "Lens: 35mm");
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Push in");
   await prompt.fill(`${WORDS} #soft`);
   await hash.getByRole("option", { name: /Soft/ }).click();
   await expect(prompt).toHaveValue(WORDS);
@@ -288,8 +314,10 @@ test("the grid says when its loops cannot be read and reads them again; Escape a
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill("#");
   await expect(page.getByTestId("gen-hash").getByRole("option").first()).toContainText("Shot");
+  await expect(page.getByTestId("gen-hash").getByRole("option", { selected: true })).toHaveCount(0);
+  /* A still has no camera move: #push offers nothing, so nothing opens. */
   await prompt.fill("#push");
-  await expect(page.getByTestId("gen-hash-none")).toHaveText("Nothing called #push");
+  await expect(page.getByTestId("gen-hash")).toHaveCount(0);
   await page.getByRole("tab", { name: "Audio" }).click();
   await expect(page.getByTestId("gen-film")).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -308,6 +336,12 @@ test("every grid draws every entry it offers, and picks from the keyboard", asyn
       return !t.querySelector("video") && (!svg || svg.childElementCount === 0 || !svg.getBoundingClientRect().width);
     }).map((t) => t.getAttribute("data-option")));
     expect(blank, `${key}: tiles with nothing drawn`).toEqual([]);
+    if (key === "camera") {
+      /* No two entries are drawn alike, so they tell apart where no loop is published. */
+      const drawings = await sheet.locator(".gx-fv-tile:not([data-option='auto']) svg").evaluateAll((svgs) => svgs.map((svg) => svg.innerHTML));
+      expect(drawings.length).toBeGreaterThan(30);
+      expect(drawings.filter((d, i) => drawings.indexOf(d) !== i).length, "camera entries drawn alike").toBe(0);
+    }
     /* On a phone every grid rises edge to edge, whatever its content (not only the one with a search). */
     if (PHONES.includes(info.project.name)) expect(Math.round((await sheet.boundingBox())!.width), `${key}: sheet width`).toBe(page.viewportSize()!.width);
     await shot(page, info, `film-grid-${key}`);
@@ -324,5 +358,102 @@ test("every grid draws every entry it offers, and picks from the keyboard", asyn
   await page.keyboard.press("Enter");
   await expect(sheet).toHaveCount(0);
   await expect(chip(page, "look")).not.toHaveAttribute("aria-label", "Look: Auto");
+
+  /* Focus stays in the sheet: Shift+Tab from its first control goes to its last, Tab from its last back to the first. */
+  await chip(page, "shot").click();
+  const close = sheet.getByTestId("gen-film-close");
+  await close.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(sheet.locator(".gx-fv-tile").last()).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+
+  /* Rack focus locks the camera off: it takes the move off, only Locked off rides with it, and a move takes it off again. */
+  const camera = async (option: string) => { await chip(page, "camera").click(); await sheet.locator(`[data-option='${option}']`).click(); await expect(sheet).toHaveCount(0); };
+  await camera("move:push");
+  await camera("technique:rackfocus");
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Rack focus");
+  await camera("move:static");
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Locked off + Rack focus");
+  await camera("move:orbit");
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Orbit");
+
+  /* Long values read whole on a narrow phone, and a chip just set is never left under the sticky Generate. */
+  for (const [key, option] of [["shot", "shot:evs"], ["angle", "angle:ground"], ["look", "look:teal"]] as const) {
+    await chip(page, key).click();
+    await sheet.locator(`[data-option='${option}']`).click();
+    await expect(sheet).toHaveCount(0);
+    const covered = await chip(page, key).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit && !el.contains(hit) ? `${hit.tagName}.${hit.className}` : null;
+    });
+    expect(covered, `${key} chip covered after its pick`).toBeNull();
+  }
+  if (info.project.name === "workbench-390x844") {
+    const cut = await page.locator(".gx-fv-chip-value").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1).map((e) => e.textContent));
+    expect(cut, "chip values cut short").toEqual([]);
+  }
+  expect(errors).toEqual([]);
+});
+
+/* A take stored the way admission stored one made with the camera on Auto before the words were kept beside it: the words Gen sent, then a move the server chose, then the platform's rules. */
+const NET = "A fisherman mends a net on the pier";
+const served = () => generation({
+  id: "gen_net", kind: "video", model: "dreamina-seedance-2-0-260128", title: "Net mending",
+  prompt: `${composePrompt(NET, { shot: "cu" })}\n\n${craftModules({ move: "static" })}\n\nKeep the horizon level.`,
+  params: { ratio: "16:9", resolution: "720p", duration: 5, shotSpec: { shot: "cu" } },
+});
+
+test("Recreate takes what the server added off a take's words, so one chip changed sends one setup", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { errors, priced } = await open(page, { generations: [served()] });
+  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_net']").click();
+  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  const prompt = page.getByTestId("gen-prompt");
+  await expect(prompt).toHaveValue(`${NET}.`);
+  await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Close-up");
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Auto");
+  await chip(page, "camera").click();
+  await page.getByTestId("gen-film-sheet").locator("[data-option='move:pull']").click();
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await page.getByTestId("gen-generate").click();
+  await expect.poll(() => priced.length).toBe(1);
+  expect(priced[0]).toMatchObject({ prompt: composePrompt(`${NET}.`, { shot: "cu", move: "pull" }), shotSpec: { shot: "cu", move: "pull" } });
+  expect(String(priced[0].prompt)).not.toMatch(/locked on a tripod|horizon level/);
+  expect(errors).toEqual([]);
+});
+
+/* The connected account stores only the words, with the setup written in as Gen sent it. */
+const GULL = "a gull over the breakwater";
+const accountTake = () => generation({
+  id: "gen_account", kind: "video", model: "seedance_2_5", title: "Account take", provider: "higgsfield",
+  prompt: composePrompt(GULL, { move: "push", light: "soft" }),
+  params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", duration: 5.04, settings: { aspect_ratio: "16:9", resolution: "720p", duration: 5 } },
+});
+
+test("a connected take's setup, kept only in its words, comes back onto the chips; a move changed sends one camera block", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  /* A member recreates on this workspace's engines, so the one press stops at this workspace's price check. */
+  const { errors, priced } = await open(page, { member: true, generations: [accountTake()] });
+  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_account']").click();
+  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  const prompt = page.getByTestId("gen-prompt");
+  await expect(prompt).toHaveValue(`${GULL}.`);
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Push in");
+  await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Soft");
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Push in · Soft");
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "kept");
+  await chip(page, "camera").click();
+  await page.getByTestId("gen-film-sheet").locator("[data-option='move:pull']").click();
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "changed");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await page.getByTestId("gen-generate").click();
+  await expect.poll(() => priced.length).toBe(1);
+  expect(priced[0]).toMatchObject({ prompt: composePrompt(`${GULL}.`, { move: "pull", light: "soft" }), shotSpec: { move: "pull", light: "soft" } });
+  expect(String(priced[0].prompt)).not.toMatch(/travels forward/);
+  expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);
 });

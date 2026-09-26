@@ -31,7 +31,7 @@ import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
-import { cleanSetup, recipeSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
+import { cleanSetup, composeForSend, recipeSetup, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
 
 /** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
@@ -39,8 +39,8 @@ const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
-  video: "Describe the shot: subject, setting, action. # picks a camera move; @name cites a reference; raw: sends your words as written.",
-  image: "Describe the frame: subject, setting, medium. # picks a shot, lens or light; @name cites a reference; raw: sends your words as written.",
+  video: "Describe the shot: subject, setting, action. # picks a setup; @name cites a reference; raw: nothing is rewritten.",
+  image: "Describe the frame: subject, setting, medium. # picks a setup; @name cites a reference; raw: nothing is rewritten.",
   audio: "Describe the sound, the voice or the music: source, setting, pace, texture.",
 };
 const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }, { id: "connected", label: "Higgsfield catalogue" }];
@@ -74,7 +74,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
 }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
+  const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video", compose: composeForSend });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
   /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
      "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
@@ -225,14 +225,18 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     /* The connected account is the owner's; anyone else recreates on this workspace's engines, and their own engine choice stands. */
     const billing: BillingSource = next.billing === "connected" && owner ? "connected" : "workspace";
     const lost = next.billing === "connected" && billing !== "connected";
-    /* The shot setup lands on the chips, and comes back out of the words it was written into. */
-    const shot = cleanSetup(next.shotSpec);
+    /* The shot setup lands on the chips, and comes back out of the words it was written into. A take that keeps
+       none as data (the connected account stores only words) is read for one written in the bank's way. */
+    const kept = cleanSetup(next.shotSpec);
+    const found = Object.keys(kept).length ? null : recoverSetup(next.prompt, type);
+    const shot = found?.setup ?? kept;
+    const taken = found ? { ...next, shotSpec: found.setup } : next;
     dispatchComposer({
       type: "recipe",
       value: {
         type, billing, picks: next.picks ?? {}, sound: next.sound, shot,
         ...(lost ? {} : { model: next.model }),
-        ...(settingsOnly ? {} : { prompt: withoutSetup(next.prompt, shot), references: [] }),
+        ...(settingsOnly ? {} : { prompt: found ? found.words : withoutSetup(next.prompt, shot), references: [] }),
       },
     });
     /* A take made raw on the account is recreated raw, one enhanced there is enhanced there again. */
@@ -240,7 +244,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     const autoMoved = billing === "connected" && next.enhance !== undefined && next.enhance !== autoBefore;
     if (autoMoved) setAuto(next.enhance!);
     setPreset(null);
-    setRecipe({ preset: next, previous, autoBefore: autoMoved ? autoBefore : null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
+    setRecipe({ preset: taken, previous, autoBefore: autoMoved ? autoBefore : null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
     if (!refs.length) return;
     /* Every reference is read again in this workspace. The ones still here keep the take's order; the words
        are renumbered to match them, and the ones that are gone keep citations of their own (recipe › retagRecipe). */

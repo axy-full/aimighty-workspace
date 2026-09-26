@@ -3,7 +3,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { createPortal } from "react-dom";
 import type { ComposerType } from "@/lib/workspace/composer";
 import {
-  FILM_CHIPS, chipOptions, chipValue, chipsFor, dropToken, extraRows, hashToken, isPicked, optionMatches, pickOption, vocabularyMatches,
+  FILM_CHIPS, chipOptions, chipValue, chipsFor, dropToken, extraRows, hashDefault, hashToken, isPicked, optionMatches, pickOption, vocabularyMatches,
   type FilmChip, type FilmChipKey, type FilmHit, type FilmOption, type FilmSetup,
 } from "@/lib/workspace/film-vocabulary";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -46,7 +46,14 @@ export function FilmChips({ scope, type, setup, onChange }: {
   }, [wantsPreviews, scopedFetch]);
   if (!chips.length) return null;
 
-  const close = () => { const key = open; setOpen(null); if (key) buttons.current[key]?.focus({ preventScroll: true }); };
+  /* Focus goes back to the chip, and the chip into view with its new value: on a phone, clear of the sticky Generate (its scroll margin). */
+  const close = () => {
+    const key = open;
+    setOpen(null);
+    const button = key ? buttons.current[key] : null;
+    button?.focus({ preventScroll: true });
+    button?.scrollIntoView({ block: "nearest" });
+  };
   const chip = open ? FILM_CHIPS.find((c) => c.key === open) ?? null : null;
   return (
     <div className="gx-fv" data-testid="gen-film">
@@ -124,6 +131,16 @@ function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  /* Focus stays in the sheet while it is open: Tab past its last control comes back to its first, Shift+Tab the other way. */
+  const onTrap = (e: KeyboardEvent<HTMLDivElement>) => {
+    const box = dialog.current;
+    if (e.key !== "Tab" || !box) return;
+    const all = Array.from(box.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)")).filter((el) => el.getClientRects().length);
+    if (!all.length) return;
+    const at = document.activeElement;
+    if (e.shiftKey && (at === all[0] || at === box)) { e.preventDefault(); all[all.length - 1].focus(); }
+    else if (!e.shiftKey && at === all[all.length - 1]) { e.preventDefault(); all[0].focus(); }
+  };
   const tiles = () => Array.from(list.current?.querySelectorAll<HTMLElement>(".gx-fv-tile") ?? []);
   const onGridKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const all = tiles();
@@ -163,7 +180,7 @@ function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
 
   return (
     <div ref={dialog} tabIndex={-1} className="gx-sheet gx-sheet--vocab" role="dialog" aria-modal="true" aria-label={chip.label} onClick={(e) => e.stopPropagation()}
-      data-testid="gen-film-sheet" data-chip={chip.key}>
+      onKeyDown={onTrap} data-testid="gen-film-sheet" data-chip={chip.key}>
       <div className="gx-sheet-head">
         <span className="gx-panel-title">{chip.label}</span>
         <span className="gx-fv-now" data-set={value.set || undefined} data-testid="gen-film-now">{value.text}</span>
@@ -179,7 +196,8 @@ function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
             <input ref={search} type="search" className="gx-field" value={query} onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") { e.preventDefault(); tiles()[query ? 0 : 1]?.focus(); }
-                if (e.key === "Enter" && !e.nativeEvent.isComposing && query.trim() && shown[0]) { e.preventDefault(); onPick(shown[0]); }
+                /* Enter takes the first match; one already held stays held (a pick again would put it back to Auto). */
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && query.trim() && shown[0]) { e.preventDefault(); if (isPicked(setup, shown[0])) onClose(); else onPick(shown[0]); }
               }}
               placeholder={`Search ${options.length} ${chip.key === "camera" ? "moves" : "entries"}`} aria-label={`Search ${chip.label.toLowerCase()}`}
               autoComplete="off" spellCheck={false} enterKeyHint="go" data-testid="gen-film-search" />
@@ -261,8 +279,11 @@ function PreviewLoop({ url, active, onFail }: { url: string; active: boolean; on
 
 /**
  * The Direction box's typeahead: `#` opens the bank (camera moves first on
- * video), arrows move, Enter or Tab picks, Escape closes. A pick sets its chip
- * and takes the `#word` out of the words.
+ * video) and each letter narrows it to names that begin so; arrows move, a
+ * click picks, Escape closes. Enter or Tab picks only an entry the arrows
+ * chose, or the first when two letters or more begin its name: after a
+ * hashtag or a number they are a new line and the next field, as ever. A pick
+ * sets its chip and takes the `#word` out of the words.
  */
 export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSetup }: {
   type: ComposerType; prompt: string; setup: FilmSetup; textarea: RefObject<HTMLTextAreaElement | null>;
@@ -271,25 +292,28 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
   const listId = useId();
   const [caret, setCaret] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const [active, setActive] = useState<{ query: string; index: number }>({ query: "", index: 0 });
+  const [active, setActive] = useState<{ query: string; index: number }>({ query: "", index: -1 });
   const [said, setSaid] = useState("");
   const pendingCaret = useRef<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const token = caret !== null && type !== "audio" ? hashToken(prompt, caret) : null;
   const tokenKey = token ? `${token.start}:${token.query}` : null;
-  const open = Boolean(token) && tokenKey !== dismissed;
-  const hits: FilmHit[] = open && token ? vocabularyMatches(token.query, type) : [];
-  const index = token && active.query === token.query ? Math.min(active.index, Math.max(0, hits.length - 1)) : 0;
+  const hits: FilmHit[] = token && tokenKey !== dismissed ? vocabularyMatches(token.query, type) : [];
+  /* Nothing to offer, nothing shown: a hashtag in the words is left alone. */
+  const open = hits.length > 0;
+  /* The arrows' choice for what is typed now; else the one Enter would take unasked, if any. */
+  const index = !token || !open ? -1 : active.query === token.query && active.index >= 0 ? Math.min(active.index, hits.length - 1) : hashDefault(token.query, hits);
 
-  /* As it opens, the list's first row comes into view if it is not (on a phone, clear of the tab bar: its
-     scroll margin). A list whose first rows already show is left where it is, so the words do not move. */
+  /* As it opens, the list's first row comes into view if it is not (clear of what is pinned below: its scroll
+     margin); a row of pills, all of it. A list whose first rows already show is left where it is, so the words
+     do not move. */
   const openedAt = open && token ? token.start : null;
   useEffect(() => {
     const el = box.current;
     if (openedAt === null || !el) return;
     const top = el.getBoundingClientRect().top;
     const margin = Number.parseFloat(getComputedStyle(el).scrollMarginBottom) || 0;
-    if (top + Math.min(el.offsetHeight, 56) > innerHeight - margin) el.scrollIntoView({ block: "nearest" });
+    if (top + Math.min(el.offsetHeight, 96) > innerHeight - margin) el.scrollIntoView({ block: "nearest" });
   }, [openedAt]);
   /* The active entry stays in view (on a phone the list is one scrolling row). */
   useEffect(() => {
@@ -326,12 +350,11 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!open || !token || e.nativeEvent.isComposing) return;
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setDismissed(tokenKey); return; }
-    if (!hits.length) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
-      setActive({ query: token.query, index: (index + step + hits.length) % hits.length });
-    } else if (e.key === "Enter" || e.key === "Tab") {
+      setActive({ query: token.query, index: index < 0 ? (step > 0 ? 0 : hits.length - 1) : (index + step + hits.length) % hits.length });
+    } else if ((e.key === "Enter" || e.key === "Tab") && index >= 0 && !e.shiftKey) {
       e.preventDefault();
       pick(hits[index]);
     }
@@ -339,21 +362,19 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
 
   const list: ReactNode = (
     <>
-      {open && token ? (
+      {open ? (
         <div ref={box} className="gx-fv-hash" data-testid="gen-hash">
-          {hits.length ? (
-            <div id={listId} role="listbox" aria-label="Film vocabulary" className="gx-fv-hash-list">
-              {hits.map((h, i) => (
-                <div key={`${h.row}:${h.value}`} id={`${listId}-${i}`} role="option" aria-selected={i === index} tabIndex={-1} className="gx-fv-hash-row"
-                  data-option={`${h.row}:${h.value}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(h)}
-                  onKeyDown={(e) => { if (e.key === "Enter") pick(h); }}>
-                  <span className="gx-fv-hash-chip">{h.chipLabel}</span>
-                  <span className="gx-fv-hash-name">{h.label}</span>
-                  {h.aka ? <span className="gx-fv-hash-aka">{h.aka}</span> : null}
-                </div>
-              ))}
-            </div>
-          ) : <p className="gx-fv-hash-none" role="status" data-testid="gen-hash-none">Nothing called #{token.query}</p>}
+          <div id={listId} role="listbox" aria-label="Film vocabulary" className="gx-fv-hash-list">
+            {hits.map((h, i) => (
+              <div key={`${h.row}:${h.value}`} id={`${listId}-${i}`} role="option" aria-selected={i === index} tabIndex={-1} className="gx-fv-hash-row"
+                data-option={`${h.row}:${h.value}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(h)}
+                onKeyDown={(e) => { if (e.key === "Enter") pick(h); }}>
+                <span className="gx-fv-hash-chip">{h.chipLabel}</span>
+                <span className="gx-fv-hash-name">{h.label}</span>
+                {h.aka ? <span className="gx-fv-hash-aka">{h.aka}</span> : null}
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
       <span className="sr-only" role="status">{said}</span>
@@ -368,8 +389,8 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
       onSelect: (e: { currentTarget: HTMLTextAreaElement }) => track(e.currentTarget),
       onBlur: () => setCaret(null),
       "aria-autocomplete": "list" as const,
-      "aria-controls": open && hits.length ? listId : undefined,
-      "aria-activedescendant": open && hits.length ? `${listId}-${index}` : undefined,
+      "aria-controls": open ? listId : undefined,
+      "aria-activedescendant": open && index >= 0 ? `${listId}-${index}` : undefined,
     },
     track,
   };
@@ -410,9 +431,28 @@ const MOTION: Record<string, string> = {
   truckright: "right", track: "right", lowtrack: "right", steadicam: "glide", truckleft: "left",
   pan: "panright", whippan: "panright", panleft: "panleft", tilt: "tiltup", tiltdown: "tiltdown",
   pedup: "up", peddown: "down", crane: "craneup", cranedown: "cranedown", aerial: "cranedown",
-  orbit: "orbit", arc: "orbit", bullettime: "orbit", handheld: "wave", snorricam: "wave", topdown: "top", motioncontrol: "path", oner: "path",
+  orbit: "orbit", arc: "arc", bullettime: "orbit", handheld: "wave", snorricam: "wave", topdown: "top", motioncontrol: "path", oner: "long",
   dollyzoom: "zolly", rackfocus: "focus",
 };
+/* What sets a move apart from another drawn the same way: the subject's own travel, speed, a rig, the ground. */
+function moveMark(value: string): ReactNode {
+  const acc = (d: string) => <path d={d} className="gx-fv-g-acc" />;
+  const line = (d: string) => <path d={d} className="gx-fv-g-line" />;
+  switch (value) {
+    case "followbehind": return acc(arrow(80, 36, 80, 22, 4));
+    case "chase": return <>{acc(arrow(80, 36, 80, 22, 4))}{line("M64 40h-10M64 46h-14M64 52h-10")}</>;
+    case "lead": return acc(arrow(80, 54, 80, 68, 4));
+    case "track": return acc(arrow(89, 45, 104, 45, 4));
+    case "lowtrack": return line("M24 74H136");
+    case "bullettime": return <><circle cx="58" cy="45" r="7" className="gx-fv-g-dim" /><circle cx="102" cy="45" r="7" className="gx-fv-g-dim" /></>;
+    case "snorricam": return <>{line("M80 53V74")}<rect x="74" y="72" width="12" height="7" rx="2" className="gx-fv-g-cam" /></>;
+    case "fpv": return <>{acc("M72 58L88 68M88 58L72 68")}{[[72, 58], [88, 58], [72, 68], [88, 68]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="3" className="gx-fv-g-acc" />)}</>;
+    case "crash": return line("M34 18l8 5M126 18l-8 5M34 72l8-5M126 72l-8-5");
+    case "whippan": return line("M44 37Q80 21 116 37M44 44Q80 28 116 44");
+    case "aerial": return <path d="M24 70L58 64L98 70L136 63V76H24Z" className="gx-fv-g-ground" />;
+    default: return null;
+  }
+}
 type Palette = [sky: string, horizon: string, sun: string, hill: string, near: string, overlay?: "grain" | "scan"];
 const LOOK: Record<string, Palette> = {
   clean: ["#5F9ED6", "#D3E6F4", "#FFF4CC", "#3E6B45", "#274530"],
@@ -498,8 +538,11 @@ function glyphBody(row: string, value: string, id: string): ReactNode {
       {overlay === "scan" ? <path d={Array.from({ length: 30 }, (_, i) => `M0 ${i * 3 + 1}H160`).join("")} className="gx-fv-g-scan" /> : null}
     </>;
   }
-  /* A move or technique with no loop published: the frame, and the move drawn on it. */
-  const kind = MOTION[value] ?? "static";
+  /* A move or technique with no loop published: the frame, the move drawn on it, and what sets it apart. */
+  return <>{moveBody(MOTION[value] ?? "static")}{moveMark(value)}</>;
+}
+
+function moveBody(kind: string): ReactNode {
   const frame = <rect x="22" y="12" width="116" height="66" rx="5" className="gx-fv-g-frame" />;
   const subject = <circle cx="80" cy="45" r="7" className="gx-fv-g-fig" />;
   const d = (path: string) => <path d={path} className="gx-fv-g-acc" />;
@@ -521,9 +564,11 @@ function glyphBody(row: string, value: string, id: string): ReactNode {
     case "craneup": return <>{frame}{subject}{d(`M44 68Q52 30 104 22${head(96, 22, 104, 22)}`)}</>;
     case "cranedown": return <>{frame}{subject}{d(`M44 22Q52 60 104 68${head(96, 68, 104, 68)}`)}</>;
     case "orbit": return <>{frame}{subject}<ellipse cx="80" cy="45" rx="44" ry="14" className="gx-fv-g-acc" strokeDasharray="4 4" />{d(arrow(112, 55, 124, 49))}</>;
+    case "arc": return <>{frame}{subject}{d(`M38 45A42 14 0 0 0 122 45${head(117, 53, 122, 45)}`)}</>;
     case "wave": return <>{frame}{subject}{d("M34 64q8-8 16 0t16 0t16 0t16 0t16 0t14 0")}</>;
     case "top": return <>{frame}<circle cx="80" cy="45" r="22" className="gx-fv-g-acc" /><circle cx="80" cy="45" r="12" className="gx-fv-g-acc" />{subject}</>;
     case "path": return <>{frame}<path d="M32 66C56 20 92 70 128 24" className="gx-fv-g-acc" strokeDasharray="5 4" />{[[32, 66], [80, 45], [128, 24]].map(([x, y]) => <circle key={x} cx={x} cy={y} r="3.5" className="gx-fv-g-accfill" />)}</>;
+    case "long": return <>{frame}{subject}{d(`M28 68C40 30 60 70 76 56S112 20 132 30${head(124, 27, 132, 30)}`)}</>;
     case "zolly": return <>{frame}{subject}{d([arrow(32, 45, 58, 45), arrow(128, 45, 102, 45)].join(""))}<rect x="46" y="26" width="68" height="38" rx="3" className="gx-fv-g-frame" strokeDasharray="3 3" /></>;
     case "focus": return <>{frame}<circle cx="58" cy="50" r="14" className="gx-fv-g-blur" /><circle cx="104" cy="40" r="11" className="gx-fv-g-fig" />{d(arrow(70, 40, 90, 40))}</>;
     default: return <>{frame}<path d="M80 30V60M65 45H95" className="gx-fv-g-line" /><path d="M80 78L66 90M80 78L94 90M80 78V90" className="gx-fv-g-line" /></>;

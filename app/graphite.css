@@ -253,7 +253,7 @@
 .gx-recipe-head .gx-eyebrow { color: var(--gx-accent-text); flex: none; }
 .gx-recipe-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-recipe-chips, .gx-recipe-why { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.gx-recipe-chips li { max-width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text); background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-recipe-chips li { max-width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; display: block; line-height: 22px; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text); background: var(--gx-input); border: 1px solid var(--gx-hair); }
 .gx-recipe-chips li[data-state="changed"] { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .4); }
 .gx-recipe-chips li[data-state="reading"] { color: var(--gx-text-3); animation: gx-pulse 1.6s ease-in-out infinite; }
 .gx-recipe-why { flex-direction: column; gap: 2px; font-size: 12px; color: var(--gx-text-2); }
@@ -280,7 +280,7 @@
 .gx-fv-chip { min-width: 0; min-height: 40px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 4px 10px; border-radius: 6px; text-align: left; background: var(--gx-input); border: 1px solid var(--gx-hair); transition: background .15s, border-color .15s; }
 .gx-fv-chip:hover { background: var(--gx-input-hover); }
 .gx-fv-chip:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
-.gx-fv-chip-label { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-text-3); line-height: 1.2; }
+.gx-fv-chip-label { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-text-2); line-height: 1.2; }
 .gx-fv-chip-value { max-width: 100%; font-size: 12.5px; font-weight: 500; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
 .gx-fv-chip[data-set] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
 .gx-fv-chip[data-set] .gx-fv-chip-value { color: var(--gx-accent-text); font-weight: 600; }
@@ -293,10 +293,9 @@
 .gx-fv-hash-row { display: flex; align-items: baseline; gap: 8px; min-height: 36px; padding: 8px 10px; border-radius: 6px; cursor: pointer; min-width: 0; }
 .gx-fv-hash-row[aria-selected="true"], .gx-fv-hash-row:hover { background: var(--gx-input); }
 .gx-fv-hash-row[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--gx-accent); }
-.gx-fv-hash-chip { flex: none; width: 58px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--gx-text-3); }
+.gx-fv-hash-chip { flex: none; width: 58px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--gx-text-2); }
 .gx-fv-hash-name { flex: none; font-size: 13px; font-weight: 600; }
 .gx-fv-hash-aka { min-width: 0; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-fv-hash-none { margin: 0; padding: 10px 12px; font-size: 12.5px; color: var(--gx-text-2); }
 /* The grid a chip opens: every entry with its loop (or a drawing of it), its name and its other name. */
 /* Two classes: the plain .gx-sheet rules come later in this file, and its 100% width is cyclic in the veil's grid. */
 .gx-sheet.gx-sheet--vocab { width: min(760px, calc(100vw - 32px)); max-height: 78vh; min-width: 0; }
@@ -365,8 +364,26 @@
   .gx .gx-fv-tile { border-radius: 16px; padding: 6px 6px 8px; }
   .gx .gx-fv-media { border-radius: 11px; }
   .gx-sheet--vocab .gx-sheet-head .gx-panel-title { flex: none; }
+  /* Title, value and Close keep their row; the loops note takes its own line under them. */
+  .gx-sheet--vocab .gx-fv-note { order: 1; flex-basis: 100%; }
+  .gx-sheet--vocab .gx-sheet-find { order: 2; }
+  /* A chip brought back into view after its grid closes sits clear of the sticky Generate and the tab bar. */
+  .gx-fv-chip { scroll-margin-bottom: 184px; }
 }
 @media (min-width: 500px) and (max-width: 767px) { .gx-fv-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* A narrow phone: two chips to a row, so each value has room, and a long one takes a second line rather than an ellipsis. */
+@media (max-width: 400px) {
+  .gx-fv-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gx-fv-chip-value { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+}
+/* A phone on its side: the grid takes the screen's height under a tight head, as the model sheet does. */
+@media (max-height: 500px) and (min-width: 768px) {
+  .gx-veil:has(> .gx-sheet--vocab) { padding-top: 12px; padding-bottom: 12px; }
+  .gx-sheet.gx-sheet--vocab { max-height: calc(100dvh - 24px); }
+  .gx-sheet--vocab .gx-sheet-head { padding: 8px 14px; gap: 8px; }
+  /* Gen's words and its # list both fit under the page head: the box starts at three lines (it still stretches). */
+  .gx-gen-card .gx-textarea { height: 88px; min-height: 88px; }
+}
 @media (prefers-reduced-motion: reduce) { .gx-fv-media[data-preview="loading"]::after, .gx-fv-hash { animation: none; } }
 .gx-insp-why { flex-basis: 100%; margin: 0; }
 .gx-model { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-height: 48px; }

@@ -1727,6 +1727,9 @@ export async function executeGenerationAdmission(
     const ts = now();
     const hasVideoInput = references.some((r) => r.kind === "video");
     const shotSpec = shotSpecOf(body.shotSpec);
+    /* The words as they came, whenever what renders differs from them (a camera move chosen for an Auto
+       camera, the platform's rules), so Recreate hands back the person's words and never the server's. */
+    if (rawPrompt === undefined && finalPrompt !== prompt) rawPrompt = prompt;
 
     const storedParams = {
       ...params,

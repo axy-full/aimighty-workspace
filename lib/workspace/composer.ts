@@ -1,5 +1,6 @@
 import { displayModelName } from "../models";
 import { audioTaskAvailable, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
+import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -486,6 +487,8 @@ export function composerBlock(input: {
   capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
+  /** The words as sent: with Gen's film vocabulary written in, they can run past what the connected account takes. */
+  sentPrompt?: string;
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
@@ -499,6 +502,8 @@ export function composerBlock(input: {
   if (input.catalogue.loading && !model) return READING_MODELS;
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
   if (!state.prompt.trim()) return "Write what to generate.";
+  if (state.billing === "connected" && (input.sentPrompt?.length ?? 0) > PROMPT_LIMIT)
+    return `With the setup written in, the words run past ${PROMPT_LIMIT.toLocaleString("en-US")} characters. Shorten them or set fewer chips.`;
   if (model.audioTask === "speech" && !state.voiceId) return "Choose a voice.";
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
