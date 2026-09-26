@@ -150,3 +150,70 @@
 .pxw .pxw-team[data-mode="live"] .pxw-team-dot { background: #30D158; box-shadow: 0 0 0 3px rgba(48, 209, 88, .18); }
 .pxw .pxw-team-peer { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); color: var(--pxw-text, #fff); }
 .pxw .pxw-team-peer i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; }
+
+/* ── Phones and touch (the Suites are the site on every device) ──────────
+   The shot list stacks instead of forcing the design's 800px table, and the
+   list, the graph and the shot Inspector keep the thumb's floors: nothing
+   under 12px, no target under 44×44. */
+@media (max-width: 767px) {
+  .pxw .pxw-rig-list { min-width: 0; padding: 12px 12px 24px; }
+  .pxw .pxw-rig-head { display: none; }
+  /* # and thumb on the left; name and status, then look, engine and length under it. */
+  .pxw .pxw-rig-row { display: grid; grid-template-columns: 22px 58px minmax(0, 1fr) auto auto; grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px; align-items: center; text-align: left; }
+  .pxw .pxw-rig-row > .pxw-rig-num { grid-column: 1; grid-row: 1 / span 2; }
+  .pxw .pxw-rig-row > .pxw-rig-thumb { grid-column: 2; grid-row: 1 / span 2; }
+  .pxw .pxw-rig-row > .pxw-rig-shot { grid-column: 3 / span 2; grid-row: 1; width: auto; min-width: 0; }
+  .pxw .pxw-rig-row > .pxw-rig-status { grid-column: 5; grid-row: 1; width: auto; }
+  .pxw .pxw-rig-row > .pxw-rig-look { grid-column: 3; grid-row: 2; width: auto; min-width: 0; }
+  .pxw .pxw-rig-row > .pxw-rig-engine { grid-column: 4; grid-row: 2; width: auto; }
+  .pxw .pxw-rig-row > .pxw-rig-dur { grid-column: 5; grid-row: 2; width: auto; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  /* The list. */
+  .pxw .pxw-rig-num,
+  .pxw .pxw-rig-role,
+  .pxw .pxw-rig-engine,
+  .pxw .pxw-rig-dur,
+  .pxw .pxw-rig-list .pxw-pill-label,
+  .pxw .pxw-rig-head [data-functional-label] { font-size: 12px; }
+  .pxw .pxw-rig-row, .pxw .pxw-rig-add { min-height: 44px; }
+
+  /* The graph: labels at the floor; each wiring port is a 44px target around its 11px dot. */
+  .pxw .pxw-graph-kicker,
+  .pxw .pxw-graph-badge,
+  .pxw .pxw-graph-readouts > span,
+  .pxw .pxw-graph-foot { font-size: 12px; }
+  .pxw .pxw-graph-node .pxw-graph-port,
+  .gx .pxw .pxw-graph-node .pxw-graph-port { width: 44px; height: 44px; margin-top: -22px; border: 16.5px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1.5px var(--pxw-hover-border); }
+  .pxw .pxw-graph-node .pxw-graph-port--in { left: -22px; }
+  .pxw .pxw-graph-node .pxw-graph-port--out { right: -22px; }
+  .pxw .pxw-graph-node .pxw-graph-port:hover,
+  .pxw .pxw-graph-node .pxw-graph-port[data-armed],
+  .gx .pxw .pxw-graph-node .pxw-graph-port:hover,
+  .gx .pxw .pxw-graph-node .pxw-graph-port[data-armed] { border-color: transparent; box-shadow: inset 0 0 0 1.5px var(--pxw-blue); }
+
+  /* The shot Inspector: the phone sheet's own floors (app/workspace-mobile.css › The Inspector sheet). */
+  .pxw [data-inspector-body="shot"] .pxw-kicker,
+  .pxw [data-inspector-body="shot"] .pxw-field-label,
+  .pxw [data-inspector-body="shot"] .pxw-pill-label,
+  .pxw [data-inspector-body="shot"] .pxw-insp-estimate-meta,
+  .pxw [data-inspector-body="shot"] .pxw-insp-output-label,
+  .pxw [data-inspector-body="shot"] .pxw-insp-owner,
+  .pxw [data-inspector-body="shot"] .pxw-insp-play,
+  .pxw [data-inspector-body="shot"] .pxw-insp-row-kind,
+  .pxw [data-inspector-body="shot"] .pxw-insp-row-v,
+  .pxw [data-inspector-body="shot"] .pxw-insp-tab-count,
+  .pxw [data-inspector-body="shot"] .pxw-insp-version-meta,
+  .pxw [data-inspector-body="shot"] .pxw-insp-version-v,
+  .pxw [data-inspector-body="shot"] small { font-size: 12px; }
+  /* No keyboard layer on a phone: the key hint is hidden rather than naming a key nothing can press. */
+  .pxw [data-inspector-body="shot"] .pxw-insp-play-key { display: none; }
+  .pxw [data-inspector-body="shot"] button,
+  .pxw [data-inspector-body="shot"] select,
+  .pxw [data-inspector-body="shot"] input { min-height: 44px; min-width: 44px; }
+  .pxw [data-inspector-body="shot"] .pxw-insp-play { padding: 0 13px; align-items: center; }
+  .pxw [data-inspector-body="shot"] .pxw-stepper-btn { width: 44px; height: 44px; }
+  .pxw [data-inspector-body="shot"] select,
+  .pxw [data-inspector-body="shot"] input,
+  .pxw [data-inspector-body="shot"] textarea { font-size: 16px; }
+}

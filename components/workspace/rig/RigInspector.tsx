@@ -12,6 +12,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
+import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import "./rig.css";
@@ -19,14 +20,16 @@ import "./rig.css";
 /** The Inspector for a selected shot (03, "Inspector"). */
 export function RigInspector() {
   const rig = useRig();
+  const { state } = useWorkspace();
   const { selected, project } = rig;
   if (!project || !selected) {
+    const load = rigLoadState({ status: rig.status, hasProject: !!project, projectId: state.projectId });
     return (
       <div data-inspector-body="shot">
         <Kicker>Output</Kicker>
         <div className="pxw-preview" style={{ marginTop: 10 }} aria-hidden="true" />
         <p className="pxw-inspector-note">
-          {rig.status === "loading" ? "Loading shots…" : project ? (rig.shots.length ? "Select a shot to see its controls." : "Add a shot to start.") : "Open a project to see its shots."}
+          {load === "loading" ? "Loading shots…" : load === "error" ? rig.error : project ? (rig.shots.length ? "Select a shot to see its controls." : "Add a shot to start.") : RIG_NO_PROJECT}
         </p>
       </div>
     );
@@ -182,6 +185,13 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   /* Notes are the notes alone; the shot's prompt has its own box above. */
   const notes = rig.selectedNode ? shotNotesOnly(rig.selectedNode) : shot.note;
   const quote = rig.quote?.state === "ready" && rig.quote.credits !== null ? formatCredits(rig.quote.credits) : null;
+  /* The Estimate is the Generate button's own figure. With references bound that is the
+     reference-inclusive live quote; the settings-only estimate would read lower than the button. */
+  const live = rig.selected?.id === shot.id ? rig.quote : null;
+  const withRefs = !!live && live.key !== shot.estimateKey;
+  const shown = live
+    ? { credits: live.state === "ready" ? live.credits : null, state: live.state, reason: live.reason }
+    : { credits: estimate.credits, state: estimate.state, reason: estimate.reason };
   const durations = model?.durations ?? [];
   const range = durations.length ? { min: Math.min(...durations), max: Math.max(...durations) } : null;
 
@@ -260,14 +270,15 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
             onClick={() => edit({ durationS: stepDuration(durations, shot.durationS, 1) })}>+</button>
         </span>
       </div>
-      <div className="pxw-insp-estimate" data-testid="shot-estimate" data-state={estimate.state}>
+      <div className="pxw-insp-estimate" data-testid="shot-estimate" data-state={shown.state} data-with-references={withRefs || undefined}>
         <div className="pxw-insp-estimate-row">
           <span>Estimate</span>
-          <span className="pxw-insp-estimate-value">{estimate.credits !== null ? formatCredits(estimate.credits) : estimate.state === "loading" ? "…" : "—"}</span>
+          <span className="pxw-insp-estimate-value">{shown.credits !== null ? formatCredits(shown.credits) : shown.state === "loading" ? "…" : "—"}</span>
         </div>
         <div className="pxw-insp-estimate-meta">
-          {estimate.state === "unavailable" && estimate.reason
-            ? estimate.reason
+          {shown.state === "unavailable" && shown.reason
+            ? shown.reason
+            : withRefs ? "With references · billed on settle"
             : estimate.tokens !== undefined ? `${formatTokens(estimate.tokens)} · billed on settle` : "Billed on settle"}
         </div>
       </div>

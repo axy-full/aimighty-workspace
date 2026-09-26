@@ -150,3 +150,85 @@ test("an edit made while the team canvas is still loading is kept, not overwritt
   await expect.poll(async () => (await canvas())?.nodes["rig-a"]?.durationS).toBe(6);
   await expect.poll(async () => (await page.request.get(`/api/workbench/projects?id=${draft.id}`, { headers }).then((r) => r.json())).project.nodes[0].durationS).toBe(6);
 });
+
+test("an edit waiting for one production is only ever sent there, and a refused edit is dropped, never sinking the next", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  const projects: Record<string, Project> = {
+    "ws-a": { ...newProject("Harbour"), id: "ws-a", productionProjectId: "prod-a", shotMappings: {}, nodes: [shot("a1", "Harbour wide", 100, 100)] },
+    "ws-b": { ...newProject("Desert"), id: "ws-b", productionProjectId: "prod-b", shotMappings: {}, nodes: [shot("b1", "Desert wide", 100, 100), shot("b2", "Desert close", 420, 100)] },
+  };
+  const revisions: Record<string, number> = { "ws-a": 1, "ws-b": 1 };
+  await page.route("**/api/workbench/projects**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      const id = new URL(request.url()).searchParams.get("id") ?? "ws-a";
+      const list = Object.values(projects).map((p) => ({ id: p.id, name: p.name, revision: revisions[p.id], updatedAt: "2026-09-18T10:00:00Z" }));
+      return route.fulfill({ json: { projects: list, productions: [], project: projects[id] ?? null, revision: revisions[id] ?? 0, shared: null } });
+    }
+    if (request.method() === "PUT") {
+      const body = request.postDataJSON() as { project: Project; revision: number };
+      const id = body.project.id;
+      if (body.revision !== revisions[id]) return route.fulfill({ status: 409, json: { error: "This project changed in another window." } });
+      revisions[id]++;
+      projects[id] = { ...body.project, productionProjectId: projects[id].productionProjectId, shotMappings: {} };
+      return route.fulfill({ json: { revision: revisions[id], productionProjectId: projects[id].productionProjectId, shotMappings: {} } });
+    }
+    return route.fulfill({ status: 400, json: { error: "Unexpected projects request in a workspace test." } });
+  });
+  await mockLibrary(page, { uploads: [], generations: [] });
+  /* The team canvas: offline on demand, and it refuses one particular edit (b1 at 6 s) every time it sees it. */
+  const sent: { productionId: string; nodes: CanvasNode[] }[] = [];
+  let offline = false;
+  let refused = 0;
+  await page.route("**/api/workbench/team-canvas**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") return route.fulfill({ json: { canvas: null, revision: 0, room: null } });
+    if (offline) return route.abort("internetdisconnected");
+    const body = request.postDataJSON() as { productionId: string; upsertNodes: CanvasNode[] };
+    if (body.upsertNodes.some((n) => n.id === "b1" && n.durationS === 6)) {
+      refused++;
+      return route.fulfill({ status: 400, json: { error: "Check the canvas edit before saving." } });
+    }
+    sent.push({ productionId: body.productionId, nodes: body.upsertNodes });
+    return route.fulfill({ json: { revision: sent.length } });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const sentTo = (pid: string, id: string) => sent.filter((s) => s.productionId === pid && s.nodes.some((n) => n.id === id));
+
+  await page.goto("/suites?suite=studio&page=rig&project=ws-a&sel=shot:a1");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour");
+  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
+  await expect.poll(() => sentTo("prod-a", "a1").length).toBeGreaterThan(0);
+
+  /* A's edit is made while the connection is down... */
+  offline = true;
+  await page.getByRole("button", { name: "Longer" }).click();
+  await expect(page.getByTestId("shot-duration")).toHaveText("6s");
+  await page.waitForTimeout(1200);
+  /* ...and the person moves to B before it gets through. */
+  await page.getByTestId("project-switcher").click();
+  await page.getByRole("option", { name: /Desert/ }).click();
+  await expect(page.getByTestId("project-name")).toHaveText("Desert");
+  offline = false;
+  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
+  /* The retry lands in A's canvas, where it was made; B's canvas never sees A's shot. */
+  await expect.poll(() => sentTo("prod-a", "a1").some((s) => s.nodes.some((n) => n.durationS === 6)), { timeout: 15_000 }).toBe(true);
+  expect(sentTo("prod-b", "a1")).toEqual([]);
+
+  /* In B, an edit the canvas refuses is dropped with a notice... */
+  await page.locator('.pxw-rig-row[data-shot-id="b1"]').click();
+  await expect(page.getByTestId("shot-duration")).toHaveText("5s");
+  await page.getByRole("button", { name: "Longer" }).click();
+  await expect.poll(() => refused).toBe(1);
+  await expect(page.getByText(/Teammates will not see your last Rig edit/)).toBeVisible();
+  /* ...and the next edit, on another shot, reaches the team on its own. */
+  await page.locator('.pxw-rig-row[data-shot-id="b2"]').click();
+  await page.getByRole("button", { name: "Longer" }).click();
+  await expect.poll(() => sentTo("prod-b", "b2").some((s) => s.nodes.some((n) => n.id === "b2" && n.durationS === 6))).toBe(true);
+  expect(refused).toBe(1);
+  expect(errors).toEqual([]);
+});
