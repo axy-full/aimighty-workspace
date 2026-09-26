@@ -1,5 +1,6 @@
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { CtxCapabilities, CtxCommand } from "./context-menu";
+import { recreateBlock, type GenPreset } from "./recipe";
 
 /**
  * Assets on every page (FINAL_SPEC §1 step 1, README › Interactions). Pure:
@@ -16,15 +17,14 @@ import type { CtxCapabilities, CtxCommand } from "./context-menu";
  */
 export type AssetRef = {
   id: string; sourceId: string; origin: "upload" | "generation"; name: string; media: "image" | "video" | "audio" | null;
-  /** Why Gen cannot make this generation again from its own inputs; null when it can. */
-  retryBlock?: string | null;
+  /** A generation Gen cannot recreate, and why (lib/shell/recipe.ts › recreateBlock). */
+  noRecreate?: string;
 };
 
 export function assetRef(entry: LibraryEntry): AssetRef {
-  return {
-    id: entry.take.id, sourceId: entry.take.sourceId, origin: entry.asset.origin, name: entry.take.name, media: entry.media,
-    ...(entry.asset.origin === "generation" ? { retryBlock: retryBlock(entry.asset.value) } : {}),
-  };
+  const ref: AssetRef = { id: entry.take.id, sourceId: entry.take.sourceId, origin: entry.asset.origin, name: entry.take.name, media: entry.media };
+  const blocked = entry.asset.origin === "generation" ? recreateBlock(entry.asset.value) : null;
+  return blocked ? { ...ref, noRecreate: blocked } : ref;
 }
 
 /** The reference role a dropped or `+`-ed asset takes in the Gen composer (per-model roles arrive in step 4). */
@@ -33,7 +33,7 @@ export function referenceRole(media: AssetRef["media"]): "Image" | "Video" | nul
 }
 
 /** What the commands are called for an asset — the prototype's labels. */
-export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Retry generation" };
+export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Recreate" };
 
 /**
  * Which commands this build carries out for an asset, and why the others
@@ -53,20 +53,23 @@ export function assetCapabilities(input: {
   if (asset) {
     if (asset.media === "image" || asset.media === "video") can["use-as-reference"] = true;
     else why["use-as-reference"] = "References are images and videos.";
-    if (asset.origin === "generation" && !asset.retryBlock) can.retry = true;
-    else why.retry = asset.retryBlock ?? "An upload was not generated; there is nothing to retry.";
+    if (asset.origin !== "generation") why.retry = NOT_GENERATED;
+    else if (asset.noRecreate) why.retry = asset.noRecreate;
+    else can.retry = true;
     if (input.otherProjects > 0) can.move = true;
     else why.move = "This workspace has no other project to move it to.";
     why.duplicate = asset.origin === "generation"
-      ? "A generation has one copy. Use Retry generation for a new take with the same inputs."
+      ? "A generation has one copy. Recreate makes a new take from the same recipe."
       : "An original has one copy. Copy it and paste it into another project to file it there too.";
   }
   if (clip && projectId) {
     if (clip.mode === "cut" || clip.asset.origin === "upload") can.paste = true;
-    else why.paste = "A generation belongs to one project: cut it to move it, or Retry generation here.";
+    else why.paste = "A generation belongs to one project: cut it to move it, or Recreate it here.";
   } else if (clip) why.paste = "Open a project to paste into.";
   return { can, why, hasClipboard: Boolean(clip), canUndo: input.canUndo };
 }
+
+export const NOT_GENERATED = "An upload was not generated; there is nothing to recreate.";
 
 /** The toasts, in the prototype's words. */
 export const SAY = {
@@ -79,123 +82,12 @@ export const SAY = {
     : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
-  retry: (name: string, kept: RetryScope = "same inputs") => `Retry ${name} — ${kept}, new seed. Quoted before it runs.`,
+  recreate: (name: string) => `${name}’s recipe is in Gen.`,
+  settingsOnly: (name: string) => `${name}’s model and settings are in Gen.`,
+  promptCopied: "Prompt copied",
+  copyBlocked: "This browser blocked the clipboard.",
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
-/**
- * What Gen is handed from elsewhere in the shell (lib/shell/gen-preset): a
- * Retry carries the render's own inputs — its prompt, engine, catalogue,
- * settings, identity, references and sound — priced again before anything
- * runs; Soul ID's Use in Gen carries the identity; Crew's Open in Gen only
- * the words.
- */
-export type GenPresetReference = { genId: string; role?: string } | { uploadId: string; role?: string };
-export type GenPreset = {
-  prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string;
-  /** Which catalogue the model is on; the composer switches to it before it picks the model. */
-  billing?: "workspace" | "connected";
-  /** A Soul model's trained identity (`soul_id`). */
-  soulId?: string;
-  /** Present on a Retry: the inputs replace whatever the composer held. */
-  references?: GenPresetReference[];
-  /** A Retry's ratio, resolution and length; the composer keeps only what the model offers. */
-  picks?: { ratio?: string; resolution?: string; duration?: number };
-  /** Sound only: length, instrumental, voice. */
-  sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
-};
-/** How much of a render a Retry in Gen can bring back — said on the toast and on Gen's note. */
-export type RetryScope = "same inputs" | "same inputs, frames as references" | "prompt only";
-const REFERENCES_MAX = 10;
-function presetReferences(value: unknown): GenPresetReference[] {
-  if (!Array.isArray(value)) return [];
-  const out: GenPresetReference[] = [];
-  for (const item of value) {
-    if (out.length >= REFERENCES_MAX) break;
-    if (!item || typeof item !== "object") continue;
-    const { genId, uploadId, role } = item as Record<string, unknown>;
-    const named = typeof role === "string" && role ? { role } : {};
-    if (typeof genId === "string" && genId) out.push({ genId, ...named });
-    else if (typeof uploadId === "string" && uploadId) out.push({ uploadId, ...named });
-  }
-  return out;
-}
-const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {});
-function storedPicks(stored: Record<string, unknown>, ratioKey: "ratio" | "aspect_ratio"): GenPreset["picks"] {
-  const ratio = stored[ratioKey], resolution = stored.resolution, duration = Number(stored.duration);
-  const picks = {
-    ...(typeof ratio === "string" && ratio ? { ratio } : {}),
-    ...(typeof resolution === "string" && resolution ? { resolution } : {}),
-    ...(Number.isFinite(duration) && duration > 0 ? { duration } : {}),
-  };
-  return Object.keys(picks).length ? picks : undefined;
-}
-const positive = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
-/** A sound take's length, instrumental flag and voice (as /api/audio stores them, lib/audioAdmission.ts). */
-function storedSound(stored: Record<string, unknown>): GenPreset["sound"] {
-  const lengthMs = positive(stored.lengthMs);
-  const seconds = positive(stored.durationSeconds) ?? (lengthMs ? Math.round(lengthMs / 1000) : undefined);
-  const sound = {
-    ...(seconds ? { seconds } : {}),
-    ...(typeof stored.instrumental === "boolean" ? { instrumental: stored.instrumental } : {}),
-    ...(typeof stored.voiceId === "string" && stored.voiceId ? { voiceId: stored.voiceId } : {}),
-  };
-  return Object.keys(sound).length ? sound : undefined;
-}
-
-type RetrySource = { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null; task?: string | null };
-/** Marketing Studio renders carry Business setup (products, avatars, styles) that Gen's composer has no place for. */
-const BUSINESS_MODELS = new Set(["marketing_studio_video", "marketing_studio_image", "ms_image", "marketing_studio_v2"]);
-/**
- * The tasks that work on a source clip (lib/tasks.ts TaskId, lib/dubbing.ts,
- * the audio route's voiceChange). Every other task — generate, a connected
- * generation, speech, sound, music — is a plain generation Gen composes.
- */
-const SOURCE_TASKS = new Set(["edit", "extend", "motion", "upscale", "reframe", "genjutsu", "dub", "voiceChange"]);
-/** The sound Gen's Audio tab makes itself (lib/audioAdmission.ts), retried with its own length, instrumental flag and voice. */
-const SOUND_TASKS = new Set(["speech", "sound", "music"]);
-
-/**
- * Why Gen cannot make this take again from its own inputs, or null when it
- * can. Gen composes plain generations; a take made from a source clip (an
- * edit, an extend, a dub), by a connected tool, as a dialogue or as a
- * Business ad is run again where it was made, not re-imagined here as
- * something else — Retry is blocked with this reason.
- */
-export function retryBlock(generation: RetrySource): string | null {
-  const p = generation.params ?? {};
-  if (generation.kind !== "image" && generation.kind !== "video" && generation.kind !== "audio") return "Gen makes pictures, videos and sound; this take is neither.";
-  if (p.task === "dialogue" || Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
-  if (p.sourceGenId || p.sourceUploadId || (typeof p.task === "string" && SOURCE_TASKS.has(p.task)))
-    return "This take was made from a source clip. Run that tool again from Takes.";
-  if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Gen. Run that tool again.";
-  if (BUSINESS_MODELS.has(generation.model)) return "This ad was made in Business, with its product and setup. Make it again from Ads.";
-  return null;
-}
-
-export function retryPreset(generation: RetrySource): GenPreset & { kept: RetryScope } {
-  const params = generation.params ?? {};
-  const raw = typeof params.rawPrompt === "string" ? params.rawPrompt : "";
-  const prompt = raw || generation.prompt;
-  const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
-  const title = generation.title || generation.prompt.slice(0, 40);
-  /* A catalogue render (lib/higgsfield-consumer/original-identity) keeps its settings, identity and media under params. */
-  const connected = params.task === "connected-generation" && (params.workflow === undefined || params.workflow === "generation");
-  const task = params.task ?? generation.task ?? undefined;
-  const workspace = !connected && (task === undefined || task === "generate" || (type === "audio" && typeof task === "string" && SOUND_TASKS.has(task)));
-  /* Made by another tool (an edit, extend or upscale of a clip, an Ads template, a voice tool, Shorts,
-     Viral): Gen takes its words and clears the well, and says it could not bring back the rest. */
-  if (!connected && !workspace) return { prompt, type, references: [], kept: "prompt only", note: `Retry · ${title} · prompt only` };
-  const settings = connected ? record(params.settings) : params;
-  const soulId = connected && typeof settings.soul_id === "string" && settings.soul_id ? settings.soul_id : undefined;
-  const references = presetReferences(params.references);
-  const picks = storedPicks(settings, connected ? "aspect_ratio" : "ratio");
-  const sound = type === "audio" ? storedSound(params) : undefined;
-  /* This workspace's composer sets a reference's role from its kind, so a first or last frame comes back as a plain reference. */
-  const kept: RetryScope = !connected && references.some((r) => r.role === "first_frame" || r.role === "last_frame") ? "same inputs, frames as references" : "same inputs";
-  return {
-    prompt, model: generation.model, type, billing: connected ? "connected" : "workspace",
-    ...(soulId ? { soulId } : {}), references, ...(picks ? { picks } : {}), ...(sound ? { sound } : {}), kept,
-    note: `Retry · ${title} · ${kept} · new seed`,
-  };
-}
+/* What Gen is handed from elsewhere in the shell, through its one letterbox (lib/shell/gen-preset.ts). */
+export type { GenPreset };

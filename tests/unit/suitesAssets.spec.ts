@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { ASSET_LABEL, SAY, assetCapabilities, referenceRole, retryBlock, retryPreset, type AssetRef, type GenPreset } from "../../lib/shell/assets";
+import { ASSET_LABEL, SAY, assetCapabilities, referenceRole, type AssetRef, type GenPreset } from "../../lib/shell/assets";
 import { readGenPresets, sendGenPreset } from "../../lib/shell/gen-preset";
+import { recreateBlock, recreatePreset, type RecipeSource } from "../../lib/shell/recipe";
 import { ctxItems } from "../../lib/shell/context-menu";
 
 const gen: AssetRef = { id: "generation:g1", sourceId: "g1", origin: "generation", name: "Wide on the water", media: "video" };
@@ -18,14 +19,18 @@ test("a reference is an image or a video; the toast names the role", () => {
 test("every command is offered; the ones this asset cannot do say exactly why", () => {
   const caps = assetCapabilities({ ...base, asset: gen });
   expect(caps.can).toMatchObject({ copy: true, cut: true, delete: true, "use-as-reference": true, retry: true, move: true, "open-in-inspector": true });
-  expect(caps.why.duplicate).toContain("Retry generation");
+  expect(caps.why.duplicate).toContain("Recreate");
   const items = ctxItems({ kind: "asset", id: gen.id }, caps);
   const disabled = items.filter((i) => !i.sep && i.disabled).map((i) => (i.sep ? "" : `${i.command}: ${i.reason}`));
-  expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Use Retry generation for a new take with the same inputs.", "undo: Nothing to undo."]);
-  expect(ASSET_LABEL.retry).toBe("Retry generation");
+  expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Recreate makes a new take from the same recipe.", "undo: Nothing to undo."]);
+  expect(ASSET_LABEL.retry).toBe("Recreate");
 
   const forUpload = assetCapabilities({ ...base, asset: up, otherProjects: 0 });
-  expect(forUpload.why.retry).toContain("nothing to retry");
+  expect(forUpload.why.retry).toContain("nothing to recreate");
+  /* A take from a tool Gen does not have is blocked, and says why. */
+  const edit = assetCapabilities({ ...base, asset: { ...gen, noRecreate: "Made with a tool Gen does not have. Run it again from that tool." } });
+  expect(edit.can.retry).toBeUndefined();
+  expect(edit.why.retry).toBe("Made with a tool Gen does not have. Run it again from that tool.");
   expect(forUpload.why.move).toContain("no other project");
   expect(assetCapabilities({ ...base, asset: audio }).why["use-as-reference"]).toBe("References are images and videos.");
 });
@@ -47,31 +52,21 @@ test("delete says what really happens to each kind of asset", () => {
   expect(SAY.pasted("X", "Northline")).toBe("Pasted X into Northline");
 });
 
-test("Retry hands Gen the render's own inputs: words, engine, catalogue, settings, identity and references", () => {
-  const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox", ratio: "9:16", resolution: "1080p", duration: 10, references: [{ genId: "g7", role: "reference_image", kind: "image" }, { uploadId: "u3", role: "reference_video", kind: "video" }, { url: "https://elsewhere.invalid/x.png" }] }, title: "Fox" });
-  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", references: [{ genId: "g7", role: "reference_image" }, { uploadId: "u3", role: "reference_video" }], picks: { ratio: "9:16", resolution: "1080p", duration: 10 }, kept: "same inputs", note: "Retry · Fox · same inputs · new seed" });
-  expect(SAY.retry("Fox", preset.kept)).toBe("Retry Fox — same inputs, new seed. Quoted before it runs.");
-  expect(retryPreset({ prompt: "p", model: "m", kind: "model" }).type).toBeUndefined();
-  expect(retryPreset({ prompt: "p", model: "m", kind: "image" }).references).toEqual([]);
-  expect(retryPreset({ prompt: "p", model: "m", kind: "image" }).picks).toBeUndefined();
-  /* A catalogue render keeps its catalogue, its settings and its Soul ID (lib/higgsfield-consumer/original-identity). */
-  const soul = retryPreset({ prompt: "Mira at dusk", model: "soul_2", kind: "image", params: { task: "connected-generation", outputType: "image", settings: { aspect_ratio: "3:4", resolution: "2k", soul_id: "soul_ready" }, references: [{ uploadId: "u9", role: "image", kind: "image" }] } });
-  expect(soul).toMatchObject({ billing: "connected", model: "soul_2", soulId: "soul_ready", references: [{ uploadId: "u9", role: "image" }], picks: { ratio: "3:4", resolution: "2k" }, kept: "same inputs" });
-  /* This workspace's composer gives a reference its role from its kind: a render's frames come back as references, and it says so. */
-  const framed = retryPreset({ prompt: "p", model: "kling-3-pro", kind: "video", params: { references: [{ genId: "g1", role: "first_frame", kind: "image" }, { genId: "g2", role: "last_frame", kind: "image" }] }, title: "Door" });
-  expect(framed.kept).toBe("same inputs, frames as references");
-  expect(framed.note).toBe("Retry · Door · same inputs, frames as references · new seed");
-  /* Made by another tool (a template, a voice tool, Viral, an edit or upscale of a clip): Gen takes the words only, clears the well, and says so. */
-  for (const params of [{ task: "connected-generation", workflow: "marketing-template" }, { task: "connected-generation", workflow: "voice-tool" }, { task: "genjutsu" }, { task: "upscale", sourceGenId: "g0" }, { task: "edit", references: [{ genId: "g0" }] }]) {
-    const other = retryPreset({ prompt: "p", model: "marketing_studio_v2", kind: "image", params, title: "Poster" });
-    expect(other).toEqual({ prompt: "p", type: "image", references: [], kept: "prompt only", note: "Retry · Poster · prompt only" });
-  }
-  expect(SAY.retry("Poster", "prompt only")).toBe("Retry Poster — prompt only, new seed. Quoted before it runs.");
-  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: { task: "generate" } }).billing).toBe("workspace");
-  /* The render's own task column says the same where params do not. */
-  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: {}, task: "generate" }).kept).toBe("same inputs");
-  expect(retryPreset({ prompt: "p", model: "topaz", kind: "video", params: {}, task: "upscale" }).kept).toBe("prompt only");
-  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: { references: Array.from({ length: 14 }, (_, i) => ({ genId: `g${i}` })) } }).references).toHaveLength(10);
+/* A take as the library holds it: a plain Studio generation unless the fields say otherwise. */
+const take = (fields: Partial<RecipeSource> & Pick<RecipeSource, "prompt" | "model" | "kind" | "params">): RecipeSource => ({ id: "g1", provider: "byteplus", task: "generate", ...fields });
+const blockOf = (g: Pick<RecipeSource, "model" | "kind" | "params">) => recreateBlock({ task: "generate", ...g });
+
+test("Recreate hands Gen the render's recipe, through Gen's one letterbox", () => {
+  const preset = recreatePreset({ id: "g1", prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox" }, provider: "byteplus", task: "generate" }, { name: "Fox" });
+  expect(preset).toMatchObject({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", from: { id: "g1", name: "Fox" }, note: "Recreate · Fox" });
+  expect(recreatePreset({ id: "g2", prompt: "p", model: "m", kind: "model", params: {}, provider: "fal", task: "generate" }, { name: "Mesh" }).type).toBeUndefined();
+  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Gen.");
+  /* A recipe travels the same letterbox as Crew's words and Soul ID's identity, and arrives whole. */
+  const got: GenPreset[] = [];
+  const stop = readGenPresets((p) => got.push(p));
+  sendGenPreset(preset);
+  expect(got).toEqual([preset]);
+  stop();
 });
 
 test("a preset reaches a mounted Gen at once, and waits (the newest only) for one that is not", () => {
@@ -89,54 +84,51 @@ test("a preset reaches a mounted Gen at once, and waits (the newest only) for on
   expect(later).toEqual([]);
 });
 
-test("Retry carries every input the render was made with: settings, references, the wallet, the sound", () => {
-  /* A workspace render: its ratio, resolution, length and references (Gen places them itself, so its frames come back as references and it says so). */
-  const workspace = retryPreset({
-    prompt: "harbour at dawn", model: "seedance-2.5", kind: "video", title: "Harbour",
+test("Recreate carries every input the render was made with: settings, references, the wallet, the sound", () => {
+  /* A workspace render: its ratio, resolution, length and references, in order and with their roles. */
+  const workspace = recreatePreset(take({
+    prompt: "harbour at dawn", model: "seedance-2.5", kind: "video",
     params: { ratio: "9:16", resolution: "1080p", duration: 8, references: [{ genId: "g7", role: "first_frame", kind: "image" }, { uploadId: "u3", role: "reference_image", kind: "image" }] },
-  });
+  }), { name: "Harbour" });
   expect(workspace).toMatchObject({
     billing: "workspace", picks: { ratio: "9:16", resolution: "1080p", duration: 8 },
-    references: [{ genId: "g7", role: "first_frame" }, { uploadId: "u3", role: "reference_image" }], kept: "same inputs, frames as references",
+    references: [{ origin: "generation", id: "g7", role: "first_frame", kind: "image" }, { origin: "upload", id: "u3", role: "reference_image", kind: "image" }],
   });
   expect(workspace).not.toHaveProperty("sound");
-  /* A connected-account render is retried on the connected account, with each reference's role. */
-  const connected = retryPreset({
-    prompt: "neon alley", model: "kling_3_0", kind: "video",
+  /* A connected-account render is recreated on the connected account, with each reference's role. */
+  const connected = recreatePreset(take({
+    prompt: "neon alley", model: "kling_3_0", kind: "video", provider: "higgsfield",
     params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", settings: { aspect_ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ uploadId: "u9", role: "start_image", kind: "image" }] },
-  });
-  expect(connected).toMatchObject({ billing: "connected", model: "kling_3_0", picks: { ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ uploadId: "u9", role: "start_image" }] });
+  }), { name: "Alley" });
+  expect(connected).toMatchObject({ billing: "connected", model: "kling_3_0", picks: { ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ origin: "upload", id: "u9", role: "start_image", kind: "image" }] });
   /* Sound: length, instrumental, voice. */
-  expect(retryPreset({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { lengthMs: 45_000, instrumental: true } }).sound).toEqual({ seconds: 45, instrumental: true });
-  expect(retryPreset({ prompt: "door slam", model: "eleven_sfx", kind: "audio", params: { durationSeconds: 3 } }).sound).toEqual({ seconds: 3 });
-  /* Gen's own sound tasks are the same inputs, not "prompt only". */
-  expect(retryPreset({ prompt: "Hello there", model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ" }, title: "Hello" })).toMatchObject({ kept: "same inputs", sound: { voiceId: "abc123XYZ" }, note: "Retry · Hello · same inputs · new seed" });
+  expect(recreatePreset(take({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } }), { name: "Rain" }).sound).toEqual({ seconds: 45, instrumental: true });
+  expect(recreatePreset(take({ prompt: "door slam", model: "eleven_sfx", kind: "audio", params: { task: "sound", durationSeconds: 3 } }), { name: "Door" }).sound).toEqual({ seconds: 3 });
+  expect(recreatePreset(take({ prompt: "Hello there", model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ" } }), { name: "Hello" })).toMatchObject({ type: "audio", sound: { voiceId: "abc123XYZ" }, note: "Recreate · Hello" });
 });
 
-test("a take Gen cannot make again from its own inputs says why, and Retry is blocked with that reason", () => {
-  expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: {} })).toBeNull();
-  expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: { task: "extend", sourceGenId: "g1" } })).toContain("source clip");
-  expect(retryBlock({ prompt: "", model: "eleven_sts", kind: "audio", params: { sourceUploadId: "u1" } })).toContain("source clip");
-  expect(retryBlock({ prompt: "p", model: "marketing_studio_v2", kind: "image", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", workflow: "marketing-template" } })).toContain("connected tool");
-  expect(retryBlock({ prompt: "p", model: "marketing_studio_video", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toContain("Business");
-  expect(retryBlock({ prompt: "p", model: "m", kind: "model", params: {} })).not.toBeNull();
+test("a take Gen cannot make again from its own inputs says why, and Recreate is blocked with that reason", () => {
+  expect(blockOf({ model: "seedance-2.5", kind: "video", params: {} })).toBeNull();
+  expect(blockOf({ model: "seedance-2.5", kind: "video", params: { task: "extend", sourceGenId: "g1" } })).toContain("source clip");
+  expect(blockOf({ model: "eleven_sts", kind: "audio", params: { sourceUploadId: "u1" } })).toContain("source clip");
+  expect(blockOf({ model: "marketing_studio_v2", kind: "image", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", workflow: "marketing-template" } })).toContain("connected tool");
+  expect(blockOf({ model: "marketing_studio_video", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toContain("Business");
+  expect(blockOf({ model: "m", kind: "model", params: {} })).not.toBeNull();
   /* Audio takes as /api/audio stores them (lib/audioAdmission.ts): params.task is always set. */
-  expect(retryBlock({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } })).toBeNull();
-  expect(retryBlock({ prompt: "door slam", model: "eleven_sfx", kind: "audio", params: { task: "sound", durationSeconds: 3, loop: false } })).toBeNull();
-  expect(retryBlock({ prompt: "Hello there", model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ", settings: {} } })).toBeNull();
-  expect(retryBlock({ prompt: "", model: "eleven_v3", kind: "audio", params: { task: "dialogue", lines: [{ text: "Hi", voiceId: "v1" }] } })).toContain("dialogue");
-  expect(retryBlock({ prompt: "", model: "eleven_sts", kind: "audio", params: { task: "voiceChange", voiceId: "v1", sourceGenId: "g2" } })).toContain("source clip");
-  expect(retryBlock({ prompt: "", model: "dub", kind: "audio", params: { task: "dub", sourceKind: "generation", sourceId: "g3" } })).toContain("source clip");
+  expect(blockOf({ model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } })).toBeNull();
+  expect(blockOf({ model: "eleven_sfx", kind: "audio", params: { task: "sound", durationSeconds: 3, loop: false } })).toBeNull();
+  expect(blockOf({ model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ", settings: {} } })).toBeNull();
+  expect(blockOf({ model: "eleven_v3", kind: "audio", params: { task: "dialogue", lines: [{ text: "Hi", voiceId: "v1" }] } })).toBe("A dialogue is made in Edit & Sound, not Gen.");
+  expect(blockOf({ model: "eleven_sts", kind: "audio", params: { task: "voiceChange", voiceId: "v1", sourceGenId: "g2" } })).toContain("source clip");
+  expect(blockOf({ model: "dub", kind: "audio", params: { task: "dub", sourceKind: "generation", sourceId: "g3" } })).toContain("source clip");
   for (const task of ["edit", "motion", "upscale", "reframe", "genjutsu"])
-    expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: { task } })).toContain("source clip");
-  expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: { task: "generate" } })).toBeNull();
-  expect(retryBlock({ prompt: "p", model: "kling_3_0", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toBeNull();
-  /* The music preset is reachable from a real take: Gen gets its length and instrumental flag. */
-  expect(retryPreset({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } })).toMatchObject({ type: "audio", model: "eleven_music", sound: { seconds: 45, instrumental: true } });
-  const edited: AssetRef = { ...gen, retryBlock: "This take was made from a source clip. Run that tool again from Takes." };
+    expect(blockOf({ model: "seedance-2.5", kind: "video", params: { task } })).toBe("This take was made from a source clip. Run that tool again from Takes.");
+  expect(blockOf({ model: "seedance-2.5", kind: "video", params: { task: "generate" } })).toBeNull();
+  expect(blockOf({ model: "kling_3_0", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toBeNull();
+  const edited: AssetRef = { ...gen, noRecreate: "This take was made from a source clip. Run that tool again from Takes." };
   const caps = assetCapabilities({ ...base, asset: edited });
   expect(caps.can.retry).toBeUndefined();
-  expect(caps.why.retry).toBe(edited.retryBlock);
+  expect(caps.why.retry).toBe(edited.noRecreate);
   /* No promise that a node can be bypassed from an asset's menu. */
   expect(caps.why.bypass).toBeUndefined();
 });

@@ -51,7 +51,7 @@ test("⌫ and ⌘D act on a tile clicked in the Library even when the browser le
   await tile.click();
   expect(await onPage(page)).toBe("BODY");
   await page.keyboard.press(`${mod}+d`);
-  await expect(page.getByTestId("toast")).toHaveText("A generation has one copy. Use Retry generation for a new take with the same inputs.");
+  await expect(page.getByTestId("toast")).toHaveText("A generation has one copy. Recreate makes a new take from the same recipe.");
   await page.keyboard.press("Backspace");
   await expect.poll(() => trashed).toEqual([{ trashed: true }]);
   /* The undo entry is pushed once the trash lands; its toast says so. */

@@ -5,10 +5,32 @@ import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { SAY, assetRef, referenceRole, retryBlock, retryPreset, type AssetRef } from "./assets";
+import { NOT_GENERATED, SAY, assetRef, referenceRole, type AssetRef } from "./assets";
 import { sendGenPreset } from "./gen-preset";
+import { recreateBlock, recreatePreset } from "./recipe";
 import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
+
+/**
+ * Recreate (and Use settings only): the take's recipe goes to Gen through its
+ * letterbox (lib/shell/gen-preset.ts), so a Gen that is already open takes it
+ * at once and one that is not takes it when it opens. Nothing is quoted or
+ * sent here; Gen prices it on the button. The right-click menu, ⌘R and the
+ * Inspector all come through this one function.
+ */
+export function useRecreate() {
+  const shell = useShell();
+  const ws = useWorkspace();
+  return useCallback((entry: LibraryEntry, settingsOnly = false) => {
+    if (entry.asset.origin !== "generation") { ws.toast(NOT_GENERATED); return; }
+    const blocked = recreateBlock(entry.asset.value);
+    if (blocked) { ws.toast(blocked); return; }
+    sendGenPreset(recreatePreset(entry.asset.value, { name: entry.take.name, settingsOnly }));
+    /* Already in Gen: only the overlays close, so the composer is what the person sees. */
+    if (shell.view === "gen") shell.closePanels(); else shell.goGen();
+    ws.toast(settingsOnly ? SAY.settingsOnly(entry.take.name) : SAY.recreate(entry.take.name));
+  }, [shell, ws]);
+}
 
 /**
  * What the right-click commands, the Library `+` and a drop actually do to
@@ -128,18 +150,11 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     ws.toast(SAY.referenced(entry.take.name, role));
   }, [find, shell, ws]);
 
+  const recreate = useRecreate();
   const retry = useCallback((id: string) => {
     const entry = find(id);
-    if (!entry) return;
-    if (entry.asset.origin !== "generation") { ws.toast("An upload was not generated; there is nothing to retry."); return; }
-    const blocked = retryBlock(entry.asset.value);
-    if (blocked) { ws.toast(blocked); return; }
-    /* Gen applies it at once when it is on screen, or when it opens. */
-    const preset = retryPreset(entry.asset.value);
-    sendGenPreset(preset);
-    if (shell.view !== "gen") shell.goGen();
-    ws.toast(SAY.retry(entry.take.name, preset.kept));
-  }, [find, shell, ws]);
+    if (entry) recreate(entry);
+  }, [find, recreate]);
 
   /* A render dropped on a Rig row is filed on that shot (its next version); an upload cannot be. */
   const fileOnShot = useCallback(async (id: string, shot: { nodeId: string; name: string }) => {

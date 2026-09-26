@@ -5,8 +5,8 @@ import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * The Suites shell, audited (September 2026): a Retry pressed on Gen lands at
- * once with its references and never replays later; the phone's Assets tab
+ * The Suites shell, audited (September 2026): a Recreate pressed on Gen lands
+ * at once with its references and never replays later; the phone's Assets tab
  * works from More; "Run stage" opens the page's Atomik plan with its reason or
  * its gate; the Library's Tools lead somewhere or are not offered; the phone
  * Studio grid counts the project as saved now; an audio take opens its
@@ -40,19 +40,20 @@ async function open(page: Page, path: string, store = { current: fixture() }) {
   return errors;
 }
 
-test("Retry pressed on Gen lands at once, with the take's own references, and nothing replays when Gen opens again", async ({ page }, info) => {
+test("Recreate pressed on Gen lands at once, with the take's own references, and nothing replays when Gen opens again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites?view=gen");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
-  await page.getByTestId("asset-inspector").getByRole("button", { name: "Retry generation" }).click();
-  await expect(page.getByTestId("toast")).toContainText("Retry Wide on the water");
-  if (!WIDE.includes(info.project.name)) await page.getByTestId("close-inspector").click();
+  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Gen.");
+  /* Already in Gen, the Inspector's overlay closes by itself so the composer is what is seen. */
+  if (!WIDE.includes(info.project.name)) await expect(page.getByTestId("close-inspector")).toBeHidden();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Wide on the water · same inputs · new seed");
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
   await expect(page.getByTestId("gen-well")).toContainText("harbour-plate.webp");
 
-  /* Leave and come back: the composer starts as it should, not with the old retry laid over it. */
+  /* Leave and come back: the composer starts as it should, not with the old recipe laid over it. */
   await page.getByTestId("gen-prompt").fill("my own words");
   const suites = page.getByRole("tablist", { name: "Suites" });
   await suites.getByRole("tab", { name: "Studio" }).click();
@@ -60,6 +61,7 @@ test("Retry pressed on Gen lands at once, with the take's own references, and no
   await suites.getByRole("tab", { name: "Gen" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).not.toHaveValue("wide on the water, raw");
+  await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
   await expect(page.getByTestId("gen-preset-note")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

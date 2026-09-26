@@ -115,6 +115,22 @@ export const INITIAL_COMPOSER: ComposerState = {
 
 export const chosenKey = (billing: BillingSource, type: ComposerType) => `${billing}:${type}`;
 
+/**
+ * A take's recipe applied in one step (Recreate, lib/shell/recipe.ts): the
+ * output, the credits, the model and its settings replace the composer's; the
+ * words and references do too unless they are left out (Use settings only).
+ * One take — a recreate is one new take, priced again on the button.
+ */
+export type ComposerRecipe = {
+  type: ComposerType;
+  billing: BillingSource;
+  model?: string;
+  picks: ComposerPicks;
+  prompt?: string;
+  references?: ComposerReference[];
+  sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
+};
+
 export type ComposerAction =
   | { type: "type"; value: ComposerType }
   | { type: "billing"; value: BillingSource }
@@ -131,6 +147,9 @@ export type ComposerAction =
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
+  | { type: "recipe"; value: ComposerRecipe }
+  /** Undo of a recipe: the composer exactly as it was. */
+  | { type: "restore"; value: ComposerState }
   | { type: "reset" };
 
 const SOUND_SECONDS = 10;
@@ -203,6 +222,27 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, references: state.references.filter((r) => r.key !== action.key), notice: null };
     case "notice":
       return { ...state, notice: action.value };
+    case "recipe": {
+      const recipe = action.value;
+      const sound = recipe.type === "audio" ? recipe.sound ?? {} : {};
+      const references = recipe.type === "audio" ? [] : recipe.references ?? state.references;
+      return {
+        ...state,
+        type: recipe.type,
+        billing: recipe.billing,
+        chosen: recipe.model ? { ...state.chosen, [chosenKey(recipe.billing, recipe.type)]: recipe.model } : state.chosen,
+        picks: { ...recipe.picks },
+        prompt: recipe.prompt === undefined ? state.prompt : recipe.prompt.slice(0, 5000),
+        references: references.slice(0, 10),
+        seconds: sound.seconds ?? (recipe.type === "audio" && state.type !== "audio" ? SOUND_SECONDS : state.seconds),
+        instrumental: sound.instrumental ?? state.instrumental,
+        voiceId: sound.voiceId ?? state.voiceId,
+        count: 1,
+        notice: null,
+      };
+    }
+    case "restore":
+      return { ...action.value, notice: null };
     case "reset":
       return { ...INITIAL_COMPOSER, billing: state.billing, chosen: state.chosen };
   }

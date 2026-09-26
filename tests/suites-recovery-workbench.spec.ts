@@ -6,7 +6,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 /**
  * The Suites shell recovers instead of sticking: Back leaves /suites after
  * the landing, a failed Library read says so with Retry, Load more reaches
- * takes past the first page, Retry refills Gen while Gen is open, a plan that
+ * takes past the first page, Recreate refills Gen while Gen is open, a plan that
  * cannot run says why (in its sheet, and under the stage strip once the sheet
  * is closed), and a failed Ads quote re-arms Generate on its own only when
  * the failure passes by itself; an idle page asks the account nothing. Every
@@ -112,39 +112,39 @@ test("the Rig's own library pages on with Load more, from the same store as the 
   expect(errors).toEqual([]);
 });
 
-test("Retry generation on a music take opens Gen on Audio with its prompt; a dialogue says where it is made", async ({ page }, info) => {
+test("Recreate on a music take opens Gen on Audio with its prompt; a dialogue says where it is made", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?view=gen", { generations: [...takes, ...sounds] });
   const gen = page.getByTestId("gen-view");
   const menu = page.getByTestId("context-menu");
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_talk']").click({ button: "right" });
-  await expect(menu.getByRole("menuitem", { name: "Retry generation" })).toBeDisabled();
-  await expect(menu.getByRole("menuitem", { name: "Retry generation" })).toHaveAttribute("title", "A dialogue is made in Edit & Sound, not Gen.");
+  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toHaveAttribute("title", "A dialogue is made in Edit & Sound, not Gen.");
   await page.keyboard.press("Escape");
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_score']").click({ button: "right" });
-  await expect(menu.getByRole("menuitem", { name: "Retry generation" })).toBeEnabled();
-  await menu.getByRole("menuitem", { name: "Retry generation" }).click();
+  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeEnabled();
+  await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("Slow strings under gulls");
   await expect(gen.getByRole("tab", { name: "Audio" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Harbour score · same inputs · new seed");
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Harbour score");
   expect(errors).toEqual([]);
 });
 
-test("Retry generation refills Gen while Gen is open, with that take's own inputs", async ({ page }, info) => {
+test("Recreate refills Gen while Gen is open, with that take's own inputs", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?view=gen");
   const gen = page.getByTestId("gen-view");
   await expect(gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_harbour']")).toBeVisible();
   const menu = page.getByTestId("context-menu");
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_harbour']").click({ button: "right" });
-  await menu.getByRole("menuitem", { name: "Retry generation" }).click();
+  await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("harbour at dawn");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Harbour at dawn · same inputs · new seed");
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Harbour at dawn");
   /* Again, from the same open Gen: the composer changes at once. */
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_alley']").click({ button: "right" });
-  await menu.getByRole("menuitem", { name: "Retry generation" }).click();
+  await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("Neon alley in the rain");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Neon alley");
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Neon alley");
   expect(await page.evaluate(() => sessionStorage.getItem("particl-gen-preset"))).toBeNull();
   expect(errors).toEqual([]);
 });

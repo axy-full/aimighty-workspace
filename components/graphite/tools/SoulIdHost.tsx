@@ -75,7 +75,7 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
   };
   const openInGen = (character: ConnectedCharacter) => {
     /* The Soul models are on the account's catalogue: Gen switches to it, then to the model, with this identity chosen. */
-    sendGenPreset({ prompt: "", type: "image", billing: "connected", model: SOUL_MODEL[character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"], soulId: character.soulId, note: `Soul ID · ${character.name}` });
+    sendGenPreset({ prompt: "", type: "image", billing: "connected", model: SOUL_MODEL[character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"], picks: { soulId: character.soulId }, note: `Soul ID · ${character.name}` });
     shell.goGen();
   };
 
