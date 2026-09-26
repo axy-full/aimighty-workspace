@@ -14,16 +14,19 @@ import {creditUsage} from "@/lib/creditUsage";
 import {creditsApply} from "@/lib/credits";
 import {requireTenant} from "@/lib/tenant";
 import { billCredits, marginKeyOf } from "@/lib/creditTerms";
+import { usageLedgerResponse } from "@/lib/usageLedger";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** The full ledger — eight aggregates over the table. Only the Usage page
- *  asks for this; the always-on chrome polls /api/usage/summary instead. */
-export const GET = withTenant(async function GET() {
+ *  asks for this; the always-on chrome polls /api/usage/summary instead.
+ *  `?rows=1` is the same ledger one job per row, paged (lib/usageLedger.ts). */
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  if (new URL(req.url).searchParams.has("rows")) return usageLedgerResponse(req, { id: got.user.id, admin: got.user.role === "admin" || got.user.owner });
   if(creditsApply(requireTenant()))return NextResponse.json(await creditUsage(),{headers:{"Cache-Control":"no-store"}});
   await ready();
   try { await syncActive(); } catch { /* report on what we have */ }
