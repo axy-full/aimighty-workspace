@@ -34,7 +34,6 @@ export default function AtomikSheet() {
   const rail = useAtomikRail();
   const { requestScope } = useSession();
   const size = useAtomikSize(true, requestScope ?? "visitor", 58);
-  const [engineMenu, setEngineMenu] = useState<{ x: number; y: number; step: Step } | null>(null);
   const seen = useRef<string | null>(null);
   const cur = a.current;
   useEffect(() => {
@@ -45,11 +44,8 @@ export default function AtomikSheet() {
   const expanded = rail.state === "expanded";
   const step: Step | null = cur.kind === "checkpoint" ? cur.step : cur.kind === "plan" ? (cur.steps.find((s) => s.status === "proposed") ?? null) : null;
   const done = cur.kind === "checkpoint" ? cur.done : cur.kind === "done" ? cur.steps : a.plan.filter((s) => s.status === "done");
-  const spent = cur.kind === "checkpoint" || cur.kind === "done" ? cur.spentCredits : 0;
   const total = a.plan.length;
   const context = total ? `${done.length} of ${total}` : a.chat?.title ?? null;
-  const eyebrow = step ? "Checkpoint · stopped" : cur.kind === "question" ? "Question" : cur.kind === "planning" ? "Planning" : cur.kind === "done" ? "Done" : "Nothing needs you";
-  const secondary = "tap44 flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none";
   const action = "tap44 flex h-[34px] items-center rounded-ctl border border-border-mid px-[10px] text-[12.5px] font-medium leading-none text-ink";
 
   return (
@@ -86,6 +82,40 @@ export default function AtomikSheet() {
           )}
         </>
       )}
+      <CheckpointCard />
+    </Sheet>
+  );
+}
+
+/** The header's Atomik button on a phone (M1–M3): a 44px pill, the ring at 14, `Atomik`, the state word beside it. */
+export function AtomikPhoneButton() {
+  const { ring, word } = useAtomik();
+  const rail = useAtomikRail();
+  return (
+    <button type="button" onClick={rail.toggle} aria-label="Ask Atomik" aria-expanded={rail.open}
+      className={`flex h-[44px] items-center gap-[6px] rounded-pill border px-[12px] text-[12.5px] font-medium leading-none text-ink ${rail.open ? "border-[rgba(245,246,248,.35)] bg-selected" : "border-border-mid"}`}>
+      {"steps" in ring && ring.steps ? <Ring steps={ring.steps} size={14} /> : <Ring mode={"mode" in ring && ring.mode ? ring.mode : "idle"} size={14} />}
+      Atomik{word && <Mono cost>{word}</Mono>}
+    </button>
+  );
+}
+
+/**
+ * The one card that moves the run (M3), shared by the phone sheet and the
+ * inline panel: the checkpoint with its price, a question's options, or
+ * what the run is doing. Every target is at least 44px.
+ */
+export function CheckpointCard() {
+  const a = useAtomik();
+  const [engineMenu, setEngineMenu] = useState<{ x: number; y: number; step: Step } | null>(null);
+  const cur = a.current;
+  const step: Step | null = cur.kind === "checkpoint" ? cur.step : cur.kind === "plan" ? (cur.steps.find((s) => s.status === "proposed") ?? null) : null;
+  const done = cur.kind === "checkpoint" ? cur.done : cur.kind === "done" ? cur.steps : a.plan.filter((s) => s.status === "done");
+  const spent = cur.kind === "checkpoint" || cur.kind === "done" ? cur.spentCredits : 0;
+  const eyebrow = step ? "Checkpoint · stopped" : cur.kind === "question" ? "Question" : cur.kind === "planning" ? "Planning" : cur.kind === "done" ? "Done" : "Nothing needs you";
+  const secondary = "tap44 flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none";
+  return (
+    <>
       <div className="flex flex-col gap-[10px] rounded-mobile border border-[rgba(245,246,248,.3)] bg-card p-[16px]" aria-label="Checkpoint" role="group">
         <Mono>{eyebrow}</Mono>
         <span className="text-[20px] font-semibold leading-[1.2] text-ink" data-headline="">
@@ -122,19 +152,6 @@ export default function AtomikSheet() {
         )}
       </div>
       {engineMenu && <Menu x={engineMenu.x} y={engineMenu.y} title="Engine" items={a.engines.filter((e) => e.kind === engineMenu.step.kind && !e.connected).map((e): MenuItem => ({ kind: "item", label: e.label, onSelect: () => a.changeEngine(engineMenu.step, e.id) }))} onClose={() => setEngineMenu(null)} />}
-    </Sheet>
-  );
-}
-
-/** The header's Atomik button on a phone (M1–M3): a 44px pill, the ring at 14, `Atomik`, the state word beside it. */
-export function AtomikPhoneButton() {
-  const { ring, word } = useAtomik();
-  const rail = useAtomikRail();
-  return (
-    <button type="button" onClick={rail.toggle} aria-label="Ask Atomik" aria-expanded={rail.open}
-      className={`flex h-[44px] items-center gap-[6px] rounded-pill border px-[12px] text-[12.5px] font-medium leading-none text-ink ${rail.open ? "border-[rgba(245,246,248,.35)] bg-selected" : "border-border-mid"}`}>
-      {"steps" in ring && ring.steps ? <Ring steps={ring.steps} size={14} /> : <Ring mode={"mode" in ring && ring.mode ? ring.mode : "idle"} size={14} />}
-      Atomik{word && <Mono cost>{word}</Mono>}
-    </button>
+    </>
   );
 }

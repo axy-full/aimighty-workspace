@@ -91,11 +91,20 @@ const Ctx = createContext<AtomikLive | null>(null);
 const usdOf = (s: Step) => s.estCostUsd ?? 0;
 const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
 
-export function AtomikProvider({ children }: { children: ReactNode }) {
+/**
+ * `projectId` pins the conversation to one production (a page that is about
+ * one, such as a Suites project's Atomik suite). Without it, the conversation
+ * follows the production chosen in the app's switcher.
+ */
+export function AtomikProvider({ children, projectId }: { children: ReactNode; projectId?: string | null }) {
   const { signedIn, workspace, email } = useSession();
-  const { current: production } = useProject();
+  const projectCtx = useProject();
+  const pinned = projectId !== undefined;
+  const production = pinned ? (projectCtx.projects.find((p) => p.id === projectId) ?? null) : projectCtx.current;
+  /* The id is known before the production list loads, so nothing is filed unscoped while it does. */
+  const productionId = pinned ? (projectId ?? null) : (production?.id ?? null);
   const money = useMoney();
-  const paid=usePaidAction(`/api/atomik/chat:${production?.id??"unfiled"}`);
+  const paid=usePaidAction(`/api/atomik/chat:${productionId??"unfiled"}`);
   const recovered = paid.pending ? JSON.parse(paid.pending.body) as {text?:string;model?:string;effort?:string} : null;
   const recoveryText = recovered ? String(recovered.text ?? "") : null;
   const { data: index, refresh: refreshIndex } = useApi<Index>(signedIn ? "/api/atomik" : null, 60_000);
@@ -113,17 +122,17 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
      person dismissed it from the rail's context chip. */
   const pick = useMemo(() => {
     if (!index?.chats?.length) return null;
-    const mine = production ? index.chats.filter((c) => c.projectId === production.id) : index.chats;
+    const mine = productionId ? index.chats.filter((c) => c.projectId === productionId) : index.chats;
     const first = (mine.length ? mine : [])[0] ?? null;
     return first && first.id !== dismissed ? first.id : null;
-  }, [index, production, dismissed]);
-  const activeId = chatFor && chatFor.projectId === (production?.id ?? null) ? chatFor.id : pick;
+  }, [index, productionId, dismissed]);
+  const activeId = chatFor && chatFor.projectId === productionId ? chatFor.id : pick;
 
   const { data: loaded, refresh: refreshChat } = useApi<Loaded>(
     signedIn && activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : null,
     thinking ? 3_000 : 15_000,
   );
-  const composerScope = JSON.stringify([workspace?.id, email, production?.id, activeId]);
+  const composerScope = JSON.stringify([workspace?.id, email, productionId, activeId]);
   const [selection, setSelection] = useState<{ scope: string; model: string; effort: string } | null>(null);
   const [draft, setDraft] = useState<{ scope: string; text: string } | null>(null);
   const selected = selection?.scope === composerScope ? selection : null;
@@ -137,7 +146,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const setReasoningEffort = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model, effort: value }); }, [composerScope, model, paid.pending, busy]);
   const { quote, error: quoteError, loading: quoting } = useAtomikQuote(activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : "/api/atomik",
     /* A bare `/name` is still being typed: nothing to price until a brief follows. */
-    !paid.pending && draftText.trim() && !/^\/[a-z0-9-]*$/.test(draftText.trim()) ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
+    !paid.pending && draftText.trim() && !/^\/[a-z0-9-]*$/.test(draftText.trim()) ? { text: draftText.trim(), model, effort, projectId: productionId } : null);
 
   /* The latest refresh, for the flows that await it after their writes —
      bound in an effect, since a ref may not change during render. */
@@ -235,12 +244,12 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     setBusy(true); setError(null);
     try {
       let id = paid.pending?decodeURIComponent(paid.pending.url.split("/").at(-1)!):activeId;
-      if(paid.pending)setChatFor({id:id!,projectId:production?.id??null});
+      if(paid.pending)setChatFor({id:id!,projectId:productionId});
       if (!id) {
-        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: production?.id ?? null, model: requestBody.model, effort: requestBody.effort }) });
+        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: productionId, model: requestBody.model, effort: requestBody.effort }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Atomik couldn't start a conversation.");
-        id = String(j.id); setChatFor({ id, projectId: production?.id ?? null }); setDismissed(null);
+        id = String(j.id); setChatFor({ id, projectId: productionId }); setDismissed(null);
       }
       setThinking(true);
       await paid.run(`/api/atomik/${encodeURIComponent(id)}`, requestBody);
@@ -253,7 +262,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       refreshIndex();
       setBusy(false);
     }
-  }, [activeId, busy, production, refreshIndex,paid,recoveryText,quote,draftText]);
+  }, [activeId, busy, productionId, refreshIndex,paid,recoveryText,quote,draftText]);
 
   /* Continue: the gate. Claim, then render through the ordinary routes. */
   const approve = useCallback(async (proposed: Step) => {
@@ -289,10 +298,16 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
             prompt: step.prompt, model: step.model, projectId, ratio: step.params.ratio, resolution: step.params.resolution,
             duration: Number(step.params.seconds) || undefined, references: step.refs?.length ? step.refs : undefined }) });
       const j = await res.json().catch(() => ({}));
+      /* Still being accepted under this step's key: not a failure. The step
+         stays running and is settled from the request's record when the plan
+         is next read (lib/atomik.ts › reconcileRunningSteps). */
+      if (res.status === 409 && j.pending) { setError("That render is still being accepted. It will show here once it has started."); return; }
       await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(res.ok ? { status: "done", genId: j.id ?? null } : { status: "failed", error: j.error ?? `Failed (${res.status})` }) });
       if (!res.ok) setError(j.error ?? "That render didn't start.");
     } catch (e) {
+      /* A dropped connection leaves the claimed step running; reading the
+         plan settles it from what the server recorded. */
       setError((e as Error).message);
     } finally {
       await refreshRef.current();
@@ -313,7 +328,9 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     if (busy) return;
     setBusy(true); setError(null);
     try {
-      const r = await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ params: { ...step.params, model }, model }) });
+      /* The engine alone: the server moves the step's length, size and shape
+         to what that engine offers and re-prices it. */
+      const r = await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
       if (!r.ok) { const j = await r.json().catch(() => ({})); setError(j.error ?? "That engine didn't stick."); }
     } finally { await refreshRef.current(); setBusy(false); }
   }, [busy]);
