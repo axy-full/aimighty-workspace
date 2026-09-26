@@ -400,10 +400,13 @@
 .gx-banner[data-compact] .gx-banner-text { flex-basis: calc(100% - 18px); }
 .gx-banner[data-compact] .gx-hbtn { margin-left: 18px; }
 .gx-main > .gx-banner { flex: none; margin: 0 20px 8px; }
+/* In a stage that has nothing else to show (the project list did not load), the banner keeps the page's gutters. */
+.gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
 @media (max-width: 767px), (pointer: coarse) {
   .gx-tile-refresh { height: 44px; padding: 0 16px; }
   .gx-tile-chip { height: 22px; font-size: 12px; }
   .gx-main > .gx-banner { margin: 0 12px 8px; }
+  .gx-stage > .gx-banner { margin: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .gx-skel-thumb, .gx-skel-line, .gx-tile-spin, .gx-tile-chip-dot { animation: none; }

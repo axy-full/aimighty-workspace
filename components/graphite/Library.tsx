@@ -122,11 +122,12 @@ export function Library({ project = null, items, library, projects = "ready", ov
         </div>
       ) : (
         <>
+          {/* First, above the filters: on a phone the list under them can sit behind the dock. */}
+          {failed ? <LoadBanner banner={failed} onRetry={library.refresh} testId="library-error" compact /> : null}
           <input className="gx-field" aria-label="Search assets" placeholder="Search this project" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
-          {failed ? <LoadBanner banner={failed} onRetry={library.refresh} testId="library-error" compact /> : null}
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
