@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Download, Plus, RefreshCw } from "lucide-react";
@@ -10,9 +10,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useDraft } from "@/lib/useDraft";
 import { useMoney } from "@/lib/price";
 import { MODELS, modelLabel } from "@/lib/models";
-import { AtomikProvider, useAtomik } from "@/components/atomik/AtomikProvider";
-import { AtomikInline } from "@/components/atomik/AtomikInline";
-import { ProjectProvider } from "@/lib/projectContext";
+import { useAtomik } from "@/components/atomik/AtomikProvider";
 import {
   ModelPicker,
   EffortPicker,
@@ -510,7 +508,6 @@ function MappedAtomik({
       ) : page === "recipes" ? (
         <Recipes
           runs={mergedRuns}
-          productionId={embedded ? productionId : null}
           busy={busy}
           create={(recipe) =>
             perform(async () => {
@@ -539,7 +536,7 @@ function MappedAtomik({
       ) : page === "budget" ? (
         <Budget productionId={productionId} />
       ) : page === "models" ? (
-        <Models catalog={catalog} rail={!embedded} />
+        <Models catalog={catalog} />
       ) : (
         <div className={styles.runLayout}>
           <aside
@@ -754,40 +751,14 @@ function SaveRecipe({ run }: { run: PublicPipelineRun }) {
 }
 /** The connected account's workflow bundles as recipes (A5 + A6): run one
  * from the Atomik composer as `/name brief`; every paid step it plans is
- * priced for approval like any other.
- *
- * In the app shell the composer is the Atomik rail. A shell without one
- * (Suites) passes the production, and the conversation is mounted here,
- * beside the recipes: "Use in Atomik" then writes into a composer that
- * exists instead of a rail that does not. */
-function ConnectedRecipes({ productionId }: { productionId: string | null }) {
-  const { data } = useApi<{ recipes: ConnectedRecipe[] }>("/api/atomik/recipes");
-  const recipes = data?.recipes ?? [];
-  if (!recipes.length) return null;
-  if (!productionId) return <RecipeList recipes={recipes} />;
-  return (
-    <ProjectProvider>
-      <AtomikProvider projectId={productionId}>
-        <InlineRecipes recipes={recipes} />
-      </AtomikProvider>
-    </ProjectProvider>
-  );
-}
-
-function InlineRecipes({ recipes }: { recipes: ConnectedRecipe[] }) {
-  const composer = useRef<HTMLInputElement>(null);
-  return (
-    <RecipeList recipes={recipes} onUse={() => {
-      composer.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-      composer.current?.focus({ preventScroll: true });
-    }}>
-      <AtomikInline inputRef={composer} />
-    </RecipeList>
-  );
-}
-
-function RecipeList({ recipes, onUse, children }: { recipes: ConnectedRecipe[]; onUse?: () => void; children?: ReactNode }) {
+ * priced for approval like any other. Only where that composer exists — the
+ * app shell's rail; a host without it (the Suites shell) lists nothing it
+ * could not start. */
+function ConnectedRecipes() {
   const atomik = useAtomik();
+  const { data } = useApi<{ recipes: ConnectedRecipe[] }>(atomik.hosted ? "/api/atomik/recipes" : null);
+  const recipes = data?.recipes ?? [];
+  if (!atomik.hosted || !recipes.length) return null;
   return (
     <section className={styles.panel} aria-label="Connected recipes">
       <h2>Connected recipes</h2>
@@ -804,8 +775,7 @@ function RecipeList({ recipes, onUse, children }: { recipes: ConnectedRecipe[]; 
                 disabled={atomik.busy || !!atomik.recoveryText}
                 onClick={() => {
                   atomik.setDraftText(`/${recipe.name} `);
-                  if (onUse) onUse();
-                  else setAtomikRail("expanded");
+                  setAtomikRail("expanded");
                 }}
               >
                 Use in Atomik
@@ -814,20 +784,16 @@ function RecipeList({ recipes, onUse, children }: { recipes: ConnectedRecipe[]; 
           </article>
         ))}
       </div>
-      {children}
     </section>
   );
 }
 
 function Recipes({
   runs,
-  productionId,
   busy,
   create,
 }: {
   runs: PublicPipelineRun[];
-  /** Set when the shell has no Atomik rail: the conversation is mounted with the recipes. */
-  productionId: string | null;
   busy: boolean;
   create: (run: PublicPipelineRun) => Promise<void>;
 }) {
@@ -875,7 +841,7 @@ function Recipes({
           </article>
         ))}
       </div>
-      <ConnectedRecipes productionId={productionId} />
+      <ConnectedRecipes />
       {!recipes.length && (
         <div className={styles.empty}>
           <h2>No saved recipes yet</h2>
@@ -1037,10 +1003,7 @@ function BudgetForm({
   );
 }
 
-/** `rail`: the shell has an Atomik rail, whose thinking model the picker
- * sets. Without one (Suites) there is nothing for it to change, so it is not
- * shown: a conversation there picks its model in its own composer. */
-function Models({ catalog, rail }: { catalog: AtomikCatalog; rail: boolean }) {
+function Models({ catalog }: { catalog: AtomikCatalog }) {
   const session = useSession(),
     money = useMoney(),
     atomik = useAtomik();
@@ -1048,7 +1011,9 @@ function Models({ catalog, rail }: { catalog: AtomikCatalog; rail: boolean }) {
   const current = atomik.models.find((model) => model.id === atomik.model);
   return (
     <div className={styles.modelLayout}>
-      {rail && <section className={styles.panel}>
+      {/* Only where the Atomik rail it sets is open to use it: elsewhere (the
+          Suites shell) the agent picks its model with each quote. */}
+      {atomik.hosted && <section className={styles.panel}>
         <h2>Atomik thinking</h2>
         <p>
           The model and effort for the current Atomik rail. A saved request

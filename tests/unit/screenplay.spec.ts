@@ -11,6 +11,7 @@ import {
   sceneCoverageRequest,
 } from "../../lib/workbench/screenplay-nodes";
 import { newProject } from "../../lib/workbench/studio";
+import { PROJECT_LIMITS } from "../../lib/workbench/project-limits";
 import { saveSchema } from "../../lib/workbench/studio-schema";
 import { publishedContext } from "../../lib/workbench/published-context";
 
@@ -118,10 +119,19 @@ test("canvas admission is atomic for capacity, stale source and oversized scene 
     scenes = parseScreenplay(p.script!, p.scriptSource!.pages);
   expect(() =>
     buildScreenplayNodes(
-      { ...p, nodes: Array(249).fill({ id: "existing" }) },
+      { ...p, nodes: Array(PROJECT_LIMITS.nodes - 1).fill({ id: "existing" }) },
       scenes.slice(0, 2),
     ),
-  ).toThrow(/at most 1/);
+  ).toThrow(/at most 1 scenes/);
+  // A full canvas never reports a negative count.
+  for (const count of [PROJECT_LIMITS.nodes, PROJECT_LIMITS.nodes + 5])
+    expect(() =>
+      buildScreenplayNodes({ ...p, nodes: Array(count).fill({ id: "existing" }) }, scenes.slice(0, 1)),
+    ).toThrow(/holds 4,000 nodes/);
+  // Past the old 250-node ceiling there is still room for a whole screenplay.
+  expect(
+    buildScreenplayNodes({ ...p, nodes: Array(300).fill({ id: "existing" }) }, scenes.slice(0, 2)),
+  ).toHaveLength(2);
   expect(p.nodes).toHaveLength(0);
   expect(() =>
     buildScreenplayNodes(
@@ -136,6 +146,20 @@ test("canvas admission is atomic for capacity, stale source and oversized scene 
   expect(() =>
     buildScreenplayNodes(long, parseScreenplay(long.script)),
   ).toThrow(/nothing was added/);
+});
+test("a large scene batch stays inside the project's position bounds and saves", () => {
+  const p = newProject("Long feature");
+  p.script = Array.from({ length: 300 }, (_, i) => `INT. ROOM ${i + 1} - DAY\n\nA line of action ${i + 1}.`).join("\n\n");
+  const scenes = parseScreenplay(p.script);
+  expect(scenes).toHaveLength(300);
+  p.nodes = buildScreenplayNodes(p, scenes);
+  expect(p.nodes).toHaveLength(300);
+  expect(Math.max(...p.nodes.map((n) => n.y))).toBeLessThanOrEqual(20000);
+  expect(saveSchema.safeParse({ project: p, revision: 0 }).error?.issues.slice(0, 3)).toBeUndefined();
+  // Past the floor the grid continues in a new block to the right: no two scene nodes share a spot.
+  expect(new Set(p.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(300);
+  expect(p.nodes[0]).toMatchObject({ x: 50, y: 1030 });
+  expect(p.nodes[264]).toMatchObject({ x: 1450, y: 1030 });
 });
 test("reviewed beats and source lineage are preserved while outdated notes cannot enter a new node", () => {
   const p = sourceProject(),

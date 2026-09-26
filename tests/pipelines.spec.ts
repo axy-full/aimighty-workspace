@@ -14,7 +14,7 @@ test("published production â†’ individually approved image/video/audio stages â†
   const headers = {
     "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}`,
   };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   await platform.execute({
     sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
     args: [
@@ -234,7 +234,7 @@ test("published production â†’ individually approved image/video/audio stages â†
     try {
       await signInLocally(collaborator);
       const other = await collaborator.get("/api/me").then((r) => r.json());
-      const platform = createClient({ url: localPlatformDbUrl() });
+      const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
       await platform.execute({
         sql: "INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,'member',0,?)",
         args: [me.workspace.id, other.id, Date.now()],

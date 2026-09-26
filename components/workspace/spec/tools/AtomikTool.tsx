@@ -10,10 +10,10 @@ import { usePlanRequest } from "@/lib/workspace/atomik-host";
 /**
  * The existing Atomik suite bodies (components/suites/AtomikSuite.tsx) for
  * this project: Runs (with the Atomik conversation), Recipes, Approvals,
- * Budget, Models and Generate, and the suite agent panel on Agent. This shell
- * has no Atomik rail, so the suite is `embedded`: Recipes mounts the Atomik
- * conversation beside the connected recipes, and Models shows no rail
- * picker (there is no rail for it to set).
+ * Budget, Models and Generate, and the suite agent panel on Agent. No Atomik
+ * rail lives here, so the pages that drive one (Models' thinking picker,
+ * Recipes' "Use in Atomik") leave those controls out; the agent picks its
+ * model with each quote.
  *
  * On Generate the form's quote input — exactly what AtomikGenerate sends,
  * and only once it could send it — is the request the page's plan prices.

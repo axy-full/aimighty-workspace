@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 /**
@@ -13,6 +14,8 @@ type Verified = { ok: boolean; listed: boolean; model: string; models: string[];
 
 export function XaiEngineRow() {
   const scoped = useScopedFetch();
+  /* The key is stored by the owner-only keys route; anyone may Verify. */
+  const owner = useSession().role === "owner";
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -52,16 +55,16 @@ export function XaiEngineRow() {
           {status == null ? "Checking…" : status.connected ? `Connected · ${status.model}${status.priced ? "" : " · no price listed, rounds will not run"}` : "No key connected"}
         </span>
         <span className="gx-spacer" />
-        <button type="button" className="gx-hbtn" aria-expanded={entering} onClick={() => setEntering((v) => !v)}>{status?.connected ? "Replace key" : "Connect"}</button>
+        {owner ? <button type="button" className="gx-hbtn" aria-expanded={entering} onClick={() => setEntering((v) => !v)}>{status?.connected ? "Replace key" : "Connect"}</button> : null}
         <button type="button" className="gx-hbtn" disabled={busy || !status?.connected} onClick={() => void verify()}>{busy ? "Verifying…" : "Verify"}</button>
       </div>
-      {entering ? (
+      {owner && entering ? (
         <div className="cw-engine-row">
           <input className="gx-field" type="password" autoComplete="off" spellCheck={false} aria-label="xAI API key" placeholder="xai-…" value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: "1 1 220px", width: "auto" }} />
           <button type="button" className="gx-hbtn" disabled={busy || key.trim().length < 8} onClick={() => void connect()}>Save key</button>
         </div>
       ) : null}
-      <p className="cw-foot" style={{ padding: 0 }}>Crew seats one Grok agent per member. Verify lists models only; it costs nothing.</p>
+      <p className="cw-foot" style={{ padding: 0 }}>Crew seats one Grok agent per member. Verify lists models only; it costs nothing.{owner ? "" : " The key is the owner’s to change."}</p>
       {result ? <p className="cw-notice" role="status">{result}</p> : null}
     </div>
   );

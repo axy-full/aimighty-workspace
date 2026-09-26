@@ -22,6 +22,7 @@ import {
   type VideoAnalysisReport,
   type VoiceToolName,
 } from "@/lib/higgsfield-consumer/voice-tools";
+import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./atomik-generate.module.css";
 
 export const voiceEndpoint = "/api/higgsfield/consumer/audio-tools";
@@ -147,7 +148,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     : consumerVoiceToolInputSchema.safeParse(normalized).success ? "" : "Review the source file and settings.";
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && JSON.stringify(selected.input) === JSON.stringify(normalized);
-  const unresolved = jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
+  const unresolved = jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
   const enabled = tool === "video_analysis" ? capabilities?.analysis === true : tool === "dubbing" ? capabilities?.dubbing !== false : tool === "reframe" ? capabilities?.reframe === true : capabilities?.voice !== false;
   const ready = capability.owner && capability.connected && !capability.suspended && !busy && enabled;
   const canQuote = ready && !validation && !unresolved && disclosed;
@@ -155,7 +156,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
   const change = (patch: Partial<Draft>) => { stored.set((before) => ({ ...draft(before), ...patch })); setApproved(false); setNotice(""); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
     const byId = new Map(confirmed.map((job) => [job.id, job]));
-    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && job.quoteExpired !== true); });
+    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || awaitingReconciliation(job) || (job.status === "quoted" && job.quoteExpired !== true); });
     try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); } catch { /* Keep the guard when its resolution cannot be saved. */ }
   }, [attemptKey]);
   const saveJob = (job: Job) => { setJobs((before) => retain([job, ...before.filter((item) => item.id !== job.id)], attemptIds.current)); setSelectedId(job.id); };
@@ -226,7 +227,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
         setNotice(saved.status === "completed" ? (saved.tool.output === "report" ? "The report is ready to save to this project." : originalAsset(saved) ? "The original is ready to save to this project." : "The job completed, but its original is unavailable. Refresh saved jobs before saving it.")
-          : saved.status === "failed" ? "The connected account reported that this job failed." : "Status checked. The saved job remains available here.");
+          : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this job failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -254,7 +255,8 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     } catch (reason) { if (live.current && token === lifecycle.current) setError(reason instanceof Error ? reason.message : "The result could not be saved in this project."); }
     finally { if (token === lifecycle.current) { pending.current = false; if (live.current) setBusy(""); } }
   }
-  const presets = voices?.voices.filter((voice) => voice.type === "preset") ?? [], custom = voices?.voices.filter((voice) => voice.type === "element") ?? [];
+  /* Preset voices only: voices made on the account stay there (standalone rule). */
+  const presets = voices?.voices.filter((voice) => voice.type === "preset") ?? [];
   return <>
     <fieldset className={styles.form} disabled={!capability.owner || !!busy} aria-label={`${definition.label} settings`}>
       <p className={styles.hint} aria-label="Selected tool">{definition.label}: {definition.description} Needs one video from this project; no prompt.</p>
@@ -262,8 +264,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
       {tool === "voice_change" && <label>Voice<select aria-label="Voice" value={input.voiceId ? `${input.voiceType}:${input.voiceId}` : ""} onChange={(e) => { const [type, ...rest] = e.target.value.split(":"); const id = rest.join(":"); const voice = voices?.voices.find((v) => v.type === type && v.id === id); change({ voiceId: voice?.id ?? "", voiceType: voice?.type ?? "preset", voiceName: voice?.name ?? "" }); }}>
         <option value="">{voices ? "Choose a voice" : busy === "voices" ? "Reading voices…" : "Voices not loaded"}</option>
         {presets.length > 0 && <optgroup label="Preset voices">{presets.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
-        {custom.length > 0 && <optgroup label="Your voices">{custom.map((voice) => <option key={`element:${voice.id}`} value={`element:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
-      </select><small className={styles.hint}>{voices ? `${voices.voices.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}` : "The connected account’s voices are read once an hour."}</small></label>}
+      </select><small className={styles.hint}>{voices ? `${presets.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}` : "The connected account’s voices are read once an hour."}</small></label>}
       {tool === "reframe" && <label>Target aspect ratio<select aria-label="Target aspect ratio" value={input.aspectRatio} onChange={(e) => change({ aspectRatio: e.target.value as AspectRatio | "" })}>
         <option value="">Choose an aspect ratio</option>
         {REFRAME_ASPECT_RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratio}</option>)}
@@ -291,7 +292,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
       <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
       {tool === "voice_change" && <button type="button" className="suite-button" disabled={!!busy || !capability.connected} onClick={() => void loadVoices(true)}><RefreshCw size={14} />Reload voices</button>}
     </div>
-    {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+    {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
     {selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
       <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
       <small>{selected.tool.label} · {selected.source.name} · {settingsSummary(selected)}</small>
@@ -309,7 +310,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
         const saved = (original && project.assets.some((asset) => asset.generationId === original.generationId)) || (note && project.assets.some((asset) => asset.id === note.id));
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
         return <article key={job.id} className={styles.job}>
-          <div><strong>{job.status === "completed" ? (original ? "Original ready" : analysis ? "Report ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Job failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
+          <div><strong>{job.status === "completed" ? (original ? "Original ready" : analysis ? "Report ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Job failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.source.name}</p>
           <small>{job.tool.label} · {settingsSummary(job)} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}

@@ -56,7 +56,7 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
 /** GLASS_SPEC §3 › Home: one tile per suite, its colour, its line (verbatim) and a live fact in mono. */
 export type SuiteTile = { id: "studio" | "gen" | "business" | "viral" | "atomik" | "crew"; label: string; color: string; line: string; fact: string };
 export type HomeFacts = {
-  /** Generations in flight (the running pill) and the default video engine's name. */
+  /** Generations in flight (the running pill) and the workspace's default video engine's name (Workspace › General). */
   rendering: number; videoEngine: string;
   /** Business › Ads defaults: the mode's label and the duration. */
   adMode: string; adSeconds: number;
@@ -73,7 +73,8 @@ export function suiteTiles(cards: readonly StageCard[], facts: HomeFacts): Suite
   return [
     /* The prototype said "eight stages"; the owner's Production brief (23 September) sets the count, so it is read from the strip. */
     { id: "studio", label: "Studio", color: "#0A84FF", line: `Brief to delivery, ${COUNT_WORDS[cards.length] ?? cards.length} stages.`, fact: `${done} of ${cards.length} done` },
-    { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio, 3D — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} ready` },
+    /* Gen has no 3D (Astra is the 3D stage), and "ready" was never checked: the fact is the engine Gen opens on. */
+    { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} · default` },
     { id: "business", label: "Business", color: "#FF9F0A", line: "Marketing Studio: product, presenter, ad.", fact: `${facts.adMode} · ${facts.adSeconds} s · quoted in Ads` },
     { id: "viral", label: "Viral", color: "#FF453A", line: "Genjutsu: motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
     { id: "atomik", label: "Atomik", color: "#30D158", line: "Plans, prices, waits for your word.", fact: `${facts.awaiting} awaiting approval` },

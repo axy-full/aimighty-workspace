@@ -1,6 +1,5 @@
 "use client";
 
-import type { Ref } from "react";
 import { useAtomik } from "./AtomikProvider";
 import { EffortPicker, ModelPicker, effortLabel, thinkingModelName } from "./ModelPicker";
 import { useApi } from "@/lib/useApi";
@@ -32,7 +31,7 @@ function RecipeHints({ text, pick, disabled }: { text: string; pick: (value: str
 }
 
 /** Planning always presents the exact model, effort and credit ceiling before Send. */
-export function ChatComposer({ inputHeight = 48, inputRef }: { inputHeight?: 44 | 46 | 48; inputRef?: Ref<HTMLInputElement> }) {
+export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 }) {
   const a = useAtomik();
   const recovering = a.recoveryText !== null;
   const locked = a.busy || recovering;
@@ -43,7 +42,7 @@ export function ChatComposer({ inputHeight = 48, inputRef }: { inputHeight?: 44 
       <EffortPicker value={a.effort} model={selected} onPick={a.setReasoningEffort} disabled={locked} compact label="Chat reasoning effort" />
     </div>
     <RecipeHints text={a.draftText} pick={a.setDraftText} disabled={locked} />
-    <input ref={inputRef} value={a.draftText} onChange={event => a.setDraftText(event.target.value)} placeholder="Ask Atomik… or / for recipes" aria-label="Ask Atomik" disabled={locked}
+    <input value={a.draftText} onChange={event => a.setDraftText(event.target.value)} placeholder="Ask Atomik… or / for recipes" aria-label="Ask Atomik" disabled={locked}
       style={{height:inputHeight}} className="w-full min-w-0 rounded-card border border-border-mid bg-card px-3 text-[16px] text-ink placeholder:text-ink-muted" />
     {a.quote && !recovering && <p className="text-[11px] leading-relaxed text-ink-muted">{thinkingModelName(a.quote.model, a.models)} · {effortLabel(a.quote.effort, a.models.find(model => model.id === a.quote?.model))} · up to {a.quote.estimateCredits} cr</p>}
     {a.quoteError && !recovering && <p role="alert" className="text-[12px] text-ink-body">{a.quoteError}</p>}
