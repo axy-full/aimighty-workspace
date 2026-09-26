@@ -1,0 +1,104 @@
+{
+ "idea": 1,
+ "branch": "feat/hf-jobs-tray",
+ "commits": [
+  "71c98e25 The header counts every job and opens a jobs tray",
+  "03a0d8fa The jobs tray says the real reason, the real figure, and never a made-up percentage"
+ ],
+ "built": "The header now has a jobs pill and a Jobs tray in place of the single-slot pill. The old pill showed one composer's job, the next job overwrote it, and clicking it opened Atomik \u203a Runs.\n\nThe pill counts every take the signed-in person has in flight or held, from any page and on either engine, e.g. \"3 rendering \u00b7 1 held\". On a phone it shows only the number, on a target of at least 44px. When nothing is running it shows what finished since the tray was last opened (\"2 done \u00b7 1 failed\"). Otherwise it is hidden.\n\nClicking it opens the tray: a popover under the pill on desktop and at 844x390, a bottom sheet on phones that stays clear of the home indicator. Each row shows:\n- a thumbnail (from Particl's own /api/media only) or a kind tag\n- the name, and the project when that is not the one open\n- the real stage: Queued \u00b7 Held \u00b7 needs N cr \u00b7 Held \u00b7 waiting for a slot \u00b7 Rendering \u00b7 Confirming \u00b7 Not confirmed \u00b7 Complete \u00b7 Failed \u00b7 not billed, plus the reason\n- the age since createdAt\n- the approved price, in credits, or \"connected cr\" for a connected-account job\n- one action: Open in Takes (switching to the take's own project first), Release, Recreate (hands the failed take's own recipe to Gen, where it is priced again and nothing is sent), or Open Business / Open Viral for failed connected ads and motion jobs.\n\nNo engine reports a percentage, so rows in flight show a moving bar with no number. A ring appears only if a row carries a real 0\u20131 progress figure.\n\nOther states:\n- **Loading:** \"Reading your jobs\u2026\".\n- **Empty:** one line plus a Generate button.\n- **Failed read:** keeps the last rows, says so, and offers Try now.\n- **Partial:** if only the connected-account jobs could not be read, a note says so.\n- **Stopped:** if a read is refused because the tab's account or workspace changed, reading stops, the tray says why (without suggesting a reload that could lose work), and the pill disappears.\n\n**Server:**\n- GET /api/jobs gains `view=tray` (lib/jobsTray.server.ts, with the pure row logic in lib/jobsTray.ts). It returns the person's own queued, running and held generations plus those settled in the last six hours, and their own admitted connected-account jobs. It reads named columns only, never the payload, receipt or grant, and uses the tenant's own database. Prices are rounded to credits on the server, and the reply's `pollAfterSeconds` is 10 while anything runs and 60 otherwise.\n- The list route's `status` filter now also takes a comma list (`queued,running,held`).\n- lib/held gains `heldNeeds`, one shared figure for the release check, the tray label and a refused Release. Before, the label could say \"needs 43 cr\" while the refusal said \"needs 40 credits\".\n- lib/held also gains `releaseRefusal`. Previously a Release refused only because every render slot was busy said \"Still short\" and turned the button into Top up, sending people to buy credits they did not need. Now a short balance is a 402 that shows Top up; a cap refusal is shown as written; otherwise it says the take waits for a slot and starts on its own.\n\n**Client:**\n- The tray reads through lib/poll at the server's pace, and not while the tab is hidden.\n- It reads immediately when the tray opens or a job starts. lib/shell/jobs-bus carries that signal from the shared dispatch, Business and Viral, which covers jobs started from Storyboards, Environment and the Takes re-edit too.\n- A job started while a read is in flight triggers one more read as soon as that read returns.\n- The composer's just-pressed Generate shows in the tray until the server has its row.\n- The phone Home tile uses the same count.\n\nThe old phone strip on /workspace printed the fixed stage numbers (4/10/50/100) as a percentage. It now draws the same moving bar as the desktop strip and shows the job's own line instead.",
+ "files": [
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/JobsTray.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/Header.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/SuitesShell.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/mobile/SuiteHome.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/workspace/mobile/MobileGenerationStrip.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/shell/use-jobs-tray.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/shell/jobs-bus.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/shell/use-connected-job.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/shell/use-viral.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/workspace/generate-submit.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/jobsTray.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/jobsTray.server.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/jobs.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/held.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/app/api/jobs/route.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/app/api/jobs/[id]/release/route.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/app/graphite.css",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/app/workspace-mobile.css",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/design/particl-suites/README.md",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/docs/atomik-generation.md",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/tests/hf-jobs-tray-workbench.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/tests/unit/jobsTray.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/tests/workspace-mobile-make-workbench.spec.ts"
+ ],
+ "deferred": [
+  {
+   "what": "Replacing the single state.gen slot with a jobs map keyed by id inside the workspace state",
+   "reason": "state.gen is written by lib/workspace/use-composer.ts and components/workspace/rig/RigProvider.tsx, which the audit-fix change owns. The tray does not need it replaced: its own list comes from the server, keyed and deduplicated by id, and the composer's slot is folded in by id until the server has that row. So a new job no longer hides an earlier one anywhere the user looks. state.gen stays as the composer's own slot, which the Suites and legacy strips still read."
+  },
+  {
+   "what": "A percentage ring driven by real engine progress",
+   "reason": "No engine reports progress today. The ring (`progress` 0\u20131, role=progressbar with aria-valuenow) is built and checked row by row, but every row sends null, so every row in flight shows the moving bar. It turns on without UI work once an adapter reports a real figure."
+  },
+  {
+   "what": "Reading the connected account's jobs through the three browser GET lists (/api/higgsfield/consumer/generation, the genjutsu route, the video route)",
+   "reason": "Replaced by one tenant-scoped server read of higgsfield_consumer_jobs inside GET /api/jobs?view=tray. It covers every connected workflow (generation, genjutsu, marketing, voice, shorts) in one request and never sends payloads, receipts or grants to the browser. This is a design choice, not missing work."
+  },
+  {
+   "what": "End-to-end browser test of a Release refused because every slot is busy or the hourly limit is reached",
+   "reason": "Reaching it against the real route means seeding a held take the local balance covers. If the concurrency limit were not full, that release would actually start a (mock) render, and the rule is never to trigger generations. The decision is unit-tested (releaseRefusal) and the 402 path is tested for real against the route with a held take no local balance could cover."
+  }
+ ],
+ "tests": [
+  {
+   "command": "npx tsc --noEmit -p .",
+   "result": "pass (exit 0)"
+  },
+  {
+   "command": "npx eslint --max-warnings=0 <every changed .ts/.tsx on the branch>",
+   "result": "pass (exit 0)"
+  },
+  {
+   "command": "PW_BASE_URL=http://localhost:1 npx playwright test --config=playwright.config.ts --project=unit tests/unit/jobsTray.spec.ts tests/unit/held.spec.ts --output /private/tmp/particl-suites/hf-jobs/pw-unit-tray4",
+   "result": "14 passed (includes the new heldNeeds/releaseRefusal spec)"
+  },
+  {
+   "command": "PW_BASE_URL=http://localhost:1 npx playwright test --config=playwright.config.ts --project=unit tests/unit --output /private/tmp/particl-suites/hf-jobs/pw-unit-tray-all",
+   "result": "2141 passed, 3 skipped, 0 failed"
+  },
+  {
+   "command": "HF_JOBS_SHOTS=/private/tmp/particl-suites/hf-jobs/shots PW_CHANNEL=chrome PW_BASE_URL=http://localhost:4842 PW_PLATFORM_DATABASE_URL=file:/private/tmp/particl-suites/hf-jobs/platform.db npx playwright test --config=playwright.workbench.config.ts tests/hf-jobs-tray-workbench.spec.ts --output /private/tmp/particl-suites/hf-jobs/pw-tray-r4",
+   "result": "24 passed, 11 skipped (each test picks its viewports on purpose), 0 failed, across 360x640, 390x844, 844x390, 1440x900 and 1920x1080"
+  },
+  {
+   "command": "(same env) npx playwright test --config=playwright.workbench.config.ts tests/hf-jobs-tray-workbench.spec.ts -g \"everything has cleared|server's pace\" --output /private/tmp/particl-suites/hf-jobs/pw-tray-r5",
+   "result": "5 passed, run after the empty-state Generate button was added"
+  },
+  {
+   "command": "PW_CHANNEL=chrome PW_BASE_URL=http://localhost:4842 PW_PLATFORM_DATABASE_URL=file:/private/tmp/particl-suites/hf-jobs/platform.db npx playwright test --config=playwright.workbench.config.ts tests/suites-*-workbench.spec.ts tests/workspace-*-workbench.spec.ts --output /private/tmp/particl-suites/hf-jobs/pw-tray-surfaces",
+   "result": "473 passed, 445 skipped, 2 failed. workspace-switchover:52 at 1440 is a known failure from earlier runs of this track. workspace-atomik:203 at 1920 failed when the test's fake clock skipped ahead 6 minutes and the dev server's lazy AtomikTool chunk timed out. Both pass on rerun."
+  },
+  {
+   "command": "(same env) npx playwright test --config=playwright.workbench.config.ts tests/workspace-atomik-workbench.spec.ts:203 tests/workspace-switchover-workbench.spec.ts:52 --project=workbench-1920x1080 --project=workbench-1440x900 --output /private/tmp/particl-suites/hf-jobs/pw-tray-rerun",
+   "result": "4 passed"
+  }
+ ],
+ "pr_title": "Jobs tray: every job in the header, real stages, one action each",
+ "pr_body": "**Before:** the header pill showed one composer's job, the next job overwrote it, and it opened Atomik \u203a Runs. Jobs started from Business, Viral, Storyboards, Environment or a Takes re-edit never appeared. The old phone strip printed a fixed stage number as a percentage. A Release refused only because every render slot was busy said \"Still short\" and offered Top up, even though the balance covered it.\n\n**Now:**\n- **Pill:** counts every take you have in flight or held, from any page and on either engine (\"3 rendering \u00b7 1 held\"; just the number on a phone). With nothing running it shows what finished since you last looked.\n- **Tray:** the pill opens a Jobs tray, a popover on desktop and a bottom sheet on phones. Each row shows the real stage (Queued, Held \u00b7 needs N cr, Rendering, Complete, Failed \u00b7 not billed + the reason), the age, the approved price (credits; \"connected cr\" for connected-account jobs) and one action: Open in Takes, Release (Top up only when the balance is actually short) or Recreate in Gen, which prices it again and sends nothing.\n- **Progress:** no engine reports a percentage, so rows in flight show a moving bar with no number.\n- **States:** loading, empty (with Generate), failed read (keeps the last rows, offers Try now) and stopped (the tab's account changed) are all covered.\n- **API:** GET /api/jobs gains `view=tray`, reading only this person's own jobs, and `status` also takes a comma list. The release route now names the same figure as the tray and gives the real reason when it refuses.\n\n**Testing:**\n- Unit specs for rows, ordering, summary, reply parsing, held figure and refusal reasons.\n- tests/hf-jobs-tray-workbench.spec.ts at all five viewports:\n  - pill and tray geometry, including 44px targets and no horizontal overflow\n  - Release / Top up, Recreate (nothing sent), Open in Takes\n  - poll pacing, the hidden tab, and a job started while a read is in flight\n  - empty, error and stopped states\n  - the real route against seeded rows: tenant and user isolation, no dollar amounts or payloads in the reply, and a refused Release naming the tray's figure\n- tsc, eslint and all unit specs pass. The suites and workspace workbench specs pass except two tests that failed in the full run and pass on rerun.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+ "screenshots": [
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-1440x900.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-390x844.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-pill-1440x900.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-pill-390x844.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-short-1440x900.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-short-390x844.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-short-360x640.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-empty-1440x900.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-empty-390x844.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-read-failed-1440x900.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-read-failed-390x844.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-844x390.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-1920x1080.png",
+  "/private/tmp/particl-suites/hf-jobs/shots/jobs-tray-360x640.png"
+ ]
+}

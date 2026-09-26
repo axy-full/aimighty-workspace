@@ -1,0 +1,115 @@
+{
+ "breaks": [
+  {
+   "severity": "major",
+   "title": "A one-line edit in this window reverts a large saved edit from another window: past 1,000 line edits the text merge gives up and mine's whole text stands",
+   "file": "lib/workbench/merge.ts",
+   "line": 102,
+   "reproduced": true,
+   "spec": "tests/zz-break-merge-algebra-r2-1-workbench.spec.ts; unit: tests/unit/zz-break-merge-algebra-r2-merge.spec.ts 'a character renamed on 600 lines\u2026'",
+   "scenario": "The screenplay has 3,000 lines, with MARA's cue on 600 of them. Window B renames MARA to NORA on all 600 cue lines and saves. Window A (Brief & Script \u203a Script editor) had typed one word at the end, and its save gets a 409 and is merged. alignment(base, theirs) needs 1,200 edits, over DIFF_LIMIT=1000, so it returns null. mergeSequence then returns null and `?? mine` keeps A's whole old script. The server ends with MARA 600, NORA 0, plus the typed word, and A shows 'Saved'. B's saved rename is silently reverted by a one-word edit. The same happens when a window approves an agent redraft or imports a new screenplay of a feature while another tab fixes a typo. On main, this conflict stopped the save instead of overwriting B."
+  },
+  {
+   "severity": "major",
+   "title": "Edits on neighbouring lines are a 'both rewrote' conflict: the other window's saved line is silently reverted",
+   "file": "lib/workbench/merge.ts",
+   "line": 294,
+   "reproduced": true,
+   "spec": "tests/zz-break-merge-algebra-r2-4-workbench.spec.ts; unit: 'two windows each editing a different line of a list\u2026' and 'a dialogue line rewritten in one window, its character cue in another\u2026'",
+   "scenario": "The brief is 'A fox crosses a frozen harbour at dusk.\\nAudience: families\\nLength: 90 seconds, no narration.' Another window rewrites line 2 to 'Audience: families with children under ten' and saves. This window (Brief & Script) typed onto the end of line 1, and its save gets a 409 and is merged. No line stays unchanged in all three versions between the two edits, so resolveChunk sees one stretch that both sides rewrote, and mine stands. The saved brief has line 1's new text and line 2 reverted to 'Audience: families', and both windows say 'Saved'. The same loss happens in a screenplay when one window edits a character cue and another edits the dialogue under it, and in any single-newline list. The merge.ts contract says each side's change to a different line is kept."
+  },
+  {
+   "severity": "major",
+   "title": "Two valid saves still merge into a draft the server refuses (cross-field rules), and Edit & Sound then stops saving everything",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 89,
+   "reproduced": true,
+   "spec": "tests/zz-break-merge-algebra-r2-2-workbench.spec.ts (3 of 4 runs; the other run timed out loading); unit: tests/unit/zz-break-merge-algebra-r2-merge.spec.ts 'a merge of two valid saves must be a valid save' (3 tests)",
+   "scenario": "Edit & Sound \u203a Mix has one sound clip of 24 frames. This window sets Fade in to 20 (allowed, since 20 \u2264 24\u22120). Another window sets Fade out to 20 on the same clip (also allowed) and saves first. The merge goes field by field and gives fadeIn 20 + fadeOut 20 > 24. validateAudio then refuses the PUT with 400 'Check the project fields before saving.' The observed PUTs were [409 revision_conflict, 400]. The draft-editor store sets stopped, so Fade in is never saved (server fadeIn 0), and a Gain of \u22126 typed afterwards is never sent (server gainDb 0). The page shows the error, and load() does nothing while dirty. fitDraft only repairs issues with code 'too_big', so any superRefine rule breaks this way. Unit tests also show it for a clip trimmed to 10 frames in one window and faded out over 20 in another. They also show it for a screenplay imported in one tab (scriptSource.edited=false with a page map) while a line was typed into the old script in another: the line-merged script no longer matches the page map ('The screenplay page mapping no longer matches its source text.')."
+  },
+  {
+   "severity": "major",
+   "title": "The merge drops an asset that the other side's new Rig input still points at (the deleteDrawing guard is bypassed)",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 37,
+   "reproduced": true,
+   "spec": "tests/zz-break-merge-algebra-r2-3-workbench.spec.ts (2 runs); unit: 'Storyboards deletes a line drawing while the Rig makes it a shot's input\u2026'",
+   "scenario": "Tab B (Storyboards) uploads a line drawing. Tab A (Rig) picks it for shot Opening under Inputs \u203a From the library\u2026. addInput keeps the existing asset, so A's copy leaves the asset unchanged. Before A's save lands, B deletes the drawing, and deleteDrawing allows it because B's copy shows no Rig input. A's save gets a 409 and is merged. The asset was removed by one side and left unchanged by the other, so it is dropped. The media node A added (assetId=upl_\u2026, wired into Opening) is kept. The saved draft ends with assets [] and Opening's input pointing at nothing. The Rig shows 'harbour-drawing.png \u00b7 Media' with no picture and no first-frame option, and says 'saved'. keepLinkedInputs only repairs node-to-node links; nothing checks node.assetId, firstFrameId, shots[].assetId or frame sketches against the merged assets. The rule deleteDrawing enforces ('a drawing the Rig uses as an input is refused') no longer holds after a merge. On main, this conflict stopped the save instead."
+  },
+  {
+   "severity": "major",
+   "title": "Rig: reopening a project while its parked save is out reuses the parked draft's old base, and a shot deleted then comes back",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 284,
+   "reproduced": true,
+   "spec": "tests/zz-break-merge-algebra-r2-5-workbench.spec.ts (2 runs)",
+   "scenario": "Project A is open in the Rig and the network returns 503. '+ Add shot' makes shot X, and its save fails. The user switches to project B, and A is parked (park at line 254 keeps saving it). The parked retry PUT goes out and is held on the wire. The user switches back to A: back = parked.get(A), next = back.draft, which still has the base and revision from before X. The user deletes X. The parked PUT then lands with X at revision 2. Once the network is back, the Rig's save checks its unconfirmed write (not landed, fenced) and merges from the stale base: mergeDraft(base without X, mine without X, latest with X). X counts as 'added by theirs' and is kept. Final server nodes are [n1, X], and the Rig shows X again with 'saved'. park() drops writeMergedDraft's result instead of moving draft.base and draft.revision on, and the reopen does not wait for or cancel the in-flight parked write, which uses the same writer."
+  },
+  {
+   "severity": "minor",
+   "title": "At the 4,000-node cap, fitDraft trims this window's new input node after keepLinkedInputs has run, leaving a link to it",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 23,
+   "reproduced": true,
+   "spec": "tests/unit/zz-break-merge-algebra-r2-merge.spec.ts 'at the 4,000-node cap\u2026'",
+   "scenario": "The base has 3,998 nodes. Mine adds an input to n0 (media-mine, n0.linked += media-mine), giving 3,999. Theirs adds two shots, giving 4,000. Each fit roomFor. The merge has 4,001 nodes, so fitDraft (saved-first) drops media-mine. keepLinkedInputs ran before the fit, so n0.linked still names media-mine. The result is valid for the schema but holds the dangling link 'n0 -> media-mine', and mine's input is silently lost."
+  },
+  {
+   "severity": "minor",
+   "title": "A second record sharing an id is silently deleted whenever both sides touched the list",
+   "file": "lib/workbench/merge.ts",
+   "line": 189,
+   "reproduced": true,
+   "spec": "tests/unit/zz-break-merge-algebra-r2-merge.spec.ts 'a draft holding two assets under one id\u2026'",
+   "scenario": "A draft holds two assets under id 'dup' (v1.png and v2.png). It passes saveSchema; only export asks for the duplicate to be resolved, and moleculr-bindings expects such drafts. Each window adds an upload. index() keeps only the first record per id, so the merged assets drop dup@v2.png. That breaks never-delete for legacy drafts; the existing spec calls it intended ('an id is never doubled')."
+  },
+  {
+   "severity": "minor",
+   "title": "Keyed lists lose position: another window's mid-list insert goes to the end, and when both sides move records, theirs' move is dropped",
+   "file": "lib/workbench/merge.ts",
+   "line": 193,
+   "reproduced": true,
+   "spec": "tests/unit/zz-break-merge-algebra-r2-merge.spec.ts 'order' (2 tests)",
+   "scenario": "Edit cut [s1,s2,s3]. Mine changes s1's length; theirs inserts x after s1. The merge gives [s1,s2,s3,x], so the other window's insert moves to the end of the cut. The same happens to the newest take or plate the other window filed at the front: it sits last until the list is trimmed. Mine swaps s1/s2 while theirs swaps s3/s4; the merge gives [s2,s1,s3,s4], so theirs' move is lost. Both follow the documented order rule, but they change the cut and scene order without saying so."
+  },
+  {
+   "severity": "minor",
+   "title": "mergeDraft takes 300\u2013750 ms on the main thread for a feature-size project whenever a list grows",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 92,
+   "reproduced": true,
+   "spec": "tests/unit/zz-break-merge-algebra-r2-merge.spec.ts 'a feature-sized project'",
+   "scenario": "The project has 4,000 nodes, 6,000 assets and 1,500 cut shots, and each side adds one node and edits another. grew=true, so fitDraft runs a full saveSchema.safeParse. That measured 305 ms and 743 ms in Node, and it runs in the browser on every conflicting save and every in-flight rebase. When every node changed on both sides, with no list growing, it took 32\u201364 ms. The screenplay case was fast only because of the DIFF_LIMIT fallback, the first break above."
+  },
+  {
+   "severity": "minor",
+   "title": "Text diff3 drops the other side's inserted lines that equal any line in mine's stretch (blank lines, repeated cues)",
+   "file": "lib/workbench/merge.ts",
+   "line": 286,
+   "reproduced": false,
+   "scenario": "Inferred from the code in resolveChunk.added: `!besides.includes(code)` skips a line theirs inserted when mine's stretch has the same line. When both windows insert a paragraph at one place, theirs' blank separator is dropped, which glues its paragraph to the next one. A repeated character cue theirs added is dropped too, which moves its dialogue under the previous speaker. Not run."
+  },
+  {
+   "severity": "minor",
+   "title": "use-draft-editor replaces its writer on every (re)load, even with a save still unconfirmed",
+   "file": "lib/workspace/use-draft-editor.ts",
+   "line": 102,
+   "reproduced": false,
+   "scenario": "Inferred, not run. The load effect always sets writer.current = draftWriter(), including on reload() after an uncertain save. A PUT from the old writer that is still on its way can land after the reload's read, and it is never fenced by check-write. The editor's base then misses that landed save, and the next merge treats its additions as the other side's."
+  }
+ ],
+ "checked": [
+  "Previous round's breaks, re-checked against the tree: lost-reply re-merge now goes through writer-tagged check-write (draftRequest unit specs pass); the direction-note duplicate is fixed with stableId('op', node, 'direction'); round-1 overflow (references, pending, plates, takes) is fixed by fitDraft for too_big only (other schema rules still fail, see break 3); Environment double take is fixed with sourcedPlaceId; node\u2192node dangling links are fixed with keepLinkedInputs (assets are not, see break 4)",
+  "Baseline: tests/unit/draft-merge.spec.ts and tests/unit/draftRequest.spec.ts: 63 of 63 pass",
+  "merge3 on JSON values: null and missing, undefined in arrays, key order (canonical/sameJson), a key named __proto__ (put via defineProperty), a type change between object and array (mine wins), numbers and vectors (mine wins), mixed lists (mine), token-set detection, identity-key choice (id / genId / jobId / assetId / frame / page), duplicate ids (break 7)",
+  "mergeById order and flip rules (break 8); deletion versus change keeps the changed record; ancestors apply only for key 'id'",
+  "Text diff3: Myers alignment and DIFF_LIMIT fallback (break 1), stretch resolution for adjacent edits (break 2), the added() dedupe (minor), grew and fitDraft on text",
+  "mergeDraft validity against every saveSchema superRefine: audio fades and duration (break 3), scriptSource page map versus line-merged script (break 3, unit), bins, moleculr and poster bindings (by reading), OCR requestedPages versus pages (by reading: requestedPages is a number list where mine wins, pages merge by page)",
+  "Asset references after a merge: node.assetId and firstFrameId, shots[].assetId, boards frame sketches (break 4)",
+  "Performance at the caps: 4,000 nodes, 6,000 assets, 1,500 shots, a 6,000-line script; fitDraft trimming at the node cap (breaks 6 and 9)",
+  "Editor bases. use-draft-editor: flush sets base to saved.project and rebases in-flight edits, refresh merges from base and reads in turn, load resets the writer (minor). draft-editor store: the stamp guard, base set after a save, rebase, a 400 stops saving (break 3). RigProvider: flush sets base to saved.project, current is read after teamFlush, ancestors are pruned, fold; park and reopen reuses a stale base (break 5). use-composer saveOnLatest reads and applies the change on the latest draft with a tagged writeDraft",
+  "writeMergedDraft: pending-unconfirmed path (from = pending.mine when landed, else write.base), sameDraftContent early return, the tries limit, settle carrying mine rather than the merged body",
+  "Server: saveDraft keeps the revision pre-check and CAS with DraftConflictError code 'revision_conflict', the writer fence (seq >= write.seq throws a conflict), checkDraftWrite fencing",
+  "Browser specs (run against localhost:4790 with ENGINE_MOCK; nothing billed): tests/zz-break-merge-algebra-r2-1..5-workbench.spec.ts all fail as described (r2-2 in 3 of 4 runs, the fourth timed out loading). Unit spec tests/unit/zz-break-merge-algebra-r2-merge.spec.ts: 11 fail as expected, 3 timing tests pass. No product code was edited; the specs are left uncommitted, like the other breakers' specs in the tree"
+ ]
+}

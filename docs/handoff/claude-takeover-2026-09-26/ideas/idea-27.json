@@ -1,0 +1,16 @@
+{
+ "n": 27,
+ "title": "Agent stages keep the user's notes and speak in credits",
+ "area": "Studio \u203a Brief & Beats",
+ "gap": "Redraft notes are cleared even when the start fails: BriefStage.tsx:247 and BeatsStage.tsx:331 do runs.start().then(() => setNotes('')), and use-agent-runs.ts:120 catches every error, so the promise always resolves. BriefStage.tsx:136 shows '$\u2026 ceiling' to customers billed in credits. Deleting a scene, beat or shot in Beats has no confirmation and no undo.",
+ "target": "start() resolves to a boolean, and notes are cleared only on true. The quote line shows credits only unless the workspace pays its vendors in USD. Beats deletes go through the shell undo stack with a '\u2318Z to undo' toast.",
+ "files": [
+  "components/graphite/production/BriefStage.tsx",
+  "components/graphite/production/BeatsStage.tsx",
+  "components/graphite/production/use-agent-runs.ts",
+  "lib/shell/undo.ts"
+ ],
+ "priority": "P2",
+ "effort": "small",
+ "respects_rules": "Undo keeps team data recoverable, and credits are shown before any agent spend."
+}
