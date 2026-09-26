@@ -27,12 +27,13 @@ import { useOnChange } from "@/lib/changes";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { timeAgo, downloadHref, posterSrc } from "@/lib/format";
+import { timeAgo, downloadHref, isOwnMedia, posterSrc } from "@/lib/format";
 import LazyMedia from "@/components/LazyMedia";
 import ProductionNav from "@/components/ProductionNav";
 import PaneDivider from "@/components/PaneDivider";
 import { PANES, usePaneWidth } from "@/lib/panes";
 import { Empty, Waiting } from "@/components/ParticlMark";
+import { appAlert } from "@/components/dialog";
 import { stateOf, roleOf } from "@/components/Feed";
 import type { Gen } from "@/components/GenCard";
 import type { Shot } from "@/lib/shots";
@@ -126,10 +127,11 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
     return () => { live = false; el.removeEventListener("loadedmetadata", fromTheTop); };
   }, [playing]);
 
+  /* Stored masters only: a file on the engine's own host would navigate the tab
+     (a browser ignores `download` across origins) and cut the rest short. */
+  const downloadable = approvedHeroes.map((g) => g.storedUrl ?? g.sourceUrl).filter((url): url is string => isOwnMedia(url));
   function downloadAll() {
-    approvedHeroes.forEach((g, i) => {
-      const url = g.storedUrl ?? g.sourceUrl;
-      if (!url) return;
+    downloadable.forEach((url, i) => {
       setTimeout(() => {
         const a = document.createElement("a");
         a.href = downloadHref(url); a.download = ""; a.rel = "noopener";
@@ -138,8 +140,16 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
     });
   }
 
+  /* The server's refusal (a member, a stale scope, a lapsed session) is said, not swallowed. */
+  const refusal = async (res: Response) => ((await res.json().catch(() => ({}))).error as string | undefined) ?? `The server answered ${res.status}.`;
   async function approve(g: Gen) {
-    await fetch(`/api/jobs/${g.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" }, body: JSON.stringify({ reviewState: "approved" }) });
+    const res = await fetch(`/api/jobs/${g.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" }, body: JSON.stringify({ reviewState: "approved" }) });
+    if (!res.ok) await appAlert("Not approved", await refusal(res));
+    refresh(); refreshShots();
+  }
+  async function fileTo(genId: string, shot: ShotRow) {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(genId)}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" }, body: JSON.stringify({ shotId: shot.id }) });
+    if (!res.ok) await appAlert(`Not filed to ${shot.code}`, await refusal(res));
     refresh(); refreshShots();
   }
 
@@ -152,6 +162,12 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
      download. The download link asserted that away with a `!` and took the
      whole screen down with "Cannot read properties of null". */
   const heroUrl = cur?.hero ? (cur.hero.storedUrl ?? cur.hero.sourceUrl) : null;
+  /* This project's own views: Media lists every take it made, Shots is where a
+     take is picked, approved and rendered. "/" is the Suites home now, and knows
+     nothing of this project. */
+  const projectBase = project?.productionId ? `/productions/${project.productionId}/${id}` : null;
+  const takesHref = projectBase ? `${projectBase}/media` : "/productions";
+  const shotsHref = projectBase ? `${projectBase}/shots` : "/productions";
 
   return (
     <>
@@ -169,8 +185,8 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                 onClick={() => setSeq(seq == null ? 0 : null)}>
                 {seq == null ? "▶ Play approved" : "■ Stop"}
               </button>
-              <button type="button" className="btn-secondary" disabled={!approvedHeroes.length} onClick={downloadAll}>
-                Download {approvedHeroes.length} master{approvedHeroes.length === 1 ? "" : "s"} ↓
+              <button type="button" className="btn-secondary" disabled={!downloadable.length} onClick={downloadAll}>
+                Download {downloadable.length} master{downloadable.length === 1 ? "" : "s"} ↓
               </button>
             </div>
           </div>
@@ -217,8 +233,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                             const a = readDraggedAsset(e);
                             if (!a || a.gen.kind === "audio") return;
                             e.preventDefault();
-                            await fetch(`/api/jobs/${encodeURIComponent(a.gen.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" }, body: JSON.stringify({ shotId: c.shot.id }) });
-                            refresh(); refreshShots();
+                            await fileTo(a.gen.id, c.shot);
                           }}>
                           <span className="cv-tile-well">
                             {url && c.hero ? <LazyMedia url={url} kind="video" alt="" className="media" /> : null}
@@ -329,15 +344,15 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
           </div>
           <div className="ws-rail-foot">
             <div className="cv-foot-acts">
-              <Link href="/" className="btn-secondary justify-center" onClick={() => setSelection(id)}>Open takes</Link>
+              <Link href={takesHref} className="btn-secondary justify-center">Open takes</Link>
               {cur?.state === "approved" && heroUrl ? (
                 <a href={downloadHref(heroUrl)} download className="btn-primary justify-center">Download master ↓</a>
               ) : cur?.state === "picked" && cur.hero ? (
                 <button type="button" className="btn-primary justify-center" onClick={() => approve(cur.hero!)}>Approve take</button>
               ) : cur?.state === "draft" ? (
-                <Link href="/" className="btn-primary justify-center" onClick={() => setSelection(id)}>Pick a take</Link>
+                <Link href={shotsHref} className="btn-primary justify-center">Pick a take</Link>
               ) : (
-                <Link href="/" className="btn-primary justify-center" onClick={() => setSelection(id)}>Compose in Video</Link>
+                <Link href={shotsHref} className="btn-primary justify-center">Render in Shots</Link>
               )}
             </div>
             <span className="mono-s text-center">

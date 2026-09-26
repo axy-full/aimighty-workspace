@@ -17,6 +17,7 @@ import WorkspaceMenu, {type WorkbenchAccount} from "./WorkspaceMenu";
 import { MobileStudioMenu } from "@/components/studio/StudioNavigation";
 import {AtomikMark} from "@/components/AtomikMark";
 import {clearPrivateLocal} from "@/lib/session";
+import {signInHrefFor} from "@/lib/signIn";
 import React, {
   useState,
   useLayoutEffect,
@@ -1604,7 +1605,7 @@ export default function Studio({
                     <DropdownMenuItem onClick={() => setDialog("shortcuts")}>
                       Keyboard shortcuts
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={()=>void leaveWorkspace(signedIn?'/settings':'/login')}>{signedIn?'Account & workspace':'Sign in'}</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={()=>void leaveWorkspace(signedIn?'/settings':signInHrefFor(window.location.pathname,window.location.search))}>{signedIn?'Account & workspace':'Sign in'}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDialog("connections")}>
                       Connected engines
                     </DropdownMenuItem>

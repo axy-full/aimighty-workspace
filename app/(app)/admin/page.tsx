@@ -30,6 +30,10 @@ type Admin = {
   concurrency: { byEngine: { engine: string; peak: number; at: number; jobs: number }[]; overall: { peak: number; at: number }; days: number } | null;
   workspaces: Ws[];
 };
+/** The server's own words for a refusal, or its status when it sent none. */
+const refusal = async (res: Response): Promise<string> =>
+  ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `The server answered ${res.status}.`;
+
 type Ws = {
   id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean;
   credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number;
@@ -65,11 +69,13 @@ export default function AdminPage() {
   }
   async function withdraw(code: string) {
     if (!(await appConfirm("Withdraw this invitation?", "The link stops working.", { confirmLabel: "Withdraw", danger: true }))) return;
-    await fetch(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
+    if (!res.ok) await appAlert("Not withdrawn", await refusal(res));
     refresh();
   }
   async function handled(id: string) {
-    await fetch(`/api/admin/requests/${encodeURIComponent(id)}`, { method: "PATCH" });
+    const res = await fetch(`/api/admin/requests/${encodeURIComponent(id)}`, { method: "PATCH" });
+    if (!res.ok) await appAlert("Not marked handled", await refusal(res));
     refresh();
   }
 
@@ -632,7 +638,11 @@ function ReportsCard() {
   const [busy, setBusy] = useState<string | null>(null);
   async function handled(id: string) {
     setBusy(id);
-    try { await fetch("/api/admin/reports", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }); refresh(); }
+    try {
+      const res = await fetch("/api/admin/reports", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!res.ok) await appAlert("Not marked handled", await refusal(res));
+      refresh();
+    } catch (e) { await appAlert("Not marked handled", (e as Error).message); }
     finally { setBusy(null); }
   }
   if (!data) return null;

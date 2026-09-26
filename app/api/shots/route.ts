@@ -3,7 +3,8 @@ import { billedCreditsSum } from "@/lib/creditSql";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { listShots, createShot, codeProblem } from "@/lib/shots";
-import { requireTenant } from "@/lib/tenant";
+import { currentTenant, requireTenant } from "@/lib/tenant";
+import { creditsApply } from "@/lib/credits";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,9 @@ export const GET = withTenant(async function GET(req: Request) {
    * composer opens, and an unscoped GROUP BY over generations would become a
    * full scan of the whole table as the library grows (R5). */
   await ready();
+  /* A workspace on credits is shown credits. The vendor's dollars beside them
+     would give the margin away (lib/jobs.ts withholds costUsd the same way). */
+  const inCredits = creditsApply(currentTenant()?.workspace);
   const stats = new Map<string, { takes: number; ok: number; failed: number; spend: number; credits: number }>();
   if (shots.length) {
     const ids = shots.map((s) => s.id);
@@ -44,7 +48,7 @@ export const GET = withTenant(async function GET(req: Request) {
       const row = r as any;
       stats.set(row.shot_id, {
         takes: Number(row.takes ?? 0), ok: Number(row.ok ?? 0),
-        failed: Number(row.failed ?? 0), spend: Number(row.spend ?? 0), credits: Number(row.credits ?? 0),
+        failed: Number(row.failed ?? 0), spend: inCredits ? 0 : Number(row.spend ?? 0), credits: Number(row.credits ?? 0),
       });
     }
   }
@@ -78,7 +82,7 @@ export const GET = withTenant(async function GET(req: Request) {
   }
   return NextResponse.json({
     shots: shots.map((s) => ({
-      ...s, ...(stats.get(s.id) ?? { takes: 0, ok: 0, failed: 0, spend: 0 }),
+      ...s, ...(stats.get(s.id) ?? { takes: 0, ok: 0, failed: 0, spend: 0, credits: 0 }),
       ...(back.get(s.id) ?? { state: s.kind === "type" ? "type" : "none", master: null, poster: null }),
     })),
   }, { headers: { "Cache-Control": "private, no-store" } });

@@ -39,6 +39,11 @@ export function downloadHref(url: string): string {
   return url.startsWith("/api/media/") ? `${url}?download=1` : url;
 }
 
+/** A file this app serves itself — the only kind a `download` link can save rather than open. */
+export function isOwnMedia(url: string | null | undefined): boolean {
+  return typeof url === "string" && url.startsWith("/api/media/");
+}
+
 /** Machine time, spoken the way a producer would say it. */
 export function dur(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";

@@ -33,7 +33,7 @@ export default function AppError({
           <button type="button" onClick={reset} className="btn-render h-[38px] px-5 text-[14px]">
             Try again
           </button>
-          <Link href="/" className="chip">Go to Video</Link>
+          <Link href="/" className="chip">Go to Studio</Link>
           <button type="button" onClick={() => window.location.reload()} className="chip">
             Reload the page
           </button>
