@@ -106,6 +106,22 @@ async function inChunks<T>(items: T[], size: number, fn: (item: T) => Promise<un
 /** libsql rows, typed loosely at the one place we read them by hand. */
 function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 
+/**
+ * What a held take's snapshot (lib/held.ts heldInfo) may tell the browser:
+ * why it waits, and its price in the one unit this workspace pays in — the
+ * credits it `needs`, or, on its own keys, `estUsd`, the dollars that would
+ * leave its own account. Never both, for the reason costUsd and
+ * creditsBilled are never both: side by side they are the margin.
+ * Releasing reads the raw row (heldRows), not this.
+ */
+function heldForBrowser(held: Record<string, unknown>, inCredits: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (typeof held.why === "string") out.why = held.why;
+  if (inCredits && typeof held.needs === "number") out.needs = held.needs;
+  if (!inCredits && typeof held.estUsd === "number") out.estUsd = held.estUsd;
+  return out;
+}
+
 export function rowToGeneration(r: any): Generation {
   /* Read once per row rather than per field: which unit this workspace pays
      in decides what the row is allowed to carry. */
@@ -135,6 +151,7 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
+  if (params.held && typeof params.held === "object") params.held = heldForBrowser(params.held, inCredits);
   return {
     id: r.id,
     projectId: r.project_id ?? null,
