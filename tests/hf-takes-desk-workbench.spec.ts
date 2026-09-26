@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
 import type { Generation } from "../lib/jobs";
 import type { LibraryUpload } from "../lib/genLibrary";
-import { smallTargets } from "./phoneFloors";
+import { dimLabels, smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
@@ -297,8 +297,9 @@ test("the selected take is picked, approved or sent back through the review rout
   await tile(takes, "Night swim").getByTestId("edit-take").click();
   await expect(toast).toHaveText("Night swim did not render · Refused by the content filter.");
 
-  /* Back to the takes brings the selected take's card into view. */
+  /* Back to the takes closes the take and brings its card into view. */
   await page.getByTestId("takes-back").click();
+  await expect(page.getByTestId("takes-selected")).toHaveCount(0);
   await expect(tile(takes, "Harbour plate.webp")).toBeInViewport();
   await noSideScroll(page);
   expect(errors).toEqual([]);
@@ -368,6 +369,13 @@ test("a long project is windowed and reads on as its end comes into view; the la
   await toEnd(page);
   await expect(last).toBeVisible();
   await clearsTabBar(page, last, "the last row");
+  /* Opened from the end of a windowed grid, then Back: its card, not mounted meanwhile, is brought back into view. */
+  await last.getByTestId("edit-take").click();
+  await expect(page.getByTestId("takes-selected")).toContainText("Selected · Take 300");
+  await expect(last).toHaveCount(0);
+  await page.getByTestId("takes-back").click();
+  await expect(page.getByTestId("takes-selected")).toHaveCount(0);
+  await expect(last).toBeInViewport();
   await noSideScroll(page);
   expect(errors).toEqual([]);
 });
@@ -397,6 +405,41 @@ test("the Library panel reads its next page as its end comes into view, and a sp
   await page.getByTestId("takes-more-button").click();
   await expect(tile(grid(page), "Take 126")).toBeVisible();
   await expect(page.getByTestId("takes-more")).toHaveCount(0);
+  await noSideScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test("long names stay inside the desk: a shot, a batch, a selected take and a search that finds nothing", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const name = "Harbour at dusk from the far breakwater with gulls crossing the lamp line while the ferry turns ".repeat(2).trim();
+  const store: Library = {
+    uploads: [],
+    generations: [
+      row(0, { id: "gen_long1", title: name, shotId: "shot_long", shotCode: "SH030", shotTitle: `${name} (shot)`, params: { batchId: "b_longone" } }),
+      row(1, { id: "gen_long2", title: `${name} (take two)`, shotId: "shot_long", shotCode: "SH030", shotTitle: `${name} (shot)`, params: { batchId: "b_longone" } }),
+    ],
+  };
+  const { errors } = await open(page, store);
+  const takes = grid(page);
+  await expect(takes.getByTestId("take-tile")).toHaveCount(2);
+  await tile(takes, name).getByTestId("edit-take").click();
+  const selected = page.getByTestId("takes-selected");
+  await expect(selected).toContainText(`Selected · ${name}`);
+  /* One line each, cut short inside their card: the selected name, the shot. */
+  const inside = async (el: Locator, card: Locator, what: string) => {
+    const [box, cardBox] = [(await el.boundingBox())!, (await card.boundingBox())!];
+    expect(box.x + box.width, `${what} inside its card`).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+    const line = await el.evaluate((node) => ({ h: node.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(node).lineHeight) || 18 }));
+    expect(line.h, `${what} on one line`).toBeLessThan(line.lh * 1.6);
+  };
+  await inside(selected.locator(".pd-selected-name"), selected, "the selected name");
+  await inside(takes.getByTestId("takes-shot").locator(".pd-desk-head-name"), page.getByTestId("edit-takes"), "the shot");
+  await page.getByTestId("takes-search").fill("unbrokensearchwordwithoutanyspaces".repeat(4));
+  await expect(page.getByTestId("takes-empty")).toContainText("Nothing matches");
+  const empty = (await page.getByTestId("takes-empty").boundingBox())!;
+  expect(empty.x + empty.width, "the empty note inside the screen").toBeLessThanOrEqual(page.viewportSize()!.width);
+  if (PHONES.includes(info.project.name)) expect(await dimLabels(page, '[data-testid="edit-stage"]'), "labels dimmer than #7C7C84").toEqual([]);
+  await shot(page, info, "desk-long", selected);
   await noSideScroll(page);
   expect(errors).toEqual([]);
 });

@@ -157,13 +157,23 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   };
   const prev = entry ? stepTake(all, shownIds, entry.take.id, -1) : null;
   const next = entry ? stepTake(all, shownIds, entry.take.id, 1) : null;
-  /* Back to the take in the grid: its tile if it is on the page, else the windowed grid brings its row in. */
+  /* Back to the takes: the take closes and its card comes into view — its tile if it is on the page, else the
+     windowed grid brings its row in (centred, clear of the phone's tab bar). A reveal is dropped once it has
+     been applied, so a grid that is windowed again later does not jump back to it. */
   const [reveal, setReveal] = useState<{ key: string; n: number } | null>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    const timer = setTimeout(() => setReveal(null), 500);
+    return () => clearTimeout(timer);
+  }, [reveal]);
   const backToGrid = (id: string) => {
-    const tile = document.querySelector(`[data-testid="takes-grid"] [data-take="${CSS.escape(id)}"]`);
-    if (tile) tile.scrollIntoView({ block: "center" });
-    else if (shownIds.has(id)) setReveal((r) => ({ key: id, n: (r?.n ?? 0) + 1 }));
-    else document.querySelector("[data-section='takes']")?.scrollIntoView({ block: "start" });
+    setPicked(null); setFocus(null);
+    requestAnimationFrame(() => {
+      const tile = document.querySelector(`[data-testid="takes-grid"] [data-take="${CSS.escape(id)}"]`);
+      if (tile) tile.scrollIntoView({ block: "center" });
+      else if (shownIds.has(id)) setReveal((r) => ({ key: id, n: (r?.n ?? 0) + 1 }));
+      else document.querySelector("[data-section='takes']")?.scrollIntoView({ block: "start" });
+    });
   };
 
   /* The Library's tools: Needs review narrows the desk to it; Seedance Edit and Re-edit open the newest take they work on. */
@@ -354,7 +364,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         </>
       ) : chosen && !readFailed ? (
         /* Handed a take that cannot open (it did not render, waits, or its copy has not landed): what it is doing, and what happens next. */
-        <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-finding">
+        <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-waiting">
           <span className="gx-hint">{notOpenWords(chosen)}</span>
         </div>
       ) : picked && !chosen && !readFailed ? (

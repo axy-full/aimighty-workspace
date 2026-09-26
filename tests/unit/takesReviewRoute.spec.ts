@@ -168,7 +168,7 @@ test("a review is refused for a word it does not know, a take that is gone or no
     expect((await api.patch(id, { reviewState: "" })).status).toBe(200);
   }
   /* A page captured for another workspace, or no scope at all, writes nothing. */
-  for (const headers of [{}, { "X-Workbench-Scope": "particl-active-elsewhere-member" }]) {
+  for (const headers of [{}, { "X-Workbench-Scope": "particl-active-elsewhere-member" }] as Record<string, string>[]) {
     expect((await api.patch("again", { reviewState: "changes" }, headers)).status).toBe(409);
   }
   expect(await api.row(ws, "again")).toMatchObject({ review_state: "approved" });
