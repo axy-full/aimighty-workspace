@@ -1,7 +1,7 @@
 import { makeFCPXML, makeXMEML } from './editorial-xml';
 import {audioClips} from './audio';
 import {zipSync,strToU8} from 'fflate';
-import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
+import {Asset,EDL_EVENTS,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
 import {moleculrAssetDependencies,validateMoleculrBindings} from './moleculr-bindings';
 import {originalAssetDownload} from './original-asset';
 import {resolveReferenceAd} from './reference-ad';
@@ -52,14 +52,16 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  const exportAssets=new Map(p.assets.map(asset=>[asset.id,asset]));
  const links:{assetId:string;name:string;url:string}[]=[];
  let bytes=0;
+ // Over 999 shots there is no EDL to send instead, so the advice names the XML formats.
+ const tooLarge='This browser package is limited to 200 MB. Export '+(p.shots.length>EDL_EVENTS?'FCPXML or Premiere XML':'the EDL')+' and collect large sources separately.';
  for(const original of sources){
   if(original.kind==='link'){links.push({assetId:original.id,name:original.name,url:original.url});continue;}
   const response=await fetchAsset(referenceVideoUrls.get(original.id) ?? originalAssetDownload(original)?.url ?? original.url);
   if(!response.ok)throw new Error('Cannot export '+original.name+'. Try opening the asset first.');
   const length=Number(response.headers.get('content-length')||0);
-  if(length>EXPORT_LIMIT-bytes)throw new Error('This browser package is limited to 200 MB. Export the EDL and collect large sources separately.');
+  if(length>EXPORT_LIMIT-bytes)throw new Error(tooLarge);
   const blob=await response.blob();bytes+=blob.size;
-  if(bytes>EXPORT_LIMIT)throw new Error('This browser package is limited to 200 MB. Export the EDL and collect large sources separately.');
+  if(bytes>EXPORT_LIMIT)throw new Error(tooLarge);
   const mime=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
   if(['image','video','audio'].includes(original.kind)&&(!blob.size||(mime&&mime!=='application/octet-stream'&&!mime.startsWith(original.kind+'/'))))throw new Error('The source for '+original.name+' did not return usable '+original.kind+' media.');
   // A protected media URL often has no extension; use its actual response type for relinking.
@@ -71,7 +73,9 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
   sourceFiles.push({assetId:asset.id,file:filename});
  }
  const project={...p,assets:[...exportAssets.values()]};
- files['sequence.edl']=strToU8(makeEDL(project));
+ // CMX3600 stops at 999 events; a longer cut travels whole in the two XML formats.
+ const edl=project.shots.length<=EDL_EVENTS;
+ if(edl)files['sequence.edl']=strToU8(makeEDL(project));
  files['sequence.fcpxml']=strToU8(makeFCPXML(project));
  files['sequence.xml']=strToU8(makeXMEML(project));
  let at=p.fps*3600;
@@ -88,7 +92,7 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
 ${p.name}
 ${p.fps} fps, non-drop frame. Record starts at 01:00:00:00.
 
-sequence.edl: CMX3600, one video track, straight cuts only.
+${edl?'sequence.edl: CMX3600, one video track, straight cuts only.':`sequence.edl: not included. CMX3600 holds 999 events and this cut has ${p.shots.length}; use sequence.fcpxml or sequence.xml.`}
 sequence.fcpxml: FCPXML 1.10 for Final Cut Pro and DaVinci Resolve — the cut plus the Sound lanes (dialogue, music, effects) at their positions, gain and mute.
 sequence.xml: Final Cut Pro 7 XML (XMEML v4) for Premiere Pro — the same cut and lanes. Both point at media/ by relative path; relink to the unzipped folder if asked.
 shotlist.csv: inclusive in / exclusive out timecodes and creative notes.

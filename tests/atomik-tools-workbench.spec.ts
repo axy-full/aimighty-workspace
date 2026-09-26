@@ -18,10 +18,10 @@ const uploads = {
 };
 
 /** Same mocked owner surface as the Generate spec, with an image and a video original in the library. */
-async function fixture(page: Page) {
+async function fixture(page: Page, owner = true) {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json());
-  me.owner = true;
+  me.owner = owner;
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   let project: Project = { ...newProject("Atomik film"), id: "atomik-draft", productionProjectId: "actual-production" };
   let revision = 1;
@@ -227,4 +227,52 @@ test("Remove background (video) runs on one project video and files the result a
   expect(state.posts.filter((body) => body.action === "quote")).toHaveLength(1);
   await noOverflow(page);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("the library's Upscale opens the matching upscale tool on that file, and Edit hands the file to Generate", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
+  const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
+  await expect(panel.getByRole("combobox", { name: "Generate model", exact: true })).toBeVisible();
+  const menu = async (id: string, item: string) => {
+    const card = page.locator(`[data-library-id="${id}"]`);
+    await expect(card).toBeVisible();
+    await card.getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: item, exact: true }).click();
+  };
+  // Upscale: the video tool, its first listed model, the clip as its one source — and nothing priced or sent yet.
+  await menu("upload:clip-original", "Upscale video");
+  const tools = panel.getByRole("group", { name: "Tools", exact: true });
+  await expect(tools.getByRole("button", { name: "Upscale video", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("combobox", { name: "Generate model", exact: true })).not.toHaveValue("");
+  await expect(panel.getByRole("combobox", { name: "Role for Hero take.mp4", exact: true })).toBeVisible();
+  await expect(panel.getByRole("checkbox", { name: /copied to the connected account/ })).toBeVisible();
+  // The image goes to the image tool, replacing the video.
+  await menu("upload:still-original", "Upscale image");
+  await expect(tools.getByRole("button", { name: "Upscale image", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("combobox", { name: "Role for Bottle.png", exact: true })).toBeVisible();
+  await expect(panel.getByRole("combobox", { name: "Role for Hero take.mp4", exact: true })).toHaveCount(0);
+  expect(state.posts.map((body) => body.action)).toEqual(["catalogue"]);
+  await noOverflow(page);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+  // Edit: Particl's own Generate, with the image as its reference.
+  await menu("upload:still-original", "Edit image");
+  /* A dev server compiles /generate on its first visit. */
+  await expect(page).toHaveURL(/\/generate\?/, { timeout: 60_000 });
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({ project: "atomik-draft", mode: "images", ref: "upload:still-original" });
+});
+
+test("where the connected account cannot upscale, the library's Upscale hands the file to Particl's own Generate", async ({ page }) => {
+  const state = await fixture(page, false);
+  await page.goto(await legacyShell(page, "/atomik?project=atomik-draft&page=generate"));
+  await expect(page.getByText("The workspace owner can use the connected account.", { exact: false }).first()).toBeVisible();
+  const card = page.locator('[data-library-id="upload:clip-original"]');
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByRole("menuitem", { name: "Upscale video", exact: true }).click();
+  /* A dev server compiles /generate on its first visit. */
+  await expect(page).toHaveURL(/\/generate\?/, { timeout: 60_000 });
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({ project: "atomik-draft", mode: "video", task: "upscale", source: "upload:clip-original" });
+  expect(state.posts).toEqual([]);
+  expect(state.external).toEqual([]);
 });

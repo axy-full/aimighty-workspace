@@ -79,13 +79,20 @@ export function persistPendingAtomik(storage: AtomikPendingStorage, scope: strin
   return record;
 }
 
-/** A matching accepted job resolves the submission; an absent GET row or uncertain outcome does not. */
+/**
+ * A server row for this request ID resolves the browser record, whatever its status: the
+ * request ID can no longer mint a second paid job, and an 'uncertain' row keeps its reservation
+ * and error on the server for review (nothing retries it). Keeping the browser record after that
+ * would lock every later Atomik request on this project on this device. An absent GET row does
+ * not resolve it.
+ */
+export const ATOMIK_RESOLVED_STATUSES: readonly string[] = ['queued', 'running', 'succeeded', 'failed', 'uncertain'];
 export type AtomikResolution =
   | { job: AtomikRecoveryJob }
   | { rejectedStatus: number; confirmedNoJob: boolean };
 export function resolvePendingAtomik(storage: AtomikPendingStorage, scope: string, projectId: string, record: PendingAtomikRequest, resolution: AtomikResolution): boolean {
   const resolved = 'job' in resolution
-    ? resolution.job.requestId === record.requestId && ['queued', 'running', 'succeeded', 'failed'].includes(resolution.job.status)
+    ? resolution.job.requestId === record.requestId && ATOMIK_RESOLVED_STATUSES.includes(resolution.job.status)
     : resolution.confirmedNoJob && [400, 402, 422].includes(resolution.rejectedStatus);
   if (!resolved) return false;
   const current = readPendingAtomik(storage, scope, projectId);

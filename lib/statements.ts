@@ -7,6 +7,7 @@ import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
 import { creditFundingFor } from "./billingLedger";
+import { GROK_STT_MODEL } from "./xaiVoice";
 
 /**
  * Statements: what a workspace was billed, itemised by production, shot
@@ -150,7 +151,20 @@ type GenRow = {
   prompt: string; cost_usd: number | null; refine_cost_usd: number | null; params: string | null; project_id: string | null; shot_id: string | null;
   project_name: string | null; shot_code: string | null; shot_title: string | null;
 };
-type MeterRow = { id: string; kind: string; model: string; status: string; billed_credits: number | null; engine_cost_usd: number | null; project_id: string | null; shot_id: string | null; created_at: number };
+type MeterRow = { id: string; kind: string; engine: string | null; model: string; status: string; billed_credits: number | null; engine_cost_usd: number | null; project_id: string | null; shot_id: string | null; created_at: number };
+
+const statementKind = (kind: string): StatementLine["kind"] =>
+  kind === "image" || kind === "audio" || kind === "text" || kind === "training" ? kind : "video";
+
+/** How a metered job with no take of its own reads on a statement. */
+export function meteredLine(e: Pick<MeterRow, "kind" | "model"> & { engine?: string | null }): { take: string; what: string } {
+  if (e.kind === "training") return { take: "Training", what: `Identity training · ${e.model}` };
+  if (e.kind === "text") return { take: "Atomik", what: `Thinking · ${e.model}` };
+  if (e.engine === "vercel-sandbox") return { take: "Astra", what: "Astra render" };
+  if (e.model === GROK_STT_MODEL) return { take: "Transcript", what: "Transcription" };
+  const kind = statementKind(e.kind);
+  return { take: kind === "image" ? "Still" : kind === "audio" ? "Audio" : "Video", what: modelLabel(e.model) };
+}
 
 /** One month's statement for this workspace, or one production of it. */
 export async function statementFor(month: string, projectId: string | null): Promise<Statement | null> {
@@ -173,7 +187,7 @@ export async function statementFor(month: string, projectId: string | null): Pro
   try {
     await platformReady();
     const mt = await platformDb().execute({
-      sql: `SELECT id, kind, model, status, billed_credits, engine_cost_usd, project_id, shot_id, created_at
+      sql: `SELECT id, kind, engine, model, status, billed_credits, engine_cost_usd, project_id, shot_id, created_at
             FROM meter_events WHERE workspace_id = ? AND created_at >= ? AND created_at < ? ${projectId ? "AND project_id = ?" : ""}`,
       args: projectId ? [ws.id, range.from, range.to, projectId] : [ws.id, range.from, range.to],
     });
@@ -203,6 +217,22 @@ export async function statementFor(month: string, projectId: string | null): Pro
       projectId: r.project_id, projectName: r.project_name ?? "", shotId: r.shot_id, shotCode: r.shot_code ?? "", shotTitle: r.shot_title ?? "",
     });
   }
+  /* Metered work with no take of its own: a transcription, an Astra render,
+     anything else the meter billed under an id that is not a generation. The
+     balance lost these credits, so the statement lists them. A meter row whose
+     take exists but sits outside this month or production is that take's,
+     and is left to the statement that lists the take. */
+  const seen = new Set((gens.rows as unknown as GenRow[]).map((r) => String(r.id)));
+  const leftover = [...meter.values()].filter((m) => !seen.has(String(m.id)));
+  if (leftover.length) {
+    const taken = new Set<string>();
+    for (let i = 0; i < leftover.length; i += 500) {
+      const ids = leftover.slice(i, i + 500).map((m) => String(m.id));
+      const rs = await db().execute({ sql: `SELECT id FROM generations WHERE id IN (${ids.map(() => "?").join(",")})`, args: ids });
+      for (const r of rs.rows as unknown as { id: string }[]) taken.add(String(r.id));
+    }
+    extra.push(...leftover.filter((m) => !taken.has(String(m.id))));
+  }
   if (extra.length) {
     const ids = [...new Set(extra.map((e) => e.project_id).filter((x): x is string => Boolean(x)))].filter((id) => !projectNames.has(id));
     if (ids.length) {
@@ -213,9 +243,10 @@ export async function statementFor(month: string, projectId: string | null): Pro
       const credits = inCredits ? Number(e.billed_credits ?? 0) : 0;
       const usd = inCredits ? 0 : Number(e.engine_cost_usd ?? 0);
       if (!(credits > 0) && !(usd > 0)) continue;
+      const { take, what } = meteredLine(e);
       raw.push({
-        id: e.id, at: Number(e.created_at), kind: e.kind as RawLine["kind"], take: e.kind === "training" ? "Training" : "Atomik",
-        what: e.kind === "training" ? `Identity training · ${e.model}` : `Thinking · ${e.model}`, status: e.status, note: "",
+        id: e.id, at: Number(e.created_at), kind: statementKind(e.kind), take,
+        what, status: e.status, note: "",
         credits, usd, projectId: e.project_id, projectName: e.project_id ? projectNames.get(e.project_id) ?? "" : "", shotId: e.shot_id, shotCode: "", shotTitle: "",
       });
     }

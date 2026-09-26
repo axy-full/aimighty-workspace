@@ -214,3 +214,13 @@ test("Genjutsu recoverable errors preserve bounded categories and never expose p
     expect(await response.text()).not.toContain("PRIVATE_PROVIDER_TOKEN_AND_URL");
   }
 });
+
+test("the Viral pages ask for submitted jobs only; every other reader keeps the full list", async () => {
+  const f = await fixture();
+  expect((await f.request("GET", undefined, { query: "?draftId=draft-1&results=submitted" })).status).toBe(200);
+  expect((await f.request("GET", undefined, { query: "?draftId=draft-1&results=everything" })).status).toBe(200);
+  expect(f.calls).toEqual([
+    { name: "list", args: ["owner", "draft-1", { submittedOnly: true }], workspace: "workspace" },
+    { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
+  ]);
+});

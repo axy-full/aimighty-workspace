@@ -39,6 +39,7 @@ import { FrameExtractControls } from "./FrameExtractControls";
 import { ReferenceImagePreview } from "./ReferenceImagePreview";
 import { SyncedVideoComparison } from "./SyncedVideoComparison";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
+import { awaitingReconciliation, setAsideUnconfirmed } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./subatomik.module.css";
 import { SUBATOMIK_DIRECTIONS } from "./subatomik-directions";
 
@@ -340,7 +341,7 @@ export function ConsumerGenjutsu({
     !!missing.length ||
     jobs.some(
       (job) =>
-        ["dispatching", "uncertain"].includes(job.status) ||
+        awaitingReconciliation(job) ||
         (job.status === "quoted" && attempts.includes(job.id)),
     );
   const matches =
@@ -384,7 +385,7 @@ export function ConsumerGenjutsu({
         const job = byId.get(id);
         return (
           !job ||
-          ["dispatching", "uncertain"].includes(job.status) ||
+          awaitingReconciliation(job) ||
           (job.status === "quoted" && job.quoteExpired !== true)
         );
       });
@@ -1494,7 +1495,9 @@ export function ConsumerGenjutsu({
                         : job.originalAvailability === "deleted"
                           ? "Original deleted"
                           : "Original unavailable"
-                      : job.status}{" "}
+                      : setAsideUnconfirmed(job)
+                        ? "set aside"
+                        : job.status}{" "}
                     · {job.quoteCredits} connected credits
                   </span>
                 </button>

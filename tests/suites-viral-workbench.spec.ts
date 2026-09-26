@@ -121,6 +121,23 @@ test("Object Swap has its own words; History offers Recreate, Compare and Send t
   await expect(page.getByTestId("viral-generate")).toHaveText("Swap object · 22 cr");
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /History/ }).click();
   await page.getByTestId("history-result").getByRole("button", { name: "Send to Edit" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
+  /* Takes is where a take opens in Seedance Edit; Edit & Sound is the cut. */
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
   if (wide) await expect(page.getByTestId("inspector")).toBeVisible();
+});
+
+test("History lists what ran, not estimates, and keeps polling a job the account still holds until it settles", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const base = { draftId: "ws-viral", input: { variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ uploadId: "up_ref" }] }, workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 21, creditUnit: "higgsfield_credits", quoteExpiresAt: 0, createdAt: Date.now() - 60_000 };
+  /* Submitted on another page (or before a reload): nothing here started it, and it still settles. */
+  const running = { ...base, id: "44444444-4444-4444-8444-000000000004", status: "accepted", providerJobId: "22222222-2222-4222-8222-000000000004" };
+  const estimate = { ...base, id: "55555555-5555-4555-8555-000000000005", status: "quoted", providerJobId: null };
+  const { posts } = await open(page, "history", { jobs: [running, estimate] });
+  await expect(page.getByTestId("history-view")).toBeVisible();
+  await expect(page.getByTestId("history-result")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.getByTestId("history-result")).toContainText("Motion Transfer · 720p");
+  expect(posts.find((p) => p.action === "status")).toEqual({ action: "status", draftId: "ws-viral", id: running.id });
+  await expect(page.getByTestId("history-view")).not.toContainText("quoted");
+  /* The list asks for what ran, so estimates never push results off its page. */
+  expect(await page.evaluate(() => performance.getEntriesByType("resource").some((e) => /consumer\/genjutsu\?draftId=ws-viral&results=submitted/.test(e.name)))).toBe(true);
 });

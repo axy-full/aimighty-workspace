@@ -2,15 +2,18 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import {
+  AUDIO_SECONDS,
   BILLING_LABELS,
   COMPOSER_TYPES,
   TYPE_LABELS,
+  audioSeconds,
   type BillingSource,
   type ComposerType,
 } from "@/lib/workspace/composer";
 import { composerEyebrow, renderPrimaryLabel } from "@/lib/workspace/make";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useComposer, type ComposerHost } from "@/lib/workspace/use-composer";
+import { useSecondsField } from "@/lib/workspace/use-seconds-field";
 import type { MobilePrimary } from "./MobileActionBar";
 import { MobileSheet } from "./MobileSheet";
 
@@ -73,9 +76,15 @@ export function MakeComposerProvider({
   );
 }
 
-/** Seconds on the button: an engine's own duration, or the sound length. */
+/** The sound or music length as billed (held to the task's range); a voice line has none. */
+function audioLength(host: ComposerHost): number | null {
+  const task = host.model?.audioTask;
+  return task === "sound" || task === "music" ? audioSeconds(task, host.state.seconds) : null;
+}
+
+/** Seconds on the button: an engine's own duration, or the sound or music length. */
 function composerSeconds(host: ComposerHost): number | null {
-  if (host.model?.audioTask) return host.state.seconds;
+  if (host.model?.audioTask) return audioLength(host);
   if (!host.model?.durations?.length) return null;
   return host.settings.duration;
 }
@@ -102,7 +111,7 @@ export function MakeComposerCard() {
     ratio: host.settings.ratio,
     resolution: host.settings.resolution,
     duration: host.model?.durations?.length ? host.settings.duration : null,
-    seconds: host.state.seconds,
+    seconds: audioLength(host),
     audio: Boolean(host.model?.audioTask),
   });
   const line = host.state.prompt.trim();
@@ -129,7 +138,6 @@ export function MakeComposerSheet() {
   const { host, setOpen } = ctx;
   const audioTask = host.model?.audioTask;
   const wantsVoice = audioTask === "speech";
-  const wantsSeconds = audioTask === "sound" || audioTask === "music";
   const { label, cost } = renderPrimaryLabel({ credits: host.credits, seconds: composerSeconds(host) });
 
   return (
@@ -182,19 +190,10 @@ export function MakeComposerSheet() {
           onChange={(event) => host.dispatch({ type: "prompt", value: event.target.value })}
         />
 
-        {wantsSeconds ? (
+        {audioTask === "sound" || audioTask === "music" ? (
           <>
             <label className="pxm-form-label" htmlFor="pxm-composer-seconds">Seconds</label>
-            <input
-              id="pxm-composer-seconds"
-              className="pxm-input"
-              type="number"
-              min={audioTask === "music" ? 10 : 1}
-              max={audioTask === "music" ? 300 : 30}
-              value={host.state.seconds}
-              disabled={host.submitting}
-              onChange={(event) => host.dispatch({ type: "seconds", value: Math.max(1, Number(event.target.value) || 1) })}
-            />
+            <SecondsInput host={host} task={audioTask} />
           </>
         ) : null}
 
@@ -263,5 +262,22 @@ export function MakeComposerSheet() {
         </button>
       </div>
     </MobileSheet>
+  );
+}
+
+/** The sound or music length, held to the task's range: the seconds on the primary are the seconds billed. */
+function SecondsInput({ host, task }: { host: ComposerHost; task: "sound" | "music" }) {
+  const seconds = useSecondsField(audioSeconds(task, host.state.seconds), (value) => host.dispatch({ type: "seconds", value, task }));
+  return (
+    <input
+      id="pxm-composer-seconds"
+      className="pxm-input"
+      type="number"
+      min={AUDIO_SECONDS[task].min}
+      max={AUDIO_SECONDS[task].max}
+      step={1}
+      {...seconds}
+      disabled={host.submitting}
+    />
   );
 }

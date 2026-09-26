@@ -6,7 +6,7 @@ import { requireTenant } from "@/lib/tenant";
 import { workspaceExport } from "@/lib/workspaceExport";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * Full workspace export — the "your data is yours" escape hatch.

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { clearDevelopment, developmentSourceHash, readDevelopment, recordDevelopment, withDevelopmentLock } from '../../lib/workbench/development-client';
+import { clearDevelopment, developmentSourceHash, readDevelopment, readKindDevelopment, recordDevelopment, withDevelopmentLock } from '../../lib/workbench/development-client';
+import { PROJECT_LIMITS } from '../../lib/workbench/project-limits';
 import { applyDevelopment } from '../../lib/workbench/development-apply';
 import { newProject } from '../../lib/workbench/studio';
 import { publishedContext } from '../../lib/workbench/published-context';
@@ -20,6 +21,35 @@ test('development recovery keeps exact quoted request, rejects races, and isolat
   const order: string[] = [];
   await Promise.all([withDevelopmentLock('same', 'one', async () => { order.push('first'); await Promise.resolve(); order.push('first done'); }), withDevelopmentLock('same', 'one', async () => { order.push('second'); })]);
   expect(order).toEqual(['first', 'first done', 'second']);
+});
+test('the breakdown panel recovers only its own kind; an agent run on the project neither blocks nor relabels it', () => {
+  const store = storage();
+  const body = (kind: string, id: string) => JSON.stringify({ projectId: 'project-one', requestId: id, kind, model: 'anthropic/claude-test', effort: 'auto', sourceHash: 'a'.repeat(64), maxCredits: 9, maxUsd: .9 });
+  /* The Production agent's unconfirmed frames run sits in the project's shared slot. */
+  const agent = recordDevelopment(store, 'scope-a', 'project-one', body('frames', 'request-agent'));
+  expect(readKindDevelopment(store, 'scope-a', 'project-one', 'screenplay')).toBeNull();
+  /* The panel records its own request beside it instead of being refused. */
+  const panel = recordDevelopment(store, 'scope-a', 'project-one', body('screenplay', 'request-panel'), 'screenplay');
+  expect(readKindDevelopment(store, 'scope-a', 'project-one', 'screenplay')).toEqual(panel);
+  expect(readKindDevelopment(store, 'scope-a', 'project-one', 'adfilm')).toBeNull();
+  expect(readDevelopment(store, 'scope-a', 'project-one')).toEqual(agent);
+  expect(() => recordDevelopment(store, 'scope-a', 'project-one', body('screenplay', 'request-other'), 'screenplay')).toThrow('earlier development');
+  expect(clearDevelopment(store, panel, 'request-panel')).toBe(true);
+  expect(readKindDevelopment(store, 'scope-a', 'project-one', 'screenplay')).toBeNull();
+  expect(readDevelopment(store, 'scope-a', 'project-one')).toEqual(agent);
+  expect(clearDevelopment(store, agent, 'request-agent')).toBe(true);
+  /* A breakdown left in the shared slot before slots were keyed is still the panel's to recover. */
+  const legacy = recordDevelopment(store, 'scope-a', 'project-one', body('screenplay', 'request-legacy'));
+  expect(readKindDevelopment(store, 'scope-a', 'project-one', 'screenplay')).toEqual(legacy);
+  expect(clearDevelopment(store, legacy, 'request-legacy')).toBe(true);
+  expect(readDevelopment(store, 'scope-a', 'project-one')).toBeNull();
+  /* An unreadable shared record might be the panel's own: it still pauses new paid requests. */
+  store.setItem('particl:development:v1:scope-a:project-one', '{malformed');
+  expect(() => readKindDevelopment(store, 'scope-a', 'project-one', 'screenplay')).toThrow();
+  store.removeItem('particl:development:v1:scope-a:project-one');
+  /* A record moved to another slot's key is refused, not trusted. */
+  store.setItem('particl:development:v1:scope-a:project-one:idea', JSON.stringify({ ...panel, slot: 'screenplay' }));
+  expect(() => readDevelopment(store, 'scope-a', 'project-one', 'idea')).toThrow('does not match');
 });
 test('development source identity covers final script text and creative inputs but not canvas operations', async () => {
   const project = { ...newProject('Ad film'), scriptFormat: 'adfilm' as const, script: 'OPEN\n' + 'Full source. '.repeat(5000) + 'FINAL END FRAME' };
@@ -43,6 +73,28 @@ test('reviewed scene application retains original source and provenance, refuses
   expect(() => applyDevelopment(project, { ...job, projectId: 'another-project' }, { scenes: ['scene-one'] })).toThrow('this project');
   const tooLarge = structuredClone(job); tooLarge.result!.scenes[0].summary = 'x'.repeat(30000);
   expect(() => applyDevelopment(project, tooLarge, { scenes: ['scene-one'] })).toThrow('text limit');
+  /* The project's node limit applies, not the old 250: a feature-sized canvas still takes the scene. */
+  const rig = Array.from({ length: 300 }, (_, i) => ({ id: `rig-${i}`, title: `Rig ${i}`, type: 'note' as const, x: 0, y: 0, width: 200, linked: [] }));
+  const big = applyDevelopment({ ...project, nodes: rig }, job, { scenes: ['scene-one'] });
+  expect(big.nodes).toHaveLength(301);
+  expect(projectSchema.safeParse(big).success).toBe(true);
+  const full = Array.from({ length: PROJECT_LIMITS.nodes }, (_, i) => ({ ...rig[0], id: `full-${i}` }));
+  expect(() => applyDevelopment({ ...project, nodes: full }, job, { scenes: ['scene-one'] })).toThrow('room for 0');
+  /* A long breakdown below a tall canvas widens instead of running off the bottom edge. */
+  const many = structuredClone(job);
+  many.result!.scenes = Array.from({ length: 120 }, (_, i) => ({ ...job.result!.scenes[0], id: `scene-${i}` }));
+  const low = [{ ...rig[0], y: 17000 }];
+  const wide = applyDevelopment({ ...project, nodes: low }, many, { scenes: many.result!.scenes.map(scene => scene.id) });
+  const placed = wide.nodes.slice(1);
+  expect(placed).toHaveLength(120);
+  expect(Math.min(...placed.map(node => node.y))).toBe(17290);
+  expect(Math.max(...placed.map(node => node.y))).toBeLessThanOrEqual(20000);
+  expect(new Set(placed.map(node => `${node.x},${node.y}`)).size).toBe(120);
+  expect(projectSchema.safeParse(wide).success).toBe(true);
+  /* Four columns, as before, whenever the batch fits. */
+  expect(applyDevelopment(project, many, { scenes: ['scene-0', 'scene-4'] }).nodes.map(node => [node.x, node.y])).toEqual([[50, 1030], [400, 1030]]);
+  expect(applyDevelopment(project, many, { scenes: many.result!.scenes.slice(0, 5).map(scene => scene.id) }).nodes.map(node => [node.x, node.y]).slice(3)).toEqual([[1100, 1030], [50, 1320]]);
+  expect(() => applyDevelopment({ ...project, nodes: [{ ...rig[0], y: 19800 }] }, job, { scenes: ['scene-one'] })).toThrow('Rearrange the canvas');
   expect(project.nodes).toHaveLength(0);
   const source = { id: 'original-pdf', name: 'Original screenplay.pdf', kind: 'document' as const, category: 'Screenplay', url: '/api/uploads/original-pdf', uploadId: 'original-pdf', description: '', prompt: '', status: 'Draft' as const, locked: false, version: 1, refs: [] };
   const fromPdf = applyDevelopment({ ...project, assets: [source], scriptSource: { assetId: source.id, filename: source.name, sha256: 'b'.repeat(64), pages: [], importedAt: '2026-09-16', edited: false, acknowledgedEmptyPages: [] } }, job, { scenes: ['scene-one'] });

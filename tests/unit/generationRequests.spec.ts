@@ -239,3 +239,77 @@ test("public job payloads preserve creative parameters without exposing paid-ste
   const result = rowToGeneration({id:"gen_public",kind:"image",model:"mock",params:JSON.stringify({ratio:"16:9",references:[{uploadId:"ref"}],paidClaim:123,producedOutcome:{cost:1.23,storedUrl:"internal-recovery-path"}})});
   expect(result.params).toEqual({ratio:"16:9",references:[{uploadId:"ref"}]});
 });
+
+test("with atomic binding, a request interrupted before its job existed completes its claim instead of pending forever", async () => {
+  const { withGenerationRequest, bindGenerationRequestStatement, generationRequestsReady } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("atomic-claims"), async () => {
+    await ready();
+    await generationRequestsReady();
+    let calls = 0;
+    // A database hiccup before any job row was written (getShot, listCast, checkCap…).
+    const interrupted = await withGenerationRequest(request("atomic-before-row"), "u_test", async () => { calls++; throw new Error("database briefly unavailable"); }, { atomicBinding: true });
+    expect(interrupted.status).toBe(409);
+    expect(interrupted.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await interrupted.json()).error).toContain("Nothing was charged");
+    // The same key replays that answer (complete), so the client clears it and can start a new request.
+    const replay = await withGenerationRequest(request("atomic-before-row"), "u_test", async () => { calls++; return Response.json({}); }, { atomicBinding: true });
+    expect(replay.status).toBe(409);
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await replay.json()).pending).toBeUndefined();
+    expect(calls).toBe(1);
+
+    // Once the row and its binding committed together, the claim is kept for recovery.
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at) VALUES('gen_atomic_bound','video','mock','x','{}','queued',1,1)" });
+    const bound = await withGenerationRequest(request("atomic-after-row"), "u_test", async (claim) => {
+      await db().execute(bindGenerationRequestStatement(claim, "gen_atomic_bound"));
+      throw new Error("lost after the row was written");
+    }, { atomicBinding: true });
+    expect(bound.status).toBe(503);
+    const recovered = await withGenerationRequest(request("atomic-after-row"), "u_test", async () => { throw new Error("must not run again"); }, { atomicBinding: true });
+    expect(await recovered.json()).toMatchObject({ id: "gen_atomic_bound", status: "queued" });
+
+    // Routes whose jobs are not bound atomically keep the conservative pending claim.
+    const legacy = await withGenerationRequest(request("non-atomic"), "u_test", async () => { throw new Error("interrupted"); });
+    expect(legacy.status).toBe(503);
+    const pending = await withGenerationRequest(request("non-atomic"), "u_test", async () => Response.json({}));
+    expect(pending.status).toBe(409);
+    expect((await pending.json()).pending).toBe(true);
+  });
+});
+
+test("a claim whose request died before its catch, or before claims were bound atomically, completes on retry once that request is gone", async () => {
+  const { withGenerationRequest, generationRequestsReady, generationFingerprint, STALE_CLAIM_MS } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("stale-claims"), async () => {
+    await ready();
+    await generationRequestsReady();
+    // What a killed function leaves behind: the claim, with no job and no answer.
+    const orphan = async (key: string, age: number) => {
+      const fingerprint = generationFingerprint({ method: "POST", path: "/api/generate", body: { prompt: "A studio test" } });
+      await db().execute({ sql: "INSERT INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES('u_test',?,?,?,?)",
+        args: [key, fingerprint, Date.now() - age, Date.now() - age] });
+    };
+    const never = async () => { throw new Error("a replay never runs the request again"); };
+    await orphan("stale-atomic", STALE_CLAIM_MS + 60_000);
+    const repaired = await withGenerationRequest(request("stale-atomic"), "u_test", never, { atomicBinding: true });
+    expect(repaired.status).toBe(409);
+    expect(repaired.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await repaired.json()).error).toContain("Nothing was charged");
+    const replay = await withGenerationRequest(request("stale-atomic"), "u_test", never, { atomicBinding: true });
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+
+    // A claim young enough that its request may still be running stays pending.
+    await orphan("fresh-atomic", 60_000);
+    const fresh = await withGenerationRequest(request("fresh-atomic"), "u_test", never, { atomicBinding: true });
+    expect(fresh.status).toBe(409);
+    expect((await fresh.json()).pending).toBe(true);
+
+    // A route that does not bind atomically cannot prove there is no job: it stays pending.
+    await orphan("stale-legacy", STALE_CLAIM_MS + 60_000);
+    const legacy = await withGenerationRequest(request("stale-legacy"), "u_test", never);
+    expect((await legacy.json()).pending).toBe(true);
+  });
+});

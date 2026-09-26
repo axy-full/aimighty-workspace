@@ -508,7 +508,11 @@
 .pxw .pxw-gen > .pxw-dot { width: 7px; height: 7px; animation: pulseDot 1.4s ease-in-out infinite; }
 .pxw .pxw-gen-label { font-size: 12.5px; font-weight: 530; white-space: nowrap; }
 .pxw .pxw-gen-track { flex: 1; height: 3px; border-radius: 2px; background: var(--pxw-progress-track); overflow: hidden; display: block; }
-.pxw .pxw-gen-bar { display: block; height: 100%; border-radius: 2px; background: var(--pxw-blue); }
+.pxw .pxw-gen-bar { display: block; width: 100%; height: 100%; border-radius: 2px; background: var(--pxw-blue); }
+/* No engine reports progress: while a job runs the bar is a moving mark, not a fraction. */
+.pxw .pxw-gen-bar[data-running] { width: 28%; animation: pxwGenRun 1.6s ease-in-out infinite; }
+@keyframes pxwGenRun { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
+@media (prefers-reduced-motion: reduce) { .pxw .pxw-gen-bar[data-running] { width: 100%; opacity: .35; animation: none; } }
 .pxw .pxw-gen-meta { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-dimmer); white-space: nowrap; }
 
 /* Inspector: 328px, flex:none */

@@ -66,7 +66,7 @@ export async function writeGenerationOutcome(
 }
 
 export async function deliverGenerationSettlement(id: string): Promise<void> {
-return await withRecoveryJob(requireTenant().id, id, async () => {
+  const delivered = await withRecoveryJob(requireTenant().id, id, async () => {
 
   await generationSettlementReady();
   const row = (
@@ -75,7 +75,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       args: [id],
     })
   ).rows[0];
-  if (!row) return;
+  if (!row) return false;
   const serialized = String(row.event);
   const event = JSON.parse(serialized) as MeterEvent;
   // The event lives only in this tenant's private table. Never accept a supplied workspace override.
@@ -89,8 +89,14 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     sql: "UPDATE generation_settlements SET settled_at=? WHERE id=? AND event=?",
     args: [now(), id, serialized],
   });
+  return true;
 
-});
+  });
+  /* Every engine's end lands here — video, stills, audio, upscales — so this
+     is where a freed slot (or a released reservation) starts what waited for
+     it, rather than only the video polls and the ten-minute cron. Imported
+     late: held.ts reaches back into the render paths that settle here. */
+  if (delivered) await (await import("./held")).releaseAfterSettlement();
 }
 
 export type ReconcileResult = { attempted: number; failed: number };
