@@ -315,7 +315,7 @@ test("Crew › → Rig with a long pinned line: the shot is named to a word with
   expect(errors).toEqual([]);
 });
 
-test("Crew › → Rig, then an edit on the Rig while it is still reading the saved draft: the edit is never silently replaced", async ({ page }, info) => {
+test("Crew › → Rig, then an edit on the Rig while it is still reading the saved draft: the edit is kept, beside the new shot", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one desktop: the Rig's shot list and its Add shot");
   const { errors, project, headers, solutions } = await roomWithSolutions(page);
   /* From here every read of the saved draft is held, so Open Rig lands before the Rig has the new shot. */
@@ -326,25 +326,29 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
     if (route.request().method() === "GET") { reads += 1; await held; }
     return route.fallback();
   });
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string };
   await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
   await page.getByTestId("toast-open").click();
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
   const rows = page.locator(".pxw-rig-row");
   await expect(rows, "the Rig has not read the new shot yet").toHaveCount(0);
   expect(reads, "the Rig is reading the saved draft again").toBeGreaterThan(0);
-  /* An edit, and the read comes back straight after it — before the edit's own save goes out. */
+  /* An edit while that read is out. */
   await page.getByRole("button", { name: "+ Add shot" }).click();
-  release();
   await expect(rows).toHaveCount(1);
+  const added = (await rows.first().getAttribute("data-shot-id"))!;
+  release();
 
-  /* The read is not taken over the edit. The edit's save meets the newer revision, is refused, and the Rig
-     reloads the saved version — and says so, rather than dropping the edit quietly. */
-  await expect(page.getByTestId("toast")).toHaveText("This project changed elsewhere. Rig reloaded the saved version.", { timeout: 15_000 });
+  /* The read is merged under the edit (lib/workbench/draft-merge): the new shot joins, the edit stays, and both are saved. */
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`)).toContainText("Cut on the drop");
+  await expect(page.locator(`.pxw-rig-row[data-shot-id="${added}"]`)).toBeVisible();
   await page.unroute(`**/api/workbench/projects?id=${project.id}`);
-  const saved = (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as { nodes: { title: string }[] };
-  await expect.poll(() => rows.allInnerTexts().then((all) => all.length)).toBe(saved.nodes.length);
-  await expect(rows.first()).toContainText("Cut on the drop");
+  const savedIds = async () => ((await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as { nodes: { id: string }[] }).nodes.map((n) => n.id).sort();
+  await expect.poll(savedIds, { timeout: 15_000 }).toEqual([reply.nodeId, added].sort());
+  await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved");
   expect(errors).toEqual([]);
 });
 

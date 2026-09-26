@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { CONFIRM, destinationName, isHere, landingPage, openLabel, solutionStatusLabel, type Confirmation, type Destination, type Here } from "../../lib/shell/confirmations";
-import { SAY, retryPreset, type GenPreset } from "../../lib/shell/assets";
+import { SAY, type GenPreset } from "../../lib/shell/assets";
 import { readGenPresets, sendGenPreset } from "../../lib/shell/gen-preset";
-import { CAST_LIMITS, mergeAgentCast, newEntry, type CastProposal } from "../../lib/production/cast";
+import { CAST_LIMITS, mergeAgentCast, newEntry, sourcedCastId, type CastProposal } from "../../lib/production/cast";
 import { generationPhase } from "../../lib/workspace/rig";
 import { SHOT_TITLE_MAX, solutionShot } from "../../lib/crew/room";
 
@@ -26,9 +26,6 @@ const EVERY: [string, Confirmation][] = [
   ["plate built, unnamed", CONFIRM.plateBuilt("")],
   ["breakdown to Rig", CONFIRM.breakdownToRig()],
   ["scene nodes to Rig", CONFIRM.breakdownToRig(4)],
-  ["retry", CONFIRM.retry("Wide on the water")],
-  ["retry, frames as references", CONFIRM.retry("Door", "same inputs, frames as references")],
-  ["retry, prompt only", CONFIRM.retry("Poster", "prompt only")],
 ];
 
 test("every confirmation opens a real place, the one its words name, under that place's own label", () => {
@@ -131,6 +128,10 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
   expect(merged.cast.agentJobId).toBe("job-1");
   expect(merged.cast.entries.map((e) => e.name)).toEqual(["Mira", "Chrome sphere", "Idris", "Kettle"]);
   expect(merged.cast.entries[2]).toMatchObject({ kind: "character", prompt: "Idris, reference" });
+  /* Each entry's id comes from the run and its name: another tab taking the same run holds it once, even renamed since. */
+  expect(merged.cast.entries[2].id).toBe(sourcedCastId("job-1", "Idris"));
+  const elsewhere = mergeAgentCast({ entries: [newEntry("character", "Idris Varga", "", "", {}, sourcedCastId("job-1", "Idris"))] }, [p("Idris")], "job-1");
+  expect(elsewhere).toMatchObject({ added: 0, known: 1, overLimit: 0 });
   /* Seven proposals, two added: the toast says two. */
   expect(CONFIRM.castTaken(merged).text).toBe("The agent added 2 entries to Cast · 2 already listed");
   expect(CONFIRM.castTaken({ added: 1, known: 0, overLimit: 0 }).text).toBe("The agent added 1 entry to Cast");
@@ -144,20 +145,14 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
   expect(CONFIRM.castTaken(capped).text).toBe("The agent added 1 entry to Cast · 2 left out · the list is full");
 });
 
-test("Retry's toast says it is loaded in Gen, in one line, and names what did not come back", () => {
-  expect("retry" in SAY).toBe(false);
-  expect(CONFIRM.retry("Fox").text).toBe("Retry · Fox loaded in Gen");
-  expect(CONFIRM.retry("Door", "same inputs, frames as references").text).toBe("Retry · Door loaded in Gen · frames as references");
-  expect(CONFIRM.retry("Poster", "prompt only").text).toBe("Retry · Poster loaded in Gen · prompt only");
-  /* The price is on Gen's Generate button and the seed on Gen's note: the toast says neither. */
-  for (const kept of ["same inputs", "same inputs, frames as references", "prompt only"] as const) expect(CONFIRM.retry("Fox", kept).text).not.toMatch(/seed|quoted|price/i);
-  /* The toast and Gen's note agree on what came back (lib/shell/assets › retryPreset). */
-  const full = retryPreset({ prompt: "a fox", model: "seedance-2.5", kind: "video", title: "Fox" });
-  expect(full.note).toContain(full.kept);
-  expect(CONFIRM.retry("Fox", full.kept).text).toBe("Retry · Fox loaded in Gen");
-  const partial = retryPreset({ prompt: "p", model: "topaz", kind: "video", params: {}, task: "upscale", title: "Poster" });
-  expect(partial.note).toContain("prompt only");
-  expect(CONFIRM.retry("Poster", partial.kept).text).toBe("Retry · Poster loaded in Gen · prompt only");
+test("Recreate's toasts say what reached Gen, in one line, naming Gen, where they land", () => {
+  /* Recreate goes to Gen (lib/shell/use-asset-actions › useRecreate), so its toast carries no Open; Gen shows the recipe, and its Generate button the price. */
+  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Gen.");
+  expect(SAY.settingsOnly("Fox")).toBe("Fox’s model and settings are in Gen.");
+  for (const text of [SAY.recreate("Fox"), SAY.settingsOnly("Fox")]) {
+    expect(text).toContain(destinationName({ to: "gen" }));
+    expect(text).not.toMatch(/seed|quoted|price/i);
+  }
 });
 
 test("a held take says why it waits — out of credits, or no free slot — never 'for approval'", () => {

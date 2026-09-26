@@ -1,4 +1,5 @@
 import type { BeatSheet } from "./beats";
+import { stableId } from "../workbench/stable-id";
 
 /**
  * Production › Cast & Elements (owner's brief, 23 September): the film's
@@ -37,9 +38,12 @@ export const SOUL_CINEMA = "soul_cinematic";
 export const CAST_CATEGORY: Record<CastKind, string> = { character: "Character", element: "Element" };
 
 const id = () => `cast-${crypto.randomUUID().slice(0, 8)}`;
-export function newEntry(kind: CastKind, name = "", description = "", prompt = "", extra: Partial<Pick<CastEntry, "model" | "category">> = {}): CastEntry {
-  return { id: id(), name: name.slice(0, CAST_LIMITS.name), kind, description: description.slice(0, CAST_LIMITS.description), prompt: prompt.slice(0, CAST_LIMITS.prompt), takes: [], ...extra };
+/** `entryId`: an entry made from a source (an agent run, the beat sheet) takes an id from it, so two windows taking the same source make it once. */
+export function newEntry(kind: CastKind, name = "", description = "", prompt = "", extra: Partial<Pick<CastEntry, "model" | "category">> = {}, entryId = id()): CastEntry {
+  return { id: entryId, name: name.slice(0, CAST_LIMITS.name), kind, description: description.slice(0, CAST_LIMITS.description), prompt: prompt.slice(0, CAST_LIMITS.prompt), takes: [], ...extra };
 }
+/** The id of the entry `name` an agent run (or the beat sheet, `source` "beats") made. */
+export const sourcedCastId = (source: string, name: string) => stableId("cast", source, name.trim().toLowerCase());
 /** An entry's category: what it says, else a character for the cast and a prop otherwise. */
 export const entryCategory = (e: Pick<CastEntry, "kind" | "category">): ElementCategory => e.category ?? (e.kind === "character" ? "character" : "prop");
 /** An entry's Soul model: what it says, else Soul Location for a place, Soul Cinema for everything else. */
@@ -77,13 +81,14 @@ export function castFromBeats(sheet: BeatSheet | null | undefined, existing: rea
   });
   const names = new Map<string, string>();
   (sheet?.scenes ?? []).forEach((s) => [...s.characters, ...s.locations, ...s.props].forEach((n) => names.set(n.trim().toLowerCase(), n.trim())));
-  return [...found.entries()].slice(0, CAST_LIMITS.entries - existing.length).map(([key, f]) => {
+  const taken = new Set(existing.map((e) => e.id));
+  return [...found.entries()].filter(([key]) => !taken.has(sourcedCastId("beats", key))).slice(0, CAST_LIMITS.entries - existing.length).map(([key, f]) => {
     const name = names.get(key) ?? key;
     const where = `${f.label} · scene${f.scenes.length > 1 ? "s" : ""} ${f.scenes.join(", ")}`;
     const prompt = f.kind === "character"
       ? `Character reference of ${name}: full body and three-quarter views on a neutral grey background, even soft light, consistent face, hair and wardrobe.`
       : f.label === "Prop" ? `Prop reference of ${name}: a clean, well-lit plate that shows its shape, material and scale.` : `${name}: the place itself, wide, in the film's light, no people.`;
-    return newEntry(f.kind, name, where, prompt, { category: f.kind === "character" ? "character" : f.label === "Location" ? "environment" : "prop" });
+    return newEntry(f.kind, name, where, prompt, { category: f.kind === "character" ? "character" : f.label === "Location" ? "environment" : "prop" }, sourcedCastId("beats", key));
   });
 }
 
@@ -95,10 +100,14 @@ export type CastProposal = { kind: CastKind; name: string; description: string; 
  * once, however often the agent repeats it), names already here are kept as
  * they are, and what does not fit under the list's limit is left out. The
  * counts are what the confirmation says — what was added, not what was
- * proposed.
+ * proposed. Each entry takes an id from this run and its name
+ * (sourcedCastId): another tab taking the same run makes the same entries,
+ * which the merge of the two saves holds once, and an entry already here
+ * under that id (renamed since) counts as listed.
  */
 export function mergeAgentCast(cast: Cast, proposals: readonly CastProposal[], jobId: string): { cast: Cast; added: number; known: number; overLimit: number } {
   const listed = new Set(cast.entries.map((e) => e.name.trim().toLowerCase()));
+  const ids = new Set(cast.entries.map((e) => e.id));
   const seen = new Set<string>();
   const room = Math.max(0, CAST_LIMITS.entries - cast.entries.length);
   const fresh: CastEntry[] = [];
@@ -107,9 +116,10 @@ export function mergeAgentCast(cast: Cast, proposals: readonly CastProposal[], j
     const key = p.name.trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    if (listed.has(key)) { known++; continue; }
+    const entryId = sourcedCastId(jobId, p.name);
+    if (listed.has(key) || ids.has(entryId)) { known++; continue; }
     if (fresh.length >= room) { overLimit++; continue; }
-    fresh.push(newEntry(p.kind, p.name, p.description, p.prompt, { model: p.model, category: p.category }));
+    fresh.push(newEntry(p.kind, p.name, p.description, p.prompt, { model: p.model, category: p.category }, entryId));
   }
   return { cast: { ...cast, entries: [...cast.entries, ...fresh], agentJobId: jobId }, added: fresh.length, known, overLimit };
 }

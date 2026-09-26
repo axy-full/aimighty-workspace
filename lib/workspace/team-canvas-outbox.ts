@@ -16,16 +16,31 @@ import type { TeamPatch } from "../workbench/team-canvas-model";
  * never re-sent over it.
  */
 
-/** Several edits between saves travel as one patch: the last write of each node wins. */
+/**
+ * Several edits between saves travel as one patch: the last write of each node
+ * wins, with every field any of them changed (TeamPatch.fields); a node one of
+ * them made stays made, and one written whole stays whole.
+ */
 export function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
   if (!a) return b;
   const nodes = new Map(a.upsertNodes.map((n) => [n.id, n]));
   const removed = new Set(a.removeNodes);
-  for (const n of b.upsertNodes) { nodes.set(n.id, n); removed.delete(n.id); }
-  for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); }
+  const fields = new Map(Object.entries(a.fields ?? {}));
+  const made = new Set(a.made ?? []);
+  const whole = new Set(a.upsertNodes.filter((n) => !fields.has(n.id) && !made.has(n.id)).map((n) => n.id));
+  for (const n of b.upsertNodes) {
+    nodes.set(n.id, n);
+    removed.delete(n.id);
+    const changed = b.fields?.[n.id];
+    if (b.made?.includes(n.id)) { made.add(n.id); fields.delete(n.id); whole.delete(n.id); }
+    else if (!changed) { whole.add(n.id); fields.delete(n.id); made.delete(n.id); }
+    /* Made here, then changed: still one node this window made, as it is now. */
+    else if (!made.has(n.id) && !whole.has(n.id)) fields.set(n.id, [...new Set([...(fields.get(n.id) ?? []), ...changed])]);
+  }
+  for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); fields.delete(id); made.delete(id); whole.delete(id); }
   const assets = new Map(a.upsertAssets.map((x) => [x.id, x]));
   for (const x of b.upsertAssets) assets.set(x.id, x);
-  return { upsertNodes: [...nodes.values()], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
+  return { upsertNodes: [...nodes.values()], fields: Object.fromEntries(fields), made: [...made], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
 }
 
 /** Per production: the number of the latest send that carried each node, asset and the order. */

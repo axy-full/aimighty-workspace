@@ -8,7 +8,7 @@ import { useShell, type Shell } from "./state";
  * Confirmations in the shell (lib/shell/confirmations): the toast says what
  * was done, and carries an Open to where it is — unless the person is already
  * there. `go` is for an action whose own button says it opens somewhere
- * (Open in Gen, Retry generation): it goes, then confirms there.
+ * (Open in Gen, Build scene nodes): it goes, then confirms there.
  */
 export function useConfirm() {
   const { live } = useShell();
@@ -34,7 +34,7 @@ export function useConfirm() {
   const confirm = useCallback((c: Confirmation, options: { go?: boolean } = {}) => {
     const ws = latest.current;
     const to = c.open && !isHere(c.open, hereOf(live())) ? c.open : null;
-    /* Already there (a Retry pressed on Gen itself): nothing moves, and no history entry is added. */
+    /* Already there: nothing moves, and no history entry is added. */
     if (options.go) { if (to) open(to); ws.toast(c.text); return; }
     ws.toast(c.text, to ? { label: openLabel(to), run: () => open(to) } : undefined);
   }, [open, live]);
