@@ -47,6 +47,9 @@ async function roomWithSolutions(page: Page) {
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
   const project = { ...newProject("Dune Studies"), brief: "One kitchen, one rainy dawn.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
   expect((await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } })).ok()).toBe(true);
+  /* The Brief page reads this route. On a cold dev server its first read compiles it, and the dev client can then reload the
+     page, dropping the preset Gen holds in memory (lib/shell/gen-preset) mid-test: compile it before the page opens. */
+  expect((await page.request.get(`/api/workbench/development?projectId=${project.id}`, { headers })).ok()).toBe(true);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 200)); });
