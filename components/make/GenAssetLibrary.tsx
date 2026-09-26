@@ -26,9 +26,12 @@ export type GenAssetLibraryProps = {
   controller?: Ref<GenAssetLibraryHandle>;
   search: string;
   onUseAsset: (asset: DraggedAsset) => void;
-  onEdit: (asset: LibraryAsset) => void;
-  onUpscale: (asset: LibraryAsset) => void;
-  onUsePrompt: (take: Generation) => void;
+  /* Offered only when the host can act on them: a host without an edit,
+     upscale or prompt tool leaves these out, and the cards show no button
+     for them rather than one that does nothing. */
+  onEdit?: (asset: LibraryAsset) => void;
+  onUpscale?: (asset: LibraryAsset) => void;
+  onUsePrompt?: (take: Generation) => void;
   workbenchProjectId?: string;
   projectName?: string;
   allowWorkspaceBrowse?: boolean;
@@ -53,6 +56,8 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
   const [error, setError] = useState<string | null>(null);
   const [moreBusy, setMoreBusy] = useState(false);
   const live = useRef(true), pageCache = useRef<Page<T>[]>([]), lock = useRef(false), refreshQueued = useRef(false);
+  /* A "Load more" pressed while a refresh holds the lock waits for it, and runs next. */
+  const moreQueued = useRef(false), drainMore = useRef<() => void>(() => {});
   const read = useCallback(async (cursor?: string): Promise<Page<T>> => {
     const response = await fetch(path + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""), {
       cache: "no-store", headers: requestScope ? { "X-Workbench-Scope": requestScope } : {},
@@ -86,6 +91,7 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
       }
     } while (refreshQueued.current && live.current && !document.hidden);
     lock.current = false;
+    if (moreQueued.current && live.current) { moreQueued.current = false; drainMore.current(); }
   }, [read, signedIn]);
   useEffect(() => {
     live.current = true;
@@ -101,11 +107,14 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
     return () => { live.current = false; clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener(GEN_ASSETS_CHANGED, changed); };
   }, [refresh, requestScope]);
   const next = pages.at(-1)?.next ?? null;
-  const more = async () => {
-    if (!next || lock.current) return;
+  const more = useCallback(async () => {
+    if (lock.current) { moreQueued.current = true; setMoreBusy(true); return; }
+    // The cursor is read when the page is fetched, so a refresh that just finished cannot hand it a stale one.
+    const cursor = pageCache.current.at(-1)?.next;
+    if (!cursor) { setMoreBusy(false); return; }
     lock.current = true; setMoreBusy(true);
     try {
-      const page = await read(next);
+      const page = await read(cursor);
       if (live.current) { pageCache.current = [...pageCache.current, page]; setPages(pageCache.current); setError(null); }
     } catch (e) { if (live.current) setError((e as Error).message); }
     finally {
@@ -115,7 +124,8 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
         if (refreshQueued.current) { refreshQueued.current = false; void refresh(); }
       }
     }
-  };
+  }, [read, refresh]);
+  useEffect(() => { drainMore.current = () => { void more(); }; }, [more]);
   const items = useMemo(() => {
     const unique = new Map<string, T>();
     for (const page of pages) for (const item of page.items) if (!unique.has(item.id)) unique.set(item.id, item);
@@ -231,11 +241,11 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
               ...(visual ? [
                 ...(kind==='image'&&onUseFirstFrame?[{label:'Use as first frame',run:()=>onUseFirstFrame(asset),disabled:!ready}]:[]),
                 { label: "Use as reference", run: () => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset)), disabled: !ready },
-                { label: kind === "video" ? "Edit clip" : "Edit image", run: () => onEdit(asset), disabled: !ready },
-                { label: kind === "video" ? "Upscale video" : "Upscale image", run: () => onUpscale(asset), disabled: !ready },
+                ...(onEdit ? [{ label: kind === "video" ? "Edit clip" : "Edit image", run: () => onEdit(asset), disabled: !ready }] : []),
+                ...(onUpscale ? [{ label: kind === "video" ? "Upscale video" : "Upscale image", run: () => onUpscale(asset), disabled: !ready }] : []),
               ] : []),
               ...(kind === "audio" && audioReference && onUseReference ? [{ label: "Use as reference", run: () => onUseReference(asset), disabled: !ready }] : []),
-              ...(gen ? [{ label: "Use prompt", run: () => onUsePrompt(gen) }, { label: "File to shot", run: () => setFiling(gen), disabled: !ready }] : []),
+              ...(gen ? [...(onUsePrompt ? [{ label: "Use prompt", run: () => onUsePrompt(gen) }] : []), { label: "File to shot", run: () => setFiling(gen), disabled: !ready }] : []),
               ...(workbenchProjectId&&asset.origin==='upload'&&asset.value.projectFiled?[{label:'Remove project filing',run:()=>void removeFiling(asset.value)}]:[]),
             ];
             return <ActionMenu key={id} label={`Actions for ${name}`} actions={actions}><article className={styles.takeCard} data-library-id={id} tabIndex={0}
@@ -254,7 +264,7 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
               </div>
               <div className={styles.takeActions} data-expanded-actions={onAddToProject || (kind==='image'&&onUseFirstFrame) ? '' : undefined}>
                 {onAddToProject && <button type="button" disabled={!ready} onClick={()=>onAddToProject(asset)}>Add to project</button>}
-                {visual ? <>{kind==='image'&&onUseFirstFrame&&<button type="button" disabled={!ready} onClick={()=>onUseFirstFrame(asset)}>Use as first frame</button>}<button type="button" disabled={!ready} onClick={() => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset))}>Use as reference</button><button type="button" disabled={!ready} onClick={() => onEdit(asset)}>{kind === "video" ? "Edit clip" : "Edit image"}</button></>
+                {visual ? <>{kind==='image'&&onUseFirstFrame&&<button type="button" disabled={!ready} onClick={()=>onUseFirstFrame(asset)}>Use as first frame</button>}<button type="button" disabled={!ready} onClick={() => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset))}>Use as reference</button>{onEdit && <button type="button" disabled={!ready} onClick={() => onEdit(asset)}>{kind === "video" ? "Edit clip" : "Edit image"}</button>}</>
                   : <>{kind === "audio" && audioReference && onUseReference && <button type="button" disabled={!ready} onClick={() => onUseReference(asset)}>Use as reference</button>}<button type="button" disabled={!ready} onClick={() => setSelected(asset)}>Preview</button></>}
                 {ready && <a href={libraryUrl(asset).split("?")[0] + "?download=1"} download={asset.origin === "upload" ? asset.value.filename : true} aria-label={`Download ${name}`}><Download size={15}/></a>}
               </div>
