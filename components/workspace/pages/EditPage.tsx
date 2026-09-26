@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SoundGenerate } from "@/components/workbench/SoundGenerate";
+import { useSoundPlacements } from "@/components/workbench/use-sound-placements";
 import { SoundMix } from "@/components/workbench/SoundMix";
 import { TimelinePreview } from "@/components/workbench/TimelinePreview";
 import { useProductionJobs } from "@/components/workbench/use-production-jobs";
 import { colorLutAsset } from "@/lib/workbench/color";
-import { readSoundPlacements, soundPlacementsKey, type SoundJobTask, type SoundPlacement } from "@/lib/workbench/sound-generate";
+import type { SoundJobTask } from "@/lib/workbench/sound-generate";
 import type { Project } from "@/lib/workbench/studio";
 import { usePlanRequest } from "@/lib/workspace/atomik-host";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
@@ -21,23 +22,6 @@ const STATE: Record<StemRow["state"], { label: string; dot: string }> = {
   generating: { label: "Generating", dot: "var(--pxw-blue-ink)" },
   scored: { label: "Scored", dot: "var(--pxw-green)" },
 };
-
-/** Queued sound SoundGenerate remembers for this project (read on an interval: it writes from its own module). */
-function usePlacements(scope: string, projectId: string) {
-  const key = soundPlacementsKey(scope, projectId);
-  const [list, setList] = useState<SoundPlacement[]>([]);
-  useEffect(() => {
-    const read = () => setList((prev) => {
-      const next = readSoundPlacements(window.localStorage, key);
-      return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
-    });
-    read();
-    const timer = setInterval(read, 1500);
-    window.addEventListener("storage", read);
-    return () => { clearInterval(timer); window.removeEventListener("storage", read); };
-  }, [key]);
-  return list;
-}
 
 /** Edit & Sound: the assembly, its sound stems, and the mix. */
 export function EditPage({ project: shellProject, scope }: PageBodyProps) {
@@ -66,18 +50,23 @@ export function EditPage({ project: shellProject, scope }: PageBodyProps) {
 function EditBody({ project, scope, draft }: { project: Project; scope: string; draft: ReturnType<typeof useDraftEditor> }) {
   const jobs = useProductionJobs(project, true, draft.onChange, scope);
   const library = useProjectLibrary(scope, project.id);
-  const placements = usePlacements(scope, project.id);
-  const rows = useMemo(() => stemRows(project, placements), [project, placements]);
-  const cut = assembly(project);
   const [open, setOpen] = useState<{ stem: StemId; task: SoundJobTask } | null>(null);
   const [mixOpen, setMixOpen] = useState(false);
   const [composed, setComposed] = useState<Partial<Record<StemId, { task: SoundJobTask; body: Record<string, unknown>; text: string } | null>>>({});
   const [problem, setProblem] = useState<string | null>(null);
+  const [landed, setLanded] = useState<string | null>(null);
   const audioPicker = useRef<HTMLInputElement>(null);
 
   /* Transport: the edit owns the clock; TimelinePreview and the mix follow it. */
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const pause = useCallback(() => setPlaying(false), []);
+  const placed = useCallback((message: string) => { setProblem(null); setLanded(message); }, []);
+  const failed = useCallback((message: string) => { setLanded(null); setProblem(message); }, []);
+  /* Generated sound lands on its lane when it is ready, whichever stem row is open (or none). */
+  const placements = useSoundPlacements({ scope, project, jobs: jobs.mediaJobs, onChange: draft.onChange, onPause: pause, onPlaced: placed, onFailed: failed });
+  const rows = useMemo(() => stemRows(project, placements), [project, placements]);
+  const cut = assembly(project);
   const clock = useRef<{ at: number; from: number } | null>(null);
   useEffect(() => {
     if (!playing) { clock.current = null; return; }
@@ -119,6 +108,7 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
   return (
     <div className="pxw-edit" data-page-body="edit" data-stem-requests={stems.length}>
       {problem || draft.state.error ? <p className="pxw-notice pxw-notice--error" role="alert">{problem ?? draft.state.error}</p> : null}
+      {landed && !problem ? <p className="pxw-notice" role="status">{landed}</p> : null}
       <div className="pxw-assembly" data-testid="assembly" data-section="assembly">
         <div className="pxw-assembly-screen" aria-hidden={!current}>
           {current ? (
@@ -185,7 +175,6 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
                   jobs={jobs.mediaJobs}
                   enabled
                   onChange={draft.onChange}
-                  onPause={() => setPlaying(false)}
                   onSave={() => draft.ensureSaved()}
                   onQueued={() => void jobs.refresh()}
                   onRequest={(request) => setComposed((c) => ({ ...c, [row.id]: request }))}
@@ -204,7 +193,7 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
       }} />
       <div id="pxw-mix" className="pxw-sound-host" hidden={!mixOpen} data-testid="mix">
         {/* Always mounted: the mix plays the audio lanes against the transport even while folded away. */}
-        <SoundMix project={project} frame={frame} playing={playing} onChange={draft.onChange} onPause={() => setPlaying(false)} onUpload={() => audioPicker.current?.click()} />
+        <SoundMix project={project} frame={frame} playing={playing} onChange={draft.onChange} onPause={pause} onUpload={() => audioPicker.current?.click()} />
       </div>
     </div>
   );
