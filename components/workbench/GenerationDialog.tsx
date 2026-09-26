@@ -11,7 +11,7 @@ import {
 import { Button } from "./ui/button";
 import { mediaReferenceIdentity, mediaQuoteReferences } from '@/lib/workbench/media-reference-input';
 import { generationRequestBody, resolveGenerationReferences } from "@/lib/workbench/generation-request";
-import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
+import { audioTaskAvailable, nodeAudioBody, speechVoiceFor, speechVoicesFor, usableAudioTask, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { referenceVideoModels } from "@/lib/workbench/reference-ad";
 import { displayModelName, type ModelDef } from "@/lib/models";
@@ -161,9 +161,13 @@ export function GenerationDialog({
   const refs = useMemo(() => kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs, [kind, model?.soulIdentity, boundRefs]);
   const referenceQuery = mediaQuoteReferences(refs);
   const roleFor = (asset: Asset) => asset.kind === "video" ? "reference_video" : kind === "video" && asset.id === firstFrameId ? "first_frame" : "reference_image";
-  const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) }))) : null;
+  const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) })), resolution) : null;
+  /* Each speech model reads in its own vendor's voices: the list swaps with the model. */
+  const speechModelId = speechModel || audioSetup?.defaultSpeechModel || "";
+  const speechVoices = speechVoicesFor(audioSetup, speechModelId);
+  const speechVoiceId = speechVoiceFor(speechVoices, voiceId)?.id ?? "";
   const audioBody = JSON.stringify(nodeAudioBody({ task: audioTask, text: prompt, seconds: audioSeconds, instrumental,
-    voiceId: voiceId || audioSetup?.voices[0]?.id || "", modelId: speechModel || audioSetup?.defaultSpeechModel || "" }));
+    voiceId: speechVoiceId, modelId: speechModelId }));
   const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined, ...(model?.marketing ? { prompt, marketing, shotId: mapped?.shotId, projectId: mapped?.productionProjectId } : {}) });
   const cost = pending?.credits ?? (!referenceProblem && quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
@@ -202,10 +206,15 @@ export function GenerationDialog({
     if (kind !== "audio") return;
     const abort = new AbortController();
     studioRequest<NodeAudioSetup>("/api/audio", { signal: abort.signal, headers: { "X-Workbench-Scope": scope } })
-      .then(data => { setAudioSetup(data); if (!data.configured) setError("Audio generation is not configured for this workspace."); })
+      .then(data => {
+        setAudioSetup(data);
+        /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone lands on a spoken line. */
+        if (!initial.pending) setAudioTask(task => usableAudioTask(data, task));
+        if (!data.configured) setError("Audio generation is not configured for this workspace.");
+      })
       .catch(error => { if (!abort.signal.aborted) setError(error.message); });
     return () => abort.abort();
-  }, [kind, scope]);
+  }, [kind, scope, initial.pending]);
   useEffect(() => {
     if (kind !== "audio" || pending || !audioSetup?.configured || !prompt.trim() || (audioTask === "speech" && !JSON.parse(audioBody).voiceId)) return;
     const abort = new AbortController();
@@ -409,12 +418,12 @@ export function GenerationDialog({
           {kind === "audio" && <div className="generation-options">
             <label className="field-label">Audio type<select aria-label="Audio type" value={audioTask} disabled={busy || !!pending} onChange={event => {
               const task = event.target.value as NodeAudioTask; setAudioTask(task); setAudioSeconds(task === "music" ? 30 : 10);
-            }}><option value="sound">Sound effect / ambience</option><option value="music">Music</option><option value="speech">Dialogue / voice</option></select></label>
+            }}><option value="sound" disabled={!!audioSetup?.configured && !audioTaskAvailable(audioSetup, "sound")}>Sound effect / ambience</option><option value="music" disabled={!!audioSetup?.configured && !audioTaskAvailable(audioSetup, "music")}>Music</option><option value="speech">Dialogue / voice</option></select></label>
             {audioTask === "speech" ? <>
-              <label className="field-label">Voice<select aria-label="Audio voice" value={voiceId || audioSetup?.voices[0]?.id || ""} disabled={busy || !!pending} onChange={event => setVoiceId(event.target.value)}>
-                {!audioSetup?.voices.length && <option value="">No voices available</option>}{audioSetup?.voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+              <label className="field-label">Voice<select aria-label="Audio voice" value={speechVoiceId} disabled={busy || !!pending} onChange={event => setVoiceId(event.target.value)}>
+                {!speechVoices.length && <option value="">No voices available</option>}{speechVoices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
               </select></label>
-              <label className="field-label">Speech model<select aria-label="Speech model" value={speechModel || audioSetup?.defaultSpeechModel || ""} disabled={busy || !!pending} onChange={event => setSpeechModel(event.target.value)}>
+              <label className="field-label">Speech model<select aria-label="Speech model" value={speechModelId} disabled={busy || !!pending} onChange={event => setSpeechModel(event.target.value)}>
                 {audioSetup?.speechModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select></label>
             </> : <label className="field-label">Seconds<NumberDraftInput aria-label="Audio duration" min={audioTask === "music" ? 10 : 0.5} max={audioTask === "music" ? 300 : 30} step={audioTask === "music" ? 1 : 0.5}

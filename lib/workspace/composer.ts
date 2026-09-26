@@ -1,5 +1,5 @@
 import { displayModelName } from "../models";
-import type { NodeAudioSetup, NodeAudioTask } from "../workbench/generation-audio";
+import { audioTaskAvailable, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -275,8 +275,11 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
     }));
   if (audio?.configured) {
     const speech = audio.defaultSpeechModel || audio.speechModels[0]?.id || "";
-    out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound", description: "Sound effects from a description." });
-    out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music", description: "Music from a description, 10 s and up." });
+    /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone speaks only. */
+    if (audioTaskAvailable(audio, "sound")) {
+      out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound", description: "Sound effects from a description." });
+      out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music", description: "Music from a description, 10 s and up." });
+    }
     if (speech && audio.voices.length) out.push({ id: speech, label: displayModelName(speech), type: "audio", audioTask: "speech", description: "Your words, read in a chosen voice." });
   }
   return out;
