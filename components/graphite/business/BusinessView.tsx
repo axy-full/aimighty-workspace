@@ -154,14 +154,14 @@ function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnec
   return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
 }
 
-/** The job this composer remembers for the project (it resumes that one itself, on its button). */
+/** The job this composer remembers for the project; while it reads that one back, its button says so. */
 function rememberedJob(slot: string, draftId: string | null): string | null {
   try { return draftId ? localStorage.getItem(connectedJobKey(slot, draftId)) : null; } catch { return null; }
 }
 /**
- * This composer's other jobs still on the account from an earlier visit (another
+ * This composer's jobs still on the account from an earlier visit (another
  * device, another tab, or older than the one it remembers), followed until they
- * land. The one it is resuming or running right now is shown by its button.
+ * land. The one its button is resuming or running is not listed twice.
  */
 function useEarlierJobs(scope: string, project: Project | null, job: ReturnType<typeof useConnectedJob>, slot: string, models: readonly string[], done: string, name: (job: ConnectedJob) => string) {
   const ws = useWorkspace();
@@ -171,7 +171,7 @@ function useEarlierJobs(scope: string, project: Project | null, job: ReturnType<
     onSettled: (saved) => { if (saved.status === "completed") ws.toast(done); },
   });
   const live = "job" in job.state && job.state.job ? job.state.job.id : null;
-  const own = rememberedJob(slot, project?.id ?? null);
+  const own = job.state.phase === "resuming" ? rememberedJob(slot, project?.id ?? null) : null;
   const rows: ResumedRow[] = resumed.jobs.filter((item) => item.job.id !== live && item.job.id !== own).map(({ job: saved, problem }) => ({
     id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem,
   }));

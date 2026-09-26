@@ -55,7 +55,8 @@ async function base(page: Page, library: LibraryRoute) {
 }
 
 /** The generation route: GET lists the project's saved jobs; POST answers status reads from `reply`. */
-async function mockGeneration(page: Page, jobs: Job[], reply: (id: string) => { status?: number; json: unknown }) {
+type Reply = { status?: number; json: unknown };
+async function mockGeneration(page: Page, jobs: Job[], reply: (id: string) => Reply | Promise<Reply>) {
   const posts: Record<string, unknown>[] = [];
   let listed = 0;
   await page.route(/\/api\/higgsfield\/consumer\/generation(\?.*)?$/, async (route: Route) => {
@@ -68,7 +69,7 @@ async function mockGeneration(page: Page, jobs: Job[], reply: (id: string) => { 
     const body = request.postDataJSON() as Record<string, unknown>;
     posts.push(body);
     if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: [], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
-    if (body.action === "status") { const { status, json } = reply(String(body.id)); return route.fulfill({ status: status ?? 200, json }); }
+    if (body.action === "status") { const { status, json } = await reply(String(body.id)); return route.fulfill({ status: status ?? 200, json }); }
     return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
   });
   return { posts, listed: () => listed };
@@ -79,8 +80,9 @@ async function noOverflow(page: Page) {
   expect(wide).toBeLessThanOrEqual(0);
 }
 async function thumbSized(page: Page, name: string, testId: string) {
-  const box = await page.getByTestId(testId).getByRole("button", { name }).first().boundingBox();
-  expect(box!.height).toBeGreaterThanOrEqual(44);
+  /* Rounded: a landscape phone lays out on fractional pixels (43.99997 is a 44 px target). */
+  const height = await page.getByTestId(testId).getByRole("button", { name }).first().evaluate((el) => el.getBoundingClientRect().height);
+  expect(Math.round(height)).toBeGreaterThanOrEqual(44);
 }
 async function shoot(page: Page, project: string, name: string, target: string, index = 0) {
   const size = SHOTS[project];
@@ -148,21 +150,29 @@ test("Gen picks up takes left rendering, names each state, and files a finished 
   expect(errors).toEqual([]);
 });
 
-test("Ads follows an ad from an earlier visit until it lands, then points to Takes", async ({ page }, info) => {
+test("Ads follows an ad from an earlier visit until it lands, then points to Takes; the ad its button resumes is not listed twice", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   const errors = await base(page, { uploads: [], generations: [] });
   const ad = connected(11, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "Unboxing the trail runner on a kitchen counter", ago: 25 * MIN, credits: 40 });
   const genTake = connected(12, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A Gen take", ago: 4 * MIN, fileToProject: true });
+  /* The last ad submitted on this device: the composer remembers it and reads it back on its own button
+     (held open here, so the composer stays "Checking the last take…" the whole time). */
+  const remembered = connected(13, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "The ad this device submitted last", ago: 2 * MIN });
+  await page.addInitScript(([key, id]) => { try { localStorage.setItem(key, id); } catch { /* private mode */ } }, [`particl:connected-job:ads:${DRAFT}`, remembered.id]);
   let done = false;
-  const { posts } = await mockGeneration(page, [ad, genTake], (id) =>
-    id === ad.id ? { json: { job: done ? completed(ad) : ad, pollAfterSeconds: 8 } } : { status: 404, json: { error: "not this composer's job" } });
+  const { posts } = await mockGeneration(page, [ad, genTake, remembered], (id) =>
+    id === ad.id ? { json: { job: done ? completed(ad) : ad, pollAfterSeconds: 8 } }
+      : id === remembered.id ? new Promise<Reply>(() => {})
+        : { status: 404, json: { error: "not this composer's job" } });
   await page.clock.install();
   await page.goto(`/suites?suite=moleculr&page=marketing&sp=ads`);
   await expect(page.getByTestId("ads-view")).toBeVisible();
   const rows = page.getByTestId("ads-earlier-row");
   await expect(rows).toHaveCount(1);
   await expect(rows.locator(".vr-job-name")).toHaveText("Unboxing the trail runner on a kitchen counter");
+  await expect.poll(() => posts.some((p) => p.action === "status" && p.id === remembered.id)).toBe(true);
+  await expect(page.getByText("The ad this device submitted last")).toHaveCount(0);
   await expect(rows.locator(".gx-resumed-state")).toHaveText("Rendering · 25 min");
   await noOverflow(page);
   await shoot(page, info.project.name, "ads-earlier", "ads-earlier");
@@ -186,9 +196,10 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
   await shoot(page, info.project.name, "ads-complete", "ads-earlier");
   await rows.getByRole("button", { name: "Open Takes" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  expect(posts.filter((p) => p.action === "status").every((p) => p.id === ad.id)).toBe(true);
+  expect(posts.filter((p) => p.action === "status").every((p) => p.id === ad.id || p.id === remembered.id)).toBe(true);
   expect(posts.some((p) => p.action === "quote" || p.action === "submit")).toBe(false);
   expect(errors).toEqual([]);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("Motion Transfer rows move from Rendering to settled instead of sitting at accepted", async ({ page }, info) => {
