@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "./spec-store";
+import { knownCopy, rememberCopy } from "@/lib/shell/use-fresh-project";
 
 /* Client data hooks for the shell. They read the existing routes the
    workbench already uses — /api/workbench/projects and /api/me — and add
@@ -131,11 +132,22 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
         if (startedAt >= settleUntil.current) setKept(null);
         return;
       }
+      /* The phone grid's own check (lib/shell/use-fresh-project) may already hold this revision. */
+      const known = knownCopy();
+      if (row && typeof row.revision === "number" && known?.id === open.id && known.revision === row.revision) {
+        if (loaded.current?.id !== open.id) return;
+        revision.current = known.revision;
+        serverCopies.add(known.project);
+        setData({ status: "ready", projects: listed!.projects!, project: known.project, error: null });
+        if (startedAt >= settleUntil.current) setKept(null);
+        return;
+      }
       const response = await fetch("/api/workbench/projects?id=" + encodeURIComponent(open.id), { headers: { "X-Workbench-Scope": scope }, cache: "no-store" });
       const body = await response.json().catch(() => ({})) as { projects?: ProjectSummary[]; project?: Project | null; revision?: number };
       if (!response.ok || !body.project || loaded.current?.id !== open.id || body.project.id !== open.id) return;
       revision.current = typeof body.revision === "number" ? body.revision : null;
       serverCopies.add(body.project);
+      rememberCopy(open.id, body.revision, body.project);
       setData((prev) => ({ status: "ready", projects: body.projects ?? prev.projects, project: body.project!, error: null }));
       if (startedAt >= settleUntil.current) setKept(null);
     } catch { /* The copy on screen stays; the next focus or change reads again. */ }

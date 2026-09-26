@@ -285,9 +285,11 @@ test("Ads: a failing catalogue read is asked again a few times, then waits for R
   const { errors } = await open(page, "/suites?suite=moleculr&page=marketing&sp=ads");
   await page.getByTestId("ads-prompt").fill("Morning routine with the bottle on the sill.");
   await expect(page.getByTestId("ads-blocked")).toHaveText("The connected catalogue is unavailable.");
-  /* The first read and three more (5 s, 15 s, 45 s later); then nothing until asked. */
-  await page.clock.runFor(70_000);
-  await expect.poll(() => reads).toBe(4);
+  /* The first read and three more (5 s, 15 s, 45 s after each failure); then nothing until asked.
+     Each wait is timed from a failure landing, which takes real time, so the clock moves a second at a
+     time until the next read is asked rather than jumping past a retry that is not timed yet. */
+  for (const count of [2, 3, 4])
+    await expect.poll(async () => { await page.clock.runFor(1_000); return reads; }, { intervals: [50], timeout: 30_000 }).toBe(count);
   await page.clock.runFor(10 * 60_000);
   expect(reads).toBe(4);
   failing = false;
