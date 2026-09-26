@@ -60,10 +60,6 @@ const headers = [
 const nextConfig: NextConfig = {
   // Keep framework debugging chrome from covering controls in mock browser rehearsals.
   ...(process.env.ENGINE_MOCK === "1" ? { devIndicators: false as const } : {}),
-  // CI's webpack dev server keeps every page it compiled. By default a page idle
-  // for a minute is dropped (five are kept) and compiled again on its next
-  // request, which can reload a page a test is filling in.
-  ...(process.env.NEXT_KEEP_COMPILED_PAGES === "1" ? { onDemandEntries: { maxInactiveAge: 6 * 60 * 60 * 1000, pagesBufferLength: 500 } } : {}),
   async headers() {
     // Only the dedicated movie document can create the bundled AAC WASM worker.
     // Every other page retains the policy above; production never enables general eval.
