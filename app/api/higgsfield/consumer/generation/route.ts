@@ -26,6 +26,8 @@ import {
   pollConsumerGeneration,
 } from "@/lib/higgsfield-consumer/generation-service";
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
+/* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
+import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -94,7 +96,7 @@ function problem(error: unknown) {
         : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
-  if (error instanceof ConsumerVideoError)
+  if (error instanceof ConsumerVideoError || error instanceof ConsumerSetupError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
     return Response.json({ error: "Too many requests. Try again shortly." }, { status: 429, headers });

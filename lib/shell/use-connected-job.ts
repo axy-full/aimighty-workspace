@@ -5,6 +5,7 @@ import {
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
 
 /**
  * One connected-account job from a Business composer (FINAL_SPEC §2), on the
@@ -17,6 +18,11 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * either way, and Particl settles it only on a status read. While that read
  * is out the composer is `resuming` and prices nothing, so no newer job can
  * be submitted underneath it; and an id is only ever cleared by its own job.
+ *
+ * A completed job is filed to the project by the server; the project's
+ * Library is re-read once (`scope` is the workspace scope) so Takes and the
+ * Library show it without a reload, and the job stays on hand (`finished`)
+ * while the composer prices its next run.
  */
 export type ConnectedJobState =
   | { phase: "idle" }
@@ -90,10 +96,13 @@ export function resumeRetry(status: number, tries: number): "forget" | "stop" | 
 /** A 4xx submit was refused before anything was sent; anything else (a 5xx, a lost reply) may have reached the account. */
 export const submitRefused = (status: number) => status >= 400 && status < 500;
 
-export function useConnectedJob(draftId: string | null, slot = "business") {
+export function useConnectedJob(draftId: string | null, slot = "business", scope?: string) {
   const scoped = useScopedFetch();
   const [state, setState] = useState<ConnectedJobState>({ phase: "idle" });
   const [quotedFor, setQuotedFor] = useState<string | null>(null);
+  /* The last completed job, however it settled (submit, poll or resume): kept beside the composer until reset. */
+  const [finished, setFinished] = useState<ConnectedJob | null>(null);
+  if (state.phase === "done" && state.job.status === "completed" && state.job !== finished) setFinished(state.job);
   const live = useRef(state);
   useEffect(() => { live.current = state; });
   /** The remembered job this composer is reading back, if any; cleared the moment anything else takes the composer. */
@@ -209,8 +218,17 @@ export function useConnectedJob(draftId: string | null, slot = "business") {
     }
   }, [call, draftId, key]);
 
-  /** Price the same input again: after a failed quote, a failed job, or a finished take (for another one). */
+  /* Once per completed job: Takes and the Library sidebar read one shared store. */
+  const refreshed = useRef<string | null>(null);
+  const doneId = finished?.id ?? null;
+  useEffect(() => {
+    if (!doneId || !draftId || !scope || refreshed.current === doneId) return;
+    refreshed.current = doneId;
+    void refreshProjectLibrary(scope, draftId);
+  }, [doneId, draftId, scope]);
+
+  /** Price the same input again: after a failed quote, a failed job, or a finished take (for another one; the finished take stays on hand). */
   const requote = useCallback(() => { setQuotedFor(null); setState({ phase: "idle" }); }, []);
-  const reset = useCallback(() => { setState({ phase: "idle" }); setQuotedFor(null); }, []);
-  return { state, quotedFor, quote, submit, requote, reset };
+  const reset = useCallback(() => { setState({ phase: "idle" }); setQuotedFor(null); setFinished(null); }, []);
+  return { state, quotedFor, finished, quote, submit, requote, reset };
 }
