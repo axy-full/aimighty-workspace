@@ -43,9 +43,19 @@ function usePlacements(scope: string, projectId: string) {
 export function EditPage({ project: shellProject, scope }: PageBodyProps) {
   const draft = useDraftEditor(scope, shellProject?.id ?? null);
   if (!draft.project) {
+    /* A failed read says so and offers it again; it never sits beside a loading line that will not change. */
+    if (shellProject && draft.state.status === "error") {
+      return (
+        <div className="pxw-edit" data-page-body="edit">
+          <p className="pxw-notice pxw-notice--error" role="alert">
+            {draft.state.error || "This project could not be opened."}{" "}
+            <Button onClick={() => void draft.reload()} data-testid="edit-retry">Retry</Button>
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="pxw-edit" data-page-body="edit">
-        {draft.state.error ? <p className="pxw-notice pxw-notice--error" role="alert">{draft.state.error}</p> : null}
         <p className="pxw-empty" role="status">{shellProject ? "Loading the edit…" : "Open a project to see its edit."}</p>
       </div>
     );
