@@ -25,13 +25,15 @@ export type LibraryState = {
   pages: Record<Source, number>;
   moreBusy: boolean;
   error: string | null;
+  /** A re-read failed while cards were on screen: they are the last good read (`error` says why). A failed Load more is not stale. */
+  stale: boolean;
   /** Upload progress, e.g. "still.png · 40%"; null when idle. */
   uploading: string | null;
 };
 
 const EMPTY: LibraryState = {
   status: "idle", uploads: [], generations: [], next: { uploads: null, generations: null },
-  pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, uploading: null,
+  pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, stale: false, uploading: null,
 };
 
 type Entry = {
@@ -105,15 +107,17 @@ async function load(scope: string, projectId: string): Promise<void> {
       const [uploads, generations] = await Promise.all([read("uploads"), read("generations")]);
       e.retry.attempts = 0;
       e.epoch++;
+      /* A full read just landed: a take still in flight is asked after again soon, not at the end of a long backoff. */
+      nudge(key);
       set(key, {
-        status: "ready", error: null,
+        status: "ready", error: null, stale: false,
         uploads: uploads.items as LibraryUpload[], generations: generations.items as Generation[],
         next: { uploads: uploads.next, generations: generations.next },
         pages: { uploads: uploads.pages, generations: generations.pages },
       });
     } catch (error) {
       const first = e.state.status !== "ready";
-      set(key, { status: first ? "error" : "ready", error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      set(key, { status: first ? "error" : "ready", stale: !first, error: error instanceof Error ? error.message : "The project library could not be loaded." });
       /* A blip on the first read is not left on screen for the session: try again, a few times, further apart. */
       const wait = first ? LIBRARY_RETRY_MS[e.retry.attempts] : undefined;
       if (wait !== undefined && e.listeners.size) {
@@ -163,7 +167,7 @@ async function more(scope: string, projectId: string) {
       if (source === "uploads") uploads = dedupe([...uploads, ...(pages[i].items as LibraryUpload[])]);
       else generations = dedupe([...generations, ...(pages[i].items as Generation[])]);
     });
-    set(key, { uploads, generations, next, pages: count, moreBusy: false, error: null });
+    set(key, { uploads, generations, next, pages: count, moreBusy: false, error: null, stale: false });
   } catch (error) {
     set(key, { moreBusy: false, error: error instanceof Error ? error.message : "More assets could not be loaded." });
   }
@@ -225,22 +229,51 @@ export function mergeNewest<T extends { id: string }>(loaded: readonly T[], newe
 }
 
 /* One timer per project, however many grids read it; it reads only while the tab is on screen. */
-type Poller = { count: number; quiet: number; timer: ReturnType<typeof setTimeout> | null };
+type Poller = { count: number; quiet: number; timer: ReturnType<typeof setTimeout> | null; running: boolean; tick: () => Promise<void> };
 const pollers = new Map<string, Poller>();
+
+/** Something fresh happened (a full read landed, the tab came back): poll again from the short end of the backoff. */
+function nudge(key: string, wait: number = settleWait(0)) {
+  const poller = pollers.get(key);
+  if (!poller) return;
+  poller.quiet = 0;
+  /* A tick that is out reschedules itself when it lands. */
+  if (poller.running) return;
+  if (poller.timer) clearTimeout(poller.timer);
+  poller.timer = setTimeout(() => void poller.tick(), wait);
+}
+
+let watchingVisibility = false;
+function nudgeWhenVisible() {
+  if (watchingVisibility || typeof document === "undefined") return;
+  watchingVisibility = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") for (const key of pollers.keys()) nudge(key, 1_000);
+  });
+}
+
 function watch(scope: string, projectId: string): () => void {
   const key = keyOf(scope, projectId);
   const found = pollers.get(key);
   if (found) found.count++;
   else {
-    const poller: Poller = { count: 1, quiet: 0, timer: null };
-    const tick = async () => {
-      poller.timer = null;
-      const visible = typeof document === "undefined" || document.visibilityState !== "hidden";
-      if (visible && settling(entry(key).state.generations)) poller.quiet = (await settle(scope, projectId)) ? 0 : poller.quiet + 1;
-      if (pollers.get(key) === poller) poller.timer = setTimeout(() => void tick(), settleWait(poller.quiet));
+    const poller: Poller = {
+      count: 1, quiet: 0, timer: null, running: false,
+      tick: async () => {
+        poller.timer = null;
+        poller.running = true;
+        try {
+          const visible = typeof document === "undefined" || document.visibilityState !== "hidden";
+          if (visible && settling(entry(key).state.generations)) poller.quiet = (await settle(scope, projectId)) ? 0 : poller.quiet + 1;
+        } finally {
+          poller.running = false;
+        }
+        if (pollers.get(key) === poller && !poller.timer) poller.timer = setTimeout(() => void poller.tick(), settleWait(poller.quiet));
+      },
     };
-    poller.timer = setTimeout(() => void tick(), settleWait(0));
+    poller.timer = setTimeout(() => void poller.tick(), settleWait(0));
     pollers.set(key, poller);
+    nudgeWhenVisible();
   }
   return () => {
     const poller = pollers.get(key);
@@ -332,7 +365,11 @@ export async function uploadFilesToProject(scope: string, projectId: string, fil
 export type LibraryView = {
   /** Aspect-true placeholders while the first read is in flight. */
   skeletons: boolean;
-  /** A failed read: "error" when nothing could be shown, "stale" when the cards on screen are the last good read. */
+  /**
+   * A failed read: "error" when the first read failed and nothing could be shown (every grid's
+   * top banner); "stale" when a re-read failed and the cards on screen are the last good read
+   * (Gen's banner; the Library and Takes say it at the list's end, beside Load more).
+   */
   banner: { tone: "error" | "stale"; message: string } | null;
   /** Only a finished, successful read may say the project is empty. */
   empty: boolean;
@@ -345,12 +382,12 @@ export type LibraryView = {
  * still opening shows skeletons; failed shows nothing here (the shell's banner
  * says it and offers Try again).
  */
-export function libraryView(load: Pick<LibraryState, "status" | "error"> | null, shown: number, projects: "loading" | "ready" | "error" = "ready"): LibraryView {
+export function libraryView(load: Pick<LibraryState, "status" | "error"> & { stale?: boolean } | null, shown: number, projects: "loading" | "ready" | "error" = "ready"): LibraryView {
   if (!load) return projects === "loading" ? { skeletons: shown === 0, banner: null, empty: false } : { skeletons: false, banner: null, empty: projects === "ready" && shown === 0 };
   if (load.status === "error")
     return { skeletons: false, banner: { tone: "error", message: load.error || "The project library could not be loaded." }, empty: false };
   if (load.status !== "ready") return { skeletons: shown === 0, banner: null, empty: false };
-  return { skeletons: false, banner: load.error ? { tone: "stale", message: load.error } : null, empty: shown === 0 };
+  return { skeletons: false, banner: load.stale && load.error ? { tone: "stale", message: load.error } : null, empty: shown === 0 };
 }
 
 /** The project's frame as a CSS aspect-ratio, held between 9:16 and 2:1 so a tile stays a tile. */
@@ -390,12 +427,13 @@ export function libraryEntries(state: Pick<LibraryState, "uploads" | "generation
 
 /**
  * What a card's picture area shows: the media; a live or held render; a
- * failure; a finished take whose stored copy is not there yet ("Preview
- * unavailable · Refresh"); or the sound / file glyph.
+ * failure, or a take stopped before it rendered; a finished take whose stored
+ * copy is not there yet ("Preview unavailable · Refresh"); or the sound /
+ * file glyph.
  */
-export type EntryFace = "media" | "live" | "held" | "failed" | "unavailable" | "audio" | "file";
+export type EntryFace = "media" | "live" | "held" | "failed" | "stopped" | "unavailable" | "audio" | "file";
 export function entryFace(entry: Pick<LibraryEntry, "take" | "asset" | "url" | "media">): EntryFace {
-  if (entry.take.status === "failed") return "failed";
+  if (entry.take.status === "failed") return entry.take.cancelled ? "stopped" : "failed";
   if (entry.take.status === "rendering") return entry.take.stage === "held" ? "held" : "live";
   if (entry.url && (entry.media === "image" || entry.media === "video")) return "media";
   if (entry.media === "audio") return "audio";

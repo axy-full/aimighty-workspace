@@ -351,6 +351,7 @@
 .gx-tile-face { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gx-text-3);
   background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .03) 0 8px, transparent 8px 16px); }
 .gx-tile-face[data-face="failed"] { background-color: rgba(255, 69, 58, .08); }
+.gx-tile-face[data-face="stopped"] .gx-tile-glyph { color: var(--gx-text-2); }
 .gx-tile-face[data-face="held"] { background-color: rgba(255, 159, 10, .07); }
 .gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
 .gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
@@ -376,7 +377,7 @@
 .gx-tile-reason[data-tone="waiting"] { color: var(--gx-waiting); }
 .gx-asset.gx-tile > .gx-tile-reason { padding: 0 2px; }
 /* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
-.gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"]) .gx-tile-glyph { display: none; }
+.gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"], [data-face="stopped"]) .gx-tile-glyph { display: none; }
 .gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
 .gx-tile-over { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .gx-tile-refresh { pointer-events: auto; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 600; text-align: center;

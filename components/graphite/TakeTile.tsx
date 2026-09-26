@@ -9,10 +9,15 @@ import { takeChip, takeReasonLine, type ChipTone } from "@/lib/workspace/takes";
 /**
  * One card contract for every grid of takes — Gen › Results, Library › Assets
  * and Studio › Takes. The picture area says what the take is doing (media,
- * rendering, held, failed, or a finished take whose copy has not landed),
- * a chip names its status, and the line under the name says why a take
- * failed or waits. While the library is read, aspect-true skeletons hold the
- * grid; a failed read is a banner with Try again, never an empty grid.
+ * rendering, held, failed, stopped, or a finished take whose copy has not
+ * landed), a chip names its status, and the line under the name says why a
+ * take failed or waits. While the library is read, aspect-true skeletons hold
+ * the grid; a failed read is a banner with Try again, never an empty grid.
+ *
+ * The words come from lib/workspace/takes.ts (takeChip, takeReasonLine, the
+ * Take's `stage`, `reason`, `detail`, `failedUnbilled`, `cancelled`) and the
+ * states from lib/workspace/library.ts (entryFace, libraryView, tileAspect):
+ * a new grid of takes renders TakeTile and reads those, never its own copy.
  */
 
 type Variant = "grid" | "library" | "take";
@@ -25,7 +30,7 @@ function Chip({ label, tone }: { label: string; tone: ChipTone }) {
 function Face({ face, entry, onFail }: { face: EntryFace; entry: LibraryEntry; onFail: () => void }) {
   if (face === "media" && entry.url && (entry.media === "image" || entry.media === "video"))
     return <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" onFail={onFail} />;
-  const glyph = face === "live" ? <span className="gx-tile-spin" /> : face === "held" ? <span className="gx-tile-pause" /> : face === "failed" ? "!" : face === "audio" ? "♪" : face === "unavailable" ? "" : "▤";
+  const glyph = face === "live" ? <span className="gx-tile-spin" /> : face === "held" ? <span className="gx-tile-pause" /> : face === "failed" ? "!" : face === "stopped" ? "–" : face === "audio" ? "♪" : face === "unavailable" ? "" : "▤";
   return <span className="gx-tile-face" data-face={face}><span className="gx-tile-glyph" aria-hidden="true">{glyph}</span></span>;
 }
 
@@ -79,12 +84,14 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   const tone = face === "unavailable" ? "idle" : chip?.tone ?? "idle";
   const why = reason ? <span className="gx-tile-reason" data-tone={tone} title={face === "unavailable" ? "The stored copy did not load. Refresh reads the library again." : take.detail ?? reason} data-testid="take-reason">{reason}</span> : null;
   const refreshButton = face === "unavailable" ? <span className="gx-tile-over"><Refresh onRefresh={refresh} name={take.name} /></span> : null;
+  /* A screen reader hears the take and its state, not the badge text inside the picture. */
+  const label = [take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
   const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": "take-tile" };
 
   if (variant === "take") {
     return (
       <div className="pd-take-cell gx-tile" {...attrs}>
-        <button type="button" role="radio" aria-checked={checked} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
+        <button type="button" role="radio" aria-checked={checked} aria-label={label} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
           {...previewAttrs(entryPreview(entry))} {...dragAttrs(take.id, { name: take.name, kind: entry.media ?? "file" })}>
           <span className="gx-tile-media pd-take-media">{inner}</span>
           <span className="pd-take-name">{take.name}</span>
@@ -97,7 +104,7 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   return (
     <div className="gx-asset gx-tile" {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
       <div className="gx-tile-media">
-        <button type="button" className="gx-asset-thumb" title={take.name} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
+        <button type="button" className="gx-asset-thumb" title={take.name} aria-label={label} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
           onDragStart={(e) => { e.dataTransfer.setData("text/plain", take.id); e.dataTransfer.effectAllowed = dragEffect; }}
           onClick={onOpen}>
           {inner}

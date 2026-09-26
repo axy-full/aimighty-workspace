@@ -50,7 +50,12 @@ test("a failed take says why in one line; the row's own words ride along only wh
   expect(failureReason({ status: "failed", error: "Not enough credits to start this render." })).toMatchObject({ reason: "Out of credits" });
   expect(failureReason({ status: "failed", error: "The production is at its cap." })).toEqual({ reason: "The production is at its cap" });
   expect(failureReason({ status: "failed", error: null, params: { held: { why: "slots" } } })).toEqual({ reason: "Every render slot was busy" });
-  expect(failureReason({ status: "cancelled", error: "" })).toEqual({ reason: "Cancelled before it rendered" });
+  /* Stopped on purpose: its own words, else a plain line. */
+  expect(failureReason({ status: "cancelled", error: "" })).toEqual({ reason: "Stopped before it rendered" });
+  expect(failureReason({ status: "cancelled", error: "Discarded before it started. Nothing was charged." })).toEqual({ reason: "Discarded before it started." });
+  /* The row's own words outrank a parked marker left in its params. */
+  expect(failureReason({ status: "failed", error: "Refused by moderation.", params: { held: { why: "slots" } } })).toMatchObject({ reason: "Refused by the content filter" });
+  expect(failureReason({ status: "failed", error: "Something odd happened.", params: { held: { why: "credits" } } })).toMatchObject({ reason: "Out of credits" });
   expect(failureReason({ status: "failed", error: null })).toEqual({ reason: "Did not render" });
   /* An unrecognised message is its own reason, first sentence only, no links. */
   expect(failureReason({ status: "failed", error: "The reference image is too small. See https://example.test/help for sizes." }))
@@ -61,6 +66,9 @@ test("a failed take says why in one line; the row's own words ride along only wh
 
   const refused = take(gen("f", { status: "failed", creditsBilled: 0, error: "Refused: prompt flagged by moderation." }));
   expect(refused).toMatchObject({ status: "failed", failedUnbilled: true, reason: "Refused by the content filter", detail: "Refused: prompt flagged by moderation." });
+  expect(refused).not.toHaveProperty("cancelled");
+  const discarded = take(gen("d", { status: "cancelled", creditsBilled: null, costUsd: 0, error: "Discarded before it started. Nothing was charged." }));
+  expect(discarded).toMatchObject({ status: "failed", cancelled: true, failedUnbilled: true, reason: "Discarded before it started." });
 });
 
 test("the chip names the status; the not-billed note moves to the reason line on a 2-up tile", () => {
@@ -71,6 +79,10 @@ test("the chip names the status; the not-billed note moves to the reason line on
   expect(takeReasonLine(failed, true)).toBe("Not billed · The engine timed out");
   /* Billed failure: never claims it was free. */
   expect(takeChip({ status: "failed" })).toEqual({ label: "Failed", tone: "failed" });
+  /* A take stopped on purpose is not a failure. */
+  expect(takeChip({ status: "failed", cancelled: true, failedUnbilled: true })).toEqual({ label: "Cancelled · not billed", tone: "idle" });
+  expect(takeChip({ status: "failed", cancelled: true, failedUnbilled: true }, true)).toEqual({ label: "Cancelled", tone: "idle" });
+  expect(takeStatusWord({ status: "failed", cancelled: true })).toBe("Cancelled");
   expect(takeReasonLine({ status: "failed", reason: "Did not render" }, true)).toBe("Did not render");
 
   expect(takeChip({ status: "rendering", stage: "queued" })).toEqual({ label: "Queued", tone: "idle" });
@@ -100,10 +112,11 @@ test("a card's face: media, live, held, failed, or 'Preview unavailable' for a f
       gen("fail", { status: "failed", storedUrl: null, kind: "video" }),
       gen("gone", { storedUrl: null }),
       gen("mesh", { kind: "model" as Generation["kind"], storedUrl: null }),
+      gen("stop", { status: "cancelled", storedUrl: null, kind: "video" }),
     ].map((g, i) => ({ ...g, createdAt: 100 - i })),
   });
   expect(entries.map((e) => [e.take.sourceId, entryFace(e)])).toEqual([
-    ["ok", "media"], ["run", "live"], ["held", "held"], ["fail", "failed"], ["gone", "unavailable"], ["mesh", "file"],
+    ["ok", "media"], ["run", "live"], ["held", "held"], ["fail", "failed"], ["gone", "unavailable"], ["mesh", "file"], ["stop", "stopped"],
   ]);
   /* Filed by what it is, whether or not it rendered: a failed clip is still Video. */
   expect(entryKind(entries[3])).toBe("video");
@@ -116,8 +129,11 @@ test("never 'nothing here' while reading or after a failed read; a failed read a
   expect(libraryView({ status: "loading", error: null }, 3)).toEqual({ skeletons: false, banner: null, empty: false });
   expect(libraryView({ status: "error", error: "Library offline." }, 0)).toEqual({ skeletons: false, banner: { tone: "error", message: "Library offline." }, empty: false });
   expect(libraryView({ status: "error", error: null }, 0).banner?.message).toBe("The project library could not be loaded.");
-  /* A later read failing keeps the cards and says they are not fresh. */
-  expect(libraryView({ status: "ready", error: "More assets could not be loaded." }, 5)).toEqual({ skeletons: false, banner: { tone: "stale", message: "More assets could not be loaded." }, empty: false });
+  /* A re-read failing keeps the cards and says they are not fresh. */
+  expect(libraryView({ status: "ready", error: "The project library could not be loaded.", stale: true }, 5)).toEqual({ skeletons: false, banner: { tone: "stale", message: "The project library could not be loaded." }, empty: false });
+  /* A failed Load more is not a stale grid: it is said at the list's end, beside Load more. */
+  expect(libraryView({ status: "ready", error: "More assets could not be loaded.", stale: false }, 5)).toEqual({ skeletons: false, banner: null, empty: false });
+  expect(libraryView({ status: "ready", error: "More assets could not be loaded." }, 5).banner).toBeNull();
   expect(libraryView({ status: "ready", error: null }, 0)).toEqual({ skeletons: false, banner: null, empty: true });
   /* No project open: the project list still opening shows skeletons; a failed list shows nothing (the shell's banner says it). */
   expect(libraryView(null, 0, "loading")).toEqual({ skeletons: true, banner: null, empty: false });

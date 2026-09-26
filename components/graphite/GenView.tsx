@@ -461,7 +461,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           {pickedUp.map(({ job, problem, following }) => {
             const phase = resumePhase(job, following);
             return (
-              <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
+              <div className="gx-asset gx-tile" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
                 {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
                 <span className="gx-asset-name" title={job.input.prompt}>{takeName(job)}</span>

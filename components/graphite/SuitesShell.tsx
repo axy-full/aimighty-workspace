@@ -245,7 +245,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
             {showLibrary ? <Library project={project} items={items} library={library} projects={data.status} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
+              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
                 onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
                 onCreate={async (name) => {
                   const created = newProject(name.slice(0, 120));
@@ -256,7 +256,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   toast(`${created.name} is open`);
                   return null;
                 }} />
-              {/* Gen still composes without a project list, so the failed read sits above it rather than in its place. */}
+              {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
+                  "Try again", never "Retry": that word is the paid re-render on a take (⌘R). */}
               {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
               {shell.view === "gen" ? (
                 <>

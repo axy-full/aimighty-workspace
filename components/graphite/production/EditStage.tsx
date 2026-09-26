@@ -13,7 +13,7 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { libraryView, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryFace, libraryView, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
@@ -76,8 +76,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const pick = (e: LibraryEntry) => {
     if (!pickable(e)) {
       const { take } = e;
-      toast(take.status === "failed" ? `${take.name} did not render${take.reason ? ` · ${take.reason}` : ""}.`
-        : take.status === "rendering" ? (take.stage === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}.` : `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`)
+      const face = entryFace(e);
+      toast(face === "failed" || face === "stopped" ? `${take.name} did not render${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.`
+        : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}. It starts on its own when credits arrive.`
+        : face === "live" ? `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`
+        : face === "unavailable" ? `${take.name} rendered, but its stored copy is not here yet. Refresh on its card reads it again.`
         : "This file has no picture or sound to edit.");
       return;
     }

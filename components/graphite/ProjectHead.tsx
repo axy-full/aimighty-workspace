@@ -14,10 +14,10 @@ function initials(name: string) {
 }
 
 /** `[DS] Project ▾` — the project switcher: a list with ✓ on the current one, and New project. */
-export function ProjectHead({ project, projects, loading, error = null, onRetry, onPick, onCreate }: {
+export function ProjectHead({ project, projects, loading, error = null, onPick, onCreate }: {
   project: Project | null; projects: ProjectSummary[]; loading: boolean; onPick: (id: string) => void;
-  /** The project list could not be read: said here, with Try again, rather than "No project". */
-  error?: string | null; onRetry?: () => void;
+  /** The project list could not be read: said here rather than "No project"; the banner under the head says why, with Try again. */
+  error?: string | null;
   /** Starts a project here and opens it; returns the refusal, or null. Without it, New project opens the older dialog. */
   onCreate?: (name: string) => Promise<string | null>;
 }) {
@@ -45,9 +45,8 @@ export function ProjectHead({ project, projects, loading, error = null, onRetry,
   }, [open]);
   const name = project?.name ?? (loading ? "Opening…" : error ? "Projects didn’t load" : "No project");
   const meta = [project?.aspect, project?.fps ? `${project.fps} fps` : null].filter(Boolean).join(" · ");
-  /* A failed list read takes the meta's place with Try again (on a phone the meta sits at the row's right edge, where the button goes).
-     "Retry" is the paid re-render on a take (⌘R), so a read that failed is never offered under that word. */
-  const failed = Boolean(error && !project && onRetry);
+  /* A failed list read: no aspect or suite line under a name that is not a project. One Try again, in the banner below. */
+  const failed = Boolean(error && !project);
   return (
     <div className="gx-project" ref={box} data-row="project">
       <button type="button" className="gx-project-btn" aria-haspopup="listbox" aria-expanded={open} title="Switch project" onClick={() => setOpen((v) => !v)} data-testid="project-switcher">
@@ -58,7 +57,6 @@ export function ProjectHead({ project, projects, loading, error = null, onRetry,
           {failed ? null : <span className="gx-project-meta">{meta || shell.suite.name}</span>}
         </span>
       </button>
-      {failed ? <button type="button" className="gx-hbtn" onClick={onRetry} data-testid="projects-retry">Try again</button> : null}
       {open ? (
         <div className="gx-popover" role="listbox" aria-label="Projects">
           {projects.map((p) => (

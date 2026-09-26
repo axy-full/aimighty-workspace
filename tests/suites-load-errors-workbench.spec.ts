@@ -37,7 +37,7 @@ test("the project list and the library say they failed and recover on Try again"
   await expect(page.getByTestId("projects-error")).toContainText("Projects are unavailable right now.");
   await expect(page.getByTestId("brief-no-project")).toHaveCount(0);
   projectsFail = false;
-  await page.getByTestId("projects-retry").click();
+  await page.getByTestId("projects-error").getByRole("button", { name: "Try again" }).click();
   await expect(page.getByTestId("project-name")).toHaveText(project.name);
   await expect(page.getByTestId("projects-error")).toHaveCount(0);
 

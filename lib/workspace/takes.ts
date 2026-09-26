@@ -38,6 +38,8 @@ export type Take = {
   usd: number | null;
   status: TakeStatus;
   failedUnbilled?: true;
+  /** A take stopped before it rendered (a held take discarded): filed under `failed`, but nothing went wrong. */
+  cancelled?: true;
   /** Where a render that has not settled is: waiting its turn, on the engine, or parked for credits. */
   stage?: TakeStage;
   /** One line on why a take failed or is held ("Refused by the content filter", "Needs 12 cr"). */
@@ -88,7 +90,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
       meta: [label, detail].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : billedCredits ?? null,
       usd: !settled ? null : unbilled ? (g.costUsd == null ? null : 0) : g.costUsd ?? null,
-      status, ...(unbilled ? { failedUnbilled: true as const } : {}),
+      status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
       ...(stage ? { stage } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
       sha256: sha, createdAt: g.createdAt,
     };
@@ -131,8 +133,11 @@ export function failureReason(g: Row): { reason: string; detail?: string } {
   const detail = raw ? firstLine(raw) : "";
   const same = (a: string, b: string) => a.replace(/[.!?\s]+$/, "").toLowerCase() === b.replace(/[.!?\s]+$/, "").toLowerCase();
   const withDetail = (reason: string) => (detail && !same(detail, reason) ? { reason, detail } : { reason });
-  if (g.status === "cancelled") return withDetail("Cancelled before it rendered");
-  switch (failureKind(raw, g.params)) {
+  /* Stopped on purpose (a held take discarded): its own words say so ("Discarded before it started."). */
+  if (g.status === "cancelled") return { reason: detail || "Stopped before it rendered" };
+  /* The row's own words first; why a take was parked only when they say nothing. */
+  const said = raw ? failureKind(raw) : "unknown";
+  switch (said !== "unknown" ? said : failureKind(raw, g.params)) {
     case "refused": return withDetail("Refused by the content filter");
     case "cap": return withDetail("The production is at its cap");
     case "balance": return withDetail("Out of credits");
@@ -147,14 +152,17 @@ export type TakeChip = { label: string; tone: ChipTone };
 
 /**
  * The card's status chip (Queued / Rendering / Held / Failed · not billed /
- * Picked / Approved / Changes). A take waiting for review and an upload carry
- * none. `compact` shortens the one long label for a 2-up sidebar tile; the
- * billing note then rides on the reason line instead.
+ * Cancelled / Picked / Approved / Changes). A take waiting for review and an
+ * upload carry none. `compact` shortens the one long label for a 2-up sidebar
+ * tile; the billing note then rides on the reason line instead.
  */
-export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled">, compact = false): TakeChip | null {
+export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled">, compact = false): TakeChip | null {
   switch (take.status) {
     case "rendering": return take.stage === "held" ? { label: "Held", tone: "waiting" } : take.stage === "queued" ? { label: "Queued", tone: "idle" } : { label: "Rendering", tone: "live" };
-    case "failed": return { label: take.failedUnbilled && !compact ? "Failed · not billed" : "Failed", tone: "failed" };
+    case "failed": {
+      const word = take.cancelled ? "Cancelled" : "Failed";
+      return { label: take.failedUnbilled && !compact ? `${word} · not billed` : word, tone: take.cancelled ? "idle" : "failed" };
+    }
     case "picked": return { label: "Picked", tone: "picked" };
     case "approved": return { label: "Approved", tone: "done" };
     case "changes": return { label: "Changes", tone: "waiting" };
@@ -163,7 +171,7 @@ export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled">
 }
 
 /** The status in words, where there is room for all of them (the Inspector's facts). */
-export function takeStatusWord(take: Pick<Take, "status" | "stage" | "failedUnbilled">): string {
+export function takeStatusWord(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled">): string {
   return takeChip(take)?.label ?? (take.status === "uploaded" ? "Uploaded" : "In review");
 }
 

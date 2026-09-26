@@ -72,7 +72,9 @@ export function Library({ project = null, items, library, projects = "ready", ov
   const view = libraryView(project ? library.state : null, items.length, projects);
   /* A count only once the read has answered: never "0 assets" while reading or after a failed read. */
   const counted = project ? !view.skeletons && view.banner?.tone !== "error" : projects === "ready";
-  const assetCount = counted ? items.length.toLocaleString("en-US") : view.skeletons ? "…" : "—";
+  /* "60+" while the cursors say the project holds more than is loaded (Load more at the list's end). */
+  const more = Boolean(project) && library.hasMore;
+  const assetCount = counted ? `${items.length.toLocaleString("en-US")}${more ? "+" : ""}` : view.skeletons ? "…" : "—";
   /* A first read that failed is the banner above the grid; a later one is said at the list's end, beside Load more. */
   const failed = view.banner?.tone === "error" ? view.banner : null;
   const open = (entry: LibraryEntry) => {
@@ -83,7 +85,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
     <aside className={`gx-panel gx-library${overlay ? " gx-panel--overlay" : ""}`} aria-label="Library" data-testid="library">
       <div className="gx-panel-head">
         <span className="gx-panel-title">Library</span>
-        <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${assetCount} ${counted && items.length === 1 ? "asset" : "assets"}`}</span>
+        <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${assetCount} ${counted && items.length === 1 && !more ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
 {!libraryHasTools(shell.view, shell.suite.id, shell.page.id) ? null : (
