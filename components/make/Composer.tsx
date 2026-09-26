@@ -30,6 +30,8 @@ import { saveDraft, clearDraft } from "@/lib/draft";
 import { useUploadFile } from "@/lib/useUploadFile";
 import type { RefItem } from "@/lib/refs";
 import { referenceKey, selectFirstFrame, videoReferenceProblem } from "@/lib/generationReferences";
+import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
+import { audioTaskAvailable, speechVoiceFor, speechVoicesFor, usableAudioTask } from "@/lib/workbench/generation-audio";
 import type { DraggedAsset } from "@/lib/dnd";
 import type { GenerationProject } from "@/lib/generationProject";
 import { fileProjectUpload } from "@/lib/workbench/project-library-client";
@@ -95,10 +97,13 @@ type SpeechModel = {
 };
 type AudioSetup = {
   configured: boolean;
+  vendors?: { elevenlabs: boolean; xai: boolean };
   speechModels: SpeechModel[];
   defaultSpeechModel: string;
   voices: Voice[];
+  grokVoices?: Voice[];
   voicesError: string | null;
+  grokVoicesError?: string | null;
   account: { usdPerCredit: number } | null;
   terms: { sfxCredits: number; musicCreditsPerMinute: number };
 };
@@ -301,7 +306,6 @@ function ScopedComposer({
   );
   const modelId = batchDisplay?.modelId ?? modelChoice;
   const model = getModel(modelId);
-  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs) : null;
   const chooseFirstFrame = (key: string | null) => {
     if (busy || pendingAudio || pendingBatch || uploading) return;
     const next = selectFirstFrame(attachedRefs.current, key);
@@ -329,6 +333,7 @@ function ScopedComposer({
         : model.resolutions[0],
   );
   const resolution = batchDisplay?.resolution ?? resolutionChoice;
+  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs, resolution) : null;
   const [countChoice, setCount] = useState(1);
   const count = batchDisplay?.count ?? countChoice;
   const [audioChoice, setAudio] = useState(true);
@@ -502,7 +507,8 @@ function ScopedComposer({
     0,
   );
   const [trackChoice, setTrack] = useState<Track>("speech");
-  const track: Track = recoveredBody?.task ?? trackChoice;
+  /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone lands on a spoken line. */
+  const track: Track = recoveredBody?.task ?? usableAudioTask(audioSetup, trackChoice);
   const [voiceChoice, setVoiceId] = useState("");
   const voiceId: string = recoveredBody?.voiceId ?? voiceChoice;
   const [voiceQuery, setVoiceQuery] = useState("");
@@ -521,8 +527,22 @@ function ScopedComposer({
     recoveredBody?.instrumental ?? instrumentalChoice;
   const sample = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
-  const voices = useMemo(() => audioSetup?.voices ?? [], [audioSetup]);
-  const voice = voices.find((v) => v.id === (voiceId || voices[0]?.id)) ?? null;
+  const sModel =
+    (audioSetup?.speechModels ?? []).find(
+      (m) => m.id === (speechModel || audioSetup?.defaultSpeechModel),
+    ) ??
+    audioSetup?.speechModels[0] ??
+    null;
+  /* Each speech model reads in its own vendor's voices: the list swaps with the model. */
+  const voices = useMemo(
+    () => speechVoicesFor(audioSetup, sModel?.id ?? ""),
+    [audioSetup, sModel?.id],
+  );
+  const voice = speechVoiceFor(voices, voiceId);
+  const voicesError =
+    sModel?.id === GROK_TTS_MODEL
+      ? audioSetup?.grokVoicesError
+      : audioSetup?.voicesError;
   const shownVoices = useMemo(() => {
     const q = voiceQuery.trim().toLowerCase();
     return q
@@ -533,12 +553,6 @@ function ScopedComposer({
         )
       : voices;
   }, [voices, voiceQuery]);
-  const sModel =
-    (audioSetup?.speechModels ?? []).find(
-      (m) => m.id === (speechModel || audioSetup?.defaultSpeechModel),
-    ) ??
-    audioSetup?.speechModels[0] ??
-    null;
   const spokenS = Math.max(1, Math.round(words(prompt) / 2.5));
   const audioLen =
     track === "speech"
@@ -987,6 +1001,10 @@ function ScopedComposer({
                     key={t.id}
                     type="button"
                     aria-pressed={track === t.id}
+                    disabled={
+                      !!audioSetup?.configured &&
+                      !audioTaskAvailable(audioSetup, t.id)
+                    }
                     onClick={() => setTrack(t.id)}
                   >
                     {t.label}
@@ -1293,7 +1311,7 @@ function ScopedComposer({
                         ))
                       ) : (
                         <p>
-                          {audioSetup?.voicesError ??
+                          {voicesError ??
                             (signedIn
                               ? "No voices available."
                               : "Sign in to choose a voice.")}

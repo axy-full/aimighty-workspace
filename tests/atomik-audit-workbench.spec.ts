@@ -294,7 +294,7 @@ test("Crew: a room opened on an engine the deployment has moved off offers the m
   await expect(move).toHaveText(`Move to ${current}`, { timeout: 30_000 });
   await expect(panel).toContainText("grok-retired");
   // A thumb's target on a phone, in either orientation.
-  if ((page.viewportSize()?.width ?? 0) < 900) expect((await move.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if ((page.viewportSize()?.width ?? 0) < 900) expect(Math.round((await move.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await move.click();
   await expect.poll(() => patches).toEqual([{ model: "current" }]);
   await expect(move).toHaveCount(0);

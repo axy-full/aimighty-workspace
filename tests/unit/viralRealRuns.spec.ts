@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerJobStatus, ConsumerWorkflow, CreateConsumerJob } from "../../lib/higgsfield-consumer/jobs";
-import { INITIAL_VIRAL, RUN_STATUS, mergeRuns, originalNote, runCannotSettle, runInFlight, runStatus, viralBlock } from "../../lib/shell/viral";
+import { INITIAL_VIRAL, RUN_STATUS, mergeRuns, originalNote, runAfterStatus, runCannotSettle, runInFlight, runStatus, viralBlock, viralFailure, type ViralRun } from "../../lib/shell/viral";
 
 /**
  * Viral's Recent and History list real runs only (idea 17): an estimate is
@@ -163,6 +163,18 @@ test("every status reads as words, never the raw code", () => {
   expect(runStatus("reconciling").label).toBe("Checking");
   expect(["dispatching", "accepted", "uncertain"].every(runInFlight)).toBe(true);
   expect(["quoted", "failed", "completed"].some(runInFlight)).toBe(false);
+});
+
+test("a failed run says whether it was billed, as Gen and Business do", () => {
+  /* The account refused it: not billed. It finished, but its result could not be kept: it may have been, and its receipt is saved. */
+  expect(runStatus("failed", "provider_failed")).toEqual({ label: "Failed · not billed", tone: "failed" });
+  expect(runStatus("failed", "invalid_result")).toEqual({ label: "Not kept · receipt saved", tone: "failed" });
+  expect(runStatus("completed", "invalid_result").label).toBe("Done");
+  expect(viralFailure({ failureCode: null })).toContain("not billed");
+  expect(viralFailure({ failureCode: "invalid_result" })).toContain("receipt is saved");
+  expect(viralFailure({ failureCode: "invalid_result" })).not.toContain("not billed");
+  const running: ViralRun<{ id: string; status: string; failureCode?: string | null }> = { phase: "running", job: { id: "r", status: "accepted" } };
+  expect(runAfterStatus(running, { id: "r", status: "failed", failureCode: "invalid_result" })).toMatchObject({ phase: "failed", error: expect.stringContaining("receipt is saved") });
 });
 
 test("the browser keeps one row per run, the freshest copy, newest first, and no estimates", () => {

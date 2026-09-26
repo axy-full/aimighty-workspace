@@ -24,10 +24,13 @@ import { SeedanceEditHost } from "./tools/SeedanceEditHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
+import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
+import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
+import { dismissable, useClock } from "./ResumedJobs";
 
 /** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
 const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,6 +45,8 @@ const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label
 const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
+const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
+const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -228,6 +233,19 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
   }, [items, filter]);
   const running = ws.state.gen;
+  /* Takes still on the connected account from an earlier visit, as the shell's collector reads them until
+     they land (it announces each one and re-reads the Library). The one the composer is running now is the
+     composer's alone. Collection files a take into Takes on the server; nothing here writes the draft. */
+  const resumed = useResumedConnectedJobs({
+    draftId: project?.id ?? null, owned: [running?.id],
+    accept: (job) => job.composer === "gen",
+  });
+  const pickedUp = resumed.jobs;
+  const rendering = pickedUp.filter((item) => item.following).length;
+  const clock = useClock(rendering ? 30_000 : 0);
+  const resultsRef = useRef<HTMLElement | null>(null);
+  /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. */
+  const jumpToPickedUp = () => resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]')?.scrollIntoView({ block: "center", behavior: "smooth" });
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
   /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
   const attachToGen = async (attached: Attached) => {
@@ -273,6 +291,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   }
   return (
     <div className="gx-gen gx-enter" data-testid="gen-view">
+      {pickedUp.length ? (
+        <button type="button" className="gx-hbtn gx-resumed-jump" data-tone={rendering ? "blue" : "amber"} onClick={jumpToPickedUp} data-testid="gen-resumed-jump">
+          <span className="gx-resumed-dot" aria-hidden="true" />
+          {rendering ? `${rendering} ${rendering === 1 ? "take" : "takes"} still rendering` : `${pickedUp.length} earlier ${pickedUp.length === 1 ? "take" : "takes"} to check`}
+        </button>
+      ) : null}
       <section className="gx-gen-card" aria-label="Composer">
         {tabs}
 
@@ -405,7 +429,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         <p className="gx-gen-foot">{composer.wording}</p>
       </section>
 
-      <section className="gx-gen-results" aria-label="Results">
+      <section className="gx-gen-results" aria-label="Results" ref={resultsRef}>
         <div className="gx-gen-results-head">
           <span className="gx-panel-title">Results</span>
           <div className="gx-chips" role="group" aria-label="Result kind">
@@ -422,6 +446,19 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>
           ) : null}
+          {pickedUp.map(({ job, problem, following }) => {
+            const phase = resumePhase(job, following);
+            return (
+              <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
+                {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
+                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
+                <span className="gx-asset-name" title={job.input.prompt}>{takeName(job)}</span>
+                <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
+                {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
+                {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
+              </div>
+            );
+          })}
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
@@ -438,7 +475,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             </div>
           )}
         />
-        {!running && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !pickedUp.length && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`

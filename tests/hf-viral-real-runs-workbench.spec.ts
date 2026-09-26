@@ -244,6 +244,9 @@ test("History says what it cannot show: an archived or unavailable original, a r
   await expect(runs.nth(0).getByTestId("history-run-note")).toHaveText("Sending to the account");
   await expect(runs.nth(1).getByRole("button", { name: "Check again" })).toBeVisible({ timeout: 20_000 });
   await expect(runs.nth(1).getByTestId("history-run-note")).toHaveText("Could not be read");
+  /* Why, in the words Gen and Business use for a read that would fail the same way every time. */
+  await expect(runs.nth(1).getByTestId("history-run-problem")).toHaveText("This job can no longer be checked from here.");
+  await expect(runs.nth(0).getByTestId("history-run-problem")).toHaveCount(0);
   await expect(runs.nth(0).getByTestId("history-run-note")).toHaveText("Not confirmed yet · never sent twice", { timeout: 40_000 });
   await expect(runs.nth(0).getByRole("button", { name: "Check again" })).toBeVisible();
   const count = (id: string) => f.polls.filter((p) => p === id).length;

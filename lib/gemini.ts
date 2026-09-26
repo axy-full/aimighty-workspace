@@ -153,21 +153,50 @@ export async function generateImage(opts: {
    * rotate it, hit a project quota, and without this the answer is that
    * nobody can make an image until someone edits an environment variable.
    *
-   * Deliberately NOT retried: a refusal. That is the model's answer, not a
-   * transport problem — the other door runs the same model and would refuse
-   * it again, having charged for the privilege. Only the failures that mean
-   * "this door is shut" get a second one.
+   * Only a door that is certainly shut gets a second one (googleDoorShut):
+   * a key refused, a quota spent, a host never reached. A refusal is the
+   * model's answer and the other door would give it again; a timeout, a
+   * dropped connection or a 5xx may be a still Google is already drawing
+   * and billing, so sending it again could pay for it twice.
    */
   try {
     return await viaGoogle(opts);
   } catch (e) {
-    const msg = (e as Error).message ?? "";
-    const doorIsShut = /API key|api_key|invalid.*key|unauthor|forbidden|quota|RESOURCE_EXHAUSTED|fetch failed|ENOTFOUND|ECONNRESET|timed? ?out|abort|\b5\d\d\b/i.test(msg);
-    const wasRefused = /declined|filter/i.test(msg);
-    if (wasRefused || !doorIsShut || !gatewayReachable()) throw e;
-    console.warn(`stills: the Google door failed (${msg.slice(0, 140)}); falling back to the gateway`);
+    if (!googleDoorShut(e) || !gatewayReachable()) throw e;
+    console.warn(`stills: the Google door failed (${((e as Error).message ?? "").slice(0, 140)}); falling back to the gateway`);
     return viaGateway(opts);
   }
+}
+
+/** A failure from the Google door, with the HTTP status when Google answered. */
+class GoogleDoorError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+  ) {
+    super(message);
+    this.name = "GoogleDoorError";
+  }
+}
+
+/**
+ * Whether the Google door failed in a way that charged nothing: no key, a
+ * key refused (401/403, or a 400 naming the key), a quota spent (429), or a
+ * host never reached (DNS, connection refused). Everything else — a
+ * timeout, an abort, a reset connection, a 5xx, an unreadable answer, a
+ * refusal — is not, and never falls through to a second paid door.
+ */
+export function googleDoorShut(error: unknown): boolean {
+  if (error instanceof GoogleDoorError) {
+    if (error.status == null) return true;
+    if ([401, 403, 429].includes(error.status)) return true;
+    return error.status === 400 && /API key|api_key|invalid.*key/i.test(error.message);
+  }
+  /* fetch rejects with the socket's reason in `cause` (an AggregateError of them when every address failed). */
+  const cause = (error as { cause?: { code?: unknown; errors?: { code?: unknown }[] } } | null)?.cause;
+  const codes = cause?.code != null ? [cause.code] : Array.isArray(cause?.errors) ? cause.errors.map((inner) => inner?.code) : [];
+  const unreached = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "UND_ERR_CONNECT_TIMEOUT"]);
+  return codes.length > 0 && codes.every((code) => unreached.has(String(code)));
 }
 
 /* ── Door 1: Vercel AI Gateway ─────────────────────────────────────────── */
@@ -261,7 +290,7 @@ async function viaGoogle(opts: {
   model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 }): Promise<ImageResult> {
   const key = vendorKey("gemini");
-  if (!key) throw new Error("The image account isn't connected for this workspace.");
+  if (!key) throw new GoogleDoorError("The image account isn't connected for this workspace.", null);
   const input: Record<string, unknown>[] = [{ type: "text", text: opts.prompt.trim() }];
   for (const ref of opts.references) {
     const { mime, b64 } = await refPayload(ref);
@@ -307,13 +336,13 @@ async function viaGoogle(opts: {
   }
   let j: InteractionResponse;
   try { j = JSON.parse(raw) as InteractionResponse; }
-  catch { throw new Error(`The image engine returned non-JSON (${res.status}): ${raw.slice(0, 300)}`); }
+  catch { throw new GoogleDoorError(`The image engine returned non-JSON (${res.status}): ${raw.slice(0, 300)}`, res.status); }
   if (!res.ok) {
     const msg = j.error?.message ?? raw.slice(0, 400);
     if (res.status === 400 && /API key|api_key|invalid.*key/i.test(msg)) {
-      throw new Error("The image engine rejected the GEMINI_API_KEY on this deployment. Check it in the deployment's environment variables and redeploy.");
+      throw new GoogleDoorError("The image engine rejected the GEMINI_API_KEY on this deployment. Check it in the deployment's environment variables and redeploy.", res.status);
     }
-    throw new Error(`Image engine request failed (${res.status}): ${msg}`);
+    throw new GoogleDoorError(`Image engine request failed (${res.status}): ${msg}`, res.status);
   }
 
   // Prefer the convenience field; otherwise the LAST image block across the

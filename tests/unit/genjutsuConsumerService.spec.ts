@@ -554,9 +554,10 @@ test("verified provider failure releases active capacity, no result or refund cl
   fixture(async (f) => {
     const job = await accepted(f);
     f.state.pollRaw = await terminal(f, job.id, "canceled");
-    expect(
-      (await f.service.pollConsumerGenjutsu(scoped(job.id))).job.status,
-    ).toBe("failed");
+    const failed = (await f.service.pollConsumerGenjutsu(scoped(job.id))).job;
+    expect(failed.status).toBe("failed");
+    /* The run says why it failed, so History never claims "not billed" for a result the account finished. */
+    expect(failed.failureCode).toBe("provider_failed");
     expect(f.state.collectCount).toBe(0);
     expect(f.state.paidCount).toBe(1);
     expect(

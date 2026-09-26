@@ -716,3 +716,108 @@ test("a previous-step authenticator code is accepted with margin and refused onc
   // The current step's code survives the boundary (it becomes current - 1).
   expect(matchingTotpCounter(secret, totpAt(secret, filledAt), windowStart + 30_100, -1)).toBe(Math.floor(filledAt / 30_000));
 });
+
+test("a new authenticator replaces the old one without passing through off, even where a workspace requires two-step sign-in", async () => {
+  const f = await enrolled("replace-authenticator"),
+    other = (
+      await f.security.completePasswordLogin({
+        accountId: f.id,
+        passwordHash: f.passwordHash,
+        code: f.codes[5],
+        deviceLabel: "Other browser",
+      })
+    ).session!;
+  await f.client.execute({
+    sql: "INSERT INTO workspaces(id,slug,name,db_url,owner_id,requires_mfa,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)",
+    args: ["ws_replace", "replace", "Required", "file::memory:", "someone-else", Date.now(), Date.now()],
+  });
+  await f.client.execute({
+    sql: "INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,'member',0,?)",
+    args: ["ws_replace", f.id, Date.now()],
+  });
+  await expect(
+    f.security.changeAccountSecurity({ accountId: f.id, session: f.session, password, action: "disable", code: f.codes[0] }),
+  ).rejects.toThrow(/requires two-step/);
+  // Staging needs a current factor, like every other change on an enrolled account.
+  await expect(
+    f.security.changeAccountSecurity({ accountId: f.id, session: f.session, password, action: "replace_begin" }),
+  ).rejects.toMatchObject({ status: 401 });
+  const before = (
+    await f.client.execute({ sql: "SELECT secret_enc,enabled_at,epoch FROM account_security WHERE account_id=?", args: [f.id] })
+  ).rows[0];
+  const staged = await f.security.changeAccountSecurity({
+    accountId: f.id, session: f.session, password, action: "replace_begin", code: f.codes[1],
+  });
+  const fresh = staged.setup!.secret;
+  expect(fresh).not.toBe(f.secret);
+  const mid = (
+    await f.client.execute({ sql: "SELECT secret_enc,enabled_at,pending_enc FROM account_security WHERE account_id=?", args: [f.id] })
+  ).rows[0];
+  // Until confirmation the old authenticator stays live and the account stays enrolled.
+  expect(mid.secret_enc).toBe(before.secret_enc);
+  expect(mid.enabled_at).toBe(before.enabled_at);
+  expect(String(mid.pending_enc)).not.toContain(fresh);
+  await expect(
+    f.security.changeAccountSecurity({ accountId: f.id, session: other, password, action: "replace", code: totpAt(fresh, Date.now()) }),
+  ).rejects.toThrow(/expired or changed/);
+  await expect(
+    f.security.changeAccountSecurity({ accountId: f.id, session: f.session, password, action: "replace", code: totpAt(f.secret, Date.now()) }),
+  ).rejects.toThrow(/new authenticator/);
+  // Setup and enable cannot be used to replace a live factor.
+  await expect(
+    f.security.changeAccountSecurity({ accountId: f.id, session: f.session, password, action: "enable", code: totpAt(fresh, Date.now()) }),
+  ).rejects.toThrow(/expired or changed/);
+  const replaced = await f.security.changeAccountSecurity({
+    accountId: f.id, session: f.session, password, action: "replace", code: totpAt(fresh, Date.now()),
+  });
+  const after = (
+    await f.client.execute({ sql: "SELECT secret_enc,enabled_at,epoch,pending_enc FROM account_security WHERE account_id=?", args: [f.id] })
+  ).rows[0];
+  expect(after.secret_enc).not.toBe(before.secret_enc);
+  expect(after.enabled_at).toBe(before.enabled_at);
+  expect(Number(after.epoch)).toBe(Number(before.epoch) + 1);
+  expect(after.pending_enc).toBeNull();
+  expect(await f.p.sessionLookup(f.session)).toBeNull();
+  expect(await f.p.sessionLookup(other)).toBeNull();
+  expect(await f.p.sessionLookup(replaced.session!)).not.toBeNull();
+  const state = await f.security.readAccountSecurity(f.id, replaced.session!);
+  expect(state.enabled).toBe(true);
+  // Two codes spent (the other login, staging); the refused disable rolled back its code.
+  expect(state.recoveryCodesRemaining).toBe(8);
+  const audit = await f.client.execute({
+    sql: "SELECT action FROM security_audit WHERE actor_id=? AND action='account.mfa_replaced'",
+    args: [f.id],
+  });
+  expect(audit.rows).toHaveLength(1);
+  // A minute on, the old device's code is refused and the new one's is accepted.
+  const clock = Date.now, later = clock() + 60_000;
+  Date.now = () => later;
+  try {
+    await expect(
+      f.security.completePasswordLogin({ accountId: f.id, passwordHash: f.passwordHash, code: totpAt(f.secret, later), deviceLabel: "Old phone" }),
+    ).rejects.toMatchObject({ status: 401 });
+    const signedIn = await f.security.completePasswordLogin({
+      accountId: f.id, passwordHash: f.passwordHash, code: totpAt(fresh, later), deviceLabel: "New phone",
+    });
+    expect(signedIn.session).toBeTruthy();
+  } finally {
+    Date.now = clock;
+  }
+});
+
+test("the last recovery code cannot start an authenticator replacement", async () => {
+  const f = await enrolled("replace-last-code");
+  const last = f.codes[9];
+  await f.client.execute({
+    sql: "UPDATE account_recovery_codes SET used_at=? WHERE account_id=? AND code_hash!=?",
+    args: [Date.now(), f.id, f.auth.tokenHash(`particl-recovery:${f.id}:${last.replace(/-/g, "")}`)],
+  });
+  await expect(
+    f.security.changeAccountSecurity({ accountId: f.id, session: f.session, password, action: "replace_begin", code: last }),
+  ).rejects.toThrow(/last code to replace/);
+  expect((await f.security.readAccountSecurity(f.id, f.session)).recoveryCodesRemaining).toBe(1);
+  const row = (
+    await f.client.execute({ sql: "SELECT pending_enc FROM account_security WHERE account_id=?", args: [f.id] })
+  ).rows[0];
+  expect(row.pending_enc).toBeNull();
+});

@@ -89,6 +89,8 @@ function presentGenjutsu(
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     setAside: consumerJobSetAside(job, observedAt),
+    /* Why a failed run failed: a refused render is not billed; a result that could not be kept may have been. */
+    failureCode: job.failureCode,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
   };

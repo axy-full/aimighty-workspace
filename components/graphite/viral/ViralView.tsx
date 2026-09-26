@@ -15,6 +15,7 @@ import { SET_ASIDE_LABEL, setAsideUnconfirmed } from "@/lib/higgsfield-consumer/
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { useClock } from "../ResumedJobs";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on the existing genjutsu-service:
@@ -27,7 +28,8 @@ import { useWorkspace } from "@/lib/workspace/state";
  * · Done), with Recreate · Compare · Send to Edit (which finds the take in
  * the Library, however far back, and opens it in Takes). Recent beside a
  * composer is that page's own runs. Runs still in flight are read until they
- * land, even ones sent before the page opened.
+ * land, even ones sent before the page opened; a read that fails is said on
+ * the run in plain words (reconnect, storage, an outage) until one succeeds.
  */
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 const PRESET_KEY = "particl-viral-preset";
@@ -71,13 +73,6 @@ function useSendToTakes(scope: string, project: Project | null) {
     shell.goSuite("studio", "takes");
   };
   return { send, opening };
-}
-
-/** A clock for "5 min ago" that ticks while the page is open. */
-function useNow(every = 30_000) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), every); return () => clearInterval(t); }, [every]);
-  return now;
 }
 
 function Composer({ scope, page, project, viral, items }: { scope: string; page: ViralPage; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
@@ -224,7 +219,7 @@ type Send = ReturnType<typeof useSendToTakes>;
 /** The last four runs of this page's variant (the route lists that variant only), each in words, each finished one a way into Takes. */
 function Recent({ page, project, viral, send }: { page: ViralPage; project: Project | null; viral: Viral; send: Send }) {
   const shell = useShell();
-  const now = useNow();
+  const now = useClock();
   const mine = viral.jobs.filter((j) => j.input.variant === VIRAL_PAGES[page]);
   const { status } = viral.list;
   return (
@@ -233,7 +228,7 @@ function Recent({ page, project, viral, send }: { page: ViralPage; project: Proj
       {!project ? <p className="cw-dim">Open a project to see its runs.</p>
         : status === "loading" ? <><span className="vr-job vr-skel" aria-hidden="true" /><span className="vr-job vr-skel" aria-hidden="true" /></>
         : status === "error" ? <ListError viral={viral} />
-        : mine.length ? mine.slice(0, 4).map((job) => <RunRow key={job.id} job={job} now={now} stalled={viral.stalledAs(job)} onRecheck={viral.recheck} send={send} />)
+        : mine.length ? mine.slice(0, 4).map((job) => <RunRow key={job.id} job={job} now={now} stalled={viral.stalledAs(job)} problem={viral.problemOf(job)} onRecheck={viral.recheck} send={send} />)
         : <p className="cw-dim" data-testid="viral-recent-empty">No {VIRAL_COPY[page].title} runs yet.</p>}
       {status === "ready" && viral.listError ? <ListError viral={viral} /> : null}
     </section>
@@ -255,8 +250,11 @@ const runNote = (job: GenjutsuJob, stalled: Stall | null) => (setAsideUnconfirme
 /** The direction a run was given, else what kind of run it was. */
 const brief = (job: GenjutsuJob) => job.input.prompt.trim() || VARIANT_NAME[job.input.variant];
 
-function RunRow({ job, now, stalled, onRecheck, send }: { job: GenjutsuJob; now: number; stalled: Stall | null; onRecheck: (id: string) => void; send: Send }) {
-  const status = runStatus(job.status);
+/** A run's credits: settled once it lands; none for a failed one. */
+const runCredits = (job: GenjutsuJob) => (job.status === "completed" ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? null : cr(job.quoteCredits));
+
+function RunRow({ job, now, stalled, problem, onRecheck, send }: { job: GenjutsuJob; now: number; stalled: Stall | null; problem: string | null; onRecheck: (id: string) => void; send: Send }) {
+  const status = runStatus(job.status, job.failureCode);
   const done = job.status === "completed", url = done && job.originalAvailable ? job.result?.original?.asset?.url : null;
   const note = runNote(job, stalled);
   return (
@@ -265,13 +263,15 @@ function RunRow({ job, now, stalled, onRecheck, send }: { job: GenjutsuJob; now:
       {/* Recent is one variant's list, so a row names what differs: the direction, resolution and references. */}
       <span className="vr-job-name" title={job.input.prompt || undefined}>{brief(job)}</span>
       <span className="vr-status" data-tone={status.tone} data-testid="viral-run-status">{status.label}</span>
-      <span className="cw-dim vr-job-meta">{[job.input.resolution, refs(job.input.references.length), job.status === "failed" ? null : cr(job.quoteCredits), when(job.createdAt, now)].filter(Boolean).join(" · ")}</span>
+      <span className="cw-dim vr-job-meta">{[job.input.resolution, refs(job.input.references.length), runCredits(job), when(job.createdAt, now)].filter(Boolean).join(" · ")}</span>
+      {note ? <span className="cw-dim vr-job-note" data-testid="viral-run-note">{note}</span> : null}
+      {/* A read that failed, in plain words and who can fix it; it goes once a read succeeds. */}
+      {problem ? <p className="gx-resumed-problem vr-job-problem" role="status" data-testid="viral-run-problem">{problem}</p> : null}
       {done ? (
         <button type="button" className="gx-hbtn vr-job-act" disabled={!url || send.opening === job.id} title={url ? undefined : originalTitle(job)} onClick={() => void send.send(job)} data-testid="viral-run-open">{send.opening === job.id ? "Opening…" : "Open in Takes"}</button>
       ) : stalled ? (
         <button type="button" className="gx-hbtn vr-job-act" onClick={() => onRecheck(job.id)}>Check again</button>
       ) : null}
-      {note ? <span className="cw-dim vr-job-note" data-testid="viral-run-note">{note}</span> : null}
     </div>
   );
 }
@@ -281,7 +281,7 @@ const originalTitle = (job: GenjutsuJob) => (job.originalAvailability === "delet
 function HistoryView({ scope, project, viral, items }: { scope: string; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const now = useNow();
+  const now = useClock();
   const sendToTakes = useSendToTakes(scope, project);
   const [compare, setCompare] = useState<GenjutsuJob | null>(null);
   const resultUrl = (job: GenjutsuJob) => (job.originalAvailable && typeof job.result?.original?.asset?.url === "string" ? job.result.original.asset.url : null);
@@ -319,7 +319,7 @@ function HistoryView({ scope, project, viral, items }: { scope: string; project:
     <>
       {viral.listError ? <ListError viral={viral} /> : null}
       <div className="gx-gen-grid">
-        {viral.jobs.map((job) => <RunCard key={job.id} job={job} now={now} url={resultUrl(job)} stalled={viral.stalledAs(job)} opening={sendToTakes.opening === job.id} onRecheck={viral.recheck} onRecreate={recreate} onCompare={setCompare} onSend={(j) => void sendToTakes.send(j)} />)}
+        {viral.jobs.map((job) => <RunCard key={job.id} job={job} now={now} url={resultUrl(job)} stalled={viral.stalledAs(job)} problem={viral.problemOf(job)} opening={sendToTakes.opening === job.id} onRecheck={viral.recheck} onRecreate={recreate} onCompare={setCompare} onSend={(j) => void sendToTakes.send(j)} />)}
       </div>
       {nextCursor ? (
         <div className="vr-more">
@@ -338,10 +338,10 @@ function HistoryView({ scope, project, viral, items }: { scope: string; project:
 }
 
 /** One run: the result and its next steps once it lands; until then, where it stands. */
-function RunCard({ job, now, url, stalled, opening, onRecheck, onRecreate, onCompare, onSend }: { job: GenjutsuJob; now: number; url: string | null; stalled: Stall | null; opening: boolean; onRecheck: (id: string) => void; onRecreate: (job: GenjutsuJob) => void; onCompare: (job: GenjutsuJob) => void; onSend: (job: GenjutsuJob) => void }) {
-  const status = runStatus(job.status);
+function RunCard({ job, now, url, stalled, problem, opening, onRecheck, onRecreate, onCompare, onSend }: { job: GenjutsuJob; now: number; url: string | null; stalled: Stall | null; problem: string | null; opening: boolean; onRecheck: (id: string) => void; onRecreate: (job: GenjutsuJob) => void; onCompare: (job: GenjutsuJob) => void; onSend: (job: GenjutsuJob) => void }) {
+  const status = runStatus(job.status, job.failureCode);
   const done = job.status === "completed", flying = runInFlight(job.status) && !stalled && !setAsideUnconfirmed(job);
-  const meta = [done ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? null : cr(job.quoteCredits), when(job.createdAt, now)].filter(Boolean).join(" · ");
+  const meta = [runCredits(job), when(job.createdAt, now)].filter(Boolean).join(" · ");
   const missing = done && !url ? originalNote(job) : null;
   const note = runNote(job, stalled);
   return (
@@ -357,6 +357,7 @@ function RunCard({ job, now, url, stalled, opening, onRecheck, onRecreate, onCom
       {/* What sets one run apart from the next: its references and its direction. */}
       <span className="gx-asset-meta" title={job.input.prompt || undefined}>{[refs(job.input.references.length), job.input.prompt.trim()].filter(Boolean).join(" · ")}</span>
       <span className="gx-asset-meta" title={new Date(job.createdAt).toLocaleString()}>{meta}</span>
+      {problem ? <span className="gx-resumed-note" role="status" data-testid="history-run-problem">{problem}</span> : null}
       {done ? (
         <div className="cw-sol-actions">
           {HISTORY_ACTIONS.map((a) => {

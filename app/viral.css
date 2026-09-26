@@ -27,7 +27,9 @@
 .vr-status { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; flex: none; color: var(--vr-tone); background: color-mix(in srgb, var(--vr-tone) 14%, transparent); border: 1px solid color-mix(in srgb, var(--vr-tone) 32%, transparent); }
 .vr-job-meta { grid-column: 2; grid-row: 2; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vr-job-note { grid-column: 2 / -1; grid-row: 3; min-width: 0; font-size: 11.5px; }
-.vr-job-act { grid-column: 2 / -1; grid-row: 4; justify-self: start; margin-top: 4px; }
+/* A read that failed (reconnect, storage, an outage), under the note and above the next step. */
+.vr-job-problem { grid-column: 2 / -1; grid-row: 4; min-width: 0; }
+.vr-job-act { grid-column: 2 / -1; grid-row: 5; justify-self: start; margin-top: 4px; }
 .vr-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; text-align: center; background: var(--gx-input); }
 .vr-veil-note { position: relative; max-width: 100%; font-size: 11px; line-height: 1.3; color: var(--gx-text-2); }
 .vr-veil::before { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--vr-tone) 16%, transparent), transparent 70%); }
