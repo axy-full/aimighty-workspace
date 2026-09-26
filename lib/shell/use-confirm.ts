@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
 import { isHere, openLabel, type Confirmation, type Destination, type Here } from "./confirmations";
-import { useShell } from "./state";
+import { useShell, type Shell } from "./state";
 
 /**
  * Confirmations in the shell (lib/shell/confirmations): the toast says what
@@ -11,18 +11,15 @@ import { useShell } from "./state";
  * (Open in Gen, Retry generation): it goes, then confirms there.
  */
 export function useConfirm() {
-  const shell = useShell();
+  const { live } = useShell();
   const ws = useWorkspace();
-  /* A confirmation can arrive after an await; it is judged against where the person is then. */
-  const here = useRef<Here>({ view: shell.view, suite: shell.suite.id, page: shell.page.id, library: false });
-  const latest = useRef({ shell, ws });
-  useEffect(() => {
-    here.current = { view: shell.view, suite: shell.suite.id, page: shell.page.id, library: (shell.view === "suite" || shell.view === "gen") && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
-    latest.current = { shell, ws };
-  });
+  /* A confirmation can arrive after an await, and its Open can be pressed after the page that raised it has gone:
+     both read the shell as it is then (the provider's, which outlives this component), never a snapshot from here. */
+  const latest = useRef(ws);
+  useEffect(() => { latest.current = ws; });
 
   const open = useCallback((to: Destination) => {
-    const { shell, ws } = latest.current;
+    const shell = live(), ws = latest.current;
     if (to.to === "gen") { shell.goGen(); return; }
     if (to.to === "library") { shell.openLibrary("assets"); return; }
     shell.goSuite(to.suite, to.page);
@@ -32,16 +29,21 @@ export function useConfirm() {
       /* The shot, in view: the Rig lists it once it has read the saved draft; centred, so a phone's floating tab bar never covers it. */
       if (to.select.kind === "shot") reveal(`.pxw-rig-row[data-shot-id="${CSS.escape(to.select.id)}"], .pxw-graph-node[data-node-id="${CSS.escape(to.select.id)}"]`);
     }
-  }, []);
+  }, [live]);
 
   const confirm = useCallback((c: Confirmation, options: { go?: boolean } = {}) => {
-    const { ws } = latest.current;
+    const ws = latest.current;
     if (options.go && c.open) { open(c.open); ws.toast(c.text); return; }
-    const to = c.open && !isHere(c.open, here.current) ? c.open : null;
+    const to = c.open && !isHere(c.open, hereOf(live())) ? c.open : null;
     ws.toast(c.text, to ? { label: openLabel(to), run: () => open(to) } : undefined);
-  }, [open]);
+  }, [open, live]);
 
   return { confirm, open };
+}
+
+/** Where the person is, and whether the Library's assets are already on screen there. */
+function hereOf(shell: Shell): Here {
+  return { view: shell.view, suite: shell.suite.id, page: shell.page.id, library: (shell.view === "suite" || shell.view === "gen") && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
 }
 
 /**

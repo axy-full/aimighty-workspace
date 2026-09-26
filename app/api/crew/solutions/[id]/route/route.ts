@@ -1,5 +1,6 @@
 import { withTenant } from "@/lib/auth";
 import { NO_STORE, crewCaller, crewFailure } from "@/lib/crew/http";
+import { solutionShot } from "@/lib/crew/room";
 import { CrewError, readSolution, setSolutionStatus } from "@/lib/crew/store";
 import { readDraft, saveDraft, workbenchReady } from "@/lib/workbench/records";
 import { uid, type CanvasNode } from "@/lib/workbench/studio";
@@ -39,9 +40,9 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     let placed: { nodeId: string; title: string } | null = null;
     if (to === "brief") project.brief = `${project.brief.trimEnd()}${project.brief.trim() ? "\n\n" : ""}Crew · ${solution.text}`;
     else {
-      const [title, ...rest] = solution.text.split(" — ");
+      const shot = solutionShot(solution.text);
       const node: CanvasNode = {
-        id: uid("node"), title: title.trim().slice(0, 80) || "Crew solution", type: "scene", text: (rest.join(" — ") || solution.text).trim(),
+        id: uid("node"), title: shot.title, type: "scene", text: shot.text,
         x: 50, y: Math.max(0, ...project.nodes.map((n) => n.y + 290)), width: 300, linked: [], status: "draft",
       };
       project.nodes = [...project.nodes, node];

@@ -210,11 +210,18 @@
 
 /* A confirmation with somewhere to go: the words, then one Open (lib/shell/confirmations). Centred by margin, since the pop animation owns transform. */
 .gx-toast[data-open] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
-.gx-toast-text { min-width: 0; overflow-wrap: anywhere; }
+/* Two lines at most: the Open says where the rest is. */
+.gx-toast-text { min-width: 0; line-height: 18px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .gx-toast-open { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; font: inherit; font-weight: 600; white-space: nowrap; color: var(--gx-text); background: var(--gx-input-hover); border: 1px solid var(--gx-hair); cursor: pointer; }
 .gx-toast-open:hover { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
 /* Phone: above the floating tab bar (66px at 22px) and the home indicator. Any touch screen: the Open is a full 44px target. */
-@media (max-width: 767px) { .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); } }
+@media (max-width: 767px) {
+  .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); }
+  /* The Uploads chip (components/UploadRecovery) floats just above the tab bar once anything was uploaded: the toast goes above it. */
+  body:has(section[aria-label="Upload recovery"]) .gx-toast { bottom: calc(122px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Wherever that chip floats (up to 900px), a confirmation is above it (z-index 90), so no part of its Open is the chip's. */
+@media (max-width: 900px) { body:has(section[aria-label="Upload recovery"]) .gx-toast { z-index: 91; } }
 @media (max-width: 767px), (pointer: coarse) {
   .gx-toast[data-open] { padding: 4px 4px 4px 16px; }
   .gx-toast-open { height: 44px; min-width: 44px; padding: 0 16px; }

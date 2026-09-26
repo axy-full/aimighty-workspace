@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { GEN_PRESET_KEY } from "../lib/shell/assets";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -17,7 +18,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844"];
 const TOUCH = [...PHONES, "workbench-844x390"];
-const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
+const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844", "workbench-360x640": "360x640" };
 const SHOTS = "/private/tmp/particl-suites/hf-connected/shots";
 const GOAL = "Open the film without dialogue and still make the product unmistakable inside the first four seconds.";
 
@@ -52,9 +53,14 @@ async function roomWithSolutions(page: Page) {
   await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
   await expect(page.locator(".cw-project")).toContainText("Dune Studies");
+  /* The shell writes its own params into the URL once it settles (cp=room); on a cold server that lands after hydration and
+     resets the room, so a goal typed before it is lost. Wait for it, and type again if it still went. */
+  await page.waitForURL(/[?&]cp=room\b/);
   await hydrated(page.getByTestId("crew-goal"));
-  await page.getByTestId("crew-goal").fill(GOAL);
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(async () => {
+    await page.getByTestId("crew-goal").fill(GOAL);
+    await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/, { timeout: 4_000 });
+  }).toPass({ timeout: 30_000 });
   await page.getByTestId("crew-run").click();
   const solutions = page.getByTestId("crew-solutions").locator(".cw-solution");
   await expect(solutions).toHaveCount(3, { timeout: 45_000 });
@@ -62,10 +68,29 @@ async function roomWithSolutions(page: Page) {
   return { errors, project, headers, solutions };
 }
 
-/** A phone's Open is a whole target, and the toast sits clear of the floating tab bar and the home indicator. */
+/** The Uploads chip: once anything was uploaded (filing the minutes is an upload) it floats over the page's bottom right. */
+const uploadsChip = (page: Page) => page.locator("details", { has: page.locator('section[aria-label="Upload recovery"]') });
+
+/**
+ * A phone's Open is a whole target: 44px, and every point of it is the Open —
+ * nothing floats over any part of it (the tab bar, the Uploads chip). The
+ * toast sits clear of the tab bar, the home indicator and, on a phone, the chip.
+ */
 async function reachable(page: Page, open: Locator, name: string) {
+  await settle(page);
   const box = (await open.boundingBox())!;
   if (TOUCH.includes(name)) expect(box.height, "Open is a 44px target").toBeGreaterThanOrEqual(44);
+  const covered = await open.evaluate((el) => {
+    const b = el.getBoundingClientRect(), misses: string[] = [];
+    /* The pill's straight run and its whole height (the rounded ends are not the button's to hit). */
+    for (let i = 0; i <= 10; i++) for (let j = 0; j <= 6; j++) {
+      const x = b.left + b.height / 2 + (b.width - b.height) * i / 10, y = b.top + 2 + (b.height - 4) * j / 6;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || !el.contains(hit)) misses.push(`${Math.round(x)},${Math.round(y)} → ${hit ? hit.tagName.toLowerCase() : "nothing"}`);
+    }
+    return misses;
+  });
+  expect(covered, "no part of the Open is under something else").toEqual([]);
   const toast = (await page.getByTestId("toast").boundingBox())!;
   const viewport = page.viewportSize()!;
   expect(toast.x).toBeGreaterThanOrEqual(0);
@@ -76,11 +101,30 @@ async function reachable(page: Page, open: Locator, name: string) {
     const tabs = (await bar.boundingBox())!;
     expect(toast.y + toast.height, "the toast clears the tab bar").toBeLessThanOrEqual(tabs.y);
   }
+  const chip = uploadsChip(page);
+  if (PHONES.includes(name) && await chip.isVisible()) expect(toast.y + toast.height, "on a phone the toast sits above the Uploads chip").toBeLessThanOrEqual((await chip.boundingBox())!.y);
 }
 
 test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a Rig that read the saved draft", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, project, headers, solutions } = await roomWithSolutions(page);
+  const toast = page.getByTestId("toast");
+
+  /* Filed minutes leave the Uploads chip on screen for good (a finished upload stays listed): every toast after it must clear it. */
+  const file = page.getByTestId("crew-file-minutes");
+  await expect(file).toHaveText("File minutes in the Library · free");
+  await file.scrollIntoViewIfNeeded();
+  await file.click();
+  /* The pointer leaves: a mouse resting on a toast holds it, and this one has to time out. */
+  await page.mouse.move(1, 1);
+  await expect(toast).toContainText("Minutes filed in the Library");
+  await expect(uploadsChip(page)).toBeVisible();
+  await expect(page.getByTestId("toast-open")).toHaveText("Open Library");
+  await reachable(page, page.getByTestId("toast-open"), info.project.name);
+  await shot(page, "minutes-toast", info.project.name);
+  /* It times out on its own (a tap never holds it); the next toast replaces it anyway. */
+  await expect(toast).toHaveCount(0, { timeout: 10_000 });
+
   const second = solutions.nth(1);
   await expect(second.getByRole("button", { name: "→ Rig" })).toBeVisible();
   await expect(page.getByTestId("crew-view").getByRole("button", { name: "Board it" })).toHaveCount(0);
@@ -91,12 +135,13 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   expect(reply).toMatchObject({ status: "boarded", title: "Cut on the drop" });
 
   /* The toast names the Rig and the shot; nothing about Boards or frames. The room stays where it was. */
-  const toast = page.getByTestId("toast");
   await expect(toast).toContainText("Added to Rig · Cut on the drop");
   await expect(toast).not.toContainText(/Board|frame/);
   const open = page.getByTestId("toast-open");
   await expect(open).toHaveText("Open Rig");
   await expect(second.getByTestId("crew-solution-status")).toHaveText("Added to Rig");
+  /* A second press would add a second shot: the button says so. */
+  await expect(second.getByRole("button", { name: "→ Rig again" })).toBeVisible();
   await expect(page.getByTestId("crew-view")).toBeVisible();
   expect(new URL(page.url()).searchParams.get("view")).toBe("crew");
   await reachable(page, open, info.project.name);
@@ -166,6 +211,85 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await noSideScroll(page);
   await settle(page);
   await shot(page, "gen-from-crew", info.project.name);
+  expect(errors).toEqual([]);
+});
+
+test("Crew › Open in Gen when the browser will not store the preset: Gen opens empty and the toast says the solution did not carry", async ({ page }, info) => {
+  test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "the narrowest phone, one desktop");
+  const { errors, solutions } = await roomWithSolutions(page);
+  /* Storage blocked for the preset only (a private window, a full quota): everything else keeps working. */
+  await page.evaluate((key) => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, name: string, value: string) {
+      if (name === key) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      return set.call(this, name, value);
+    };
+  }, GEN_PRESET_KEY);
+  await solutions.nth(2).getByRole("button", { name: "Open in Gen" }).click();
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await expect(page.getByTestId("toast")).toHaveText("The solution could not be carried to Gen");
+  await expect(page.getByTestId("toast")).not.toContainText("Gen’s prompt");
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("");
+  await expect(page.getByTestId("gen-preset-note")).toHaveCount(0);
+  await noSideScroll(page);
+  await settle(page);
+  await shot(page, "gen-not-carried", info.project.name);
+  expect(errors).toEqual([]);
+});
+
+test("Crew › → Rig with a long pinned line: the shot is named to a word with an ellipsis, and the toast is two lines at most", async ({ page }, info) => {
+  test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "the narrowest phone, one desktop");
+  const { errors, project, headers, solutions } = await roomWithSolutions(page);
+  /* The DOP's proposal has no " — ": the whole line would be the title. */
+  await page.getByTestId("crew-message").filter({ hasText: "24mm, camera locked" }).getByRole("button", { name: "Pin" }).click();
+  await expect(solutions).toHaveCount(4);
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
+  await solutions.nth(3).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string; title: string };
+  expect(reply.title).toBe("24mm, camera locked, dawn coming up behind the bottle so it silhouettes then…");
+  const saved = (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as { nodes: { id: string; title: string; text: string }[] };
+  expect(saved.nodes.find((n) => n.id === reply.nodeId)).toMatchObject({ title: reply.title, text: expect.stringContaining("fills with colour over four seconds") });
+
+  const text = page.getByTestId("toast").locator(".gx-toast-text");
+  await expect(text).toHaveText(`Added to Rig · ${reply.title}`);
+  await reachable(page, page.getByTestId("toast-open"), info.project.name);
+  const lines = await text.evaluate((el) => Math.round(el.clientHeight / parseFloat(getComputedStyle(el).lineHeight)));
+  expect(lines, "two lines at most").toBeLessThanOrEqual(2);
+  await noSideScroll(page);
+  await shot(page, "long-rig-toast", info.project.name);
+  expect(errors).toEqual([]);
+});
+
+test("Crew › → Rig, then an edit on the Rig while it is still reading the saved draft: the edit is never silently replaced", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop: the Rig's shot list and its Add shot");
+  const { errors, project, headers, solutions } = await roomWithSolutions(page);
+  /* From here every read of the saved draft is held, so Open Rig lands before the Rig has the new shot. */
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let reads = 0;
+  await page.route(`**/api/workbench/projects?id=${project.id}`, async (route) => {
+    if (route.request().method() === "GET") { reads += 1; await held; }
+    return route.fallback();
+  });
+  await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await page.getByTestId("toast-open").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  const rows = page.locator(".pxw-rig-row");
+  await expect(rows, "the Rig has not read the new shot yet").toHaveCount(0);
+  expect(reads, "the Rig is reading the saved draft again").toBeGreaterThan(0);
+  /* An edit, and the read comes back straight after it — before the edit's own save goes out. */
+  await page.getByRole("button", { name: "+ Add shot" }).click();
+  release();
+  await expect(rows).toHaveCount(1);
+
+  /* The read is not taken over the edit. The edit's save meets the newer revision, is refused, and the Rig
+     reloads the saved version — and says so, rather than dropping the edit quietly. */
+  await expect(page.getByTestId("toast")).toHaveText("This project changed elsewhere. Rig reloaded the saved version.", { timeout: 15_000 });
+  await page.unroute(`**/api/workbench/projects?id=${project.id}`);
+  const saved = (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as { nodes: { title: string }[] };
+  await expect.poll(() => rows.allInnerTexts().then((all) => all.length)).toBe(saved.nodes.length);
+  await expect(rows.first()).toContainText("Cut on the drop");
   expect(errors).toEqual([]);
 });
 

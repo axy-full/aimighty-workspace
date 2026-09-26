@@ -134,8 +134,9 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     const entry = find(id);
     if (!entry) return;
     if (entry.asset.origin !== "generation") { ws.toast("An upload was not generated; there is nothing to retry."); return; }
-    try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify(retryPreset(entry.asset.value))); } catch { /* Gen starts empty; the toast still says what to do */ }
-    confirm(CONFIRM.retry(entry.take.name), { go: true });
+    let carried = true;
+    try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify(retryPreset(entry.asset.value))); } catch { carried = false; }
+    confirm(carried ? CONFIRM.retry(entry.take.name) : CONFIRM.notCarried(entry.take.name), { go: true });
   }, [find, confirm, ws]);
 
   /* A render dropped on a Rig row is filed on that shot (its next version); an upload cannot be. */

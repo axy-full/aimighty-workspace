@@ -93,7 +93,7 @@ test("right-click: every command works or says exactly why not; delete is soft a
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Wide on the water · same prompt and model");
-  await expect(page.getByTestId("toast")).toHaveText("Retry Wide on the water — its prompt and model are in Gen. Priced before it runs.");
+  await expect(page.getByTestId("toast")).toHaveText("Retry · Wide on the water loaded in Gen");
   expect(errors).toEqual([]);
 });
 

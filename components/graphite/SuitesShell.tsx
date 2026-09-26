@@ -301,12 +301,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <TabBar />
         {state.toast ? (() => {
-          /* A confirmation with somewhere to go carries its Open; hovering or focusing it holds it on screen. */
+          /* A confirmation with somewhere to go carries its Open; a mouse over it, or keyboard focus on it, holds it on screen.
+             A tap does not: on a phone it sits over the page's bottom actions, so it times out. */
           const open = ws.toastAction?.text === state.toast ? ws.toastAction.action : null;
           return (
             <div className="gx-toast" role="status" data-testid="toast" data-open={open ? "" : undefined}
-              onMouseEnter={open ? () => ws.holdToast(true) : undefined} onMouseLeave={open ? () => ws.holdToast(false) : undefined}
-              onFocus={open ? () => ws.holdToast(true) : undefined} onBlur={open ? () => ws.holdToast(false) : undefined}>
+              onPointerEnter={open ? (e) => { if (e.pointerType === "mouse") ws.holdToast(true); } : undefined}
+              onPointerLeave={open ? (e) => { if (e.pointerType === "mouse") ws.holdToast(false); } : undefined}
+              onFocus={open ? (e) => { if (e.target.matches(":focus-visible")) ws.holdToast(true); } : undefined}
+              onBlur={open ? () => ws.holdToast(false) : undefined}>
               {open ? <><span className="gx-toast-text">{state.toast}</span><button type="button" className="gx-toast-open" onClick={open.run} data-testid="toast-open">{open.label}</button></> : state.toast}
             </div>
           );

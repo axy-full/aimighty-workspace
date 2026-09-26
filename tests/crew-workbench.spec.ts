@@ -94,13 +94,13 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   expect(errors).toEqual([]);
 });
 
-test("the minutes can be filed in Assets once a round exists; nothing to file is said inline", async ({ page }, info) => {
+test("the minutes can be filed in the Library once a round exists; nothing to file is said inline", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page);
   await page.goto(page.url() + "&view=crew");
   const file = page.getByTestId("crew-file-minutes");
   await expect(file).toBeVisible();
-  await expect(file).toHaveText("File minutes in Assets · free");
+  await expect(file).toHaveText("File minutes in the Library · free");
   await expect(file).toBeDisabled();
   expect(errors).toEqual([]);
 });

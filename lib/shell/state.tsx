@@ -24,7 +24,7 @@ export type LibTab = "tools" | "assets";
 export type Clip = { mode: "copy" | "cut"; target: Exclude<CtxTarget, { kind: "empty" }>; name: string; /** What the paste needs to know about it (lib/shell/use-asset-actions). */ payload?: unknown };
 export type CtxState = { x: number; y: number; target: CtxTarget; title: string };
 
-type Shell = {
+export type Shell = {
   view: ShellView;
   suite: ShellSuite;
   page: ShellPage;
@@ -60,6 +60,8 @@ type Shell = {
   runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
   setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
   undo: () => Promise<void>;
+  /** The shell as it is now, for work that finishes after the component that started it has gone (a toast's Open). */
+  live: () => Shell;
 };
 
 const ShellContext = createContext<Shell | null>(null);
@@ -108,6 +110,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
   const undoRef = useRef(undoStack);
   useEffect(() => { undoRef.current = undoStack; }, [undoStack]);
+  const liveRef = useRef<Shell | null>(null);
+  const live = useCallback(() => liveRef.current!, []);
 
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
@@ -190,7 +194,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       await popped.entry.undo();
       ws.toast(popped.entry.label);
     },
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack.length, goSuite, apply, ws]);
+    live,
+  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack.length, goSuite, apply, ws, live]);
+  useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
 }

@@ -78,8 +78,10 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
     const routed = await room.routeSolution(id, to).finally(() => setRouting(null));
     if (!routed) return;
     if (to === "gen") {
-      try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify({ prompt: routed.prompt ?? "", note: "Crew · solution" } satisfies GenPreset)); } catch { /* Gen opens empty; the solution is still in the room */ }
-      confirm(CONFIRM.crewGen(), { go: true });
+      let carried = true;
+      try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify({ prompt: routed.prompt ?? "", note: "Crew · solution" } satisfies GenPreset)); } catch { carried = false; }
+      /* Blocked storage: Gen opens empty, and the toast says so; the solution is still in the room. */
+      confirm(carried ? CONFIRM.crewGen() : CONFIRM.notCarried("The solution"), { go: true });
       return;
     }
     if (project) announceDraftWritten(project.id);
@@ -207,8 +209,9 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
                   <p><span className="cw-sol-n">{i + 1}</span>{s.text}</p>
                   {solutionStatusLabel(s.status) ? <span className="cw-dim" data-testid="crew-solution-status">{solutionStatusLabel(s.status)}</span> : null}
                   <div className="cw-sol-actions">
-                    <button type="button" className="gx-hbtn" disabled={routing !== null} onClick={() => void route(s.id, "brief")}>{routing === `${s.id}:brief` ? "Adding…" : "→ Brief"}</button>
-                    <button type="button" className="gx-hbtn" disabled={routing !== null} title="A draft shot on the Rig" onClick={() => void route(s.id, "boards")}>{routing === `${s.id}:boards` ? "Adding…" : "→ Rig"}</button>
+                    {/* Once it went there, a second press adds it a second time, and says so. */}
+                    <button type="button" className="gx-hbtn" disabled={routing !== null} onClick={() => void route(s.id, "brief")}>{routing === `${s.id}:brief` ? "Adding…" : s.status === "sent_to_brief" ? "→ Brief again" : "→ Brief"}</button>
+                    <button type="button" className="gx-hbtn" disabled={routing !== null} title="A draft shot on the Rig" onClick={() => void route(s.id, "boards")}>{routing === `${s.id}:boards` ? "Adding…" : s.status === "boarded" ? "→ Rig again" : "→ Rig"}</button>
                     <button type="button" className="gx-hbtn cw-go" disabled={routing !== null} onClick={() => void route(s.id, "gen")}>Open in Gen</button>
                     <button type="button" className="cw-link" aria-label="Remove solution" onClick={() => void room.dropSolution(s.id)}>Remove</button>
                   </div>
@@ -220,7 +223,7 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
             <button type="button" className="gx-hbtn cw-wide" disabled={!room.session || !room.messages.length} onClick={() => void room.minutes()}>Export minutes · free</button>
             <button type="button" className="gx-hbtn cw-wide" disabled={!room.session || !room.messages.length || !project || filing} data-testid="crew-file-minutes"
               onClick={() => { if (!project) return; setFiling(true); void room.minutesAsFile().then((file) => uploadToProject(scope, project.id, [file])).then(() => confirm(CONFIRM.minutesFiled())).catch((error: unknown) => toast(error instanceof Error ? error.message : "The minutes could not be filed.")).finally(() => setFiling(false)); }}>
-              File minutes in Assets · free
+              File minutes in the Library · free
             </button>
           </>
         )}

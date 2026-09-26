@@ -3,6 +3,7 @@ import { CONFIRM, destinationName, isHere, landingPage, openLabel, solutionStatu
 import { SAY, retryPreset } from "../../lib/shell/assets";
 import { CAST_LIMITS, mergeAgentCast, newEntry, type CastProposal } from "../../lib/production/cast";
 import { generationPhase, heldLabel } from "../../lib/workspace/rig";
+import { SHOT_TITLE_MAX, solutionShot } from "../../lib/crew/room";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it. Each
@@ -25,6 +26,7 @@ const EVERY: [string, Confirmation][] = [
   ["breakdown to Rig", CONFIRM.breakdownToRig()],
   ["scene nodes to Rig", CONFIRM.breakdownToRig(4)],
   ["retry", CONFIRM.retry("Wide on the water")],
+  ["not carried to Gen", CONFIRM.notCarried("The solution")],
 ];
 
 test("every confirmation opens a real place, the one its words name, under that place's own label", () => {
@@ -54,6 +56,34 @@ test("a destination that is not a stage is refused rather than quietly landing o
   expect(() => destinationName({ to: "page", suite: "studio", page: "home" })).toThrow();
   /* …which is exactly what goSuite would otherwise have done with it. */
   expect(landingPage({ to: "page", suite: "studio", page: "frames" }).id).toBe("brief");
+});
+
+test("Open in Gen and Retry never claim Gen holds what the browser would not store", () => {
+  const missed = CONFIRM.notCarried("The solution");
+  expect(missed.text).toBe("The solution could not be carried to Gen");
+  expect(missed.text).not.toBe(CONFIRM.crewGen().text);
+  expect(missed.open).toEqual({ to: "gen" });
+  /* Retry names the take it could not carry, never "loaded". */
+  expect(CONFIRM.notCarried("Wide on the water").text).toBe("Wide on the water could not be carried to Gen");
+  expect(CONFIRM.notCarried("Wide on the water").text).not.toBe(CONFIRM.retry("Wide on the water").text);
+});
+
+test("a Crew solution becomes a shot named by its words before the dash, cut at a word with an ellipsis", () => {
+  expect(solutionShot("Cut on the drop — hold the bottle until the beat lands")).toEqual({ title: "Cut on the drop", text: "hold the bottle until the beat lands" });
+  /* No dash: the whole line names it and is its text. */
+  const pinned = "24mm, camera locked, dawn coming up behind the bottle so it silhouettes then fills with light as the sun clears the sill";
+  const shot = solutionShot(pinned);
+  expect(shot.text).toBe(pinned);
+  expect(shot.title.length).toBeLessThanOrEqual(SHOT_TITLE_MAX);
+  expect(shot.title).toBe("24mm, camera locked, dawn coming up behind the bottle so it silhouettes then…");
+  expect(pinned.startsWith(shot.title.slice(0, -1)), "it is the start of the words, never a cut word").toBe(true);
+  expect(pinned[shot.title.length - 1]).toBe(" ");
+  /* One unbroken word is cut where it must be, still marked as cut. */
+  const long = solutionShot("x".repeat(120));
+  expect(long.title).toBe(`${"x".repeat(SHOT_TITLE_MAX - 1)}…`);
+  /* Short titles are as written; an empty one has a name. */
+  expect(solutionShot("  Wide   on the water ").title).toBe("Wide on the water");
+  expect(solutionShot(" — just the text").title).toBe("Crew solution");
 });
 
 test("Crew › → Rig says Rig and opens that shot; it never claims a Storyboards frame", () => {
@@ -115,7 +145,8 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
 test("Retry says what it carries — the prompt and the model — and never 'same inputs'", () => {
   expect("retry" in SAY).toBe(false);
   const retry = CONFIRM.retry("Fox");
-  expect(retry.text).toBe("Retry Fox — its prompt and model are in Gen. Priced before it runs.");
+  /* One line: Gen's note says what was carried, and its Generate button carries the price. */
+  expect(retry.text).toBe("Retry · Fox loaded in Gen");
   expect(retry.text).not.toMatch(/same inputs|seed/i);
   const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox", ratio: "16:9" }, title: "Fox" });
   expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", note: "Retry · Fox · same prompt and model" });

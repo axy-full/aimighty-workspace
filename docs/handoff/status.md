@@ -339,7 +339,7 @@ Tests: `tests/unit/suitesFlair.spec.ts` (fixed values, poster palette, no token 
 
 | What | Where |
 | --- | --- |
-| **File minutes in Assets · free** beside Export: the session's minutes markdown goes through the existing chunked upload (`uploadToProject`), stored byte-identical and filed on this project, so it sits in the Library and Takes like any original | `lib/crew/room.ts › minutesFile`, `lib/crew/use-crew.ts › minutesAsFile`, `CrewView.tsx` |
+| **File minutes in the Library · free** beside Export: the session's minutes markdown goes through the existing chunked upload (`uploadToProject`), stored byte-identical and filed on this project, so it sits in the Library and Takes like any original | `lib/crew/room.ts › minutesFile`, `lib/crew/use-crew.ts › minutesAsFile`, `CrewView.tsx` |
 | The round's money rule as a pure function: a chair that failed, or a room in which nobody proposed, settles at zero (messages kept, not billed, the note says so); only a converged round bills the tokens reported. The round used this rule already; it is now named and tested | `lib/crew/room.ts › settleRound`, `lib/crew/round.ts` |
 
 Tests: `tests/unit/crewRoom.spec.ts` (+2), `tests/crew-workbench.spec.ts` (+1, five viewports).
