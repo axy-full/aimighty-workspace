@@ -7,15 +7,17 @@ import { takeCost } from "../../lib/breakdownCost";
 import { listEstimate, moneyColumns, takeEstimate, wholeCredits } from "../../lib/shotListCost";
 import { publicTextCost } from "../../lib/textRunCost";
 import { textCostLabel } from "../../lib/textCostLabel";
-import { createBoardSaver, type SaveState } from "../../lib/boardSaver";
+import { isOwnMedia } from "../../lib/format";
+import { createBoardSaver, reapplyAdditions, type SaveState } from "../../lib/boardSaver";
 import { boardUrlFor } from "../../lib/rigCanvasUrl";
 import { ADDABLE_KINDS, KINDS, isRunnable } from "../../components/rig/nodes";
-import { clearComposeHandoff, handoffKey, handoffPrompt, HANDOFF_TTL_MS, readComposeHandoff, writeComposeHandoff } from "../../lib/composeHandoff";
+import { clearComposeHandoff, generateHrefFor, handoffFits, handoffKey, handoffPrompt, HANDOFF_TTL_MS, readComposeHandoff, writeComposeHandoff } from "../../lib/composeHandoff";
 import { shellEntryRedirect, signInHrefFor } from "../../lib/signIn";
 import { serverSwitchTarget, workspaceUrlFor } from "../../lib/workspace/switchover";
 import { PRIVATE_PATHS, PUBLIC_PATHS, publicPageMetadata, siteOrigin } from "../../lib/site";
 import { NEUTRAL_ICON, reviewMetadata } from "../../lib/reviewMetadata";
 import robots from "../../app/robots";
+import nextConfig from "../../next.config";
 import sitemap from "../../app/sitemap";
 
 /* ── Atomik money: estimates are in the workspace's unit, rounded per take ── */
@@ -45,16 +47,25 @@ test("a list of shots sums each take already rounded; type-only shots cost nothi
   expect(listEstimate(cr, Array.from({ length: 10 }, () => ({ planned: 5, engine: "seedance" })))).toBe(10 * billCredits(shotCostUsd("seedance", 5), ENGINE_MODEL.seedance));
 });
 
+test("only a file this app stores is downloaded in a batch; an engine's own URL is not", () => {
+  expect(isOwnMedia("/api/media/gen_1")).toBe(true);
+  expect(isOwnMedia("https://cdn.engine.example/out.mp4")).toBe(false);
+  expect(isOwnMedia(null)).toBe(false);
+});
+
 test("the shot list CSV names its money columns in the workspace's unit", () => {
   expect(moneyColumns(cr)).toEqual({ estimate: "estimate_credits", spent: "spent_credits" });
   expect(moneyColumns(usd)).toEqual({ estimate: "estimate_usd", spent: "spent_usd" });
 });
 
 test("a finished paid text run is told as the ledger billed it, never as vendor dollars, on credits", () => {
-  expect(publicTextCost(true, 0.004, 1)).toEqual({ credits: 1 });
-  expect(publicTextCost(true, 0.004, null)).toEqual({ credits: null });
-  expect("costUsd" in publicTextCost(true, 0.004, 3)).toBe(false);
-  expect(publicTextCost(false, 0.004, 1)).toEqual({ costUsd: 0.004 });
+  expect(publicTextCost(true, 0.004, 1, "succeeded")).toEqual({ credits: 1 });
+  expect(publicTextCost(true, 0.004, null, "succeeded")).toEqual({ credits: null });
+  /* The reservation's figure is the estimate held, not what was billed. */
+  expect(publicTextCost(true, 0.004, 2, "running")).toEqual({ credits: null });
+  expect(publicTextCost(true, 0.004, 2, null)).toEqual({ credits: null });
+  expect("costUsd" in publicTextCost(true, 0.004, 3, "succeeded")).toBe(false);
+  expect(publicTextCost(false, 0.004, 1, "succeeded")).toEqual({ costUsd: 0.004 });
 });
 
 test("a written idea, scene or shot list shows what was billed: credits on credits, dollars only on own keys", () => {
@@ -168,6 +179,67 @@ test("a 409 that is not a revision conflict (a referenced upload is gone) is a f
   expect(server.puts[1].body).toMatchObject({ nodes: [], baseUpdatedAt: 9 });
 });
 
+test("a write that landed but whose answer was lost is recognised as our own, not a teammate's", async () => {
+  const server = fakeServer();
+  const seen: SaveState["kind"][] = [];
+  const saver = createBoardSaver({ put: server.put, baseUpdatedAt: 10, baseGraph: { nodes: [], wires: [] }, onState: (s) => seen.push(s.kind) });
+  const a = { nodes: [{ id: "n1", x: 1 }], wires: [] };
+  saver.save(a);
+  await tick();
+  /* The server committed it at revision 11; the network dropped the reply. */
+  server.puts[0].reject(new Error("offline"));
+  await tick(); await tick();
+  expect(seen.at(-1)).toBe("failed");
+  const b = { nodes: [{ id: "n1", x: 1 }, { id: "n2", x: 2 }], wires: [] };
+  saver.save(b);
+  await tick();
+  expect(server.puts[1].body).toMatchObject({ baseUpdatedAt: 10 });
+  /* Refused against revision 11 — which holds exactly the graph whose fate was unknown. */
+  server.reply(1, 409, { conflict: true, error: "Someone else changed this board.", board: { ...a, updatedAt: 11 } });
+  await tick(); await tick();
+  expect(seen).not.toContain("conflict");
+  expect(server.puts).toHaveLength(3);
+  expect(server.puts[2].body).toMatchObject({ nodes: b.nodes, baseUpdatedAt: 11 });
+  server.reply(2, 200, { board: { updatedAt: 12 } });
+  await tick(); await tick();
+  expect(seen.at(-1)).toBe("saved");
+  expect(saver.accepted()).toEqual(b);
+});
+
+test("a teammate's board that is not our lost write is still a conflict", async () => {
+  const server = fakeServer();
+  const seen: SaveState["kind"][] = [];
+  const saver = createBoardSaver({ put: server.put, baseUpdatedAt: 10, onState: (s) => seen.push(s.kind) });
+  saver.save({ nodes: [{ id: "n1" }], wires: [] });
+  await tick();
+  server.puts[0].reject(new Error("offline"));
+  await tick(); await tick();
+  saver.retry();
+  await tick();
+  server.reply(1, 409, { conflict: true, board: { nodes: [{ id: "theirs" }], wires: [], updatedAt: 11 } });
+  await tick(); await tick();
+  expect(seen.at(-1)).toBe("conflict");
+  expect(server.puts).toHaveLength(2);
+});
+
+test("after a conflict, reloading keeps the teammate's board and puts back only the nodes this person added", () => {
+  const node = (id: string, x = 0) => ({ id, x });
+  const wire = (id: string, from: string, to: string, slotId = "image") => ({ id, from: { nodeId: from, portId: "out" }, to: { nodeId: to, slotId } });
+  const accepted = { nodes: [node("a"), node("b")], wires: [] };
+  /* The teammate moved a and deleted b; this person moved a, added c wired from a, and wired a into b. */
+  const server = { nodes: [node("a", 50)], wires: [] as ReturnType<typeof wire>[] };
+  const mine = { nodes: [node("a", 9), node("b"), node("c")], wires: [wire("w1", "a", "c"), wire("w2", "a", "b")] };
+  const merged = reapplyAdditions(server, mine, accepted);
+  expect(merged.nodes).toEqual([node("a", 50), node("c")]);
+  expect(merged.wires.map((w) => w.id)).toEqual(["w1"]);
+  expect(merged.added).toBe(1);
+  /* A wire into a new node whose source the teammate removed does not come back dangling. */
+  const orphan = reapplyAdditions({ nodes: [], wires: [] }, { nodes: [node("c")], wires: [wire("w3", "gone", "c")] }, accepted);
+  expect(orphan.wires).toEqual([]);
+  /* Nothing added: the board is exactly the server's. */
+  expect(reapplyAdditions(server, { nodes: [node("a", 9)], wires: [] }, accepted)).toEqual({ ...server, added: 0 });
+});
+
 /* ── The shot builder's hand-off to Generate ─────────────────────────────── */
 
 function memoryStore() {
@@ -184,13 +256,29 @@ test("the builder's subject line and Setup reach Generate once, scoped to one wo
   expect(writeComposeHandoff(store, "ws1", "a@x", { prompt: "A courier. Wide shot.", kind: "video" }, 1_000)).toBe(true);
   expect(readComposeHandoff(store, "ws2", "a@x", 2_000)).toBeNull();
   expect(readComposeHandoff(store, "ws1", "b@x", 2_000)).toBeNull();
-  expect(readComposeHandoff(store, "ws1", "a@x", 2_000)).toEqual({ prompt: "A courier. Wide shot.", kind: "video", at: 1_000 });
+  expect(readComposeHandoff(store, "ws1", "a@x", 2_000)).toEqual({ prompt: "A courier. Wide shot.", kind: "video", at: 1_000, productionProjectId: null });
   expect(readComposeHandoff(store, "ws1", "a@x", 1_000 + HANDOFF_TTL_MS + 1)).toBeNull();
   clearComposeHandoff(store, "ws1", "a@x");
   expect(store.map.has(handoffKey("ws1", "a@x"))).toBe(false);
   const blocked = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
   expect(writeComposeHandoff(blocked, "ws1", "a@x", { prompt: "x", kind: "video" })).toBe(false);
   expect(readComposeHandoff(blocked, "ws1", "a@x")).toBeNull();
+});
+
+test("a hand-off written for a production opens Generate on that production's project and composes nowhere else", () => {
+  const store = memoryStore();
+  expect(writeComposeHandoff(store, "ws1", "a@x", { prompt: "A courier.", kind: "video", productionProjectId: "prj_a" }, 1_000)).toBe(true);
+  const taken = readComposeHandoff(store, "ws1", "a@x", 2_000)!;
+  expect(taken.productionProjectId).toBe("prj_a");
+  expect(handoffFits(taken, "prj_a")).toBe(true);
+  /* Generate remembered another production's project: the words wait rather than bill there. */
+  expect(handoffFits(taken, "prj_b")).toBe(false);
+  expect(handoffFits(taken, null)).toBe(false);
+  /* Words from the unscoped builder belong to no production. */
+  expect(handoffFits({ productionProjectId: null }, "prj_b")).toBe(true);
+  expect(generateHrefFor("video", "wb_1")).toBe("/generate?mode=video&project=wb_1");
+  expect(generateHrefFor("video", null)).toBe("/generate?mode=video");
+  expect(generateHrefFor("image", null)).toBe("/generate?mode=images");
 });
 
 /* ── Sign-in and the switch-over ─────────────────────────────────────────── */
@@ -228,13 +316,15 @@ test("the site origin comes from APP_ORIGIN, else the production deployment", ()
   expect(siteOrigin({})).toBeNull();
 });
 
-test("robots keeps crawlers out of the API, review links and one-time links; the sitemap lists public pages only", () => {
+test("robots keeps crawlers out of the API and one-time links; the sitemap lists public pages only", () => {
   const saved = process.env.APP_ORIGIN;
   process.env.APP_ORIGIN = "https://studio.example";
   try {
     const r = robots();
     const rules = Array.isArray(r.rules) ? r.rules[0] : r.rules;
-    for (const path of ["/api/", "/review/", "/invite/", "/reset/"]) expect(rules.disallow).toContain(path);
+    for (const path of ["/api/", "/invite/", "/reset/"]) expect(rules.disallow).toContain(path);
+    /* A review link may be fetched for its preview card; its noindex keeps it out of every index. */
+    expect(rules.disallow).not.toContain("/review/");
     expect(r.sitemap).toBe("https://studio.example/sitemap.xml");
     const urls = sitemap().map((e) => e.url);
     expect(urls).toContain("https://studio.example");
@@ -244,6 +334,13 @@ test("robots keeps crawlers out of the API, review links and one-time links; the
   } finally {
     if (saved === undefined) delete process.env.APP_ORIGIN; else process.env.APP_ORIGIN = saved;
   }
+});
+
+test("a client review page is answered with X-Robots-Tag noindex, and only it", async () => {
+  const rules = await nextConfig.headers!();
+  const review = rules.filter((r) => r.headers.some((h) => h.key === "X-Robots-Tag"));
+  expect(review.map((r) => r.source)).toEqual(["/review/:path*"]);
+  expect(review[0].headers).toContainEqual({ key: "X-Robots-Tag", value: "noindex, nofollow" });
 });
 
 test("a public page carries its own title and a link-preview card", () => {

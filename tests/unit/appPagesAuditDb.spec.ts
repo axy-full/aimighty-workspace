@@ -56,5 +56,124 @@ test("a finished text run on credits reports the credits the ledger billed; on o
   expect(billed).toEqual({ credits: billCredits(0.12, "text") });
   /* Not settled on the ledger: nothing is claimed. */
   expect(await runInTenant(credits, () => textRunCost({ id: "text_unmetered", costUsd: 0.12 }))).toEqual({ credits: null });
+  /* Still the reservation (the settling write was lost): its figure is an estimate, not a bill. */
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().execute({
+    sql: `INSERT INTO meter_events (id, workspace_id, kind, engine, model, status, engine_cost_usd, billed_credits, paid_by_platform, created_by, created_at, updated_at)
+          VALUES ('text_reserved', 'ws_text', 'text', 'vercel', 'anthropic/claude-sonnet-4.5', 'running', 0.12, 2, 1, 'u', 1, 1)`,
+    args: [],
+  });
+  expect(await runInTenant(credits, () => textRunCost({ id: "text_reserved", costUsd: 0.12 }))).toEqual({ credits: null });
   expect(await runInTenant(own, () => textRunCost({ id: "text_2", costUsd: 0.12 }))).toEqual({ costUsd: 0.12 });
+});
+
+/* ── The list routes, run for real against the throwaway database ─────────── */
+
+/** A route module, compiled as it ships, with `@/…` served from `deps` (the auth wrapper is the only stand-in). */
+async function route<T>(file: string, deps: Record<string, unknown>): Promise<T> {
+  const { readFileSync } = await import("node:fs");
+  const { createRequire } = await import("node:module");
+  const ts = (await import("typescript")).default;
+  const filename = path.resolve(file), requireHere = createRequire(filename);
+  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", compiled)(
+    (name: string) => {
+      if (Object.hasOwn(deps, name)) return deps[name];
+      if (name.startsWith("@/")) throw new Error(`${file} imports ${name}, which this test does not provide.`);
+      return requireHere(name);
+    },
+    mod, mod.exports,
+  );
+  return mod.exports as T;
+}
+
+async function listRoutes(ws: { current: unknown }) {
+  const tenant = await import("../../lib/tenant");
+  const lib = {
+    "@/lib/tenant": tenant,
+    "@/lib/db": await import("../../lib/db"),
+    "@/lib/credits": await import("../../lib/credits"),
+    "@/lib/creditSql": await import("../../lib/creditSql"),
+    "@/lib/shots": await import("../../lib/shots"),
+    "@/lib/productions": await import("../../lib/productions"),
+    "@/lib/cache": await import("../../lib/cache"),
+    "@/lib/platform": await import("../../lib/platform"),
+    "@/lib/planLimits": await import("../../lib/planLimits"),
+    "@/lib/archive": await import("../../lib/archive"),
+    "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
+    /* Signed in as an admin of whichever workspace the test has chosen. */
+    "@/lib/auth": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      withTenant: (handler: (...a: any[]) => Promise<unknown>) => (...a: unknown[]) => tenant.runInTenant(ws.current as never, () => handler(...a)),
+      requireUser: async () => ({ user: { id: "u_admin", role: "admin" } }),
+    },
+  };
+  type Get = { GET: (req: Request, ctx?: unknown) => Promise<Response> };
+  return {
+    shots: await route<Get>("app/api/shots/route.ts", lib),
+    projects: await route<Get>("app/api/projects/route.ts", lib),
+    project: await route<Get>("app/api/projects/[id]/route.ts", lib),
+    productions: await route<Get>("app/api/productions/route.ts", lib),
+  };
+}
+
+test("a workspace on credits is sent its credits and never the vendor's dollars; one on its own keys gets its dollars", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { createShot } = await import("../../lib/shots");
+  const dbUrl = `file:${path.join(dir, "lists.db")}`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const credits = { ...workspace("ws_lists"), dbUrl } as any, own = { ...workspace("ws_lists_own", true), usesPlatformKeys: false, dbUrl } as any;
+  /* One project, one shot, one metered take at a vendor cost of $1.88. */
+  const shotId = await runInTenant(credits, async () => {
+    await ready();
+    await db().execute({ sql: "INSERT INTO productions (id, name, created_at) VALUES ('prd_l', 'Rain film', 1)", args: [] });
+    await db().execute({ sql: "INSERT INTO projects (id, name, created_at, production_id) VALUES ('prj_l', 'Rain film', 1, 'prd_l')", args: [] });
+    const shot = await createShot({ projectId: "prj_l", title: "Courier", planned: 5, createdBy: "u_admin" });
+    await db().execute({
+      sql: "INSERT INTO generations (id, project_id, shot_id, model, prompt, params, status, cost_usd, created_at, updated_at, kind) VALUES ('gen_l', 'prj_l', ?, 'seedance-2-0', 'A courier', '{}', 'succeeded', 1.88, 2, 2, 'video')",
+      args: [shot.id],
+    });
+    return shot.id;
+  });
+  const ws = { current: credits as unknown };
+  const r = await listRoutes(ws);
+  const get = async (h: { GET: (req: Request, ctx?: unknown) => Promise<Response> }, url: string, ctx?: unknown) => {
+    const res = await h.GET(new Request(`http://localhost${url}`), ctx);
+    return { status: res.status, json: await res.json() };
+  };
+
+  const shotsCr = (await get(r.shots, "/api/shots?projectId=prj_l")).json.shots as { id: string; spend: number; credits: number }[];
+  const mine = shotsCr.find((s) => s.id === shotId)!;
+  expect(mine.spend).toBe(0);
+  expect(mine.credits).toBeGreaterThan(0);
+  const projectsCr = (await get(r.projects, "/api/projects")).json as { unit: string; projects: { id: string; spend: number; credits: number }[] };
+  expect(projectsCr.unit).toBe("cr");
+  expect(projectsCr.projects.find((p) => p.id === "prj_l")).toMatchObject({ spend: 0, credits: mine.credits });
+  const prodsCr = (await get(r.productions, "/api/productions")).json.productions as { id: string; spentUsd: number; spentCredits: number; projects: { spentUsd: number; spentCredits: number }[] }[];
+  const prodCr = prodsCr.find((p) => p.id === "prd_l")!;
+  expect(prodCr.spentUsd).toBe(0);
+  expect(prodCr.projects[0].spentUsd).toBe(0);
+  expect(prodCr.spentCredits).toBe(mine.credits);
+  /* Nothing in any of the three answers carries the vendor figure. */
+  for (const body of [shotsCr, projectsCr, prodsCr]) expect(JSON.stringify(body)).not.toContain("1.88");
+
+  ws.current = own;
+  const shotsUsd = (await get(r.shots, "/api/shots?projectId=prj_l")).json.shots as { id: string; spend: number }[];
+  expect(shotsUsd.find((s) => s.id === shotId)!.spend).toBeCloseTo(1.88, 9);
+  const projectsUsd = (await get(r.projects, "/api/projects")).json as { unit: string; projects: { id: string; spend: number }[] };
+  expect(projectsUsd.unit).toBe("usd");
+  expect(projectsUsd.projects.find((p) => p.id === "prj_l")!.spend).toBeCloseTo(1.88, 9);
+  const prodUsd = ((await get(r.productions, "/api/productions")).json.productions as { id: string; spentUsd: number }[]).find((p) => p.id === "prd_l")!;
+  expect(prodUsd.spentUsd).toBeCloseTo(1.88, 9);
+
+  /* One project, from its own row: the page asks here before it says a project does not exist. */
+  ws.current = credits;
+  const one = await get(r.project, "/api/projects/prj_l", { params: Promise.resolve({ id: "prj_l" }) });
+  expect(one.status).toBe(200);
+  expect(one.json.project).toMatchObject({ id: "prj_l", name: "Rain film", productionId: "prd_l" });
+  expect((await get(r.project, "/api/projects/prj_gone", { params: Promise.resolve({ id: "prj_gone" }) })).status).toBe(404);
 });
