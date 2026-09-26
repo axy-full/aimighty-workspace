@@ -64,8 +64,11 @@ async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 
-/** A saved project, the Crew room open on it, one round run: three solutions from the mock chair. */
-async function roomWithSolutions(page: Page) {
+/**
+ * A saved project, the Crew room open on it, one round run: three solutions from the mock chair. `overRig`: the room is
+ * opened from Studio › Rig, so the Rig stays the page underneath it.
+ */
+async function roomWithSolutions(page: Page, overRig = false) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
@@ -77,7 +80,12 @@ async function roomWithSolutions(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 200)); });
-  await page.goto(`/suites?project=${project.id}&view=crew`);
+  if (overRig) {
+    await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
+    await expect(page.getByTestId("page-title")).toHaveText("Rig");
+    await expect(page.getByTestId("rig-list")).toBeVisible();
+    await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+  } else await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
   await expect(page.locator(".cw-project")).toContainText("Dune Studies");
   /* The shell writes its own params into the URL once it settles (cp=room); on a cold server that lands after hydration and
@@ -312,6 +320,26 @@ test("Crew › → Rig with a long pinned line: the shot is named to a word with
   expect(lines, "two lines at most").toBeLessThanOrEqual(2);
   await noSideScroll(page);
   await shot(page, "long-rig-toast", info.project.name);
+  expect(errors).toEqual([]);
+});
+
+test("Crew › → Rig over the Rig page: the Rig reads the new shot when it is written, so Open lands on it", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  /* The Rig is the page under Crew, so Open Rig does not arrive at a new page: only the draft-written catch-up
+     (lib/workspace/draft-written, RigProvider) brings the shot the route wrote into the Rig. */
+  const { errors, solutions } = await roomWithSolutions(page, true);
+  expect(new URL(page.url()).searchParams.get("page")).toBe("rig");
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
+  await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string };
+  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await page.getByTestId("toast-open").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
+  await expect(row).toContainText("Cut on the drop");
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await stopped(page, row);
+  await expect(row).toBeInViewport();
   expect(errors).toEqual([]);
 });
 
