@@ -251,6 +251,12 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
   await library.getByRole("button", { name: "Video", exact: true }).click();
   await expect(assets.getByTestId("take-tile")).toHaveCount(4);
   await shot(page, info, "library-cards");
+  /* The smallest tile still opens from its middle: Refresh keeps to its corner. */
+  await library.getByRole("button", { name: "All", exact: true }).click();
+  const gone = tile(assets, "Harbour at dusk");
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="library-assets"] .gx-tile-over'), "Refresh under 44×44").toEqual([]);
+  await gone.locator(".gx-asset-thumb").click();
+  await expect(page.getByTestId("inspector-title")).toHaveText("Harbour at dusk");
   await noSideScroll(page);
   expect(errors).toEqual([]);
 });

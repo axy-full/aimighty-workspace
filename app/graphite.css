@@ -410,12 +410,14 @@
 /* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
 .gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"], [data-face="stopped"]) .gx-tile-glyph { display: none; }
 .gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
-/* Refresh is the tile's second action: in its top-right corner, so a press anywhere else still opens the take. */
+/* Refresh is the tile's second action: a round button in its top-right corner, small enough that a press
+   in the middle of the smallest tile (the 2-up Library on a 360 px phone) still opens the take. */
 .gx-tile-over { position: absolute; inset: 0; display: grid; place-items: start end; padding: 6px; pointer-events: none; }
-.gx-tile-refresh { pointer-events: auto; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 600; text-align: center;
+.gx-tile-refresh { pointer-events: auto; width: 28px; height: 28px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 15px; line-height: 1;
   color: var(--gx-text); background: rgba(12, 12, 16, .72); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(8px); }
 .gx-tile-refresh:hover { background: var(--gx-input-hover); }
 .gx-tile-refresh:disabled { opacity: .6; cursor: default; }
+.gx-tile-refresh[aria-busy="true"] > span { animation: gx-spin 1s linear infinite; }
 /* Skeletons: the card's own shape, a slow pulse, no text. */
 .gx-skel { pointer-events: none; }
 .gx-skel-thumb { display: block; width: 100%; border-radius: 6px; background: rgba(255, 255, 255, .06); animation: gx-pulse 1.4s ease-in-out infinite; }
@@ -435,13 +437,13 @@
 /* In a stage that has nothing else to show (the project list did not load), the banner keeps the page's gutters. */
 .gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
 @media (max-width: 767px), (pointer: coarse) {
-  .gx-tile-refresh { height: 44px; padding: 0 16px; }
+  .gx-tile-refresh { width: 44px; height: 44px; font-size: 18px; }
   .gx-tile-chip { height: 22px; font-size: 12px; }
   .gx-main > .gx-banner { margin: 0 12px 8px; }
   .gx-stage > .gx-banner { margin: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gx-skel-thumb, .gx-skel-line, .gx-tile-spin, .gx-tile-chip-dot { animation: none; }
+  .gx-skel-thumb, .gx-skel-line, .gx-tile-spin, .gx-tile-chip-dot, .gx-tile-refresh[aria-busy="true"] > span { animation: none; }
 }
 
 /* ── Assets on every page (FINAL_SPEC §1 step 1) ─────────────────────── */

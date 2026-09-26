@@ -34,12 +34,13 @@ function Face({ face, entry, onFail }: { face: EntryFace; entry: LibraryEntry; o
   return <span className="gx-tile-face" data-face={face}><span className="gx-tile-glyph" aria-hidden="true">{glyph}</span></span>;
 }
 
+/* "Preview unavailable" is said under the name; this is its Refresh, named in full for a screen reader and on hover. */
 function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void; name: string }) {
   const [busy, setBusy] = useState(false);
   return (
-    <button type="button" className="gx-tile-refresh" disabled={busy} aria-label={`Refresh the preview of ${name}`} data-testid="take-refresh"
+    <button type="button" className="gx-tile-refresh" disabled={busy} aria-busy={busy} aria-label={`Refresh the preview of ${name}`} title="Refresh" data-testid="take-refresh"
       onClick={async (event) => { event.stopPropagation(); setBusy(true); try { await onRefresh(); } finally { setBusy(false); } }}>
-      {busy ? "Refreshing…" : "Refresh"}
+      <span aria-hidden="true">↻</span>
     </button>
   );
 }
