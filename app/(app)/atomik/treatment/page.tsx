@@ -32,6 +32,7 @@ import { useDraft } from "@/lib/useDraft";
 import MentionText from "@/components/atomik/MentionText";
 import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene, Note } from "@/lib/atomikDocs";
+import { EMPTY_TREATMENT, mergeTreatment } from "@/lib/treatmentMerge";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
 import { useMoney } from "@/lib/price";
@@ -44,6 +45,7 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "—";
 /* The setup defaults a treatment carries: the four the reference shows. */
 const SETUP_KEYS = ["mood", "light", "look", "lens"];
+const docOf = (t: Treatment): Doc => ({ title: t.title, logline: t.logline, setup: t.setup, scenes: t.scenes, notes: t.notes });
 
 export default function TreatmentPage() {
   usePageTitle("Atomik · Treatment");
@@ -73,14 +75,19 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   const [saving, setSaving] = useState(false);
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [merged, setMerged] = useState<string | null>(null);
   const dirty = useRef(false);
   const docRef = useRef<Doc | null>(null);
+  /* The server's copy the document on screen is based on, and its version:
+     every save names that version, so it cannot land over a newer one. */
+  const baseRef = useRef<{ doc: Doc; updatedAt: number | null } | null>(null);
   useEffect(() => { docRef.current = doc; }, [doc]);
 
   // The document is the server's until someone types; then it is theirs.
   useEffect(() => {
     if (!data || doc) return;
     const t = data.treatment;
+    baseRef.current = t ? { doc: docOf(t), updatedAt: t.updatedAt } : { doc: EMPTY_TREATMENT, updatedAt: null };
     Promise.resolve().then(() => setDoc(t
       ? { title: t.title, logline: t.logline, setup: t.setup, scenes: t.scenes.length ? t.scenes : [{ n: 1, title: "", secs: 5, prose: "" }], notes: t.notes }
       : { title: name, logline: "", setup: {}, scenes: [{ n: 1, title: "", secs: 5, prose: "" }], notes: [] }));
@@ -90,21 +97,42 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
     if (!doc) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/atomik/treatment", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, ...doc, bump }),
-      });
-      if (!res.ok) throw new Error(`The server answered ${res.status}.`);
-      if (docRef.current === doc) { dirty.current = false; setHasUnsaved(false); }
-      setSavedAt(Date.now());
-      if (bump) refresh();
+      let sending = doc, draft = bump;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await fetch("/api/atomik/treatment", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, ...sending, bump: draft, expectedUpdatedAt: baseRef.current?.updatedAt ?? null }),
+        });
+        const j = await res.json().catch(() => ({})) as { treatment?: Treatment | null; error?: string };
+        if (res.ok && j.treatment) {
+          baseRef.current = { doc: docOf(j.treatment), updatedAt: j.treatment.updatedAt };
+          if (docRef.current === sending) { dirty.current = false; setHasUnsaved(false); }
+          setSavedAt(Date.now());
+          if (draft) refresh();
+          return;
+        }
+        if (res.status !== 409 || !j.treatment) throw new Error(j.error ?? `The server answered ${res.status}.`);
+        /* Saved elsewhere in between: merge theirs with what is on screen and
+           save that. Where both changed the same words, theirs is kept as an
+           earlier draft rather than written over. */
+        const theirs = j.treatment;
+        const next = mergeTreatment(baseRef.current?.doc ?? EMPTY_TREATMENT, docRef.current ?? sending, docOf(theirs));
+        baseRef.current = { doc: docOf(theirs), updatedAt: theirs.updatedAt };
+        draft = draft || next.keptTheirs;
+        sending = next.doc;
+        docRef.current = next.doc;
+        dirty.current = true;
+        setDoc(next.doc);
+        setMerged(next.keptTheirs ? "Merged with another session · theirs kept in Earlier drafts" : "Merged with another session");
+      }
+      throw new Error("This treatment keeps changing in another session. Try again in a moment.");
     } catch (e) { await appAlert("Not saved", (e as Error).message); }
     finally { setSaving(false); }
   }
   // Autosave, 900ms after the last keystroke.
   useEffect(() => {
     if (!doc || !dirty.current) return;
-    const t = setTimeout(() => save(false), 900);
+    const t = setTimeout(() => { if (dirty.current) save(false); }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc]);
@@ -113,9 +141,11 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   // page, on a request that outlives it.
   useEffect(() => () => {
     if (!dirty.current || !docRef.current) return;
+    /* This save cannot wait to merge. If the treatment changed meanwhile, the
+       server keeps the other copy as a draft and carries its notes over. */
     void fetch("/api/atomik/treatment", {
       method: "PUT", headers: { "Content-Type": "application/json" }, keepalive: true,
-      body: JSON.stringify({ projectId, ...docRef.current, bump: false }),
+      body: JSON.stringify({ projectId, ...docRef.current, bump: false, expectedUpdatedAt: baseRef.current?.updatedAt ?? null, onConflict: "keep" }),
     }).catch(() => { /* the next visit re-reads the server's copy */ });
   }, [projectId]);
   const edit = (fn: (d: Doc) => Doc) => { if(paid.pending)return; dirty.current = true; setHasUnsaved(true); setDoc((d) => (d ? fn(d) : d)); };
@@ -211,6 +241,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
           )}
           <span className="text-[15px] font-semibold leading-[1.2]">{doc.title || name}</span>
           <span className="ak-sub !text-[12px]">{mmss(total)} · {doc.scenes.length} scene{doc.scenes.length === 1 ? "" : "s"} · {t?.updatedBy ? initials(t.updatedBy) : me ? initials(me) : "—"} · {saving ? "saving…" : savedAt ? `saved ${timeAgo(savedAt)}` : t ? `edited ${timeAgo(t.updatedAt)}` : "unsaved"}</span>
+          {merged && <span className="ak-sub !text-[12px]" role="status">{merged}</span>}
         </div>
         <div className="flex flex-col gap-0.5">
           {doc.scenes.map((s) => (
