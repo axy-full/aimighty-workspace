@@ -27,9 +27,11 @@ import { usePhone } from "@/lib/usePhone";
 import { useAtomikRail } from "@/lib/atomikRail";
 import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import {
-  KIND_TAG, KIND_WORD, KINDS, NODE_W, TAKES_DOT_LEFT, isGen,
+  KIND_TAG, KIND_WORD, ADDABLE_KINDS, NODE_W, TAKES_DOT_LEFT, isGen, isRunnable,
   outputDotTop, outputPoint, portPoint, wirePath, wireMid, endpoints, newNode, nid,
 } from "@/components/rig/nodes";
+import { createBoardSaver, type BoardSaver, type SaveState } from "@/lib/boardSaver";
+import { boardUrlFor } from "@/lib/rigCanvasUrl";
 
 /**
  * Rig · Canvas (design/particl-v2/README.md §8; board 6a), value for value.
@@ -81,26 +83,39 @@ function Canvas() {
   const rail = useAtomikRail();
   const [slotSel, setSlotSel] = useState<{ nodeId: string; slotId: string } | null>(null);
 
-  /* `new?project=` opens the project's board — the latest one, or a fresh one when it has none — and lands on it. */
+  /* `new?project=` opens the project's board — the latest one, or a fresh one when it has none — and lands on it,
+     carrying every other param (`shot`, `ref`). A failure is said, with a retry, instead of spinning for ever. */
   const wantsNew = boardId === "new";
   const projectFromUrl = search.get("project");
   const shotFromUrl = search.get("shot");
+  const query = search.toString();
+  const [openError, setOpenError] = useState<string | null>(null);
+  const [openAttempt, setOpenAttempt] = useState(0);
   useEffect(() => {
     if (!wantsNew || !projectFromUrl || !signedIn) return;
     let live = true;
-    const suffix = shotFromUrl ? `?shot=${encodeURIComponent(shotFromUrl)}` : "";
+    const said = async (r: Response) => ((await r.json().catch(() => ({}))).error as string | undefined) ?? `The server answered ${r.status}.`;
     (async () => {
-      const list = await fetch(`/api/rig/boards?projectId=${encodeURIComponent(projectFromUrl)}`).then((r) => r.json()).catch(() => ({}));
-      const boards: Board[] = Array.isArray(list.boards) ? list.boards : [];
-      if (!live) return;
-      if (boards.length) { router.replace(`/rig/canvas/${boards[boards.length - 1].id}${suffix}`); return; }
-      const made = await fetch("/api/rig/boards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: projectFromUrl, name: "Board" }) }).then((r) => r.json()).catch(() => ({}));
-      if (live && made.board?.id) router.replace(`/rig/canvas/${made.board.id}${suffix}`);
+      try {
+        const listed = await fetch(`/api/rig/boards?projectId=${encodeURIComponent(projectFromUrl)}`);
+        if (!listed.ok) throw new Error(await said(listed));
+        const list = await listed.json().catch(() => ({}));
+        const boards: Board[] = Array.isArray(list.boards) ? list.boards : [];
+        if (!live) return;
+        if (boards.length) { router.replace(boardUrlFor(boards[boards.length - 1].id, query)); return; }
+        const created = await fetch("/api/rig/boards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: projectFromUrl, name: "Board" }) });
+        if (!created.ok) throw new Error(await said(created));
+        const made = await created.json().catch(() => ({}));
+        if (!made.board?.id) throw new Error("The board was not made.");
+        if (live) router.replace(boardUrlFor(made.board.id, query));
+      } catch (e) {
+        if (live) setOpenError((e as Error).message || "The board could not be opened.");
+      }
     })();
     return () => { live = false; };
-  }, [wantsNew, projectFromUrl, shotFromUrl, signedIn, router]);
+  }, [wantsNew, projectFromUrl, query, signedIn, router, openAttempt]);
 
-  const { data: loaded, status: loadStatus } = useApi<Loaded>(signedIn && !wantsNew ? `/api/rig/boards/${encodeURIComponent(boardId)}` : null, 0);
+  const { data: loaded, status: loadStatus, error: loadError, refresh: reloadBoard } = useApi<Loaded>(signedIn && !wantsNew ? `/api/rig/boards/${encodeURIComponent(boardId)}` : null, 0);
   const projectId = loaded?.board.projectId ?? null;
   const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 60_000);
   const { data: shotsData } = useApi<{ shots: ShotRow[] }>(projectId ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
@@ -125,15 +140,35 @@ function Canvas() {
   const latest = useRef<Board | null>(null);
   useEffect(() => { latest.current = shownBoard; }, [shownBoard]);
 
-  /* The board is the unit of edit: every change writes the whole graph, a beat later. */
+  /* The board is the unit of edit: every change writes the whole graph, a beat later — through a saver that
+     keeps the graph until the server has it and sends the revision it was edited from (lib/boardSaver.ts). */
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "saved" });
+  const saver = useRef<{ id: string; saver: BoardSaver } | null>(null);
   const commit = useCallback((next: Board) => {
     setBoard(next);
     latest.current = next;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      fetch(`/api/rig/boards/${next.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nodes: next.nodes, wires: next.wires }) }).catch(() => {});
+      if (saver.current?.id !== next.id) {
+        saver.current = {
+          id: next.id,
+          saver: createBoardSaver({
+            baseUpdatedAt: next.updatedAt,
+            onState: setSaveState,
+            put: (body) => fetch(`/api/rig/boards/${encodeURIComponent(next.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body }),
+          }),
+        };
+      }
+      saver.current.saver.save({ nodes: next.nodes, wires: next.wires });
     }, 400);
   }, []);
+  /* An unsaved graph is not left behind without a word. */
+  useEffect(() => {
+    if (saveState.kind !== "failed") return;
+    const hold = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", hold);
+    return () => window.removeEventListener("beforeunload", hold);
+  }, [saveState.kind]);
   const patchNode = useCallback((id: string, patch: Partial<BoardNode>, stale = false) => {
     const b = latest.current;
     if (!b) return;
@@ -267,11 +302,16 @@ function Canvas() {
     if (!shownBoard || !refFromUrl || seededRef.current === refFromUrl) return;
     seededRef.current = refFromUrl;
     if (shownBoard.nodes.some((n) => n.kind === "note" && n.output?.url === `/api/uploads/${encodeURIComponent(refFromUrl)}`)) return;
-    fetch("/api/uploads?limit=500").then((r) => r.json()).then((j) => {
-      const u = (j.uploads as { id: string; filename: string }[] | undefined)?.find((x) => x.id === refFromUrl);
-      addNode("note", undefined, undefined, { label: u?.filename ?? "Reference", text: `REF · ${u?.filename ?? refFromUrl}`, output: { url: `/api/uploads/${encodeURIComponent(refFromUrl)}`, kind: "image" } });
-    }).catch(() => {});
-  }, [shownBoard, refFromUrl, addNode]);
+    /* The one upload, by id (not a scan of the newest page), for its name and real kind. A reference that is
+       gone is said, not placed: it would only make every later save of this board fail. */
+    fetch(`/api/uploads/${encodeURIComponent(refFromUrl)}/metadata`).then(async (r) => {
+      if (r.status === 404) { toast("That reference isn't in the Library any more."); return; }
+      if (!r.ok) throw new Error(String(r.status));
+      const u = ((await r.json()) as { upload?: { filename?: string; kind?: string } }).upload;
+      const name = u?.filename || "Reference";
+      addNode("note", undefined, undefined, { label: name, text: `REF · ${name}`, output: { url: `/api/uploads/${encodeURIComponent(refFromUrl)}`, kind: u?.kind === "video" ? "video" : "image" } });
+    }).catch(() => toast("The reference didn't reach the board. Add it again from the Library."));
+  }, [shownBoard, refFromUrl, addNode, toast]);
 
   /* ── running a node: through the ordinary generate route; the output lives in the node ── */
   const runNode = async (n: BoardNode) => {
@@ -331,12 +371,13 @@ function Canvas() {
   const saveAsRecipe = async () => {
     const b = latest.current;
     if (!projectId || !b) return;
-    const gens = b.nodes.filter((n) => isGen(n.kind)).sort((p, q) => p.x - q.x || p.y - q.y);
+    /* Only what the board can run and price; an unrunnable node would enter the recipe at 0 cr. */
+    const gens = b.nodes.filter((n) => isRunnable(n.kind)).sort((p, q) => p.x - q.x || p.y - q.y);
     const numOf = new Map(gens.map((n, i) => [n.id, i + 1]));
     const seen = new Map<string, number>();
     const stages = gens.map((n, i) => ({
       /* A stage is named for what it makes — `Image`, `Video 2` — and carries its engine beside it, the way the run track reads. */
-      num: i + 1, name: (() => { const k = (seen.get(n.kind) ?? 0) + 1; seen.set(n.kind, k); return k > 1 ? `${KIND_WORD[n.kind]} ${k}` : KIND_WORD[n.kind]; })(), kind: n.kind === "compare" ? "assemble" : "render",
+      num: i + 1, name: (() => { const k = (seen.get(n.kind) ?? 0) + 1; seen.set(n.kind, k); return k > 1 ? `${KIND_WORD[n.kind]} ${k}` : KIND_WORD[n.kind]; })(), kind: "render",
       engine: engineOf(n), units: Number(n.settings.count ?? 1), credits: priceOf(n),
       inputs: b.wires.filter((w) => w.to.nodeId === n.id && numOf.has(w.from.nodeId)).map((w) => numOf.get(w.from.nodeId)!),
     }));
@@ -361,7 +402,11 @@ function Canvas() {
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open the Rig.</div>;
   if (!wantsNew && loadStatus === 404) return <div className="p-[24px] text-[13px] text-ink-body">No such board. Open a project&rsquo;s Rig from its Shots grid.</div>;
-  if (wantsNew || !shownBoard || !prods) return <PageLoader what="Opening · Canvas" />;
+  if (wantsNew && !projectFromUrl) return <Stuck line="A board belongs to a project. Open a project’s Rig from its Shots grid." />;
+  if (wantsNew && openError) return <Stuck line={`Couldn’t open the board. ${openError}`} onRetry={() => { setOpenError(null); setOpenAttempt((n) => n + 1); }} />;
+  if (!wantsNew && !loaded && loadError) return <Stuck line={`Couldn’t open the board. ${loadError}`} onRetry={reloadBoard} />;
+  /* The productions only name the chip, so the board does not wait on them. */
+  if (wantsNew || !shownBoard) return <PageLoader what="Opening · Canvas" />;
   const b = shownBoard;
 
   const sel = b.nodes.find((n) => n.id === selected) ?? null;
@@ -377,7 +422,7 @@ function Canvas() {
     ...((elements?.elements ?? []).length ? [{ kind: "divider" } as MenuItem] : []),
     ...(shotsData?.shots ?? []).slice(0, 8).map((s): MenuItem => ({ kind: "item", label: `${s.code} · ${s.description || s.title || "shot"}`.slice(0, 40), keys: "SHOT", onSelect: () => { addShot(s); } })),
     ...((shotsData?.shots ?? []).length ? [{ kind: "divider" } as MenuItem] : []),
-    ...KINDS.filter((k) => k !== "asset" && k !== "shot").map((k): MenuItem => ({ kind: "item", label: KIND_WORD[k], keys: KIND_TAG[k], onSelect: () => { addNode(k); } })),
+    ...ADDABLE_KINDS.filter((k) => k !== "asset" && k !== "shot").map((k): MenuItem => ({ kind: "item", label: KIND_WORD[k], keys: KIND_TAG[k], onSelect: () => { addNode(k); } })),
   ];
 
   if (phone) {
@@ -389,6 +434,7 @@ function Canvas() {
           chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">·</span> {b.name}</>}
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
+        <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} />
         <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
           slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
           onRebind={(assetNodeId, portId, versionId, version) => {
@@ -422,6 +468,7 @@ function Canvas() {
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={() => navigator.clipboard?.writeText(location.href).then(() => toast("Link copied"))}>Share</Button>
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={saveAsRecipe}>Save as recipe</Button>
         </>} />
+      <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px]">
         <RigStrip />
         <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
@@ -442,7 +489,7 @@ function Canvas() {
               <span className="text-[16px] leading-none">+</span>Add node<span className="ui-mono ui-mono-cost text-on-primary-cost">⌘K</span>
             </button>
             <span className="flex h-[36px] items-center whitespace-nowrap rounded-pill border border-[rgba(245,246,248,.12)] bg-card px-[12px] text-[12.5px] leading-none text-ink-body max-md:hidden">
-              {KINDS.map((k) => KIND_WORD[k]).join(" · ")}
+              {ADDABLE_KINDS.map((k) => KIND_WORD[k]).join(" · ")}
             </span>
           </div>
           <div className="absolute bottom-[16px] left-1/2 z-[4] flex -translate-x-1/2 items-center gap-[2px] rounded-pill border border-[rgba(245,246,248,.12)] bg-card p-[4px]" role="toolbar" aria-label="Tools" onPointerDown={(e) => e.stopPropagation()}>
@@ -455,7 +502,9 @@ function Canvas() {
             <span className="mx-[6px] h-[18px] w-px bg-border-mid" />
             <button type="button" onClick={runUnrun} disabled={!unrun.length} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · {fmt(unrunCost)}</button>
           </div>
-          {addMenu && <Menu x={addMenu.x} y={addMenu.y} title="Add node" items={addItems} onClose={() => setAddMenu(null)} />}
+          {/* The menu sits on the surface, whose pointerdown clears it: without this a
+              press on an item closed the menu before its click, and nothing was added. */}
+          {addMenu && <div className="contents" onPointerDown={(e) => e.stopPropagation()}><Menu x={addMenu.x} y={addMenu.y} title="Add node" items={addItems} onClose={() => setAddMenu(null)} /></div>}
           <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
         </section>
         <Inspector node={sel} board={b} price={sel ? priceOf(sel) : 0} fmt={fmt} engines={engines} engineOf={engineOf} shots={shotsData?.shots ?? []} production={production} projectId={projectId}
@@ -589,6 +638,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
   }
   /* image · video · edit · upscale · audio · voice · compare */
   const done = Boolean(n.output?.genId);
+  const runnable = isRunnable(n.kind);
   const dotTop = outputDotTop(n);
   const secs = Number(n.settings.seconds ?? 5);
   return (
@@ -651,10 +701,10 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
           ) : <span className="ui-mono !text-[10px] !leading-[1.5] !tracking-[.1em] text-ink-muted">{stale ? "Stale · upstream changed" : n.kind === "video" && inputOf("image") ? "Not run · same frame other model" : "Not run"}</span>}
         </div>
       )}
-      <button type="button" onClick={(e) => { e.stopPropagation(); onRun(); }} onPointerDown={stop} disabled={running}
+      <button type="button" onClick={(e) => { e.stopPropagation(); onRun(); }} onPointerDown={stop} disabled={running || !runnable}
         className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[40px] w-[calc(100%-20px)] items-center justify-between rounded-[9px] border border-[rgba(245,246,248,.16)] ${n.kind === "image" ? "px-[12px] text-[13px]" : "px-[10px] text-[12.5px]"} font-medium leading-none text-ink`}>
-        <span className="truncate">{done ? (n.output?.filedTo ? `Filed · ${board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot"} v${n.output.filedTo.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
-        <Mono cost className="whitespace-nowrap">{fmt(done ? n.credits : price)}</Mono>
+        <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (n.output?.filedTo ? `Filed · ${board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot"} v${n.output.filedTo.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
+        {runnable && <Mono cost className="whitespace-nowrap">{fmt(done ? n.credits : price)}</Mono>}
       </button>
       <Dot style={{ right: -5, top: dotTop }} dashed={!done} onDown={onStartWire(n.id, "out")} title="Output" />
     </article>
@@ -741,11 +791,10 @@ function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, produ
             <span className="text-[13.5px] leading-[1.4] text-ink">{shot ? `${shot.code} v${n.output.filedTo?.version ?? ""} · draft${n.kind === "video" ? ` · 0:${String(Number(n.settings.seconds ?? 5)).padStart(2, "0")}` : ""} · ${fmt(n.credits)}. It shows on the Shots grid now; the director picks or approves it there.` : `${fmt(n.credits)} · unfiled. Wire a shot's spec in to file the next run.`}</span>
             <div className="flex gap-[6px]">
               <button type="button" onClick={() => production && projectId && router.push(`/productions/${production.id}/${projectId}/shots`)} className="flex min-h-[40px] flex-1 items-center justify-center rounded-[9px] border border-[rgba(245,246,248,.16)] text-[12.5px] font-medium leading-none text-ink">Open in Shots</button>
-              <button type="button" disabled className="flex min-h-[40px] flex-1 items-center justify-center rounded-[9px] border border-[rgba(245,246,248,.16)] text-[12.5px] font-medium leading-none text-ink disabled:opacity-60">Promote frame</button>
             </div>
           </div>
         )}
-        <span className="text-[13px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>{gen ? "Drag from the output port to add Upscale, Audio or a Compare node. Downstream nodes price themselves before they run." : "Drag from a dot on the right edge to a slot on another node to wire it."}</span>
+        <span className="text-[13px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>{gen ? "Wire the output into a video node’s image slot to start from this frame. Downstream nodes price themselves before they run." : "Drag from a dot on the right edge to a slot on another node to wire it."}</span>
         <button type="button" onClick={onRemove} className="self-start ui-mono text-ink-muted">Remove node ⌫</button>
       </div>
       {gen && (
@@ -755,5 +804,27 @@ function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, produ
         </div>
       )}
     </aside>
+  );
+}
+
+/* ── a board that could not be opened, or saved ─────────────────────── */
+function Stuck({ line, onRetry }: { line: string; onRetry?: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-start gap-[12px] p-[24px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>
+      <span>{line}</span>
+      {onRetry && <button type="button" onClick={onRetry} className="tap44 h-[44px] rounded-pill border border-border-mid px-[16px] text-[13px] font-medium leading-none text-ink">Retry</button>}
+    </div>
+  );
+}
+
+function SaveBanner({ state, onRetry }: { state: SaveState; onRetry: () => void }) {
+  if (state.kind !== "failed" && state.kind !== "conflict") return null;
+  return (
+    <div role="alert" className="flex flex-none flex-wrap items-center gap-x-[12px] gap-y-[6px] border-b border-border bg-card px-[16px] py-[6px] text-[13px] leading-[1.4] text-ink">
+      <span className="min-w-0 flex-1">{state.kind === "conflict" ? "Someone else changed this board. Your latest edits here are not saved." : `Not saved · ${state.message}`}</span>
+      {state.kind === "conflict"
+        ? <button type="button" onClick={() => window.location.reload()} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Reload the board</button>
+        : <button type="button" onClick={onRetry} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Retry</button>}
+    </div>
   );
 }

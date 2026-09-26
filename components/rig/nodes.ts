@@ -19,6 +19,16 @@ export const KIND_WORD: Record<NodeKind, string> = {
 export const KINDS: NodeKind[] = ["asset", "shot", "prompt", "image", "video", "edit", "upscale", "audio", "voice", "compare", "note"];
 export const GEN_KINDS: NodeKind[] = ["image", "video", "edit", "upscale", "audio", "voice", "compare"];
 export const isGen = (k: NodeKind): boolean => GEN_KINDS.includes(k);
+/**
+ * The generate kinds a board can actually run: image and video, through the
+ * ordinary generate route. Edit, upscale, audio, voice and compare have no
+ * runner and no price here, so they are not offered — a board that already
+ * holds one keeps it, shown as not runnable, and it is left out of recipes.
+ */
+export const RUNNABLE_KINDS: NodeKind[] = ["image", "video"];
+export const isRunnable = (k: NodeKind): boolean => RUNNABLE_KINDS.includes(k);
+/** What `+ Add node` offers. */
+export const ADDABLE_KINDS: NodeKind[] = KINDS.filter((k) => !isGen(k) || isRunnable(k));
 
 export const NODE_W: Record<NodeKind, number> = {
   asset: 200, shot: 250, prompt: 200, image: 250, video: 180, edit: 180, upscale: 180, audio: 180, voice: 180, compare: 250, note: 200,
