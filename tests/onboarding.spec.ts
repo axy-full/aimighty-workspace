@@ -19,7 +19,7 @@ test("a stranger with an invite reaches a first render inside five minutes", asy
 
   const t0 = Date.now();
   // The invitation the platform owner would have sent.
-  const platform = createClient({ url: "file:.data/ark.db" });
+  const platform = createClient({ url: "file:.data/ark.db", timeout: 10_000 });
   const code = randomBytes(18).toString("base64url");
   const email = `onboarding-${Date.now()}@example.test`;
   await platform.execute({

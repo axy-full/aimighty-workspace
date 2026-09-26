@@ -7,7 +7,7 @@ import {newProject,type Asset} from '../lib/workbench/studio';
 
 async function fixture(page:Page) {
   const account=await signInLocally(page.request);
-  const planDb=createClient({url:localPlatformDbUrl()});
+  const planDb=createClient({url:localPlatformDbUrl(),timeout:10_000});
   try{await planDb.execute({sql:"UPDATE workspaces SET plan_id='studio' WHERE id=?",args:[account.workspace.id]});}finally{planDb.close();}
   const me=await page.request.get('/api/me').then(response=>response.json());
   const scope=`particl-active-${account.workspace.id}-${me.id}`,headers={'X-Workbench-Scope':scope};
@@ -29,10 +29,10 @@ async function fixture(page:Page) {
     expect(response.ok(),await response.text()).toBe(true);return response.json();
   };
   const saved=await save(project),secondSaved=await save(second);
-  const platform=createClient({url:localPlatformDbUrl()});
+  const platform=createClient({url:localPlatformDbUrl(),timeout:10_000});
   let dbUrl:string;
   try{dbUrl=String((await platform.execute({sql:'SELECT db_url FROM workspaces WHERE id=?',args:[account.workspace.id]})).rows[0].db_url);}finally{platform.close();}
-  expect(dbUrl).toMatch(/^file:/);const tenant=createClient({url:dbUrl});
+  expect(dbUrl).toMatch(/^file:/);const tenant=createClient({url:dbUrl,timeout:10_000});
   const generation=`render_${randomUUID().replaceAll('-','')}`,otherGeneration=`render_${randomUUID().replaceAll('-','')}`;
   try {
     await mkdir('.data/generations',{recursive:true});await mkdir('.data/uploads',{recursive:true});
