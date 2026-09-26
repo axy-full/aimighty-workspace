@@ -1175,8 +1175,8 @@ test("real route guards reject stale scope, cross-origin, bearer tokens and nono
   expect(route.counts()).toEqual({ starts: 1, disconnects: 1 });
 });
 
-test("the sign-in callback returns to Suites › Workspace › Engines with its outcome, never the legacy settings page", async () => {
+test("the connection callback returns to Workspace › Engines in the Suites shell, with its outcome", async () => {
   const { oauth } = await modules();
-  expect(oauth.consumerCallbackLocation("connected")).toBe("https://particl.example/suites?view=workspace&tab=engines#higgsfield=connected");
-  expect(oauth.consumerCallbackLocation("authorization_denied")).toBe("https://particl.example/suites?view=workspace&tab=engines#higgsfield=authorization_denied");
+  expect(oauth.consumerCallbackLocation("connected")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=connected");
+  expect(oauth.consumerCallbackLocation("authorization_denied")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=authorization_denied");
 });

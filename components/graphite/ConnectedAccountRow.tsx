@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { consumerAuthorizeUrl, connectionOutcome } from "@/lib/shell/workspace-view";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 /**
@@ -7,7 +8,10 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * connects, reconnects and disconnects the account every connected surface
  * points at, and shows which of the owner's jobs hold the workspace's four
  * connected-account slots. Connecting spends nothing; a slot is set aside in
- * the ledger only (nothing is sent, deleted or resubmitted).
+ * the ledger only (nothing is sent, deleted or resubmitted). The sign-in
+ * callback returns here with `?higgsfield=<outcome>`; every read reports
+ * whether the grant is live (`onLinked`), so the developer-API row below
+ * follows a disconnect at once.
  */
 type CapacityJob = { id: string; draftId: string; projectName: string | null; workflow: string; status: string; createdAt: number; releasable: boolean };
 type Capacity = { limit: number; active: number; mine: CapacityJob[] };
@@ -18,56 +22,38 @@ const WORKFLOW: Record<string, string> = {
   "marketing-video": "Marketing video", generation: "Generate", genjutsu: "Transform", "marketing-template": "Ad template", "voice-tool": "Voice tool", shorts: "Shorts",
 };
 const STATUS: Record<string, string> = { dispatching: "sending", accepted: "running", uncertain: "unconfirmed" };
-const OUTCOME_PARAM = "higgsfield";
-/* The sign-in callback's outcome codes (lib/higgsfield-consumer/oauth.ts), each with its own advice. */
-const OUTCOME: Record<string, string> = {
-  connected: "Account connected.",
-  authorization_denied: "Sign-in was not approved. Nothing changed.",
-  invalid_state: "That sign-in expired or was already used. Connect again.",
-  session_changed: "Your session or workspace changed. Sign in to the same Particl workspace and connect again.",
-  configuration: "The account connection is not configured for this deployment.",
-};
 const since = (ms: number) => {
   const minutes = Math.max(1, Math.round((Date.now() - ms) / 60_000));
   return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
 };
 
-export function ConnectedAccountRow({ owner }: { owner: boolean }) {
+export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLinked?: (live: boolean) => void }) {
   const scoped = useScopedFetch();
   const [state, setState] = useState<Connection | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"connect" | "disconnect" | null>(null);
+  /* The callback's outcome, read as the tab opens. The shell's first URL write
+     (lib/workspace/state.tsx › writeUrl) keeps only its own params, so a reload
+     does not repeat it. */
+  const [outcome] = useState(() => {
+    try { return connectionOutcome(new URLSearchParams(window.location.search).get("higgsfield")); } catch { return null; }
+  });
   const read = useCallback(async () => {
     try {
       const response = await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" });
       const json = await response.json().catch(() => null) as (Connection & { error?: string }) | null;
       if (!response.ok || !json) throw new Error(json?.error ?? "The connection could not be read.");
       setState(json); setProblem(null);
-    } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be read."); }
-  }, [scoped]);
+      onLinked?.(json.connected === true && json.requiresReconnect !== true);
+    } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be read."); onLinked?.(false); }
+  }, [scoped, onLinked]);
   useEffect(() => {
     if (!owner) return;
     const t = setTimeout(() => void read(), 0);
     return () => clearTimeout(t);
   }, [read, owner]);
-  /* The sign-in callback lands here with its outcome in the fragment (the
-     shell keeps the fragment when it rewrites the query). It is read and
-     removed in the same tick, so a remounted effect cannot lose it. */
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const fragment = new URLSearchParams(window.location.hash.slice(1));
-      const outcome = fragment.get(OUTCOME_PARAM);
-      if (!outcome) return;
-      fragment.delete(OUTCOME_PARAM);
-      const rest = fragment.toString();
-      window.history.replaceState(null, "", window.location.pathname + window.location.search + (rest ? `#${rest}` : ""));
-      setNote(OUTCOME[outcome] ?? "The account could not complete the connection. Try again.");
-    }, 0);
-    return () => clearTimeout(t);
-  }, []);
-
   const mine = state?.capacity?.mine ?? [];
   const running = mine.length;
   const act = async (kind: "connect" | "disconnect") => {
@@ -80,9 +66,9 @@ export function ConnectedAccountRow({ owner }: { owner: boolean }) {
       const json = await response.json().catch(() => null) as { url?: string; error?: string } | null;
       if (!response.ok) throw new Error(json?.error ?? "The connection could not be changed.");
       if (kind === "connect") {
-        const url = new URL(String(json?.url));
-        if (url.origin !== "https://clerk.higgsfield.ai" || url.pathname !== "/oauth/authorize" || url.username || url.password) throw new Error("The account returned an unexpected sign-in address.");
-        window.location.assign(url.href);
+        const url = consumerAuthorizeUrl(json?.url);
+        if (!url) throw new Error("The account returned a sign-in address this page will not open.");
+        window.location.assign(url);
         return;
       }
       setNote("Account disconnected."); await read();
@@ -138,6 +124,7 @@ export function ConnectedAccountRow({ owner }: { owner: boolean }) {
         </div>
       ) : null}
       {!owner ? <p className="cw-foot" style={{ padding: 0 }}>The workspace owner connects the account.</p> : null}
+      {outcome ? <p className={outcome.ok ? "cw-notice" : "gx-gen-error"} role={outcome.ok ? "status" : "alert"} data-testid="connected-account-outcome">{outcome.line}</p> : null}
       {problem ? <p className="gx-gen-error" role="alert">{problem}</p> : null}
       {note ? <p className="cw-notice" role="status" data-testid="connected-account-note">{note}</p> : null}
     </div>

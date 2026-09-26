@@ -47,11 +47,11 @@ async function open(page: Page, path: string, connection: Record<string, unknown
 
 test("Engines connects the account, shows the owner's slot holders, sets a stuck one aside and warns before a reconnect", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, posts, connects } = await open(page, "/suites?view=workspace&tab=engines#higgsfield=connected");
+  const { errors, posts, connects } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=connected");
   const card = page.getByTestId("engine-connected-account");
   await expect(card).toContainText("Connected");
   /* The sign-in callback's outcome is read once, then removed from the address. */
-  await expect(page.getByTestId("connected-account-note")).toHaveText("Account connected.");
+  await expect(page.getByTestId("connected-account-outcome")).toHaveText("Account connected.");
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
   expect(await page.evaluate(() => new URLSearchParams(location.search).get("tab"))).toBe("engines");
 
@@ -91,8 +91,8 @@ test("Engines connects the account, shows the owner's slot holders, sets a stuck
 
 test("when Particl cannot tell which account started the running jobs, the warning says they will not be collected; a refused sign-in says so", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  const { errors, connects } = await open(page, "/suites?view=workspace&tab=engines#higgsfield=authorization_denied", { subjectKnown: false });
-  await expect(page.getByTestId("connected-account-note")).toHaveText("Sign-in was not approved. Nothing changed.");
+  const { errors, connects } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=authorization_denied", { subjectKnown: false });
+  await expect(page.getByTestId("connected-account-outcome")).toHaveText("Authorization was not approved.");
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
   await page.getByTestId("connected-account-disconnect").click();
   await expect(page.getByTestId("connected-account-warning")).toHaveText("2 of your jobs are still running and can't be collected after a disconnect.");
