@@ -19,13 +19,13 @@ async function fixture(page: Page, options: {realSoul?:boolean} = {}) {
   const response = await page.request.post('/api/uploads', { headers, multipart: { file: { name:'Mira original.webp',mimeType:'image/webp',buffer:image } } });
   expect(response.ok(), await response.text()).toBe(true);
   const uploaded = await response.json();
-  const platform = createClient({ url:localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   if(options.realSoul) await platform.execute({sql:'INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_at) VALUES(?,?,?,?,?,?)',args:[`soul-fixture-${randomUUID()}`,me.workspace.id,1000,'Isolated mock Soul UI fixture','manual',Date.now()]});
   const row = await platform.execute({ sql:'SELECT db_url FROM workspaces WHERE id=?',args:[me.workspace.id] });
   platform.close();
   const tenantUrl = String(row.rows[0].db_url);
   expect(tenantUrl).toMatch(/^file:/);
-  const tenant = createClient({ url:tenantUrl });
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   const generationId = `gen_soul_fixture_${randomUUID()}`;
   await tenant.execute({ sql:"INSERT INTO generations(id,model,prompt,params,status,stored_url,kind,title,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",args:[generationId,'gemini-3-pro-image','Mira generated portrait','{}','succeeded',`/api/media/${generationId}`,'image','Mira generated still',me.id,Date.now(),Date.now()] });
   tenant.close();

@@ -87,14 +87,14 @@ async function fixture(page: Page) {
   expect(typeof shotId).toBe("string");
   // These are completed historical rows, not provider submissions. The fixture
   // database is explicitly local, newly provisioned, and belongs to this login.
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl = "";
   try {
     const row = await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id = ?", args: [account.workspace.id] });
     tenantUrl = String(row.rows[0].db_url);
   } finally { platform.close(); }
   expect(tenantUrl).toMatch(/^file:/);
-  const tenant = createClient({ url: tenantUrl });
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   const generationImage = `gen_library_image_${randomUUID().replaceAll("-", "")}`;
   const generationVideo = `gen_library_video_${randomUUID().replaceAll("-", "")}`;
   try {

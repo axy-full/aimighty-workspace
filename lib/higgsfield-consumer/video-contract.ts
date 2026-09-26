@@ -479,6 +479,31 @@ export function consumerVideoOriginalResult(
   } catch { return null; }
 }
 
+const VIDEO_FAILED = new Set(["failed", "canceled", "cancelled", "nsfw", "ip_detected"]);
+/** The status envelope's own job: exactly the acknowledged marketing video,
+ * under the same identity rules as its original result, or null. */
+function ownVideoEnvelope(value: unknown, expectedJobId: string): Record<string, unknown> | null {
+  if (!record(value) || !record(value.raw_data)) return null;
+  const expected = expectedJobId.toLowerCase();
+  if (["job_id", "id", "jobs", "job_ids", "results"].some((key) => key in value) &&
+      consumerVideoAcknowledgement(value) !== expected) return null;
+  const raw = value.raw_data;
+  if (!uuid(raw.id) || consumerVideoAcknowledgement(raw) !== expected || raw.job_set_type !== "marketing_studio_video") return null;
+  return raw;
+}
+/**
+ * The terminal failure the account reports for exactly our marketing video
+ * (failed, canceled, nsfw, ip_detected), with no result, or null. The outer
+ * status, when present, must agree. Settles the job like every other workflow.
+ */
+export function consumerVideoFailureResult(value: unknown, expectedJobId: string): string | null {
+  const raw = ownVideoEnvelope(value, expectedJobId);
+  if (!raw || typeof raw.status !== "string" || !VIDEO_FAILED.has(raw.status)) return null;
+  if (record(value) && "status" in value && value.status !== raw.status) return null;
+  if (raw.result_url != null && raw.result_url !== "") return null;
+  return raw.status;
+}
+
 export const ENHANCED_PROMPT_MAX = 8000;
 /**
  * The prompt the account says it actually rendered (`params.enhanced_prompt`),

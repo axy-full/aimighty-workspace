@@ -12,6 +12,7 @@ import { ConsumerDiscoveryError } from '../../lib/higgsfield-consumer/mcp';
 import { ConsumerJobError } from '../../lib/higgsfield-consumer/jobs';
 import * as contract from '../../lib/higgsfield-consumer/video-contract';
 import { ConsumerOriginalError } from '../../lib/higgsfield-consumer/video-original';
+import * as records from '../../lib/higgsfield-consumer/marketing-records';
 
 const key = '11111111-1111-4111-8111-111111111111';
 const wallet = '22222222-2222-4222-8222-222222222222';
@@ -57,6 +58,8 @@ async function fixture() {
     '@/lib/higgsfield-consumer/jobs': { ConsumerJobError },
     '@/lib/higgsfield-consumer/video-contract': contract,
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
+    /* The standalone guard runs inside the quote service (tests/unit/higgsfieldConsumerVideoService.spec.ts); the route maps its refusal. */
+    '@/lib/higgsfield-consumer/marketing-records': { ConsumerSetupError: records.ConsumerSetupError },
     '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
@@ -213,4 +216,13 @@ test('original collection errors remain recoverable and expose only fixed safe c
     expect(await response.json()).toEqual({ code: `original_${code}`, error: error.message });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   }
+});
+
+test('the quote service\'s standalone refusal answers 409 setup_not_particl with its own safe words', async () => {
+  const f = await fixture();
+  f.fail(Object.assign(new records.ConsumerSetupError(), { cause: new Error('PRIVATE_ACCOUNT_DETAIL') }));
+  const response = await f.request('POST', { ...quote, input: { ...input, mode: 'ugc', productIds: ['acct_p1'] } }, { origin: 'https://particl.example' });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ code: 'setup_not_particl', error: new records.ConsumerSetupError().message });
+  expect(f.calls.map((call) => call.name)).toEqual(['quote']);
 });

@@ -7,7 +7,7 @@ import { makeEDL, safeName, type Project } from "@/lib/workbench/studio";
 import { makeFCPXML, makeXMEML, retimeProject } from "@/lib/workbench/editorial-xml";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import "./studio-css";
-import { DraftGate } from "./DraftStatus";
+import { DraftGate, DraftStatus } from "./DraftStatus";
 
 /**
  * Deliver: Studio's editorial package and EDL (lib/workbench/studio-export)
@@ -33,6 +33,8 @@ export default function DeliverTool({ tool, projectId, scope, onProject }: { too
     );
   return (
     <div className="pxw-tool pxw-tool--package" data-tool-body="package">
+      {/* A retime or a new aspect is a draft edit: its save state (and a refused save) shows here. */}
+      <DraftStatus editor={editor} />
       <div className="pxw-package">
         <div className="pxw-package-facts">
           <div><span>Sequence events</span><strong>{p.shots.length.toLocaleString("en-US")}</strong></div>

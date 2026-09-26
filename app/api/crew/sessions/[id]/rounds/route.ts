@@ -2,9 +2,9 @@ import { withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { NO_STORE, crewCaller, crewFailure, crewProject } from "@/lib/crew/http";
 import { ROUNDS_MAX } from "@/lib/crew/room";
-import { quoteRound, runRound, type RoundEvent } from "@/lib/crew/round";
+import { quoteRound, roomRate, runRound, type RoundEvent } from "@/lib/crew/round";
 import { CrewError, claimRound, listMembers, listMessages, readSession, releaseRound } from "@/lib/crew/store";
-import { xaiConnected, xaiRate } from "@/lib/crew/xai";
+import { xaiConnected } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +36,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     const project = await crewProject(caller.userId, session.projectId);
     const active = (await listMembers(caller.userId, session.projectId)).filter((m) => m.active);
     if (!active.length) throw new CrewError("Seat at least one member.", 400);
-    const rate = await xaiRate(session.model);
-    if (!rate) throw new CrewError("This engine cannot be priced right now, so the room will not run.", 503);
+    const rate = await roomRate(session.model);
     const transcriptChars = (await listMessages(session.id)).reduce((n, m) => n + m.text.length + m.name.length + 8, 0);
     const quote = quoteRound({ session, project, active, transcriptChars, rate });
     const credits = creditsApply(currentTenant()?.workspace);

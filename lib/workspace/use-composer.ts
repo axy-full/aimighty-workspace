@@ -44,6 +44,7 @@ import {
   type EngineRow,
 } from "./composer";
 import { formatCredits } from "./cost";
+import { releaseConnectedJob, watchConnectedJob } from "../shell/connected-collector";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration } from "./generate-submit";
 import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig";
@@ -143,7 +144,13 @@ const followers = new Map<string, Set<(job: ConnectedJob) => void>>();
 function followConnected(scope: string, job: ConnectedJob) {
   const following = readFollowing(scope);
   writeFollowing(scope, { run: following.run, connected: [...following.connected.filter((item) => item.id !== job.id), job].filter(followed) });
-  if (!followed(job)) polls.get(scope)?.jobs.delete(job.id);
+  const polled = polls.get(scope)?.jobs.get(job.id);
+  if (polled) polled.status = job.status;
+  if (!followed(job) && polled) {
+    polls.get(scope)!.jobs.delete(job.id);
+    /* Done here: the shell's collector (lib/shell/connected-collector.ts) forgets it, or takes up one still in flight. */
+    releaseConnectedJob(job.draftId, job);
+  }
   followers.get(scope)?.forEach((listener) => listener(job));
 }
 
@@ -151,17 +158,24 @@ function followConnected(scope: string, job: ConnectedJob) {
  * One poll per connected take per scope, however many composers follow it
  * (Gen's own and the overlay are open at once): each status goes to every
  * composer of the scope. A take stops being polled once it is done, or once
- * the account says it never got it.
+ * the account says it never got it. While a composer polls a take, the
+ * shell's collector leaves it alone (watched); when the last composer lets
+ * go, the collector follows what is still in flight — never both at once.
  */
-const polls = new Map<string, { jobs: Map<string, string>; users: number; timer: ReturnType<typeof setInterval> | null }>();
+type Polled = { draftId: string; status: ConnectedJob["status"] };
+const polls = new Map<string, { jobs: Map<string, Polled>; users: number; timer: ReturnType<typeof setInterval> | null }>();
 function pollConnected(scope: string, jobs: [draftId: string, id: string][]): () => void {
-  const entry = polls.get(scope) ?? { jobs: new Map<string, string>(), users: 0, timer: null };
+  const entry = polls.get(scope) ?? { jobs: new Map<string, Polled>(), users: 0, timer: null };
   polls.set(scope, entry);
-  for (const [draftId, id] of jobs) entry.jobs.set(id, draftId);
+  for (const [draftId, id] of jobs) {
+    if (entry.jobs.has(id)) continue;
+    entry.jobs.set(id, { draftId, status: "uncertain" });
+    watchConnectedJob(id);
+  }
   entry.users++;
   if (!entry.timer)
     entry.timer = setInterval(() => {
-      for (const [id, draftId] of [...entry.jobs]) {
+      for (const [id, { draftId }] of [...entry.jobs]) {
         void studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
@@ -176,6 +190,8 @@ function pollConnected(scope: string, jobs: [draftId: string, id: string][]): ()
     if (entry.users > 0) return;
     if (entry.timer) clearInterval(entry.timer);
     entry.timer = null;
+    /* No composer reads them now: the shell's collector follows each one still in flight. */
+    for (const [id, { draftId, status }] of entry.jobs) releaseConnectedJob(draftId, { id, status });
     entry.jobs.clear();
   };
 }
@@ -270,6 +286,8 @@ export type ComposerHost = {
   /** One line about a project the composer had to create. */
   projectNotice: string | null;
   generate: () => void;
+  /** Read the engine list again after a failed read (Gen's model sheet › Try again). */
+  retryEngines: () => void;
   scope: string;
 };
 
@@ -298,6 +316,7 @@ export function useComposer(options: {
     (type) => (type ? { ...INITIAL_COMPOSER, type } : INITIAL_COMPOSER),
   );
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
+  const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
   const [capability, setCapability] = useState<ConnectedCapability | null>(null);
   const [catalogue, setCatalogue] = useState<{ rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
@@ -335,7 +354,8 @@ export function useComposer(options: {
         setEngines({ rows: [], loading: false, error: neutralCopy(error instanceof Error ? error.message : "The available models could not be read.", "The available models could not be read.") });
       });
     return () => controller.abort();
-  }, [open, scope]);
+  }, [open, scope, enginesRead]);
+  const retryEngines = useCallback(() => { setEngines({ rows: [], error: null, loading: true }); setEnginesRead((n) => n + 1); }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -436,6 +456,10 @@ export function useComposer(options: {
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
   const connectedKey = connectedInput ? JSON.stringify(connectedInput) : "";
+  /* A connected quote is a call to the account. One is asked per project and exact body and held
+     until it expires, so coming back to the same body (the model sheet's catalogue switched away
+     and back) shows the figure already given instead of asking again. Generate re-quotes anyway. */
+  const heldQuotes = useRef(new Map<string, { credits: number; expiresAt: number }>());
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
@@ -445,12 +469,16 @@ export function useComposer(options: {
       const ask = async (): Promise<ComposerQuote> => {
         if (state.billing === "connected") {
           if (!connectedInput || !target) throw new Error("Open or create a project before pricing this generation.");
+          const heldKey = `${target.id}\n${connectedKey}`;
+          const held = heldQuotes.current.get(heldKey);
+          if (held && held.expiresAt > Date.now()) return { key: quoteKey, credits: held.credits, state: "ready", reason: null };
           const result = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
             method: "POST", signal: controller.signal,
             headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
             body: JSON.stringify(connectedQuoteRequest(target.id, connectedInput)),
           });
           const job = parseConnectedJob(result.job, target.id);
+          heldQuotes.current.set(heldKey, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt });
           setWalletName(job.workspaceName);
           return { key: quoteKey, credits: job.quoteCredits, state: "ready", reason: null };
         }
@@ -496,8 +524,8 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -590,9 +618,11 @@ export function useComposer(options: {
             /* Re-quote on click; a moved price is shown and nothing is sent. */
             const quoted = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
               method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-              body: JSON.stringify(connectedQuoteRequest(project.id, input)),
+              body: JSON.stringify(connectedQuoteRequest(project.id, input, { composer: "gen" })),
             });
             job = parseConnectedJob(quoted.job, project.id);
+            /* The figure this click was given is the one held for this body from now on. */
+            heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt });
             if (shown === null || job.quoteCredits !== shown) {
               setQuote({ key: now.quoteKey, credits: job.quoteCredits, state: "ready", reason: null });
               dispatch({ type: "notice", value: `The price is now ${job.quoteCredits.toLocaleString("en-US")} connected cr. Press Generate again to approve it.` });
@@ -838,7 +868,7 @@ export function useComposer(options: {
     buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, capability, project: target, projectNotice, generate, scope,
+    audio, capability, project: target, projectNotice, generate, retryEngines, scope,
   };
 }
 

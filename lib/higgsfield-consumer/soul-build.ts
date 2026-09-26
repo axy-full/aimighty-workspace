@@ -69,16 +69,26 @@ export function soulBuildBlock(state: { name: string; stills: number; plan: Conn
   return null;
 }
 
-/** The account's reply to a create, parsed the way the list is: the new Soul ID and its status when the reply names them. */
-export function parseCharacterCreate(value: unknown): ConnectedCharacter | null {
+/**
+ * The account's reply to a create, parsed the way the list is: the new Soul ID
+ * and its status when the reply names them. A reply that is a LIST is not read
+ * as the new identity — its first entry may be one the owner trained on the
+ * account — unless it holds exactly one entry carrying the requested name.
+ */
+export function parseCharacterCreate(value: unknown, expectedName?: string): ConnectedCharacter | null {
   const candidates: unknown[] = [];
   if (record(value)) { candidates.push(value); for (const key of ["character", "soul", "data", "result"]) if (record(value[key])) candidates.push(value[key]); }
-  candidates.push(...listIn(value));
   for (const entry of candidates) { const [parsed] = parseCharacters([entry], 1); if (parsed) return parsed; }
-  return null;
+  const entries = listIn(value), wanted = expectedName === undefined ? "" : text(expectedName);
+  const [only] = entries.length === 1 ? parseCharacters(entries, 1) : [];
+  return only && wanted && only.name === wanted ? only : null;
 }
 
 export type SoulBuildOutcome =
   | { state: "training"; character: ConnectedCharacter }
   | { state: "accepted"; character: null }
-  | { state: "refused"; reason: string };
+  | { state: "refused"; reason: string }
+  /** Sent, but the account's answer was lost: it may be training (and billed). Never sent again. */
+  | { state: "uncertain" };
+/** A build Particl sent that the account has not named yet (client-safe mirror of build-records). */
+export type PendingSoulBuild = { id: string; name: string; type: string; state: "sending" | "uncertain" | "pending"; createdAt: number; stale: boolean };

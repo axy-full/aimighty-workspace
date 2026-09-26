@@ -1,0 +1,20 @@
+{
+ "n": 15,
+ "title": "Typed errors: each failure gets one clear next step",
+ "area": "Errors / trust",
+ "gap": "neutralCopy (lib/workspace/rig.ts:194) replaces any message that names a vendor with 'The engine could not take this request. Nothing was charged.' That hides the real cause and claims no charge even when the outcome is unknown. Consumer failures are stored as failureCode 'provider_failed' (generation-service.ts:292), even though consumerGenerationFailureResult returns nsfw / ip_detected / canceled. The UI shows only 'Failed \u00b7 not billed' (use-composer.ts:111, use-connected-job.ts:62). lib/engines/higgsfield.ts:64-70 cancels the error body and throws 'returned N', losing the FastAPI detail[] and concurrency messages.",
+ "target": "One lib/errors.ts map from code to {copy, action}. Out of credits \u2192 'Request credits'. Capacity ('Four connected-account jobs\u2026' or the provider's concurrency cap) \u2192 'N jobs are running \u2014 this waits for a free slot'. nsfw / ip_detected \u2192 'Blocked by the content filter \u00b7 not billed \u00b7 change the prompt or reference'. Auth or reconnect \u2192 'Reconnect in Workspace \u203a Engines'. Validation \u2192 the field message built from detail[] loc/msg. Store the real failure code. Read a bounded error body in call(). Say 'not billed' only when the ledger confirms it. The model-naming rule is retired, so vendor names may appear in these messages.",
+ "files": [
+  "lib/workspace/rig.ts",
+  "lib/errors.ts",
+  "lib/higgsfield-consumer/generation-service.ts",
+  "lib/higgsfield-consumer/generation-contract.ts",
+  "lib/engines/higgsfield.ts",
+  "lib/higgsfield.ts",
+  "lib/workspace/use-composer.ts",
+  "lib/shell/use-connected-job.ts"
+ ],
+ "priority": "P1",
+ "effort": "medium",
+ "respects_rules": "Extends existing error classes without changing the routes. Refund and charge claims follow the ledger."
+}

@@ -328,9 +328,45 @@ async function rotateCurrentSession(
   });
 }
 
+/** Stage a new authenticator secret for this session to confirm within ten
+ * minutes. The live secret, if any, is untouched until confirmation. */
+async function stageAuthenticator(
+  tx: Transaction,
+  accountId: string,
+  session: string,
+  at: number,
+) {
+  const secret = newTotpSecret(),
+    encrypted = seal(
+      JSON.stringify({
+        purpose: "account-mfa",
+        accountId,
+        secret,
+      }),
+    );
+  await tx.execute({
+    sql: `INSERT INTO account_security(account_id,pending_enc,pending_session_hash,pending_expires_at) VALUES(?,?,?,?)
+        ON CONFLICT(account_id) DO UPDATE SET pending_enc=excluded.pending_enc,pending_session_hash=excluded.pending_session_hash,pending_expires_at=excluded.pending_expires_at`,
+    args: [accountId, encrypted, tokenHash(session), at + 10 * 60_000],
+  });
+  const account = (
+    await tx.execute({
+      sql: "SELECT email FROM accounts WHERE id=?",
+      args: [accountId],
+    })
+  ).rows[0];
+  return {
+    secret,
+    uri: `otpauth://totp/${encodeURIComponent(`Particl:${String(account.email)}`)}?secret=${secret}&issuer=Particl&algorithm=SHA1&digits=6&period=30`,
+    expiresAt: at + 10 * 60_000,
+  };
+}
+
 export type SecurityChange =
   | "begin"
   | "enable"
+  | "replace_begin"
+  | "replace"
   | "disable"
   | "rotate_codes"
   | "activate_codes"
@@ -361,36 +397,8 @@ export async function changeAccountSecurity(input: {
     if (input.action === "begin") {
       if (enabled(state))
         throw new AccountError("Two-step sign-in is already enabled.", 409);
-      const secret = newTotpSecret(),
-        encrypted = seal(
-          JSON.stringify({
-            purpose: "account-mfa",
-            accountId: input.accountId,
-            secret,
-          }),
-        );
-      await tx.execute({
-        sql: `INSERT INTO account_security(account_id,pending_enc,pending_session_hash,pending_expires_at) VALUES(?,?,?,?)
-        ON CONFLICT(account_id) DO UPDATE SET pending_enc=excluded.pending_enc,pending_session_hash=excluded.pending_session_hash,pending_expires_at=excluded.pending_expires_at`,
-        args: [
-          input.accountId,
-          encrypted,
-          tokenHash(input.session),
-          at + 10 * 60_000,
-        ],
-      });
-      const account = (
-        await tx.execute({
-          sql: "SELECT email FROM accounts WHERE id=?",
-          args: [input.accountId],
-        })
-      ).rows[0];
       return {
-        setup: {
-          secret,
-          uri: `otpauth://totp/${encodeURIComponent(`Particl:${String(account.email)}`)}?secret=${secret}&issuer=Particl&algorithm=SHA1&digits=6&period=30`,
-          expiresAt: at + 10 * 60_000,
-        },
+        setup: await stageAuthenticator(tx, input.accountId, input.session, at),
       };
     }
     if (input.action === "enable") {
@@ -429,6 +437,49 @@ export async function changeAccountSecurity(input: {
       );
       await receipt(tx, input.accountId, "account.mfa_enabled", workspaceId);
       return { recoveryCodes, session };
+    }
+    if (input.action === "replace") {
+      /* The new device's code is the proof here; the old factor was spent to
+         stage it (replace_begin). The swap is one statement, so the account
+         is never without a live authenticator. */
+      if (
+        !enabled(state) ||
+        !state?.pending_enc ||
+        state.pending_session_hash !== tokenHash(input.session) ||
+        Number(state.pending_expires_at) <= at
+      )
+        throw new AccountError(
+          "Authenticator replacement expired or changed. Start again.",
+          409,
+        );
+      const counter = matchingTotpCounter(
+        secretFor(input.accountId, String(state.pending_enc)),
+        code,
+        at,
+        -1,
+      );
+      if (counter == null)
+        throw new AccountError(
+          "Enter the current six-digit code from your new authenticator.",
+          401,
+        );
+      await tx.execute({
+        sql: "UPDATE account_security SET secret_enc=pending_enc,last_counter=?,epoch=?,pending_enc=NULL,pending_session_hash=NULL,pending_expires_at=NULL WHERE account_id=? AND enabled_at IS NOT NULL",
+        args: [counter, Number(state.epoch) + 1, input.accountId],
+      });
+      const session = await rotateCurrentSession(
+        tx,
+        input.accountId,
+        input.session,
+        true,
+      );
+      // This browser's prepared recovery-code set follows its new session.
+      await tx.execute({
+        sql: "UPDATE account_recovery_batches SET session_hash=? WHERE account_id=? AND session_hash=? AND state='prepared'",
+        args: [tokenHash(session), input.accountId, tokenHash(input.session)],
+      });
+      await receipt(tx, input.accountId, "account.mfa_replaced", workspaceId);
+      return { ok: true, session };
     }
     if (input.action === "rotate_codes" || input.action === "activate_codes") {
       if (!enabled(state))
@@ -518,7 +569,9 @@ export async function changeAccountSecurity(input: {
       const factor = await consumeFactor(tx, input.accountId, code, state!);
       if (
         factor === "recovery" &&
-        (input.action === "revoke_others" || input.action === "revoke_session")
+        (input.action === "revoke_others" ||
+          input.action === "revoke_session" ||
+          input.action === "replace_begin")
       ) {
         const remaining = (
           await tx.execute({
@@ -530,7 +583,9 @@ export async function changeAccountSecurity(input: {
           // Roll back the factor use too. A lost rotated-cookie response must
           // not leave the account with neither a usable session nor a factor.
           throw new AccountError(
-            "Save and activate replacement recovery codes before using your last code to revoke sessions.",
+            input.action === "replace_begin"
+              ? "Save and activate replacement recovery codes before using your last code to replace your authenticator."
+              : "Save and activate replacement recovery codes before using your last code to revoke sessions.",
             409,
           );
       }
@@ -564,6 +619,14 @@ export async function changeAccountSecurity(input: {
       );
       await receipt(tx, input.accountId, "account.mfa_disabled", workspaceId);
       return { ok: true, session };
+    }
+    if (input.action === "replace_begin") {
+      // Reached only after a current factor was consumed above.
+      if (!enabled(state))
+        throw new AccountError("Set up two-step sign-in first.", 409);
+      return {
+        setup: await stageAuthenticator(tx, input.accountId, input.session, at),
+      };
     }
     if (input.action === "rotate_codes") {
       const recoveryCodes = Array.from({ length: 10 }, () =>

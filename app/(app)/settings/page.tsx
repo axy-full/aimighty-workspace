@@ -251,7 +251,7 @@ function SettingsContent() {
       `Delete “${name}”?`,
       "",
       name,
-      "The team will lose access and its media and database will be removed. Billing records are retained. Type the workspace name to confirm.",
+      "The team loses access at once. Its files, database and billing records are kept, not erased. Type the workspace name to confirm.",
     );
     if (typed == null) return;
     setBusy(true);
@@ -769,9 +769,8 @@ function SettingsContent() {
                           className="management-danger"
                         >
                           <p>
-                            The team loses access immediately. Media and
-                            workspace data are removed; billing records are
-                            retained.
+                            The team loses access immediately. Files, database
+                            and billing records are kept, not erased.
                           </p>
                           <button
                             className="management-button danger"

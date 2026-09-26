@@ -6,6 +6,9 @@ import {
   getConsumerJob,
   getConsumerJobByKey,
   listConsumerRecoveryJobs,
+  listConsumerRuns,
+  formatConsumerJobCursor,
+  parseConsumerJobCursor,
   readConsumerJobAfterAdmissions,
   claimConsumerDispatch,
   markConsumerAccepted,
@@ -16,6 +19,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -38,12 +42,13 @@ import {
   resolveConsumerGenjutsuSources,
   resolveConsumerMediaImport,
 } from "./genjutsu-sources";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import {
   consumerOriginalAvailability,
   type ConsumerOriginalAvailability,
 } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
+import type { GenjutsuVariant } from "../genjutsuTypes";
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 function presentGenjutsu(
   job: ConsumerJob,
@@ -83,7 +88,11 @@ function presentGenjutsu(
     originalAvailability: availability,
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
+    setAside: consumerJobSetAside(job, observedAt),
+    /* Why a failed run failed: a refused render is not billed; a result that could not be kept may have been. */
+    failureCode: job.failureCode,
     createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
   };
 }
 export async function consumerGenjutsuView(job: ConsumerJob) {
@@ -382,10 +391,23 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
       // authorize collection under a replacement connection.
       await connected(scope.userId, claim.job.connectionGeneration);
-      const original = await collectConsumerVideoOriginal(
-        claim.job,
-        terminal.url,
-      );
+      let original;
+      try {
+        original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+      } catch (error) {
+        // Refused the same way on every poll: settle once, receipt kept.
+        if (!uncollectableOriginal(error)) throw error;
+        const settled = await failConsumerPoll({
+          ...scope,
+          leaseToken: claim.leaseToken,
+          failureCode: "invalid_result",
+        });
+        return {
+          job: await consumerGenjutsuView(settled ?? (await ownedGenjutsu(scope))),
+          collection: { code: error.code, message: error.message },
+          pollAfterSeconds,
+        };
+      }
       const providerResult = { model: params.model };
       const completed = await completeConsumerJob({
         ...scope,
@@ -431,4 +453,37 @@ export async function consumerGenjutsuJobs(
   return jobs.map((job) =>
     presentGenjutsu(job, availability.get(job.id)!, observedAt),
   );
+}
+/** How many runs one History page carries. */
+export const GENJUTSU_RUN_PAGE = 24;
+/**
+ * This project's Genjutsu runs, newest first, a page at a time — what Viral's
+ * Recent and History show. Estimates (status `quoted`) are left out; they
+ * stay in the ledger, and `consumerGenjutsuJobs` still lists them for the
+ * surfaces that price from saved quotes. Every job still awaiting
+ * reconciliation rides on the first page. A variant narrows the list to one
+ * page's runs (Recent beside Motion Transfer or Object Swap).
+ */
+export async function consumerGenjutsuRuns(
+  userId: string,
+  draftId: string,
+  cursor: string | null = null,
+  variant: GenjutsuVariant | null = null,
+) {
+  const observedAt = Date.now();
+  const { items, nextCursor } = await listConsumerRuns({
+    userId,
+    draftId,
+    workflow: "genjutsu",
+    limit: GENJUTSU_RUN_PAGE,
+    before: cursor ? parseConsumerJobCursor(cursor) : undefined,
+    ...(variant ? { variant } : {}),
+  });
+  const availability = await consumerOriginalAvailability(items);
+  return {
+    jobs: items.map((job) =>
+      presentGenjutsu(job, availability.get(job.id)!, observedAt),
+    ),
+    nextCursor: nextCursor ? formatConsumerJobCursor(nextCursor) : null,
+  };
 }

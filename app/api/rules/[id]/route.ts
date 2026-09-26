@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
+import { requireAdmin, withTenant } from "@/lib/auth";
 import { effectiveRules, patchRule, deleteRule, ruleProblem, setPlatformRuleOff } from "@/lib/rules";
 import { getPlatformLayer } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
-/** A workspace rule can change in full; a platform rule can only be switched off or on here. */
+/** A workspace rule can change in full; a platform rule can only be switched off or on here. Admins only:
+ *  a rule changes every prompt the workspace writes. */
 export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = await requireUser();
+  const got = await requireAdmin();
   if (got.response) return got.response;
   const { id } = await ctx.params;
   const body = await req.json().catch(() => ({}));
@@ -32,7 +33,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
 });
 
 export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = await requireUser();
+  const got = await requireAdmin();
   if (got.response) return got.response;
   const { id } = await ctx.params;
   if ((await getPlatformLayer()).rules.some((r) => r.id === id)) {

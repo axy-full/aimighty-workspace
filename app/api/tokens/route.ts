@@ -1,5 +1,6 @@
 import { securityAuditStatement } from "@/lib/securityAudit";
 import { requireTenant } from "@/lib/tenant";
+import { parseCeiling } from "@/lib/tokenCeiling";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import {
@@ -69,8 +70,12 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "Give the token a name" }, { status: 400 });
 
   const scope: TokenScope = body.scope === "read" ? "read" : "render";
-  const capRaw = Number(body.capUsd);
-  const capUsd = Number.isFinite(capRaw) && capRaw > 0 ? capRaw : null;
+  /* Absent or blank is "no limit"; any other value must be dollars above zero.
+     A value that is not one used to be stored as no limit — an uncapped
+     spending token from a typo. */
+  const ceiling = body.capUsd == null || body.capUsd === "" ? { capUsd: null } : parseCeiling(String(body.capUsd));
+  if ("error" in ceiling) return NextResponse.json({ error: ceiling.error }, { status: 400 });
+  const capUsd = ceiling.capUsd;
 
   const secret = mintTokenSecret();
   const tid = id("tok");

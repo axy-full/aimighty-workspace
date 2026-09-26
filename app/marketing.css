@@ -1,0 +1,209 @@
+/*
+ * The public site (app/(marketing)): the Graphite theme of the Suites shell,
+ * laid out as long pages. Tokens come from app/graphite.css (`.gx`), the
+ * gradient button from app/flair.css (`.gx-primary`), fonts from
+ * app/fonts.css — none are redeclared here. What is new is layout: a page
+ * that scrolls (the shell's `.gx` is a fixed-height app), sections, cards and
+ * the three widths (> 1040, 720–1040, ≤ 720). Measurements follow
+ * design/particl-site/README.md.
+ */
+/* The body face. app/fonts.css declares Outfit and Kode Mono; the app's Geist
+   is declared per surface (app/workbench/workbench.css), so the site declares it too. */
+@font-face { font-family: "Particl Geist"; src: url("/fonts/geist-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+.gx.mk { height: auto; min-height: 100dvh; display: block; overflow: visible; overflow-x: clip; font-family: "Particl Geist", Geist, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-size: 15px; line-height: 1.45; background: var(--gx-root); }
+.mk a { color: var(--gx-accent-text); }
+.mk a:hover { color: #8FC5FF; }
+.mk ::placeholder { color: rgba(235, 235, 245, .38); }
+.mk img { max-width: 100%; display: block; }
+@keyframes mk-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes mk-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+.mk-header { position: sticky; top: 0; z-index: 50; border-bottom: 1px solid var(--gx-hair-strong); background: rgba(0, 0, 0, .72); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.mk-header-in { box-sizing: content-box; max-width: 1200px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); min-height: 60px; display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; row-gap: 0; }
+.mk-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--gx-text) !important; flex: none; margin-right: 4px; }
+.mk-brand .wordmark { font-size: 21px; }
+.mk-nav { display: flex; gap: 2px; margin-left: 4px; align-items: center; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.mk-nav::-webkit-scrollbar { display: none; }
+.mk-tab { position: relative; display: inline-flex; align-items: center; padding: 7px 10px; border-radius: 6px; font-size: 13.5px; color: rgba(235, 235, 245, .72) !important; text-decoration: none; white-space: nowrap; flex: none; }
+.mk-tab:hover { color: var(--gx-text) !important; background: var(--gx-input); }
+.mk-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text) !important; font-weight: 600; }
+.mk-nav-rule { width: 1px; height: 18px; background: rgba(255, 255, 255, .12); margin: 0 6px; flex: none; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.mk-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; flex: none; border: 0; cursor: pointer; }
+.mk-btn.gx-primary { height: 40px; color: #fff !important; }
+.mk-btn--secondary { color: var(--gx-text) !important; background: var(--gx-input); border: 1px solid var(--gx-input-border); font-weight: 500; }
+.mk-btn--secondary:hover { background: var(--gx-input-hover); }
+.mk-btn--sm { height: 36px; padding: 0 14px; font-size: 13.5px; }
+.mk-btn--sm.gx-primary { height: 36px; padding: 0 16px; }
+.mk-btn:disabled { opacity: .6; cursor: default; }
+
+/* ── Sections ─────────────────────────────────────────────────────────── */
+.mk-section { border-top: 1px solid var(--gx-hair-strong); background: var(--gx-root); }
+.mk-section--panel { background: var(--gx-panel); }
+.mk-section:first-child { border-top: 0; }
+/* content-box: the 1200px is the content, the gutters sit outside it, as in the design. */
+.mk-wrap { box-sizing: content-box; max-width: 1200px; margin: 0 auto; padding: clamp(64px, 9vw, 110px) clamp(16px, 4vw, 40px); display: flex; flex-direction: column; gap: 32px; min-width: 0; }
+.mk-head { display: flex; flex-direction: column; gap: 12px; }
+.mk-head--row { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.mk-eyebrow { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gx-accent-text); font-weight: 500; }
+.mk-h1 { font-family: Outfit, sans-serif; font-weight: 600; letter-spacing: -.035em; margin: 0; color: var(--gx-text); }
+.mk-h2 { font-family: Outfit, sans-serif; font-weight: 600; font-size: clamp(30px, 4vw, 46px); letter-spacing: -.03em; line-height: 1.05; margin: 0; color: var(--gx-text); }
+.mk-h3 { font-family: Outfit, sans-serif; font-weight: 600; font-size: clamp(24px, 2.6vw, 32px); letter-spacing: -.03em; line-height: 1.1; margin: 0; color: var(--gx-text); }
+.mk-lead { margin: 0; font-size: 16px; line-height: 1.55; color: rgba(235, 235, 245, .62); max-width: 58ch; text-wrap: pretty; }
+.mk-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--mk-col, 240px)), 1fr)); min-width: 0; }
+.mk-cols { display: grid; gap: clamp(24px, 4vw, 48px); grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--mk-col, 420px)), 1fr)); min-width: 0; align-items: start; }
+
+/* ── Cards, tiles, notes, facts, chips ────────────────────────────────── */
+.mk-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 10px; background: linear-gradient(180deg, #1B1B20, #141417); border: 1px solid var(--gx-card-border); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 8px 20px rgba(0, 0, 0, .3); color: var(--gx-text); min-width: 0; }
+a.mk-card { text-decoration: none; color: var(--gx-text) !important; }
+a.mk-card:hover { border-color: rgba(10, 132, 255, .45); }
+.mk-card--hl { border-color: rgba(10, 132, 255, .45); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 4px rgba(10, 132, 255, .10); }
+.mk-tag { font-family: "Kode Mono", monospace; font-size: 10.5px; letter-spacing: .14em; color: var(--gx-accent-text); text-transform: uppercase; }
+.mk-tag--muted { color: rgba(235, 235, 245, .6); }
+.mk-name { font-family: Outfit, sans-serif; font-weight: 600; font-size: 20px; letter-spacing: -.02em; line-height: 1.15; }
+.mk-body { font-size: 13.5px; line-height: 1.5; color: rgba(235, 235, 245, .72); margin: 0; }
+.mk-price-row { display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--gx-hair); padding-top: 12px; margin-top: auto; }
+.mk-price { font-family: "Kode Mono", monospace; font-weight: 600; font-size: 16px; color: var(--gx-text); }
+.mk-price-note { font-size: 12px; color: rgba(235, 235, 245, .6); }
+.mk-note { background: #17171B; border: 1px solid var(--gx-card-border); border-radius: 8px; padding: 14px 16px; font-size: 13.5px; line-height: 1.5; color: rgba(235, 235, 245, .72); margin: 0; }
+.mk-note strong, .mk-note b { color: var(--gx-text); font-weight: 600; }
+.mk-fact { display: flex; flex-direction: column; gap: 6px; background: #17171B; border: 1px solid var(--gx-card-border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.mk-fact-k { font-family: "Kode Mono", monospace; font-size: 10.5px; letter-spacing: .12em; color: var(--gx-accent-text); text-transform: uppercase; }
+.mk-fact-v { font-size: 14px; font-weight: 600; color: var(--gx-text); }
+.mk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--gx-input-border); font: 10.5px "Kode Mono", monospace; letter-spacing: .04em; color: rgba(235, 235, 245, .72); white-space: nowrap; }
+.mk-chip--tint { border-color: var(--gx-tint-border); background: var(--gx-tint); color: var(--gx-accent-text); }
+.mk-chip b { color: var(--gx-accent-text); font-weight: 500; margin-right: 6px; }
+.mk-amber { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: rgba(255, 159, 10, .14); border: 1px solid rgba(255, 159, 10, .35); color: #FFB340; font: 10px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
+.mk-green { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: rgba(48, 209, 88, .14); border: 1px solid rgba(48, 209, 88, .35); color: #5BE07C; font: 10px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
+.mk-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.mk-dot--done { background: var(--gx-done); }
+.mk-dot--run { background: var(--gx-accent); box-shadow: 0 0 8px var(--gx-accent); animation: mk-pulse 1.4s ease-in-out infinite; }
+.mk-dot--idle { border: 1.5px solid rgba(235, 235, 245, .35); }
+
+/* Group card (Business, Workspace): a head and rows. */
+.mk-group { display: flex; flex-direction: column; border-radius: 10px; background: linear-gradient(180deg, #1B1B20, #141417); border: 1px solid var(--gx-card-border); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 8px 20px rgba(0, 0, 0, .3); min-width: 0; }
+.mk-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 14px 18px 12px; }
+.mk-group-note { font-size: 12px; color: rgba(235, 235, 245, .6); text-align: right; }
+.mk-group-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 18px; border-top: 1px solid rgba(255, 255, 255, .07); align-items: start; }
+.mk-group-name { font-size: 14px; font-weight: 600; color: var(--gx-text); min-width: 0; }
+.mk-group-desc { grid-column: 1 / -1; font-size: 13px; line-height: 1.5; color: rgba(235, 235, 245, .62); margin: 0; }
+
+/* Product window: a title bar and a screenshot. */
+.mk-window { border-radius: 12px; border: 1px solid rgba(255, 255, 255, .12); background: var(--gx-panel); box-shadow: 0 40px 100px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06); overflow: hidden; min-width: 0; }
+.mk-window-bar { height: 38px; background: #111114; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.mk-window-bar i { width: 10px; height: 10px; border-radius: 50%; background: #3A3A40; flex: none; }
+.mk-window-path { font: 11px "Kode Mono", monospace; color: rgba(235, 235, 245, .6); margin-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mk-window img { width: 100%; height: auto; }
+
+/* ── Suite header (every page but Gen) ────────────────────────────────── */
+.mk-suite-head { background: radial-gradient(70% 60% at 50% 0%, rgba(10, 132, 255, .16), transparent 60%); border-bottom: 1px solid var(--gx-hair-strong); }
+.mk-suite-head .mk-wrap { padding-top: clamp(56px, 8vw, 96px); padding-bottom: clamp(40px, 5vw, 56px); gap: 22px; }
+.mk-suite-head .mk-h1 { font-size: clamp(36px, 5.2vw, 64px); line-height: 1; max-width: 20ch; }
+.mk-suite-head .mk-lead { font-size: 17px; color: rgba(235, 235, 245, .66); max-width: 62ch; }
+.mk-pages { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-page { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-input-border); font: 11px "Kode Mono", monospace; letter-spacing: .04em; color: rgba(235, 235, 245, .72); white-space: nowrap; }
+.mk-page b { color: var(--gx-accent-text); font-weight: 500; }
+.mk-cta { display: flex; flex-wrap: wrap; gap: 10px; }
+/* The suite header already draws the hairline the next section would. */
+.mk-suite-head + .mk-section { border-top: 0; }
+
+/* ── Suites strip, shell, pricing teaser, access, footer ──────────────── */
+.mk-suites-grid { display: grid; gap: 12px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.mk-suite-card { min-height: 196px; gap: 14px; }
+.mk-suite-card .mk-name { font-size: 22px; }
+.mk-suite-card-top { display: flex; align-items: center; justify-content: space-between; }
+.mk-glow { width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); box-shadow: 0 0 8px var(--gx-accent); }
+.mk-suite-card .mk-body { color: rgba(235, 235, 245, .62); flex: 1; }
+.mk-suite-pages { font: 10.5px "Kode Mono", monospace; letter-spacing: .06em; line-height: 1.7; color: rgba(235, 235, 245, .6); }
+.mk-plan-price { font-family: Outfit, sans-serif; font-weight: 600; font-size: 34px; letter-spacing: -.03em; line-height: 1; }
+.mk-plan-price small { font-size: 15px; font-weight: 500; color: rgba(235, 235, 245, .6); letter-spacing: 0; }
+.mk-access { background: radial-gradient(60% 70% at 50% 100%, rgba(10, 132, 255, .16), transparent 65%); }
+.mk-access .mk-wrap { max-width: 760px; padding-top: clamp(72px, 10vw, 128px); padding-bottom: clamp(72px, 10vw, 128px); align-items: center; text-align: center; gap: 18px; }
+.mk-access .mk-h2 { font-size: clamp(32px, 4.6vw, 54px); line-height: 1.02; text-wrap: balance; }
+.mk-access .mk-lead { max-width: 48ch; }
+.mk-access-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 520px; margin-top: 8px; }
+.mk-input { flex: 1 1 240px; height: 44px; padding: 0 14px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-card-border); color: var(--gx-text); font-size: 16px; outline: none; box-shadow: inset 0 1px 0 rgba(0, 0, 0, .35); min-width: 0; }
+.mk-input:focus { border-color: var(--gx-accent); }
+.mk-access-form .mk-btn { height: 44px; }
+.mk-sent { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 16px; border-radius: 8px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); font-size: 14px; margin-top: 8px; animation: mk-rise .4s var(--gx-ease) both; text-align: left; }
+.mk-error { color: #FF6961; font-size: 13.5px; margin: 0; }
+.mk-footer { border-top: 1px solid var(--gx-hair-strong); background: var(--gx-root); }
+.mk-footer .mk-wrap { padding-top: 40px; padding-bottom: 32px; gap: 28px; }
+.mk-footer-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 28px; }
+.mk-footer-blurb { margin: 0; font-size: 13px; line-height: 1.55; color: rgba(235, 235, 245, .6); max-width: 300px; }
+.mk-footer-cols { display: flex; flex-wrap: wrap; gap: 40px; }
+.mk-footer-col { display: flex; flex-direction: column; gap: 8px; }
+.mk-footer-col a { font-size: 13.5px; color: rgba(235, 235, 245, .78) !important; text-decoration: none; }
+.mk-footer-col a:hover { color: var(--gx-text) !important; }
+.mk-footer-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 20px; border-top: 1px solid var(--gx-hair); font-size: 12.5px; color: rgba(235, 235, 245, .6); }
+.mk-footer-bottom .mk-tag { letter-spacing: .08em; font-size: 11px; color: rgba(235, 235, 245, .6); }
+
+/* ── Shell: phone panel ───────────────────────────────────────────────── */
+.mk-phone { width: min(100%, 300px); border-radius: 34px; padding: 10px; background: var(--gx-panel); border: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 40px 100px rgba(0, 0, 0, .7); justify-self: center; }
+.mk-sticky { position: sticky; top: 84px; }
+.mk-phone img { border-radius: 26px; width: 100%; height: auto; }
+
+/* ── Small parts ──────────────────────────────────────────────────────── */
+.mk-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.mk-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.mk-brand-studio { font-family: "Kode Mono", monospace; font-size: 10px; letter-spacing: .36em; text-transform: uppercase; color: rgba(235, 235, 245, .6); margin-top: 2px; }
+.mk-stat { font-family: "Kode Mono", monospace; font-size: 22px; font-weight: 600; color: var(--gx-accent-text); letter-spacing: -.01em; }
+.mk-role { font-size: 12.5px; color: rgba(235, 235, 245, .6); margin-top: -6px; }
+
+/* ── Gen hero: the campaign still, the prompt bar ─────────────────────── */
+.mk-hero { position: relative; min-height: min(92vh, 900px); display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+.mk-hero-img { position: absolute; inset: 0; width: 100%; height: 100% !important; object-fit: cover; object-position: 72% 30%; }
+.mk-hero-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, .55) 0%, rgba(0, 0, 0, .3) 30%, rgba(0, 0, 0, .55) 62%, #000 100%), linear-gradient(90deg, rgba(0, 0, 0, .74) 0%, rgba(0, 0, 0, .4) 45%, rgba(0, 0, 0, 0) 78%); }
+.mk-hero-in { position: relative; max-width: 1200px; margin: 0 auto; width: 100%; padding: clamp(120px, 18vh, 180px) clamp(16px, 4vw, 40px) 48px; display: flex; flex-direction: column; gap: 22px; }
+.mk-hero-title { font-size: clamp(40px, 6.4vw, 84px); line-height: .98; max-width: 14ch; text-wrap: balance; }
+.mk-hero-lead { margin: 0; font-size: clamp(16px, 1.4vw, 19px); line-height: 1.5; color: rgba(235, 235, 245, .78); max-width: 58ch; text-wrap: pretty; }
+.mk-hero-actions { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.mk-prompt { max-width: 920px; background: rgba(13, 13, 16, .86); border: 1px solid rgba(255, 255, 255, .12); border-radius: 14px; padding: 12px; box-shadow: 0 30px 80px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+.mk-prompt textarea { display: block; width: 100%; resize: none; background: transparent; border: 0; outline: none; color: var(--gx-text); font: inherit; font-size: 16px; line-height: 1.5; padding: 6px 8px; min-height: 64px; }
+.mk-prompt-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .07); }
+.mk-model-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-input-border); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.mk-model-tag { font-family: "Kode Mono", monospace; font-size: 10px; letter-spacing: .1em; padding: 3px 6px; border-radius: 4px; background: var(--gx-tint); color: var(--gx-accent-text); }
+.mk-set { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-input-border); font-size: 12.5px; color: rgba(235, 235, 245, .72); white-space: nowrap; }
+.mk-set--on { border-color: var(--gx-tint-border); background: var(--gx-tint); color: var(--gx-accent-text); }
+.mk-prompt-meta { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .04em; color: rgba(235, 235, 245, .6); }
+.mk-go.mk-btn { border-radius: 10px; }
+.mk-hero-status { min-height: 44px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mk-running { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); font-size: 13px; box-shadow: 0 0 16px rgba(10, 132, 255, .25); }
+.mk-take { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; max-width: 680px; width: 100%; background: linear-gradient(180deg, #1B1B20, #141417); border: 1px solid var(--gx-card-border); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 8px 20px rgba(0, 0, 0, .3); animation: mk-rise .4s cubic-bezier(.2, .7, .2, 1) both; }
+.mk-take-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 280px; }
+.mk-take-prompt { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-take-meta { font-size: 12.5px; color: rgba(235, 235, 245, .62); }
+.mk-take-actions { display: flex; gap: 8px; flex: none; }
+
+/* ── Widths ───────────────────────────────────────────────────────────── */
+/* Six suites: six across, then three by two, then two by three, then a column. */
+@media (max-width: 1100px) { .mk-suites-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .mk-suites-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 440px) { .mk-suites-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 720–1040: two header rows — brand and buttons, then the tabs full width. */
+@media (max-width: 1040px) {
+  .mk-header-in { flex-wrap: wrap; }
+  .mk-brand { flex: 1 1 auto; }
+  .mk-nav { order: 3; flex: 1 1 100%; margin: 0; padding: 2px 0 8px; }
+}
+/* ≤ 720: Sign in hidden, 44px targets, the sticky column becomes static. */
+@media (max-width: 720px) {
+  .mk-hide-phone { display: none !important; }
+  .mk-tab { padding: 11px 10px; min-height: 44px; }
+  .mk-brand { min-height: 44px; }
+  .mk-footer-col { gap: 0; }
+  .mk-footer-col a { min-height: 44px; display: flex; align-items: center; }
+  .mk-body a, .mk-lead a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+  .mk-prompt textarea { min-height: 96px; }
+  .mk-header .mk-btn { height: 44px; }
+  .mk-btn { min-height: 44px; }
+  .mk-wrap-text { white-space: normal !important; }
+  .mk-sticky { position: static !important; }
+  .mk-hero { min-height: 0; }
+  .mk-hero-in { padding-top: 104px; padding-bottom: 36px; }
+  .mk-go.mk-btn { flex: 1 1 100%; }
+}

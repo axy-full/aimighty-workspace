@@ -185,3 +185,62 @@ test("a stem's Generate carries the live quote; a stale or missing quote blocks,
   /* The lane node was created and saved through the draft before submitting. */
   expect(store.current.nodes.some((n) => n.role === "sound-lane:sound")).toBe(true);
 });
+
+test("generated music lands on its lane after the composer is closed, with the length that was typed", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
+  const store: ProjectRoute = { current: fixture() };
+  const audio: Audio = { price: 5, quoteDelayMs: 0, quotes: [], submissions: [] };
+  await open(page, store, audio);
+  /* As the route: map-shot records the node's shot, and every save and read returns the mappings it holds. */
+  await page.route("**/api/workbench/projects**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      const body = request.postDataJSON() as { action?: string; nodeId?: string };
+      if (body.action !== "map-shot") return route.fallback();
+      const shotId = "shot_" + String(body.nodeId).replace(/[^a-zA-Z0-9_-]/g, "");
+      store.current = { ...store.current, shotMappings: { ...store.current.shotMappings, [String(body.nodeId)]: shotId } };
+      return route.fulfill({ json: { productionProjectId: "prod-ws", shotId } });
+    }
+    return route.fallback();
+  });
+  /* The job feed: running until the composer is closed, then finished. */
+  let finished = false;
+  await page.route("**/api/jobs?**", (route) => {
+    const submitted = audio.submissions.find((s) => typeof s.maxCredits === "number");
+    const generations = submitted
+      ? [{ id: "job_sfx_1", status: finished ? "succeeded" : "running", kind: "audio", shotId: submitted.shotId, prompt: String(submitted.text), model: "music-model", version: 1, createdAt: Date.now(), durationS: 45, params: { task: "music" } }]
+      : [];
+    return route.fulfill({ json: { generations, nextCursor: null } });
+  });
+
+  await stem(page, "music").getByRole("button", { name: "Generate" }).click();
+  const composer = page.getByTestId("composer-music");
+  await composer.getByLabel("Describe the music").fill("Slow strings under the reveal");
+  /* Typed key by key: 45 stays 45 (clamping each keystroke made it 105). */
+  const length = composer.getByLabel("Length in seconds");
+  await length.fill("");
+  await length.pressSequentially("45");
+  await expect(length).toHaveValue("45");
+  await expect(composer.locator("[data-sound-generate]")).toHaveText("Generate music · 5 cr");
+  expect(audio.quotes.at(-1)).toMatchObject({ task: "music", lengthMs: 45000 });
+  await length.blur();
+  await expect(length).toHaveValue("45");
+
+  await composer.locator("[data-sound-generate]").click();
+  await expect(composer.getByRole("status")).toContainText("lands on the music lane");
+  expect(audio.submissions).toHaveLength(1);
+  expect(audio.submissions[0]).toMatchObject({ task: "music", lengthMs: 45000, maxCredits: 5 });
+  /* Close the composer before the track is ready. */
+  await stem(page, "music").getByRole("button", { name: "Generate" }).click();
+  await expect(page.getByTestId("composer-music")).toHaveCount(0);
+  await expect(stem(page, "music")).toContainText("1 generating");
+  finished = true;
+  await expect(stem(page, "music")).toContainText("2 clips", { timeout: 20_000 });
+  await expect(stem(page, "music")).not.toContainText("generating");
+  await expect(page.getByRole("status").filter({ hasText: "placed on the music lane" })).toBeVisible();
+  /* The lane's mapping reached the draft, and the placed clip was saved. */
+  await expect.poll(() => (store.current.audioClips ?? []).filter((c) => c.lane === "music").length).toBe(2);
+  const lane = store.current.nodes.find((n) => n.role === "sound-lane:music")!;
+  expect(store.current.shotMappings?.[lane.id]).toBe(audio.submissions[0].shotId);
+  expect(store.current.assets.some((a) => a.generationId === "job_sfx_1")).toBe(true);
+});

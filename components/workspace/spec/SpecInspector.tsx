@@ -56,12 +56,18 @@ export function SpecInspector({ state }: InspectorBodyProps) {
           <Button
             variant={chip.tone === "waiting" ? "amber" : "primary"}
             className="pxw-insp-run"
-            disabled={disabled}
+            disabled={disabled || Boolean(run?.quoting)}
             aria-describedby={reason && disabled ? "pxw-plan-reason" : undefined}
-            onClick={() => atomik.start(page)}
+            onClick={() => (chip.tone === "waiting" ? void atomik.approve() : atomik.start(page))}
           >
             <span>{chip.label}</span>
           </Button>
+          {/* "Approve 18 cr" approves (never starts); the gate always has a way out. */}
+          {chip.tone === "waiting" ? (
+            <Button variant="control" className="pxw-insp-run" disabled={run?.approved} onClick={atomik.decline} data-testid="spec-plan-decline">
+              <span>Not now</span>
+            </Button>
+          ) : null}
           {reason && disabled ? (
             <p className="pxw-insp-reason" id="pxw-plan-reason" data-testid="spec-plan-reason">{reason}</p>
           ) : null}

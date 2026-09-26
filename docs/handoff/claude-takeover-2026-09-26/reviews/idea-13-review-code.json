@@ -1,0 +1,47 @@
+{
+ "verdict": "fix-first",
+ "issues": [
+  {
+   "severity": "major",
+   "file": "components/graphite/GenView.tsx (applyPreset: withoutSetup(preset.prompt, shot)); lib/workspace/film-vocabulary.ts (withoutSetup, composeForSend); lib/generationAdmission.ts (video path, rawPrompt ~L1402 and the camera-module append ~L1551-1590)",
+   "problem": "Recreate does not take the setup back out of the words for a Gen clip made with Camera on Auto, which is the default. Nothing else on the card or chips shows the problem. On a credit workspace, admission skips the refine. It appends a camera module it infers itself (and any platform prompt rules) to the composed words, stores that as `prompt`, and leaves `params.rawPrompt` unset. `recipePrompt` then returns composed words plus server text. `withoutSetup` only strips an exact composePrompt tail, so it returns the prompt unchanged. The chips show the setup, the card says Setup 'kept', and the Direction box still holds the old setup words and the inferred module. Any chip change is then written in on top of them, so a paid render gets contradictory instructions.\n\nReproduced twice:\n(1) Unit trace through the real admission route (ENGINE_MOCK). Words 'A fisherman mends a net on the pier', chips {shot:'cu'}. Stored prompt = 'A fisherman mends a net on the pier. Close-up.\\n\\nThe camera is locked on a tripod and does not move at any point\u2026', rawPrompt undefined, shotSpec {shot:'cu'}. recreatePreset + withoutSetup gives back that same text, and recipeSetup says kept:true.\n(2) Browser at 1440x900 against :4841 with that stored take: Recreate, then Camera \u2192 Pull out, then Generate. The /api/generate/quote body (refused by the spec, nothing ran) was '\u2026pier. Close-up.\\n\\nThe camera is locked on a tripod and does not move\u2026 Close-up.\\n\\nThe camera travels backward along its axis\u2026' with shotSpec {shot:'cu',move:'pull'}. That is 'Close-up' twice plus a static module and a pull-out module. Shot \u2192 Wide likewise sends both 'Close-up' and 'Wide shot'.\n\nThe builder's fixtures (craned(): rawPrompt = composePrompt(...) with Camera set) never reproduce what admission actually stores in this case.",
+   "fix": "Keep the words exactly as they were sent. In the video admission path, set `rawPrompt = prompt` whenever `finalPrompt !== prompt`, not only when cast or refine changed it. This is an extension of an existing field. `recipePrompt` then returns exactly composePrompt(words, setup), and `withoutSetup` works. Also, or instead, make `withoutSetup` accept a stored prompt that starts with composePrompt(rest, setup) followed by '\\n\\n' and server additions (a bank camera module or rules block), and drop that tail. Add a spec that runs Gen's body through admission \u2192 recreatePreset \u2192 withoutSetup with Camera on Auto and with a prompt rule in scope, and asserts that the box holds the typed words and that one chip change produces one setup.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "lib/workspace/use-composer.ts (connectedInput uses sent.prompt, no shotSpec); lib/shell/recipe.ts (recreatePreset)",
+   "problem": "On connected billing, the setup is written into the words but never kept as data. `connectedInput` carries no shotSpec, and the filed asset's prompt is the composed text. Recreating a connected take therefore sets every chip to Auto and leaves the composed scene line and camera module in the box. Picking any chip afterwards appends a second, possibly contradictory setup. The idea's 'Recreate restores them' does not hold on this path.",
+   "fix": "Keep the setup with the connected job and filed asset, or on Recreate detect the bank's scene line and modules in the words (lib/studio detectSpec or hasCameraModule), move them onto the chips, and strip them with withoutSetup.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "lib/workspace/use-composer.ts; lib/higgsfield-consumer/catalogue.ts (PROMPT_LIMIT 5000)",
+   "problem": "The reducer caps the box at 5000 characters, but the composed setup can add up to about 740 characters on the chip rows (about 920 with every bank row; measured with the longest option per row). On connected billing the catalogue then refuses the quote with 'Prompts are limited to 5000 characters.'. Nothing tells the person that the chips caused it.",
+   "fix": "Compare sent.prompt against the limit in composerBlock and name the chips as the cause, or trim the person's words to the limit less the setup's length.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "components/graphite/FilmVocabulary.tsx",
+   "problem": "Enter has surprising effects in two places. (a) In a grid's search, Enter calls onPick(shown[0]). Through pickOption this turns the entry off when it is already held, so searching for the current move and pressing Enter puts Camera back to Auto. (b) In the Direction box, Enter right after a bare '#' picks the first camera move (Static) instead of starting a new line.",
+   "fix": "In the search, pick without toggling (skip it when isPicked). In the typeahead, let Enter pass through while the query is empty, or require at least one letter before Enter or Tab picks.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "lib/workspace/film-vocabulary.ts (imports lib/studio, lib/previews) via lib/workspace/use-composer.ts",
+   "problem": "The whole camera bank (lib/studio.ts, with its long modules) is now imported statically through use-composer into the shell-wide GenerateComposer and MakeComposer bundles. The removed code deliberately loaded it lazily so the bank stayed out of Gen's bundle.",
+   "fix": "Load composeForSend and the bank lazily (as recipe-setup did), or only when state.shot has rows.",
+   "reproduced": false
+  },
+  {
+   "severity": "minor",
+   "file": "lib/workspace/film-vocabulary.ts (recipeSetup)",
+   "problem": "The note 'A still has no camera move' is hard-coded. It also appears when what the still dropped was pace, sound or titles rather than a camera move, so the card gives the wrong reason.",
+   "fix": "Name the rows actually dropped, or use a general 'Not used on a still' note.",
+   "reproduced": false
+  }
+ ]
+}

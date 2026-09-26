@@ -8,10 +8,9 @@ import { renderKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth 
 import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
-import { projectCap } from "./caps";
+import { projectCapSpent, spentBy } from "./caps";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import { shotCreditsSoFar } from "./shotCap";
-import { billedCreditsSum } from "./creditSql";
 import { quoteOf, verdictOf, liveTerms, stampOf, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
 /**
@@ -198,14 +197,11 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
             WHERE shot_id IN (${holes}) AND review_state = 'approved' AND deleted = 0`,
       args: ids,
     }),
-    /* What each shot has already taken, in one read rather than one per shot.
+    /* What each shot has already taken, in one pass rather than one per shot.
        The per-shot approval rule is about this running total, and the press
-       reads exactly the same figure before it decides. */
-    db().execute({
-      sql: `SELECT shot_id, ${billedCreditsSum("generations")} AS spent FROM generations
-            WHERE shot_id IN (${holes}) AND deleted = 0 GROUP BY shot_id`,
-      args: ids,
-    }),
+       and the reservation gate read exactly the same figure before they
+       decide — hidden takes included, because they were paid for. */
+    spentBy("shot_id", ids),
     /* The engine a shot would actually run on when it does not name one:
        this workspace's own default, falling back to the platform's. The same
        resolution the composer opens with, so the quote and the press agree. */
@@ -213,12 +209,6 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
   ]);
 
   const isApproved = new Set(approvals.rows.map((r) => String((r as unknown as { shot_id: string }).shot_id)));
-  const spentBy = new Map<string, number>();
-  for (const r of spends.rows) {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    const row = r as any;
-    spentBy.set(String(row.shot_id), Number(row.spent ?? 0));
-  }
   const fallback = models?.video || DEFAULT_MODEL_ID;
 
   const byId = new Map<string, Described>();
@@ -233,7 +223,7 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
     try { platformPays = paidByPlatform(renderKeyNameFor(getModel(model).provider)); } catch { platformPays = true; }
     byId.set(String(r.id), {
       usd, engine: model, platformPays,
-      spent: spentBy.get(String(r.id)) ?? 0,
+      spent: spends.get(String(r.id))?.credits ?? 0,
       shot: {
         shotId: String(r.id), code: String(r.code ?? ""), title: String(r.title ?? ""),
         projectId: r.project_id ?? null,
@@ -273,7 +263,7 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
     getSetting("capWarnPct"),
     getSetting("atCap"),
     allowanceUsd() == null ? Promise.resolve(0) : platformSpendThisMonth(),
-    Promise.all(wanted.map(async (id) => [id, await projectCap(id)] as const)),
+    Promise.all(wanted.map(async (id) => [id, await projectCapSpent(id)] as const)),
   ]);
 
   const atCapRule = atCap === "stop" || atCap === "warn" ? atCap : "producer";

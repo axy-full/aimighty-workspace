@@ -18,7 +18,7 @@ import { deleteDrawing } from "../../lib/production/boards";
 import { prepareMoleculrVariants } from "../../lib/workbench/moleculr-storyboard";
 import { EMPTY_MOLECULR } from "../../lib/workbench/moleculr";
 import { uid } from "../../lib/workbench/studio";
-import { popUndo, pushUndo, restoreUndo, type UndoEntry } from "../../lib/shell/undo";
+import { canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 
 /* lib/workbench/merge.ts: how two saves of one draft come together. */
 
@@ -1450,10 +1450,10 @@ test.describe("undo on the open project", () => {
     const again = popUndo(onB.rest, "b")!;
     expect(again.entry.label).toBe("B's shot back");
     expect(again.rest.map((e) => e.label)).toEqual(["A's shot back"]);
-    /* Only another project's left: the newest, which says which project to open — and back where it stood if refused. */
-    const other = popUndo(again.rest, "b")!;
-    expect(other.entry.label).toBe("A's shot back");
-    expect(restoreUndo(other.rest, other.entry, other.at).map((e) => e.label)).toEqual(["A's shot back"]);
+    /* Only another project's left: nothing to undo here, and it waits for its own project. */
+    expect(popUndo(again.rest, "b")).toBeNull();
+    expect({ onB: canUndo(again.rest, "b"), onA: canUndo(again.rest, "a") }).toEqual({ onB: false, onA: true });
+    expect(popUndo(again.rest, "a")!.entry.label).toBe("A's shot back");
   });
 });
 

@@ -4,6 +4,8 @@ import type { Json, LiveMap, Room } from "@liveblocks/client";
 import { draftBody, draftRequest } from "@/lib/workbench/draft-request";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
 import { catchUpForTeam, diffForTeam, joinTeamCanvas, landedRemoval, landedWrite, orderedIds, withTeamCanvas, type TeamPatch } from "@/lib/workbench/team-canvas-model";
+import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
+import { useWorkspace } from "@/lib/workspace/state";
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
@@ -52,29 +54,6 @@ const RETRY_MS = 5000;
 const KEEPALIVE_MAX = 60_000;
 const plain = <T,>(value: T): Json => JSON.parse(JSON.stringify(value)) as Json;
 
-/** Several edits between saves travel as one patch: the last write of each node wins, with every field any of them changed. */
-function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
-  if (!a) return b;
-  const nodes = new Map(a.upsertNodes.map((n) => [n.id, n]));
-  const removed = new Set(a.removeNodes);
-  const fields = new Map(Object.entries(a.fields ?? {}));
-  const made = new Set(a.made ?? []);
-  const whole = new Set(a.upsertNodes.filter((n) => !fields.has(n.id) && !made.has(n.id)).map((n) => n.id));
-  for (const n of b.upsertNodes) {
-    nodes.set(n.id, n);
-    removed.delete(n.id);
-    const changed = b.fields?.[n.id];
-    if (b.made?.includes(n.id)) { made.add(n.id); fields.delete(n.id); whole.delete(n.id); }
-    else if (!changed) { whole.add(n.id); fields.delete(n.id); made.delete(n.id); }
-    /* Made here, then changed: still one node this window made, as it is now. */
-    else if (!made.has(n.id) && !whole.has(n.id)) fields.set(n.id, [...new Set([...(fields.get(n.id) ?? []), ...changed])]);
-  }
-  for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); fields.delete(id); made.delete(id); whole.delete(id); }
-  const assets = new Map(a.upsertAssets.map((x) => [x.id, x]));
-  for (const x of b.upsertAssets) assets.set(x.id, x);
-  return { upsertNodes: [...nodes.values()], fields: Object.fromEntries(fields), made: [...made], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
-}
-
 /** The canvas with this window's not-yet-sent edits laid over it. */
 function overlay(canvas: Canvas, patch: TeamPatch | null): Canvas {
   if (!patch) return canvas;
@@ -117,9 +96,10 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const [joinedState, setJoinedState] = useState<{ pid: string; mode: "saved" | "live"; peers: Peer[] } | null>(null);
   const mode: TeamCanvasApi["mode"] = productionId && joinedState?.pid === productionId ? joinedState.mode : "off";
   const peers = useMemo(() => (productionId && joinedState?.pid === productionId ? joinedState.peers : []), [productionId, joinedState]);
+  const { toast } = useWorkspace();
   const retry = useRef<() => void>(() => {});
-  /* Edits waiting to be sent, by the production they were made on: one that could not go yet never goes to another. */
-  const pending = useRef(new Map<string, TeamPatch>());
+  /* Each waiting edit keeps the production it was made in: it is sent there and nowhere else. */
+  const [outbox] = useState(() => new TeamOutbox());
   /* Catch-ups (what merges brought in), by production, in order: sent before this window's own edits, never folded into them. */
   const catchUps = useRef(new Map<string, TeamPatch[]>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,49 +118,57 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
       await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
     };
-    const waiting = [...pending.current.entries()], caught = [...catchUps.current.entries()];
-    pending.current.clear();
+    const batch = outbox.take(), caught = [...catchUps.current.entries()];
     catchUps.current.clear();
+    if (!batch.length && !caught.length) return;
     let again = false;
-    await Promise.all([...new Set([...caught.map(([pid]) => pid), ...waiting.map(([pid]) => pid)])].map(async (pid) => {
+    await Promise.all([...new Set([...caught.map(([pid]) => pid), ...batch.map(([pid]) => pid)])].map(async (pid) => {
+      const own = batch.find(([id]) => id === pid)?.[1];
       /* What merges brought in first, then this window's own edits: a later write wins on the server's clock. */
       const queue = caught.find(([id]) => id === pid)?.[1] ?? [];
       for (let i = 0; i < queue.length; i++) {
         try { await post(pid, queue[i]); }
-        catch {
+        catch (error) {
+          /* A catch-up the server refuses would be refused again: it goes (the draft save carried the change already). */
+          if (sendFailure(error) === "refused") continue;
           catchUps.current.set(pid, [...queue.slice(i), ...(catchUps.current.get(pid) ?? [])]);
-          const patch = waiting.find(([id]) => id === pid)?.[1];
-          if (patch) { const later = pending.current.get(pid); pending.current.set(pid, later ? mergePatches(patch, later) : patch); }
+          if (own) outbox.keep(pid, own);
           again = true;
           return;
         }
       }
-      const patch = waiting.find(([id]) => id === pid)?.[1];
-      if (!patch) return;
-      try { await post(pid, patch); }
-      catch {
-        /* Kept for its own production and tried again; a later edit there rides along. */
-        const later = pending.current.get(pid);
-        pending.current.set(pid, later ? mergePatches(patch, later) : patch);
+      if (!own) return;
+      try { await post(pid, own); }
+      catch (error) {
+        if (sendFailure(error) === "refused") {
+          /* It would be refused again, and riding along it would sink every later edit: dropped.
+             The draft holds it only until the production next opens, when the team canvas wins
+             for every node it knows (joinTeamCanvas). A 401 is dropped too: draftRequest carries
+             no status to tell it apart, and its message says to save the work before signing in. */
+          toast(`Your last Rig edit did not reach the team, and the team's version replaces it when this production next opens. ${error instanceof Error ? error.message : ""}`.trim());
+          return;
+        }
+        /* Keep it for its own production and try again, less anything a later send carried; a later edit rides along. */
+        outbox.keep(pid, own);
         again = true;
       }
     }));
     if (again && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
-  }, [scope]);
+  }, [scope, outbox, toast]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
 
   /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
   useEffect(() => {
-    const onHide = () => { if (pending.current.size || catchUps.current.size) void send(); };
+    const onHide = () => { if (outbox.size || catchUps.current.size) void send(); };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
-  }, [send]);
+  }, [send, outbox]);
 
   const queue = useCallback((pid: string, patch: TeamPatch) => {
-    pending.current.set(pid, mergePatches(pending.current.get(pid) ?? null, patch));
+    outbox.add(pid, patch);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void send(), SAVE_MS);
-  }, [send]);
+  }, [send, outbox]);
 
   /* Open the production's canvas, fold it in, then join its live room if there is one. */
   useEffect(() => {

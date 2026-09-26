@@ -129,6 +129,9 @@ export const DISCOVERY_LIMITS = {
 export const QUALIFICATION_LIMITS = {
   timeoutMs: 45_000,
   callTimeoutMs: 10_000,
+  /** A Soul ID or reference-element create carries up to twenty imported
+   * stills and may take longer than a job submission to answer. */
+  createCallTimeoutMs: 60_000,
 } as const;
 
 // These exact tools/arguments were advertised by the authorized consumer MCP
@@ -550,6 +553,7 @@ async function withConsumerSession<T>(
       "initialize" | "notifications/initialized" | "tools/list" | "tools/call",
     params?: Record<string, unknown>,
     sending?: () => void,
+    callCeilingMs: number = QUALIFICATION_LIMITS.callTimeoutMs,
   ) {
     assertDeadline(controller.signal);
     const id =
@@ -567,8 +571,8 @@ async function withConsumerSession<T>(
     const abortRequest = () => requestController.abort();
     controller.signal.addEventListener("abort", abortRequest, { once: true });
     const requestMs = Math.min(
-      QUALIFICATION_LIMITS.callTimeoutMs,
-      Math.max(1, options.callTimeoutMs ?? QUALIFICATION_LIMITS.callTimeoutMs),
+      callCeilingMs,
+      Math.max(1, options.callTimeoutMs ?? callCeilingMs),
     );
     const requestDeadline =
       method === "tools/call"
@@ -779,8 +783,8 @@ async function withConsumerSession<T>(
       },
       shortsCall: async (tool, args, sending) => (await post("tools/call", { name: SHORTS_TOOLS[tool], arguments: args }, sending))!,
       explainerPresets: async () => (await post("tools/call", { name: EXPLAINER_PRESETS_TOOL, arguments: {} }))!,
-      charactersCall: async (args, sending) => (await post("tools/call", { name: CHARACTERS_TOOL, arguments: args }, sending))!,
-      elementsCall: async (args, sending) => (await post("tools/call", { name: ELEMENTS_TOOL, arguments: args }, sending))!,
+      charactersCall: async (args, sending) => (await post("tools/call", { name: CHARACTERS_TOOL, arguments: args }, sending, args.action === "create" ? QUALIFICATION_LIMITS.createCallTimeoutMs : undefined))!,
+      elementsCall: async (args, sending) => (await post("tools/call", { name: ELEMENTS_TOOL, arguments: args }, sending, args.action === "create" ? QUALIFICATION_LIMITS.createCallTimeoutMs : undefined))!,
     });
   } catch (error) {
     if (
@@ -2171,25 +2175,31 @@ export type ConsumerCharacterCreate = { name: string; type: "soul_2" | "soul_cin
 export type ConsumerCharacterCreateResult =
   | { state: "accepted"; value: unknown }
   /** The account said no; its reason, bounded and scrubbed, is the only text kept. */
-  | { state: "refused"; reason: string };
+  | { state: "refused"; reason: string }
+  /** The paid create was sent but its answer was lost or unreadable: it may
+   * have been accepted (and billed). Kept, and never sent again. */
+  | { state: "uncertain" };
 /**
  * One training request on the connected account: every still is imported
- * first (`media_import_url`, free), then `show_characters` is called once with
- * `action: "create"`, the name, the type and the imported media. Never retried.
- * There is no cost tool for training — the account bills it at its plan's rate
- * — so the caller shows the plan gate and the owner's ceiling, not a quote.
+ * first (`media_import_url`, free), then the caller's durable admission runs,
+ * then `show_characters` is called once with `action: "create"`, the name, the
+ * type and the imported media. Never retried. An error after the create was
+ * sent is `uncertain`, never "nothing was sent". There is no cost tool for
+ * training — the account bills it at its plan's rate — so the caller shows the
+ * plan gate and the owner's ceiling, not a quote.
  */
 export async function createConsumerCharacter(
   accessToken: string,
   input: ConsumerCharacterCreate,
   sources: { url: string; type: "image" }[],
-  options: Options & { sending: () => void },
+  options: Options & { admit: () => Promise<void> },
 ): Promise<ConsumerCharacterCreateResult> {
   const name = input.name.trim();
   if (!name || name.length > 80 || !["soul_2", "soul_cinematic"].includes(input.type)) throw new ConsumerVideoError("invalid_input");
   if (sources.length < 5 || sources.length > 20 || sources.some((source) => !safeImportUrl(source.url) || source.type !== "image"))
     throw new ConsumerVideoError("invalid_input");
   const createArgs = (medias: { value: string; role: "image" }[]) => ({ action: "create", name, type: input.type, medias });
+  let attempted = false;
   try {
     return await withConsumerSession(accessToken, options, 150_000, async (session) => {
       if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
@@ -2202,11 +2212,19 @@ export async function createConsumerCharacter(
           throw new ConsumerVideoError("provider_error");
         medias.push({ value: consumerVideoJobId(raw.media_id), role: "image" });
       }
-      const normalized = normalizeQualificationResult(await session.charactersCall(createArgs(medias), options.sending), session.secrets);
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const normalized = normalizeQualificationResult(await session.charactersCall(createArgs(medias), () => { attempted = true; }), session.secrets);
       if (normalized.isError) return { state: "refused", reason: refusalText(normalized.result) };
       return { state: "accepted", value: normalized.result };
     });
   } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return { state: "uncertain" };
     return videoPreflightError(error);
   }
 }
@@ -2229,47 +2247,154 @@ export type ConsumerElementCategory = "character" | "environment" | "prop";
 export type ConsumerElementCreate = { name: string; category: ConsumerElementCategory; description: string };
 /**
  * One reference element on the connected account, from Particl's own images:
- * each is imported first (`media_import_url`, free), then
- * `show_reference_elements` is called once with `action: "create"`. Never
- * retried. The account names no price for it, so the caller asks once more.
+ * each is imported first (`media_import_url`, free), then the caller's durable
+ * admission runs, then `show_reference_elements` is called once with
+ * `action: "create"`. Each media carries the `{id, url}` pair the advertised
+ * schema requires: the imported media id and the URL the import names (or the
+ * source URL it was imported from). Never retried; an error after the create
+ * was sent is `uncertain`. The account names no price for it, so the caller
+ * asks once more.
  */
 export async function createConsumerElement(
   accessToken: string,
   input: ConsumerElementCreate,
   sources: { url: string; type: "image" }[],
-  options: Options & { sending: () => void },
+  options: Options & { admit: () => Promise<void> },
 ): Promise<ConsumerCharacterCreateResult> {
   const name = input.name.trim();
   if (!name || name.length > 32 || !["character", "environment", "prop"].includes(input.category) || input.description.length > 1000) throw new ConsumerVideoError("invalid_input");
   if (!sources.length || sources.length > 8 || sources.some((source) => !safeImportUrl(source.url) || source.type !== "image")) throw new ConsumerVideoError("invalid_input");
-  const createArgs = (medias: { id: string; type: "media_input" }[]) => ({ action: "create", name, category: input.category, ...(input.description.trim() ? { description: input.description.trim() } : {}), medias });
+  type Media = { id: string; type: "media_input"; url: string };
+  const createArgs = (medias: Media[]) => ({ action: "create", name, category: input.category, ...(input.description.trim() ? { description: input.description.trim() } : {}), medias });
+  let attempted = false;
   try {
     return await withConsumerSession(accessToken, options, 150_000, async (session) => {
       if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
-      await requireConnectedTools(session, [...importCalls(sources), { name: ELEMENTS_TOOL, args: createArgs([{ id: "00000000-0000-4000-8000-000000000000", type: "media_input" }]) }]);
-      const medias: { id: string; type: "media_input" }[] = [];
+      await requireConnectedTools(session, [...importCalls(sources), { name: ELEMENTS_TOOL, args: createArgs([{ id: "00000000-0000-4000-8000-000000000000", type: "media_input", url: sources[0].url }]) }]);
+      const medias: Media[] = [];
       for (const source of sources) {
         const raw = videoReadResult(session, await session.genjutsuImport(source.url, "image"));
         if (!object(raw) || typeof raw.media_id !== "string" || (raw.error != null && raw.error !== "")) throw new ConsumerVideoError("provider_error");
-        medias.push({ id: consumerVideoJobId(raw.media_id), type: "media_input" });
+        const url = typeof raw.url === "string" && safeImportUrl(raw.url) ? raw.url : source.url;
+        medias.push({ id: consumerVideoJobId(raw.media_id), type: "media_input", url });
       }
-      const normalized = normalizeQualificationResult(await session.elementsCall(createArgs(medias), options.sending), session.secrets);
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const normalized = normalizeQualificationResult(await session.elementsCall(createArgs(medias), () => { attempted = true; }), session.secrets);
       if (normalized.isError) return { state: "refused", reason: refusalText(normalized.result) };
       return { state: "accepted", value: normalized.result };
     });
   } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return { state: "uncertain" };
     return videoPreflightError(error);
   }
 }
+/** Free list reads follow the reply's cursor this many pages at most. */
+export const CONNECTED_LIBRARY_PAGES = 5;
+/** Recorded ids still missing after the pages are read one by one, at most. */
+export const CONNECTED_LIBRARY_GETS = 20;
+const LIBRARY_LIST_KEYS = ["items", "results", "data", "list", "characters", "souls", "elements"];
+/** The entries of one list page and the numeric cursor of the next, if the page names one. */
+function libraryPage(value: unknown, current: number | null): { entries: unknown[]; next: number | null } {
+  const entries = Array.isArray(value) ? value : object(value) ? ((LIBRARY_LIST_KEYS.map((key) => value[key]).find(Array.isArray) as unknown[] | undefined) ?? []) : [];
+  if (!object(value) || value.has_more === false) return { entries, next: null };
+  const raw = value.next_cursor ?? value.cursor;
+  const next = typeof raw === "number" ? raw : typeof raw === "string" && /^\d{1,12}$/.test(raw) ? Number(raw) : null;
+  return { entries, next: next !== null && Number.isSafeInteger(next) && next >= 0 && next !== current ? next : null };
+}
+const entryIdOf = (entry: unknown, keys: readonly string[]) => {
+  if (!object(entry)) return null;
+  for (const key of keys) if (typeof entry[key] === "string") return entry[key] as string;
+  return null;
+};
+/** Whether the pages read so far still leave an open build unaccounted for:
+ * the list keeps paging (bounded) while it says so. */
+export type LibraryPaging = (entries: readonly unknown[]) => boolean;
+/**
+ * A free, paged read of one of the account's libraries, only as far as it
+ * takes to find the ids Particl recorded (and, with `more`, to cover the
+ * builds Particl is still waiting on): page one, then the reply's cursor
+ * (bounded), then — where the tool offers `get` — each recorded id still
+ * missing, one by one (bounded). Returns the raw entries; the caller narrows
+ * them to what Particl built, so nothing else of the library is kept.
+ */
+async function readConnectedLibrary(
+  session: ConsumerSession,
+  call: (args: Record<string, unknown>) => Promise<Record<string, unknown>>,
+  tool: string,
+  idKeys: readonly string[],
+  wanted: ReadonlySet<string>,
+  get?: (id: string) => Record<string, unknown>,
+  more?: LibraryPaging,
+): Promise<{ state: "ok"; entries: unknown[] } | { state: "unavailable" }> {
+  const { toolset } = await connectedToolset(session);
+  if (checkTool(toolset, tool, { action: "list", size: 100 }) !== "ok") return { state: "unavailable" };
+  const entries: unknown[] = [], found = new Set<string>();
+  const take = (items: unknown[]) => { for (const item of items) { entries.push(item); const id = entryIdOf(item, idKeys); if (id) found.add(id); } };
+  let cursor: number | null = null;
+  for (let page = 0; page < CONNECTED_LIBRARY_PAGES; page++) {
+    const args: Record<string, unknown> = cursor === null ? { action: "list", size: 100 } : { action: "list", size: 100, cursor };
+    if (cursor !== null && checkTool(toolset, tool, args) !== "ok") break;
+    const normalized = normalizeQualificationResult(await call(args), session.secrets);
+    if (normalized.isError) {
+      if (page === 0) return { state: "unavailable" };
+      break;
+    }
+    const { entries: items, next } = libraryPage(normalized.result, cursor);
+    take(items);
+    if (([...wanted].every((id) => found.has(id)) && !more?.(entries)) || next === null || !session.active()) break;
+    cursor = next;
+  }
+  if (get) {
+    for (const id of [...wanted].filter((id) => !found.has(id)).slice(0, CONNECTED_LIBRARY_GETS)) {
+      const args = get(id);
+      if (!session.active() || checkTool(toolset, tool, args) !== "ok") break;
+      try {
+        const normalized = normalizeQualificationResult(await call(args), session.secrets);
+        if (normalized.isError) continue;
+        const value = normalized.result;
+        const item = object(value) && entryIdOf(value, idKeys) === id ? value
+          : libraryPage(value, null).entries.find((entry) => entryIdOf(entry, idKeys) === id)
+            ?? (object(value) ? [value.element, value.character, value.soul, value.data, value.result].find((entry) => entryIdOf(entry, idKeys) === id) : undefined);
+        if (item) take([item]);
+      } catch (error) {
+        if (error instanceof ConsumerDiscoveryError && (error.code === "reconnect_required" || error.code === "rate_limited")) throw error;
+      }
+    }
+  }
+  return { state: "ok", entries };
+}
 /** The account's element list (free read) — narrowed by the caller to the ones Particl created. */
-export async function listConsumerElements(accessToken: string, options: Options = {}): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
+export async function listConsumerElements(accessToken: string, options: Options = {}, wanted: ReadonlySet<string> = new Set(), more?: LibraryPaging): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
   try {
     return await withConsumerSession(accessToken, options, 60_000, async (session) => {
       if (!session.supportsTools) return { state: "unavailable" as const };
-      const { toolset } = await connectedToolset(session);
-      if (checkTool(toolset, ELEMENTS_TOOL, { action: "list", size: 100 }) !== "ok") return { state: "unavailable" as const };
-      const normalized = normalizeQualificationResult(await session.elementsCall({ action: "list", size: 100 }), session.secrets);
-      return normalized.isError ? { state: "unavailable" as const } : { state: "ok" as const, value: normalized.result };
+      const read = await readConnectedLibrary(session, (args) => session.elementsCall(args), ELEMENTS_TOOL, ["element_id", "id"], wanted, (id) => ({ action: "get", element_id: id }), more);
+      return read.state === "ok" ? { state: "ok" as const, value: { items: read.entries } } : read;
+    });
+  } catch (error) {
+    if (error instanceof ConsumerDiscoveryError && (error.code === "reconnect_required" || error.code === "rate_limited")) throw error;
+    return { state: "unavailable" };
+  }
+}
+/** One Soul ID by id: `show_characters` takes `soul_id` (its `action` is a free
+ * string in the advertised schema). A free read; a reply that is not that
+ * character is ignored. */
+export const characterGetArgs = (soulId: string) => ({ action: "get", soul_id: soulId });
+/** The account's Soul IDs (free read), paged until every id Particl recorded
+ * is found, then each one still missing read by its soul_id — narrowed by the
+ * caller to the ones Particl built. */
+export async function listConsumerCharacters(accessToken: string, wanted: ReadonlySet<string>, options: Options = {}, more?: LibraryPaging): Promise<{ state: "ok"; value: unknown } | { state: "unavailable" }> {
+  try {
+    return await withConsumerSession(accessToken, options, 60_000, async (session) => {
+      if (!session.supportsTools) return { state: "unavailable" as const };
+      const read = await readConnectedLibrary(session, (args) => session.charactersCall(args), CHARACTERS_TOOL, ["soul_id", "id"], wanted, characterGetArgs, more);
+      return read.state === "ok" ? { state: "ok" as const, value: { items: read.entries } } : read;
     });
   } catch (error) {
     if (error instanceof ConsumerDiscoveryError && (error.code === "reconnect_required" || error.code === "rate_limited")) throw error;

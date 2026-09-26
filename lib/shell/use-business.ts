@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL } from "./business";
+import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL, catalogueBlock, retryAfterMs, AUTO_RETRIES, type CatalogueStatus } from "./business";
 
 /**
  * What the Business pages read before they can compose (FINAL_SPEC §2):
@@ -18,6 +18,9 @@ export function useBusiness(scopeReady: boolean) {
   const [connection, setConnection] = useState<{ owner: boolean; connected: boolean } | null>(null);
   const [models, setModels] = useState<Record<string, CatalogueModel>>({});
   const [catalogueError, setCatalogueError] = useState<string | null>(null);
+  const [catalogueStatus, setCatalogueStatus] = useState<CatalogueStatus>("idle");
+  /* Failed reads so far; each one schedules the next read a little later. */
+  const [catalogueFailures, setCatalogueFailures] = useState(0);
   const [setup, setSetup] = useState<SetupState>({ connected: null, reads: {}, loading: false, error: null });
 
   useEffect(() => {
@@ -35,11 +38,13 @@ export function useBusiness(scopeReady: boolean) {
     return () => { live = false; };
   }, [scoped, scopeReady]);
 
-  /* The two Marketing Studio entries, from the live catalogue. */
+  /* The two Marketing Studio entries, from the live catalogue. A failed read is tried again a few times, further
+     apart each time; after that only Read again (readCatalogue) asks the account. */
+  const connected = connection?.connected ?? false;
   useEffect(() => {
-    if (!connection?.connected) return;
+    if (!connected || catalogueFailures > AUTO_RETRIES) return;
     let live = true;
-    (async () => {
+    const timer = setTimeout(() => void (async () => {
       try {
         const found: Record<string, CatalogueModel> = {};
         for (const type of ["video", "image"] as const) {
@@ -48,13 +53,25 @@ export function useBusiness(scopeReady: boolean) {
           if (!response.ok) throw new Error(json?.error ?? "The connected catalogue could not be read.");
           for (const m of json?.catalogue?.models ?? []) if (m.id === ADS_MODEL || m.id === IMAGE_ADS_MODEL || m.id === DTC_ADS_MODEL) found[m.id] = m;
         }
-        if (live) { setModels(found); setCatalogueError(null); }
-      } catch (error) { if (live) setCatalogueError(error instanceof Error ? error.message : "The connected catalogue could not be read."); }
-    })();
-    return () => { live = false; };
-  }, [scoped, connection?.connected]);
+        if (live) { setModels(found); setCatalogueError(null); setCatalogueStatus("ready"); }
+      } catch (error) {
+        if (!live) return;
+        setCatalogueError(error instanceof Error ? error.message : "The connected catalogue could not be read.");
+        setCatalogueStatus("error");
+        setCatalogueFailures((n) => n + 1);
+      }
+    })(), catalogueFailures ? retryAfterMs(catalogueFailures) : 0);
+    return () => { live = false; clearTimeout(timer); };
+  }, [scoped, connected, catalogueFailures]);
 
-  /* One read at a time: a page that asks while a read is in flight waits for it. */
+  const catalogueStalled = catalogueStatus === "error" && catalogueFailures > AUTO_RETRIES;
+  const readCatalogue = useCallback(() => setCatalogueFailures(0), []);
+
+  /** Why a composer cannot use this catalogue model yet (null when it can). */
+  const modelBlock = useCallback((model: string) => catalogueBlock({ connected, status: catalogueStatus, error: catalogueError, offered: Boolean(models[model]), model }), [connected, catalogueStatus, catalogueError, models]);
+
+  /* One read at a time: a page that asks while a read is in flight is answered by that read. After a
+     failure the pages do not ask again on their own (that looped against the account); Read again does. */
   const reading = useRef(false);
   const readSetup = useCallback(async (types?: SetupType[]) => {
     if (reading.current) return;
@@ -70,5 +87,5 @@ export function useBusiness(scopeReady: boolean) {
     } finally { reading.current = false; }
   }, [scoped]);
 
-  return { connection, models, catalogueError, setup, readSetup, setupTypes: SETUP_TYPES };
+  return { connection, models, catalogueError, catalogueStalled, readCatalogue, modelBlock, setup, readSetup, setupTypes: SETUP_TYPES };
 }

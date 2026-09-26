@@ -1,0 +1,17 @@
+{
+ "n": 20,
+ "title": "Replace the Skills page with Particl's own Tools & connections",
+ "area": "Atomik / developer surface",
+ "gap": "SkillsView.tsx lists eight higgsfield-ai/skills packs with `npx skills add` commands and a green dot on every row (lib/shell/skills.ts:10), and says 'The agent's tool reach is these packs'. Nothing in Particl reads installed packs. Meanwhile Particl already ships its own MCP server (app/api/mcp; lib/mcp.ts TOOLS, 14 tools including render_shot and wait_for_render; mcp/particl-mcp.mjs) and API tokens (app/api/tokens), and neither is surfaced here.",
+ "target": "Atomik \u203a Skills becomes 'Tools & connections'. Part (a), 'What Atomik can do': rows from lib/mcp.ts TOOLS plus the live connected-toolset check (lib/higgsfield-consumer/toolset.ts), each with its real status (available / missing / owner-only). Part (b), 'Use Particl from Claude or ChatGPT': the /api/mcp URL, create and revoke tokens through /api/tokens (revoke disables the token), and a copyable particl-mcp.mjs config.",
+ "files": [
+  "components/graphite/atomik/SkillsView.tsx",
+  "lib/shell/skills.ts",
+  "lib/mcp.ts",
+  "app/api/tokens/route.ts",
+  "lib/higgsfield-consumer/toolset.ts"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "Standalone: this is Particl's own surface. Token revocation disables rather than erases. Existing routes are reused."
+}

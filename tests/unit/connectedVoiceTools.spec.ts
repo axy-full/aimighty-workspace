@@ -140,7 +140,7 @@ test("an analysis report is reduced to bounded, labelled figures and scenes for 
   expect(consumerVideoAnalysisFailure(raw, job)).toBeNull();
 });
 
-test("voice listings keep only the exact voice pair the tools need, never a preview link, and page by next_cursor", () => {
+test("voice listings keep only the account's preset voices with the exact pair the tools need, never a preview link, and page by next_cursor", () => {
   const page = parseConnectedVoicesPage({ voices: [{ voice_id: "a", voice_type: "preset", name: "Nova", preview_url: "https://cdn.example.com/a.mp3" }], next_cursor: "p2" });
   expect(page.next).toBe("p2");
   expect(parseConnectedVoicesPage({ items: [], next_cursor: null }).next).toBeNull();
@@ -153,7 +153,8 @@ test("voice listings keep only the exact voice pair the tools need, never a prev
     { voice_id: "c", voice_type: "custom", name: "Unknown type" },
     { voice_id: "", voice_type: "preset" }, "text", null,
   ], complete: false }, 5);
-  expect(parsed).toEqual({ voices: [{ id: "a", type: "preset", name: "Nova", language: "en-US" }, { id: "b", type: "element", name: "My voice" }], complete: false, fetchedAt: 5 });
+  // A voice the owner made on the account ("element") is its own library: never listed in Particl.
+  expect(parsed).toEqual({ voices: [{ id: "a", type: "preset", name: "Nova", language: "en-US" }], complete: false, fetchedAt: 5 });
   expect(JSON.stringify(parsed)).not.toContain("preview");
   expect(() => parseConnectedVoices({ items: Array.from({ length: 501 }, () => ({})) })).toThrow();
 });
