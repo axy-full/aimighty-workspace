@@ -59,7 +59,7 @@ jobs:
       fail-fast: false
       matrix:
         suite: [workbench, customer]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     runs-on: ubuntu-latest
     # Shards ran 19-25 min against a 25 min ceiling on 19 Sep and were
     # cancelled mid-run; six shards restore headroom as specs keep landing.
@@ -67,6 +67,10 @@ jobs:
     # media specs, ran out of room compiling the public site's routes and the
     # runner was shut down three times at the same test. Fewer specs per
     # server keeps every shard's memory well clear of the runner's limit.
+    # Twelve since 26 Sep: customer shards peaked at 10.7 GB and workbench
+    # shards at 10-11 GB before a spec was added, and the platform desk and
+    # account pages then took shards to 14 GB of the runner's 16. The repo is
+    # public, so the extra runners cost nothing.
     timeout-minutes: 30
     env:
       ENGINE_MOCK: '1'
@@ -102,7 +106,7 @@ jobs:
         # only record of what grew before it went.
         run: |
           ( while true; do echo "[resources] $(date -u +%T) $(free -m | awk '/Mem:/{print "mem "$3"/"$2" MB"}') $(df -m . | awk 'NR==2{print "disk free "$4" MB"}') | $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s %d MB; ", $2, $1/1024}')"; sleep 30; done ) &
-          npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --shard=${{ matrix.shard }}/8 --output=ci-results/${{ matrix.suite }}
+          npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --shard=${{ matrix.shard }}/12 --output=ci-results/${{ matrix.suite }}
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
