@@ -4,11 +4,11 @@ import { randomBytes } from "node:crypto";
 import { requireSuperAdmin } from "@/lib/auth";
 import { platformDb, platformReady, now, platformKeysByDefault, rowToWorkspace, grantsByKind, getPlatformLayer } from "@/lib/platform";
 import { creditStateFor } from "@/lib/credits";
-import { creditUsd, signupCredits, fundedFraction } from "@/lib/creditTerms";
+import { creditUsd, fundedFraction } from "@/lib/creditTerms";
+import { approvedWelcomeCredits } from "@/lib/workspaceProvisioning";
 import { asPlanId, DEFAULT_PLANS } from "@/lib/plans";
 import { peakByEngine, peakOverall } from "@/lib/concurrency";
 import { defaultAllowanceUsd } from "@/lib/allowance";
-import { gatewayMintConfigured } from "@/lib/vercelKeys";
 import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
@@ -32,7 +32,7 @@ export const GET = recoveryRoute(async function GET() {
     p.execute(`SELECT id, name, email, note, mailed, created_at FROM access_requests WHERE handled_at IS NULL ORDER BY created_at DESC LIMIT 100`),
     p.execute(`SELECT w.*, a.email AS owner_email, a.name AS owner_name,
                       (SELECT COUNT(*) FROM memberships m WHERE m.workspace_id = w.id AND m.disabled = 0) AS members
-               FROM workspaces w LEFT JOIN accounts a ON a.id = w.owner_id ORDER BY w.created_at`),
+               FROM workspaces w LEFT JOIN accounts a ON a.id = w.owner_id ORDER BY (w.deleted_at IS NOT NULL), w.created_at`),
   ]);
   const spend = await meterByWorkspace(now() - 30 * 86_400_000).catch(() => new Map());
   /* One grouped query for every workspace's bought-versus-given split, beside
@@ -49,6 +49,10 @@ export const GET = recoveryRoute(async function GET() {
     try { return await creditStateFor(rowToWorkspace(r)); } catch { return null; }
   }));
   const layer = await getPlatformLayer().catch(() => null);
+  /* The welcome grant is written only for an approved invitation, at the
+     platform layer's figure when it sets one; a self-serve sign-up starts
+     at zero (lib/workspaceProvisioning.ts). */
+  const welcomeCredits = await approvedWelcomeCredits().catch(() => null);
   return NextResponse.json({
     /* The plans themselves, not just each workspace's id: the console has to
        name them and show what each costs, and the platform layer is where
@@ -56,15 +60,14 @@ export const GET = recoveryRoute(async function GET() {
     plans: layer?.plans ?? DEFAULT_PLANS,
     concurrency: { byEngine: peakByEngine(spans, now()), overall: peakOverall(spans, now()), days: 30 },
     creditUsd: creditUsd(),
-    signupCredits: signupCredits(),
+    welcomeCredits,
     ready: provisioningConfigured() && keyringConfigured(),
     mail: mailConfigured(),
     platformKeysByDefault: platformKeysByDefault(),
     defaultAllowanceUsd: defaultAllowanceUsd(),
-    gatewayMint: gatewayMintConfigured(),
     invites: invites.rows.map((r: any) => ({ code: r.code, email: r.email, name: r.name, note: r.note, createdAt: Number(r.created_at), expiresAt: Number(r.expires_at), sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0) })),
     requests: requests.rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, note: r.note, mailed: Boolean(Number(r.mailed)), createdAt: Number(r.created_at) })),
-    workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
+    workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), deletedAt: r.deleted_at == null ? null : Number(r.deleted_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
       grants: (() => { const g = split.get(String(r.id)); return { paid: g?.paid ?? 0, free: g?.free ?? 0 }; })(),
       planId: asPlanId(r.plan_id),
       spend30: (() => {

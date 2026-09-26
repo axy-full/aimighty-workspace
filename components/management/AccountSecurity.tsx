@@ -93,8 +93,11 @@ export default function AccountSecurity({
         throw new Error(
           result.error || "This security change could not be saved.",
         );
-      if (result.setup) setSetup(result.setup);
-      else {
+      if (result.setup) {
+        setSetup(result.setup);
+        // The code just entered was for the old device; the next is the new one's.
+        setCode("");
+      } else {
         setSetup(null);
         if (!result.batchId) setPassword("");
         setCode("");
@@ -110,15 +113,19 @@ export default function AccountSecurity({
       setNotice(
         action === "begin"
           ? "Add this key to your authenticator, then enter its code to finish setup."
-          : action === "enable"
-            ? "Two-step sign-in is enabled. Every previous session has ended; this browser received a new session."
-            : action === "disable"
-              ? "Two-step sign-in is off. Recovery codes and previous sessions have been revoked."
-              : action === "rotate_codes"
-                ? "Save the new recovery codes, then confirm to activate them. Your unused old codes continue to work until then."
-                : action === "activate_codes"
-                  ? "Your saved recovery codes are active. Old recovery codes have been revoked."
-                  : "The selected sessions have ended.",
+          : action === "replace_begin"
+            ? "Add this key to your new authenticator, then enter its code to finish."
+            : action === "enable"
+              ? "Two-step sign-in is enabled. Every previous session has ended; this browser received a new session."
+              : action === "replace"
+                ? "Your new authenticator is active and the old one no longer works. Every other session has ended."
+                : action === "disable"
+                  ? "Two-step sign-in is off. Recovery codes and previous sessions have been revoked."
+                  : action === "rotate_codes"
+                    ? "Save the new recovery codes, then confirm to activate them. Your unused old codes continue to work until then."
+                    : action === "activate_codes"
+                      ? "Your saved recovery codes are active. Old recovery codes have been revoked."
+                      : "The selected sessions have ended.",
       );
       const fresh = await read();
       setState(fresh);
@@ -247,7 +254,10 @@ export default function AccountSecurity({
               </div>
               {setup ? (
                 <div className={styles.setup}>
-                  <h3>Add Particl to your authenticator</h3>
+                  <h3>
+                    Add Particl to your {state.enabled ? "new " : ""}
+                    authenticator
+                  </h3>
                   <p>
                     Choose a time-based account and enter this setup key. Finish
                     within ten minutes.
@@ -267,9 +277,13 @@ export default function AccountSecurity({
                   <button
                     className="management-button primary"
                     disabled={busy || !password || !code}
-                    onClick={() => void change("enable")}
+                    onClick={() =>
+                      void change(state.enabled ? "replace" : "enable")
+                    }
                   >
-                    Enable two-step sign-in
+                    {state.enabled
+                      ? "Use new authenticator"
+                      : "Enable two-step sign-in"}
                   </button>
                 </div>
               ) : (
@@ -283,18 +297,27 @@ export default function AccountSecurity({
                       <KeyRound size={14} /> Set up authenticator
                     </button>
                   ) : (
-                    <button
-                      className="management-button danger"
-                      disabled={
-                        busy ||
-                        !password ||
-                        !code ||
-                        Boolean(state.requiredWorkspaces?.length)
-                      }
-                      onClick={() => void change("disable")}
-                    >
-                      Turn off two-step sign-in
-                    </button>
+                    <>
+                      <button
+                        className="management-button"
+                        disabled={busy || !password || !code}
+                        onClick={() => void change("replace_begin")}
+                      >
+                        <KeyRound size={14} /> Replace authenticator
+                      </button>
+                      <button
+                        className="management-button danger"
+                        disabled={
+                          busy ||
+                          !password ||
+                          !code ||
+                          Boolean(state.requiredWorkspaces?.length)
+                        }
+                        onClick={() => void change("disable")}
+                      >
+                        Turn off two-step sign-in
+                      </button>
+                    </>
                   )}
                 </div>
               )}
@@ -302,7 +325,8 @@ export default function AccountSecurity({
                 <p>
                   Two-step sign-in is required by{" "}
                   {state.requiredWorkspaces!.map((w) => w.name).join(", ")}. It
-                  cannot be turned off while that membership requires it.
+                  cannot be turned off while that membership requires it; a new
+                  device can replace the old one.
                 </p>
               )}
             </ManagementCard>
