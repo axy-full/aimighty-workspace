@@ -623,7 +623,8 @@ export function useComposer(options: {
       const takes = known ? [...known.takes.filter((take) => !found.some((item) => item.variation === take.variation)), ...found].sort((a, b) => a.variation - b.variation) : found;
       return [...list.filter((item) => item.id !== settled.batchId), { id: settled.batchId, source: "workspace", projectId, name: settled.name, model: settled.model, takes }];
     });
-    return { proceed: false, notice: `${lost ? `${lost} ` : ""}${takesPhrase(settled.landed.map((take) => take.variation)).replace(/^t/, "T")} of your last batch had reached the server: followed until ${settled.landed.length === 1 ? "it lands" : "they land"}. Nothing new was sent.` };
+    const landed = settled.landed.length === 1;
+    return { proceed: false, notice: `${lost ? `${lost} ` : ""}${takesPhrase(settled.landed.map((take) => take.variation)).replace(/^t/, "T")} of your last batch ${landed ? "is" : "are"} on the server, followed until ${landed ? "it lands" : "they land"}. Nothing new was sent.` };
   }, [scope, followBatch]);
 
   const generate = useCallback(() => {

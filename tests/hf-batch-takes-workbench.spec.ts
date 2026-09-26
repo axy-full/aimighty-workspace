@@ -188,7 +188,8 @@ test("this workspace's credits: 4 takes are one batch at the total on the button
   await page.clock.install();
   await gen(page);
   await page.getByTestId("gen-prompt").fill(PROMPT);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`);
+  /* The first live price can wait on a cold compile of the engines route. */
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
   await takes(page, 4);
   /* The whole batch's price is on the button before anything is spent. */
   await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr");
@@ -253,7 +254,7 @@ test("this workspace's credits: a moved price sends none; admission refusing tak
   await gen(page);
   await page.getByTestId("gen-prompt").fill(PROMPT);
   await takes(page, 4);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr", { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
   /* Nothing sent; the new total is on the button, said once. */
   await expect(page.getByRole("status").filter({ hasText: "The price is now 73 cr for 4 takes. Nothing was sent; press Generate again to approve it." })).toBeVisible();
@@ -283,6 +284,7 @@ test("this workspace's credits: when the credits run out mid-batch, takes 3–4 
   await gen(page);
   await page.getByTestId("gen-prompt").fill(PROMPT);
   await takes(page, 4);
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr", { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
   await expect(page.getByRole("status").filter({ hasText: "Takes 1–2 were sent at 36 cr. Takes 3–4 are held, not charged until they run: top up to release them at the same price." })).toBeVisible();
   /* Two charges; two takes admitted as held, which cost nothing until they run. */
@@ -362,7 +364,7 @@ async function connectedGen(page: Page, single = PRICE) {
   await sheet.getByRole("option", { name: /Seedance 2\.5/ }).first().click();
   await expect(sheet).toHaveCount(0);
   await page.getByTestId("gen-prompt").fill(PROMPT);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${single.toLocaleString("en-US")} connected cr`);
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${single.toLocaleString("en-US")} connected cr`, { timeout: 60_000 });
 }
 
 test("the connected account: one quote per take, ONE paid call for their exact sum, every take followed and filed into one strip", async ({ page }, info) => {

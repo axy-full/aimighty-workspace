@@ -670,12 +670,12 @@ test("⌘Z after deleting a shot another tab changed: the shot keeps that tab's 
 
 /* ── The Gen composer after a Brief edit ────────────────────────────────── */
 
-test("Gen: two takes after a Brief edit elsewhere keep the Brief edit and both takes' shots", async ({ page }) => {
+test("Gen: a batch of two takes after a Brief edit elsewhere keeps the Brief edit and files both takes on one shot", async ({ page }) => {
   const { project, errors, read, elsewhere, scope } = await setup(page, (p) => { p.nodes = [scene("n1", { title: "Opening" })]; });
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const saves = watchSaves(page);
-  const paid: string[] = [];
-  page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) paid.push(request.url()); });
+  const paid: { batchId?: string; variation?: number; shotId?: string }[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) paid.push(request.postDataJSON() as (typeof paid)[number]); });
   await page.goto(`/suites?view=gen&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await expect(page.getByTestId("gen-view")).toBeVisible();
@@ -691,12 +691,16 @@ test("Gen: two takes after a Brief edit elsewhere keep the Brief edit and both t
   await expect(go).toHaveText(/\d cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => paid.length, { timeout: 60_000 }).toBe(2);
-  await expect.poll(async () => (await read()).project.nodes.filter((n) => n.id !== "n1" && n.type === "scene").length, { timeout: 30_000 }).toBe(2);
+  /* One batch: one shot, both takes on it with one batch id and their take numbers. */
+  expect(paid.map((p) => p.variation)).toEqual([1, 2]);
+  expect(new Set(paid.map((p) => p.batchId)).size).toBe(1);
+  expect(new Set(paid.map((p) => p.shotId)).size).toBe(1);
+  await expect.poll(async () => (await read()).project.nodes.filter((n) => n.id !== "n1" && n.type === "scene").length, { timeout: 30_000 }).toBe(1);
   const saved = (await read()).project;
   expect(saved.brief).toBe("Written in Brief after Gen opened.");
   expect(saved.script).toContain("A fox crosses the ice.");
   const made = saved.nodes.filter((n) => n.id !== "n1");
-  expect(made.map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · take 1", "A red fox crosses the frozen harbour at dusk. · take 2"]);
+  expect(made.map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · 2 takes"]);
   expect(ids(saved.nodes)[0]).toBe("n1");
   expect(repeated(ids(saved.nodes))).toEqual([]);
   for (const node of made) expect(saved.shotMappings?.[node.id], `${node.title} is mapped`).toBeTruthy();
@@ -1355,7 +1359,7 @@ test("Gen sound: when Edit & Sound makes the sound lane while Gen's save is out,
   expect(errors).toEqual([]);
 });
 
-test("Gen, two takes: recovering take 2 after its request was cut off charges two takes in all, not three", async ({ page }) => {
+test("Gen, two takes: take 2's request cut off stops the batch, and the next Generate recovers it by its own key — two takes charged in all, not three", async ({ page }) => {
   const { project, errors, read, scope } = await setup(page, () => {});
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const reached: string[] = [];
@@ -1378,20 +1382,21 @@ test("Gen, two takes: recovering take 2 after its request was cut off charges tw
   await expect(go).toHaveText(/\d cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => seen, { timeout: 60_000 }).toBe(2);
-  await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
+  /* The batch stops at the take whose reply never came back, and says so. */
+  await expect(page.locator(".gx-gen-note[role=status]").first()).toContainText("Take 2: the reply never came back. It is checked before anything else is sent, and never sent twice.", { timeout: 30_000 });
   await expect(go).toBeEnabled({ timeout: 60_000 });
   await go.click();
   await expect.poll(() => new Set(reached).size, { timeout: 60_000 }).toBe(2);
-  /* One take left: said as one take, never "Takes 2–2". */
-  await expect(page.locator(".gx-gen-note[role=status]").first()).toHaveText("Take 2 submitted at the price shown. It files into Takes as it lands.", { timeout: 30_000 });
+  /* One take recovered, by its own key: said as one take, never "Takes 2–2", and nothing new sent. */
+  await expect(page.locator(".gx-gen-note[role=status]").first()).toHaveText("Take 2 of your last batch is on the server, followed until it lands. Nothing new was sent.", { timeout: 30_000 });
   await page.waitForTimeout(4000);
   expect(new Set(reached).size, "paid requests for a two-take ask").toBe(2);
-  expect((await read()).project.nodes.filter((n) => n.type === "scene").map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · take 1", "A red fox crosses the frozen harbour at dusk. · take 2"]);
+  expect((await read()).project.nodes.filter((n) => n.type === "scene").map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · 2 takes"]);
   expect(errors).toEqual([]);
 });
 
 /** A connected account, fully intercepted: nothing is billed anywhere. `submit` decides each submit's fate. */
-async function mockConnected(page: Page, options: { submit?: (id: string, n: number) => "lost" | "ok"; holdQuote?: (n: number) => Promise<void> | void; completed?: boolean } = {}) {
+async function mockConnected(page: Page, options: { submit?: (id: string, n: number) => "lost" | "ok"; holdQuote?: (n: number) => Promise<void> | void; holdBatch?: () => Promise<void> | void; completed?: boolean } = {}) {
   const wallet = "22222222-2222-4222-8222-222222222222";
   const submits: string[] = [], polled = new Set<string>(), provider = new Map<string, string>();
   let quotes = 0;
@@ -1410,6 +1415,16 @@ async function mockConnected(page: Page, options: { submit?: (id: string, n: num
     if (body.action === "catalogue")
       return route.fulfill({ json: { catalogue: { models: [{ id: "connected-motion", name: "Motion 1", description: "", outputType: "video", parameters: [], medias: [], aspectRatios: ["16:9"], tags: [], supportsUnlim: false }], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
     if (body.action === "quote") { quotes++; await options.holdQuote?.(submits.length); return route.fulfill({ json: { job: job(`11111111-1111-4111-8111-${String(quotes).padStart(12, "0")}`, "quoted") } }); }
+    /* Takes 2–4 of one Generate: one quote per take in one request, then one submit for all of them. */
+    if (body.action === "quote-batch") {
+      await options.holdBatch?.();
+      const jobs = (body.idempotencyKeys as string[]).map((_, i) => ({ ...job(`11111111-1111-4111-8111-${String(++quotes).padStart(12, "0")}`, "quoted"), batch: { id: body.batchId, variation: i + 1 } }));
+      return route.fulfill({ json: { jobs } });
+    }
+    if (body.action === "submit-batch") {
+      for (const id of body.ids as string[]) { submits.push(id); provider.set(id, randomUUID()); }
+      return route.fulfill({ json: { jobs: (body.ids as string[]).map((id, i) => ({ ...job(id, "accepted"), batch: { id: "b_mock0001", variation: i + 1 } })) } });
+    }
     if (body.action === "submit") {
       submits.push(body.id);
       provider.set(body.id, randomUUID());
@@ -1451,15 +1466,15 @@ test("Gen, connected: a take whose submit reply was lost is read back on the nex
   expect(errors).toEqual([]);
 });
 
-test("Gen, connected: takes submitted after the person left Gen are still followed and filed when Gen is back", async ({ page }) => {
+test("Gen, connected: a batch submitted after the person left Gen is still followed and filed when Gen is back", async ({ page }) => {
   const { project, errors, scope } = await setup(page, () => {});
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const hold = latch(), holding = latch();
   let held = false;
   const account = await mockConnected(page, {
     completed: true,
-    /* The second take's price is held until the person has left Gen. */
-    holdQuote: async (submitted) => { if (submitted === 1 && !held) { held = true; holding.open(); await hold.opened; } },
+    /* The batch's prices are held until the person has left Gen: its one submit is sent after Gen is closed. */
+    holdBatch: async () => { if (!held) { held = true; holding.open(); await hold.opened; } },
   });
   const filed = new Set<string>();
   page.on("request", (request) => {
@@ -1490,7 +1505,7 @@ test("Gen, connected: takes submitted after the person left Gen are still follow
   expect(errors).toEqual([]);
 });
 
-test("Gen: two takes while other saves land between and on top of them — a take's lost save reply is checked, never made twice", async ({ page }) => {
+test("Gen: a batch's shot saved while other saves land before and on top of it — its lost save reply is checked, never made twice", async ({ page }) => {
   const { project, errors, read, elsewhere, scope } = await setup(page, (p) => { p.nodes = [scene("n1", { title: "Opening" })]; });
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const puts: { status?: number; lost?: boolean }[] = [];
@@ -1498,10 +1513,10 @@ test("Gen: two takes while other saves land between and on top of them — a tak
     if (route.request().method() !== "PUT") return route.continue();
     const entry: (typeof puts)[number] = {};
     puts.push(entry);
-    /* Between take 1 and take 2: the Brief is saved elsewhere, so take 2's save is refused. */
-    if (puts.length === 2) await elsewhere((p) => { p.brief = "Brief written between the takes."; });
-    if (puts.length === 3) {
-      /* Take 2's retry lands, another editor saves on top, and the reply never arrives. */
+    /* Just before the batch's shot is saved, the Brief is saved elsewhere, so that save is refused. */
+    if (puts.length === 1) await elsewhere((p) => { p.brief = "Brief written between the takes."; });
+    if (puts.length === 2) {
+      /* The shot's retry lands, another editor saves on top, and the reply never arrives. */
       entry.status = (await route.fetch()).status();
       await elsewhere((p) => { p.script = "EXT. HARBOUR - NIGHT\n\nThe ice sings.\n"; });
       entry.lost = true;
@@ -1529,7 +1544,7 @@ test("Gen: two takes while other saves land between and on top of them — a tak
   const saved = (await read()).project;
   expect(saved.brief).toBe("Brief written between the takes.");
   expect(saved.script).toContain("The ice sings.");
-  expect(saved.nodes.filter((n) => n.id !== "n1").map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · take 1", "A red fox crosses the frozen harbour at dusk. · take 2"]);
+  expect(saved.nodes.filter((n) => n.id !== "n1").map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · 2 takes"]);
   expect(repeated(ids(saved.nodes))).toEqual([]);
   expect(new Set(paid).size).toBe(2);
   expect(errors).toEqual([]);
@@ -2257,7 +2272,7 @@ for (const where of ["another tab on the same project", "this tab, as an image"]
 /** A connected account, fully intercepted: `price(n)` is the n-th quote's credits, `submit(n)` the n-th submit's fate, `status` what a read-back says. Nothing is billed. */
 async function mockAccount(page: Page, options: { price?: (n: number) => number; submit?: (n: number) => "ok" | "capacity" | "lost" | "taken"; limitQuote?: (n: number) => boolean; status?: string } = {}) {
   const wallet = "22222222-2222-4222-8222-222222222222";
-  const submits: string[] = [], statusCalls: string[] = [];
+  const submits: string[] = [], statusCalls: string[] = [], batches: string[][] = [];
   let quotes = 0;
   await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: true, requiresReconnect: false } }));
   await page.route("**/api/higgsfield/consumer/generation", async (route: Route) => {
@@ -2271,6 +2286,21 @@ async function mockAccount(page: Page, options: { price?: (n: number) => number;
       return route.fulfill({ json: { catalogue: { models: [{ id: "connected-motion", name: "Motion 1", description: "", outputType: "video", parameters: [], medias: [], aspectRatios: ["16:9"], tags: [], supportsUnlim: false }], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
     if (body.action === "quote" && options.limitQuote?.(quotes + 1)) { quotes++; return route.fulfill({ status: 429, json: { error: "Too many requests. Wait a while before trying again." } }); }
     if (body.action === "quote") { quotes++; return route.fulfill({ json: { job: job(`11111111-1111-4111-8111-${String(quotes).padStart(12, "0")}`, "quoted", options.price?.(quotes) ?? 9) } }); }
+    /* Takes 2–4: one request quotes every take (the quote limit counts it once), one submit sends them all. */
+    if (body.action === "quote-batch" && options.limitQuote?.(quotes + 1)) { quotes++; return route.fulfill({ status: 429, json: { error: "Too many requests. Wait a while before trying again." } }); }
+    if (body.action === "quote-batch") {
+      const jobs = (body.idempotencyKeys as string[]).map((_, i) => ({ ...job(`11111111-1111-4111-8111-${String(++quotes).padStart(12, "0")}`, "quoted", options.price?.(quotes) ?? 9), batch: { id: body.batchId, variation: i + 1 } }));
+      return route.fulfill({ json: { jobs } });
+    }
+    if (body.action === "submit-batch") {
+      batches.push(body.ids as string[]);
+      const fate = options.submit?.(batches.length) ?? "ok";
+      if (fate === "capacity") return route.fulfill({ status: 429, json: { code: "capacity", error: "All four connected-account slots are in use." } });
+      submits.push(...(body.ids as string[]));
+      if (fate === "lost") return route.abort("connectionreset");
+      return route.fulfill({ json: { jobs: (body.ids as string[]).map((id, i) => ({ ...job(id, "accepted"), batch: { id: "b_mock0001", variation: i + 1 } })) } });
+    }
+    if (body.action === "check-batch") return route.fulfill({ json: { state: "landed", jobs: (body.ids as string[]).map((id, i) => ({ ...job(id, "accepted"), batch: { id: "b_mock0001", variation: i + 1 } })) } });
     if (body.action === "submit") {
       const fate = options.submit?.(submits.length + 1) ?? "ok";
       if (fate === "capacity") return route.fulfill({ status: 429, json: { error: "The connected account is busy with other takes. Try again in a moment." } });
@@ -2288,7 +2318,7 @@ async function mockAccount(page: Page, options: { price?: (n: number) => number;
     }
     return route.fulfill({ status: 409, json: { error: "Not in this spec." } });
   });
-  return { submits, statusCalls };
+  return { submits, statusCalls, batches };
 }
 async function connectedTakes(page: Page, project: Project, takes: number) {
   const { box, go } = await openGen(page, project);
@@ -2300,34 +2330,39 @@ async function connectedTakes(page: Page, project: Project, takes: number) {
   return go;
 }
 
-for (const stop of ["the price of take 2 moved", "the account refused take 2 for now (429)"] as const)
-  test(`Gen, connected, two takes: when ${stop} and the person presses Generate again, two takes are submitted in all, not three`, async ({ page }) => {
+for (const stop of ["the price of take 2 moved", "the account had no room for the batch for now (429)"] as const)
+  test(`Gen, connected, two takes: when ${stop}, nothing is sent; the next press sends the batch once — two takes in all, not three`, async ({ page }) => {
     const { project, errors, scope } = await setup(page, () => {});
     await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
     let refused = false;
-    const account = await mockAccount(page, stop === "the price of take 2 moved" ? { price: (n) => (n >= 3 ? 10 : 9) } : { submit: (n) => (n === 2 && !refused ? ((refused = true), "capacity") : "ok") });
+    /* Quote 1 is the button's own; each batch then quotes take 1 and take 2, and take 2 is always a credit dearer. */
+    const account = await mockAccount(page, stop === "the price of take 2 moved" ? { price: (n) => (n > 1 && n % 2 === 1 ? 10 : 9) } : { submit: (n) => (n === 1 && !refused ? ((refused = true), "capacity") : "ok") });
     const go = await connectedTakes(page, project, 2);
     await go.click();
-    await expect.poll(() => account.submits.length, { timeout: 60_000 }).toBe(1);
     await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
+    /* A moved price never reaches a submit; a batch the account had no room for was sent whole and refused whole. */
+    expect(account.submits.length).toBe(0);
     await expect(go).toBeEnabled({ timeout: 60_000 });
-    await expect(go).toHaveText(/connected cr/, { timeout: 60_000 });
+    await expect(go).toHaveText(stop === "the price of take 2 moved" ? /2 takes · 19 connected cr/ : /2 takes · 18 connected cr/, { timeout: 60_000 });
     await go.click();
     await expect.poll(() => account.submits.length, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
     await page.waitForTimeout(4000);
     expect(account.submits.length).toBe(2);
+    expect(account.batches.at(-1)).toHaveLength(2);
     expect(errors).toEqual([]);
   });
 
-test("Gen, connected, four takes: when take 3's quote meets the account's quote limit and the person presses Generate again, four takes are submitted in all, not six", async ({ page }) => {
+test("Gen, connected, four takes: when the batch's quote meets the account's quote limit and the person presses Generate again, four takes are submitted in all, not six", async ({ page }) => {
   const { project, errors, scope } = await setup(page, () => {});
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   let limited = false;
-  const account = await mockAccount(page, { limitQuote: (n) => (n === 4 && !limited ? (limited = true) : false) });
+  /* The button's own live quote is the first; the batch's quote request the second. */
+  const account = await mockAccount(page, { limitQuote: (n) => (n === 2 && !limited ? (limited = true) : false) });
   const go = await connectedTakes(page, project, 4);
   await go.click();
-  await expect.poll(() => account.submits.length, { timeout: 60_000 }).toBe(2);
   await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
+  /* Refused before anything was priced: nothing sent. */
+  expect(account.submits.length).toBe(0);
   await expect(go).toBeEnabled({ timeout: 60_000 });
   await go.click();
   await expect.poll(() => account.submits.length, { timeout: 60_000 }).toBeGreaterThanOrEqual(4);
