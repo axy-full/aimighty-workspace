@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision, type RigWiring } from "../../lib/shell/rig-wire";
-import { DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, imageAdsFromPreset, presetKey, readPreset } from "../../lib/shell/business";
+import { DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, imageAdsFromPreset, parsePreset, presetFor, type BusinessPage, type SetupType } from "../../lib/shell/business";
 import { MIRROR_ECHO_MS, listedJobs, mirrorSeek, pendingJobIds, runAfterStatus, type MirrorMark, type ViralRun } from "../../lib/shell/viral";
 import { libraryHasTools } from "../../lib/shell/production-tools";
 import { QUOTE_RETRY_MS, RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
@@ -61,19 +61,23 @@ test("the agent's wiring lands once: prompt, notes, inputs and first frame, with
 });
 
 /* Business › Setup → a composer. */
+/* The pick names its page (lib/shell/business.ts › Setup → Ads / Image ads; the rest of that model is in businessStandalone.spec.ts). */
 test("Setup's picks reach the composer they were meant for, and only what that composer takes", () => {
-  expect(presetKey("ads")).not.toBe(presetKey("dtc"));
+  const NOW = 1_800_000_000_000;
+  const pick = (type: SetupType, id: string, page: BusinessPage) => presetFor({ id, type, name: id, meta: "", previewUrl: null }, page, NOW);
+  const raw = (type: SetupType, id: string, page: BusinessPage) => JSON.stringify(pick(type, id, page));
+  expect(parsePreset(raw("hook", "h1", "ads"), "dtc", NOW)).toBeNull();
   expect(PRESET_TYPES.dtc).not.toContain("avatar");
-  expect(readPreset(JSON.stringify({ type: "avatar", id: "a1" }), "ads")).toEqual({ type: "avatar", id: "a1" });
-  expect(readPreset(JSON.stringify({ type: "avatar", id: "a1" }), "dtc")).toBeNull();
-  expect(readPreset("not json", "ads")).toBeNull();
-  expect(readPreset(null, "dtc")).toBeNull();
-  expect(adsFromPreset({ type: "product", id: "p1" })).toEqual({ ...INITIAL_ADS, productId: "p1" });
+  expect(parsePreset(raw("avatar", "a1", "ads"), "ads", NOW)).toMatchObject({ type: "avatar", id: "a1" });
+  expect(parsePreset(raw("avatar", "a1", "dtc"), "dtc", NOW)).toBeNull();
+  expect(parsePreset("not json", "ads", NOW)).toBeNull();
+  expect(parsePreset(null, "dtc", NOW)).toBeNull();
+  expect(adsFromPreset(pick("product", "p1", "ads"))).toEqual({ ...INITIAL_ADS, productId: "p1" });
   expect(adsFromPreset(null)).toBe(INITIAL_ADS);
   /* Products, brand kits and styles ride only on the DTC engine, so a pick of one switches to it. */
-  expect(imageAdsFromPreset({ type: "product", id: "p1" })).toEqual({ ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL, productIds: ["p1"] });
-  expect(imageAdsFromPreset({ type: "brand_kit", id: "bk1" })).toMatchObject({ engine: DTC_ADS_MODEL, brandKitId: "bk1" });
-  expect(imageAdsFromPreset({ type: "image_style", id: "st1" })).toMatchObject({ engine: DTC_ADS_MODEL, styleId: "st1" });
+  expect(imageAdsFromPreset(pick("product", "p1", "dtc"))).toEqual({ ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL, productIds: ["p1"] });
+  expect(imageAdsFromPreset(pick("brand_kit", "bk1", "dtc"))).toMatchObject({ engine: DTC_ADS_MODEL, brandKitId: "bk1" });
+  expect(imageAdsFromPreset(pick("image_style", "st1", "dtc"))).toMatchObject({ engine: DTC_ADS_MODEL, styleId: "st1" });
   expect(imageAdsFromPreset(null)).toBe(INITIAL_IMAGE_ADS);
 });
 

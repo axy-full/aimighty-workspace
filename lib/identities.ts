@@ -1,4 +1,5 @@
 import { withRecoveryJob } from './recovery';
+import { TRAIN_STEPS, RENDER_USD_PER_MP, trainCostUsd } from "./identityPricing";
 import type { Transaction } from "@libsql/client";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
@@ -81,13 +82,9 @@ export const RENDERER = "fal-ai/flux-lora";
 export const MIN_PHOTOS = 5;
 export const MAX_PHOTOS = 40;
 export const RECOMMENDED_PHOTOS = "10 to 20";
-/** Steps decide both quality and price. fal's default is 2500; 1500 is the
- *  point past which a face stops improving noticeably. */
-export const TRAIN_STEPS = Math.max(500, Math.min(5000, Number(process.env.FAL_TRAIN_STEPS ?? 1500)));
-/** fal's listed price for the portrait trainer (read 2026-09-03):
- *  "$0.0024 per step. A minimum of 1000 steps will be billed." */
-export const TRAIN_USD_PER_STEP = Number(process.env.FAL_TRAIN_USD_PER_STEP ?? 0.0024);
-export const TRAIN_MIN_BILLED_STEPS = 1000;
+/* Training and render prices live in lib/identityPricing.ts, so a page that
+   only quotes them (the public site's rate card) does not load this module. */
+export { TRAIN_STEPS, TRAIN_USD_PER_STEP, TRAIN_MIN_BILLED_STEPS, RENDER_USD_PER_MP, trainCostUsd } from "./identityPricing";
 /** How long a training job may sit unfinished before we call it lost. A
  *  1500-step portrait LoRA runs in tens of minutes; three hours means the
  *  job is gone, and an identity must not read "training" for ever. */
@@ -101,11 +98,6 @@ export const RENDER_CEILING_MS = 30 * 60_000;
  *  render fal may have finished and billed. */
 export const RENDER_UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
 
-/** Rendering with a LoRA: "$0.035 per megapixel", rounded UP to the megapixel. */
-export const RENDER_USD_PER_MP = Number(process.env.FAL_RENDER_USD_PER_MP ?? 0.035);
-
-export const trainCostUsd = (steps = TRAIN_STEPS) =>
-  Math.round(Math.max(steps, TRAIN_MIN_BILLED_STEPS) * TRAIN_USD_PER_STEP * 100) / 100;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function rowToIdentity(r: any): Identity {

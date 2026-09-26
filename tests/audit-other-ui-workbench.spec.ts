@@ -408,6 +408,9 @@ test("Astra: a failed render-history poll clears on the next good one, and the u
   await picker.setInputFiles(clip, { timeout: 30_000 });
   await expect(picker).toHaveValue("");
   await expect.poll(() => finishes, { timeout: 30_000 }).toBe(1);
+  /* The picker sits in a fieldset that is disabled while an upload is in
+     flight; choose again only once the refusal has landed. */
+  await expect(page.getByRole("status").filter({ hasText: "Uploading original clip" })).toHaveCount(0, { timeout: 30_000 });
   await picker.setInputFiles(clip);
   await expect.poll(() => finishes, { timeout: 30_000 }).toBe(2);
   await page.unroute("**/api/uploads/finish");

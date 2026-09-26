@@ -3,6 +3,7 @@ import {readProjectBody} from '@/lib/workbench/request-body';
 import { withTenant, requireSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { saveSchema } from '@/lib/workbench/studio-schema';
+import { saveProblem } from '@/lib/workbench/save-problem';
 import { newProject, type Project } from '@/lib/workbench/studio';
 import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
@@ -57,7 +58,7 @@ export const PUT=withTenant(async(req:Request)=>{
   const body=await readProjectBody(req);if(!body.ok)return Response.json({error:body.error},{status:body.status});
   const value=body.value;
   const parsed=saveSchema.safeParse(value);
-  if(!parsed.success)return Response.json({error:'Check the project fields before saving.'},{status:400});
+  if(!parsed.success)return Response.json({error:saveProblem(parsed.error)},{status:400});
   await workbenchReady();
   const {project:p,revision}=parsed.data;
   try{return Response.json(await saveDraft(auth.user.id,p,revision));}

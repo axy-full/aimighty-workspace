@@ -24,8 +24,7 @@ import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { specToPhrase, CATEGORIES } from "@/lib/studio";
 import { takeCost } from "@/lib/breakdownCost";
-import { listEstimate, takeEstimate } from "@/lib/shotListCost";
-import { textCostLabel, type TextRunReply } from "@/lib/textCostLabel";
+import { takeEstimate } from "@/lib/shotListCost";
 import QuotedAtomikAction from "@/components/atomik/QuotedAtomikAction";
 import type { PaidTextQuote } from "@/lib/paidText";
 import { mentionsIn } from "@/lib/mentions";
@@ -76,8 +75,13 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const billable = shots.filter((s) => s.kind !== "type");
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
   const target = runtimeTarget ?? scenes.reduce((a, s) => a + s.secs, 0);
-  /* In the unit this workspace pays in, each take rounded as it bills. */
-  const estimate = listEstimate(rates, billable);
+  /* One take of each, in the workspace's unit, summed take by take as each is
+     billed (lib/price.ts): whole credits per take, or the vendors' dollars. */
+  const takesTotal = (list: { planned: number | null; engine?: string | null }[]) => list.reduce((a, s) => {
+    const n = takeCost(rates, s.planned, s.engine);
+    return a + (money.inCredits ? (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0) : n);
+  }, 0);
+  const estimate = takesTotal(billable);
 
   async function patch(s: Shot, body: Record<string, unknown>) {
     const res = await fetch(`/api/shots/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -97,16 +101,15 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   }
   /* The shot builder (brief 1.8): a scene's shots proposed with every row filled, cast tagged, an engine and its credits each — added one by one, never over what is here. */
   const [drafting, setDrafting] = useState<number | null>(null);
-  const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; model: string; writing: string | null } | null>(null);
+  const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; model: string; costUsd: number; writingCredits: number | null } | null>(null);
   async function draftShots(currentScene: Scene, quote?: PaidTextQuote) {
     if (!paid.pending && !quote) return;
     const pending=paid.pending?JSON.parse(paid.pending.body):null;
     const scene=pending?scenes.find(item=>item.n===pending.scene):currentScene;if(!scene)return;
     setDrafting(scene.n); setProposals(null);
     try {
-      const {data:j}=await paid.run<{shots:ShotProposal[];model:string}&TextRunReply>("/api/atomik/shots/draft",pending ?? {projectId,scene:scene.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
-      /* The shots are priced here, off this workspace's own rate table; the writing is what the ledger billed. */
-      setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], model: String(j.model), writing: textCostLabel(money, j) });
+      const {data:j}=await paid.run<{shots:ShotProposal[];model:string;costUsd?:number;writingCredits?:number}>("/api/atomik/shots/draft",pending ?? {projectId,scene:scene.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
+      setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], model: String(j.model), costUsd: Number(j.costUsd ?? 0), writingCredits: typeof j.writingCredits === "number" ? j.writingCredits : null });
     } catch (e) { await appAlert("No shots drafted", (e as Error).message); }
     finally { setDrafting(null); }
   }
@@ -173,12 +176,12 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
                 </div>
                 {proposals && proposals.scene === sc.n && (
                   <div className="ak-proposal">
-                    <span className="mono-s">PROPOSED BY {proposals.model.split("/").pop()} · {proposals.shots.length} SHOT{proposals.shots.length === 1 ? "" : "S"} · SCENE ≈ {money.price(listEstimate(rates, proposals.shots))} AT ONE TAKE EACH{proposals.writing ? ` · WRITING ${proposals.writing.toUpperCase()}` : ""}</span>
+                    <span className="mono-s">PROPOSED BY {proposals.model.split("/").pop()} · {proposals.shots.length} SHOT{proposals.shots.length === 1 ? "" : "S"} · SCENE ≈ {money.price(takesTotal(proposals.shots))} AT ONE TAKE EACH{money.inCredits ? (proposals.writingCredits === null ? "" : ` · WRITING ${money.price(proposals.writingCredits)}`) : ` · WRITING ${money.price(proposals.costUsd, "text")}`}</span>
                     {proposals.shots.map((p, i) => (
                       <div key={`${sc.n}-${i}`} className="ak-prop-shot">
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className="font-medium">{p.title || "Untitled"}</span>
-                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(takeEstimate(rates, p))}</span>
+                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(takeCost(rates, p.planned, p.engine))}</span>
                           {p.cast.length > 0 && <span className="mono-s">{p.cast.map((c) => `@${c}`).join(" ")}</span>}
                         </div>
                         <p className="text-[13px] leading-relaxed text-dim">{p.description}</p>

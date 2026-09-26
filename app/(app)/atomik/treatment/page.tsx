@@ -35,7 +35,6 @@ import type { Treatment, Scene, Note } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
 import { useMoney } from "@/lib/price";
-import { textCostLabel, type TextRunReply } from "@/lib/textCostLabel";
 
 type Loaded = { versions?: { version: number; by: string; at: number }[]; snapshot?: { draft: number; title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[]; updatedBy: string; at: number } | null; treatment: Treatment | null; cast: CastMember[]; identities: { name: string; status: string }[] };
 type Doc = { title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[] };
@@ -131,9 +130,8 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
     if(!pending)await save(false);
     setRegen(s.n); setProposal(null);
     try {
-      const {data:j}=await paid.run<{scene:Scene;model:string}&TextRunReply>("/api/atomik/treatment/scene",pending ?? {projectId,n:s.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
-      /* What the ledger billed; the engine's own dollars only on a workspace's own keys. */
-      setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: textCostLabel(money, j) });
+      const {data:j}=await paid.run<{scene:Scene;model:string;writingCredits?:number;costUsd?:number}>("/api/atomik/treatment/scene",pending ?? {projectId,n:s.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
+      setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: money.price(Number((money.inCredits ? j.writingCredits : j.costUsd) ?? 0), "text") });
     } catch (e) { await appAlert("Not rewritten", (e as Error).message); }
     finally { setRegen(null); }
   }

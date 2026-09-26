@@ -50,7 +50,9 @@ async function serviceFixture() {
     pollRaw: undefined as unknown, collectorError: undefined as unknown, submitBarrier: undefined as (() => Promise<void>) | undefined,
     originals: new Map<string, ConsumerVideoOriginal>(),
     batchPaid: 0, batchItems: [] as unknown[], batchResult: null as null | { state: string; providerJobId?: string }[], presetChecks: [] as string[],
+    guardCalls: 0, presetReads: [] as string[][],
   };
+  const records = await import("../../lib/higgsfield-consumer/marketing-records");
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
     "@/lib/tenant": tenant,
@@ -69,6 +71,14 @@ async function serviceFixture() {
       if (presetId !== "preset-dolly") throw new (await import("../../lib/higgsfield-consumer/catalogue")).CatalogueError("parameter_invalid", "That motion preset is not offered by the connected account.");
     } },
     "./video-contract": contract,
+    "./marketing-records": records,
+    /* The standalone guard with the account's presets faked: a preset avatar, hook and setting are listed. */
+    "./marketing-setup": {
+      refuseForeignMarketingSetup: (userId: string, wanted: Parameters<typeof records.refuseForeignSetup>[1]) => {
+        state.guardCalls++;
+        return records.refuseForeignSetup(userId, wanted, async (types) => { state.presetReads.push(types); return { avatar: new Set(["av_preset"]), hook: new Set(["h1"]), setting: new Set(["s1"]) }; });
+      },
+    },
     "./video-original": {
       uncollectableOriginal: original.uncollectableOriginal,
       CONSUMER_ORIGINAL_SECONDS: 600,
@@ -153,6 +163,25 @@ const scoped = (id: string) => ({ ...identity, id });
 function terminal(f: Awaited<ReturnType<typeof serviceFixture>>, params: Record<string, unknown>, status = "completed") {
   return { generation: { id: f.state.providerJobId, model: "nano_banana_2", type: "image", status, params, results: status === "completed" ? { rawUrl: "https://media.example.com/qualified-original.png" } : null } };
 }
+
+test("standalone: every quote meets the setup guard first — an item Particl may not send is refused before the account is asked", async () =>
+  fixture(async ({ service, state, jobs }) => {
+    const quote = (parameters: ConsumerGenerationInput["parameters"]) =>
+      service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, parameters: { ...request.parameters, ...parameters } }, randomUUID());
+    const refused: ConsumerGenerationInput["parameters"][] = [{ product_ids: ["p_acct"] }, { brand_kit_id: "bk_acct" }, { ad_reference_id: "r_acct" }, { assets: ["asset_1"] }, { avatar_ids: ["av_custom"] }];
+    for (const parameters of refused)
+      await expect(quote(parameters), JSON.stringify(parameters)).rejects.toMatchObject({ code: "setup_not_particl", status: 409, paidAttempted: false });
+    expect([state.quoteCount, state.importCount, state.catalogueReads, state.paidCount]).toEqual([0, 0, 0, 0]);
+    expect((await jobs.listConsumerJobs(identity)).items).toHaveLength(0);
+    /* Owned types refuse from the record alone; only the avatar needed the account's presets. */
+    expect(state.presetReads).toEqual([["avatar"]]);
+    /* A preset avatar passes the guard (whatever the catalogue then says of it); a plain request never reads the presets. */
+    expect(await quote({ avatar_ids: ["av_preset"] }).then(() => "quoted", (error: { code?: string }) => error.code)).not.toBe("setup_not_particl");
+    const reads = state.presetReads.length;
+    await service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
+    expect(state.presetReads).toHaveLength(reads);
+    expect(state.guardCalls).toBe(7);
+  }));
 
 test("the catalogue is read once per connection and every quote is validated against it before the provider is asked", async () =>
   fixture(async (f) => {

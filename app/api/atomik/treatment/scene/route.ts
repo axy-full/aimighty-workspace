@@ -6,10 +6,11 @@ import { getTreatment, sceneFromReply } from "@/lib/atomikDocs";
 import { requestEffort, resolveModel } from "@/lib/atomik";
 import { gatewayReachable } from "@/lib/gateway";
 import { specToPhrase } from "@/lib/studio";
+import { creditsApply } from "@/lib/credits";
+import { currentTenant } from "@/lib/tenant";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest } from "@/lib/generationRequests";
-import { textRunCost } from "@/lib/textRunCost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -60,12 +61,12 @@ export const POST = withTenant(async function POST(req: Request) {
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
   const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
-  const text = result.text;
-  const out = sceneFromReply(text);
+  const out = sceneFromReply(result.text);
   if (!out) return NextResponse.json({ error: `${model} answered, but not with a scene. Try once more, or another model.` }, { status: 502 });
 
-  /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
-  return NextResponse.json({ scene: { ...out, n, by: model, effort: effort ?? "auto", at: now() }, model, effort: effort ?? "auto", ...(await textRunCost(result)) });
+  /* The writing in this workspace's unit: the credits the ledger billed, or the dollars a workspace on its own keys paid. Never the vendor's dollars to a workspace on credits. */
+  const writing = creditsApply(currentTenant()?.workspace) ? { writingCredits: result.credits } : { costUsd: result.costUsd };
+  return NextResponse.json({ scene: { ...out, n, by: model, effort: effort ?? "auto", at: now() }, model, effort: effort ?? "auto", ...writing });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
