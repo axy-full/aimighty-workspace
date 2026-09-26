@@ -283,6 +283,10 @@ test("the Inspector's Settled fact is the ledger's own row — never a take's do
   });
   const lookups: string[] = [];
   page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname === "/api/usage" && url.searchParams.get("id")) lookups.push(url.searchParams.get("id")!); });
+  /* The charged take's row is refused until Try again: the fact says so rather than guessing a figure. */
+  let refuse = true;
+  await page.route(new RegExp(`/api/usage\\?rows=1&id=${ids.charged}$`), (route) =>
+    refuse ? route.fulfill({ status: 503, json: { error: "The ledger could not be read." } }) : route.fallback());
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=particl&page=boards&sp=boards");
@@ -298,7 +302,11 @@ test("the Inspector's Settled fact is the ledger's own row — never a take's do
     await expect(page.getByTestId("asset-inspector")).toBeVisible();
   };
   await inspect(ids.charged);
+  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("SettledCould not be read");
+  refuse = false;
+  await page.getByTestId("inspector-settled-retry").click();
   await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled43 cr");
+  await expect(page.getByTestId("inspector-settled-retry")).toHaveCount(0);
   await expect(facts).not.toContainText("$");
   await expect(facts).not.toContainText("99 cr");
   await inspect(ids.held);
@@ -329,6 +337,8 @@ test("a workspace that pays its vendors reads its takes in dollars, and the conn
     await tenant.execute({ sql: gen, args: ["gen_usd_failed", "gemini-3.1-flash-image", "a gull", "{}", "failed", "image", "google", null, null, me.id, now - 2000, now - 2000] });
     await tenant.execute({ sql: gen, args: [`gen_hfc_${"c".repeat(40)}`, SEEDANCE, "a pier", JSON.stringify({ consumerCreditUnit: "higgsfield_credits", consumerCredits: 75 }), "succeeded", "video", "higgsfield", null, null, me.id, now - 3000, now - 3000] });
   } finally { tenant.close(); }
+  /* The bars' own read asks the vendors for balances; this test is about the rows, so the bars are a fixture. */
+  await page.route(/\/api\/usage$/, (route) => route.fulfill({ json: { vendors: [{ id: "byteplus", label: "BytePlus", models: [{ model: SEEDANCE, label: "Seedance 2.5", n: 1, spend: 1.3 }] }] } }));
   await page.goto("/suites?view=workspace&tab=usage");
   const rows = page.getByTestId("ws-ledger-row");
   await expect(rows).toHaveCount(2);

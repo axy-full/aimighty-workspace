@@ -114,32 +114,32 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
   await runInTenant(ws, async () => {
     const { db, ready } = await import("../../lib/db");
     await ready();
-    await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_ana','ana@example.test','Ana','x','admin',0)" });
+    await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_editor','editor@example.test','Editor','x','admin',0)" });
     /* Reserved and still running: held. */
-    await reserveGenerationSpend({ ...video, id: id("held"), status: "running", engineCostUsd: 1, createdBy: "u_ana" });
+    await reserveGenerationSpend({ ...video, id: id("held"), status: "running", engineCostUsd: 1, createdBy: "u_editor" });
     /* Reserved, then settled at its actual cost. */
-    await reserveGenerationSpend({ ...video, id: id("settled"), status: "running", engineCostUsd: 1, createdBy: "u_ana" });
+    await reserveGenerationSpend({ ...video, id: id("settled"), status: "running", engineCostUsd: 1, createdBy: "u_editor" });
     await meter({ ...video, id: id("settled"), status: "succeeded", engineCostUsd: 0.8 });
     /* Reserved, then released: the job failed at no cost. */
-    await reserveGenerationSpend({ ...video, id: id("released"), status: "running", engineCostUsd: 1, createdBy: "u_ana" });
+    await reserveGenerationSpend({ ...video, id: id("released"), status: "running", engineCostUsd: 1, createdBy: "u_editor" });
     await meter({ ...video, id: id("released"), status: "failed", engineCostUsd: 0 });
     /* Failed after the vendor billed: charged, and said so. */
-    await reserveGenerationSpend({ ...video, id: id("failed_paid"), status: "running", engineCostUsd: 1, createdBy: "u_ana" });
+    await reserveGenerationSpend({ ...video, id: id("failed_paid"), status: "running", engineCostUsd: 1, createdBy: "u_editor" });
     await meter({ ...video, id: id("failed_paid"), status: "failed", engineCostUsd: 0.5 });
     /* On the workspace's own key: no credits, whatever the vendor charged. */
-    await meter({ id: id("own_key"), kind: "image", engine: "openai", model: "gpt-image-2.5-flare", status: "succeeded", engineCostUsd: 0.0421, createdBy: "u_ana" });
+    await meter({ id: id("own_key"), kind: "image", engine: "openai", model: "gpt-image-2.5-flare", status: "succeeded", engineCostUsd: 0.0421, createdBy: "u_editor" });
   });
   const at = Date.now();
   /* A failed agent run as PR #398's `unbilled` meter event writes it: the vendor's cost kept, nothing billed. */
   await platformDb().execute({
     sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [id("agent_unbilled"), ws.id, "text", "vercel", "anthropic/claude-sonnet-4.6", "failed", 0.3512, 0, 1, "u_ana", at, at],
+    args: [id("agent_unbilled"), ws.id, "text", "vercel", "anthropic/claude-sonnet-4.6", "failed", 0.3512, 0, 1, "u_editor", at, at],
   });
   /* Last month, and a neighbour's job this minute: neither belongs on this month's page. */
   const earlier = lastMonthAt();
   for (const [key, workspaceId, when] of [["old_a", ws.id, earlier], ["old_b", ws.id, earlier + 60_000], ["neighbour", other.id, at]] as const)
     await platformDb().execute({
-      sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,'image','google','gemini-3.1-flash-image','succeeded',0.039,1,1,'u_ana',?,?)`,
+      sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,'image','google','gemini-3.1-flash-image','succeeded',0.039,1,1,'u_editor',?,?)`,
       args: [id(key), workspaceId, when, when],
     });
 
@@ -149,7 +149,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     const byId = new Map(all.rows.map((r) => [r.id, r]));
     expect(byId.get(id("neighbour"))).toBeUndefined();
     expect(all.rows).toHaveLength(8);
-    expect(byId.get(id("held"))).toMatchObject({ state: "held", credits: 15, who: "Ana", engine: "Seedance 2.5", kind: "video" });
+    expect(byId.get(id("held"))).toMatchObject({ state: "held", credits: 15, who: "Editor", engine: "Seedance 2.5", kind: "video" });
     expect(byId.get(id("settled"))).toMatchObject({ state: "charged", credits: 12 });
     expect(byId.get(id("released"))).toMatchObject({ state: "failed-not-billed", credits: 0 });
     expect(byId.get(id("failed_paid"))).toMatchObject({ state: "failed-charged", credits: 8 });
@@ -190,12 +190,12 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     expect((await usageLedgerPage(q(`&id=${id("neighbour")}`), admin("u_owner"))).rows).toEqual([]);
 
     /* Everyone's spend by person is the owners' and admins': a member reads every job, and a name only on their own. */
-    const member = inCredits(await usageLedgerPage(q(), { id: "u_bo", admin: false }));
+    const member = inCredits(await usageLedgerPage(q(), { id: "u_producer", admin: false }));
     expect(member.rows.map((r) => r.credits)).toEqual(all.rows.map((r) => r.credits));
     expect(new Set(member.rows.map((r) => r.who))).toEqual(new Set(["Teammate"]));
-    expect(JSON.stringify(member)).not.toContain("Ana");
-    const author = await usageLedgerPage(q(), { id: "u_ana", admin: false });
-    expect(new Set(author.rows.map((r) => r.who))).toEqual(new Set(["Ana"]));
+    expect(JSON.stringify(member)).not.toContain("Editor");
+    const author = await usageLedgerPage(q(), { id: "u_editor", admin: false });
+    expect(new Set(author.rows.map((r) => r.who))).toEqual(new Set(["Editor"]));
 
     /* The file: the same rows, in credits. */
     const csv = ledgerCsv(all);
@@ -203,15 +203,15 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     expect(csv.split("\r\n").filter(Boolean)).toHaveLength(9);
     expect(csv).toContain("Failed · not billed");
     expect(csv).not.toMatch(/usd|\$/i);
-    const response = await usageLedgerResponse(new Request(`http://local/api/usage?rows=1&format=csv&month=${monthOf(at)}`), admin("u_ana"));
+    const response = await usageLedgerResponse(new Request(`http://local/api/usage?rows=1&format=csv&month=${monthOf(at)}`), admin("u_editor"));
     expect(response.headers.get("Content-Disposition")).toBe(`attachment; filename="usage-${ws.slug}-${monthOf(at)}.csv"`);
     const file = await response.text();
     expect(file.split("\r\n").filter(Boolean)).toHaveLength(7);
     expect(file).not.toMatch(/usd|\$/i);
-    expect((await usageLedgerResponse(new Request("http://local/api/usage?rows=1&month=26-9"), admin("u_ana"))).status).toBe(400);
+    expect((await usageLedgerResponse(new Request("http://local/api/usage?rows=1&month=26-9"), admin("u_editor"))).status).toBe(400);
     /* A member's file carries no teammate's name either. */
-    const memberFile = await (await usageLedgerResponse(new Request("http://local/api/usage?rows=1&format=csv"), { id: "u_bo", admin: false })).text();
-    expect(memberFile).not.toContain("Ana");
+    const memberFile = await (await usageLedgerResponse(new Request("http://local/api/usage?rows=1&format=csv"), { id: "u_producer", admin: false })).text();
+    expect(memberFile).not.toContain("Editor");
     expect(memberFile).toContain("Teammate");
   });
 });
@@ -224,7 +224,7 @@ test("a dollar workspace reads its takes in dollars; the connected account's and
   await runInTenant(ws, async () => {
     const { db, ready } = await import("../../lib/db");
     await ready();
-    await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_bo','bo@example.test','Bo','x','admin',0)" });
+    await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_producer','producer@example.test','Producer','x','admin',0)" });
     const gen = "INSERT INTO generations(id,model,prompt,params,status,kind,provider,cost_usd,refine_cost_usd,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
     const t = Date.now();
     const rows: [string, string, string, number | null, number | null, number][] = [
@@ -240,14 +240,14 @@ test("a dollar workspace reads its takes in dollars; the connected account's and
       ["d_demo", JSON.stringify({ demo: true }), "succeeded", 2.5, null, t - 9000],
     ];
     for (const [key, params, status, cost, refine, at] of rows)
-      await db().execute({ sql: gen, args: [key, "dreamina-seedance-2-5-260628", "a harbour", params, status, "video", "byteplus", cost, refine, "u_bo", at, at] });
-    const page = await usageLedgerPage(q(), admin("u_bo"));
+      await db().execute({ sql: gen, args: [key, "dreamina-seedance-2-5-260628", "a harbour", params, status, "video", "byteplus", cost, refine, "u_producer", at, at] });
+    const page = await usageLedgerPage(q(), admin("u_producer"));
     expect(page.unit).toBe("usd");
     expect(page.rows.map((r) => [r.id, r.state])).toEqual([
       ["d_charged", "charged"], ["d_failed", "failed-not-billed"], ["d_cancelled", "failed-not-billed"],
       ["d_running", "running"], ["d_held", "waiting"], ["d_unpriced", "unpriced"],
     ]);
-    expect(page.rows[0]).toMatchObject({ usd: 1.3, who: "Bo" });
+    expect(page.rows[0]).toMatchObject({ usd: 1.3, who: "Producer" });
     expect(page.totals).toEqual({ jobs: 6, charged: 1.3, notBilled: 2 });
     expect(JSON.stringify(page)).not.toContain("credits");
     expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd");
