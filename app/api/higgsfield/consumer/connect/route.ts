@@ -3,6 +3,7 @@ import { requireOwner, SESSION_COOKIE, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import {
+  backfillConsumerSubject,
   beginConsumerAuthorization,
   ConsumerOAuthError,
 } from "@/lib/higgsfield-consumer/oauth";
@@ -24,6 +25,9 @@ export const POST = withTenant(
         5,
         300_000,
       );
+      // A reconnect keeps the running jobs only if Particl knows which
+      // account the current grant belongs to; learn it before replacing it.
+      await backfillConsumerSubject(identity);
       return Response.json(
         await beginConsumerAuthorization(identity, session),
         { headers },

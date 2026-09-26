@@ -78,7 +78,6 @@ function ProjectLibraryRoute({scope,signedIn}:{scope:string|null;signedIn:boolea
     {importing&&<p className={styles.importing} role="status">Adding asset to project…</p>}
     <ProjectAssetLibrary projectId={project.id} projectName={project.name} fallbackAssets={project.assets}
       onUseAsset={useAsset} onEdit={asset=>router.push(libraryToolHref(project.id,asset,'edit'))} onUpscale={asset=>router.push(libraryToolHref(project.id,asset,'upscale'))}
-      onAddToProject={asset=>void add(asset)} onUsePrompt={take=>router.push(`/generate?${new URLSearchParams({project:project.id,mode:take.kind==='image'?'images':take.kind,promptFrom:take.id})}`)}
-      onUseProjectAsset={()=>router.push(`/workbench?project=${encodeURIComponent(project.id)}&stage=assets`)} onEditProjectAsset={()=>router.push(`/workbench?project=${encodeURIComponent(project.id)}&stage=assets`)}/>
+      onAddToProject={asset=>void add(asset)} onUsePrompt={take=>router.push(`/generate?${new URLSearchParams({project:project.id,mode:take.kind==='image'?'images':take.kind,promptFrom:take.id})}`)}/>
   </div>;
 }

@@ -49,8 +49,12 @@ async function open(page: Page, options: Options = {}) {
   }
   await page.route("**/api/higgsfield/consumer/**", async (route) => {
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
-    consumer.push({ url: route.request().url(), ...body });
+    /* The shell lists the open project's saved connected jobs (GET ?draftId=, lib/shell/connected-collector) whenever
+       a project opens, on any page, so a render left mid-way still reaches Takes: not the composer reading the account. */
+    const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
+    if (!listing) consumer.push({ url: route.request().url(), ...body });
     if (!options.owner) return route.fulfill({ status: 403, json: { error: "The workspace owner only." } });
+    if (listing) return route.fulfill({ json: { jobs: [] } });
     if (new URL(route.request().url()).pathname.endsWith("/connection")) return route.fulfill({ json: { connected: !options.unconnected, requiresReconnect: false } });
     if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: CATALOGUE, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
     if (body.action === "quote") {
@@ -379,10 +383,15 @@ test("the connected catalogue is never quoted from the sheet; a quote the compos
   await expect(price).toHaveAttribute("title", "Last quoted in this browser: 43 connected cr at 4 s");
   await expect(sheet.getByRole("option", { name: /^Seedance 2\.5/ }).getByTestId("gen-sheet-price")).toHaveText("priced on Generate");
   await shot(page, info, "connected-last-quote");
-  /* Opening the sheet and browsing asked for nothing. */
+  /* Opening the sheet and browsing asked for nothing: away to Studio engines until the composer has
+     priced a Studio take there, then back, lands on the figure already given for this exact body. */
   await sheet.getByRole("tab", { name: "Studio engines" }).click();
+  await expect(page.getByTestId("gen-generate")).toHaveText(/^Generate · \d+ cr$/, { timeout: 30_000 });
   await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 43 connected cr");
   await closeSheet(page);
+  /* A re-quote would go out one debounce (260 ms) after the switch back: count well after it. */
+  await page.waitForTimeout(1_000);
   expect(quotes.length).toBe(asked);
   expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);

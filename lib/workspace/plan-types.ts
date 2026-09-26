@@ -133,6 +133,8 @@ export type PlanContext = {
   wait?: (ms: number) => Promise<void>;
   /** Idempotency / request ids; defaults to crypto.randomUUID. */
   newId?: () => string;
+  /** Hands the browser a file to save (a package zip); defaults to a download link. Injectable for tests. */
+  download?: (url: string) => void;
 };
 
 /** A request body a page has already built for one of the existing routes. */

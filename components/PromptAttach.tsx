@@ -43,7 +43,9 @@ export function PromptAttach({ scope, projectId, onAttach, children, label = "At
         setBusy(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
         ({ uploads, notes } = await uploadFilesToProject(scope, projectId, files));
       }
-      const said = await onAttach({ ids: [...ids, ...uploads.map((u) => `upload:${u.id}`)], uploads, notes });
+      /* A file that failed is named in `notes`; the ones that arrived are still attached. */
+      const all = [...ids, ...uploads.map((u) => `upload:${u.id}`)];
+      const said = all.length ? await onAttach({ ids: all, uploads, notes }) : null;
       const text = [...notes, ...(said ? [said] : [])].join(" ");
       setNote(text || null);
     } catch (error) { setNote(error instanceof Error ? error.message : "The files could not be attached."); }

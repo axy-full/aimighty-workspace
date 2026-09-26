@@ -1,11 +1,12 @@
 "use client";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PromptAttach, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { readsLabel } from "@/lib/crew/context";
 import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS_MAX } from "@/lib/crew/room";
 import { useCrew, type CrewRoom, type RoomMessage } from "@/lib/crew/use-crew";
 import { CREW_PAGES } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uploadToProject } from "@/lib/workspace/library";
@@ -36,12 +37,12 @@ export function CrewStrip({ room }: { room: CrewRoom }) {
   );
 }
 
-export function CrewView({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
+export function CrewView({ project, room, scope, projectsError = null, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError?: string | null; onRetry?: () => void }) {
   const shell = useShell();
   const page = CREW_PAGES.find((p) => p.id === shell.crewPage)!;
   return (
     <div className="cw" data-testid="crew-view" data-page={page.id}>
-      {page.id === "room" ? <Room project={project} room={room} scope={scope} /> : null}
+      {page.id === "room" ? <Room project={project} room={room} scope={scope} projectsError={projectsError} onRetry={onRetry} /> : null}
       {page.id === "members" ? <Members room={room} title={page.title} hint={page.hint} /> : null}
       {page.id === "sessions" ? <Sessions room={room} title={page.title} hint={page.hint} /> : null}
     </div>
@@ -50,7 +51,7 @@ export function CrewView({ project, room, scope }: { project: Project | null; ro
 
 /* ── Room ─────────────────────────────────────────────────────────────── */
 
-function Room({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
+function Room({ project, room, scope, projectsError, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError: string | null; onRetry?: () => void }) {
   const shell = useShell();
   const ws = useWorkspace();
   const [selected, setSelected] = useState<string | null>(null);
@@ -72,10 +73,9 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
     if (to === "brief") { ws.toast("Added to the Brief."); shell.goSuite("studio", "brief"); }
     else if (to === "boards") { ws.toast("A draft frame is on Boards."); shell.goSuite("studio", "boards"); }
     else {
-      try { sessionStorage.setItem("particl-gen-preset", routed.prompt ?? ""); } catch { /* the clipboard still carries it */ }
-      let copied = false;
-      try { await navigator.clipboard.writeText(routed.prompt ?? ""); copied = true; } catch { /* no clipboard permission */ }
-      ws.toast(copied ? "Solution copied — paste it as the prompt in Gen." : "Opened Gen.");
+      /* The solution becomes Gen's prompt, whether Gen is open yet or not. */
+      sendGenPreset({ prompt: routed.prompt ?? "" });
+      ws.toast("The solution is the prompt in Gen.");
       shell.goGen();
     }
   };
@@ -122,7 +122,7 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
       <section className="cw-col cw-main" aria-label="Room">
         <div className="cw-head">
           <div className="cw-head-text">
-            <span className="cw-project"><span className="cw-project-tile" aria-hidden="true">{initials(project?.name ?? "")}</span>{project?.name ?? "No project"}</span>
+            <span className="cw-project"><span className="cw-project-tile" aria-hidden="true">{initials(project?.name ?? "")}</span>{project?.name ?? (projectsError ? "Projects didn’t load" : "No project")}</span>
             <h1 className="gx-h1" data-testid="page-title">{page.title}</h1>
             <span className="gx-hint">{page.hint}</span>
           </div>
@@ -151,6 +151,13 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
           </div>
         </div>
 
+        {/* The project list failed to read: said, with Retry — not "No project", which sent people to make duplicates. */}
+        {projectsError && !project ? (
+          <div className="cw-notice" role="alert" data-testid="crew-projects-error">
+            <span className="gx-gen-error">{projectsError}</span>
+            {onRetry ? <> <button type="button" className="gx-hbtn" style={{ display: "inline-flex" }} onClick={onRetry}>Retry</button></> : null}
+          </div>
+        ) : null}
         {room.notice ? <p className="cw-notice" role="status" data-testid="crew-notice">{room.notice}</p> : null}
 
         <div className="cw-transcript" data-testid="crew-transcript">
@@ -189,7 +196,7 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
             <span className="gx-eyebrow" data-functional-label="">Session</span>
             <p className="cw-panel-goal">{room.goal.trim() || "No goal yet."}</p>
             <dl className="cw-rows">
-              {[["Members", `${room.active.length} seated`], ["Engine", room.session?.model ?? room.status?.model ?? "—"], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session && room.session.spendUsd > 0 ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]].map(([k, v]) => (
+              {([["Members", `${room.active.length} seated`], ["Engine", <EngineRow key="engine" room={room} />], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session && room.session.spendUsd > 0 ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]] as [string, ReactNode][]).map(([k, v]) => (
                 <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
               ))}
             </dl>
@@ -322,3 +329,17 @@ function Sessions({ room, title, hint }: { room: CrewRoom; title: string; hint: 
 }
 
 export { useCrew };
+
+/* The room's engine. A room keeps the one it was opened on, so a deployment
+   that has moved on offers the move here — priced again before any round. */
+function EngineRow({ room }: { room: CrewRoom }) {
+  const own = room.session?.model ?? room.status?.model ?? "—";
+  const current = room.status?.connected ? room.status.model : "";
+  if (!room.session || !current || current === room.session.model) return <>{own}</>;
+  return (
+    <span className="cw-engine-move">
+      {own}
+      <button type="button" className="gx-hbtn" disabled={room.running} onClick={() => void room.moveToCurrentEngine()} data-testid="crew-engine-move">Move to {current}</button>
+    </span>
+  );
+}

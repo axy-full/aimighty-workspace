@@ -7,6 +7,9 @@ import { withRecoveryJob } from "./recovery";
 import { db, ready, now } from "./db";
 import { type VideoParams, type Reference, type ImageRole } from "./ark";
 import { falEndpointFor } from "./falVideo";
+import { falSubmissionRejected } from "./fal";
+import { xaiSubmissionRejected } from "./xaiVideo";
+import { PreflightError } from "./preflight";
 import { classifyFailure, billedTo } from "./providers";
 import { getModel, type ModelDef } from "./models";
 import { getTask, type TaskDef } from "./tasks";
@@ -133,24 +136,24 @@ async function rememberSubmission(
   });
 }
 
-/** These exact adapter errors represent a received rejection, not transport
- * ambiguity. Unrecognized errors retain the estimate conservatively. */
-function definitelyRejected(message: string): boolean {
-  const status =
-    message.match(/^Ark submit failed \((\d+)\)/)?.[1] ??
-    message.match(/^fal\.ai returned (\d+)\b/)?.[1];
+/** A received refusal, or a failure before anything was sent — never transport
+ * ambiguity. Each adapter says so with a typed error; unrecognized errors
+ * retain the estimate conservatively. */
+export function definitelyRejected(error: unknown, message: string): boolean {
+  if (
+    error instanceof PreflightError ||
+    falSubmissionRejected(error) ||
+    xaiSubmissionRejected(error) ||
+    higgsfieldSubmissionRejected(error)
+  )
+    return true;
+  const status = message.match(/^Ark submit failed \((\d+)\)/)?.[1];
   return (
-    Boolean(
-      status &&
+    (status != null &&
       [400, 401, 402, 403, 404, 405, 413, 415, 422, 429].includes(
         Number(status),
-      ),
-    ) ||
-    /^fal\.ai (rejected the key|account is out of credit|refused the request|rate limit —)/.test(
-      message,
-    ) ||
-    /^That engine isn't connected for this workspace\./.test(message) ||
-    /^Request body is [\d.]+ MB, over ModelArk's 64 MB limit\./.test(message)
+      )) ||
+    /^That engine isn't connected for this workspace\./.test(message)
   );
 }
 async function submissionFailed(
@@ -173,12 +176,14 @@ async function submissionFailed(
       /* The existing meter reservation remains authoritative. */
     }
   }
-  await writeSubmission(() =>
-    db().execute({
+  let ended = false;
+  await writeSubmission(async () => {
+    const out = await db().execute({
       sql: `UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL AND json_extract(params,'$.higgsfieldVideoHandle') IS NULL`,
       args: [error, retainedCost, now(), job.genId],
-    }),
-  ).catch(() => {});
+    });
+    ended ||= out.rowsAffected > 0;
+  }).catch(() => {});
   await meter(
     {
       id: job.genId,
@@ -190,6 +195,11 @@ async function submissionFailed(
     },
     { critical: false },
   ).catch(() => {});
+  /* The take ended without a settlement, but its slot (and, when refused,
+     its reservation) came back all the same: start what waited for it now,
+     not at the next ten-minute cron. Imported late: held.ts submits through
+     this module. */
+  if (ended) await (await import("./held")).releaseAfterSettlement();
   return {
     ok: false,
     error,
@@ -320,7 +330,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       ).replace(/; it will be retried\./, "; no additional request was sent.");
       const uncertain =
         !(error instanceof FundingSourceChangedError) &&
-        !definitelyRejected(message) && !higgsfieldSubmissionRejected(error);
+        !definitelyRejected(error, message);
       return submissionFailed(
         job,
         uncertain

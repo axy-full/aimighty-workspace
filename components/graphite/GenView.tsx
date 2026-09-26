@@ -7,9 +7,10 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
-import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
+import { displayModelName } from "@/lib/models";
+import { useGenPresetInbox } from "@/lib/shell/gen-preset";
 import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
-import { sendRecipe, useRecipeInbox, useReferenceInbox } from "@/lib/shell/reference-inbox";
+import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
@@ -28,6 +29,8 @@ import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 
+/** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
+const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
@@ -67,6 +70,26 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
+     "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
+     read it, so the strip lets go of a connected job this view started and the collector follows it. */
+  const strip = ws.state.gen, wsDispatch = ws.dispatch;
+  const [stripAtMount] = useState(() => ws.state.gen?.id ?? null);
+  const stripNow = useRef(strip);
+  const sendNow = useRef(wsDispatch);
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    stripNow.current = strip;
+    sendNow.current = wsDispatch;
+    if (strip && strip.tone === "blue" && strip.id !== stripAtMount && CONNECTED_JOB_ID.test(strip.id)) started.current.add(strip.id);
+  }, [strip, stripAtMount, wsDispatch]);
+  useEffect(() => {
+    const last = stripNow, send = sendNow, mine = started.current;
+    return () => {
+      const left = last.current;
+      if (left && left.tone === "blue" && mine.has(left.id)) send.current({ type: "patch", patch: { gen: null } });
+    };
+  }, []);
   const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
@@ -152,12 +175,15 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     }
   }, [scope, dispatchComposer]);
 
-  /* Words and recipes handed over from elsewhere in the shell. Crew › Open in
-     Gen and Soul ID leave words (and a model) in session storage; Recreate
-     posts a take's whole recipe by letter, so a Gen that is already open takes
-     it too. Nothing runs either way: the button prices what arrived. */
+  /* What is handed over from elsewhere in the shell arrives by letter (lib/shell/gen-preset.ts): a Gen
+     that is already open takes it at once — ⌘R included — and nothing lingers to be applied again. Crew ›
+     Open in Gen, Soul ID › Use in Gen, a model picked in ⌘K and the public site's hero hand over words, a
+     model and settings: the catalogue first (it decides which models exist), then the kind, the model,
+     the words (an empty prompt leaves the composer's own), the settings and the sound. Recreate hands
+     over a take's whole recipe, applied in one step that Undo reverses. Nothing runs either way: the
+     button prices what arrived. */
   const [recipe, setRecipe] = useState<RecipeCard | null>(null);
-  const [presetNote, setPresetNote] = useState<string | null>(null);
+  const [preset, setPreset] = useState<GenPreset | null>(null);
   const recipeEpoch = useRef(0);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; });
@@ -165,40 +191,46 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const { dismiss: dismissEnhanced, auto: autoNow, setAuto } = enhancer;
   const autoWas = useRef(autoNow);
   useEffect(() => { autoWas.current = autoNow; });
-  const applyPreset = useCallback((preset: GenPreset) => {
+  const applyPreset = useCallback((next: GenPreset) => {
     const epoch = ++recipeEpoch.current;
     setMode("compose");
+    setWellError(null);
     /* New words replace the old: an enhancement of the old words must not be what Generate sends. */
-    if (!preset.settingsOnly) dismissEnhanced();
-    if (!preset.from) {
-      if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-      if (preset.model) dispatchComposer({ type: "model", value: preset.model });
-      dispatchComposer({ type: "prompt", value: preset.prompt });
+    if (next.from ? !next.settingsOnly : next.prompt) dismissEnhanced();
+    if (!next.from) {
+      if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+      if (next.type) dispatchComposer({ type: "type", value: next.type });
+      if (next.model) dispatchComposer({ type: "model", value: next.model });
+      if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
+      if (next.picks) dispatchComposer({ type: "pick", value: next.picks });
+      if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
+      if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
+      if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
       setRecipe(null);
-      setPresetNote(preset.note ?? null);
+      setPreset(next);
       return;
     }
     const previous = latest.current;
-    const settingsOnly = Boolean(preset.settingsOnly);
-    const type = preset.type ?? previous.type;
-    const refs = settingsOnly || type === "audio" ? [] : preset.references ?? [];
+    const settingsOnly = Boolean(next.settingsOnly);
+    const type = next.type ?? previous.type;
+    const refs = settingsOnly || type === "audio" ? [] : next.references ?? [];
     /* The connected account is the owner's; anyone else recreates on this workspace's engines, and their own engine choice stands. */
-    const billing: BillingSource = preset.billing === "connected" && owner ? "connected" : "workspace";
-    const lost = preset.billing === "connected" && billing !== "connected";
+    const billing: BillingSource = next.billing === "connected" && owner ? "connected" : "workspace";
+    const lost = next.billing === "connected" && billing !== "connected";
     dispatchComposer({
       type: "recipe",
       value: {
-        type, billing, picks: preset.picks ?? {}, sound: preset.sound,
-        ...(lost ? {} : { model: preset.model }),
-        ...(settingsOnly ? {} : { prompt: preset.prompt, references: [] }),
+        type, billing, picks: next.picks ?? {}, sound: next.sound,
+        ...(lost ? {} : { model: next.model }),
+        ...(settingsOnly ? {} : { prompt: next.prompt, references: [] }),
       },
     });
     /* A take made raw on the account is recreated raw, one enhanced there is enhanced there again. */
     const autoBefore = autoWas.current;
-    const autoMoved = billing === "connected" && preset.enhance !== undefined && preset.enhance !== autoBefore;
-    if (autoMoved) setAuto(preset.enhance!);
-    setPresetNote(null);
-    setRecipe({ preset, previous, autoBefore: autoMoved ? autoBefore : null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
+    const autoMoved = billing === "connected" && next.enhance !== undefined && next.enhance !== autoBefore;
+    if (autoMoved) setAuto(next.enhance!);
+    setPreset(null);
+    setRecipe({ preset: next, previous, autoBefore: autoMoved ? autoBefore : null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
     if (!refs.length) return;
     /* Every reference is read again in this workspace. The ones still here keep the take's order; the words
        are renumbered to match them, and the ones that are gone keep citations of their own (recipe › retagRecipe). */
@@ -228,13 +260,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       setRecipe((now) => (now?.epoch === epoch ? { ...now, refs: { total: refs.length, reading: false, missing, renumbered, frames } } : now));
     });
   }, [scope, owner, dispatchComposer, dismissEnhanced, setAuto]);
-  useEffect(() => {
-    try {
-      const found = readGenPreset(sessionStorage.getItem(GEN_PRESET_KEY));
-      if (found) { sessionStorage.removeItem(GEN_PRESET_KEY); sendRecipe(found); }
-    } catch { /* the preset is a convenience */ }
-  }, []);
-  useRecipeInbox(applyPreset);
+  useGenPresetInbox(applyPreset);
+  /* The engine a preset named may not be on offer here any more: say which one stands in (a recipe's card says it for Recreate). */
+  const presetNote = !preset?.note ? null
+    : preset.model && model && composer.models.length && model.id !== preset.model ? `${preset.note} · ${displayModelName(preset.model)} is not offered here; ${model.label} is selected` : preset.note;
   const undoRecipe = () => {
     if (!recipe) return;
     recipeEpoch.current++;
@@ -578,7 +607,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
-              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: "var(--gx-accent)" }} aria-hidden="true" /></span>
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>

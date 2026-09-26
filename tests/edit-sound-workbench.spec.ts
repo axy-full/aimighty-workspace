@@ -167,6 +167,21 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   await expect(clip1).toContainText("Voice-over · v1");
   await expect(clip1.getByLabel("Sound lane", { exact: true })).toHaveValue("dialogue");
   await expect(clip1.getByLabel("Timeline start", { exact: true })).toHaveValue("12");
+  if (page.viewportSize()!.width < 760) {
+    /* The phone floor: 12px text and 44px targets in the mixer, Mute / Solo / Remove clip included. */
+    const floor = await mix.evaluate((root) => {
+      const shown = (el: Element) => (el as HTMLElement).offsetParent !== null;
+      const small = Array.from(root.querySelectorAll("*"))
+        .filter((el) => shown(el) && Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim()))
+        .filter((el) => Number.parseFloat(getComputedStyle(el).fontSize) < 12)
+        .map((el) => `${getComputedStyle(el).fontSize}: ${el.textContent?.trim().slice(0, 30)}`);
+      const short = Array.from(root.querySelectorAll("button, label"))
+        .filter((el) => shown(el) && el.getBoundingClientRect().height < 44)
+        .map((el) => `${Math.round(el.getBoundingClientRect().height)}px: ${el.textContent?.trim().slice(0, 30)}`);
+      return { small, short };
+    });
+    expect(floor).toEqual({ small: [], short: [] });
+  }
   await expect(panel.getByRole("status")).toContainText("Voice-over placed on the dialogue lane at 00:00");
   await expect(panel.getByRole("list", { name: "Sound in progress" })).toHaveCount(0);
 
@@ -199,7 +214,8 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   expect(submissions[2].body).toMatchObject({ task: "music", lengthMs: 10_000, instrumental: true, maxCredits: 21 });
   finished = 3;
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(3);
-  expect(current().audioClips![2]).toMatchObject({ lane: "music", startFrame: 30, duration: 10 * fps });
+  // Ten seconds asked for, but the 6 s cut ends first: the clip ends with the cut so the mix and render still work.
+  expect(current().audioClips![2]).toMatchObject({ lane: "music", startFrame: 30, duration: 2 * 72 - 30 });
   const clip3 = mix.getByRole("group", { name: "Sound clip 3" });
   await expect(clip3).toContainText("Music · v1");
   await expect(clip3.getByLabel("Timeline start", { exact: true })).toHaveValue("30");
@@ -211,5 +227,91 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   await panel.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("edit-sound.png") });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("a sound request still mapping its lane when another project opens leaves that project's draft alone", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one project-switch race");
+  await signInLocally(page.request);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const me = await page.request.get("/api/me").then((r) => r.json()),
+    scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const first: Project = { ...seedProject(), id: "race-first-" + randomUUID().slice(0, 8), name: "First edit", productionProjectId: "production-first", shotMappings: {} };
+  const second: Project = { ...seedProject(), id: "race-second-" + randomUUID().slice(0, 8), name: "Second edit", productionProjectId: "production-second", shotMappings: {} };
+  const drafts = new Map([[first.id, first], [second.id, second]]);
+  const revisions = new Map([[first.id, 1], [second.id, 1]]);
+  const secondSaves: Project[] = [];
+  const submissions: Record<string, unknown>[] = [];
+  let mapping = "";
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(),
+      url = new URL(request.url()),
+      path = url.pathname;
+    const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (path === "/api/workbench/projects") {
+      if (request.method() === "PUT") {
+        const saved = request.postDataJSON().project as Project;
+        const owned = drafts.get(saved.id)!.productionProjectId!;
+        if (saved.id === second.id) secondSaves.push(saved);
+        /* As saveDraft: a draft never changes its production. */
+        if (saved.productionProjectId && saved.productionProjectId !== owned) return json({ error: "A draft cannot change its project. Open a separate space." }, 400);
+        drafts.set(saved.id, { ...saved, productionProjectId: owned });
+        const revision = revisions.get(saved.id)! + 1;
+        revisions.set(saved.id, revision);
+        return json({ revision, productionProjectId: owned, shotMappings: saved.id === first.id && mapping ? { [mapping]: "shot-" + mapping } : {} });
+      }
+      if (request.method() === "POST") {
+        const body = request.postDataJSON();
+        if (body.action !== "map-shot" || body.projectId !== first.id) return json({ error: "unexpected mapping" }, 400);
+        mapping = body.nodeId;
+        /* Held while the page opens the second project. */
+        await released;
+        return json({ productionProjectId: "production-first", shotId: "shot-" + body.nodeId });
+      }
+      const id = url.searchParams.get("id") ?? first.id;
+      return json({ project: drafts.get(id), revision: revisions.get(id), projects: [...drafts.values()].map((p) => ({ id: p.id, name: p.name })), productions: [] });
+    }
+    if (path === "/api/audio" && request.method() === "GET")
+      return json({ configured: true, speechModels: [{ id: "mock-speech", label: "Mock speech", creditsPerChar: 1, note: "Local test" }], defaultSpeechModel: "mock-speech", voices: [], voicesError: null, account: null, terms: { sfxCredits: 200, musicCreditsPerMinute: 900 } });
+    if (path === "/api/audio/voices") return json({ configured: true, voices: [{ id: "mockvoice01", name: "Avery", category: "premade" }] });
+    if (path === "/api/audio" && request.method() === "POST") {
+      const body = request.postDataJSON();
+      if (body.quoteOnly) return json({ estimatedCredits: 14, price: 14, unit: "cr" });
+      submissions.push(body);
+      return json({ id: "mock-race-audio", status: "running", estCredits: 1, estimatedCredits: 14 });
+    }
+    if (path === "/api/jobs") return json({ generations: [], nextCursor: null });
+    if (path === "/api/workbench/atomik") return json({ models: [], jobs: [] });
+    if (request.method() !== "GET") throw new Error(`Unexpected paid/mutating browser request: ${request.method()} ${path}`);
+    return route.fallback();
+  });
+
+  await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: first.id });
+  await page.goto(await legacyShell(page, "/workbench"));
+  await stage(page, "edit");
+  await openWorkbenchInspector(page, "sound");
+  const panel = page.getByRole("region", { name: "Generate sound" });
+  await expect(panel.getByLabel("Voice", { exact: true })).toHaveValue("mockvoice01");
+  await panel.getByLabel("Script", { exact: true }).fill(SCRIPT);
+  const generate = panel.locator("[data-sound-generate]");
+  await expect(generate).toContainText("Generate voice-over · 14 cr");
+  await generate.click();
+  await expect.poll(() => mapping).not.toBe("");
+
+  /* The second project opens while the first one's lane is still being mapped. */
+  await page.locator(".project-switch").click();
+  await page.getByRole("menuitem", { name: "Second edit" }).click();
+  await expect(page.locator(".project-switch")).toContainText("Second edit");
+  release();
+  /* The first project's request carries on to its own submission… */
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0]).toMatchObject({ projectId: "production-first", shotId: "shot-" + mapping });
+  /* …and the second project's draft never takes the first one's production or lane. */
+  await page.waitForTimeout(2000);
+  expect(secondSaves.filter((p) => p.productionProjectId === "production-first" || p.shotMappings?.[mapping])).toEqual([]);
+  await expect(page.getByText("A draft cannot change its project")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

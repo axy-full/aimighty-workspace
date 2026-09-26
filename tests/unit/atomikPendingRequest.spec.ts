@@ -56,12 +56,23 @@ test('only a verified rejection with a successful empty lookup clears a rejected
   }
 });
 
-test('an uncertain provider result and another job identity cannot clear the recovery record', () => {
+test('another job identity or an unknown status cannot clear the recovery record', () => {
   const storage = new MemoryStorage();
   const pending = persistPendingAtomik(storage, scope, projectId, body);
-  expect(resolvePendingAtomik(storage, scope, projectId, pending, { job: { id: 'job-1', requestId: pending.requestId, status: 'uncertain' } })).toBe(false);
   expect(resolvePendingAtomik(storage, scope, projectId, pending, { job: { id: 'job-2', requestId: 'different-request', status: 'succeeded' } })).toBe(false);
+  expect(resolvePendingAtomik(storage, scope, projectId, pending, { job: { id: 'job-3', requestId: 'different-request', status: 'uncertain' } })).toBe(false);
+  expect(resolvePendingAtomik(storage, scope, projectId, pending, { job: { id: 'job-1', requestId: pending.requestId, status: 'mystery' } })).toBe(false);
   expect(readPendingAtomik(storage, scope, projectId)).toEqual(pending);
+});
+
+test('an uncertain server row resolves the browser record, so the project is not locked afterwards', () => {
+  const storage = new MemoryStorage();
+  const pending = persistPendingAtomik(storage, scope, projectId, body);
+  // The server row keeps the reservation and error for review; the request ID can never mint another job.
+  expect(resolvePendingAtomik(storage, scope, projectId, pending, { job: { id: 'job-1', requestId: pending.requestId, status: 'uncertain' } })).toBe(true);
+  expect(readPendingAtomik(storage, scope, projectId)).toBeNull();
+  // A later request on the same project and device is accepted instead of throwing AtomikPendingConflict.
+  expect(persistPendingAtomik(storage, scope, projectId, alternate).requestId).toBe('request-reopened');
 });
 
 test('recovery records are isolated by authenticated workspace, user and draft', () => {

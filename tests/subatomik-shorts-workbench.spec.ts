@@ -9,7 +9,7 @@ const wallet = "22222222-2222-4222-8222-222222222222";
 const session = "33333333-3333-4333-8333-333333333333";
 const clipIds = ["44444444-4444-4444-8444-444444444441", "44444444-4444-4444-8444-444444444442", "44444444-4444-4444-8444-444444444443"];
 const genIds = [`gen_hfc_${"a".repeat(40)}`, `gen_hfc_${"b".repeat(40)}`];
-const presetId = "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", userPreset = "a1914fcf-5b8c-4cab-9c21-6bb6c4f3e41a";
+const presetId = "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f";
 type Job = Record<string, unknown> & { id: string; status: string };
 
 async function fixture(page: Page, options: { connected?: boolean } = {}) {
@@ -47,7 +47,7 @@ async function fixture(page: Page, options: { connected?: boolean } = {}) {
       const body = request.postDataJSON();
       posts.push(body);
       if (body.action === "presets")
-        return json({ presets: { presets: [{ id: userPreset, source: "user", name: "My look" }, { id: presetId, source: "cms", name: "Bold Urban" }], complete: true, fetchedAt: Date.now() } });
+        return json({ presets: { presets: [{ id: presetId, source: "cms", name: "Bold Urban" }], complete: true, fetchedAt: Date.now() } });
       expect(body.draftId).toBe(project.id);
       if (body.action === "quote") {
         expect(body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
@@ -118,8 +118,17 @@ test("Shorts picks a style and one project video, quotes the whole set once, run
   await expect(panel.getByText("Pick one video from this project.", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Load styles", exact: true }).click();
   const style = panel.getByRole("combobox", { name: "Style", exact: true });
-  await expect(style.locator("optgroup").nth(0)).toHaveAttribute("label", "Your styles");
-  await expect(style.locator("optgroup").nth(1)).toHaveAttribute("label", "Library styles");
+  // Library styles only: styles saved on the account are never listed (the route never returns them).
+  await expect(style.locator("optgroup")).toHaveCount(1);
+  await expect(style.locator("optgroup")).toHaveAttribute("label", "Library styles");
+  /* Shorts restyles a video: the library offers what it can do with one, not an Edit, Upscale or Use prompt that does nothing here. */
+  const launch = page.locator('[data-library-id="upload:launch-original"]');
+  await expect(launch).toBeVisible();
+  await expect(launch.getByRole("button", { name: /^Edit (clip|image)$/ })).toHaveCount(0);
+  await launch.getByRole("button", { name: /^Actions for / }).click();
+  await expect(page.getByRole("menuitem", { name: "Use as reference", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /^(Edit clip|Upscale video|Use prompt)$/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await useSource(page, "upload:still-original");
   await expect(panel.getByRole("alert")).toContainText("Shorts need a video file.");
   await useSource(page, "upload:launch-original");

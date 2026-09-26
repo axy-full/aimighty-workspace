@@ -372,7 +372,8 @@ test("a take from a tool Gen does not have — an edit, a dub — cannot be recr
   if (info.project.name !== "workbench-1440x900" && await close.isVisible()) await close.click();
   inspector = await inspect(page, "gen_dub");
   await expect(inspector.getByTestId("inspector-recreate")).toBeDisabled();
-  await expect(inspector.getByTestId("inspector-recreate-why")).toHaveText(why);
+  /* Made from a source clip: the reason says where to run it again. */
+  await expect(inspector.getByTestId("inspector-recreate-why")).toHaveText("This take was made from a source clip. Run that tool again from Takes.");
   expect(errors).toEqual([]);
 });
 

@@ -12,21 +12,25 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
+import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
 import "./rig.css";
 
 /** The Inspector for a selected shot (03, "Inspector"). */
 export function RigInspector() {
   const rig = useRig();
+  const { state } = useWorkspace();
   const { selected, project } = rig;
   if (!project || !selected) {
+    const load = rigLoadState({ status: rig.status, hasProject: !!project, projectId: state.projectId });
     return (
       <div data-inspector-body="shot">
         <Kicker>Output</Kicker>
         <div className="pxw-preview" style={{ marginTop: 10 }} aria-hidden="true" />
         <p className="pxw-inspector-note">
-          {rig.status === "loading" ? "Loading shots…" : project ? (rig.shots.length ? "Select a shot to see its controls." : "Add a shot to start.") : "Open a project to see its shots."}
+          {load === "loading" ? "Loading shots…" : load === "error" ? rig.error : project ? (rig.shots.length ? "Select a shot to see its controls." : "Add a shot to start.") : RIG_NO_PROJECT}
         </p>
       </div>
     );
@@ -108,7 +112,13 @@ function ShotInspector({ shot }: { shot: RigShot }) {
   const project = rig.project!;
   const node = rig.selectedNode;
   const inputs = useMemo(() => shotInputs(project, shot.id), [project, shot.id]);
-  const versions = useMemo(() => shotVersions(project, shot.id, rig.jobs), [project, shot.id, rig.jobs]);
+  /* A discarded held take reads as what it now is at once; the jobs poll
+     confirms it within seconds. */
+  const [discarded, setDiscarded] = useState<ReadonlySet<string>>(() => new Set());
+  const jobs = useMemo(() => discarded.size
+    ? rig.jobs.map((job) => discarded.has(job.id) && job.status === "held" ? { ...job, status: "cancelled", creditsBilled: 0, error: undefined } : job)
+    : rig.jobs, [rig.jobs, discarded]);
+  const versions = useMemo(() => shotVersions(project, shot.id, jobs), [project, shot.id, jobs]);
   const tab = state.inspTab;
   /* The Library's Rig tools land on this shot's prompt, inputs or versions. */
   useEffect(() => {
@@ -152,14 +162,43 @@ function ShotInspector({ shot }: { shot: RigShot }) {
           {versions.length ? versions.map((row) => (
             <div className="pxw-insp-version" key={row.id} data-current={row.current || undefined} data-state={row.state} data-section="versions">
               <span className="pxw-insp-version-v">{row.v}</span>
-              <span className="pxw-insp-version-label">{row.label}</span>
+              <span className="pxw-insp-version-label" title={row.note}>{row.label}</span>
               <span className="pxw-insp-version-meta">{row.meta}</span>
               <BranchFromTake shot={shot} assetId={row.id} />
+              {row.held ? <DiscardHeld jobId={row.id} onDiscarded={() => setDiscarded((ids) => new Set(ids).add(row.id))} /> : null}
             </div>
           )) : <p className="pxw-inspector-note" style={{ marginTop: 0 }}>No takes yet. Generate one to start the version history.</p>}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A held take waits for credits or a slot and never ends on its own; nothing was charged, so taking it out of the line is free. */
+function DiscardHeld({ jobId, onDiscarded }: { jobId: string; onDiscarded: () => void }) {
+  const rig = useRig();
+  const { toast } = useWorkspace();
+  const [busy, setBusy] = useState(false);
+  const discard = async () => {
+    setBusy(true);
+    try {
+      await studioRequest(`/api/jobs/${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": rig.scope },
+        body: JSON.stringify({ discard: true }),
+      });
+      onDiscarded();
+      toast("Discarded · nothing was charged");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The take could not be discarded.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" className="pxw-link-button" disabled={busy} onClick={() => void discard()} data-testid="rig-discard-held">
+      {busy ? "Discarding…" : "Discard"}
+    </button>
   );
 }
 
@@ -182,6 +221,13 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   /* Notes are the notes alone; the shot's prompt has its own box above. */
   const notes = rig.selectedNode ? shotNotesOnly(rig.selectedNode) : shot.note;
   const quote = rig.quote?.state === "ready" && rig.quote.credits !== null ? formatCredits(rig.quote.credits) : null;
+  /* The Estimate is the Generate button's own figure. With references bound that is the
+     reference-inclusive live quote; the settings-only estimate would read lower than the button. */
+  const live = rig.selected?.id === shot.id ? rig.quote : null;
+  const withRefs = !!live && live.key !== shot.estimateKey;
+  const shown = live
+    ? { credits: live.state === "ready" ? live.credits : null, state: live.state, reason: live.reason }
+    : { credits: estimate.credits, state: estimate.state, reason: estimate.reason };
   const durations = model?.durations ?? [];
   const range = durations.length ? { min: Math.min(...durations), max: Math.max(...durations) } : null;
 
@@ -260,14 +306,15 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
             onClick={() => edit({ durationS: stepDuration(durations, shot.durationS, 1) })}>+</button>
         </span>
       </div>
-      <div className="pxw-insp-estimate" data-testid="shot-estimate" data-state={estimate.state}>
+      <div className="pxw-insp-estimate" data-testid="shot-estimate" data-state={shown.state} data-with-references={withRefs || undefined}>
         <div className="pxw-insp-estimate-row">
           <span>Estimate</span>
-          <span className="pxw-insp-estimate-value">{estimate.credits !== null ? formatCredits(estimate.credits) : estimate.state === "loading" ? "…" : "—"}</span>
+          <span className="pxw-insp-estimate-value">{shown.credits !== null ? formatCredits(shown.credits) : shown.state === "loading" ? "…" : "—"}</span>
         </div>
         <div className="pxw-insp-estimate-meta">
-          {estimate.state === "unavailable" && estimate.reason
-            ? estimate.reason
+          {shown.state === "unavailable" && shown.reason
+            ? shown.reason
+            : withRefs ? "With references · billed on settle"
             : estimate.tokens !== undefined ? `${formatTokens(estimate.tokens)} · billed on settle` : "Billed on settle"}
         </div>
       </div>

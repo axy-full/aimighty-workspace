@@ -4,6 +4,9 @@ import { modelLabel } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { billedCreditsSum } from "@/lib/creditSql";
 import { maskEmail } from "@/lib/maskEmail";
+import { creditsApply } from "@/lib/credits";
+import { requireTenant } from "@/lib/tenant";
+import { withoutVendorCost } from "@/lib/analyticsRedact";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -160,7 +163,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const filed = num(it?.filed);
   const shots = num(it?.shots);
 
-  return NextResponse.json({
+  const payload = {
     scope: { projectId: raw ?? "all", days },
     totals: {
       generations: num(t?.n),
@@ -228,5 +231,7 @@ export const GET = withTenant(async function GET(req: Request) {
       /** The iteration number: takes per shot. 1.0 means nobody revises. */
       takesPerShot: shots ? filed / shots : 0,
     },
-  });
+  };
+  /* A workspace billed in credits reads credits: vendor dollars beside them are the margin. */
+  return NextResponse.json(creditsApply(requireTenant()) ? withoutVendorCost(payload) : payload);
 });

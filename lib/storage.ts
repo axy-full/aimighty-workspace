@@ -553,3 +553,47 @@ export async function openVideoStream(genId: string, range: ByteRange, signal?: 
   if ((await stat(file)).size !== range.total) throw new Error("Original video length changed");
   return Readable.toWeb(createReadStream(file,{start:range.start,end:range.end,signal})) as ReadableStream<Uint8Array>;
 }
+
+/** The stored size of a retained original, or null when there is no such object. */
+export async function originalSize(kind: OriginalKind, genId: string): Promise<number | null> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
+  if (usingCloud()) return (await cloudBackend().head(originalPath(kind, genId)))?.size ?? null;
+  try {
+    return (await stat(path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`))).size;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A retained original, whole or one byte range of it, streamed without
+ * buffering — for a route that answers Range itself (iOS Safari will not
+ * play a video from a server that never answers 206). `size` is the length
+ * of the body when it is known, never a guess.
+ */
+export async function openOriginalStream(
+  kind: OriginalKind, genId: string, range?: ByteRange | null, signal?: AbortSignal,
+): Promise<{ stream: ReadableStream<Uint8Array>; size: number | null }> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
+  if (usingCloud()) {
+    const found = await cloudBackend().get(originalPath(kind, genId), { ...(range ? { range } : {}), signal, identity: true });
+    if (!found) throw new Error("blob not found");
+    const encoding = found.headers.get("content-encoding");
+    const identity = !encoding || encoding.trim().toLowerCase() === "identity";
+    if (range && (!identity || found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`)) {
+      await found.stream.cancel().catch(() => {});
+      throw new Error("Storage did not honor the requested media range");
+    }
+    const length = found.headers.get("content-length");
+    const known = identity && length !== null && /^\d+$/.test(length) && Number.isSafeInteger(Number(length));
+    return { stream: found.stream, size: range ? range.end - range.start + 1 : known ? Number(length) : null };
+  }
+  const { createReadStream } = await import("node:fs");
+  const file = path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`);
+  const st = await stat(file);
+  if (range && st.size !== range.total) throw new Error("Original length changed");
+  return {
+    stream: Readable.toWeb(createReadStream(file, { ...(range ? { start: range.start, end: range.end } : {}), signal })) as ReadableStream<Uint8Array>,
+    size: range ? range.end - range.start + 1 : st.size,
+  };
+}
