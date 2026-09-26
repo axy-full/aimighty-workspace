@@ -464,24 +464,28 @@ const IN_FLIGHT = "('dispatching','accepted','uncertain')";
  * so estimates never push a result out of the window. The first page also
  * carries every admitted job still awaiting reconciliation, however old, so
  * paging can never hide a paid operation (a later page may repeat one).
+ * `variant` narrows to one kind of run by the saved input's own variant
+ * (Genjutsu's Motion Transfer and Object Swap pages each list their own).
  */
 export async function listConsumerRuns(
-  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; before?: ConsumerJobCursor },
+  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; before?: ConsumerJobCursor; variant?: string },
 ): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {
   scope(input);
   const limit = input.limit ?? 25;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
       !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
-  const before = input.before;
+  const before = input.before, variant = input.variant;
   if (before) {
     identifier(before.id);
     if (!Number.isSafeInteger(before.createdAt) || before.createdAt < 0) invalid();
   }
+  if (variant !== undefined && !/^[a-z][a-z-]{0,39}$/.test(variant)) invalid();
   await consumerJobsReady();
   return workbenchTransaction(async (tx) => {
-    const owned = [input.userId, input.draftId, input.workflow];
+    const owned = [input.userId, input.draftId, input.workflow, ...(variant ? [variant] : [])];
+    const kind = variant ? "AND json_extract(payload_json,'$.input.variant')=?" : "";
     const page = (await tx.execute({
-      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? AND status<>'quoted'
+      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? ${kind} AND status<>'quoted'
       ${before ? "AND (created_at < ? OR (created_at = ? AND id < ?))" : ""}
       ORDER BY created_at DESC,id DESC LIMIT ?`,
       args: [...owned, ...(before ? [before.createdAt, before.createdAt, before.id] : []), limit + 1],
@@ -490,7 +494,7 @@ export async function listConsumerRuns(
     const nextCursor = page.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null;
     if (before) return { items, nextCursor };
     const pinned = (await tx.execute({
-      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? AND status IN ${IN_FLIGHT}
+      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? ${kind} AND status IN ${IN_FLIGHT}
       ORDER BY created_at DESC,id DESC LIMIT 50`,
       args: owned,
     })).rows.map(asJob);

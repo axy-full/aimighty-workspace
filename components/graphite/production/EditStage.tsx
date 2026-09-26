@@ -14,7 +14,7 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { findProjectTake, refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { TranscribePanel } from "./TranscribePanel";
@@ -64,10 +64,33 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* Every generation first; then every asset, each in one group — its production category, else its kind. */
   const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
   const groups = useMemo(() => assetGroups(items, project), [items, project]);
-  /* A take sent here (Viral's Send to Edit, the Library) opens first. */
+  /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
   const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
-  const entry = items.find((e) => e.take.id === picked && editable(e)) ?? generations.find(editable) ?? null;
+  const chosen = picked ? items.find((e) => e.take.id === picked) ?? null : null;
+  const [lost, setLost] = useState<string | null>(null);
+  const finding = Boolean(picked) && !chosen && lost !== picked;
+  const entry = chosen ? (editable(chosen) ? chosen : generations.find(editable) ?? null) : picked ? null : generations.find(editable) ?? null;
+  /* Not in the loaded range yet: older pages come in until it is found, or it is not in the project. */
+  useEffect(() => {
+    if (!finding || !picked) return;
+    let live = true;
+    void findProjectTake(scope, projectId, picked).then((found) => { if (live && !found) setLost(picked); });
+    return () => { live = false; };
+  }, [finding, picked, scope, projectId]);
+  /* A take handed over from another page is brought into view once, the way a pick is. */
+  const [focus, setFocus] = useState(picked);
+  const focusOn = project && focus && focus === picked ? (entry?.take.id === focus ? "take" : !chosen ? (finding ? "finding" : "lost") : null) : null;
+  useEffect(() => {
+    if (!focusOn) return;
+    const frame = requestAnimationFrame(() => {
+      const panel = document.querySelector("[data-section='edit-panel']");
+      if (!panel) return;
+      panel.scrollIntoView({ block: "start" });
+      if (focusOn !== "finding") setFocus(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusOn]);
   const pick = (e: LibraryEntry) => {
     if (!editable(e)) { toast(e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit."); return; }
     setPicked(e.take.id); setQuote(null); setError("");
@@ -206,6 +229,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             </section>
           )}
         </>
+      ) : picked && !chosen ? (
+        <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-finding">
+          <span className="gx-eyebrow" data-functional-label="">{finding ? "Finding the take…" : "That take is not in this project"}</span>
+          {finding ? null : <button type="button" className="gx-hbtn" onClick={() => setPicked(null)}>Show the newest take</button>}
+        </div>
       ) : null}
       <section className="gx-gen-card" aria-label="All assets" data-testid="takes-assets" data-section="assets">
         <div className="pd-row-head">

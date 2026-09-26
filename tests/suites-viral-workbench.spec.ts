@@ -21,7 +21,8 @@ async function open(page: Page, sp: "motion" | "swap" | "history", options: { jo
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, {
     uploads: [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_long", filename: "long.mp4", mime: "video/mp4", kind: "video", durationS: 45 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" })],
-    generations: [generation({ id: "gen_still", title: "Dunes still", prompt: "dunes" })],
+    /* A finished run's original is filed to the project by the account, so Send to Edit finds it there. */
+    generations: [generation({ id: "gen_still", title: "Dunes still", prompt: "dunes" }), generation({ id: GEN, title: "Swapped bottle", kind: "video", model: "genjutsu" })],
   });
   const me = await page.request.get("/api/me").then((r) => r.json());
   await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
@@ -122,5 +123,6 @@ test("Object Swap has its own words; History offers Recreate, Compare and Send t
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /History/ }).click();
   await page.getByTestId("history-result").getByRole("button", { name: "Send to Edit" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
   if (wide) await expect(page.getByTestId("inspector")).toBeVisible();
 });

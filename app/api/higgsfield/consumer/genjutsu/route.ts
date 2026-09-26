@@ -7,6 +7,7 @@ import {
   CONSUMER_GENJUTSU_RESOLUTIONS,
 } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { ConsumerVideoServiceError } from "@/lib/higgsfield-consumer/video-service";
+import { GENJUTSU_VARIANTS, type GenjutsuVariant } from "@/lib/genjutsuTypes";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
@@ -39,6 +40,7 @@ const runCursor = z
   .string()
   .max(240)
   .regex(/^\d{1,16}\.[A-Za-z0-9-]{1,200}$/);
+const runVariant = z.enum(GENJUTSU_VARIANTS);
 const quote = z
   .object({
     action: z.literal("quote"),
@@ -147,12 +149,14 @@ export const GET = withTenant(
         { status: 400, headers },
       );
     /* `view=runs` is Viral's Recent and History: runs only (never
-       estimates), paged by the cursor the last page ended on. Without it the
+       estimates), paged by the cursor the last page ended on, and — for
+       Recent beside one page — only that page's variant. Without it the
        saved jobs, quotes included, are listed as before. */
-    const view = query.get("view"), cursor = query.get("cursor");
+    const view = query.get("view"), cursor = query.get("cursor"), variant = query.get("variant");
     if (
       (view !== null && view !== "runs") ||
-      (cursor !== null && (view !== "runs" || !runCursor.safeParse(cursor).success))
+      (cursor !== null && (view !== "runs" || !runCursor.safeParse(cursor).success)) ||
+      (variant !== null && (view !== "runs" || !runVariant.safeParse(variant).success))
     )
       return Response.json(
         { error: "Choose a valid page of runs." },
@@ -165,7 +169,7 @@ export const GET = withTenant(
       });
       const runs =
         view === "runs"
-          ? await consumerGenjutsuRuns(owner.user.id, draftId, cursor)
+          ? await consumerGenjutsuRuns(owner.user.id, draftId, cursor, variant as GenjutsuVariant | null)
           : null;
       return Response.json(
         {

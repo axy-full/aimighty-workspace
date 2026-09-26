@@ -597,6 +597,15 @@ test("History lists runs, never estimates: quotes stay in the ledger and pages c
       [run.id, "accepted"],
     ]);
     expect(listed.nextCursor).toBeNull();
+    /* Recent beside one page lists that page's variant only. */
+    expect(
+      (await f.service.consumerGenjutsuRuns(identity.userId, identity.draftId, null, "motion-transfer")).jobs.map((job) => job.id),
+    ).toEqual([run.id]);
+    expect(
+      (await f.service.consumerGenjutsuRuns(identity.userId, identity.draftId, null, "object-swap")).jobs,
+    ).toEqual([]);
+    /* Each copy carries when it last changed, so the browser keeps the fresher one. */
+    expect(listed.jobs[0].updatedAt).toEqual(expect.any(Number));
     /* Nothing was deleted: the four quotes are all still in the ledger, and
        the saved-jobs list the quote-driven surfaces read still carries them. */
     expect((await f.jobs.listConsumerJobs(identity)).items).toHaveLength(4);

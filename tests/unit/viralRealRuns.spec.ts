@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerJobStatus, ConsumerWorkflow, CreateConsumerJob } from "../../lib/higgsfield-consumer/jobs";
-import { RUN_STATUS, mergeRuns, runInFlight, runStatus } from "../../lib/shell/viral";
+import { INITIAL_VIRAL, RUN_STATUS, mergeRuns, originalNote, runCannotSettle, runInFlight, runStatus, viralBlock } from "../../lib/shell/viral";
 
 /**
  * Viral's Recent and History list real runs only (idea 17): an estimate is
@@ -51,15 +51,17 @@ async function row(
   m: Awaited<ReturnType<typeof modules>>,
   status: ConsumerJobStatus,
   createdAt: number,
-  scope: { userId?: string; draftId?: string; workflow?: ConsumerWorkflow } = {},
+  scope: { userId?: string; draftId?: string; workflow?: ConsumerWorkflow; variant?: string } = {},
 ) {
   const input: CreateConsumerJob = {
     userId: scope.userId ?? owner.userId, draftId: scope.draftId ?? owner.draftId, connectedOwnerId: "connected-owner",
-    connectionGeneration: randomUUID(), workflow: scope.workflow ?? "marketing-video", idempotencyKey: randomUUID(),
-    payload: { params: { prompt: "Bottle on a stone plinth" } }, quoteCredits: 12, quoteExpiresAt: Date.now() + 60_000, originalAssetIds: ["product-original"],
+    connectionGeneration: randomUUID(), workflow: scope.variant ? "marketing-video" : scope.workflow ?? "marketing-video", idempotencyKey: randomUUID(),
+    payload: { params: { prompt: "Bottle on a stone plinth" }, ...(scope.variant ? { input: { variant: scope.variant } } : {}) },
+    quoteCredits: 12, quoteExpiresAt: Date.now() + 60_000, originalAssetIds: ["product-original"],
   };
   const { job } = await m.jobs.createConsumerJob(input);
-  await m.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET status=?, created_at=? WHERE id=?", args: [status, createdAt, job.id] });
+  /* A variant's row is written as the Genjutsu run it stands for, without the source checks a real quote passes. */
+  await m.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET status=?, created_at=?, workflow=? WHERE id=?", args: [status, createdAt, scope.workflow ?? "marketing-video", job.id] });
   return job.id;
 }
 
@@ -99,6 +101,29 @@ test("runs leave estimates out, page by cursor, and keep an old paid job on the 
 
     await expect(m.jobs.listConsumerRuns({ ...owner, workflow: "marketing-video", limit: 0 })).rejects.toMatchObject({ code: "invalid_input" });
     await expect(m.jobs.listConsumerRuns({ ...owner, workflow: "not-a-workflow" as ConsumerWorkflow })).rejects.toMatchObject({ code: "invalid_input" });
+  });
+});
+
+test("a variant narrows the runs to one page's own, the in-flight pin included", async () => {
+  await inTenant(async (m) => {
+    const t = 1_700_000_000_000;
+    const swaps = [];
+    for (let i = 0; i < 6; i++) swaps.push(await row(m, "completed", t + 10_000 + i, { workflow: "genjutsu", variant: "object-swap" }));
+    const motion = await row(m, "completed", t, { workflow: "genjutsu", variant: "motion-transfer" });
+    const stuck = await row(m, "accepted", t - 50_000, { workflow: "genjutsu", variant: "motion-transfer" });
+    await row(m, "accepted", t - 60_000, { workflow: "genjutsu", variant: "object-swap" });
+    await row(m, "quoted", t + 90_000, { workflow: "genjutsu", variant: "motion-transfer" });
+    /* The newest page of every run is all Object Swap; Motion Transfer's own list still finds its runs. */
+    const all = await m.jobs.listConsumerRuns({ ...owner, workflow: "genjutsu", limit: 3 });
+    expect(all.items.slice(0, 3).map((j) => j.id)).toEqual([swaps[5], swaps[4], swaps[3]]);
+    const mine = await m.jobs.listConsumerRuns({ ...owner, workflow: "genjutsu", limit: 3, variant: "motion-transfer" });
+    expect(mine.items.map((j) => j.id)).toEqual([motion, stuck]);
+    expect(mine.nextCursor).toBeNull();
+    const theirs = await m.jobs.listConsumerRuns({ ...owner, workflow: "genjutsu", limit: 3, variant: "object-swap" });
+    expect(theirs.items.slice(0, 3).map((j) => j.id)).toEqual([swaps[5], swaps[4], swaps[3]]);
+    expect(theirs.items).toHaveLength(4);
+    for (const bad of ["", "Object-Swap", "x".repeat(41), "swap'--"])
+      await expect(m.jobs.listConsumerRuns({ ...owner, workflow: "genjutsu", variant: bad })).rejects.toMatchObject({ code: "invalid_input" });
   });
 });
 
@@ -148,4 +173,29 @@ test("the browser keeps one row per run, the freshest copy, newest first, and no
   /* Equal times fall back to the id, the server's own tiebreak. */
   expect(mergeRuns([job("x", "completed", 5), job("y", "completed", 5)], []).map((j) => j.id)).toEqual(["y", "x"]);
   expect(mergeRuns([], [job("q", "quoted", 1)])).toEqual([]);
+});
+
+test("a read that started before a run landed never sets it back", () => {
+  const landed = { id: "r", status: "completed", createdAt: 10, updatedAt: 50 };
+  /* A list read taken before the poll landed it arrives later. */
+  expect(mergeRuns([{ id: "r", status: "accepted", createdAt: 10, updatedAt: 20 }], [landed])).toEqual([landed]);
+  expect(mergeRuns([{ id: "r", status: "uncertain", createdAt: 10 }], [{ id: "r", status: "accepted", createdAt: 10 }])[0].status).toBe("accepted");
+  /* Same state: the later-updated copy wins; a genuinely fresher copy always does. */
+  expect(mergeRuns([{ id: "r", status: "accepted", createdAt: 10, updatedAt: 30 }], [{ id: "r", status: "accepted", createdAt: 10, updatedAt: 40 }])[0].updatedAt).toBe(40);
+  expect(mergeRuns([{ id: "r", status: "completed", createdAt: 10, updatedAt: 60 }], [{ id: "r", status: "accepted", createdAt: 10, updatedAt: 40 }])[0].status).toBe("completed");
+});
+
+test("a run that cannot move on its own is known; a missing original and an unread account are said in words", () => {
+  expect(runCannotSettle({ status: "dispatching" })).toBe(true);
+  expect(runCannotSettle({ status: "uncertain", providerReceipt: null })).toBe(true);
+  expect(runCannotSettle({ status: "uncertain", providerReceipt: { response: {} } })).toBe(false);
+  expect(runCannotSettle({ status: "accepted" })).toBe(false);
+  expect(originalNote({ originalAvailable: true, originalAvailability: "available" })).toBeNull();
+  expect(originalNote({ originalAvailable: false, originalAvailability: "deleted" })).toBe("Archived");
+  expect(originalNote({ originalAvailable: false, originalAvailability: "unavailable" })).toBe("Original unavailable");
+  const base = { connected: false, owner: true, hasProject: true };
+  expect(viralBlock(INITIAL_VIRAL, base)).toBe("Connect the account in Workspace › Engines.");
+  expect(viralBlock(INITIAL_VIRAL, { ...base, account: "Reading the connected account…" })).toBe("Reading the connected account…");
+  expect(viralBlock(INITIAL_VIRAL, { ...base, account: "The connected account could not be read." })).toBe("The connected account could not be read.");
+  expect(viralBlock(INITIAL_VIRAL, { ...base, hasProject: false, account: "Reading the connected account…" })).toBe("Open a project first.");
 });

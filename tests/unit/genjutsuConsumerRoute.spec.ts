@@ -15,6 +15,7 @@ import { ConsumerVideoServiceError } from "../../lib/higgsfield-consumer/video-s
 import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-original";
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as contract from "../../lib/higgsfield-consumer/genjutsu-contract";
+import * as genjutsuTypes from "../../lib/genjutsuTypes";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -56,6 +57,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/genjutsu-contract": contract,
+    "@/lib/genjutsuTypes": genjutsuTypes,
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/genjutsu-service": {
       consumerGenjutsuJobs: service("list", [job]),
@@ -160,7 +162,8 @@ test("strict Genjutsu schemas reject remote URLs, spoofed identities, duplicate 
   for (const cursor of ["", "abc", "12", "12.", ".abc", "12.a b", "12.../x", "1e3.abc", "99999999999999999.abc", `12.${"a".repeat(201)}`])
     expect((await f.request("GET", undefined, { query: `?draftId=draft-1&view=runs&cursor=${encodeURIComponent(cursor)}` })).status, cursor).toBe(400);
   /* A cursor pages runs only, and there is one other view: none. */
-  for (const query of [`?draftId=draft-1&cursor=1700000000000.${key}`, "?draftId=draft-1&view=all", "?draftId=draft-1&view="])
+  for (const query of [`?draftId=draft-1&cursor=1700000000000.${key}`, "?draftId=draft-1&view=all", "?draftId=draft-1&view=",
+    "?draftId=draft-1&variant=motion-transfer", "?draftId=draft-1&view=runs&variant=", "?draftId=draft-1&view=runs&variant=lip-sync", "?draftId=draft-1&view=runs&variant=Motion-Transfer"])
     expect((await f.request("GET", undefined, { query })).status, query).toBe(400);
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
@@ -173,11 +176,14 @@ test("Viral's runs view lists runs only and pages by the cursor the last page en
   expect(page).toMatchObject({ connection: f.connection, jobs: [{ id: key, status: "completed" }], nextCursor: `1700000000000.${key}` });
   const cursor = page.nextCursor as string;
   expect((await f.request("GET", undefined, { query: `?draftId=draft-1&view=runs&cursor=${encodeURIComponent(cursor)}` })).status).toBe(200);
+  /* Recent beside one page lists that page's variant only. */
+  expect((await f.request("GET", undefined, { query: "?draftId=draft-1&view=runs&variant=object-swap" })).status).toBe(200);
   expect(f.calls).toEqual([
-    { name: "runs", args: ["owner", "draft-1", null], workspace: "workspace" },
-    { name: "runs", args: ["owner", "draft-1", cursor], workspace: "workspace" },
+    { name: "runs", args: ["owner", "draft-1", null, null], workspace: "workspace" },
+    { name: "runs", args: ["owner", "draft-1", cursor, null], workspace: "workspace" },
+    { name: "runs", args: ["owner", "draft-1", null, "object-swap"], workspace: "workspace" },
   ]);
-  expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }, { workspaceId: "workspace", userId: "owner" }]);
+  expect(f.connections).toEqual(Array.from({ length: 3 }, () => ({ workspaceId: "workspace", userId: "owner" })));
 });
 
 test("valid Genjutsu boundaries retain ordered source identities without adding provider-controlled fields", async () => {

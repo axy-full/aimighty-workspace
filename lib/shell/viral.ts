@@ -66,9 +66,15 @@ export function moveReference(state: ViralState, id: string, dir: -1 | 1): Viral
   return { ...state, references: next };
 }
 
-/** Why the primary is off; null when the well is complete. Prototype copy first, then the account's needs. */
-export function viralBlock(state: ViralState, extra: { connected: boolean; owner: boolean; hasProject: boolean }): string | null {
+/**
+ * Why the primary is off; null when the well is complete. Prototype copy
+ * first, then the account's needs. `account` is set while the account has
+ * not been read (being read, or the read failed) — then that is the reason,
+ * never a connect hint the account may not need.
+ */
+export function viralBlock(state: ViralState, extra: { connected: boolean; owner: boolean; hasProject: boolean; account?: string | null }): string | null {
   if (!extra.hasProject) return "Open a project first.";
+  if (extra.account) return extra.account;
   if (!extra.owner) return "Only the workspace owner can run the connected account.";
   if (!extra.connected) return "Connect the account in Workspace › Engines.";
   if (!state.source) return "Add one source video (4–30 s).";
@@ -113,17 +119,40 @@ export function runStatus(status: string): { label: string; tone: RunTone } {
 }
 /** Sent and not settled yet: read again until the account settles it; never sent twice. */
 export const runInFlight = (status: string) => status === "dispatching" || status === "accepted" || status === "uncertain";
+/**
+ * In flight with nothing that can move it on its own: a dispatch the account
+ * never acknowledged, or a check with no receipt to reconcile. Read a few
+ * times, then left for the person to check again.
+ */
+export const runCannotSettle = (job: { status: string; providerReceipt?: unknown }) =>
+  job.status === "dispatching" || (job.status === "uncertain" && job.providerReceipt == null);
+/** The one visible line under an in-flight run (never only a tooltip). */
+export const RUN_NOTE: Partial<Record<RunStatus, string>> = { dispatching: "Sending to the account", uncertain: "Confirming · never sent twice" };
+export const STALLED_NOTE = { unconfirmed: "Not confirmed yet · never sent twice", gone: "Could not be read" } as const;
+/** A finished run whose original is not in the project, in words. */
+export function originalNote(job: { originalAvailable?: boolean; originalAvailability?: string }): string | null {
+  if (job.originalAvailable) return null;
+  return job.originalAvailability === "deleted" ? "Archived" : "Original unavailable";
+}
 export const VARIANT_NAME: Record<string, string> = { "motion-transfer": "Motion Transfer", "object-swap": "Object Swap" };
 
-type Run = { id: string; status: string; createdAt: number };
+type Run = { id: string; status: string; createdAt: number; updatedAt?: number };
+/* How far along a run is. A run only ever moves forward (dispatching → uncertain → accepted → settled). */
+const RANK: Record<string, number> = { quoted: 0, dispatching: 1, uncertain: 2, accepted: 3, failed: 4, completed: 4 };
+const fresher = (a: Run, b: Run) => {
+  const ra = RANK[a.status] ?? 2, rb = RANK[b.status] ?? 2;
+  return ra !== rb ? ra > rb : (a.updatedAt ?? 0) >= (b.updatedAt ?? 0);
+};
 /**
- * Fresh runs over the ones on hand: one row per job, the fresher copy wins,
- * newest first. An estimate is never a run, so a quoted row never shows.
+ * Fresh runs over the ones on hand: one row per job, the fresher copy wins —
+ * the one further along, else the later-updated — so a read that started
+ * before a run landed never sets it back. Newest first. An estimate is never
+ * a run, so a quoted row never shows.
  */
 export function mergeRuns<T extends Run>(fresh: T[], current: T[]): T[] {
   const byId = new Map<string, T>();
   for (const job of current) byId.set(job.id, job);
-  for (const job of fresh) byId.set(job.id, job);
+  for (const job of fresh) { const had = byId.get(job.id); if (!had || fresher(job, had)) byId.set(job.id, job); }
   return [...byId.values()]
     .filter((job) => job.status !== "quoted")
     .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));

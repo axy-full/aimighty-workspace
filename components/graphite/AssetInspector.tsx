@@ -23,7 +23,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const library = useProjectLibrary(scope, project?.id ?? null);
   const entry = library.items.find((item) => item.take.id === id) ?? null;
   if (!entry) {
-    return <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" /><p className="gx-empty">{library.state.status === "ready" ? "This asset is no longer in the project." : "Reading this project…"}</p></div>;
+    return <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" /><p className="gx-empty">{library.state.status === "ready" && !library.state.moreBusy ? "This asset is no longer in the project." : "Reading this project…"}</p></div>;
   }
   const { take, asset } = entry;
   const generation = asset.origin === "generation" ? asset.value : null;
