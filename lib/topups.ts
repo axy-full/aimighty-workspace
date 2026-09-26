@@ -148,6 +148,11 @@ export async function decideTopupCredits(opts: { id: string; action: "approve" |
     const next = opts.action === "approve" ? "approved" : "declined";
     if (req.status === next) return { request: req, changed: false };
     if (!nextStatus(req.status, opts.action)) throw new Error(`This request was already ${req.status}.`);
+    // Nobody can open a deleted workspace: its credits wait for a restore. Declining still works.
+    if (opts.action === "approve") {
+      const ws = await tx.execute({ sql: `SELECT deleted_at FROM workspaces WHERE id=?`, args: [req.workspaceId] });
+      if (ws.rows[0]?.deleted_at != null) throw new Error("This workspace was deleted. Restore it before approving its top-up.");
+    }
     // Initialize the old balance before this new paid pack is inserted, so its lifetime is dated.
     await syncBillingLedger(tx, req.workspaceId, ts);
     await tx.execute({ sql: `UPDATE topup_requests SET status=?,decided_at=?,decided_by=?,decision_note=? WHERE id=? AND status='requested'`,

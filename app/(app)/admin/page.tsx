@@ -24,15 +24,15 @@ type Admin = {
   ready: boolean; mail: boolean;
   invites: { code: string; email: string; name: string; note: string; createdAt: number; expiresAt: number; sentAt: number | null; sendCount: number }[];
   requests: { id: string; name: string; email: string; note: string; mailed: boolean; createdAt: number }[];
-  platformKeysByDefault: boolean; defaultAllowanceUsd: number | null; gatewayMint: boolean;
-  creditUsd: number; signupCredits: number;
+  platformKeysByDefault: boolean; defaultAllowanceUsd: number | null;
+  creditUsd: number; welcomeCredits: number | null;
   plans: PlanDef[];
   concurrency: { byEngine: { engine: string; peak: number; at: number; jobs: number }[]; overall: { peak: number; at: number }; days: number } | null;
   workspaces: Ws[];
 };
 type Ws = {
   id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean;
-  credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number;
+  credits: { granted: number; used: number; balance: number } | null; createdAt: number; deletedAt: number | null; owner: { email: string; name: string } | null; members: number;
   spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number } | null;
   grants: { paid: number; free: number };
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
@@ -72,6 +72,10 @@ export default function AdminPage() {
     await fetch(`/api/admin/requests/${encodeURIComponent(id)}`, { method: "PATCH" });
     refresh();
   }
+
+  // A deleted workspace is kept, not live: it is counted apart from the rest.
+  const deleted = data ? data.workspaces.filter((w) => w.deletedAt).length : 0,
+    live = data ? data.workspaces.length - deleted : 0;
 
   if (!superAdmin) return <div className="page"><div className="page-inner"><Empty title="The platform owner only" line="This desk administers sign-ups for the whole deployment." /></div></div>;
 
@@ -140,12 +144,12 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a model gateway key of its own."}</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys: ${data.welcomeCredits ?? "—"} credits from an approved invitation, 0 from self-serve sign-up (one credit is ${usd(data.creditUsd, 2)} of vendor cost). Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
-                  <div key={w.id} className={`steam !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] ${w.suspended ? "opacity-70" : ""}`}>
-                    <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.flagged ? <span className="ml-2 text-[11px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
+                  <div key={w.id} className={`steam !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] ${w.deletedAt ? "opacity-60" : w.suspended ? "opacity-70" : ""}`}>
+                    <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.deletedAt ? <span className="ml-2 text-[11px] text-lift">DELETED</span> : w.flagged ? <span className="ml-2 text-[11px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
                     <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
@@ -163,7 +167,7 @@ export default function AdminPage() {
 
 /** Whose keys a workspace runs on, and — on the platform's — its credit balance, with a way to add some. */
 function CreditsCell({ w, onChanged }: {
-  w: { id: string; legacy: boolean; platformKeys: boolean; credits: { granted: number; used: number; balance: number } | null; gatewayKey: boolean };
+  w: { id: string; legacy: boolean; platformKeys: boolean; credits: { granted: number; used: number; balance: number } | null; gatewayKey: boolean; deletedAt: number | null };
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -171,6 +175,8 @@ function CreditsCell({ w, onChanged }: {
   const [busy, setBusy] = useState(false);
   if (w.legacy) return <span className="mono-s">THE PLATFORM</span>;
   if (!w.platformKeys) return <span className="mono-s">ITS OWN</span>;
+  // Nobody can open a deleted workspace, so its balance is read, not topped up.
+  if (w.deletedAt) return <span className="mono-s">PLATFORM · {w.credits ? `${creditsNumber(w.credits.balance)} CR` : "—"}</span>;
   async function grant() {
     const n = Number(val);
     if (!Number.isFinite(n) || n === 0) return;
@@ -323,17 +329,36 @@ function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged
     if (note === null) return;
     await patch({ flagged: true, note });
   }
+  async function restore() {
+    if (!(await appConfirm("Restore this workspace?", "Its owner gets access back and turns the rest of the team on from People.", { confirmLabel: "Restore" }))) return;
+    await patch({ restore: true });
+  }
   if (w.legacy) return <span className="mono-s text-right">THE PLATFORM</span>;
+  // Suspending and flagging mark a workspace, so they apply to a deleted one too.
+  const marks = (
+    <>
+      {w.suspended
+        ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
+        : <button type="button" className="chip !py-0.5 !text-[11.5px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
+      {w.flagged
+        ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
+        : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+    </>
+  );
+  if (w.deletedAt) return (
+    <span className="flex flex-col items-end gap-1">
+      <span className="mono-s text-lift" title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>DELETED {timeAgo(w.deletedAt).toUpperCase()}{w.suspended ? " · SUSPENDED" : w.flagged ? " · FLAGGED" : ""}</span>
+      <span className="flex gap-1.5">
+        {marks}
+        <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={restore}>Restore</button>
+      </span>
+    </span>
+  );
   return (
     <span className="flex flex-col items-end gap-1">
       <span className={`mono-s ${w.suspended ? "text-lift" : ""}`} title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>{w.suspended ? "SUSPENDED" : w.flagged ? "FLAGGED" : "ACTIVE"}</span>
       <span className="flex gap-1.5">
-        {w.suspended
-          ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
-          : <button type="button" className="chip !py-0.5 !text-[11.5px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
-        {w.flagged
-          ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
-          : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+        {marks}
         <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
         <button type="button" className={`chip !py-0.5 !text-[11.5px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
         <PlanChip w={w} plans={plans} busy={busy} patch={patch} />

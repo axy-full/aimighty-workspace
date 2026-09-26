@@ -3,6 +3,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { billingPath, readAnswer, signupSignInPath } from "@/lib/authPages";
 import "../../commercial.css";
 
 type SignupAvailability = {
@@ -14,8 +15,6 @@ type SignupAvailability = {
 };
 const validPlan = (value: string | null) =>
   ["studio", "agency", "production"].includes(value || "") ? value! : "studio";
-const billingPath = (plan: string, cadence: string) =>
-  `/billing?plan=${encodeURIComponent(plan)}&cadence=${cadence}&onboarding=1`;
 export default function SignupPage() {
   return (
     <Suspense
@@ -36,8 +35,7 @@ function Signup() {
     verify = params.get("verify") || "";
   const plan = validPlan(params.get("plan")),
     cadence = params.get("cadence") === "annual" ? "annual" : "monthly";
-  const next = billingPath(plan, cadence),
-    login = "/login?next=" + encodeURIComponent(next);
+  const login = signupSignInPath(code, plan, cadence);
   const [available, setAvailable] = useState<SignupAvailability | null>(null),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
@@ -65,11 +63,11 @@ function Signup() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: verify }),
           }).then(async (response) => {
-            const data = await response.json();
-            if (!response.ok)
-              throw new Error(
-                data.error || "This verification link could not be used.",
-              );
+            const { data, problem } = await readAnswer(
+              response,
+              "This verification link could not be used.",
+            );
+            if (problem) throw new Error(problem);
             return data;
           }),
         };
@@ -101,9 +99,9 @@ function Signup() {
       { signal: controller.signal },
     )
       .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(data.error || "Sign-up is unavailable.");
+        const answer = await readAnswer(response, "Sign-up is unavailable.");
+        if (answer.problem) throw new Error(answer.problem);
+        const data = answer.data as SignupAvailability;
         if (active) {
           setAvailable(data);
           if (data.name) setName(data.name);
@@ -143,16 +141,20 @@ function Signup() {
           cadence,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        setNeedsSignIn(!!data.needsSignIn);
-        throw new Error(data.error || "Your account could not be created.");
+      const { data, problem } = await readAnswer(
+        response,
+        "Your account could not be created.",
+      );
+      if (problem) {
+        setNeedsSignIn(data.needsSignIn === true);
+        throw new Error(problem);
       }
       if (data.verificationRequired) {
         setSent(true);
         setNotice(
-          data.message ||
-            "Open the verification link in your email to continue.",
+          typeof data.message === "string" && data.message
+            ? data.message
+            : "Open the verification link in your email to continue.",
         );
         setPassword("");
         setConfirm("");
@@ -184,14 +186,15 @@ function Signup() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "The verification email could not be sent.",
-        );
+      const { data, problem } = await readAnswer(
+        response,
+        "The verification email could not be sent.",
+      );
+      if (problem) throw new Error(problem);
       setNotice(
-        data.message ||
-          "If a verification is pending for this address, a new email is on its way.",
+        typeof data.message === "string" && data.message
+          ? data.message
+          : "If a verification is pending for this address, a new email is on its way.",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Try again in a moment.");
@@ -356,7 +359,11 @@ function Signup() {
         )}
         {needsSignIn && (
           <p className="auth-status">
-            <Link href={login}>Sign in to continue with this plan</Link>
+            <Link href={login}>
+              {code
+                ? "Sign in to accept this invitation"
+                : "Sign in to continue with this plan"}
+            </Link>
           </p>
         )}
       </form>

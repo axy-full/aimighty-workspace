@@ -298,12 +298,16 @@ test("concurrent invitation accepts cannot exceed seats; an existing owner is ne
   const { platformDb } = await import("../../lib/platform");
   const { user, ws } = await workspace("Seats");
   await invite(ws.id, "already@example.test", "seat-existing");
-  await acceptWorkspaceInvitation({ code: "seat-existing", password });
+  await acceptWorkspaceInvitation({
+    acceptedPolicy: true,
+    code: "seat-existing",
+    password,
+  });
   await invite(ws.id, "seat-a@example.test", "seat-a");
   await invite(ws.id, "seat-b@example.test", "seat-b");
   const results = await Promise.allSettled(
     ["seat-a", "seat-b"].map((code) =>
-      acceptWorkspaceInvitation({ code, password }),
+      acceptWorkspaceInvitation({ acceptedPolicy: true, code, password }),
     ),
   );
   expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
@@ -331,6 +335,7 @@ test("concurrent invitation accepts cannot exceed seats; an existing owner is ne
   ).toHaveLength(1);
   await invite(ws.id, user.email, "owner-stale");
   await acceptWorkspaceInvitation({
+    acceptedPolicy: true,
     code: "owner-stale",
     signedInAccountId: user.id,
     signedInSession: await (
@@ -348,6 +353,7 @@ test("concurrent invitation accepts cannot exceed seats; an existing owner is ne
   expect(
     (
       await acceptWorkspaceInvitation({
+        acceptedPolicy: true,
         code: "owner-stale",
         signedInAccountId: user.id,
         signedInSession: await (
@@ -383,14 +389,22 @@ test("a confirmed paid period permits team seats and lapse restores the existing
   );
   for (let i = 0; i < 4; i++) {
     await invite(ws.id, `paid-${i}@example.test`, `paid-${i}`);
-    await acceptWorkspaceInvitation({ code: `paid-${i}`, password });
+    await acceptWorkspaceInvitation({
+      acceptedPolicy: true,
+      code: `paid-${i}`,
+      password,
+    });
   }
   await platformDb().execute(
     `UPDATE billing_paid_periods SET period_end=0 WHERE invoice_id='seat-invoice'`,
   );
   await invite(ws.id, "paid-after@example.test", "paid-after");
   await expect(
-    acceptWorkspaceInvitation({ code: "paid-after", password }),
+    acceptWorkspaceInvitation({
+      acceptedPolicy: true,
+      code: "paid-after",
+      password,
+    }),
   ).rejects.toMatchObject({ status: 402 });
 });
 
@@ -504,7 +518,11 @@ test("tenant mirror failure retains a repairable accepted membership and never c
   let accountId = "";
   try {
     accountId = (
-      await acceptWorkspaceInvitation({ code: "repair-invite", password })
+      await acceptWorkspaceInvitation({
+        acceptedPolicy: true,
+        code: "repair-invite",
+        password,
+      })
     ).accountId;
     expect(
       (
@@ -539,6 +557,7 @@ test("tenant mirror failure retains a repairable accepted membership and never c
   expect(
     (
       await acceptWorkspaceInvitation({
+        acceptedPolicy: true,
         code: "repair-invite",
         signedInAccountId: accountId,
         signedInSession: await (
@@ -566,13 +585,21 @@ test("concurrent member reactivation and invite acceptance share one seat reserv
   const { platformDb, getPlatformLayer } = await import("../../lib/platform");
   const { ws } = await workspace("Reactivate");
   await invite(ws.id, "reactivate-a@example.test", "reactivate-a");
-  const a = await acceptWorkspaceInvitation({ code: "reactivate-a", password });
+  const a = await acceptWorkspaceInvitation({
+    acceptedPolicy: true,
+    code: "reactivate-a",
+    password,
+  });
   await platformDb().execute({
     sql: "UPDATE memberships SET disabled=1 WHERE workspace_id=? AND account_id=?",
     args: [ws.id, a.accountId],
   });
   await invite(ws.id, "reactivate-b@example.test", "reactivate-b");
-  await acceptWorkspaceInvitation({ code: "reactivate-b", password });
+  await acceptWorkspaceInvitation({
+    acceptedPolicy: true,
+    code: "reactivate-b",
+    password,
+  });
   await invite(ws.id, "reactivate-c@example.test", "reactivate-c");
   const layer = await getPlatformLayer();
   const results = await Promise.allSettled([
@@ -583,7 +610,11 @@ test("concurrent member reactivation and invite acceptance share one seat reserv
         args: [ws.id, a.accountId],
       });
     }),
-    acceptWorkspaceInvitation({ code: "reactivate-c", password }),
+    acceptWorkspaceInvitation({
+      acceptedPolicy: true,
+      code: "reactivate-c",
+      password,
+    }),
   ]);
   expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   expect(
