@@ -1,7 +1,8 @@
 import {
   CONNECTED_GENERATION_ENDPOINT, connectedRecoverable, connectedStatusRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
-import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { checkingProblem, resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { presentTimeout } from "@/lib/poll";
 
 /**
  * Connected-account renders finish even when nobody is looking.
@@ -31,7 +32,11 @@ import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
  * Asking is bounded: a job the account has not accepted is read a few times;
  * a read that would fail the same way every time (a job made on an earlier
  * account connection, or one that is gone) stops at once; and a job given up
- * on is taken up again by a later listing only once the listing shows it moved.
+ * on — here, or by its own view — is taken up again by a later listing only
+ * once the listing shows it moved. Its pace is its own (at least 20 s between
+ * reads, the reply's pollAfterSeconds when longer), and like every status
+ * read (lib/poll) it asks nothing while the tab is hidden or offline: the read
+ * that fell due is made when the page is back.
  */
 export const COLLECT_POLL_MS = 20_000;
 /** After a failed read (network, rate limit): wait this long before the next. */
@@ -83,8 +88,9 @@ export class ConnectedCollector {
 
   constructor(private readonly deps: CollectorDeps) {
     this.now = deps.now ?? Date.now;
-    this.setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimer = deps.clearTimer ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>));
+    /* Never while the tab is hidden or offline (lib/poll's presentTimeout returns its own cancel). */
+    this.setTimer = deps.setTimer ?? ((fn, ms) => presentTimeout(fn, ms));
+    this.clearTimer = deps.clearTimer ?? ((timer) => (timer as () => void)());
   }
 
   /** The ids this collector is following (for tests and the shell). */
@@ -121,12 +127,21 @@ export class ConnectedCollector {
   release(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null) {
     if (!job) return;
     this.watched.delete(job.id);
-    this.given.delete(job.id);
-    if (connectedRecoverable(job)) this.adopt(draftId, job.id, true);
+    if (connectedRecoverable(job)) {
+      /* Its view gave up on it (a read that fails the same way every time): not taken up here either. */
+      if (this.given.get(job.id) !== job.status) { this.given.delete(job.id); this.adopt(draftId, job.id, true); }
+    }
     /* Settled by its view, which showed it: nothing left for a page to pick up. */
     else { this.jobs.delete(job.id); this.seen.delete(job.id); }
     this.changed();
     this.schedule();
+  }
+
+  /** A view's read of this job failed the way every read would: nobody reads it again until a listing shows it moved. */
+  forgo(id: string, status: string) {
+    this.jobs.delete(id);
+    this.given.set(id, status);
+    this.changed();
   }
 
   /**
@@ -265,10 +280,10 @@ export class ConnectedCollector {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(connectedStatusRequest(tracked.draftId, id)),
       });
-    } catch {
+    } catch (error) {
       if (this.jobs.get(id) !== tracked) return;
       tracked.nextAt = this.now() + COLLECT_BACKOFF_MS;
-      this.trouble(id, resumeProblem(null));
+      this.trouble(id, checkingProblem(error));
       this.changed();
       return;
     }
@@ -281,7 +296,8 @@ export class ConnectedCollector {
       /* Gone (404: not this draft's any more), or made on an earlier account connection: every read would
          fail the same way, so asking stops. Anything else (an outage, a rate limit, full storage) is read again later. */
       if (resumeGivesUp(failure)) this.giveUp(id, this.seen.get(id)?.job.status ?? "", resumeProblem(failure, body?.error));
-      else { tracked.nextAt = this.now() + COLLECT_BACKOFF_MS; this.trouble(id, resumeProblem(failure, body?.error)); }
+      /* Said in fixed words (lib/higgsfield-consumer/resume `checkingProblem`), never the route's own text. */
+      else { tracked.nextAt = this.now() + COLLECT_BACKOFF_MS; this.trouble(id, checkingProblem(failure)); }
       this.changed();
       return;
     }
@@ -332,6 +348,9 @@ export function watchConnectedJob(id: string) {
 }
 export function unwatchConnectedJob(id: string, forget = false) {
   shared?.unwatch(id, forget);
+}
+export function forgoConnectedJob(id: string, status: string) {
+  shared?.forgo(id, status);
 }
 export function releaseConnectedJob(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null) {
   shared?.release(draftId, job);

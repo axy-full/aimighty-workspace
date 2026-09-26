@@ -157,7 +157,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await expect(page.getByText("Nothing generated in this project yet.")).toHaveCount(0);
   /* A passing problem is said plainly; the card stays and is asked again. */
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Confirming · 3 h");
-  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Too many requests. Try again shortly.");
+  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Could not check this take. Checking again shortly.");
   /* A take from an earlier account connection cannot be checked: said once, never asked again, dismissable. */
   await expect(card("Fog rolling").locator(".gx-asset-meta")).toHaveText("Can't be checked");
   await expect(card("Fog rolling").getByRole("status")).toHaveText("Started on an earlier account connection, so it can't be checked from here.");

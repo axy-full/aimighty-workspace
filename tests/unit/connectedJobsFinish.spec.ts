@@ -138,7 +138,8 @@ test("the pages show what the collector reads: every job seen in flight, its lat
   const before = changes();
   await advance(0);
   expect(changes()).toBeGreaterThan(before);
-  expect(shown()[uuid(2)]).toEqual({ status: "uncertain", following: true, problem: "Too many requests. Try again shortly." });
+  /* In fixed words (checkingProblem), never the route's own text. */
+  expect(shown()[uuid(2)]).toEqual({ status: "uncertain", following: true, problem: "Could not check this take. Checking again shortly." });
   await advance(COLLECT_POLL_MS);
   /* Settled: announced once by the collector, still shown with its outcome, no longer followed. */
   expect(settled.map((j) => j.status)).toEqual(["completed"]);
@@ -219,4 +220,22 @@ test("a job read back by its composer is never read here at the same time; let g
   /* A job the server does not know is forgotten outright. */
   collector.unwatch(uuid(10), true);
   expect(shown()[uuid(10)]).toBeUndefined();
+});
+
+test("a job its own view gave up on is not taken up when the view lets it go, nor by a listing that shows it unchanged", async () => {
+  const { collector, reads, advance } = harness(() => [job(11, "accepted")], {});
+  /* An Ads composer was polling it; its read failed the way every read would (an earlier connection). */
+  collector.watch(uuid(11));
+  await collector.list(DRAFT);
+  collector.forgo(uuid(11), "accepted");
+  collector.release(DRAFT, { id: uuid(11), status: "accepted" });
+  await advance(COLLECT_POLL_MS * 3);
+  await collector.list(DRAFT);
+  await advance(COLLECT_POLL_MS);
+  expect(reads).toEqual([]);
+  /* A view that lets go of a job it did not give up on hands it over as before. */
+  collector.watch(uuid(12));
+  collector.release(DRAFT, { id: uuid(12), status: "accepted" });
+  await advance(0);
+  expect(reads).toEqual([uuid(12)]);
 });
