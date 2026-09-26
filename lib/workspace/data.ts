@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Project } from "@/lib/workbench/studio";
 
 /* Client data hooks for the shell. They read the existing routes the
@@ -25,12 +25,17 @@ export type ProjectsState = {
  * the workbench's remembered project for this scope opens, else the most
  * recently updated one; `onResolved` reports which id that was.
  */
-export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState {
+export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState & { retry: () => void } {
   const [data, setData] = useState<ProjectsState>({ status: "loading", projects: [], project: null, error: null });
   const loaded = useRef<{ scope: string; id: string } | null>(null);
+  /* Retry after a failed read: a new attempt re-runs the read even for the id already in the URL. */
+  const [attempt, setAttempt] = useState(0);
+  const answered = useRef(0);
   useEffect(() => {
+    const retrying = attempt !== answered.current;
+    answered.current = attempt;
     /* The id this hook just resolved coming back through the URL is not a new request. */
-    if (projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
+    if (!retrying && projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
     const controller = new AbortController();
     const request = async (id: string | null) => {
       const response = await fetch("/api/workbench/projects" + (id ? "?id=" + encodeURIComponent(id) : ""), {
@@ -64,14 +69,24 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     return () => controller.abort();
     // onResolved is a navigation callback; re-fetching when its identity changes would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, projectId]);
-  return data;
+  }, [scope, projectId, attempt]);
+  const retry = useCallback(() => {
+    setData((prev) => ({ ...prev, status: "loading", error: null }));
+    setAttempt((n) => n + 1);
+  }, []);
+  return useMemo(() => ({ ...data, retry }), [data, retry]);
+}
+
+/** Ask every mounted useAccount to read /api/me now — after a change it reports, such as a rename. */
+export const ACCOUNT_REFRESH_EVENT = "particl-account-refresh";
+export function requestAccountRefresh() {
+  try { window.dispatchEvent(new Event(ACCOUNT_REFRESH_EVENT)); } catch { /* no window: nothing mounted to refresh */ }
 }
 
 /**
  * The workspace's live credit state, refreshed the same way the workbench's
  * account menu does it (components/workbench/WorkspaceMenu.tsx): on mount,
- * every 30 seconds and whenever the tab becomes visible.
+ * every 30 seconds and whenever the tab becomes visible, and at once on requestAccountRefresh().
  */
 export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount | null {
   const [account, setAccount] = useState(initial);
@@ -92,10 +107,12 @@ export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount |
     refresh();
     const timer = setInterval(refresh, 30000);
     document.addEventListener("visibilitychange", refresh);
+    window.addEventListener(ACCOUNT_REFRESH_EVENT, refresh);
     return () => {
       controller.abort();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener(ACCOUNT_REFRESH_EVENT, refresh);
     };
   }, [workspaceId]);
   return account;

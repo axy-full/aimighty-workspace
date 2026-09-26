@@ -15,6 +15,7 @@ import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePat
 import { IMAGE_LIMITS } from "./imagemeta";
 import { vendorKey } from "./vendorKeys";
 import { engineMock, mockJobId, mockTag, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
+import { preflight } from "./preflight";
 
 const HOST =
   process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
@@ -266,23 +267,26 @@ export async function submitTask(
   references: Reference[] = []
 ): Promise<string> {
   if (engineMock()) return mockJobId("ark", mockVideoTag(p, references));
-  const payload = JSON.stringify(await buildRequestBody(modelId, prompt, p, references));
-
-  // ModelArk caps the whole JSON body at 64MB. We never shrink an image to fit —
-  // if it doesn't fit, that is reported rather than silently degraded.
-  const size = Buffer.byteLength(payload, "utf8");
-  if (size > IMAGE_LIMITS.maxRequestBytes) {
-    throw new Error(
-      `Request body is ${(size / 1048576).toFixed(1)} MB, over the video engine's 64 MB limit. ` +
-      `Remove a reference or use a smaller original — media is never re-compressed to fit.`
-    );
-  }
+  // Everything up to the POST: a failure here was never sent, so it is never charged.
+  const { payload, authorization } = await preflight(async () => {
+    const payload = JSON.stringify(await buildRequestBody(modelId, prompt, p, references));
+    // ModelArk caps the whole JSON body at 64MB. We never shrink an image to fit —
+    // if it doesn't fit, that is reported rather than silently degraded.
+    const size = Buffer.byteLength(payload, "utf8");
+    if (size > IMAGE_LIMITS.maxRequestBytes) {
+      throw new Error(
+        `Request body is ${(size / 1048576).toFixed(1)} MB, over the video engine's 64 MB limit. ` +
+        `Remove a reference or use a smaller original — media is never re-compressed to fit.`
+      );
+    }
+    return { payload, authorization: `Bearer ${apiKey()}` };
+  });
 
   const res = await arkFetch(TASKS_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey()}`,
+      Authorization: authorization,
     },
     body: payload,
   }, 120_000);

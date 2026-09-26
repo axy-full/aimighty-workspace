@@ -124,38 +124,115 @@ export async function sampleAtomikVideo(
   }
 }
 
+/**
+ * Stills already saved for a video are reused: reopening the dialog or changing
+ * its selection must not store another set of review stills each time. Keyed by
+ * the signed-in scope, the project and the video's exact identity. A saved still
+ * can still be removed from the library later; the estimate then refuses it, and
+ * the dialog forgets that video's stills (forgetAtomikVideoFrames) so the next
+ * preparation samples and saves fresh ones.
+ */
+export type AtomikFrameCache = {
+  get(key: string): AtomikVideoFrame[] | undefined;
+  set(key: string, frames: AtomikVideoFrame[]): void;
+  delete(key: string): void;
+};
+const FRAME_CACHE_KEY = "particl:atomik-video-frames:v1";
+const FRAME_CACHE_ENTRIES = 60;
+const remembered = new Map<string, AtomikVideoFrame[]>();
+function storedFrames(): [string, AtomikVideoFrame[]][] {
+  try {
+    const list = JSON.parse(window.localStorage.getItem(FRAME_CACHE_KEY) ?? "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+export const browserFrameCache: AtomikFrameCache = {
+  get(key) {
+    return remembered.get(key) ?? storedFrames().find((entry) => Array.isArray(entry) && entry[0] === key)?.[1];
+  },
+  set(key, frames) {
+    remembered.set(key, frames);
+    try {
+      const rest = storedFrames().filter((entry) => Array.isArray(entry) && entry[0] !== key);
+      window.localStorage.setItem(FRAME_CACHE_KEY, JSON.stringify([[key, frames], ...rest].slice(0, FRAME_CACHE_ENTRIES)));
+    } catch {
+      /* Memory still spares this page a second upload. */
+    }
+  },
+  delete(key) {
+    remembered.delete(key);
+    try {
+      window.localStorage.setItem(FRAME_CACHE_KEY, JSON.stringify(storedFrames().filter((entry) => !(Array.isArray(entry) && entry[0] === key))));
+    } catch {
+      /* Nothing stored to forget. */
+    }
+  },
+};
+export function atomikFramesKey(scope: string, projectId: string, asset: Asset, referenceAd: boolean) {
+  return JSON.stringify([scope, projectId, asset.id, asset.version ?? null, asset.url, asset.uploadId ?? null, asset.generationId ?? null, referenceAd]);
+}
+/** The estimate's words for a saved still that is gone or no longer matches its video. */
+export function staleAtomikFrames(message: string) {
+  return /sampled frame is (?:unavailable|outside the selected video)|Prepare its review frames again/.test(message);
+}
+/** Forgets the saved stills of these videos, so the next preparation makes new ones. */
+export function forgetAtomikVideoFrames(assets: Asset[], projectId: string, scope: string, referenceAd = false, cache: AtomikFrameCache = browserFrameCache) {
+  for (const asset of assets) if (asset.kind === "video") cache.delete(atomikFramesKey(scope, projectId, asset, referenceAd));
+}
+function usable(frames: unknown, asset: Asset, referenceAd: boolean): frames is AtomikVideoFrame[] {
+  return Array.isArray(frames) && frames.length > 0 && frames.every((frame: AtomikVideoFrame) =>
+    frame && frame.assetId === asset.id && typeof frame.uploadId === "string" && /^[\w-]{1,100}$/.test(frame.uploadId) &&
+    Number.isFinite(frame.timeSeconds) && (!referenceAd || Number.isFinite(frame.durationSeconds)));
+}
+
+async function saveStill(blob: Blob, projectId: string, assetId: string, scope: string, signal: AbortSignal) {
+  const response = await fetch(
+    "/api/workbench/atomik/frames?" + new URLSearchParams({ projectId, assetId }),
+    {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg", "X-Workbench-Scope": scope },
+      body: blob,
+      signal,
+    },
+  );
+  const data = await response.json();
+  if (!response.ok || typeof data.id !== "string")
+    throw new Error(data.error || "A video still could not be saved.");
+  return data.id as string;
+}
+
 export async function prepareAtomikVideoFrames(
   assets: Asset[],
   projectId: string,
   scope: string,
   signal: AbortSignal,
   referenceAd = false,
+  deps: { sample?: typeof sampleAtomikVideo; save?: typeof saveStill; cache?: AtomikFrameCache } = {},
 ): Promise<AtomikVideoFrame[]> {
+  const { sample = sampleAtomikVideo, save = saveStill, cache = browserFrameCache } = deps;
   const frames: AtomikVideoFrame[] = [];
   for (const asset of assets.filter((a) => a.kind === "video")) {
-    const sampled = await sampleAtomikVideo(asset, signal, referenceAd);
+    const key = atomikFramesKey(scope, projectId, asset, referenceAd);
+    const known = cache.get(key);
+    if (usable(known, asset, referenceAd)) {
+      frames.push(...known);
+      continue;
+    }
+    const sampled = await sample(asset, signal, referenceAd);
+    const saved: AtomikVideoFrame[] = [];
     for (const frame of sampled) {
       if (signal.aborted) throw new Error("Video preparation was cancelled.");
-      const response = await fetch(
-        "/api/workbench/atomik/frames?" +
-          new URLSearchParams({ projectId, assetId: asset.id }),
-        {
-          method: "POST",
-          headers: { "Content-Type": "image/jpeg", "X-Workbench-Scope": scope },
-          body: frame.blob,
-          signal,
-        },
-      );
-      const data = await response.json();
-      if (!response.ok || typeof data.id !== "string")
-        throw new Error(data.error || "A video still could not be saved.");
-      frames.push({
+      saved.push({
         assetId: asset.id,
-        uploadId: data.id,
+        uploadId: await save(frame.blob, projectId, asset.id, scope, signal),
         timeSeconds: frame.timeSeconds,
         ...(frame.durationSeconds === undefined ? {} : { durationSeconds: frame.durationSeconds }),
       });
     }
+    cache.set(key, saved);
+    frames.push(...saved);
   }
   return frames;
 }

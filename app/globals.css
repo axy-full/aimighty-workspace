@@ -2763,6 +2763,9 @@ html, body { overflow-x: clip; }
 .rv-take { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .rv-media { border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 16 / 9; }
 .rv-media video, .rv-media img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.rv-media.is-flat { aspect-ratio: auto; background: transparent; border-radius: 0; }
+.rv-media audio { width: 100%; display: block; }
+.rv-file { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--color-line); border-radius: 8px; font-size: 13.5px; font-weight: 600; }
 .rv-body h2 { font-size: 15px; font-weight: 600; }
 .rv-prompt { font-size: 13.5px; color: var(--color-dim); margin-top: 4px; line-height: 1.5; }
 .rv-notes { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
@@ -2771,13 +2774,15 @@ html, body { overflow-x: clip; }
 .rv-who.is-guest { color: var(--color-blue); }
 .rv-say { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .rv-in { border: 1px solid var(--color-line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13.5px; background: transparent; color: inherit; }
-.rv-in { flex: 1 1 140px; min-height: 40px; }
+.rv-in { flex: 1 1 140px; min-height: 44px; }
 .rv-text { flex: 1 1 100%; resize: vertical; }
-.rv-send { min-height: 40px; padding: 0 14px; border-radius: 8px; background: var(--color-action); color: var(--color-on-action); font-size: 13.5px; font-weight: 600; }
+.rv-send { min-height: 44px; padding: 0 14px; border-radius: 8px; background: var(--color-action); color: var(--color-on-action); font-size: 13.5px; font-weight: 600; }
 .rv-send:disabled { opacity: .5; }
 .rv-err { flex: 1 1 100%; font-size: 12.5px; color: var(--color-lift, #d9a441); }
 .rv-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--color-line); padding-top: 14px; font-size: 12.5px; color: var(--color-mute); }
 @media (max-width: 767px) { .rv-take { grid-template-columns: minmax(0, 1fr); } .rv { padding: 20px 14px 48px; } }
+/* 16px text on a phone, upright or on its side: smaller, and focusing a field zooms the page on iOS. */
+@media (max-width: 767px), (pointer: coarse) { .rv-in { font-size: 16px; } }
 
 /* The production's client review links (brief 2.6). */
 .rvl { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }

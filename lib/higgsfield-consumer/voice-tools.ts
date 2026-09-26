@@ -376,7 +376,10 @@ export function parseConnectedVoices(raw: unknown, fetchedAt = Date.now()): Conn
   for (const item of raw.items) {
     if (!object(item)) continue;
     const id = item.voice_id ?? item.id, type = item.voice_type ?? item.type;
-    if (typeof id !== "string" || !voiceId.safeParse(id).success || (type !== "preset" && type !== "element") || seen.has(`${type}:${id}`)) continue;
+    // Only the account's preset voices. An "element" voice is one the owner
+    // made on the account (a reference element): its own library, which
+    // Particl never lists or reuses (standalone rule, 23 September).
+    if (typeof id !== "string" || !voiceId.safeParse(id).success || type !== "preset" || seen.has(`${type}:${id}`)) continue;
     seen.add(`${type}:${id}`);
     const name = clean(item.name ?? item.title ?? item.display_name, 160) || id;
     const language = clean(item.language ?? item.locale ?? item.accent, 60), gender = clean(item.gender, 30);

@@ -105,6 +105,20 @@ export async function storedSourceDuration(source: GenerationSource): Promise<nu
   return seconds;
 }
 
+/** The longest stored length among the request's video sources, in seconds;
+ * null when it has none or none can be measured. Read before pricing, so a
+ * transform whose result could not be kept is refused before any spend. */
+export async function longestVideoSourceSeconds(input: ConsumerGenerationInput): Promise<number | null> {
+  await ready();
+  let longest: number | null = null;
+  for (const source of await validateConsumerGenerationSources(db(), input)) {
+    if (source.kind !== "video") continue;
+    // Best effort: an unmeasurable source is not refused here.
+    const seconds = await storedSourceDuration(source).catch(() => null);
+    if (seconds !== null && (longest === null || seconds > longest)) longest = seconds;
+  }
+  return longest;
+}
 /** Role, kind and display name of each validated source, for job snapshots. */
 export async function describeConsumerGenerationSources(input: ConsumerGenerationInput) {
   await ready();

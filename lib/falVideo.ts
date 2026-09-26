@@ -15,6 +15,7 @@
  */
 import { ASTRA_MODEL, astraInput } from "./astra";
 import { falSubmit, } from "./fal";
+import { preflight } from "./preflight";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
   readImageBytes, readUploadBytes, readVideoBytes, storeVideo,
@@ -153,7 +154,8 @@ export async function buildFalInput(opts: {
 
 /** Put the render on fal's queue. The request id is what the row keeps. */
 export async function submitFalVideo(opts: Parameters<typeof buildFalInput>[0]): Promise<{ requestId: string; endpoint: string }> {
-  const { endpoint, input } = await buildFalInput(opts);
+  // Reading the sources and checking the task happen before anything is sent.
+  const { endpoint, input } = await preflight(() => buildFalInput(opts));
   const queued = await falSubmit(endpoint, input);
   return { requestId: queued.request_id, endpoint };
 }

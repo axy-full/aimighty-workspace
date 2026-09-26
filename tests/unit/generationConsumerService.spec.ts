@@ -50,7 +50,9 @@ async function serviceFixture() {
     pollRaw: undefined as unknown, collectorError: undefined as unknown, submitBarrier: undefined as (() => Promise<void>) | undefined,
     originals: new Map<string, ConsumerVideoOriginal>(),
     batchPaid: 0, batchItems: [] as unknown[], batchResult: null as null | { state: string; providerJobId?: string }[], presetChecks: [] as string[],
+    guardCalls: 0, presetReads: [] as string[][],
   };
+  const records = await import("../../lib/higgsfield-consumer/marketing-records");
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
     "@/lib/tenant": tenant,
@@ -69,7 +71,17 @@ async function serviceFixture() {
       if (presetId !== "preset-dolly") throw new (await import("../../lib/higgsfield-consumer/catalogue")).CatalogueError("parameter_invalid", "That motion preset is not offered by the connected account.");
     } },
     "./video-contract": contract,
+    "./marketing-records": records,
+    /* The standalone guard with the account's presets faked: a preset avatar, hook and setting are listed. */
+    "./marketing-setup": {
+      refuseForeignMarketingSetup: (userId: string, wanted: Parameters<typeof records.refuseForeignSetup>[1]) => {
+        state.guardCalls++;
+        return records.refuseForeignSetup(userId, wanted, async (types) => { state.presetReads.push(types); return { avatar: new Set(["av_preset"]), hook: new Set(["h1"]), setting: new Set(["s1"]) }; });
+      },
+    },
     "./video-original": {
+      uncollectableOriginal: original.uncollectableOriginal,
+      CONSUMER_ORIGINAL_SECONDS: 600,
       collectConsumerVideoOriginal: async (job: { id: string; userId: string; draftId: string; providerJobId: string; quoteCredits: number }, url: string) => {
         state.collectCount++;
         expect(url).toBe("https://media.example.com/qualified-original.png");
@@ -152,6 +164,25 @@ function terminal(f: Awaited<ReturnType<typeof serviceFixture>>, params: Record<
   return { generation: { id: f.state.providerJobId, model: "nano_banana_2", type: "image", status, params, results: status === "completed" ? { rawUrl: "https://media.example.com/qualified-original.png" } : null } };
 }
 
+test("standalone: every quote meets the setup guard first — an item Particl may not send is refused before the account is asked", async () =>
+  fixture(async ({ service, state, jobs }) => {
+    const quote = (parameters: ConsumerGenerationInput["parameters"]) =>
+      service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, parameters: { ...request.parameters, ...parameters } }, randomUUID());
+    const refused: ConsumerGenerationInput["parameters"][] = [{ product_ids: ["p_acct"] }, { brand_kit_id: "bk_acct" }, { ad_reference_id: "r_acct" }, { assets: ["asset_1"] }, { avatar_ids: ["av_custom"] }];
+    for (const parameters of refused)
+      await expect(quote(parameters), JSON.stringify(parameters)).rejects.toMatchObject({ code: "setup_not_particl", status: 409, paidAttempted: false });
+    expect([state.quoteCount, state.importCount, state.catalogueReads, state.paidCount]).toEqual([0, 0, 0, 0]);
+    expect((await jobs.listConsumerJobs(identity)).items).toHaveLength(0);
+    /* Owned types refuse from the record alone; only the avatar needed the account's presets. */
+    expect(state.presetReads).toEqual([["avatar"]]);
+    /* A preset avatar passes the guard (whatever the catalogue then says of it); a plain request never reads the presets. */
+    expect(await quote({ avatar_ids: ["av_preset"] }).then(() => "quoted", (error: { code?: string }) => error.code)).not.toBe("setup_not_particl");
+    const reads = state.presetReads.length;
+    await service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
+    expect(state.presetReads).toHaveLength(reads);
+    expect(state.guardCalls).toBe(7);
+  }));
+
 test("the catalogue is read once per connection and every quote is validated against it before the provider is asked", async () =>
   fixture(async (f) => {
     const listing = await f.service.connectedGenerationCatalogue(identity.userId);
@@ -168,6 +199,8 @@ test("the catalogue is read once per connection and every quote is validated aga
       [{ type: "audio", model: "sonilo_music", prompt: "Warm piano", parameters: { duration: 8 }, medias: [] }, "model_unknown"],
       [{ ...request, type: "video" }, "type_mismatch"],
       [{ ...request, medias: [{ role: "start_image", source: { uploadId: "still" } }] }, "media_role_unknown"],
+      // A voice the owner made on the account is its own library, never Particl's.
+      [{ type: "audio", model: "text2speech_v2", prompt: "Welcome.", parameters: { voice_type: "element", voice_id: "elem-1", variant: "minimax" }, medias: [] }, "parameter_invalid"],
     ] as const)
       await expect(f.service.quoteConsumerGeneration(identity.userId, identity.draftId, bad as ConsumerGenerationInput, randomUUID())).rejects.toMatchObject({ code });
     expect(f.state.quoteCount).toBe(0);
@@ -236,7 +269,7 @@ test("an ambiguous acknowledgement or an interrupted paid request stays uncertai
     expect(f.state.paidCount).toBe(2);
   }));
 
-test("polling collects the verified original once, records failure from the provider, and keeps a job accepted when collection is out of bounds", async () =>
+test("polling collects the verified original once, records failure from the provider, keeps a job accepted while collection can still pass, and settles a result that can never be kept", async () =>
   fixture(async (f) => {
     const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
     const accepted = await f.service.submitConsumerGenerationJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
@@ -250,11 +283,11 @@ test("polling collects the verified original once, records failure from the prov
     expect((await f.service.pollConsumerGeneration(scoped(quote.id))).pollAfterSeconds).toBe(30);
     expect(f.state.statusCount).toBe(1);
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
-    // Out-of-bounds bytes leave the job accepted and recoverable.
+    // A collection problem that can pass later (storage full) leaves the job accepted and recoverable.
     f.state.pollRaw = terminal(f, params);
     const original = await import("../../lib/higgsfield-consumer/video-original");
-    f.state.collectorError = new original.ConsumerOriginalError("invalid_video");
-    await expect(f.service.pollConsumerGeneration(scoped(quote.id))).rejects.toMatchObject({ code: "invalid_video" });
+    f.state.collectorError = new original.ConsumerOriginalError("quota");
+    await expect(f.service.pollConsumerGeneration(scoped(quote.id))).rejects.toMatchObject({ code: "quota" });
     expect((await f.jobs.getConsumerJob(scoped(quote.id)))!.status).toBe("accepted");
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
     f.state.collectorError = undefined;
@@ -280,6 +313,24 @@ test("polling collects the verified original once, records failure from the prov
     expect(failed.job.failureCode).toBe("provider_failed");
     expect(failed.providerStatus).toEqual({ status: "failed" });
     expect(f.state.collectCount).toBe(2);
+    // A result that can never be kept (over the size limit, not a valid
+    // original) settles once as invalid_result, receipt kept; it no longer
+    // polls or holds a slot, and is never downloaded again.
+    for (const code of ["too_large", "invalid_video"] as const) {
+      const oversized = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt: `Uncollectable ${code}` }, randomUUID());
+      f.state.providerJobId = randomUUID();
+      await f.service.submitConsumerGenerationJob(scoped(oversized.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+      f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(oversized.id)))!.payloadJson).params);
+      f.state.collectorError = new original.ConsumerOriginalError(code);
+      const collects = f.state.collectCount;
+      const settled = await f.service.pollConsumerGeneration(scoped(oversized.id));
+      expect(settled.job).toMatchObject({ status: "failed", failureCode: "invalid_result", providerJobId: f.state.providerJobId });
+      expect(settled).toMatchObject({ collection: { code } });
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [oversized.id] });
+      expect((await f.service.pollConsumerGeneration(scoped(oversized.id))).job.status).toBe("failed");
+      expect(f.state.collectCount).toBe(collects + 1);
+    }
+    f.state.collectorError = undefined;
   }));
 
 test("a tool preset quotes through the same pipeline, records the tool and source names on the job, and refuses a missing or extra source before any import", async () =>
