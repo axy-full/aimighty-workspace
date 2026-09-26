@@ -81,6 +81,12 @@ async function open(page: Page, options: Options = {}) {
 }
 
 const chip = (page: Page, key: string) => page.getByTestId(`gen-film-${key}`);
+/** What covers the chip's centre (the sticky Generate, the tab bar…), or null when the chip is on top. */
+const coveredChip = (page: Page, key: string) => chip(page, key).evaluate((el) => {
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return hit && !el.contains(hit) ? `${hit.tagName}.${hit.className}` : null;
+});
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
 /** `centre`: the test id to bring into the middle of the screen first. */
@@ -156,6 +162,8 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
   await expect(sheet.locator(".gx-fv-media[data-preview='loop']")).toHaveCount(0);
   await sheet.locator("[data-option='shot:cu']").click();
   await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Close-up");
+  /* A chip just set is on top: clear of the sticky Generate and, on a phone, the tab bar. */
+  expect(await coveredChip(page, "shot"), "shot chip covered after its pick").toBeNull();
   expect(lists).toHaveLength(1);
 
   /* # in the words: the bank as a typeahead. A number chooses nothing by itself (it may be a rank or a
@@ -385,12 +393,7 @@ test("every grid draws every entry it offers, and picks from the keyboard", asyn
     await chip(page, key).click();
     await sheet.locator(`[data-option='${option}']`).click();
     await expect(sheet).toHaveCount(0);
-    const covered = await chip(page, key).evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return hit && !el.contains(hit) ? `${hit.tagName}.${hit.className}` : null;
-    });
-    expect(covered, `${key} chip covered after its pick`).toBeNull();
+    expect(await coveredChip(page, key), `${key} chip covered after its pick`).toBeNull();
   }
   if (info.project.name === "workbench-390x844") {
     const cut = await page.locator(".gx-fv-chip-value").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1).map((e) => e.textContent));
