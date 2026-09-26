@@ -9,6 +9,8 @@ import type { LibFilter, RigView } from "@/lib/workspace/types";
 import { primaryAvailability, type GenerateStatus } from "@/components/workspace/PageHeader";
 import { useShell } from "@/lib/shell/state";
 import { PRODUCTION_AGENT_PAGES } from "@/lib/shell/production-tools";
+import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 
 /**
  * Title (26/600) + hint; the page's view segment; on narrow widths the Library
@@ -19,6 +21,7 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
   const shell = useShell();
   const { state, dispatch, setLibFilter } = useWorkspace();
   const atomik = useAtomik();
+  const { owner } = useConnectedCapability(undefined, { read: false });
   const views = pageViews(state.page);
   const action = primaryAction(state.page);
   const availability = primaryAvailability(state, onGenerate, generate);
@@ -47,8 +50,9 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
       {!shell.wide ? <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button> : null}
       {/* Every width (FINAL_SPEC §6 › Inspector): lit while the panel is open. */}
       <button type="button" className="gx-hbtn" aria-pressed={shell.wide ? shell.inspector : shell.inspOpen} aria-keyshortcuts="Meta+J" onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
-      {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path. */}
-      {shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id) ? null : (<>
+      {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path.
+          A suite the owner runs on the Higgsfield account is the owner's stage to run: a member's page is the owner-run card. */}
+      {(shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id)) || (!owner && isOwnerRunSuite(shell.suite.id)) ? null : (<>
       {!availability.enabled && availability.reason ? <span className="gx-reason" id="gx-action-reason" data-testid="primary-reason">{availability.reason}</span> : null}
       <button type="button" className="gx-primary" data-testid="primary-action" disabled={!availability.enabled} aria-describedby={availability.reason ? "gx-action-reason" : undefined} onClick={run}>
         {label}

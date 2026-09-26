@@ -1,39 +1,30 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL } from "./business";
+import { useConnectedCapability } from "./use-connected-capability";
 
 /**
  * What the Business pages read before they can compose (FINAL_SPEC §2):
- * whether the connected account is connected, the live catalogue entries for
- * Marketing Studio (their ranges and roles drive the chips — never a
- * hard-coded list), and the account's setup items by type.
+ * whether the connected account is connected (the shell's one shared answer,
+ * lib/shell/use-connected-capability — a member is known from the session and
+ * nothing is read for them), the live catalogue entries for Marketing Studio
+ * (their ranges and roles drive the chips — never a hard-coded list), and the
+ * account's setup items by type.
  */
 export type CatalogueModel = { id: string; name: string; outputType: string; aspectRatios?: string[]; durations?: number[]; durationRange?: { min: number; max: number }; medias?: { name: string; roles: string[]; max?: number }[]; parameters?: { name: string; options?: (string | number)[]; min?: number; max?: number }[] };
 export type SetupState = { connected: boolean | null; reads: Partial<Record<SetupType, { available: boolean; items: SetupItem[] }>>; loading: boolean; error: string | null };
 
-export function useBusiness(scopeReady: boolean) {
+export function useBusiness(scope: string) {
   const scoped = useScopedFetch();
-  const [connection, setConnection] = useState<{ owner: boolean; connected: boolean } | null>(null);
+  const capability = useConnectedCapability(scope || null, { read: Boolean(scope) });
+  /* Null until the owner's connection is read; a failed read is the owner's error to retry, never a demotion to member. */
+  const connection = useMemo(() => (capability.status === "loading" ? null : { owner: capability.owner, connected: capability.connected, reconnect: capability.reconnect }), [capability.status, capability.owner, capability.connected, capability.reconnect]);
+  const connectionError = capability.status === "error" ? capability.error : null;
   const [models, setModels] = useState<Record<string, CatalogueModel>>({});
   const [catalogueError, setCatalogueError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupState>({ connected: null, reads: {}, loading: false, error: null });
-
-  useEffect(() => {
-    if (!scopeReady) return;
-    let live = true;
-    (async () => {
-      try {
-        const me = await scoped("/api/me", { cache: "no-store" }).then((r) => r.json()) as { owner?: boolean };
-        const connection = me.owner === true
-          ? await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" }).then((r) => (r.ok ? r.json() : { connected: false })) as { connected?: boolean; requiresReconnect?: boolean }
-          : { connected: false };
-        if (live) setConnection({ owner: me.owner === true, connected: connection.connected === true && connection.requiresReconnect !== true });
-      } catch { if (live) setConnection({ owner: false, connected: false }); }
-    })();
-    return () => { live = false; };
-  }, [scoped, scopeReady]);
 
   /* The two Marketing Studio entries, from the live catalogue. */
   useEffect(() => {
@@ -70,5 +61,5 @@ export function useBusiness(scopeReady: boolean) {
     } finally { reading.current = false; }
   }, [scoped]);
 
-  return { connection, models, catalogueError, setup, readSetup, setupTypes: SETUP_TYPES };
+  return { connection, connectionError, refreshConnection: capability.refresh, models, catalogueError, setup, readSetup, setupTypes: SETUP_TYPES };
 }
