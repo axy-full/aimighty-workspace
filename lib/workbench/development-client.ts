@@ -4,9 +4,14 @@ import type { Project } from './studio';
 import { withPendingAtomikLock } from './atomik-pending-request';
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
-export type PendingDevelopment = { version: 1; scope: string; projectId: string; body: string };
-export function developmentPendingKey(scope: string, projectId: string) {
-  return `particl:development:v1:${encodeURIComponent(scope)}:${encodeURIComponent(projectId)}`;
+/**
+ * One unconfirmed request per recovery slot. The Production agent keeps the
+ * project's shared slot (no `slot`); the Brief & Script panel keys its own by
+ * development kind, so an agent run never blocks or relabels the breakdown.
+ */
+export type PendingDevelopment = { version: 1; scope: string; projectId: string; body: string; slot?: string };
+export function developmentPendingKey(scope: string, projectId: string, slot = '') {
+  return `particl:development:v1:${encodeURIComponent(scope)}:${encodeURIComponent(projectId)}${slot ? ':' + encodeURIComponent(slot) : ''}`;
 }
 export async function developmentSourceHash(project: Project, kind: DevelopmentKind) {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sourceCanonical(project, kind)));
@@ -28,31 +33,43 @@ export function developmentInput(record: PendingDevelopment): DevelopmentRequest
   }
   return input;
 }
-export function readDevelopment(storage: StorageLike, scope: string, projectId: string): PendingDevelopment | null {
-  const raw = storage.getItem(developmentPendingKey(scope, projectId));
+export function readDevelopment(storage: StorageLike, scope: string, projectId: string, slot = ''): PendingDevelopment | null {
+  const raw = storage.getItem(developmentPendingKey(scope, projectId, slot));
   if (!raw) return null;
   const record = JSON.parse(raw) as PendingDevelopment;
-  if (!record || record.version !== 1 || record.scope !== scope || record.projectId !== projectId || typeof record.body !== 'string') {
+  if (!record || record.version !== 1 || record.scope !== scope || record.projectId !== projectId || typeof record.body !== 'string' || (record.slot ?? '') !== slot) {
     throw new Error('The development recovery record does not match this workspace and project.');
   }
   developmentInput(record);
   return record;
 }
-export function recordDevelopment(storage: StorageLike, scope: string, projectId: string, body: string): PendingDevelopment {
-  const record: PendingDevelopment = { version: 1, scope, projectId, body };
+/**
+ * The Brief & Script panel's unconfirmed request for `kind`: its own slot, or
+ * a request of that kind it left in the shared slot before slots were keyed.
+ * Another kind's request (an agent run) is not the panel's to recover. An
+ * unreadable shared record still throws: it might be the panel's own.
+ */
+export function readKindDevelopment(storage: StorageLike, scope: string, projectId: string, kind: DevelopmentKind): PendingDevelopment | null {
+  const own = readDevelopment(storage, scope, projectId, kind);
+  if (own) return own;
+  const shared = readDevelopment(storage, scope, projectId);
+  return shared && developmentInput(shared).kind === kind ? shared : null;
+}
+export function recordDevelopment(storage: StorageLike, scope: string, projectId: string, body: string, slot = ''): PendingDevelopment {
+  const record: PendingDevelopment = { version: 1, scope, projectId, body, ...(slot ? { slot } : {}) };
   developmentInput(record);
-  const prior = readDevelopment(storage, scope, projectId);
+  const prior = readDevelopment(storage, scope, projectId, slot);
   if (prior && prior.body !== body) throw new Error('An earlier development request is unconfirmed. Recover it before starting a new run.');
-  const key = developmentPendingKey(scope, projectId), encoded = JSON.stringify(record);
+  const key = developmentPendingKey(scope, projectId, slot), encoded = JSON.stringify(record);
   storage.setItem(key, encoded);
   if (storage.getItem(key) !== encoded) throw new Error('The recovery record could not be saved. No new request was sent.');
   return record;
 }
 export function clearDevelopment(storage: StorageLike, record: PendingDevelopment, requestId: string) {
   if (developmentInput(record).requestId !== requestId) return false;
-  const prior = readDevelopment(storage, record.scope, record.projectId);
+  const prior = readDevelopment(storage, record.scope, record.projectId, record.slot ?? '');
   if (prior?.body !== record.body) return false;
-  storage.removeItem(developmentPendingKey(record.scope, record.projectId));
+  storage.removeItem(developmentPendingKey(record.scope, record.projectId, record.slot ?? ''));
   return true;
 }
 export const withDevelopmentLock = <T>(scope: string, projectId: string, run: () => Promise<T>) =>
