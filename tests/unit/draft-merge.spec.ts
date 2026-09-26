@@ -1260,6 +1260,19 @@ test.describe("a merge of two valid saves is a save the server takes, and keeps 
     expect(notes.join(" ")).toContain("Cold, clean, yours");
   });
 
+  test("a last resort out of time leaves the merge as it was: refused, never half put back, and nothing said about parts never looked at", () => {
+    const video = { ...image("ad-vid", { kind: "video", name: "reference.mp4" }), uploadId: "ad-vid" };
+    const base = project((p) => {
+      p.assets = [video];
+      p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", hooks: ["Cold, clean, yours"], variants: [{ id: "variant-1", nodeId: "n1", hook: "Cold, clean, yours", kind: "video" }] } as Project["moleculr"];
+    });
+    const mine = clone(base); mine.moleculr!.variants[0].kind = "image";
+    const theirs = clone(base); theirs.moleculr!.variants[0].referenceVideo = { assetId: "ad-vid", sourceKey: JSON.stringify({ uploadId: "ad-vid" }) };
+    const notes: string[] = [];
+    const merged = mergeDraft(base, mine, theirs, { notes, lastResortMs: -1 });
+    expect({ refused: issues(merged).length > 0, kind: merged.moleculr!.variants[0].kind, bound: !!merged.moleculr!.variants[0].referenceVideo, notes }).toEqual({ refused: true, kind: "image", bound: true, notes: [] });
+  });
+
   /* A seeded walk: two valid saves of one edit, each changing clips, fades, lengths, gains, a place's references, hooks and bins. */
   test("random valid saves in two windows always merge into a save the server takes: the saved window's clips and gains stand, this window's additions are kept or named", () => {
     let seed = 0x1b873593;

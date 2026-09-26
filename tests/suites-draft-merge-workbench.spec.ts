@@ -1117,7 +1117,7 @@ test("a merge that brings in another window's title never puts this Rig's stale 
   expect(errors).toEqual([]);
 });
 
-test("⌘Z while the next project is still opening says which project to open, and the shot's undo stays", async ({ page }) => {
+test("⌘Z while the next project is still opening undoes nothing there, and the shot's undo stays for its own project", async ({ page }) => {
   const { project: a, errors, headers } = await setup(page, (p) => { p.nodes = [scene("n1", { title: "Opening" }), scene("n2", { title: "Second", x: 400 })]; });
   const acct = await more(page, headers);
   const b = await acct.create(`Bravo ${randomUUID().slice(0, 6)}`, (p) => { p.nodes = [scene("b1", { title: "Bravo shot" })]; });
@@ -1142,7 +1142,8 @@ test("⌘Z while the next project is still opening says which project to open, a
   release.open();
   await expect(page.locator(".pxw-rig-row[data-shot-id='b1']")).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(3000);
-  expect(toasts.some((t) => t.includes(`Open ${a.name}`)), JSON.stringify(toasts)).toBe(true);
+  /* The shell's undo is per project (#364): nothing of B's to undo, and A's step waits for A. */
+  expect(toasts.some((t) => t.includes("Nothing to undo in this project")), JSON.stringify(toasts)).toBe(true);
   expect(toasts.some((t) => t.includes("Second is back in the Rig"))).toBe(false);
   expect(ids((await acct.readOf(a.id)).project.nodes)).toEqual(["n1"]);
   /* Back on A, the same ⌘Z brings Second back, for real. */

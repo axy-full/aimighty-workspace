@@ -45,10 +45,12 @@ import { saveSchema } from "./studio-schema";
 export type DraftMergeOptions = MergeOptions & {
   /** Filled with what this side added that the merged draft had no room for, said plainly. */
   notes?: string[];
+  /** How long the last resort may look for a part to put back (ms): each look is a full check of the draft. */
+  lastResortMs?: number;
 };
 
 export function mergeDraft(base: Project, mine: Project, theirs: Project, options: DraftMergeOptions = {}): Project {
-  const { notes, ...rest } = options;
+  const { notes, lastResortMs = LAST_RESORT_MS, ...rest } = options;
   const grew = { value: false };
   /* What the other side took out since base, of records made from a shared source: made again here from a stale copy, it stays out. */
   const known = new Set(base.takenOut ?? []);
@@ -67,7 +69,7 @@ export function mergeDraft(base: Project, mine: Project, theirs: Project, option
   if (valid(merged)) return merged;
   merged = fitDraft(merged, mine, theirs, notes);
   merged = keepLinkedInputs(merged, mine, theirs, false);
-  return valid(merged) ? merged : lastResort(merged, mine, theirs, notes);
+  return valid(merged) ? merged : lastResort(merged, mine, theirs, notes, performance.now() + lastResortMs);
 }
 
 /**
@@ -426,6 +428,8 @@ function partsOf(key: string, merged: Project, mine: Project, theirs: Project): 
 
 /** How many parts are tried one by one before whole fields are put back: each try is a full check of the draft. */
 const PARTS_TRIED = 24;
+/** How long the last resort looks, at most (a feature's full check takes about 300 ms): past it, the merge is left as it was. */
+const LAST_RESORT_MS = 1500;
 
 /**
  * A rule no repair above covers. The saved version is put back where the merge
@@ -436,7 +440,7 @@ const PARTS_TRIED = 24;
  * it, and those parts are put back instead. A draft no part fixes is left as
  * it is: the save is refused, and the edits stay here, unsaved, saying why.
  */
-function lastResort(merged: Project, mine: Project, theirs: Project, notes?: string[]): Project {
+function lastResort(merged: Project, mine: Project, theirs: Project, notes: string[] | undefined, deadline: number): Project {
   let out = merged;
   let found = problems(out);
   const told: string[] = [];
@@ -446,6 +450,8 @@ function lastResort(merged: Project, mine: Project, theirs: Project, notes?: str
     const parts = scope.flatMap((key) => partsOf(key, out, mine, theirs));
     let fixed = false;
     for (const part of [...parts.filter((part) => !part.whole).slice(0, PARTS_TRIED), ...parts.filter((part) => part.whole)]) {
+      /* Out of time: the main thread is the person's; the merge is left as it was (the save is refused, the edits stay here). */
+      if (performance.now() > deadline) return merged;
       const next = part.apply(out), now = problems(next);
       if (now.count >= found.count || now.keys.some((key) => !found.keys.includes(key))) continue;
       if (part.mine) told.push(`Your change to ${part.label} could not be combined with another window's; the saved version is kept.`);
