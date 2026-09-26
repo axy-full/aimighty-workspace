@@ -4,9 +4,11 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { DESKTOP, forbidPaid, projectWithShots } from "./helpers/appPagesAudit";
 
 /**
- * The app-pages audit, in a real browser against a local ENGINE_MOCK=1 server:
- * The Rig canvas on a desktop and on a phone. Nothing here submits paid work. The audit is split across files so
- * each CI shard's dev server compiles only some of these pages.
+ * Part of the app-pages audit, in a real browser against a local ENGINE_MOCK=1
+ * server: the Rig canvas on a desktop and on a phone. Nothing here submits
+ * paid work. The audit is spread over files whose names sort apart, because CI
+ * shards take contiguous runs of files and each legacy page costs its dev
+ * server gigabytes to compile.
  */
 
 test("the Rig canvas opens, carries a Library reference, offers only runnable nodes and says when a save fails", async ({ page }, info) => {
