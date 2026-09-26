@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { canProgress, isOpen, resumeAge, resumeGivesUp, resumeLine, resumePhase, resumeProblem, shortName } from "../../lib/higgsfield-consumer/resume";
-import { COLLECT_BACKOFF_MS, COLLECT_POLL_MS, COLLECT_UNSETTLED_POLLS, ConnectedCollector } from "../../lib/shell/connected-collector";
+import { COLLECT_BACKOFF_MS, COLLECT_PACE, COLLECT_POLL_MS, COLLECT_UNSETTLED_POLLS, ConnectedCollector } from "../../lib/shell/connected-collector";
 import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 /**
@@ -91,6 +91,8 @@ function harness(listing: () => unknown[], answers: Record<string, Answer[]>) {
   const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const collector = new ConnectedCollector({
     now: () => clock,
+    /* No jitter: every wait is its pace exactly. */
+    random: () => 0.5,
     setTimer: (fn, ms) => { const t = { at: clock + ms, fn }; timers.push(t); return t; },
     clearTimer: (t) => { const i = timers.indexOf(t as (typeof timers)[number]); if (i >= 0) timers.splice(i, 1); },
     onSettled: (j) => settled.push(j),
@@ -138,7 +140,8 @@ test("the pages show what the collector reads: every job seen in flight, its lat
   const before = changes();
   await advance(0);
   expect(changes()).toBeGreaterThan(before);
-  expect(shown()[uuid(2)]).toEqual({ status: "uncertain", following: true, problem: "Too many requests. Try again shortly." });
+  /* In fixed words (checkingProblem), never the route's own text. */
+  expect(shown()[uuid(2)]).toEqual({ status: "uncertain", following: true, problem: "Could not check this take. Checking again shortly." });
   await advance(COLLECT_POLL_MS);
   /* Settled: announced once by the collector, still shown with its outcome, no longer followed. */
   expect(settled.map((j) => j.status)).toEqual(["completed"]);
@@ -163,7 +166,8 @@ test("asking is bounded: an earlier connection's job stops at once, an unmoved o
   await collector.list(DRAFT);
   await advance(0);
   expect(shown()[uuid(5)]).toEqual({ status: "accepted", following: false, problem: "Started on an earlier account connection, so it can't be checked from here." });
-  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 2; i++) await advance(COLLECT_POLL_MS);
+  /* Its reads grow further apart (20, 30, 45 s, then a minute): a minute a step reaches every one. */
+  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 2; i++) await advance(COLLECT_PACE.capMs);
   expect(reads.filter((id) => id === uuid(5))).toHaveLength(1);
   expect(reads.filter((id) => id === uuid(6))).toHaveLength(COLLECT_UNSETTLED_POLLS);
   expect(shown()[uuid(6)]).toEqual({ status: "uncertain", following: false, problem: null });
@@ -219,4 +223,22 @@ test("a job read back by its composer is never read here at the same time; let g
   /* A job the server does not know is forgotten outright. */
   collector.unwatch(uuid(10), true);
   expect(shown()[uuid(10)]).toBeUndefined();
+});
+
+test("a job its own view gave up on is not taken up when the view lets it go, nor by a listing that shows it unchanged", async () => {
+  const { collector, reads, advance } = harness(() => [job(11, "accepted")], {});
+  /* An Ads composer was polling it; its read failed the way every read would (an earlier connection). */
+  collector.watch(uuid(11));
+  await collector.list(DRAFT);
+  collector.forgo(uuid(11), "accepted");
+  collector.release(DRAFT, { id: uuid(11), status: "accepted" });
+  await advance(COLLECT_POLL_MS * 3);
+  await collector.list(DRAFT);
+  await advance(COLLECT_POLL_MS);
+  expect(reads).toEqual([]);
+  /* A view that lets go of a job it did not give up on hands it over as before. */
+  collector.watch(uuid(12));
+  collector.release(DRAFT, { id: uuid(12), status: "accepted" });
+  await advance(0);
+  expect(reads).toEqual([uuid(12)]);
 });
