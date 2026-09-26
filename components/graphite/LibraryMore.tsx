@@ -13,11 +13,12 @@ export const MORE_DWELL_MS = 200;
  * offers Try again; a Load more that failed is tried again by Load more.
  *
  * With `auto`, the row is also the list's sentinel: scrolled into view, it
- * reads the next page by itself (library.more()). Only a scroll brings it in —
- * a row already in view when the list opens, or still in view after a page
- * lands (a filter showing few of them), waits for Load more, so a sparse
- * filter never pages through a whole project on its own; and a failed page is
- * never read again by itself.
+ * reads the next page by itself (library.more()), one page per scroll. It
+ * waits for someone reading on — a row already in view when the list opens,
+ * or still in view after a page lands (a filter showing few takes), reads
+ * nothing more until the list is scrolled or Load more is pressed — so a
+ * sparse filter never pages through a whole project on its own; and a failed
+ * page is never read again by itself.
  */
 export function LibraryMore({ library, testId = "library-more", auto = false, countWord = "shown" }: {
   library: ProjectLibrary; testId?: string;
@@ -33,23 +34,35 @@ export function LibraryMore({ library, testId = "library-more", auto = false, co
   useEffect(() => { latest.current = { ready, more: library.more }; });
   useEffect(() => {
     if (!auto || !row || typeof IntersectionObserver === "undefined") return;
-    let armed = false;
+    /* Armed by a scroll of this list, or by the row leaving the view; spent by the read it starts. */
+    let inView = false, armed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new IntersectionObserver(([hit]) => {
-      if (!hit?.isIntersecting) {
-        armed = true;
-        if (timer) { clearTimeout(timer); timer = null; }
-        return;
-      }
-      if (!armed || timer) return;
+    const settle = () => {
+      if (timer || !inView || !armed) return;
       timer = setTimeout(() => {
         timer = null;
+        if (!inView) return;
         armed = false;
         if (latest.current.ready) void latest.current.more();
       }, MORE_DWELL_MS);
+    };
+    /* Every entry, in order: a fast scroll can deliver "left the view" and "came back" in one batch. */
+    const observer = new IntersectionObserver((hits) => {
+      for (const hit of hits) {
+        inView = hit.isIntersecting;
+        if (!inView) { armed = true; if (timer) { clearTimeout(timer); timer = null; } }
+      }
+      settle();
     });
+    /* A page can land and the list be scrolled to its new end within one frame: the row never seemed to
+       leave. A scroll of the list this row ends (not of another panel) is someone reading on. */
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target === document || (target instanceof Node && target.contains(row))) { armed = true; settle(); }
+    };
     observer.observe(row);
-    return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => { observer.disconnect(); document.removeEventListener("scroll", onScroll, { capture: true }); if (timer) clearTimeout(timer); };
   }, [auto, row]);
 
   if (state.status === "error") {
