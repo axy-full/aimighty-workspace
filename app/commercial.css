@@ -168,6 +168,18 @@
   font-size: 12px;
   font-weight: 500;
 }
+.plan-card .mr-tiles {
+  margin-top: 12px;
+}
+.commercial-rates {
+  margin-top: 40px;
+}
+.commercial-rates h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+}
 .plan-card ul {
   list-style: none;
   display: flex;
@@ -534,6 +546,8 @@
   .commercial .plan-card ul { font-size: 13px; line-height: 1.6; }
   .commercial .commercial-button { min-height: 44px; border-radius: 10px; font-size: 14px; font-weight: 500; }
   .commercial .commercial-details { margin-top: 24px; padding-top: 20px; }
+  .commercial .commercial-rates { margin-top: 24px; }
+  .commercial .commercial-rates h2 { font-size: 18px; }
   .commercial .commercial-details > div { grid-template-columns: 1fr; gap: 10px; }
   .commercial .commercial-details > div > article { padding: 14px; background: #17171b; border-color: rgba(255,255,255,.16); border-radius: 8px; }
   .commercial .commercial-details h3,

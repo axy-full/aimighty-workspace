@@ -2,10 +2,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PlanDef } from "@/lib/plans";
+import type { RateGroup, ReferenceTakes, TakeReach } from "@/lib/mediaReach";
 import CommercialLayout from "./CommercialLayout";
+import { PlanReach, RateCard } from "./MediaReach";
 
 export type PlansResponse = {
-  plans: PlanDef[];
+  /** `reach` is what the plan's monthly credits come to at the reference settings. */
+  plans: (PlanDef & { reach?: TakeReach })[];
+  /** The takes plans are counted in: the platform's default video and image engines at their default settings. */
+  reference?: ReferenceTakes | null;
+  /** Credits per take for every engine this deployment runs. */
+  rates?: RateGroup[] | null;
   checkoutAvailable: boolean;
   reason?: string;
   annualDiscountPercent: number;
@@ -103,6 +110,12 @@ export default function PricingClient() {
                   <strong>{plan.includedCredits.toLocaleString()}</strong>{" "}
                   credits every month
                 </p>
+                <PlanReach
+                  videos={plan.reach?.videos}
+                  images={plan.reach?.images}
+                  reference={data?.reference}
+                  testId={`plan-reach-${plan.id}`}
+                />
                 <ul>
                   <li>
                     {plan.maxMembers == null
@@ -128,6 +141,17 @@ export default function PricingClient() {
             );
           })}
       </div>
+      {data?.rates ? (
+        <section className="commercial-rates" aria-labelledby="rates-title">
+          <h2 id="rates-title">Credits per take</h2>
+          <RateCard
+            groups={data.rates}
+            reference={data.reference}
+            legend="Plans are counted at the outlined prices."
+            testId="rate-card"
+          />
+        </section>
+      ) : null}
       <section className="commercial-details">
         <h2>Clear costs. Your work stays yours.</h2>
         <div>

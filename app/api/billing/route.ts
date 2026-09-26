@@ -8,6 +8,9 @@ import {
   ANNUAL_DISCOUNT_PERCENT,
 } from "@/lib/billingConfig";
 import { packs } from "@/lib/packs";
+import { creditsApply } from "@/lib/credits";
+import { effectiveModels } from "@/lib/defaultModels";
+import { workspaceReach } from "@/lib/workbench/media-reach";
 
 export const dynamic = "force-dynamic";
 export const GET = withTenant(async function GET() {
@@ -18,6 +21,15 @@ export const GET = withTenant(async function GET() {
     billingStateFor(workspace.id),
     getPlatformLayer(),
   ]);
+  /* The balance as takes, at this workspace's usual settings (its own recent
+     takes) or its default engines. Credit workspaces only: one billed in
+     dollars on its own keys has no credit balance to translate. Best effort —
+     billing still answers when the translation cannot be made. */
+  const reach = creditsApply(workspace)
+    ? await effectiveModels()
+        .then((models) => workspaceReach(state.credits.balance, models))
+        .catch(() => null)
+    : null;
   return NextResponse.json(
     {
       ...billingConfiguration(),
@@ -29,6 +41,7 @@ export const GET = withTenant(async function GET() {
       subscription: state.subscription,
       credits: state.credits,
       cycles: state.cycles,
+      reach,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

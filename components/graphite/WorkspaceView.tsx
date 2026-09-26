@@ -7,6 +7,9 @@ import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import { takesWithin, type WorkspaceReach } from "@/lib/mediaReach";
+import type { PlansResponse } from "@/components/commercial/PricingClient";
+import { RateCard, ReachTile } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
 import { ManagementDashboard } from "./ManagementDashboard";
@@ -206,17 +209,37 @@ function People() {
 }
 
 /* ── Plans & credits ─────────────────────────────────────────────────── */
-type Billing = { canManage: boolean; plans?: { id: string; label?: string; name?: string }[]; packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[]; subscription?: { plan?: string; status?: string; renewsAt?: number } | null; credits?: { balance?: number; granted?: number; used?: number } };
+type Billing = { canManage: boolean; plans?: { id: string; label?: string; name?: string; includedCredits?: number }[]; packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[]; subscription?: { plan?: string; status?: string; renewsAt?: number } | null; credits?: { balance?: number; granted?: number; used?: number }; reach?: WorkspaceReach | null };
+const basisNote = (basis: "usual" | "default") => (basis === "usual" ? "at your usual settings" : "at the default settings");
 function Plans({ credits }: { credits: { text: string; title: string } }) {
+  const session = useSession();
+  const inCredits = session.rates.unit !== "usd";
   const { data, error } = useRead<Billing>("/api/billing");
   const { data: statements } = useRead<{ months?: string[] }>("/api/statements");
+  const [ratesOpen, setRatesOpen] = useState(false);
   const plan = data?.plans?.find((p) => p.id === data.subscription?.plan);
+  const reach = inCredits ? data?.reach ?? null : null;
+  const monthly = takesWithin(plan?.includedCredits ?? null, reach?.video?.credits);
   return (
     <div className="wsx-card" data-testid="ws-plans">
       <span className="gx-eyebrow">Balance</span>
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
-      <span className="cw-dim">{plan ? `${plan.label ?? plan.name ?? plan.id} plan` : data?.subscription?.plan ? `${data.subscription.plan} plan` : "No plan on record"}{data?.subscription?.status ? ` · ${data.subscription.status}` : ""}</span>
+      {/* The balance as takes: what it buys at the settings this workspace actually renders. */}
+      {inCredits && !data && !error ? <span className="cw-dim" role="status" data-testid="workspace-reach-loading">Counting what that buys…</span> : null}
+      {reach && (reach.video || reach.image) ? (
+        <div className="mr-tiles wsx-reach" data-testid="workspace-reach">
+          {reach.video ? <ReachTile kind="video" count={reach.video.left} take={reach.video} suffix="left" note={basisNote(reach.video.basis)} testId="workspace-reach-video" /> : null}
+          {reach.image ? <ReachTile kind="image" count={reach.image.left} take={reach.image} suffix="left" note={basisNote(reach.image.basis)} testId="workspace-reach-image" /> : null}
+        </div>
+      ) : null}
+      <span className="cw-dim" data-testid="workspace-plan">{plan ? `${plan.label ?? plan.name ?? plan.id} plan` : data?.subscription?.plan ? `${data.subscription.plan} plan` : "No plan on record"}{data?.subscription?.status ? ` · ${data.subscription.status}` : ""}{plan?.includedCredits ? ` · ${cr(plan.includedCredits)} a month` : ""}{monthly != null && plan?.includedCredits ? ` ≈ ${monthly.toLocaleString("en-US")} ${monthly === 1 ? "video" : "videos"}` : ""}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
+      {inCredits ? (
+        <details className="wsx-rates" data-testid="workspace-rates" onToggle={(e) => setRatesOpen((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary><span>Credits per take</span><span aria-hidden="true" className="wsx-rates-chev">›</span></summary>
+          {ratesOpen ? <Rates reach={reach} /> : null}
+        </details>
+      ) : null}
       {/* Packs are not listed: the app has no purchase route, and a feature with no API workflow behind it is not shown (owner's rule, 22 September). */}
       <span className="gx-eyebrow">Statements</span>
       <div className="wsx-actions">
@@ -225,6 +248,14 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
       </div>
     </div>
   );
+}
+
+/** Every engine's credits per take, read when opened; this workspace's own takes outlined. */
+function Rates({ reach }: { reach: WorkspaceReach | null }) {
+  const { data, error, read } = useRead<PlansResponse>("/api/plans");
+  if (error) return <p className="gx-gen-error" role="alert">{error} <button type="button" className="gx-hbtn" onClick={() => void read()}>Try again</button></p>;
+  if (!data) return <span className="cw-dim" role="status">Reading rates…</span>;
+  return <RateCard groups={data.rates ?? []} reference={reach} legend="Your balance is counted at the outlined prices." testId="workspace-rate-card" />;
 }
 
 /* ── Usage ───────────────────────────────────────────────────────────── */

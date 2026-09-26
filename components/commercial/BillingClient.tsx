@@ -9,6 +9,7 @@ import ManagementPage, {
 } from "@/components/management/ManagementPage";
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
+import { PlanReach } from "./MediaReach";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRateLine } from "@/lib/creditTerms";
 
@@ -207,6 +208,8 @@ export default function BillingClient({
       actionLock.current = false;
     }
   }
+  /* What a plan's credits come to as takes: carried by /api/plans only. */
+  const reachOf = (id: string) => plans?.plans.find((plan) => plan.id === id)?.reach;
   const availablePlans = (data?.plans || plans?.plans || []).filter(
       (plan) => plan.id !== "invite",
     ),
@@ -585,6 +588,12 @@ export default function BillingClient({
                   <strong className="management-amount">
                     {plan.includedCredits.toLocaleString()} credits / month
                   </strong>
+                  <PlanReach
+                    videos={reachOf(plan.id)?.videos}
+                    images={reachOf(plan.id)?.images}
+                    reference={plans?.reference}
+                    testId={`billing-plan-reach-${plan.id}`}
+                  />
                   <p>
                     {cadence === "annual"
                       ? `${formatUsd(annual)} billed annually`
