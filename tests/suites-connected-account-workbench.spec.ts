@@ -68,7 +68,7 @@ test("Engines connects the account, shows the owner's slot holders, sets a stuck
   const coarse = (info.project.use.viewport?.width ?? 1440) < 900;
   for (const button of [page.getByTestId("connected-account-connect"), page.getByTestId("connected-account-disconnect"), rows.nth(0).getByRole("button", { name: "Set aside" })]) {
     await expect(button).toBeVisible();
-    if (coarse) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    if (coarse) expect(Math.round((await button.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 

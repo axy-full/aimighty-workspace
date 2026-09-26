@@ -78,6 +78,8 @@ type Snapshot = {
   tool?: { name: ConnectedToolName; label: string; model: string; suffix: string };
   /** Display names of the request's reference files, in request order. */
   sources?: { role: string; kind: string; name: string }[];
+  /** The page that quoted it, when it asked to pick its jobs back up ("gen"). */
+  composer?: "gen";
 };
 function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvailability, observedAt: number) {
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -92,6 +94,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     model: snapshot.model,
     tool: snapshot.tool ?? null,
     sources: snapshot.sources ?? [],
+    composer: snapshot.composer === "gen" ? "gen" : null,
     workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId,
     quoteCredits: job.quoteCredits,
@@ -150,7 +153,7 @@ async function requireModel(userId: string, input: ConsumerGenerationInput): Pro
 const sameInput = (a: unknown, b: ConsumerGenerationInput) =>
   sameConsumerValue(parseConsumerGenerationInput(a), b);
 const PLACEHOLDER_MEDIA = "00000000-0000-4000-8000-000000000000";
-export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string) {
+export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string, options: { composer?: "gen" | null } = {}) {
   const normalized = parseConsumerGenerationInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
   await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
@@ -195,6 +198,7 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
     workspaceName: quote.workspace.name ?? "Connected wallet",
     model: { id: model.id, name: model.name, outputType: model.outputType },
     sources: described,
+    ...(options.composer === "gen" ? { composer: "gen" as const } : {}),
   };
   if (normalized.tool) {
     const tool = requireConnectedTool(normalized.tool.name);

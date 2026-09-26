@@ -11,6 +11,8 @@
 .gx .pd-agent-hint { margin: 0; font-size: 12px; }
 .gx .pd-tabs { width: max-content; }
 .gx .pd-row-head { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+/* A take brought into view lands with its heading clear of the scroller's edge. */
+.gx .pd-row-head[data-section="edit-panel"] { scroll-margin-top: 16px; }
 .gx .pd-prompt { min-height: 200px; }
 .gx .pd-small { min-height: 84px; }
 .gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 12px; margin-top: -8px; }

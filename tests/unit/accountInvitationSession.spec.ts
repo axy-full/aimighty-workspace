@@ -123,6 +123,15 @@ async function route(
     "@/lib/workspaceProvisioning":
       await import("../../lib/workspaceProvisioning"),
     "@/lib/policyAccept": await import("../../lib/policyAccept"),
+    // No mail on this deployment: an invitation link alone may make an account.
+    "@/lib/mail": {
+      mailConfigured: () => false,
+      inviteOrigin: () => "http://particl.test",
+      inviteEmail: () => ({ subject: "", text: "", html: "" }),
+      sendMail: async () => {
+        throw Error("Unit tests never send mail");
+      },
+    },
   };
   const compiled = ts.transpileModule(
     readFileSync(resolve(`app/api/auth/${name}/route.ts`), "utf8"),

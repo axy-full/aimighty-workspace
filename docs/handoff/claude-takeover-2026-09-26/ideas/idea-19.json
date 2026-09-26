@@ -1,0 +1,19 @@
+{
+ "n": 19,
+ "title": "Role-aware connected-account surfaces for invited members",
+ "area": "Team / permissions",
+ "gap": "The connected-account routes require the owner (requireOwner). A member opening Cast sees 'Connect it once\u2026' and an 'Open Workspace \u203a Engines' button they cannot use (CastStage.tsx:252,267-268). Gen shows members the 'Higgsfield catalogue' tab and then blocks it (use-composer.ts:383). Business, Viral and Gen each fetch /api/me separately (use-business.ts:28, use-viral.ts:44, use-composer.ts:217).",
+ "target": "One useConnectedCapability() hook in lib/shell, cached per scope, returning {owner, connected, reconnect, ownerName}. Members see a single calm card, 'Higgsfield-account tools are run by <owner>', with the workspace-credit alternative (Gen Studio engines; Cast reference stills on Studio image engines). Connected-only tabs are hidden for members, and the Business and Viral suite tabs carry an 'Owner' badge.",
+ "files": [
+  "lib/shell/use-connected-capability.ts",
+  "components/graphite/production/CastStage.tsx",
+  "components/graphite/GenView.tsx",
+  "lib/shell/use-business.ts",
+  "lib/shell/use-viral.ts",
+  "lib/workspace/use-composer.ts",
+  "components/graphite/Header.tsx"
+ ],
+ "priority": "P1",
+ "effort": "medium",
+ "respects_rules": "Members never spend through the owner's account. No higgsfield.ai library content is shown."
+}

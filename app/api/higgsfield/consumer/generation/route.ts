@@ -38,7 +38,7 @@ const catalogue = z
   .object({ action: z.literal("catalogue"), refresh: z.boolean().optional(), type: z.enum(CONNECTED_OUTPUT_TYPES).optional() })
   .strict();
 const quote = z
-  .object({ action: z.literal("quote"), draftId: id, input: consumerGenerationInputSchema, idempotencyKey: z.uuid() })
+  .object({ action: z.literal("quote"), draftId: id, input: consumerGenerationInputSchema, idempotencyKey: z.uuid(), composer: z.literal("gen").optional() })
   .strict();
 const submit = z
   .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) })
@@ -179,7 +179,7 @@ export const POST = withTenant(async (req: Request) => {
     if (body.action === "status")
       return Response.json(await pollConsumerGeneration({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
     return Response.json(
-      { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey) },
+      { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey, { composer: body.composer ?? null }) },
       { headers },
     );
   } catch (error) {

@@ -1,0 +1,19 @@
+{
+ "n": 16,
+ "title": "Polling with backoff, jitter and the server's own pacing",
+ "area": "Background work",
+ "gap": "Clients poll at fixed intervals: use-composer.ts:76 every 6 s, use-connected-job.ts:24 and use-viral.ts:23 every 4 s, and the EditStage re-edit every 3 s. The server returns pollAfterSeconds (15-30 s, generation-service.ts ~:283) and rate-limits status to 30 per minute (generation route.ts:140), but clients ignore both. Polling continues in hidden tabs. Business Setup reads re-fire in a tight loop after any error (BusinessView.tsx:180/278/378 against use-business.ts:59-71).",
+ "target": "A shared lib/poll.ts: start at 2 s, multiply by 1.5 up to a 10 s cap (or the server's pollAfterSeconds when that is larger), add \u00b120% jitter, pause while document.hidden and resume when visible, and stop on the full terminal set. Errors back off instead of looping. Setup reads get backoff plus a Retry button.",
+ "files": [
+  "lib/poll.ts",
+  "lib/workspace/use-composer.ts",
+  "lib/shell/use-connected-job.ts",
+  "lib/shell/use-viral.ts",
+  "components/graphite/production/EditStage.tsx",
+  "lib/shell/use-business.ts",
+  "components/graphite/business/BusinessView.tsx"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "Client only. Status reads are safe to retry, and paid POSTs are never retried."
+}

@@ -562,3 +562,37 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   .gx-atomik-step, .gx-atomik-meta, .gx-atomik-mark { font-size: 12px; }
   .gx-atomik-elsewhere { min-height: 44px; }
 }
+
+/* ── Connected jobs picked back up after the page was left (Business, Viral; Gen shows cards). ── */
+.gx-resumed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* One line: dot · name · state. A problem and the actions sit on their own line under it, actions at the end. */
+.vr-job.gx-resumed-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; row-gap: 6px; align-items: center; min-height: 44px; }
+.gx-resumed-row > .gx-resumed-problem, .gx-resumed-row > .gx-resumed-actions { grid-column: 1 / -1; }
+.gx-resumed-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.gx-resumed-open { color: var(--gx-accent-text); }
+.gx-resumed-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--gx-accent); }
+.gx-resumed-row[data-tone="blue"] .gx-resumed-dot { animation: gx-pulse 1.6s ease-in-out infinite; }
+.gx-resumed-row[data-tone="green"] .gx-resumed-dot { background: var(--gx-done); }
+.gx-resumed-row[data-tone="red"] .gx-resumed-dot { background: var(--gx-failed); }
+.gx-resumed-row[data-tone="amber"] .gx-resumed-dot { background: var(--gx-waiting); }
+.gx-resumed-row[data-tone="idle"] .gx-resumed-dot { background: var(--gx-idle); }
+.gx-resumed-state { color: var(--gx-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gx-resumed-row[data-tone="green"] .gx-resumed-state { color: var(--gx-done); }
+.gx-resumed-row[data-tone="red"] .gx-resumed-state { color: var(--gx-failed); }
+.gx-resumed-row[data-tone="amber"] .gx-resumed-state { color: var(--gx-waiting); }
+.gx-resumed-x { height: 28px; }
+.gx-resumed-problem { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--gx-waiting); }
+.gx-asset[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
+.gx-asset[data-tone="red"] > .gx-asset-meta { color: var(--gx-failed); }
+/* Nobody is asking after it any more (settled, or no read can move it): the ring and dot stop pulsing. */
+.gx-asset[data-following="false"] .gx-ring { animation: none; }
+/* A picked-up card's state can be a few words ("Set aside · never sent again"): it wraps rather than hides. */
+.gx-asset[data-following] > .gx-asset-meta { white-space: normal; }
+.gx-asset > .gx-resumed-note { display: block; margin-top: 4px; font-size: 12px; color: var(--gx-waiting); }
+.gx-asset > .gx-resumed-x { margin-top: 6px; }
+/* Gen on a narrow screen: the results sit under the whole composer, so its top says takes are still out. */
+.gx-resumed-jump { display: none; justify-self: start; }
+.gx-resumed-jump[data-tone="blue"] .gx-resumed-dot { animation: gx-pulse 1.6s ease-in-out infinite; }
+.gx-resumed-jump[data-tone="amber"] .gx-resumed-dot { background: var(--gx-waiting); }
+@media (max-width: 1023px) { .gx-resumed-jump { display: flex; } }
+@media (max-width: 767px), (pointer: coarse) { .gx-resumed-x, .gx-resumed-jump { height: 44px; } }

@@ -530,11 +530,36 @@ export async function syncTrainingIdentities(
 
 export const RENDER_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 
-function imageSizeFor(ratio: string): string {
-  return ({
-    "1:1": "square_hd", "16:9": "landscape_16_9", "9:16": "portrait_16_9",
-    "4:3": "landscape_4_3", "3:4": "portrait_4_3",
-  } as Record<string, string>)[ratio] ?? "landscape_16_9";
+/**
+ * The pixels fal is asked for at each ratio. The renderer bills per
+ * megapixel, rounded up, so every size stays under one and a still costs
+ * RENDER_USD_PER_MP at every ratio. fal's square_hd preset (1024 × 1024) is
+ * 1.05 MP and billed as two, so the square is asked for at 992 × 992.
+ */
+const RENDER_SIZES: Record<(typeof RENDER_RATIOS)[number], { width: number; height: number; preset?: string }> = {
+  "1:1": { width: 992, height: 992 },
+  "16:9": { width: 1024, height: 576, preset: "landscape_16_9" },
+  "9:16": { width: 576, height: 1024, preset: "portrait_16_9" },
+  "4:3": { width: 1024, height: 768, preset: "landscape_4_3" },
+  "3:4": { width: 768, height: 1024, preset: "portrait_4_3" },
+};
+/** A ratio the renderer does not draw falls back to 16:9, as the composer's still does. */
+export function renderSizeFor(ratio: string): { width: number; height: number; preset?: string } {
+  return RENDER_SIZES[ratio as keyof typeof RENDER_SIZES] ?? RENDER_SIZES["16:9"];
+}
+function imageSizeFor(ratio: string): string | { width: number; height: number } {
+  const size = renderSizeFor(ratio);
+  return size.preset ?? { width: size.width, height: size.height };
+}
+/** fal's charge for one render of these pixels: per megapixel, rounded up. */
+export function renderUsd(width: number, height: number): number {
+  const mp = (width * height) / 1_000_000;
+  return Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) / 10_000;
+}
+/** One render at a ratio, priced before it is made by the formula the finished render is billed by. */
+export function renderUsdForRatio(ratio: string): number {
+  const size = renderSizeFor(ratio);
+  return renderUsd(size.width, size.height);
 }
 
 /** The prompt the renderer sees: @Name becomes the trigger; a prompt that
@@ -553,8 +578,8 @@ type RenderResult = {
 };
 
 /** The exact body fal is asked to render. Kept in one place so a resumed
- *  render and a fresh one can never drift apart. */
-function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
+ *  render and a fresh one can never drift apart (exported for its spec). */
+export function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
   return {
     prompt: opts.prompt,
     loras: [{ path: identity.loraUrl, scale: 1 }],
@@ -633,12 +658,7 @@ async function finishRender(
     () => storeImageBytes(genId, bytes),
     { max: 3 },
   );
-  const mp =
-    ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) /
-    1_000_000;
-  const cost =
-    Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) /
-    10_000;
+  const cost = renderUsd(img.width ?? meta.width ?? 1024, img.height ?? meta.height ?? 1024);
   await writeGenerationOutcome(
     {
       sql: `UPDATE generations
@@ -839,7 +859,7 @@ export async function startIdentityStill(opts: {
   invalidate(PROJECTS_KEY);
   try {
     await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "running",
-                  engineCostUsd: RENDER_USD_PER_MP, projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
+                  engineCostUsd: renderUsdForRatio(opts.ratio), projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
   } catch (e) {
     await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] }).catch(() => {});
     invalidate(PROJECTS_KEY);

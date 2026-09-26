@@ -1,0 +1,17 @@
+{
+ "n": 21,
+ "title": "Error boundaries per panel, plus Suites-styled error and 404 pages",
+ "area": "Resilience",
+ "gap": "components/Boundary.tsx exists but no components/graphite file uses it. Any throw in a stage body unmounts the whole /suites shell into app/error.tsx, which says a page 'OUTSIDE the app shell' threw and prints 11.5px mono text, below the 12px floor. app/not-found.tsx offers 'Go to Video', /productions and /all, which are legacy destinations.",
+ "target": "Wrap each stage body, the Library, the Inspector and the Gen results in <Boundary what='\u2026' resetKey={page id}> inside SuitesShell. Add app/suites/error.tsx that keeps the header and offers 'Try again', 'Back to Studio' and the digest at 12px or larger. Rewrite not-found in Suites language with 'Back to Studio', 'Open Takes' and '\u2318K Search'.",
+ "files": [
+  "components/graphite/SuitesShell.tsx",
+  "components/Boundary.tsx",
+  "app/suites/error.tsx",
+  "app/not-found.tsx",
+  "app/error.tsx"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "Keeps the 12px floor and sans fonts."
+}

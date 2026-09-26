@@ -31,7 +31,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
         {failed
           ? <div className="gx-empty" role="alert"><p className="gx-gen-error">{library.state.error ?? "The project library could not be loaded."}</p><button type="button" className="gx-hbtn" onClick={() => void library.refresh()}>Retry</button></div>
-          : <p className="gx-empty">{library.state.status === "ready" ? "This asset is no longer in the project." : "Reading this project…"}</p>}
+          : <p className="gx-empty">{library.state.status === "ready" && !library.state.moreBusy ? "This asset is no longer in the project." : "Reading this project…"}</p>}
       </div>
     );
   }
