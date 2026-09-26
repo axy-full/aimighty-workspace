@@ -1,30 +1,13 @@
-import { test, expect, type Page } from "@playwright/test";
-import { createClient } from "@libsql/client";
+import { test, expect } from "@playwright/test";
 import { randomBytes } from "node:crypto";
-import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { signInLocally } from "./helpers/workbenchLocal";
 import { totpAt } from "../lib/totp";
+import { password, noSideScroll, signupInvite } from "./helpers/identityAdmin";
 
-/* Identity and platform-desk fixes, in the browser at every size the
-   customer config runs (its shards already serve the account pages, so
-   these add no new routes to a workbench shard's dev server). Local
-   ENGINE_MOCK server only. */
-const password = "a local browser test passphrase 42";
-const noSideScroll = (page: Page) =>
-  page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
-
-async function signupInvite(email: string) {
-  const code = randomBytes(18).toString("base64url");
-  const db = createClient({ url: localPlatformDbUrl(), timeout: 2_000 });
-  try {
-    await db.execute({
-      sql: "INSERT INTO signup_invites(code,email,name,note,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
-      args: [code, email, "Tester", "Local browser test", "test", Date.now(), Date.now() + 3_600_000],
-    });
-  } finally {
-    db.close();
-  }
-  return code;
-}
+/* Identity fixes, in the browser at every size the customer config runs (its
+   shards already serve the account pages, so these add no new routes to a
+   workbench shard's dev server). The platform desk has its own spec
+   (tests/platform-desk.spec.ts). Local ENGINE_MOCK server only. */
 
 test("after a reset that needs the second factor, sign-in says the password changed", async ({ page }) => {
   await page.goto("/login?passwordReset=1");
@@ -183,61 +166,4 @@ test("a member whose workspace requires two-step sign-in replaces a lost authent
     .then((r) => r.json());
   expect(state.enabled).toBe(true);
   expect(state.recoveryCodesRemaining).toBe(8);
-});
-
-test("the platform desk marks a deleted workspace and restores it; money stays off it until then", async ({ page }, testInfo) => {
-  test.skip((testInfo.project.use.viewport?.width ?? 0) < 900, "the platform desk is a desktop console");
-  const ownerEmail = "platform-owner@example.test";
-  const login = await page.request.post("/api/auth/login", { data: { email: ownerEmail, password } });
-  if (!login.ok()) {
-    const code = await signupInvite(ownerEmail);
-    const signup = await page.request.post("/api/auth/signup", {
-      data: { code, name: "Platform owner", email: ownerEmail, workspace: "Platform desk", password, accept: true },
-    });
-    expect(signup.ok(), await signup.text()).toBe(true);
-  }
-  const me = await page.request.get("/api/me").then((r) => r.json());
-  // Only the deployment names the platform owner; the server under test must
-  // run with SUPER_ADMIN_EMAIL set to this fixture address (CI does).
-  expect(me.superAdmin, `start the server with SUPER_ADMIN_EMAIL=${ownerEmail}`).toBe(true);
-  const name = `Closing ${randomBytes(4).toString("hex")}`;
-  const created = await page.request.post("/api/workspaces", {
-    headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` },
-    data: { name },
-  });
-  expect(created.ok(), await created.text()).toBe(true);
-  const ws = (await created.json()).workspace;
-  const removed = await page.request.delete("/api/workspaces", {
-    headers: { "X-Workbench-Scope": `particl-active-${ws.id}-${me.id}` },
-    data: { name },
-  });
-  expect(removed.ok(), await removed.text()).toBe(true);
-  const refused = await page.request.patch(`/api/admin/workspaces/${ws.id}`, { data: { grantCredits: 100 } });
-  expect(refused.status()).toBe(409);
-  // Marking is not money: a deleted workspace can be flagged for the desk.
-  const marked = await page.request.patch(`/api/admin/workspaces/${ws.id}`, { data: { flagged: true, note: "Review before restoring" } });
-  expect(marked.ok(), await marked.text()).toBe(true);
-  await page.goto("/admin");
-  const row = page.locator(".steam").filter({ hasText: name });
-  await expect(row.getByText("DELETED", { exact: true })).toBeVisible();
-  await expect(row.getByText(/· FLAGGED/)).toBeVisible();
-  await row.getByRole("button", { name: "Clear flag" }).click();
-  await expect(row.getByText(/· FLAGGED/)).toHaveCount(0);
-  await expect(page.getByText(/credits from an approved invitation, 0 from self-serve sign-up/)).toBeVisible();
-  await expect(page.getByText(/VERCEL_TOKEN/)).toHaveCount(0);
-  expect(await noSideScroll(page)).toBe(true);
-  await row.getByRole("button", { name: "Restore" }).click();
-  await page.getByRole("button", { name: "Restore", exact: true }).last().click();
-  await expect(row.getByText("DELETED", { exact: true })).toHaveCount(0);
-  await expect(row.getByText("ACTIVE", { exact: true })).toBeVisible();
-  const list = await page.request.get("/api/workspaces").then((r) => r.json());
-  expect(list.workspaces.map((w: { id: string }) => w.id)).toContain(ws.id);
-  // Hide it again, so reruns never fill this owner's five workspaces.
-  const back = await page.request.post("/api/workspaces/switch", { data: { id: ws.id } });
-  expect(back.ok(), await back.text()).toBe(true);
-  const again = await page.request.delete("/api/workspaces", {
-    headers: { "X-Workbench-Scope": `particl-active-${ws.id}-${me.id}` },
-    data: { name },
-  });
-  expect(again.ok(), await again.text()).toBe(true);
 });
