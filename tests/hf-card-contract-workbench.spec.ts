@@ -195,6 +195,22 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
   await expect(page.getByTestId("takes-more-error")).toHaveCount(0);
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="takes-error"]'), "Try again under 44×44").toEqual([]);
   await shot(page, info, "takes-error", takesBanner);
+
+  /* The Library says it too, above its filters: on a phone, never behind the tab bar. */
+  if (!wide) await page.getByTestId("toggle-library").click();
+  const library = page.getByTestId("library");
+  await library.getByRole("tab", { name: /Assets/ }).click();
+  const libraryBanner = library.getByTestId("library-error");
+  await expect(libraryBanner).toContainText(OFFLINE);
+  await expect(library.getByTestId("library-more-error")).toHaveCount(0);
+  const tabbar = page.getByTestId("tabbar");
+  if (await tabbar.isVisible()) {
+    const [bannerBox, barBox] = [(await libraryBanner.boundingBox())!, (await tabbar.boundingBox())!];
+    expect(bannerBox.y + bannerBox.height, "the Library's banner clears the tab bar").toBeLessThanOrEqual(barBox.y);
+  }
+  await shot(page, info, "library-error", libraryBanner);
+  if (!wide) await page.getByTestId("close-library").click();
+
   state.mode = "ok";
   await takesBanner.getByRole("button", { name: "Try again" }).click();
   await expect(takesBanner).toHaveCount(0);
@@ -220,8 +236,7 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
 
   /* Library › Assets: the 2-up tile shortens the chip and moves the billing note under the name. */
   if (!wide) await page.getByTestId("toggle-library").click();
-  const library = page.getByTestId("library");
-  await library.getByRole("tab", { name: /Assets/ }).click();
+  await expect(library.getByTestId("library-error")).toHaveCount(0);
   const assets = page.getByTestId("library-assets");
   await expect(tile(assets, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   await expect(tile(assets, "Night swim").getByTestId("take-reason")).toHaveText("Not billed · Refused by the content filter");
