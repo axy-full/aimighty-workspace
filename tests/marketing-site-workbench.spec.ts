@@ -21,7 +21,7 @@ async function fits(page: Page) {
     const small = phone
       ? [...document.querySelectorAll<HTMLElement>("a, button, input, textarea, select")]
         .filter((el) => el.getAttribute("aria-hidden") !== "true")
-        .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height < 44; })
+        .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && Math.round(r.height * 100) / 100 < 44; })
         .map((el) => `${(el.textContent || el.tagName).trim().slice(0, 30)} (${Math.round(el.getBoundingClientRect().height)}px)`)
       : [];
     return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, small };

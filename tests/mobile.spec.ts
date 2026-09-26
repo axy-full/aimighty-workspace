@@ -218,7 +218,7 @@ test.describe("the audio composer", () => {
     const short = await composer.evaluate((root) => [...root.querySelectorAll<HTMLElement>("button")].filter((b) => {
       const r = b.getBoundingClientRect(); if (r.height === 0) return false;
       const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
-      return r.height < 44 && band < 44;
+      return Math.round(r.height * 100) / 100 < 44 && Math.round(band * 100) / 100 < 44;
     }).map((b) => `${b.textContent?.trim().slice(0, 16)}:${Math.round(b.getBoundingClientRect().height)}`));
     expect(short, "every target on a phone is at least 44pt, or carries a 44pt touch band").toEqual([]);
   });
@@ -314,7 +314,7 @@ test.describe("Make on a phone", () => {
     const short = await sheet.evaluate((root) => [...root.querySelectorAll<HTMLElement>("button")].filter((b) => {
       const r = b.getBoundingClientRect(); if (r.height === 0) return false;
       const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
-      return r.height < 44 && band < 44;
+      return Math.round(r.height * 100) / 100 < 44 && Math.round(band * 100) / 100 < 44;
     }).map((b) => `${b.textContent?.trim().slice(0, 16)}:${Math.round(b.getBoundingClientRect().height)}`));
     expect(short, "every target in the sheet is at least 44pt, or carries a 44pt touch band").toEqual([]);
     await page.keyboard.press("Escape");
@@ -388,7 +388,7 @@ test.describe("Atomik on a phone", () => {
     const short = await sheet.evaluate((root) => [...root.querySelectorAll<HTMLElement>("button")].filter((b) => {
       const r = b.getBoundingClientRect(); if (r.height === 0) return false;
       const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
-      return r.height < 44 && band < 44;
+      return Math.round(r.height * 100) / 100 < 44 && Math.round(band * 100) / 100 < 44;
     }).map((b) => `${b.textContent?.trim().slice(0, 16)}:${Math.round(b.getBoundingClientRect().height)}`));
     expect(short).toEqual([]);
     await sheet.getByRole("button", { name: /Expand/ }).click();

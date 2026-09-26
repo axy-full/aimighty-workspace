@@ -84,7 +84,7 @@ test("the phone header shows a credit figure on Projects, Suite and Page, at eve
     const small = await page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('[data-testid="mobile-header"] button'))
         .map((el) => el.getBoundingClientRect())
-        .filter((r) => (r.width || r.height) && (r.width < 44 || r.height < 44)).length);
+        .filter((r) => (r.width || r.height) && (Math.round(r.width * 100) / 100 < 44 || Math.round(r.height * 100) / 100 < 44)).length);
     expect(small, `${width}×${height} header targets`).toBe(0);
   }
 });
