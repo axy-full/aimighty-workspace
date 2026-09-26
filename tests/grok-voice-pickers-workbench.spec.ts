@@ -76,9 +76,11 @@ async function openNode(page: Page) {
   return page.getByRole("dialog", { name: "Generate a new take", exact: true });
 }
 const optionLabels = (select: ReturnType<Page["getByRole"]>) => select.locator("option").allTextContents();
+/** The picker fits the viewport: the page never scrolls sideways. */
+const noSideScroll = (page: Page) => expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 
+/* Every picker below runs at all five sizes; Edit & Sound's voice picker is desktop's alone (see its test). */
 test("the Rig dialog swaps to Grok Voice's own voices with the model, and quotes the line with one", async ({ page }, info) => {
-  test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "bounded phone and desktop");
   const f = await fixture(page, "both");
   await page.goto(await legacyShell(page, "/workbench?project=grok-voice-fixture&stage=canvas"));
   const dialog = await openNode(page);
@@ -92,11 +94,11 @@ test("the Rig dialog swaps to Grok Voice's own voices with the model, and quotes
   await voice.selectOption("ara");
   await expect.poll(() => f.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "ara" });
   expect(f.quotes.some((q) => q.modelId === "grok-tts" && q.voiceId === ELEVEN_VOICE.id)).toBe(false);
+  await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("rig-grok-voices.png") });
 });
 
 test("a workspace on Grok Voice alone speaks in the Rig dialog, with sound and music off", async ({ page }, info) => {
-  test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "bounded phone and desktop");
   const f = await fixture(page, "grokOnly");
   await page.goto(await legacyShell(page, "/workbench?project=grok-voice-fixture&stage=canvas"));
   const dialog = await openNode(page);
@@ -107,10 +109,11 @@ test("a workspace on Grok Voice alone speaks in the Rig dialog, with sound and m
   await expect(dialog.getByRole("combobox", { name: "Audio voice" })).toHaveValue("eve");
   await expect.poll(() => f.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve" });
   await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await noSideScroll(page);
+  await page.screenshot({ path: info.outputPath("rig-grok-only.png") });
 });
 
 test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace has only Dialogue", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "one desktop run");
   const f = await fixture(page, "both");
   await page.goto("/generate?mode=audio");
   await page.getByRole("group", { name: "Track kind" }).getByRole("button", { name: "Dialogue", exact: true }).click();
@@ -129,10 +132,13 @@ test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace 
   await expect(tracks.getByRole("button", { name: "Music", exact: true })).toBeDisabled();
   await expect(tracks.getByRole("button", { name: "Dialogue", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("group", { name: "Voices" })).toContainText("Eve");
+  await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("make-grok-only.png") });
 });
 
 test("Edit & Sound on Grok Voice alone: voice-over speaks, and the ElevenLabs doors say they are not connected", async ({ page }, info) => {
+  /* Phones (844x390 included) get the phone shell's Edit & Sound, whose doors are a
+     read-only list with no voice picker and no quote (workspace-edit-workbench.spec). */
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signInLocally(page.request);
   await forbidPaidWork(page);

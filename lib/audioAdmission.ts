@@ -247,10 +247,13 @@ export async function executeAudioAdmission(
     if (!GROK_VOICE_ID.test(voiceId))
       return admissionReply({ error: "Pick a Grok voice." }, { status: 400 });
     /* Only a voice xAI lists: another vendor's voice id passes the shape
-       check, and xAI would refuse it after the spend was reserved. */
+       check, and xAI would refuse it after the spend was reserved. A voice
+       the cached list does not have (added since, or cached on another
+       instance) is looked up once more, fresh, before it is refused. */
     let grokVoice: { id: string; name: string } | undefined;
+    const listed = (list: { id: string; name: string }[]) => list.find((v) => v.id === voiceId);
     try {
-      grokVoice = (await listGrokVoices()).find((v) => v.id === voiceId);
+      grokVoice = listed(await listGrokVoices()) ?? listed(await listGrokVoices(true));
     } catch (e) {
       return admissionReply({ error: (e as Error).message }, { status: 503 });
     }

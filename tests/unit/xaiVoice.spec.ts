@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { XaiHttpError, xaiSubmissionRejected } from "../../lib/xaiErrors";
 import { PreflightError } from "../../lib/preflight";
-import { audioVendor, grokSpeech, grokSpeechUsd, grokTranscribe, GROK_VOICE_ID, listGrokVoices, transcriptSrt } from "../../lib/xaiVoice";
+import { audioVendor, grokSpeech, grokSpeechUsd, grokTranscribe, GROK_VOICE_ID, grokVoicesForScreen, listGrokVoices, transcriptSrt } from "../../lib/xaiVoice";
 
 /**
  * Owner, 23 September: Grok APIs wherever possible — Grok Voice (xAI text to
@@ -12,9 +12,9 @@ import { audioVendor, grokSpeech, grokSpeechUsd, grokTranscribe, GROK_VOICE_ID, 
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-xai-voice-"));
 process.env.PLATFORM_DATABASE_URL ??= "file:" + path.join(dir, "platform.db");
-async function withKey<T>(run: () => Promise<T>): Promise<T> {
+async function withKey<T>(run: () => Promise<T>, key = "xai-unit"): Promise<T> {
   const saved = { key: process.env.XAI_API_KEY, mock: process.env.ENGINE_MOCK };
-  process.env.XAI_API_KEY = "xai-unit"; delete process.env.ENGINE_MOCK;
+  process.env.XAI_API_KEY = key; delete process.env.ENGINE_MOCK;
   try { return await run(); } finally { if (saved.key === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = saved.key; if (saved.mock !== undefined) process.env.ENGINE_MOCK = saved.mock; }
 }
 async function stubbed<T>(reply: (url: string) => Response, run: () => Promise<T>) {
@@ -80,4 +80,38 @@ test("a line xAI refuses is certain, one it fails on is not, and one never sent 
     if (saved.key !== undefined) process.env.XAI_API_KEY = saved.key;
     if (saved.mock !== undefined) process.env.ENGINE_MOCK = saved.mock;
   }
+});
+
+/* GET /api/audio draws every audio picker; it must not wait on a slow or down xAI for the listing's full twenty seconds. */
+test("a screen waits seconds for xAI's voices, shares one listing, and does not wait again on a failed one", async () => {
+  await withKey(async () => {
+    let answer: (reply: Response) => void = () => {};
+    const slow = await stubbed(() => new Promise<Response>((resolve) => { answer = resolve; }) as never, async () => {
+      const started = Date.now();
+      await expect(grokVoicesForScreen(40)).rejects.toThrow("did not answer in time");
+      expect(Date.now() - started).toBeLessThan(2_000);
+      await expect(grokVoicesForScreen(40)).rejects.toThrow("did not answer in time");
+      const late = listGrokVoices();
+      answer(Response.json({ voices: [{ voice_id: "eve", name: "Eve", language: "en" }] }));
+      return late;
+    });
+    /* One listing for everyone who asked meanwhile; the late answer fills the cache for the next open. */
+    expect(slow.sent).toHaveLength(1);
+    expect(slow.value).toEqual([{ id: "eve", name: "Eve", language: "en" }]);
+    const next = await stubbed(() => new Response("never", { status: 500 }), () => grokVoicesForScreen(40));
+    expect(next).toEqual({ value: [{ id: "eve", name: "Eve", language: "en" }], sent: [] });
+  }, "xai-unit-slow");
+
+  await withKey(async () => {
+    const down = await stubbed(() => new Response("down", { status: 503 }), async () => {
+      await expect(grokVoicesForScreen(1_000)).rejects.toThrow("(503)");
+      /* The failure is remembered: the next open answers at once, without asking xAI. */
+      await expect(grokVoicesForScreen(1_000)).rejects.toThrow("(503)");
+    });
+    expect(down.sent).toHaveLength(1);
+    /* Refresh (and admission) always ask; a listing that works clears the failure. */
+    const back = await stubbed(() => Response.json({ voices: [{ voice_id: "ara", name: "Ara" }] }), async () => [await listGrokVoices(true), await grokVoicesForScreen(40)]);
+    expect(back.sent).toHaveLength(1);
+    expect(back.value).toEqual([[{ id: "ara", name: "Ara", language: null }], [{ id: "ara", name: "Ara", language: null }]]);
+  }, "xai-unit-down");
 });

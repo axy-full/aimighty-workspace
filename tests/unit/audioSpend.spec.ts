@@ -245,3 +245,54 @@ test("Grok Voice admits only a voice xAI lists, and reserves nothing for another
     expect(grok.status).toBe(200);
   }, actor);
 });
+
+/* xAI's list is cached for an hour per instance: a voice it did not have then (added since,
+   or cached on another instance) is looked up once more, fresh, before it is refused. */
+test("Grok Voice looks a voice up fresh once before refusing it", async () => {
+  const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { ready } = await import("../../lib/db");
+  const { executeAudioAdmission } = await import("../../lib/audioAdmission");
+  await platformReady();
+  const id = "grok-voice-fresh";
+  await platformDb().execute({
+    sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,'owner',0,0)",
+    args: [id, id, id, `file:${path.join(dir, id + ".db")}`],
+  });
+  await grantCredits(id, 100, "Test funds", "owner", "manual");
+  const ws = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [id] })).rows[0]);
+  const actor = { user: { id: "owner", email: "owner@example.invalid", name: "Owner", role: "admin" as const, owner: true, disabled: false, createdAt: 0, lastSeen: null } };
+  const options = { defer: async () => {} };
+  const saved = { key: process.env.XAI_API_KEY, mock: process.env.ENGINE_MOCK }, real = globalThis.fetch;
+  const lists = [["eve"], ["eve", "custom_voice_01"], ["eve", "custom_voice_01"], ["eve", "custom_voice_01"]];
+  const asked: string[] = [];
+  process.env.XAI_API_KEY = "xai-unit-admission";
+  delete process.env.ENGINE_MOCK;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (!url.endsWith("/tts/voices")) throw new Error(`Nothing but the voice list is asked for: ${url}`);
+    asked.push(url);
+    return Response.json({ voices: (lists[asked.length - 1] ?? []).map((voice_id) => ({ voice_id, name: voice_id })) });
+  }) as typeof fetch;
+  try {
+    await runInTenant(ws, async () => {
+      await ready();
+      const line = { task: "speech", text: "Not tonight.", modelId: "grok-tts", quoteOnly: true };
+      const custom = await executeAudioAdmission({ ...line, voiceId: "custom_voice_01" }, actor, options);
+      expect(custom.status, JSON.stringify(custom.body)).toBe(200);
+      expect(asked).toHaveLength(2);
+      /* Listed now: the cache answers. */
+      expect((await executeAudioAdmission({ ...line, voiceId: "custom_voice_01" }, actor, options)).status).toBe(200);
+      expect(asked).toHaveLength(2);
+      /* Not on xAI's fresh list either: refused, after one more look. */
+      const missing = await executeAudioAdmission({ ...line, voiceId: "21m00Tcm4TlvDq8ikWAM" }, actor, options);
+      expect(missing.status).toBe(400);
+      expect(missing.body.error).toBe("Pick a Grok voice.");
+      expect(asked).toHaveLength(3);
+    }, actor);
+  } finally {
+    globalThis.fetch = real;
+    if (saved.key === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = saved.key;
+    if (saved.mock !== undefined) process.env.ENGINE_MOCK = saved.mock;
+  }
+});

@@ -578,8 +578,8 @@ type RenderResult = {
 };
 
 /** The exact body fal is asked to render. Kept in one place so a resumed
- *  render and a fresh one can never drift apart. */
-function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
+ *  render and a fresh one can never drift apart (exported for its spec). */
+export function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
   return {
     prompt: opts.prompt,
     loras: [{ path: identity.loraUrl, scale: 1 }],

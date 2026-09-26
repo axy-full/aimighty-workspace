@@ -6,7 +6,7 @@ import { executeAudioAdmission } from "@/lib/audioAdmission";
 import { admissionResponse } from "@/lib/admissionSupport";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
-import { GROK_SPEECH_MODEL, GROK_TTS_MODEL, grokVoiceConfigured, listGrokVoices } from "@/lib/xaiVoice";
+import { GROK_SPEECH_MODEL, GROK_TTS_MODEL, grokVoiceConfigured, grokVoicesForScreen } from "@/lib/xaiVoice";
 import {
   elevenConfigured,
   subscription,
@@ -49,7 +49,8 @@ export const POST = withTenant(async function POST(req: Request) {
  *  either one connected is enough to speak. `voices` are the default speech
  *  model's, and Grok Voice's own list rides beside them in `grokVoices`, so a
  *  picker swaps lists with the model and never pairs a voice with the wrong
- *  vendor. */
+ *  vendor. xAI gets a few seconds to list them (grokVoicesForScreen): a slow
+ *  or down xAI shows as `grokVoicesError`, never as a stalled screen. */
 export const GET = withTenant(async function GET() {
   const got = await requireRender();
   if (got.response) return got.response;
@@ -59,7 +60,7 @@ export const GET = withTenant(async function GET() {
   const [elevenVoices, grokVoices, account] = await Promise.all([
     eleven ? listVoices().catch((e: Error) => ({ error: e.message })) : Promise.resolve([]),
     grok
-      ? listGrokVoices()
+      ? grokVoicesForScreen()
           .then((list) => list.map((v) => ({ id: v.id, name: v.name, category: "grok", labels: v.language ? { language: v.language } : {}, previewUrl: null, description: "" })))
           .catch((e: Error) => ({ error: e.message }))
       : Promise.resolve([]),

@@ -48,19 +48,64 @@ export const grokVoiceConfigured = () => engineMock() || Boolean(vendorKey("xai"
 export type GrokVoice = { id: string; name: string; language: string | null };
 const MOCK_VOICES: GrokVoice[] = ["Eve", "Ara", "Rex", "Sal", "Leo"].map((name) => ({ id: name.toLowerCase(), name, language: "en" }));
 let cached: { at: number; key: string; voices: GrokVoice[] } | null = null;
+/** A listing on its way, shared by everyone who asks for the same key meanwhile. */
+let pending: { key: string; voices: Promise<GrokVoice[]> } | null = null;
+/** The last listing that failed, so a screen does not wait on xAI again straight away. */
+let failed: { at: number; key: string; message: string } | null = null;
+const CACHE_MS = 3_600_000;
+const FAILED_MS = 60_000;
+/** How long a screen drawing itself waits for xAI's voices. */
+export const GROK_VOICES_SCREEN_WAIT_MS = 4_000;
+
+const cachedFor = (k: string) => (cached && cached.key === k && Date.now() - cached.at < CACHE_MS ? cached.voices : null);
+
+async function fetchGrokVoices(k: string): Promise<GrokVoice[]> {
+  const res = await recoveryFetch(`${BASE()}/tts/voices`, { headers: { Authorization: `Bearer ${k}` }, cache: "no-store", signal: AbortSignal.timeout(20_000), redirect: "error" });
+  if (!res.ok) throw new Error(`Grok voices could not be listed (${res.status}).`);
+  const reply = await res.json() as { voices?: { voice_id?: string; name?: string; language?: string | null }[] };
+  return (reply.voices ?? []).filter((v) => typeof v.voice_id === "string" && GROK_VOICE_ID.test(v.voice_id))
+    .map((v) => ({ id: v.voice_id!, name: v.name || v.voice_id!, language: v.language ?? null }));
+}
 
 /** The built-in voices, from xAI (an hour's cache per key). */
 export async function listGrokVoices(refresh = false): Promise<GrokVoice[]> {
   if (engineMock()) return MOCK_VOICES;
   const k = key();
-  if (!refresh && cached && cached.key === k && Date.now() - cached.at < 3_600_000) return cached.voices;
-  const res = await recoveryFetch(`${BASE()}/tts/voices`, { headers: { Authorization: `Bearer ${k}` }, cache: "no-store", signal: AbortSignal.timeout(20_000), redirect: "error" });
-  if (!res.ok) throw new Error(`Grok voices could not be listed (${res.status}).`);
-  const reply = await res.json() as { voices?: { voice_id?: string; name?: string; language?: string | null }[] };
-  const voices = (reply.voices ?? []).filter((v) => typeof v.voice_id === "string" && GROK_VOICE_ID.test(v.voice_id))
-    .map((v) => ({ id: v.voice_id!, name: v.name || v.voice_id!, language: v.language ?? null }));
-  cached = { at: Date.now(), key: k, voices };
+  const hit = refresh ? null : cachedFor(k);
+  if (hit) return hit;
+  if (pending?.key === k) return pending.voices;
+  const voices = fetchGrokVoices(k)
+    .then(
+      (list) => { cached = { at: Date.now(), key: k, voices: list }; if (failed?.key === k) failed = null; return list; },
+      (e: unknown) => { failed = { at: Date.now(), key: k, message: e instanceof Error ? e.message : String(e) }; throw e; },
+    )
+    .finally(() => { if (pending?.voices === voices) pending = null; });
+  pending = { key: k, voices };
   return voices;
+}
+
+/**
+ * The voices for a screen drawing itself (GET /api/audio): the cached list,
+ * or xAI's answer within `waitMs`. A listing that failed in the last minute
+ * is not waited on again, so a slow or down xAI never holds a picker open,
+ * and a listing that runs late carries on and fills the cache for the next
+ * open. Admission and the picker's Refresh ask xAI themselves.
+ */
+export async function grokVoicesForScreen(waitMs = GROK_VOICES_SCREEN_WAIT_MS): Promise<GrokVoice[]> {
+  if (engineMock()) return MOCK_VOICES;
+  const k = key();
+  const hit = cachedFor(k);
+  if (hit) return hit;
+  if (failed?.key === k && Date.now() - failed.at < FAILED_MS) throw new Error(failed.message);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Grok voices did not answer in time.")), waitMs);
+  });
+  try {
+    return await Promise.race([listGrokVoices(), late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** One spoken line: MP3 at 24 kHz / 128 kbps, the charge by its characters. */
