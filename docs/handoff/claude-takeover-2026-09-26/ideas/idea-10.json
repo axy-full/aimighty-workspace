@@ -1,0 +1,18 @@
+{
+ "n": 10,
+ "title": "First run that teaches: create button, a 'how Studio works' strip, the starter production",
+ "area": "Onboarding / empty states",
+ "gap": "With no project open, every Studio stage shows only a sentence such as 'Open or create a project to write its script.' (SuitesShell.tsx:239-251), with no button. New project is hidden inside the ProjectHead \u25be popover. lib/starter.ts seedStarterProduction (a starter production with cast, shots and demo takes on Particl's own platform previews) is never called outside tests. On desktop there is no home: the mark opens Brief.",
+ "target": "An empty stage shows a card with a 'New project' primary (reusing ProjectHead onCreate), recent projects, and a 4-step strip 'Brief \u2192 Beats \u2192 Boards \u2192 Takes' linking to each stage. Add 'Explore the starter production', which calls a new action on the existing /api/workbench/projects route; it seeds via seedStarterProduction and maps the result into a workbench draft. On desktop the mark opens a Studio home (reusing the StudioHome layout) with recent projects, running jobs and the next step.",
+ "files": [
+  "components/graphite/SuitesShell.tsx",
+  "components/graphite/ProjectHead.tsx",
+  "lib/starter.ts",
+  "app/api/workbench/projects/route.ts",
+  "lib/shell/ia.ts",
+  "components/graphite/mobile/StudioHome.tsx"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "The starter uses Particl's own neutral platform previews, not higgsfield.ai media. It is unbilled, and a starter the user does not want is archived rather than deleted."
+}

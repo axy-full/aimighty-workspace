@@ -7,12 +7,12 @@ import {
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerRecoveryJobs, readConsumerJobAfterAdmissions,
   claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
-  reconcileConsumerReceipt, completeConsumerJob,
+  reconcileConsumerReceipt, completeConsumerJob, failConsumerPoll, consumerJobSetAside,
   type ConsumerJob, type ConsumerJobScope, type ConsumerJson,
 } from "./jobs";
 import { getConsumerVideoQuote, submitConsumerVideo, readConsumerVideoJob } from "./mcp";
-import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFailureResult, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
+import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { setupIdsOfVideoInput } from "./marketing-records";
 import { refuseForeignMarketingSetup } from "./marketing-setup";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
@@ -57,7 +57,7 @@ function presentVideo(job: ConsumerJob, availability: ConsumerOriginalAvailabili
     quoteExpired: job.status === "quoted" && job.quoteExpiresAt <= observedAt,
     providerJobId: job.providerJobId, result,
     originalAvailability: availability, originalAvailable: availability === "available",
-    providerReceipt: job.providerReceipt, createdAt: job.createdAt,
+    providerReceipt: job.providerReceipt, failureCode: job.failureCode, setAside: consumerJobSetAside(job, observedAt), createdAt: job.createdAt,
   };
 }
 export async function consumerVideoView(job: ConsumerJob) {
@@ -181,12 +181,31 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
     pollAfterSeconds = Math.max(15, response.pollAfterSeconds ?? 30);
     const input = parseConsumerVideoInput(JSON.parse(claim.job.payloadJson).input);
     const terminal = consumerVideoOriginalResult(response.raw, claim.job.providerJobId!, input);
+    // The account rejected exactly our video (failed, nsfw, …): it will never
+    // be collected. Settle it once, keep the receipt, and free its slot, like
+    // every other workflow. A completed reply Particl cannot read (no result
+    // yet, another key, settings echoed differently) is diagnostic only and
+    // stays accepted: a later poll, or a parser fix, may still collect it.
+    const failed = consumerVideoFailureResult(response.raw, claim.job.providerJobId!);
+    if (failed) {
+      await connected(scope.userId, claim.job.connectionGeneration);
+      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
+      return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), providerStatus: { status: failed }, pollAfterSeconds };
+    }
     if (terminal) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
       // authorize collection under a replacement connection.
       await connected(scope.userId, claim.job.connectionGeneration);
       const providerResult = consumerVideoProviderResult(response.raw, input);
-      const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt: providerResult.enhancedPrompt });
+      let original;
+      try {
+        original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt: providerResult.enhancedPrompt });
+      } catch (error) {
+        // Refused the same way on every poll: settle once, receipt kept.
+        if (!uncollectableOriginal(error)) throw error;
+        const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+        return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), collection: { code: error.code, message: error.message }, pollAfterSeconds };
+      }
       const completed = await completeConsumerJob({ ...scope, leaseToken: claim.leaseToken, resultManifest: { original, providerResult } });
       // An expired/stolen lease cannot publish stale completion. The committed
       // original remains recoverable by the next admitted poll.

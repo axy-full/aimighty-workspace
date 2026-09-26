@@ -3,6 +3,7 @@ import { astraNativeSchema, astraNativeDigest, validateAstraNativeBindings } fro
 import { mergeRegisteredAstraAssets } from '../../lib/astra-blender/merge-assets';
 import { seedProject, type Asset } from '../../lib/workbench/studio';
 import { projectSchema, saveSchema } from '../../lib/workbench/studio-schema';
+import { PROJECT_LIMITS } from '../../lib/workbench/project-limits';
 
 const source = { schemaVersion: 1 as const, name: 'Rig', program: 'import bpy\nbpy.context.scene.frame_set(12)\n', assetIds: ['texture'], baseBlendAssetId: 'rig' };
 const inputs = [{ id: 'texture', name: 'Map', kind: 'image' as const, mime: 'image/png' }, { id: 'rig', name: 'Rig.blend', kind: 'document' as const, mime: 'application/x-blender' }];
@@ -43,4 +44,14 @@ test('render output merge exposes concurrent changes instead of overwriting eith
   remote.assets = [...base.assets, { ...base.assets[0], id: 'new', name: 'Remote' }];
   current.assets.push({ ...base.assets[0], id: 'new', name: 'Local' });
   expect(() => mergeRegisteredAstraAssets(base, current, remote)).toThrow('conflicts with a local asset');
+});
+test('render output merge allows a feature-size project up to the project asset limit', () => {
+  const base = seedProject();
+  const filler = (count: number, prefix: string): Asset[] => Array.from({ length: count }, (_, i) => ({ ...base.assets[0], id: `${prefix}-${i}`, name: `${prefix} ${i}` }));
+  base.assets = filler(PROJECT_LIMITS.assets - 1, 'held');
+  const current = structuredClone(base), remote = structuredClone(base);
+  remote.assets.push({ ...base.assets[0], id: 'render-output', name: 'Native.blend' });
+  expect(mergeRegisteredAstraAssets(base, current, remote).assets).toHaveLength(PROJECT_LIMITS.assets);
+  remote.assets.push({ ...base.assets[0], id: 'render-output-2', name: 'Native 2.blend' });
+  expect(() => mergeRegisteredAstraAssets(base, current, remote)).toThrow('asset limit');
 });

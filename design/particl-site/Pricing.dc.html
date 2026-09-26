@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:"Outfit";font-style:normal;font-weight:100 900;font-display:swap;src:url("public/fonts/outfit-latin-wght-normal.woff2") format("woff2")}
+@font-face{font-family:"Kode Mono";font-style:normal;font-weight:400 700;font-display:swap;src:url("public/fonts/kode-mono-latin-wght-normal.woff2") format("woff2")}
+@media (max-width:1040px){[data-m="head"]{flex-wrap:wrap!important}[data-m="brand"]{flex:1 1 auto!important}[data-m="nav"]{order:3;flex:1 1 100%!important;margin:0!important;padding:2px 0 8px}}
+@media (max-width:720px){[data-m="hide"]{display:none!important}[data-m="nav"] a{padding:11px 10px!important}[data-m="cta"]{height:44px!important}}
+@font-face{font-family:"Geist";font-style:normal;font-weight:100 900;font-display:swap;src:url("public/fonts/geist-latin.woff2") format("woff2")}
+html{background:#000}
+body{margin:0;background:#000;color:#F5F5F7;font-family:Geist,-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#6EB4FF}a:hover{color:#8FC5FF}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="background:#000;color:#F5F5F7;min-height:100vh;line-height:1.45;font-size:15px">
+
+<header style="position:sticky;top:0;z-index:50;border-bottom:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.72);backdrop-filter:blur(14px)">
+  <div data-m="head" style="max-width:1200px;margin:0 auto;padding:0 clamp(16px,4vw,40px);min-height:60px;display:flex;align-items:center;gap:12px;flex-wrap:nowrap;row-gap:0">
+    <a href="Home.dc.html" aria-label="particl studio" data-m="brand" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:#F5F5F7;flex:none;margin-right:4px">
+      <svg width="34" height="14" viewBox="34 72 132 56" fill="currentColor" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg>
+      <span style="font-family:Outfit,sans-serif;font-weight:600;font-size:21px;letter-spacing:-.03em;line-height:1;display:inline-flex;align-items:baseline">part<span style="position:relative;display:inline-block">ı<span style="position:absolute;left:50%;top:.09em;width:.17em;height:.17em;margin-left:-.085em;border:.04em solid currentColor;border-radius:50%;box-sizing:border-box"></span></span>cl</span>
+      <span style="font-family:'Kode Mono',monospace;font-size:10px;letter-spacing:.36em;text-transform:uppercase;color:rgba(235,235,245,.6);margin-top:2px">studio</span>
+    </a>
+    <nav data-m="nav" style="display:flex;gap:2px;margin-left:4px;align-items:center;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none;white-space:nowrap">
+      <a href="Home.dc.html#gen" style="padding:7px 10px;border-radius:6px;font-size:13.5px;color:rgba(235,235,245,.72);text-decoration:none;white-space:nowrap;flex:none" style-hover="color:#F5F5F7;background:#1B1B1F">Gen</a>
+      <a href="Home.dc.html#studio" style="padding:7px 10px;border-radius:6px;font-size:13.5px;color:rgba(235,235,245,.72);text-decoration:none;white-space:nowrap;flex:none" style-hover="color:#F5F5F7;background:#1B1B1F">Studio</a>
+      <a href="Home.dc.html#business" style="padding:7px 10px;border-radius:6px;font-size:13.5px;color:rgba(235,235,245,.72);text-decoration:none;white-space:nowrap;flex:none" style-hover="color:#F5F5F7;background:#1B1B1F">Business</a>
+      <a href="Home.dc.html#viral" style="padding:7px 10px;border-radius:6px;font-size:13.5px;color:rgba(235,235,245,.72);text-decoration:none;white-space:nowrap;flex:none" style-hover="color:#F5F5F7;background:#1B1B1F">Viral</a>
+      <a href="Home.dc.html#atomik" style="padding:7px 10px;border-radius:6px;font-size:13.5px;color:rgba(235,235,245,.72);text-decoration:none;white-space:nowrap;flex:none" style-hover="color:#F5F5F7;background:#1B1B1F">Atomik</a>
+      <a href="Home.dc.html#workspace" style="padding:7px 10px;border-radius:6px;font-size:13.5px;color:rgba(235,235,245,.72);text-decoration:none;white-space:nowrap;flex:none" style-hover="color:#F5F5F7;background:#1B1B1F">Workspace</a>
+      <span style="width:1px;height:18px;background:rgba(255,255,255,.12);margin:0 6px;flex:none"></span>
+      <a href="Pricing.dc.html" style="padding:7px 10px;border-radius:6px;font-size:13.5px;font-weight:600;color:#6EB4FF;background:rgba(10,132,255,.14);text-decoration:none;white-space:nowrap;flex:none">Pricing</a>
+    </nav>
+    <a href="Home.dc.html#access" data-m="hide" style="display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:8px;font-size:13.5px;font-weight:500;color:#F5F5F7;text-decoration:none;background:#1B1B1F;border:1px solid rgba(255,255,255,.08);white-space:nowrap;flex:none" style-hover="background:#26262B">Sign in</a>
+    <a href="Home.dc.html#access" style="display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:8px;font-size:13.5px;font-weight:600;color:#fff;text-decoration:none;background:linear-gradient(160deg,#4C9DFF,#0A84FF 55%,#0064D6);box-shadow:0 6px 18px rgba(10,132,255,.32),inset 0 1px 0 rgba(255,255,255,.28);white-space:nowrap;flex:none" style-hover="filter:brightness(1.08)">Request access</a>
+  </div>
+</header>
+
+<section data-screen-label="Pricing · plans" style="background:radial-gradient(70% 60% at 50% 0%,rgba(10,132,255,.16),transparent 60%)">
+  <div style="max-width:1200px;margin:0 auto;padding:clamp(56px,8vw,96px) clamp(16px,4vw,40px) clamp(56px,7vw,80px);display:flex;flex-direction:column;gap:36px">
+    <div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px">
+      <div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#6EB4FF;font-weight:500">Pricing · 1 credit = US$0.10</div>
+      <h1 style="font-family:Outfit,sans-serif;font-weight:600;font-size:clamp(36px,5.4vw,68px);letter-spacing:-.035em;line-height:1;margin:0;color:#F5F5F7;text-wrap:balance">Credits, not seats.</h1>
+      <p style="margin:0;font-size:17px;line-height:1.55;color:rgba(235,235,245,.62);max-width:56ch;text-wrap:pretty">Plans differ on credits, priority and features, never headcount. Every render bills the workspace’s own balance; every take carries who made it and what it cost.</p>
+      <div style="display:inline-flex;align-items:center;gap:12px;margin-top:6px;padding:3px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 2px rgba(0,0,0,.6)">
+        <button type="button" onClick="{{ setMonthly }}" style="position:relative;height:32px;padding:0 14px;border:0;border-radius:6px;background:transparent;color:#F5F5F7;font-size:13px;font-weight:500"><sc-if value="{{ monthly }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;inset:0;border-radius:6px;background:linear-gradient(180deg,#45454C,#2E2E34);box-shadow:0 2px 8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12)"></span></sc-if><span style="position:relative">Monthly</span></button>
+        <button type="button" onClick="{{ setAnnual }}" style="position:relative;height:32px;padding:0 14px;border:0;border-radius:6px;background:transparent;color:#F5F5F7;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:8px"><sc-if value="{{ annual }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;border-radius:6px;background:linear-gradient(180deg,#45454C,#2E2E34);box-shadow:0 2px 8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12)"></span></sc-if><span style="position:relative">Yearly</span><span style="position:relative;font-family:'Kode Mono',monospace;font-size:10.5px;letter-spacing:.08em;color:#6EB4FF">−20%</span></button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;align-items:stretch">
+      <div style="display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 20px rgba(0,0,0,.3)">
+        <div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">INVITE</div>
+        <div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:40px;letter-spacing:-.03em;line-height:1">$0</div><div style="font-size:12.5px;color:rgba(235,235,245,.6);margin-top:6px;min-height:18px">one-time grant</div></div>
+        <div style="font-size:14px;color:rgba(235,235,245,.78)">For a first render.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:13.5px;line-height:1.45;color:rgba(235,235,245,.72);flex:1"><span><strong style="color:#F5F5F7;font-weight:600">250 credits</strong>, once</span><span>1 production</span><span>3 people</span></div>
+        <a href="Home.dc.html#access" style="display:inline-flex;align-items:center;justify-content:center;height:40px;border-radius:8px;font-size:13.5px;font-weight:500;color:#F5F5F7;text-decoration:none;background:#1B1B1F;border:1px solid rgba(255,255,255,.08)" style-hover="background:#26262B">Request access</a>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 20px rgba(0,0,0,.3)">
+        <div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">STUDIO</div>
+        <div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:40px;letter-spacing:-.03em;line-height:1">{{ studioPrice }}<span style="font-size:15px;font-weight:500;color:rgba(235,235,245,.6);letter-spacing:0">/mo</span></div><div style="font-size:12.5px;color:rgba(235,235,245,.6);margin-top:6px;min-height:18px">{{ billingNote }}</div></div>
+        <div style="font-size:14px;color:rgba(235,235,245,.78)">For a small team shipping monthly.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:13.5px;line-height:1.45;color:rgba(235,235,245,.72);flex:1"><span><strong style="color:#F5F5F7;font-weight:600">400 credits</strong> a month</span><span>Review links</span><span>Exports</span><span>Post tools</span><span>Unlimited people</span></div>
+        <a href="Home.dc.html#access" style="display:inline-flex;align-items:center;justify-content:center;height:40px;border-radius:8px;font-size:13.5px;font-weight:500;color:#F5F5F7;text-decoration:none;background:#1B1B1F;border:1px solid rgba(255,255,255,.08)" style-hover="background:#26262B">Request access</a>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(10,132,255,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 0 0 4px rgba(10,132,255,.10),0 12px 30px rgba(10,132,255,.12)">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:#6EB4FF">AGENCY</span><span style="font-family:'Kode Mono',monospace;font-size:10px;letter-spacing:.1em;padding:3px 7px;border-radius:4px;background:rgba(10,132,255,.14);border:1px solid rgba(10,132,255,.35);color:#6EB4FF">MOST TEAMS</span></div>
+        <div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:40px;letter-spacing:-.03em;line-height:1">{{ agencyPrice }}<span style="font-size:15px;font-weight:500;color:rgba(235,235,245,.6);letter-spacing:0">/mo</span></div><div style="font-size:12.5px;color:rgba(235,235,245,.6);margin-top:6px;min-height:18px">{{ billingNote }}</div></div>
+        <div style="font-size:14px;color:rgba(235,235,245,.78)">For client work with a queue.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:13.5px;line-height:1.45;color:rgba(235,235,245,.72);flex:1"><span><strong style="color:#F5F5F7;font-weight:600">1,600 credits</strong> a month</span><span>Priority queue</span><span>Branded review links</span><span>Statements</span><span>Unlimited people</span></div>
+        <a href="Home.dc.html#access" style="display:inline-flex;align-items:center;justify-content:center;height:40px;border-radius:8px;font-size:13.5px;font-weight:600;color:#fff;text-decoration:none;background:linear-gradient(160deg,#4C9DFF,#0A84FF 55%,#0064D6);box-shadow:0 6px 18px rgba(10,132,255,.32),inset 0 1px 0 rgba(255,255,255,.28)" style-hover="filter:brightness(1.08)">Request access</a>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 20px rgba(0,0,0,.3)">
+        <div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">PRODUCTION</div>
+        <div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:40px;letter-spacing:-.03em;line-height:1">{{ productionPrice }}<span style="font-size:15px;font-weight:500;color:rgba(235,235,245,.6);letter-spacing:0">/mo</span></div><div style="font-size:12.5px;color:rgba(235,235,245,.6);margin-top:6px;min-height:18px">{{ billingNote }}</div></div>
+        <div style="font-size:14px;color:rgba(235,235,245,.78)">For a studio running several productions.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:13.5px;line-height:1.45;color:rgba(235,235,245,.72);flex:1"><span><strong style="color:#F5F5F7;font-weight:600">9,000 credits</strong> a month</span><span>Admin console</span><span>Setup hours</span><span>Unlimited people</span></div>
+        <a href="Home.dc.html#access" style="display:inline-flex;align-items:center;justify-content:center;height:40px;border-radius:8px;font-size:13.5px;font-weight:500;color:#F5F5F7;text-decoration:none;background:#1B1B1F;border:1px solid rgba(255,255,255,.08)" style-hover="background:#26262B">Talk to us</a>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px">
+      <div style="padding:14px 16px;border-radius:8px;background:#17171B;border:1px solid rgba(255,255,255,.10);font-size:13.5px;line-height:1.5;color:rgba(235,235,245,.72)"><span style="color:#F5F5F7;font-weight:600">Included credits expire at cycle end.</span> No rollover.</div>
+      <div style="padding:14px 16px;border-radius:8px;background:#17171B;border:1px solid rgba(255,255,255,.10);font-size:13.5px;line-height:1.5;color:rgba(235,235,245,.72)"><span style="color:#F5F5F7;font-weight:600">No seat fees</span> on any paid plan.</div>
+      <div style="padding:14px 16px;border-radius:8px;background:#17171B;border:1px solid rgba(255,255,255,.10);font-size:13.5px;line-height:1.5;color:rgba(235,235,245,.72)"><span style="color:#F5F5F7;font-weight:600">Nothing rendered in 60 days before renewal?</span> The plan lapses instead of renewing, and we say so.</div>
+      <div style="padding:14px 16px;border-radius:8px;background:#17171B;border:1px solid rgba(255,255,255,.10);font-size:13.5px;line-height:1.5;color:rgba(235,235,245,.72)"><span style="color:#F5F5F7;font-weight:600">Any job over 200 cr</span> fires the workspace’s approval rule first.</div>
+    </div>
+  </div>
+</section>
+
+<section data-screen-label="Pricing · packs" style="border-top:1px solid rgba(255,255,255,.09);background:#0D0D10">
+  <div style="max-width:1200px;margin:0 auto;padding:clamp(56px,7vw,88px) clamp(16px,4vw,40px);display:flex;flex-direction:column;gap:28px">
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#6EB4FF;font-weight:500">Credit packs</div>
+        <h2 style="font-family:Outfit,sans-serif;font-weight:600;font-size:clamp(28px,3.6vw,42px);letter-spacing:-.03em;line-height:1.05;margin:0;color:#F5F5F7">Top up when a production runs long.</h2>
+      </div>
+      <p style="margin:0;font-size:14.5px;line-height:1.55;color:rgba(235,235,245,.62);max-width:46ch;text-wrap:pretty">The unit stays $0.10. Discounts come only as bonus credits, capped at 20%. Purchased credits sit still while you’re on a plan; off a plan they last 12 months.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px">
+      <div style="display:flex;flex-direction:column;gap:8px;padding:20px;border-radius:10px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)"><div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">STARTER</div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:32px;letter-spacing:-.03em;line-height:1">$50</div><div style="font-family:'Kode Mono',monospace;font-size:14px;color:#F5F5F7;margin-top:6px">500 cr</div><div style="font-size:12.5px;color:rgba(235,235,245,.6)">$0.100 a credit</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:20px;border-radius:10px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)"><div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">TEAM</div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:32px;letter-spacing:-.03em;line-height:1">$200</div><div style="font-family:'Kode Mono',monospace;font-size:14px;color:#F5F5F7;margin-top:6px">2,000 cr <span style="color:#6EB4FF">+ 200</span></div><div style="font-size:12.5px;color:rgba(235,235,245,.6)">$0.091 a credit</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:20px;border-radius:10px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)"><div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">STUDIO</div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:32px;letter-spacing:-.03em;line-height:1">$500</div><div style="font-family:'Kode Mono',monospace;font-size:14px;color:#F5F5F7;margin-top:6px">5,000 cr <span style="color:#6EB4FF">+ 750</span></div><div style="font-size:12.5px;color:rgba(235,235,245,.6)">$0.087 a credit</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:20px;border-radius:10px;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)"><div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.14em;color:rgba(235,235,245,.6)">AGENCY</div><div style="font-family:Outfit,sans-serif;font-weight:600;font-size:32px;letter-spacing:-.03em;line-height:1">$2,000</div><div style="font-family:'Kode Mono',monospace;font-size:14px;color:#F5F5F7;margin-top:6px">20,000 cr <span style="color:#6EB4FF">+ 4,000</span></div><div style="font-size:12.5px;color:rgba(235,235,245,.6)">$0.083 a credit</div></div>
+    </div>
+  </div>
+</section>
+
+<section data-screen-label="Pricing · rate card" style="border-top:1px solid rgba(255,255,255,.09)">
+  <div style="max-width:1200px;margin:0 auto;padding:clamp(56px,7vw,88px) clamp(16px,4vw,40px) clamp(64px,8vw,96px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:clamp(32px,5vw,72px);align-items:start">
+    <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+      <div style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#6EB4FF;font-weight:500">Rate card</div>
+      <h2 style="font-family:Outfit,sans-serif;font-weight:600;font-size:clamp(28px,3.6vw,42px);letter-spacing:-.03em;line-height:1.05;margin:0;color:#F5F5F7">What a render costs.</h2>
+      <p style="margin:0;font-size:15px;line-height:1.55;color:rgba(235,235,245,.62);max-width:48ch;text-wrap:pretty">Every figure is computed from the live engine rate, never hand-edited: engine cost × 1.5, rounded up to the next whole credit. Batches multiply before rounding. The quote on the button is the one you pay.</p>
+      <p style="margin:0;font-size:15px;line-height:1.55;color:rgba(235,235,245,.62);max-width:48ch;text-wrap:pretty">Recipes route boards to standard stills at 1 cr, draft takes to Kling at 7 to 13 cr, and hero takes to Seedance at 29 to 43 cr. That split is a default, not a tier.</p>
+      <a href="Home.dc.html#gen" style="display:inline-flex;align-self:flex-start;align-items:center;height:38px;padding:0 16px;border-radius:8px;font-size:13.5px;font-weight:500;color:#F5F5F7;text-decoration:none;background:#1B1B1F;border:1px solid rgba(255,255,255,.08);margin-top:6px" style-hover="background:#26262B">The engines →</a>
+    </div>
+    <div style="border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#1B1B20,#141417);border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 20px rgba(0,0,0,.3);min-width:0">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.08);font-family:'Kode Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:rgba(235,235,245,.6)"><span>ACTION</span><span>SELLS AT</span></div>
+      <sc-for list="{{ rates }}" as="r" hint-placeholder-count="12">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:baseline;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px"><span style="min-width:0">{{ r.action }} <span style="color:rgba(235,235,245,.6);font-size:13px">{{ r.spec }}</span></span><span style="font-family:'Kode Mono',monospace;font-size:14px;font-weight:600;white-space:nowrap">{{ r.cr }}</span></div>
+      </sc-for>
+      <div style="padding:12px 18px;font-size:12.5px;line-height:1.5;color:rgba(235,235,245,.6)">Voice lines are priced per character and have no single row. Motion transfer, identity renders and Marketing Studio templates take a live quote first.</div>
+    </div>
+  </div>
+</section>
+
+<footer style="border-top:1px solid rgba(255,255,255,.09);background:#000">
+  <div style="max-width:1200px;margin:0 auto;padding:32px clamp(16px,4vw,40px);display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px">
+    <span style="display:flex;align-items:center;gap:10px;color:#F5F5F7"><svg width="34" height="14" viewBox="34 72 132 56" fill="currentColor" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg><span style="font-family:Outfit,sans-serif;font-weight:600;font-size:19px;letter-spacing:-.03em;line-height:1">partıcl</span><span style="font-family:'Kode Mono',monospace;font-size:10px;letter-spacing:.36em;text-transform:uppercase;color:rgba(235,235,245,.6)">studio</span></span>
+    <nav style="display:flex;flex-wrap:wrap;gap:18px;font-size:13.5px"><a href="Home.dc.html" style="color:rgba(235,235,245,.78);text-decoration:none" style-hover="color:#F5F5F7">Home</a><a href="Home.dc.html#atomik" style="color:rgba(235,235,245,.78);text-decoration:none" style-hover="color:#F5F5F7">Atomik</a><a href="Home.dc.html#access" style="color:rgba(235,235,245,.78);text-decoration:none" style-hover="color:#F5F5F7">Request access</a></nav>
+    <span style="font-family:'Kode Mono',monospace;font-size:11px;letter-spacing:.08em;color:rgba(235,235,245,.6)">FAILED RENDERS ARE NEVER BILLED</span>
+  </div>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;billing&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;monthly&quot;,&quot;options&quot;:[&quot;monthly&quot;,&quot;yearly&quot;],&quot;tsType&quot;:&quot;'monthly' | 'yearly'&quot;,&quot;section&quot;:&quot;Plans&quot;}}">
+const RATES = [
+  ["Standard still", "Nano Banana 2 · 512", 1], ["Keyframe still", "Nano Banana Pro · 1K", 3],
+  ["Kling 3.0 Standard", "5 s · 1080p", 7], ["Kling 3.0 Standard", "5 s · 1080p · audio", 10],
+  ["Kling 3.0 Pro", "5 s · 1080p · audio", 13], ["Seedance 2.5", "5 s · 720p", 18],
+  ["Seedance 2.0", "5 s · 1080p", 29], ["Seedance 2.5", "5 s · 1080p", 43],
+  ["Topaz upscale", "5 s · 1080p", 23], ["Topaz upscale", "5 s · 4K", 38],
+  ["Identity training", "1,500 steps", 54], ["Prompt enhancement", "per prompt", 1],
+];
+const PLANS = { studio: 49, agency: 199, production: 999 };
+const money = n => "$" + (Number.isInteger(n) ? n.toLocaleString("en-US") : n.toFixed(2));
+class Component extends DCLogic {
+  state = { annual: (this.props.billing ?? "monthly") === "yearly" };
+  renderVals() {
+    const a = this.state.annual, k = a ? 0.8 : 1;
+    return {
+      monthly: !a, annual: a,
+      setMonthly: () => this.setState({ annual: false }),
+      setAnnual: () => this.setState({ annual: true }),
+      studioPrice: money(PLANS.studio * k), agencyPrice: money(PLANS.agency * k), productionPrice: money(PLANS.production * k),
+      billingNote: a ? "billed yearly · 20% off" : "billed monthly",
+      rates: RATES.map(([action, spec, cr]) => ({ action, spec, cr: cr + " cr" })),
+    };
+  }
+}
+</script>
+</body>
+</html>

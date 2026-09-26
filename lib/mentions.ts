@@ -18,6 +18,19 @@ export function mentionsIn(text: string, known: string[] = []): string[] {
   return out;
 }
 
+/**
+ * The names a prompt cites that nobody has made yet (the composer's "@Maya
+ * needs a reference"). Read the way `mentionsIn` reads them — one word unless
+ * a known name is longer — so "@Maya walks in" asks about Maya, never about
+ * "Maya Walks". An `@` inside a word is an address ("studio@acme.com"), not a
+ * citation, and the engines' own `@Image1` / `@Video2` are theirs to read.
+ */
+export function unknownMentions(text: string, known: string[]): string[] {
+  const names = new Set(known.map((n) => n.toLowerCase()));
+  return mentionsIn(text.replace(/(?<=\w)@/g, " "), known)
+    .filter((n) => !names.has(n.toLowerCase()) && !/^(image|video|audio)\d+$/i.test(n));
+}
+
 /** The prose split into plain runs and mention runs, for highlighting. */
 export function splitMentions(text: string, known: string[] = []): { text: string; mention: boolean }[] {
   const names = known.slice().sort((a, b) => b.length - a.length);

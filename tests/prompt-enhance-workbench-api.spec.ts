@@ -13,7 +13,7 @@ test("enhance quotes first, charges once at the approved price, and refuses raw:
   const account = await signInLocally(request);
   const me = await request.get("/api/me").then((response) => response.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const anonymous = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL || "http://localhost:4551" });
   const events = async () => (await platform.execute({ sql: "SELECT id, status, billed_credits AS credits FROM meter_events WHERE workspace_id=?", args: [account.workspace.id] })).rows;
   try {

@@ -83,7 +83,7 @@ export function useCrew(projectId: string | null) {
   const blockedBy = roundBlock({ goal, seated: active.length, running, roundsRun: session?.roundsRun ?? 0, keyConnected: status?.connected ?? true, hasProject: Boolean(projectId) });
 
   /* The live price: what the next round can cost at most, for exactly this goal, context and roster. */
-  const quoteKey = JSON.stringify([projectId, session?.id ?? null, session?.roundsRun ?? 0, messages.length, goal.trim(), context, active.map((m) => [m.id, m.stance.length, m.name, m.department])]);
+  const quoteKey = JSON.stringify([projectId, session?.id ?? null, session?.model ?? null, session?.roundsRun ?? 0, messages.length, goal.trim(), context, active.map((m) => [m.id, m.stance.length, m.name, m.department])]);
   const quotable = blockedBy === null && Boolean(projectId) && loaded;
   useEffect(() => {
     if (!quotable) return;
@@ -183,6 +183,11 @@ export function useCrew(projectId: string | null) {
     runRound,
     newRoom: () => { if (projectId) remember(projectId, null); setSession(null); setMessages([]); setSolutions([]); setGoal(""); setContext(DEFAULT_CONTEXT); setNotice(null); },
     reopen: (id: string) => guard(() => openRoom(id)),
+    /** Moves the open room to the deployment's engine; the next quote prices it there. */
+    moveToCurrentEngine: () => guard(async () => {
+      if (!session) return;
+      setSession((await call<{ session: CrewSession }>(`/api/crew/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ model: "current" }) })).session);
+    }),
     addMember: (presetId: string) => guard(async () => { setMembers((await call<{ members: CrewMember[] }>("/api/crew/members", { method: "POST", body: JSON.stringify({ projectId, presetId }) })).members); }),
     patchMember: (id: string, patch: MemberPatch) => guard(async () => { setMembers((await call<{ members: CrewMember[] }>("/api/crew/members", { method: "PATCH", body: JSON.stringify({ id, ...patch }) })).members); }),
     removeMember: (id: string) => guard(async () => { await call(`/api/crew/members?id=${encodeURIComponent(id)}`, { method: "DELETE" }); setMembers((all) => all.filter((m) => m.id !== id)); }),

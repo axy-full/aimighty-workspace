@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
-import type { ConnectedCharacter, ConnectedPlan, SoulBuildOutcome, SoulBuildType } from "@/lib/higgsfield-consumer/soul-build";
+import type { ConnectedCharacter, ConnectedPlan, PendingSoulBuild, SoulBuildOutcome, SoulBuildType } from "@/lib/higgsfield-consumer/soul-build";
 import { SOUL_BUILD_STILLS, SOUL_BUILD_TYPES, soulBuildBlock } from "@/lib/higgsfield-consumer/soul-build";
-import { GEN_PRESET_KEY } from "@/lib/shell/assets";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { useShell } from "@/lib/shell/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -14,6 +14,7 @@ const TYPE_LABEL: Record<SoulBuildType, string> = { soul_2: "Soul 2", soul_cinem
 /* The connected catalogue lists Soul 2 as `soul_2` (the CLI's text2image_soul_v2 is not a catalogue id). */
 const SOUL_MODEL: Record<SoulBuildType, string> = { soul_2: "soul_2", soul_cinematic: "soul_cinematic" };
 const STATUS: Record<NonNullable<ConnectedCharacter["status"]>, string> = { ready: "Ready", training: "Training", failed: "Failed" };
+type Characters = { connected: boolean; available: boolean; characters: ConnectedCharacter[]; pending?: PendingSoulBuild[] };
 
 /**
  * Studio › Cast › Build identity on the connected account (FINAL_SPEC §3 ›
@@ -32,7 +33,7 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
   const [type, setType] = useState<SoulBuildType>("soul_2");
   const [picked, setPicked] = useState<string[]>([]);
   const [plan, setPlan] = useState<ConnectedPlan | null>(null);
-  const [characters, setCharacters] = useState<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] } | null>(null);
+  const [characters, setCharacters] = useState<Characters | null>(null);
   const [phase, setPhase] = useState<"idle" | "confirm" | "building">("idle");
   const [outcome, setOutcome] = useState<SoulBuildOutcome | { state: "error"; reason: string } | null>(null);
 
@@ -44,14 +45,14 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
   }, [scoped]);
   const refresh = useCallback(() => {
     void call<{ plan: ConnectedPlan }>({ action: "characters-plan" }).then((r) => setPlan(r.plan)).catch(() => setPlan({ connected: false, available: false, plan: null, paid: null }));
-    void call<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] }>({ action: "characters" }).then(setCharacters).catch(() => setCharacters({ connected: false, available: false, characters: [] }));
+    void call<Characters>({ action: "characters" }).then(setCharacters).catch(() => setCharacters({ connected: false, available: false, characters: [] }));
   }, [call]);
   useEffect(() => { refresh(); }, [refresh]);
-  /* Training takes minutes and the account has no wait tool: read the list again while any identity trains. */
-  const training = Boolean(characters?.characters.some((c) => c.status === "training"));
+  /* Training takes minutes and the account has no wait tool: read the list again while any identity trains or waits to be named. */
+  const training = Boolean(characters?.characters.some((c) => c.status === "training") || characters?.pending?.some((b) => !b.stale));
   useEffect(() => {
     if (!training) return;
-    const timer = setInterval(() => void call<{ connected: boolean; available: boolean; characters: ConnectedCharacter[] }>({ action: "characters" }).then(setCharacters).catch(() => undefined), 30_000);
+    const timer = setInterval(() => void call<Characters>({ action: "characters" }).then(setCharacters).catch(() => undefined), 30_000);
     return () => clearInterval(timer);
   }, [training, call]);
 
@@ -67,13 +68,14 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
       const sources = picked.map((id) => { const e = stills.find((s) => s.take.id === id)!; return e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }; });
       const { build } = await call<{ build: SoulBuildOutcome }>({ action: "characters-create", name: name.trim(), type, sources, ...(projectId ? { projectId } : {}) });
       setOutcome(build);
-      if (build.state !== "refused") { ws.toast(build.state === "training" ? `${build.character.name} is training on the account` : "The account accepted the training request"); refresh(); }
+      if (build.state !== "refused") { ws.toast(build.state === "training" ? `${build.character.name} is training on the account` : build.state === "uncertain" ? "The training request may have reached the account" : "The account accepted the training request"); refresh(); }
     } catch (error) {
       setOutcome({ state: "error", reason: error instanceof Error ? error.message : "The training request could not be sent." });
     } finally { setPhase("idle"); }
   };
   const openInGen = (character: ConnectedCharacter) => {
-    try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify({ prompt: "", type: "image", model: SOUL_MODEL[character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"], note: `Soul ID · ${character.name}` })); } catch { /* the preset is a convenience */ }
+    /* The Soul models are on the account's catalogue: Gen switches to it, then to the model, with this identity chosen. */
+    sendGenPreset({ prompt: "", type: "image", billing: "connected", model: SOUL_MODEL[character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"], soulId: character.soulId, note: `Soul ID · ${character.name}` });
     shell.goGen();
   };
 
@@ -128,7 +130,8 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
       {outcome ? (
         <p className={outcome.state === "refused" || outcome.state === "error" ? "gx-gen-error" : "gx-gen-note"} role="status" data-testid="soul-outcome">
           {outcome.state === "training" ? `${outcome.character.name} · ${outcome.character.type ? TYPE_LABEL[outcome.character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"] : type} · ${outcome.character.status ? STATUS[outcome.character.status] : "accepted"} · soul_id ${outcome.character.soulId}`
-            : outcome.state === "accepted" ? "The account accepted the request without naming the new Soul ID yet; it appears below once it lists it."
+            : outcome.state === "accepted" ? "Accepted without a Soul ID yet. It is listed below once the account shows a new identity by this name."
+            : outcome.state === "uncertain" ? "Sent, but the account’s answer was lost. It may be training and billed, so it is not sent again."
             : outcome.state === "refused" ? `The account refused: ${outcome.reason}` : outcome.reason}
         </p>
       ) : null}
@@ -137,7 +140,7 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
         {characters == null ? <p className="gx-hint">Reading…</p>
           : !characters.connected ? <p className="gx-hint">Connect the account in Workspace › Engines.</p>
           : !characters.available ? <p className="gx-hint">The account does not list its characters through its tools.</p>
-          : !characters.characters.length ? <p className="gx-hint">No Soul ID built in Particl yet. Identities trained on higgsfield.ai stay there; Particl lists only the ones it built.</p>
+          : !characters.characters.length && !characters.pending?.length ? <p className="gx-hint">No Soul ID built in Particl yet. Identities trained on higgsfield.ai stay there; Particl lists only the ones it built.</p>
           : (
             <ul className="gx-soul-list">
               {characters.characters.map((c) => (
@@ -146,6 +149,12 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
                   <span className="gx-hint">{c.type ? TYPE_LABEL[c.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"] : "Soul"} · {c.status ? STATUS[c.status] : "unknown"}</span>
                   <span className="gx-spacer" />
                   <button type="button" className="gx-hbtn" disabled={c.status !== "ready"} title={c.status !== "ready" ? "Ready identities only." : undefined} onClick={() => openInGen(c)}>Use in Gen</button>
+                </li>
+              ))}
+              {(characters.pending ?? []).map((b) => (
+                <li key={b.id} className="gx-soul-row" data-testid={`soul-pending-${b.id}`}>
+                  <span className="gx-soul-name">{b.name}</span>
+                  <span className="gx-hint">{b.stale ? "The account never named it; Particl cannot list it" : "Sent · waiting for the account to name it"}</span>
                 </li>
               ))}
             </ul>

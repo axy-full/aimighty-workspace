@@ -5,8 +5,9 @@ import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { GEN_PRESET_KEY, SAY, assetRef, referenceRole, retryPreset, type AssetRef } from "./assets";
+import { SAY, assetRef, referenceRole, retryBlock, retryPreset, type AssetRef } from "./assets";
 import { CONFIRM } from "./confirmations";
+import { sendGenPreset } from "./gen-preset";
 import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
 import { useConfirm } from "./use-confirm";
@@ -134,9 +135,13 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     const entry = find(id);
     if (!entry) return;
     if (entry.asset.origin !== "generation") { ws.toast("An upload was not generated; there is nothing to retry."); return; }
-    let carried = true;
-    try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify(retryPreset(entry.asset.value))); } catch { carried = false; }
-    confirm(carried ? CONFIRM.retry(entry.take.name) : CONFIRM.notCarried(entry.take.name), { go: true });
+    const blocked = retryBlock(entry.asset.value);
+    if (blocked) { ws.toast(blocked); return; }
+    /* Gen applies it at once when it is on screen, or when it opens. The toast says it is there (and when only part of it
+       came back, which part); Gen's note names what was kept, and its Generate button carries the price. */
+    const preset = retryPreset(entry.asset.value);
+    sendGenPreset(preset);
+    confirm(CONFIRM.retry(entry.take.name, preset.kept), { go: true });
   }, [find, confirm, ws]);
 
   /* A render dropped on a Rig row is filed on that shot (its next version); an upload cannot be. */

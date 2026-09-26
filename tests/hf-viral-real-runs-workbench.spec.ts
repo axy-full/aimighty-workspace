@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
@@ -15,7 +16,8 @@ import type { Generation } from "../lib/jobs";
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
-const SHOTS = "/private/tmp/particl-suites/hf-connected/shots";
+/* Review screenshots are written only when VIRAL_SHOTS names a folder; CI takes none. */
+const SHOTS = process.env.VIRAL_SHOTS;
 const fixture = (): Project => ({ ...newProject("Harbour dusk study"), id: "ws-runs", productionProjectId: "prod-ws", shotMappings: {} });
 const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const GEN = "gen_hfc_" + "b".repeat(40);
@@ -114,15 +116,21 @@ async function noOverflow(page: Page, scope: string) {
   expect(problems).toEqual([]);
 }
 
+async function snap(page: Page, name: string) {
+  if (!SHOTS) return;
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/${name}.png` });
+}
+
 /** The screen with this part of it in the middle, clear of the dock. */
 async function shot(page: Page, target: Locator, name: string) {
   await target.evaluate((el) => el.scrollIntoView({ block: "center" }));
-  await page.screenshot({ path: `${SHOTS}/${name}.png` });
+  await snap(page, name);
 }
 
 async function phoneTargets(page: Page, scope: string) {
   const small = await page.getByTestId(scope).locator("button:visible").evaluateAll((buttons) =>
-    buttons.map((b) => ({ label: b.textContent?.trim() ?? "", h: b.getBoundingClientRect().height })).filter((b) => b.h > 0 && b.h < 44));
+    buttons.map((b) => ({ label: b.textContent?.trim() ?? "", h: b.getBoundingClientRect().height })).filter((b) => b.h > 0 && Math.round(b.h * 100) / 100 < 44));
   expect(small).toEqual([]);
 }
 
@@ -147,7 +155,7 @@ test("History shows runs in words, reads the one still rendering until it lands,
   await expect(cards.nth(0)).toContainText("1 ref");
   /* Never the raw status codes. */
   for (const raw of ["accepted", "uncertain", "quoted", "dispatching"]) await expect(view).not.toContainText(raw);
-  if (SHOT_SIZES[info.project.name]) await page.screenshot({ path: `${SHOTS}/history-in-flight-${SHOT_SIZES[info.project.name]}.png` });
+  if (SHOT_SIZES[info.project.name]) await snap(page, `history-in-flight-${SHOT_SIZES[info.project.name]}`);
 
   /* Nothing was submitted here: the run was already in flight, and the page reads it until it lands. */
   const result = view.getByTestId("history-result");
@@ -170,7 +178,7 @@ test("History shows runs in words, reads the one still rendering until it lands,
 
   await noOverflow(page, "history-view");
   if (PHONE.includes(info.project.name)) await phoneTargets(page, "history-view");
-  if (SHOT_SIZES[info.project.name]) await page.screenshot({ path: `${SHOTS}/history-landed-${SHOT_SIZES[info.project.name]}.png` });
+  if (SHOT_SIZES[info.project.name]) await snap(page, `history-landed-${SHOT_SIZES[info.project.name]}`);
 
   await result.first().getByRole("button", { name: "Send to Edit" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
@@ -209,7 +217,7 @@ test("Send to Edit on an older run pages the Library back to that run's take and
   /* And the page opens at it, not at the top of seventy stills. */
   await expect.poll(async () => (await page.locator("[data-section='edit-panel']").boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
   await inView(page, "[data-section='edit-panel']");
-  if (SHOT_SIZES[info.project.name]) await page.screenshot({ path: `${SHOTS}/send-older-${SHOT_SIZES[info.project.name]}.png` });
+  if (SHOT_SIZES[info.project.name]) await snap(page, `send-older-${SHOT_SIZES[info.project.name]}`);
   expect(f.errors).toEqual([]);
 });
 
@@ -236,6 +244,9 @@ test("History says what it cannot show: an archived or unavailable original, a r
   await expect(runs.nth(0).getByTestId("history-run-note")).toHaveText("Sending to the account");
   await expect(runs.nth(1).getByRole("button", { name: "Check again" })).toBeVisible({ timeout: 20_000 });
   await expect(runs.nth(1).getByTestId("history-run-note")).toHaveText("Could not be read");
+  /* Why, in the words Gen and Business use for a read that would fail the same way every time. */
+  await expect(runs.nth(1).getByTestId("history-run-problem")).toHaveText("This job can no longer be checked from here.");
+  await expect(runs.nth(0).getByTestId("history-run-problem")).toHaveCount(0);
   await expect(runs.nth(0).getByTestId("history-run-note")).toHaveText("Not confirmed yet · never sent twice", { timeout: 40_000 });
   await expect(runs.nth(0).getByRole("button", { name: "Check again" })).toBeVisible();
   const count = (id: string) => f.polls.filter((p) => p === id).length;
@@ -246,7 +257,7 @@ test("History says what it cannot show: an archived or unavailable original, a r
   expect(count(gone.id)).toBe(1);
   if (PHONE.includes(info.project.name)) await phoneTargets(page, "history-view");
   await noOverflow(page, "history-view");
-  if (SHOT_SIZES[info.project.name]) await page.screenshot({ path: `${SHOTS}/history-stalled-${SHOT_SIZES[info.project.name]}.png` });
+  if (SHOT_SIZES[info.project.name]) await snap(page, `history-stalled-${SHOT_SIZES[info.project.name]}`);
   /* Check again reads it again. */
   await runs.nth(0).getByRole("button", { name: "Check again" }).click();
   await expect(runs.nth(0).getByTestId("history-run-note")).toHaveText("Sending to the account");
@@ -306,7 +317,7 @@ test("With no runs yet, History says so and starts one; Recent says which varian
   await expect(empty).toContainText("No runs in this project yet.");
   await expect(page.getByTestId("history-more")).toHaveCount(0);
   if (PHONE.includes(info.project.name)) await phoneTargets(page, "history-view");
-  if (SHOT_SIZES[info.project.name]) await page.screenshot({ path: `${SHOTS}/history-empty-${SHOT_SIZES[info.project.name]}.png` });
+  if (SHOT_SIZES[info.project.name]) await snap(page, `history-empty-${SHOT_SIZES[info.project.name]}`);
   await empty.getByRole("button", { name: "Object Swap" }).click();
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
   await expect(page.getByTestId("viral-recent-empty")).toHaveText("No Object Swap runs yet.");

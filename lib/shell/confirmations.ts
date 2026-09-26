@@ -1,3 +1,4 @@
+import type { RetryScope } from "./assets";
 import { restorePage, shellPage, type ShellPage, type ShellSuiteId } from "./ia";
 
 /**
@@ -41,6 +42,9 @@ export function isHere(d: Destination, here: Here): boolean {
 const page = (suite: ShellSuiteId, id: string, select?: { kind: "shot" | "take"; id: string }): Destination => ({ to: "page", suite, page: id, ...(select ? { select } : {}) });
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** What a Retry's toast adds when Gen could not bring back all of the render (lib/shell/assets › retryPreset). */
+const RETRY_PART: Record<RetryScope, string> = { "same inputs": "", "same inputs, frames as references": " · frames as references", "prompt only": " · prompt only" };
+
 /** What the agent's cast list actually changed: the entries added, names already listed, and those past the list's limit. */
 export type CastTaken = { added: number; known: number; overLimit: number };
 
@@ -51,8 +55,6 @@ export const CONFIRM = {
   crewRig: (title: string, nodeId?: string): Confirmation => ({ text: `Added to Rig · ${title}`, open: page("studio", "rig", nodeId ? { kind: "shot", id: nodeId } : undefined) }),
   /** Crew › Open in Gen puts the solution in Gen's prompt; nothing is copied or written. */
   crewGen: (): Confirmation => ({ text: "The solution is Gen’s prompt", open: { to: "gen" } }),
-  /** Open in Gen or Retry when the browser would not hold what was being carried (storage blocked): Gen opens empty, and says so. */
-  notCarried: (what: string): Confirmation => ({ text: `${what} could not be carried to Gen`, open: { to: "gen" } }),
   /** Crew › File minutes: the markdown is stored in this project's Library. */
   minutesFiled: (): Confirmation => ({ text: "Minutes filed in the Library", open: { to: "library" } }),
   /** Cast › the agent's list, counted from what was added rather than what was proposed. */
@@ -70,8 +72,8 @@ export const CONFIRM = {
   plateBuilt: (name: string): Confirmation => ({ text: `${name || "The plate"} is in the Library as Environment`, open: { to: "library" } }),
   /** Brief › a breakdown's scenes became Rig nodes. */
   breakdownToRig: (nodes?: number): Confirmation => ({ text: nodes == null ? "Scene breakdown added to Rig" : `${plural(nodes, "scene node", "scene nodes")} added to Rig`, open: page("studio", "rig") }),
-  /** Retry generation loads the render's prompt and model in Gen (Gen's note says which; its Generate button carries the price). */
-  retry: (name: string): Confirmation => ({ text: `Retry · ${name} loaded in Gen`, open: { to: "gen" } }),
+  /** Retry generation loads the render in Gen, and says so when only part of it came back (Gen's note names what was kept; its Generate button carries the price). */
+  retry: (name: string, kept: RetryScope = "same inputs"): Confirmation => ({ text: `Retry · ${name} loaded in Gen${RETRY_PART[kept]}`, open: { to: "gen" } }),
   /** Business › a finished take opens in Takes, selected. */
   take: (generationId: string): Destination => page("studio", "takes", { kind: "take", id: `generation:${generationId}` }),
 };

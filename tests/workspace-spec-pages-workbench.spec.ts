@@ -234,6 +234,8 @@ test("Generate's own form is the request its Atomik plan prices; nothing is quot
   const posts: Record<string, unknown>[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  /* A published request that re-publishes itself on every render never settles (audit, 25 September). */
+  page.on("console", (message) => { if (message.type() === "error" && /Maximum update depth/.test(message.text())) errors.push(message.text()); });
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
@@ -274,6 +276,11 @@ test("Generate's own form is the request its Atomik plan prices; nothing is quot
   await nav.getByRole("button", { name: /Atomik/ }).click();
   await expect(page.getByTestId("atomik-reason")).toHaveCount(0);
   await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeEnabled();
+  /* A complete form holds still: typing keeps up, and nothing re-renders on its own. */
+  await page.keyboard.press("Escape");
+  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).pressSequentially(" Soft light.");
+  await expect(panel.getByRole("textbox", { name: "Generate prompt", exact: true })).toHaveValue("A plain bottle on a clean studio background. Soft light.");
+  await page.waitForTimeout(1000);
   /* Publishing the request sends nothing: only the catalogue read left the page. */
   expect(posts).toEqual([{ action: "catalogue" }]);
   expect(errors).toEqual([]);

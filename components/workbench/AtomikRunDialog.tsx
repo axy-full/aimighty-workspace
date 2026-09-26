@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SuiteId } from '@/lib/suites';
 import { SUITE_AGENT_COPY } from '@/lib/workbench/suite-agent-plan';
 import type { Project } from '@/lib/workbench/studio';
-import { prepareAtomikVideoFrames } from '@/lib/workbench/atomik-video-frames';
+import { forgetAtomikVideoFrames, prepareAtomikVideoFrames, staleAtomikFrames } from '@/lib/workbench/atomik-video-frames';
 import { ATOMIK_MAX_VISUALS, type AtomikVideoFrame } from '@/lib/workbench/atomik-reference-types';
 import { REFERENCE_AD_FRAMES, REFERENCE_AD_LIMITATION, type ReferenceAnalysisSource } from '@/lib/workbench/reference-ad-analysis';
 import { CREW } from '@/lib/workbench/crew';
@@ -42,6 +42,9 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   const [role, setRole] = useState(target.role);
   const [refs, setRefs] = useState(target.refs);
   const [frameState, setFrameState] = useState<{ key: string; frames: AtomikVideoFrame[]; error?: string } | null>(null);
+  // Bumped when the estimate refuses a saved still, so the videos are prepared again (once per selection).
+  const [framesRound, setFramesRound] = useState(0);
+  const refreshedFrames = useRef(new Set<string>());
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -100,7 +103,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       } catch (e) { if (!controller.signal.aborted) setFrameState({ key: referenceKey, frames: [], error: e instanceof Error ? e.message : 'The video references could not be prepared.' }); }
     })();
     return () => controller.abort();
-  }, [loaded, pending, referenceKey, project.id, scope]);
+  }, [loaded, pending, referenceKey, project.id, scope, framesRound]);
 
   useEffect(() => {
     if (!loaded || pending || !readyFrames || request.trim().length < 3) return;
@@ -115,11 +118,21 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         });
         if (!controller.signal.aborted) { setQuote({ ...value, key: quoteKey }); setError(''); }
       } catch (e) {
-        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'The estimate could not be loaded.');
+        if (controller.signal.aborted) return;
+        const message = e instanceof Error ? e.message : 'The estimate could not be loaded.';
+        if (staleAtomikFrames(message) && !refreshedFrames.current.has(referenceKey)) {
+          refreshedFrames.current.add(referenceKey);
+          const { assets, referenceAd: analysis } = JSON.parse(referenceKey);
+          forgetAtomikVideoFrames(assets, project.id, scope, !!analysis);
+          setFrameState(null);
+          setFramesRound(round => round + 1);
+          return;
+        }
+        setError(message);
       }
     }, 400);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [quoteKey, loaded, pending, request, readyFrames, scope]);
+  }, [quoteKey, loaded, pending, request, readyFrames, scope, referenceKey, project.id]);
 
   function restore(record: PendingAtomikRequest) {
     const input = atomikPendingInput(record);

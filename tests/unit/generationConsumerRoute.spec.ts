@@ -18,6 +18,7 @@ import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as contract from "../../lib/higgsfield-consumer/generation-contract";
 import * as tools from "../../lib/higgsfield-consumer/tools";
 import * as records from "../../lib/higgsfield-consumer/marketing-records";
+import { BuildInFlightError } from "../../lib/higgsfield-consumer/build-records";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -152,7 +153,9 @@ test("owner catalogue, quote, exact approval and status receive server-derived i
   expect(catalogueResponse.status).toBe(200);
   expect(await catalogueResponse.json()).toEqual({ catalogue: f.models });
   expect((await f.request("POST", { ...listing, refresh: true, type: "video" })).status).toBe(200);
-  for (const body of [quote, submit, status]) {
+  /* The Gen composer names itself on its quote, so Gen can pick its own takes back up later. */
+  const marked = { ...quote, composer: "gen" };
+  for (const body of [quote, marked, submit, status]) {
     const response = await f.request("POST", body, { origin: "https://particl.example" });
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
@@ -166,12 +169,13 @@ test("owner catalogue, quote, exact approval and status receive server-derived i
   expect(f.calls).toEqual([
     { name: "catalogue", args: ["owner", { refresh: false }], workspace: "workspace" },
     { name: "catalogue", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", input, key], workspace: "workspace" },
+    { name: "quote", args: ["owner", "draft-1", input, key, { composer: null }], workspace: "workspace" },
+    { name: "quote", args: ["owner", "draft-1", input, key, { composer: "gen" }], workspace: "workspace" },
     { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
     { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
   ]);
-  expect(f.limits).toEqual([listing, { ...listing, refresh: true, type: "video" }, quote, submit, status].map((body) => [`hf-consumer-generation:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "catalogue" ? 12 : 6, 60_000]));
+  expect(f.limits).toEqual([listing, { ...listing, refresh: true, type: "video" }, quote, marked, submit, status].map((body) => [`hf-consumer-generation:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "catalogue" ? 12 : 6, 60_000]));
 });
 
 test("strict generation schemas reject remote URLs, spoofed identities, provider overrides and unknown actions", async () => {
@@ -184,6 +188,7 @@ test("strict generation schemas reject remote URLs, spoofed identities, provider
       { medias: [{ role: "image_references", source: { uploadId: "a" } }, { role: "mask", source: { uploadId: "a" } }] },
       { medias: Array.from({ length: 31 }, (_, i) => ({ role: "image_references", source: { uploadId: `image-${i}` } })) },
       { medias: [{ role: "image_references", source: { uploadId: "../secret" } }] }, { count: 2 }, { use_unlim: true }].map((patch) => ({ ...quote, input: { ...input, ...patch } })),
+    { ...quote, composer: "ads" }, { ...quote, composer: true }, { ...status, composer: "gen" },
     { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "9" }, { ...submit, workspaceId: "bad" }, { ...submit, id: "bad" }, { ...submit, input },
     { ...status, tool: "generate_image" }, { ...status, userId: "other" }, { ...listing, type: "gif" }, { ...listing, refresh: "yes" }, { ...listing, model: "x" },
     { action: "explainer-presets", presetId: "56fc6472-33b7-45dc-83ff-80c71d40aec6" }, { action: "explainer-presets", refresh: "yes" }, { action: "resolve-explainer-preset" }];
@@ -279,6 +284,11 @@ test("the Soul ID build: the plan gate is an owner read; the create needs render
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
   expect(f.calls).toHaveLength(2);
+  /* The same build already sent (it may be on the account): a plain 409 the card shows, never a second send. */
+  f.fail(new BuildInFlightError());
+  const again = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
+  expect(again.status).toBe(409);
+  expect(await again.json()).toEqual({ code: "build_in_flight", error: "This build was already sent and may have been accepted, so it is not sent again." });
 });
 
 test("reference elements: the list is an owner read; the create needs render, carries name · category · 1–8 sources, and is rate-limited hardest", async () => {

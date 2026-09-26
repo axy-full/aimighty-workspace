@@ -104,15 +104,16 @@ export default function AtomikSheet() {
         </span>
         {step && (
           <>
-            <button type="button" onClick={() => a.approve(step)} disabled={a.busy} data-continue=""
+            <button type="button" onClick={() => a.approve(step)} disabled={a.busy || !a.approvable(step)} data-continue=""
               className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
               Continue<span className="ui-mono ui-mono-cost text-on-primary-cost">{a.approveLabel(step)}</span>
             </button>
+            {a.stepQuoteError && !a.isConnected(step) && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
             <span className="flex gap-[8px]">
               {!a.isConnected(step) && <button type="button" className={`${secondary} text-ink`} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setEngineMenu({ x: r.left, y: Math.max(16, r.top - 266), step }); }}>Change engine</button>}
               <button type="button" className={`${secondary} text-ink-body`} onClick={() => a.stop(step)} disabled={a.busy}>Stop here</button>
             </span>
-            <Mono className="text-center">{a.fmt(spent)} of {a.fmt(a.totals.total)}{a.totals.planning ? ` · planning ${a.fmt(a.totals.planning)}` : ""}</Mono>
+            <Mono className="text-center">{a.fmt(spent)} of {a.fmt(a.totals.total)}{a.totals.unpriced ? ` + ${a.totals.unpriced} at checkpoint` : ""}{a.totals.planning ? ` · planning ${a.fmt(a.totals.planning)}` : ""}</Mono>
           </>
         )}
         {cur.kind === "question" && (
@@ -120,6 +121,9 @@ export default function AtomikSheet() {
             {cur.ask.options.map((o) => <button key={o} type="button" onClick={() => a.setDraftText(o)} disabled={a.busy} className={`${secondary} text-ink`}>{o}</button>)}
           </span>
         )}
+        {/* What the last action ran into — a refused claim, a render that did
+            not start — so a phone is told, as the rail tells a desktop. */}
+        {a.error && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.error}</span>}
       </div>
       {engineMenu && <Menu x={engineMenu.x} y={engineMenu.y} title="Engine" items={a.engines.filter((e) => e.kind === engineMenu.step.kind && !e.connected).map((e): MenuItem => ({ kind: "item", label: e.label, onSelect: () => a.changeEngine(engineMenu.step, e.id) }))} onClose={() => setEngineMenu(null)} />}
     </Sheet>

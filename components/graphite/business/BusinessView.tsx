@@ -16,7 +16,10 @@ import { useShell } from "@/lib/shell/state";
 import { useOpenTake } from "@/lib/shell/use-open-take";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
-import { useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
+import { shortName } from "@/lib/higgsfield-consumer/resume";
+import { ResumedJobRows, type ResumedRow } from "../ResumedJobs";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { uploadFilesToProject, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
@@ -331,8 +334,43 @@ function StillSlot({ scope, projectId, library, label, note, testId, still, onSt
   );
 }
 
+/** After a failed price, a failed job or a finished take: the same input, priced again (a failure with its own Try again needs no second button). */
+function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnectedJob>; blocked: string | null; testId: string }) {
+  if (blocked || job.canRetry || (job.state.phase !== "failed" && job.state.phase !== "done")) return null;
+  return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
+}
+
+/** The job this composer remembers for the project; while it reads that one back, its button says so. */
+function rememberedJob(slot: string, draftId: string | null): string | null {
+  try { return draftId ? localStorage.getItem(connectedJobKey(slot, draftId)) : null; } catch { return null; }
+}
+/**
+ * This composer's jobs still on the account from an earlier visit (another
+ * device, another tab, or older than the one it remembers), as the shell's
+ * collector reads them until they land (it announces each one once). The one
+ * its button remembers or is running belongs to the button alone: never listed
+ * here, and the collector leaves it to the button, so each job has one poller.
+ */
+function useEarlierJobs(project: Project | null, job: ReturnType<typeof useConnectedJob>, slot: string, models: readonly string[], name: (job: ConnectedJob) => string) {
+  const live = "job" in job.state && job.state.job ? job.state.job.id : null;
+  const resumed = useResumedConnectedJobs({
+    draftId: project?.id ?? null, keepCompleted: true, owned: [live, rememberedJob(slot, project?.id ?? null)],
+    accept: (saved) => saved.composer !== "gen" && models.includes(saved.input.model),
+  });
+  const rows: ResumedRow[] = resumed.jobs.map(({ job: saved, problem, following }) => ({
+    id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem, following,
+    providerReceipt: saved.providerReceipt, setAside: saved.setAside, failureCode: saved.failureCode,
+  }));
+  return { rows, dismiss: resumed.dismiss };
+}
+/* Ads run one engine, so an ad is named by its prompt; Image ads say which of their two engines made it. */
+const adName = (job: ConnectedJob) => shortName(job.input.prompt, 80) || job.model.name;
+const imageAdName = (job: ConnectedJob) => [job.model.name, shortName(job.input.prompt, 60)].filter(Boolean).join(" · ");
+const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
+
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
+  if (state.phase === "resuming") return "Checking the last take…";
   if (state.phase === "quoting") return `${verb} · pricing…`;
   if (state.phase === "quoted") return `${verb} · ${cr(state.job.quoteCredits)}`;
   if (state.phase === "submitting") return "Submitting…";
@@ -340,9 +378,25 @@ function priceLabel(state: ConnectedJobState, verb: string, blocked: string | nu
   return verb;
 }
 
+/** A failed quote or submit: the account's words, and Try again when nothing prices it again on its own. */
+function JobError({ job, testId }: { job: ReturnType<typeof useConnectedJob>; testId: string }) {
+  if (job.state.phase !== "failed") return null;
+  return (
+    <div className="gx-retry" role="alert" data-testid={testId}>
+      <span className="gx-gen-error" data-testid={`${testId}-text`}>{job.state.error}</span>
+      {job.canRetry ? <button type="button" className="gx-hbtn" onClick={job.requote}>Try again</button> : null}
+    </div>
+  );
+}
+
+/** After a few failed catalogue reads, the account is asked again only on request. */
+function CatalogueAgain({ business }: { business: Business }) {
+  return <div className="gx-retry"><button type="button" className="gx-hbtn" onClick={business.readCatalogue} data-testid="catalogue-again">Read again</button></div>;
+}
+
 /**
- * The finished take beside the composer. The composer prices the same input
- * again at once, so Generate is the rerun.
+ * The finished take beside the composer. It stays while Price again (or a
+ * change to the ad) prices the next run.
  */
 function LatestTake({ job, testId, scope, project, onLibrary }: { job: ConnectedJob; testId: string; scope: string; project: Project | null; onLibrary: () => void }) {
   const original = connectedOriginal(job), kind = original?.kind;
@@ -368,6 +422,9 @@ function LatestTake({ job, testId, scope, project, onLibrary }: { job: Connected
   );
 }
 
+/** The last finished take, shown while the composer is free: while a newer job is resumed, submitted or rendering, it is not "the latest". */
+const latestTake = (job: ReturnType<typeof useConnectedJob>) => (composerBusy(job.state.phase) ? null : job.finished);
+
 function Connection({ business, testId }: { business: Business; testId?: string }) {
   if (!business.connection || business.connection.connected) return null;
   return <p className="gx-reason" data-testid={testId}>{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p>;
@@ -381,7 +438,9 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   useSpentPreset("ads");
   /* Once Setup is read, a pick it does not list (not Particl's, or gone) is dropped rather than sent. */
   const s = useMemo(() => pruneAds(raw, business.setup.reads), [raw, business.setup.reads]);
-  const job = useConnectedJob(project?.id ?? null, scope);
+  /* One remembered job per composer (lib/shell/use-connected-job.ts): a switch away and back resumes it. */
+  const job = useConnectedJob(project?.id ?? null, "ads", scope);
+  const earlier = useEarlierJobs(project, job, "ads", [ADS_MODEL], adName);
   const model: CatalogueModel | undefined = business.models[ADS_MODEL];
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
@@ -394,7 +453,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
   const range = model?.durationRange ?? null;
-  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? business.modelBlock(ADS_MODEL);
   const clamped = clampedDuration(s, range);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
@@ -404,9 +463,9 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const inputKey = JSON.stringify(input);
   /* The button wears the account's exact price for exactly this input. */
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
-  /* A finished job re-prices the same input at once, so Generate is ready to run it again. */
+  /* Nothing is priced while a job is resumed, submitted or rendering; after a finished take, Price again prices the next one. */
   useEffect(() => {
-    if (!input || (quotedFor === inputKey && phase !== "done") || phase === "submitting" || phase === "running") return;
+    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
@@ -419,8 +478,8 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
     <div className="gx-gen bz gx-enter" data-testid="ads-view">
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <Connection business={business} testId="ads-connect" />
-        {business.catalogueError ? <p className="gx-gen-error" role="alert">{business.catalogueError}</p> : null}
         {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="ads-setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.ads])}>Try again</button></p> : null}
+        <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="ads-product"
           still={s.productStill} onStill={(still) => set(withStill(s, "product", still))}>
@@ -466,13 +525,15 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         <Well scope={scope} projectId={project?.id} medias={s.medias} roles={AD_MEDIA_ROLES} max={room} hint="Reference stills · optional"
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit()} data-testid="ads-generate">
+        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
+        <JobError job={job} testId="ads-error" />
+        <PriceAgain job={job} blocked={blocked} testId="ads-requote" />
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit(inputKey)} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
         {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · filed to this project</p> : null}
       </section>
-      {job.finished ? <LatestTake job={job.finished} testId="ads-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
+      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="ads-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
     </div>
   );
 }
@@ -484,7 +545,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const [raw, set] = useComposerDraft("dtc", scope, project?.id ?? null, INITIAL_IMAGE_ADS, restoreImageAds, imageAdsFromPreset);
   useSpentPreset("dtc");
   const s = useMemo(() => pruneImageAds(raw, business.setup.reads), [raw, business.setup.reads]);
-  const job = useConnectedJob(project?.id ?? null, scope);
+  const job = useConnectedJob(project?.id ?? null, "dtc", scope);
+  const earlier = useEarlierJobs(project, job, "dtc", IMAGE_AD_MODELS, imageAdName);
   const dtc = isDtc(s);
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
@@ -495,7 +557,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const sent = imageAdsMedias(s);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? business.modelBlock(s.engine);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "image", model: s.engine, prompt: s.prompt.trim(),
     parameters: {
@@ -506,9 +568,9 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   } as ConsumerGenerationInput : null, [project, blocked, s]);
   const inputKey = JSON.stringify(input);
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
-  /* A finished job re-prices the same input at once, so Generate is ready to run it again. */
+  /* Nothing is priced while a job is resumed, submitted or rendering; after a finished take, Price again prices the next one. */
   useEffect(() => {
-    if (!input || (quotedFor === inputKey && phase !== "done") || phase === "submitting" || phase === "running") return;
+    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
@@ -517,6 +579,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   return (
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
+        <ResumedJobRows rows={earlier.rows} label="Image ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="dtc-earlier" />
         <div className="gx-gen-row" data-testid="dtc-engine">
           <span className="gx-eyebrow" data-functional-label="">Engine</span>
           <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Image ads engine">
@@ -563,12 +626,14 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={room} hint={`Reference media · ≤ ${AD_MEDIA_MAX}`}
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="dtc-error">{job.state.error}</p> : null}
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit()} data-testid="dtc-generate">
+        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
+        <JobError job={job} testId="dtc-error" />
+        <PriceAgain job={job} blocked={blocked} testId="dtc-requote" />
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit(inputKey)} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
       </section>
-      {job.finished ? <LatestTake job={job.finished} testId="dtc-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
+      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="dtc-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
       {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
       <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
         <div className="gx-gen-row">

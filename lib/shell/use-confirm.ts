@@ -33,8 +33,9 @@ export function useConfirm() {
 
   const confirm = useCallback((c: Confirmation, options: { go?: boolean } = {}) => {
     const ws = latest.current;
-    if (options.go && c.open) { open(c.open); ws.toast(c.text); return; }
     const to = c.open && !isHere(c.open, hereOf(live())) ? c.open : null;
+    /* Already there (a Retry pressed on Gen itself): nothing moves, and no history entry is added. */
+    if (options.go) { if (to) open(to); ws.toast(c.text); return; }
     ws.toast(c.text, to ? { label: openLabel(to), run: () => open(to) } : undefined);
   }, [open, live]);
 

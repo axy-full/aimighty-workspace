@@ -37,7 +37,7 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
     scope = `particl-active-${me.workspace.id}-${me.id}`;
   let project: Project = { ...seedProject(), id: "edit-sound-c2-" + randomUUID().slice(0, 8), name: "Edit & Sound C2 test", productionProjectId: "production-fixture", shotMappings: {} };
   project.shots = project.shots.slice(0, 2).map((s) => ({ ...s, duration: 72 }));
-  const fps = project.fps;
+  const cut = project.shots.reduce((n, s) => n + s.duration, 0);
   // Two stored originals with server-read lengths, and one dialogue clip playing the audio one.
   project.assets.push(
     { ...project.assets[0], id: "interview", uploadId: "upload-src-1", generationId: undefined, name: "Interview.wav", kind: "audio", mime: "audio/wav", url: "/api/uploads/upload-src-1", refs: [], seconds: 65 },
@@ -198,8 +198,8 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
 
   finished = 2;
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(2);
-  // The dubbed track: on the dialogue lane at the remembered playhead, the stored length as its duration.
-  expect(current().audioClips![1]).toMatchObject({ lane: "dialogue", startFrame: 24, sourceIn: 0, duration: 65 * fps, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false });
+  // The dubbed track: on the dialogue lane at the remembered playhead, ending with the 6 s cut rather than running its 65 s past it.
+  expect(current().audioClips![1]).toMatchObject({ lane: "dialogue", startFrame: 24, sourceIn: 0, duration: cut - 24, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false });
   const dubAsset = current().assets.find((a) => a.id === current().audioClips![1].assetId);
   expect(dubAsset).toMatchObject({ kind: "audio", generationId: "mock-c2-2", nodeId: dubNode!.id, name: "Interview · dubbed (Spanish)", seconds: 65 });
   await expect(panel.getByRole("status")).toContainText("Dub placed on the dialogue lane at 00:01.");

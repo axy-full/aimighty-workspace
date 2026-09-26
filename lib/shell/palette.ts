@@ -23,7 +23,8 @@ export function paletteIndex(input: { models: { id: string; name: string; kind: 
   return [
     { group: "CREATE", label: "Generate", hint: "G", run: { type: "gen" } },
     ...HEADER_SEGMENT.filter((s) => s.id !== "gen" && s.id !== "crew").map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.title, run: { type: "suite", suite: s.id as ShellSuiteId } })),
-    ...ALL_SHELL_PAGES.map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
+    /* The phone's own Home and Studio grid have no desktop page to open. */
+    ...ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
     ...CREW_PAGES.map((p): PaletteRow => ({ group: "CREW", label: `${p.n} ${p.label === "Room" ? "Crew room" : p.label}`, hint: p.title === "Crew" ? "Brainstorm with the crew" : p.title, run: { type: "crew", page: p.id } })),
     ...WORKSPACE_TABS.map((t): PaletteRow => ({ group: "WORKSPACE", label: t.label, hint: "Workspace", run: { type: "workspace", tab: t.id } })),
     ...input.models.map((m): PaletteRow => ({ group: "MODEL", label: m.name, hint: m.kind, run: { type: "model", id: m.id } })),

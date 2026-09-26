@@ -107,7 +107,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
   if (c.kind === "checkpoint") {
     const step = c.step;
     const connected = a.isConnected(step);
-    const cost = connected ? undefined : a.credits(step);
+    const cost = connected ? undefined : a.credits(step) ?? undefined;
     const lastDone = c.done[c.done.length - 1];
     const sameKind = a.engines.filter((e) => e.kind === step.kind && !e.connected);
     return (
@@ -124,9 +124,10 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
           </span>
         ) : (
           <>
-            <Button variant="primary" placement={placement} cost={cost} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(step)}>
+            <Button variant="primary" placement={placement} cost={cost} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(step)} onClick={() => a.approve(step)}>
               {placement === "rail" ? `Continue · ${step.title}` : "Continue"}{connected ? ` · ${a.approveLabel(step)}` : ""}
             </Button>
+            {a.stepQuoteError && !connected && <span role="alert" className={body}>{a.stepQuoteError}</span>}
             <span className="flex gap-[6px]">
               {!connected && <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>}
               <Button placement="card" className="flex-1" muted onClick={() => a.stop(step)}>Stop</Button>
@@ -168,7 +169,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
     return (
       <div className={box}>
         <Mono>{running ? "Running" : "Plan"}</Mono>
-        <span className={title}>{c.steps.length} steps · {a.fmt(a.totals.total)}.</span>
+        <span className={title}>{c.steps.length} steps · {a.fmt(a.totals.total)}{a.totals.unpriced ? ` + ${a.totals.unpriced} at checkpoint` : ""}.</span>
         <span className={body}>{running ? `${running} rendering now.` : "Priced. Nothing is charged until you run a step."}</span>
       </div>
     );
@@ -203,15 +204,17 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
     <>
       <Mono className="whitespace-nowrap">
         <span className="text-ink">{a.fmt(a.totals.total)}</span> total
+        {a.totals.unpriced > 0 && <> + {a.totals.unpriced} at checkpoint</>}
         {a.totals.underCap !== null && <> · {a.fmt(a.totals.underCap)} under cap</>}
         {" · "}planning <span className="text-ink">{a.fmt(a.totals.planning)}</span>
         {a.totals.connected > 0 && <> · <span className="text-ink">{a.totals.connected.toLocaleString("en-US")}</span> connected cr</>}
       </Mono>
       {checkpoint && (
-        <Button variant="primary" placement="rail" cost={a.isConnected(checkpoint) ? undefined : a.credits(checkpoint)} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(checkpoint)}>
+        <Button variant="primary" placement="rail" cost={a.isConnected(checkpoint) ? undefined : a.credits(checkpoint) ?? undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
           Continue · {checkpoint.title}{a.isConnected(checkpoint) ? ` · ${a.approveLabel(checkpoint)}` : ""}
         </Button>
       )}
+      {checkpoint && a.stepQuoteError && !a.isConnected(checkpoint) && <span role="alert" className="text-[12.5px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
       <div className="flex gap-[8px] pt-[8px]"><ChatComposer inputHeight={46} /></div>
     </>
   );
@@ -237,7 +240,8 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
 
 function PlanCard({ steps, checkpoint }: { steps: Step[]; checkpoint: Step | null }) {
   const a = useAtomik();
-  const paid = steps.filter((s) => a.credits(s) > 0).length;
+  /* Unpriced is not free: a step counts as paid unless its price is a real zero. */
+  const paid = steps.filter((s) => !a.isConnected(s) && a.credits(s) !== 0).length;
   return (
     <div className="flex flex-col gap-[6px]">
       <Mono>Atomik · {a.chat?.title ?? "plan"} · {paid} paid {paid === 1 ? "step" : "steps"}</Mono>

@@ -1,4 +1,5 @@
 import { db, ready, now, id as newId } from "@/lib/db";
+import { unionNotes } from "@/lib/treatmentMerge";
 
 /**
  * Atomik's documents: ideas and treatments. Shots are the shots table.
@@ -80,14 +81,35 @@ export async function getTreatment(projectId: string): Promise<Treatment | null>
   const rs = await db().execute({ sql: `SELECT * FROM treatments WHERE project_id = ?`, args: [projectId] });
   return rs.rows[0] ? rowToTreatment(rs.rows[0]) : null;
 }
-/** Create or replace the production's treatment. `bump` starts a new draft. */
+/**
+ * A save made against a copy of the treatment that is no longer the latest:
+ * someone else (or another tab) saved in between. Nothing was written; the
+ * caller gets the current copy to merge with.
+ */
+export class TreatmentConflict extends Error {
+  constructor(readonly current: Treatment | null) { super("This treatment changed in another session."); this.name = "TreatmentConflict"; }
+}
+
+/**
+ * Save the production's treatment. `bump` starts a new draft number and keeps
+ * the previous draft as it was.
+ *
+ * `expectedUpdatedAt` is the version the saver loaded (null: it saw no
+ * treatment). The write only lands on that version, so a save made against a
+ * stale copy can no longer replace a teammate's scenes and notes; it is
+ * refused with TreatmentConflict and the current copy instead. Leaving it out
+ * is refused too once a treatment exists, except with `onConflict: "keep"` —
+ * the save a page sends as it closes, which cannot merge: then the current
+ * copy is first kept as a draft of its own, its notes are carried over, and
+ * the incoming document becomes the next draft. Nothing is lost either way.
+ */
 export async function upsertTreatment(input: {
   projectId: string; ideaId?: string | null; title: string; logline: string;
   setup: Record<string, string>; scenes: Scene[]; notes: Note[]; updatedBy: string; bump?: boolean;
+  expectedUpdatedAt?: number | null; onConflict?: "refuse" | "keep";
 }): Promise<Treatment> {
   await ready();
   const existing = await getTreatment(input.projectId);
-  const ts = now();
   const scenes = input.scenes.slice(0, 40).map((s, i) => ({
     n: i + 1, title: String(s.title ?? "").slice(0, 120),
     secs: Math.max(0, Math.min(600, Math.round(Number(s.secs) || 0))), prose: String(s.prose ?? "").slice(0, 8000),
@@ -95,29 +117,55 @@ export async function upsertTreatment(input: {
     ...(typeof s.effort === "string" && s.effort ? { effort: s.effort.slice(0, 32) } : {}),
     ...(Number.isFinite(Number(s.at)) && Number(s.at) > 0 ? { at: Number(s.at) } : {}),
   }));
-  // Saving a new draft number keeps the previous draft as it was — a versioned document, not a transcript.
-  if (existing && input.bump) {
-    await db().execute({
-      sql: `INSERT INTO treatment_versions (id, project_id, version, title, logline, setup, scenes, notes, by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      args: [newId("tv"), input.projectId, existing.draft, existing.title, existing.logline, JSON.stringify(existing.setup), JSON.stringify(existing.scenes), JSON.stringify(existing.notes), existing.updatedBy, ts],
-    });
-  }
-  const notes = input.notes.slice(0, 200);
+  let notes = input.notes.slice(0, 200);
+  let bump = Boolean(input.bump);
   if (!existing) {
-    const tid = newId("trt");
-    await db().execute({
+    const ts = now();
+    const created = await db().execute({
       sql: `INSERT INTO treatments (id, project_id, idea_id, draft, title, logline, setup, scenes, notes, updated_by, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [tid, input.projectId, input.ideaId ?? null, 1, input.title.slice(0, 160), input.logline.slice(0, 600),
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id) DO NOTHING`,
+      args: [newId("trt"), input.projectId, input.ideaId ?? null, 1, input.title.slice(0, 160), input.logline.slice(0, 600),
              JSON.stringify(input.setup), JSON.stringify(scenes), JSON.stringify(notes), input.updatedBy, ts, ts],
     });
-  } else {
-    await db().execute({
+    /* Someone else made it first: theirs stands, and this save is a conflict like any other. */
+    if (!created.rowsAffected) return upsertTreatment(input);
+    return (await getTreatment(input.projectId))!;
+  }
+  if (input.expectedUpdatedAt !== existing.updatedAt) {
+    if (input.onConflict !== "keep") throw new TreatmentConflict(existing);
+    bump = true;
+    notes = unionNotes(notes, existing.notes).slice(0, 200);
+  }
+  /* Strictly later than the version replaced, so a version is never reused. */
+  const ts = Math.max(now(), existing.updatedAt + 1);
+  const tx = await db().transaction("write");
+  let landed = false;
+  try {
+    const updated = await tx.execute({
       sql: `UPDATE treatments SET idea_id = COALESCE(?, idea_id), draft = draft + ?, title = ?, logline = ?, setup = ?, scenes = ?, notes = ?, updated_by = ?, updated_at = ?
-            WHERE project_id = ?`,
-      args: [input.ideaId ?? null, input.bump ? 1 : 0, input.title.slice(0, 160), input.logline.slice(0, 600),
-             JSON.stringify(input.setup), JSON.stringify(scenes), JSON.stringify(notes), input.updatedBy, ts, input.projectId],
+            WHERE project_id = ? AND updated_at = ?`,
+      args: [input.ideaId ?? null, bump ? 1 : 0, input.title.slice(0, 160), input.logline.slice(0, 600),
+             JSON.stringify(input.setup), JSON.stringify(scenes), JSON.stringify(notes), input.updatedBy, ts, input.projectId, existing.updatedAt],
     });
+    landed = Boolean(updated.rowsAffected);
+    // Saving a new draft number keeps the previous draft as it was — a versioned document, not a transcript.
+    if (landed && bump) {
+      await tx.execute({
+        sql: `INSERT INTO treatment_versions (id, project_id, version, title, logline, setup, scenes, notes, by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        args: [newId("tv"), input.projectId, existing.draft, existing.title, existing.logline, JSON.stringify(existing.setup), JSON.stringify(existing.scenes), JSON.stringify(existing.notes), existing.updatedBy, ts],
+      });
+    }
+    if (landed) await tx.commit(); else await tx.rollback();
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  } finally {
+    tx.close();
+  }
+  if (!landed) {
+    /* It changed between the read and the write: the same answer, from the newer copy. */
+    if (input.onConflict === "keep") return upsertTreatment(input);
+    throw new TreatmentConflict(await getTreatment(input.projectId));
   }
   return (await getTreatment(input.projectId))!;
 }

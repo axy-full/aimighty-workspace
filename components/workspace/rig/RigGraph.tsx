@@ -8,6 +8,7 @@ import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
+import { rigLoadState } from "@/lib/workspace/rig-load-state";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import type { Drag, Peer } from "./use-team-canvas";
@@ -311,7 +312,12 @@ export function RigGraph() {
     return () => window.removeEventListener("keydown", onKey);
   }, [wireFrom]);
 
-  if (!project) return <p className="pxw-rig-empty" style={{ margin: 24 }}>{rig.status === "loading" ? "Loading the graph…" : "Open a project to see its graph."}</p>;
+  if (!project) {
+    const load = rigLoadState({ status: rig.status, hasProject: false, projectId: state.projectId });
+    return load === "error"
+      ? <p className="pxw-rig-empty" role="alert" style={{ margin: 24 }}>{rig.error}</p>
+      : <p className="pxw-rig-empty" role="status" style={{ margin: 24 }}>{load === "loading" ? "Loading the graph…" : "Open or create a project to see its graph."}</p>;
+  }
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const shotCount = rig.shots.length;

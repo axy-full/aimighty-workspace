@@ -5,9 +5,10 @@ import { recipeOf, startRun } from "@/lib/runs";
 export const dynamic = "force-dynamic";
 
 /**
- * Start a run of a project's recipe (§9): every stage priced as the recipe
- * has it, nothing charged until a stage renders. The run stops at its first
- * checkpoint — a rendering stage — for a person to continue.
+ * Record a run of a project's recipe (§9): every stage queued at the price
+ * the recipe has it. Nothing advances a run yet (lib/runs.ts) and nothing is
+ * charged, so the Rig no longer starts one: its Run opens Pipelines, where
+ * runs execute.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();

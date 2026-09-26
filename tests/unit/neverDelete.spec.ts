@@ -42,6 +42,144 @@ test("a delete copies the whole row to the archive before it leaves the table", 
   });
 });
 
+test("an archive copy and its delete land together, and a multi-step delete lands whole or not at all", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { archiveAndDelete, archiveTransaction } = await import("../../lib/archive");
+  await runInTenant(workspace("archive-atomic"), async () => {
+    await ready();
+    await db().execute("CREATE TABLE sample(id TEXT PRIMARY KEY, n INTEGER)");
+    await db().execute("INSERT INTO sample VALUES('a',1),('b',2)");
+    const archived = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM archived_rows WHERE table_name='sample'")).rows[0].n);
+    const ids = async () => (await db().execute("SELECT id FROM sample ORDER BY id")).rows.map((r) => r.id);
+    // On a plain client: if the delete fails, the copy is not left behind either.
+    await db().execute("CREATE TRIGGER refuse BEFORE DELETE ON sample BEGIN SELECT RAISE(ABORT,'fixture refusal'); END");
+    await expect(archiveAndDelete(db(), "sample", "id=?", ["a"])).rejects.toThrow(/fixture refusal/);
+    expect(await archived()).toBe(0);
+    await db().execute("DROP TRIGGER refuse");
+    // Several steps: a failure halfway leaves every row where it was.
+    await expect(archiveTransaction(async (tx) => {
+      await archiveAndDelete(tx, "sample", "id=?", ["a"]);
+      throw new Error("fixture failure halfway");
+    })).rejects.toThrow(/halfway/);
+    expect(await ids()).toEqual(["a", "b"]);
+    expect(await archived()).toBe(0);
+    expect(await archiveTransaction(async (tx) =>
+      (await archiveAndDelete(tx, "sample", "id=?", ["a"])) + (await archiveAndDelete(tx, "sample", "id=?", ["b"])))).toBe(2);
+    expect(await ids()).toEqual([]);
+    expect(await archived()).toBe(2);
+    expect(await archiveAndDelete(db(), "sample", "id=?", ["missing"])).toBe(0);
+  });
+});
+
+test("a delete across many tables reads each table once and writes in one batch, whole or not at all", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { archiveDeleteStatements, archiveTransaction } = await import("../../lib/archive");
+  await runInTenant(workspace("archive-batch"), async () => {
+    await ready();
+    await db().batch([
+      "CREATE TABLE parents(id TEXT PRIMARY KEY, name TEXT)",
+      "CREATE TABLE children(id TEXT PRIMARY KEY, parent_id TEXT, n INTEGER)",
+      "INSERT INTO parents VALUES('p1','first'),('p2','second')",
+      "INSERT INTO children VALUES('c1','p1',1),('c2','p1',2),('c3','p2',3)",
+    ], "write");
+    const steps = [
+      { table: "children", where: "id IN (?,?)", args: ["c1", "c2"] },
+      { table: "children", where: "parent_id = ?", args: ["p1"] },
+      { table: "parents", where: "id = ?", args: ["p1"], by: "u1" },
+    ];
+    const rows = async () => (await db().execute("SELECT id FROM children UNION ALL SELECT id FROM parents ORDER BY id")).rows.map((r) => r.id);
+    const archived = async () => (await db().execute("SELECT table_name, row_id, archived_by FROM archived_rows ORDER BY row_id")).rows.map((r) => `${r.table_name}:${r.row_id}:${r.archived_by ?? ""}`);
+
+    // A refusal on the last step leaves every row where it was, with no copies.
+    await db().execute("CREATE TRIGGER refuse BEFORE DELETE ON parents BEGIN SELECT RAISE(ABORT,'fixture refusal'); END");
+    await expect(archiveTransaction(async (tx) => { await tx.batch(await archiveDeleteStatements(tx, steps)); })).rejects.toThrow(/fixture refusal/);
+    expect(await rows()).toEqual(["c1", "c2", "c3", "p1", "p2"]);
+    expect(await archived()).toEqual([]);
+    await db().execute("DROP TRIGGER refuse");
+
+    const calls = { execute: 0, batch: 0 };
+    await archiveTransaction(async (tx) => {
+      const execute = tx.execute.bind(tx), batch = tx.batch.bind(tx);
+      tx.execute = ((...a: Parameters<typeof execute>) => { calls.execute++; return execute(...a); }) as typeof tx.execute;
+      tx.batch = ((...a: Parameters<typeof batch>) => { calls.batch++; return batch(...a); }) as typeof tx.batch;
+      await tx.batch(await archiveDeleteStatements(tx, steps));
+    });
+    // No schema statements again, one read of both tables' columns, one write.
+    expect(calls).toEqual({ execute: 0, batch: 2 });
+    expect(await rows()).toEqual(["c3", "p2"]);
+    // Each row is copied once, by the first step that reaches it.
+    expect(await archived()).toEqual(["children:c1:", "children:c2:", "parents:p1:u1"]);
+  });
+});
+
+test("deleting a production archives everything filed under it in one write, and unfiles its renders", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const dbModule = await import("../../lib/db");
+  const archive = await import("../../lib/archive");
+  const { loadIsolated } = await import("./storageSeam");
+  const { db, ready } = dbModule;
+  const route = loadIsolated<typeof import("../../app/api/projects/[id]/route")>("app/api/projects/[id]/route.ts", {
+    "@/lib/db": dbModule,
+    "@/lib/archive": archive,
+    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ user: { id: "u1" } }) },
+    "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" },
+  });
+  const remove = (id: string) => route.DELETE(new Request(`https://studio.test/api/projects/${id}`, { method: "DELETE" }), { params: Promise.resolve({ id }) });
+  await runInTenant(workspace("project-delete"), async () => {
+    await ready();
+    /** A row with the given values and a placeholder in every other required column. */
+    const insert = async (table: string, values: Record<string, unknown>) => {
+      const required = (await db().execute(`PRAGMA table_info(${table})`)).rows
+        .filter((c) => Number(c.notnull) && c.dflt_value == null && !(String(c.name) in values));
+      const row = { ...Object.fromEntries(required.map((c) => [String(c.name), /INT|REAL|NUM/i.test(String(c.type)) ? 0 : "x"])), ...values };
+      await db().execute({ sql: `INSERT INTO ${table}(${Object.keys(row).join(",")}) VALUES(${Object.keys(row).map(() => "?").join(",")})`, args: Object.values(row) as never[] });
+    };
+    for (const project of ["prod", "other"]) await insert("projects", { id: project, name: project });
+    await insert("shots", { id: "sh1", project_id: "prod" });
+    await insert("shots", { id: "sh2", project_id: "other" });
+    await insert("cast_members", { id: "cm1", project_id: "prod" });
+    await insert("elements", { id: "el1", project_id: "prod" });
+    await insert("element_attributes", { id: "ea1", element_id: "el1" });
+    await insert("attribute_versions", { id: "av1", element_id: "el1" });
+    await insert("bindings", { id: "bd1", element_id: "el1", project_id: "prod", shot_id: "sh1" });
+    await insert("canvas_items", { id: "ci1", project_id: "prod" });
+    await insert("generations", { id: "g1", project_id: "prod", deleted: 0 });
+
+    expect((await remove("prod")).status).toBe(200);
+    const count = async (table: string, where = "1") => Number((await db().execute(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`)).rows[0].n);
+    for (const table of ["cast_members", "elements", "element_attributes", "attribute_versions", "bindings", "canvas_items"])
+      expect(await count(table)).toBe(0);
+    expect(await count("shots")).toBe(1);
+    expect(await count("projects")).toBe(1);
+    expect(await count("generations", "id='g1' AND project_id IS NULL")).toBe(1);
+    const archived = (await db().execute("SELECT table_name, row_id FROM archived_rows ORDER BY table_name, row_id")).rows.map((r) => `${r.table_name}:${r.row_id}`);
+    expect(archived).toEqual(expect.arrayContaining([
+      "attribute_versions:av1", "bindings:bd1", "canvas_items:ci1", "cast_members:cm1", "element_attributes:ea1",
+      "elements:el1", "generations.project_id:prod", "projects:prod", "shots:sh1",
+    ]));
+    // A column named for an SQL keyword (shots.cast) is copied like any other.
+    const shot = (await db().execute("SELECT body FROM archived_rows WHERE table_name='shots' AND row_id='sh1'")).rows[0];
+    expect(JSON.parse(String(shot.body))).toMatchObject({ id: "sh1", project_id: "prod", cast: "[]" });
+    expect((await remove("prod")).status).toBe(404);
+  });
+});
+
+test("a row whose column is named by a keyword is archived too (a workspace rule's \"on\")", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { addRule, deleteRule, listWorkspaceRules } = await import("../../lib/rules");
+  await runInTenant(workspace("rules"), async () => {
+    await ready();
+    const rule = await addRule({ text: "No logos in the first frame.", scope: "video", apply: "prompt" }, "owner");
+    expect(await deleteRule(rule.id)).toBe(true);
+    expect(await listWorkspaceRules()).toEqual([]);
+    const archived = (await db().execute({ sql: "SELECT body FROM archived_rows WHERE table_name = 'workspace_rules' AND row_id = ?", args: [rule.id] })).rows;
+    expect(JSON.parse(String(archived[0].body))).toMatchObject({ id: rule.id, text: "No logos in the first frame.", scope: "video", on: 1 });
+  });
+});
+
 test("deleting an upload archives its row and leaves the file in storage", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");

@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { GEN_PRESET_KEY } from "../lib/shell/assets";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -13,18 +12,19 @@ import { GEN_PRESET_KEY } from "../lib/shell/assets";
  * shot, selected — on a Rig that has read the saved draft again. → Brief
  * says Brief and opens it; the room stays put for the next solution. Open in
  * Gen goes to Gen with the solution as the prompt, and says only that. Filed
- * minutes open the Library.
+ * minutes open the Library. Review screenshots are written only when
+ * HONEST_SHOTS names a folder; CI takes none.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844"];
 const TOUCH = [...PHONES, "workbench-844x390"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844", "workbench-360x640": "360x640" };
-const SHOTS = "/private/tmp/particl-suites/hf-connected/shots";
+const SHOTS = process.env.HONEST_SHOTS;
 const GOAL = "Open the film without dialogue and still make the product unmistakable inside the first four seconds.";
 
 async function shot(page: Page, name: string, project: string) {
   const size = SHOT_AT[project];
-  if (!size) return;
+  if (!SHOTS || !size) return;
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/honest-${name}-${size}.png` });
 }
@@ -214,26 +214,28 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   expect(errors).toEqual([]);
 });
 
-test("Crew › Open in Gen when the browser will not store the preset: Gen opens empty and the toast says the solution did not carry", async ({ page }, info) => {
+test("Crew › Open in Gen while the browser refuses to store anything for the session: the solution is still Gen's prompt, as the toast says", async ({ page }, info) => {
   test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "the narrowest phone, one desktop");
   const { errors, solutions } = await roomWithSolutions(page);
-  /* Storage blocked for the preset only (a private window, a full quota): everything else keeps working. */
-  await page.evaluate((key) => {
+  /* A private window or a full quota: every session-storage write is refused. The hand-off to Gen is in memory
+     (lib/shell/gen-preset), so the solution still arrives, and the toast is true. */
+  await page.evaluate(() => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (this: Storage, name: string, value: string) {
-      if (name === key) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      if (this === window.sessionStorage) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
       return set.call(this, name, value);
     };
-  }, GEN_PRESET_KEY);
-  await solutions.nth(2).getByRole("button", { name: "Open in Gen" }).click();
+  });
+  const third = solutions.nth(2);
+  const text = (await third.locator("p").innerText()).replace(/^3/, "").trim();
+  await third.getByRole("button", { name: "Open in Gen" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("toast")).toHaveText("The solution could not be carried to Gen");
-  await expect(page.getByTestId("toast")).not.toContainText("Gen’s prompt");
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("");
-  await expect(page.getByTestId("gen-preset-note")).toHaveCount(0);
+  await expect(page.getByTestId("gen-prompt")).toHaveValue(text);
+  await expect(page.getByTestId("gen-preset-note")).toHaveText("Crew · solution");
+  await expect(page.getByTestId("toast")).toHaveText("The solution is Gen’s prompt");
   await noSideScroll(page);
   await settle(page);
-  await shot(page, "gen-not-carried", info.project.name);
+  await shot(page, "gen-storage-refused", info.project.name);
   expect(errors).toEqual([]);
 });
 

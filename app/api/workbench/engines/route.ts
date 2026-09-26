@@ -1,6 +1,6 @@
 import { withTenant, requireUser } from '@/lib/auth';
 import { modelConfigured } from '@/lib/providers';
-import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia } from '@/lib/workbench/media-quote';
+import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 
 export const GET = withTenant(async (req: Request) => {
@@ -8,11 +8,28 @@ export const GET = withTenant(async (req: Request) => {
   if (got.response) return got.response;
   const q = new URL(req.url).searchParams;
   const configured = workbenchGenerationModels().filter(model => modelConfigured(model));
-  const models = configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
-    resolutions: model.resolutions, ratios: model.ratios, durations: model.durations,
-    maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined }));
+  const listed = (at: RateAt, refs: ReferencePrices | null) => configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
+    resolutions: model.resolutions, ratios: model.ratios, durations: model.durations, untestedResolutions: model.untestedResolutions,
+    maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined,
+    /* The model sheet's row: what the engine is for in Gen, whether its takes carry sound, and its price (credits only, nothing reserved). */
+    use: workbenchUse(model), audio: rendersSound(model) || undefined, rate: refs ? workbenchRate(model, at, refs) : null }));
   const headers = { 'Cache-Control': 'no-store' };
-  if (!q.has('model')) return Response.json({ models, credits: null }, { headers });
+  if (!q.has('model')) {
+    /* The list, priced where Gen's composer stands (all optional; the untouched composer without them):
+       pickRatio/pickResolution/pickDuration are its picks, aspect the project's, seconds its sound length,
+       and uploadId/genId/imageRefs its references — each engine then resolves them as composerSettings does. */
+    const text = (name: string) => { const v = q.get(name); return v && v.length <= 24 ? v : undefined; };
+    const pickDuration = Number(q.get('pickDuration'));
+    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}) } };
+    const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];
+    const imageRefs = Number(q.get('imageRefs') || 0);
+    /* References that cannot be priced leave every rate empty: Generate then says why. */
+    const refs = Number(q.get('unresolvedVideoRefs') || 0) > 0 ? null
+      : references.length || imageRefs ? await referencePrices(references, imageRefs).catch((error: unknown) => { if (error instanceof MediaQuoteError) return null; throw error; })
+      : NO_REFERENCES;
+    return Response.json({ models: listed(at, refs), audio: workbenchAudioRates(Number(q.get('seconds') || 10)), credits: null }, { headers });
+  }
+  const models = listed({}, NO_REFERENCES);
   try {
     const model = configured.find(item => item.id === q.get('model'));
     if (!model) throw new MediaQuoteError('This generation engine is unavailable. Choose a configured engine.');

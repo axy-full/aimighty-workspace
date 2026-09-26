@@ -60,6 +60,8 @@ async function serviceFixture(options: { analysis?: boolean }) {
     "./video-service": await import("../../lib/higgsfield-consumer/video-service"),
     "./video-contract": contract,
     "./video-original": {
+      uncollectableOriginal: original.uncollectableOriginal,
+      CONSUMER_ORIGINAL_SECONDS: 600,
       collectConsumerVideoOriginal: async (job: { id: string; userId: string; draftId: string; providerJobId: string; quoteCredits: number; payloadJson: string }, url: string) => {
         state.collectCount++;
         expect(url).toBe("https://media.example.com/qualified-original.mp4");
@@ -211,7 +213,7 @@ test("one durable claim admits exactly one paid submission; ambiguous or interru
     expect((await f.service.consumerVoiceToolJobs(identity.userId, identity.draftId)).map((job) => [job.tool.name, job.status])).toEqual([["dubbing", "uncertain"], ["dubbing", "uncertain"], ["voice_change", "accepted"]]);
   }));
 
-test("polling collects a revoiced video through the shared collector once, records provider failure, and ignores envelopes for other jobs", async () =>
+test("polling collects a revoiced video through the shared collector once, records provider failure, ignores envelopes for other jobs, and settles a result that can never be kept", async () =>
   fixture(async (f) => {
     const quote = await f.service.quoteConsumerVoiceTool(identity.userId, identity.draftId, voice, randomUUID());
     await f.service.submitConsumerVoiceToolJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
@@ -227,8 +229,8 @@ test("polling collects a revoiced video through the shared collector once, recor
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
     f.state.pollRaw = completed(f);
     const original = await import("../../lib/higgsfield-consumer/video-original");
-    f.state.collectorError = new original.ConsumerOriginalError("invalid_video");
-    await expect(f.service.pollConsumerVoiceTool(scoped(quote.id))).rejects.toMatchObject({ code: "invalid_video" });
+    f.state.collectorError = new original.ConsumerOriginalError("timeout");
+    await expect(f.service.pollConsumerVoiceTool(scoped(quote.id))).rejects.toMatchObject({ code: "timeout" });
     expect((await f.jobs.getConsumerJob(scoped(quote.id)))!.status).toBe("accepted");
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
     f.state.collectorError = undefined;
@@ -247,6 +249,19 @@ test("polling collects a revoiced video through the shared collector once, recor
     expect(failed.job.failureCode).toBe("provider_failed");
     expect(failed.providerStatus).toEqual({ status: "failed" });
     expect(f.state.collectCount).toBe(2);
+    // A result over the size limit is settled once, receipt kept, never downloaded again.
+    const oversized = await f.service.quoteConsumerVoiceTool(identity.userId, identity.draftId, dub, randomUUID());
+    f.state.providerJobId = randomUUID();
+    await f.service.submitConsumerVoiceToolJob(scoped(oversized.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+    f.state.pollRaw = completed(f);
+    f.state.collectorError = new original.ConsumerOriginalError("too_large");
+    const settled = await f.service.pollConsumerVoiceTool(scoped(oversized.id));
+    expect(settled.job).toMatchObject({ status: "failed", failureCode: "invalid_result", providerJobId: f.state.providerJobId });
+    expect(settled).toMatchObject({ collection: { code: "too_large" } });
+    await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [oversized.id] });
+    expect((await f.service.pollConsumerVoiceTool(scoped(oversized.id))).job.status).toBe("failed");
+    expect(f.state.collectCount).toBe(3);
+    f.state.collectorError = undefined;
   }));
 
 test("with the analysis flag on, an analysis is quoted, submitted and completed as a bounded report on the job, never as a media original", async () =>

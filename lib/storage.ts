@@ -504,6 +504,33 @@ return await withRecoveryActivity('storage', async () => {
 });
 }
 
+/**
+ * A local file, whole or one inclusive byte range, as a web stream that an
+ * aborted request ends quietly.
+ *
+ * When the viewer leaves mid-read, `signal` destroys the read with an
+ * AbortError and toWeb hands it to the reader, which Next takes as a
+ * hang-up. But toWeb only listens to a read that is still open when it is
+ * wrapped, and a signal that fired first (the viewer left while the route
+ * was still looking the row up) makes createReadStream destroy the read
+ * before returning it. That AbortError used to be emitted with nothing
+ * listening — an uncaughtException in the server — while the reader got an
+ * empty body that looked complete. The listener only covers that window:
+ * every error on a live read still reaches the reader through toWeb.
+ */
+async function localFileStream(
+  file: string, range: ByteRange | null | undefined, signal?: AbortSignal
+): Promise<ReadableStream<Uint8Array>> {
+  const { createReadStream } = await import("node:fs");
+  const read = createReadStream(file, { ...(range ? { start: range.start, end: range.end } : {}), signal });
+  read.on("error", () => {});
+  if (read.destroyed) {
+    const reason = read.errored;
+    return new ReadableStream<Uint8Array>({ start(controller) { controller.error(reason); } });
+  }
+  return Readable.toWeb(read) as ReadableStream<Uint8Array>;
+}
+
 /** Streams a stored upload out without buffering — a 2GB download must flow
  *  through the function, never sit in it. */
 export async function openUploadStream(
@@ -526,13 +553,12 @@ export async function openUploadStream(
     const size = range ? range.end - range.start + 1 : knownLength ? Number(length) : null;
     return { stream: found.stream as ReadableStream, size };
   }
-  const { createReadStream } = await import("node:fs");
   const { stat } = await import("node:fs/promises");
   const file = path.join(UPLOAD_DIR, `${uploadId}.${ext}`);
   const st = await stat(file);
   if(range && st.size!==range.total)throw new Error('Upload length changed');
   return {
-    stream: Readable.toWeb(createReadStream(file, {...(range?{start:range.start,end:range.end}:{}),signal})) as ReadableStream,
+    stream: await localFileStream(file, range, signal),
     size: range ? range.end-range.start+1 : st.size,
   };
 }
@@ -547,9 +573,51 @@ export async function openVideoStream(genId: string, range: ByteRange, signal?: 
     if ((encoding && encoding.trim().toLowerCase() !== 'identity') || found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`) { await found.stream.cancel().catch(()=>{}); throw new Error("Storage did not honor the requested original range"); }
     return found.stream;
   }
-  const {createReadStream} = await import("node:fs");
   const {stat} = await import("node:fs/promises");
   const file = path.join(LOCAL_DIR, `${genId}.mp4`);
   if ((await stat(file)).size !== range.total) throw new Error("Original video length changed");
-  return Readable.toWeb(createReadStream(file,{start:range.start,end:range.end,signal})) as ReadableStream<Uint8Array>;
+  return localFileStream(file, range, signal);
+}
+
+/** The stored size of a retained original, or null when there is no such object. */
+export async function originalSize(kind: OriginalKind, genId: string): Promise<number | null> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
+  if (usingCloud()) return (await cloudBackend().head(originalPath(kind, genId)))?.size ?? null;
+  try {
+    return (await stat(path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`))).size;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A retained original, whole or one byte range of it, streamed without
+ * buffering — for a route that answers Range itself (iOS Safari will not
+ * play a video from a server that never answers 206). `size` is the length
+ * of the body when it is known, never a guess.
+ */
+export async function openOriginalStream(
+  kind: OriginalKind, genId: string, range?: ByteRange | null, signal?: AbortSignal,
+): Promise<{ stream: ReadableStream<Uint8Array>; size: number | null }> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
+  if (usingCloud()) {
+    const found = await cloudBackend().get(originalPath(kind, genId), { ...(range ? { range } : {}), signal, identity: true });
+    if (!found) throw new Error("blob not found");
+    const encoding = found.headers.get("content-encoding");
+    const identity = !encoding || encoding.trim().toLowerCase() === "identity";
+    if (range && (!identity || found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`)) {
+      await found.stream.cancel().catch(() => {});
+      throw new Error("Storage did not honor the requested media range");
+    }
+    const length = found.headers.get("content-length");
+    const known = identity && length !== null && /^\d+$/.test(length) && Number.isSafeInteger(Number(length));
+    return { stream: found.stream, size: range ? range.end - range.start + 1 : known ? Number(length) : null };
+  }
+  const file = path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`);
+  const st = await stat(file);
+  if (range && st.size !== range.total) throw new Error("Original length changed");
+  return {
+    stream: await localFileStream(file, range, signal),
+    size: range ? range.end - range.start + 1 : st.size,
+  };
 }
