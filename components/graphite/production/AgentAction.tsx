@@ -1,5 +1,6 @@
 "use client";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
+import { pricedAgentText } from "./agent-price";
 import type { AgentQuote } from "./use-agent-runs";
 
 /**
@@ -11,14 +12,13 @@ export function AgentAction({ id, estimateLabel, startLabel, quote, busy, blocke
   onEstimate: () => void; onStart: () => void; onChange: () => void; describe?: (quote: AgentQuote) => string; secondary?: boolean;
 }) {
   const credits = quote ? quote.value.estimateCredits.toLocaleString() : "";
-  /* A model on the workspace's own key is priced in dollars: every quote line names that ceiling. */
-  const dollars = quote?.value.estimateUsd != null ? ` · $${quote.value.estimateUsd.toFixed(4)} ceiling` : "";
-  const line = quote ? `${describe ? describe(quote) : `${quote.value.calls} agent steps · ${thinkingModelName(quote.input.model)} · up to ${credits} credits`}${dollars}` : "";
+  /* A model on the workspace's own key is priced in dollars: the button and the line name that ceiling, never "0 credits". */
+  const line = quote ? pricedAgentText(describe ? describe(quote) : `${quote.value.calls} agent steps · ${thinkingModelName(quote.input.model)} · up to ${credits} credits`, quote.value, true) : "";
   return (
     <div className="gx-gen-enhance">
       {quote ? (
         <>
-          <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(blocked)} onClick={onStart} data-testid={`${id}-start`}>{busy || startLabel(credits)}</button>
+          <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(blocked)} onClick={onStart} data-testid={`${id}-start`}>{busy || pricedAgentText(startLabel(credits), quote.value)}</button>
           <button type="button" className="gx-hbtn" onClick={onChange}>Change</button>
           <span className="gx-hint" data-testid={`${id}-quote`}>{line}</span>
         </>
