@@ -32,6 +32,7 @@ const labels: Record<string, string> = {
   "session.workspace_changed": "Switched workspace",
   "account.password_reset": "Reset password",
   "account.mfa_enabled": "Enabled two-step sign-in",
+  "account.mfa_replaced": "Replaced authenticator",
   "account.mfa_disabled": "Disabled two-step sign-in",
   "account.recovery_codes_rotated": "Replaced recovery codes",
   "account.recovery_code_used": "Used a recovery code",
