@@ -14,7 +14,8 @@ import { generationRequestBody, resolveGenerationReferences } from "@/lib/workbe
 import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { referenceVideoModels } from "@/lib/workbench/reference-ad";
-import type { ModelDef } from "@/lib/models";
+import { displayModelName, type ModelDef } from "@/lib/models";
+import { NumberDraftInput } from "./NumberDraftInput";
 import type { MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
 import {
   pendingGenerationKey,
@@ -144,7 +145,9 @@ export function GenerationDialog({
       fingerprint?: string;
     } | null>(null),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(initial.error);
+    [error, setError] = useState(initial.error),
+    /** The preset's own engine, when this workspace has not connected it and another engine stands in. */
+    [missingEngine, setMissingEngine] = useState("");
   const model = models.find((m) => m.id === modelId && m.kind === kind);
   const boundRefs = useMemo(() => target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
@@ -168,11 +171,15 @@ export function GenerationDialog({
       .then((d) => {
         const available = initial.pending ? d.models : referenceVideoModels(d.models, videoReferenceKinds.split(','));
         setModels(available);
-        const preferred = target.options?.modelId ? available.find(m => m.id === target.options?.modelId) : undefined;
-        const first = preferred || (!target.options?.modelId ? (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
+        const wanted = target.options?.modelId;
+        const preferred = wanted ? available.find(m => m.id === wanted) : undefined;
+        /* A preset (Marketing Studio, a template) names its engine; when this workspace has not
+           connected it, the first engine of the same kind stands in — named, never silently. */
+        const first = preferred || (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
           || available.find(m => m.kind === initialKind && !m.soulIdentity)
-          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined) : undefined);
+          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined);
         if (first && !initial.pending && initialKind !== "audio") {
+          if (wanted && !preferred) setMissingEngine(wanted);
           setKind(first.kind);
           setModelId(first.id);
           setResolution(target.options?.resolution && first.resolutions.includes(target.options.resolution) ? target.options.resolution : first.resolutions[0]);
@@ -259,6 +266,10 @@ export function GenerationDialog({
   function acceptedSettings(attempt: PendingGeneration) {
     if(attempt.endpoint==='/api/audio')return undefined;
     const body=JSON.parse(attempt.body);
+    /* A stand-in engine made this take (the preset's own is not connected here): the preset keeps
+       its engine and settings, so it is itself again once that engine is connected. */
+    const wanted=target.options?.modelId;
+    if(wanted&&body.model!==wanted&&models.length&&!models.some(m=>m.id===wanted))return {prompt:String(body.prompt??target.prompt),options:target.options!};
     return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength}};
   }
   async function submit() {
@@ -394,6 +405,7 @@ export function GenerationDialog({
               ))}
             </select>
           </label>}
+          {kind !== "audio" && missingEngine && model && <p role="note" className="muted small-copy">{displayModelName(missingEngine)} isn’t connected in this workspace, so this take uses {model.label}.</p>}
           {kind === "audio" && <div className="generation-options">
             <label className="field-label">Audio type<select aria-label="Audio type" value={audioTask} disabled={busy || !!pending} onChange={event => {
               const task = event.target.value as NodeAudioTask; setAudioTask(task); setAudioSeconds(task === "music" ? 30 : 10);
@@ -405,8 +417,8 @@ export function GenerationDialog({
               <label className="field-label">Speech model<select aria-label="Speech model" value={speechModel || audioSetup?.defaultSpeechModel || ""} disabled={busy || !!pending} onChange={event => setSpeechModel(event.target.value)}>
                 {audioSetup?.speechModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select></label>
-            </> : <label className="field-label">Seconds<input aria-label="Audio duration" type="number" min={audioTask === "music" ? 10 : 0.5} max={audioTask === "music" ? 300 : 30} step={audioTask === "music" ? 1 : 0.5}
-              value={audioSeconds} disabled={busy || !!pending} onChange={event => setAudioSeconds(Math.max(audioTask === "music" ? 10 : 0.5, Math.min(audioTask === "music" ? 300 : 30, Number(event.target.value) || 10)))} /></label>}
+            </> : <label className="field-label">Seconds<NumberDraftInput aria-label="Audio duration" min={audioTask === "music" ? 10 : 0.5} max={audioTask === "music" ? 300 : 30} step={audioTask === "music" ? 1 : 0.5}
+              value={audioSeconds} disabled={busy || !!pending} onCommit={setAudioSeconds} /></label>}
             {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
           </div>}
           {kind !== "audio" && model?.marketing && <div className="generation-options">

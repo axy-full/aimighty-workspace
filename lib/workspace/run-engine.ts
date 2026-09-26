@@ -135,7 +135,9 @@ const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 let counter = 0;
-const defaultId = () => `run-${Date.now().toString(36)}-${(counter += 1)}`;
+/* A run id also names its paid requests (plan-helpers › idempotencyKey), so two tabs must never mint the same one. */
+const defaultId = () =>
+  `run-${Date.now().toString(36)}-${(counter += 1)}-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10)}`;
 
 export class AtomikRunEngine {
   private state: EngineState = {

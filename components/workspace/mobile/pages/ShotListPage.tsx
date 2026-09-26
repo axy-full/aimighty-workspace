@@ -7,6 +7,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { Asset } from "@/lib/workbench/studio";
 import { STATUS, type Status } from "../../ui/StatusPill";
 import { useRig } from "../../rig/RigProvider";
+import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 
 /**
  * Shot list (05-mobile, template 1): a 62×40 thumb carrying the shot number,
@@ -57,9 +58,10 @@ export function ShotListPage() {
   const rig = useRig();
   const { shots, project, selected } = rig;
 
-  if (rig.status === "loading" || (rig.status === "idle" && !project)) return <p className="pxm-empty pxm-pad-x">Loading shots…</p>;
-  if (rig.status === "error") return <p className="pxm-empty pxm-pad-x" role="alert">{rig.error}</p>;
-  if (!project) return <p className="pxm-empty pxm-pad-x">Open a project to see its shots.</p>;
+  const load = rigLoadState({ status: rig.status, hasProject: !!project, projectId: ws.state.projectId });
+  if (load === "loading") return <p className="pxm-empty pxm-pad-x" role="status">Loading shots…</p>;
+  if (load === "error") return <p className="pxm-empty pxm-pad-x" role="alert">{rig.error}</p>;
+  if (!project) return <p className="pxm-empty pxm-pad-x">{RIG_NO_PROJECT}</p>;
 
   return (
     <div className="pxm-pad-x pxm-pad-top pxm-rows" data-template="shots" data-testid="mobile-shot-list">

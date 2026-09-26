@@ -14,7 +14,8 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { findProjectTake, refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { TranscribePanel } from "./TranscribePanel";
@@ -57,6 +58,8 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  */
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
+  /* The same store the shell reads `items` from: Load more and Try again here fill Takes and the Library together. */
+  const library = useProjectLibrary(scope, projectId);
   const { toast, state } = useWorkspace();
   const shell = useShell();
   const project = draft.project;
@@ -243,7 +246,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">All assets</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{items.length} in this project</span>
+          <span className="gx-hint">{items.length}{library.hasMore ? "+" : ""} in this project</span>
         </div>
         {groups.length ? groups.map((group) => (
           <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
@@ -258,7 +261,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             ))}
             </div>
           </div>
-        )) : <p className="gx-empty">No assets yet.</p>}
+        )) : library.state.status === "error" ? null : <p className="gx-empty">No assets yet.</p>}
+        <LibraryMore library={library} testId="takes-more" />
       </section>
     </div>
   );

@@ -12,6 +12,11 @@ export const FRESH_FOLLOW_UP_MS = 1500;
  * project is never downloaded twice.
  */
 let saved: { id: string; revision: number; project: Project } | null = null;
+/** The same record for the shell's own re-read (lib/workspace/data), so neither downloads a copy the other already has. */
+export const knownCopy = () => saved;
+export function rememberCopy(id: string, revision: unknown, project: Project) {
+  if (typeof revision === "number") saved = { id, revision, project };
+}
 /** What a list read decides: the saved copy still stands, or the project must be read in full. */
 export function freshRead(id: string, listed: { id?: unknown; revision?: unknown }[] | undefined, known: typeof saved): "known" | "read" {
   const row = listed?.find((p) => p.id === id);

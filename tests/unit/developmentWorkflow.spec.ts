@@ -121,6 +121,20 @@ test('duplicate submissions and worker retries reserve once and execute each pai
   });
 });
 
+test('ten newer agent runs of another kind never push a saved breakdown out of Brief & Script', async () => {
+  await runInTenant(workspace(), async () => {
+    const { project, request } = await fixture('screenplay'), h = harness();
+    const breakdown = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
+    for (let index = 0; index < 10; index++) {
+      await new Promise(resolve => setTimeout(resolve, 3));
+      await prepareDevelopmentJob(await approve({ ...request, requestId: randomUUID(), kind: 'idea' }, h.deps), 'owner', undefined, h.deps);
+    }
+    const listed = await listDevelopmentJobs('owner', project.id, undefined, h.deps);
+    expect(listed.filter(job => job.kind === 'idea')).toHaveLength(10);
+    expect(listed.filter(job => job.kind === 'screenplay').map(job => job.id)).toEqual([breakdown.job.id]);
+  });
+});
+
 test('a stale quote or another owner cannot submit or access the saved source', async () => {
   await runInTenant(workspace(), async () => {
     const { request, project } = await fixture(), h = harness(), approved = await approve(request, h.deps);

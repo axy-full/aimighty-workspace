@@ -97,3 +97,48 @@ test("the minutes file is byte-identical markdown named by day and session", asy
   expect(file.type).toBe("text/markdown");
   expect(await file.text()).toBe("# Minutes\n\n- one\n");
 });
+
+test("a room's rounds go to the model it was priced for, not whatever XAI_MODEL says now", async () => {
+  const { askGrok } = await import("../../lib/crew/xai");
+  const { quoteRound } = await import("../../lib/crew/round");
+  const saved = { mock: process.env.ENGINE_MOCK, key: process.env.XAI_API_KEY, model: process.env.XAI_MODEL, fetch: globalThis.fetch };
+  const sent: string[] = [];
+  /* No request leaves the test: fetch is answered here, with a fake key. */
+  globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+    sent.push(String(JSON.parse(String(init?.body)).model));
+    return new Response(JSON.stringify({ choices: [{ message: { content: "24mm." } }], usage: { prompt_tokens: 10, completion_tokens: 2 } }), { status: 200 });
+  }) as typeof fetch;
+  process.env.ENGINE_MOCK = "0";
+  process.env.XAI_API_KEY = "test-key-not-real";
+  process.env.XAI_MODEL = "grok-newer";
+  try {
+    const answer = await askGrok({ system: "s", user: "u", phase: "propose", effort: "high", mock: () => "", model: "grok-4.6" });
+    expect(answer.ok).toBe(true);
+    await askGrok({ system: "s", user: "u", phase: "propose", effort: "high", mock: () => "" });
+    expect(sent).toEqual(["grok-4.6", "grok-newer"]);
+    const session = { id: "s", projectId: "p", goal: "Find the ending", context: { brief: false, script: false, boards: false, cast: false, rig: false }, model: "grok-4.6", roundsRun: 0, spendCr: null, spendUsd: 0, createdBy: "u", createdAt: 0 };
+    const quote = quoteRound({ session, project: newProject("Dawn"), active: [{ id: "m", name: "DOP", department: "Camera", stance: "Lenses.", effort: "high", color: "#fff", presetId: "dop", active: true, isChair: true, position: 0 }] as never, transcriptChars: 0, rate: { inputUsdPerToken: 2 / 1e6, outputUsdPerToken: 6 / 1e6 } });
+    expect(quote.model).toBe("grok-4.6");
+  } finally {
+    globalThis.fetch = saved.fetch;
+    for (const [key, value] of [["ENGINE_MOCK", saved.mock], ["XAI_API_KEY", saved.key], ["XAI_MODEL", saved.model]] as const)
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
+});
+
+test("a room whose engine can no longer be priced says so, and names the engine to move it to", async () => {
+  const { roomRate } = await import("../../lib/crew/round");
+  const saved = process.env.XAI_MODEL;
+  process.env.XAI_MODEL = "grok-newer";
+  try {
+    const rate = { inputUsdPerToken: 1 / 1e6, outputUsdPerToken: 2 / 1e6 };
+    // Still priced: the room keeps its own engine and its own rate.
+    expect(await roomRate("grok-4.6", async (model) => (model === "grok-4.6" ? rate : null))).toBe(rate);
+    // The deployment moved on and the room's engine has no price: the room says where to move, never switches by itself.
+    await expect(roomRate("grok-4.6", async () => null)).rejects.toMatchObject({ status: 409, message: "This room runs on grok-4.6, which can no longer be priced. Move it to grok-newer to run." });
+    // The current engine itself unpriced is the old refusal.
+    await expect(roomRate("grok-newer", async () => null)).rejects.toMatchObject({ status: 503, message: "This engine cannot be priced right now, so the room will not run." });
+  } finally {
+    if (saved === undefined) delete process.env.XAI_MODEL; else process.env.XAI_MODEL = saved;
+  }
+});

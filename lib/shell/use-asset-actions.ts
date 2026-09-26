@@ -5,7 +5,7 @@ import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { SAY, assetRef, referenceRole, retryPreset, type AssetRef } from "./assets";
+import { SAY, assetRef, referenceRole, retryBlock, retryPreset, type AssetRef } from "./assets";
 import { sendGenPreset } from "./gen-preset";
 import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
@@ -132,6 +132,8 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     const entry = find(id);
     if (!entry) return;
     if (entry.asset.origin !== "generation") { ws.toast("An upload was not generated; there is nothing to retry."); return; }
+    const blocked = retryBlock(entry.asset.value);
+    if (blocked) { ws.toast(blocked); return; }
     /* Gen applies it at once when it is on screen, or when it opens. */
     const preset = retryPreset(entry.asset.value);
     sendGenPreset(preset);
