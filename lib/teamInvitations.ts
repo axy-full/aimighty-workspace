@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
   accountDbReady,
   accountTransaction,
@@ -147,40 +147,157 @@ export async function assertInviteSeat(ws: TenantWorkspace) {
   const layer = await getPlatformLayer();
   await accountTransaction((tx) => ensureMemberSeat(tx, ws, layer));
 }
+/** A new account from an invitation link that did not come from its email. */
+export class MailboxProofNeeded extends AccountError {
+  constructor() {
+    super("Open this invitation from its email to choose a password.", 403);
+    this.name = "MailboxProofNeeded";
+  }
+}
 /* Invitation emails carry a workspace's own words from Particl's sending
-   domain, so each workspace and each address gets a small fixed number. */
+   domain, so each workspace, each address within a workspace, and each
+   address across the platform gets a small fixed number. The per-address
+   count is kept per workspace so one workspace can never use up another's;
+   the platform-wide count is only a harassment ceiling above that. */
 export const INVITE_MAIL_LIMITS = {
   perWorkspaceHour: 20,
   perAddressDay: 3,
+  perAddressPlatformDay: 20,
   perInvitation: 5,
 } as const;
-export async function takeInviteMailSlot(workspaceId: string, email: string) {
-  const bounded = async (
-    key: string,
-    limit: number,
-    windowMs: number,
-    message: string,
-  ) => {
+type LimitSlot = { key: string; bucket: number };
+async function giveBackSlots(slots: LimitSlot[]) {
+  if (!slots.length) return;
+  await accountTransaction(async (tx) => {
+    for (const slot of slots)
+      await tx.execute({
+        sql: "UPDATE account_action_limits SET n=n-1 WHERE key=? AND bucket=? AND n>0",
+        args: [slot.key, slot.bucket],
+      });
+  });
+}
+const addressKey = (email: string) =>
+  createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+/** One email's worth of every invitation bucket, or none of them: a refused
+ * bucket gives back what this call took. `release` returns the slots when the
+ * email never left. */
+export async function takeInviteMailSlot(
+  workspaceId: string,
+  email: string,
+): Promise<{ release: () => Promise<void> }> {
+  const address = addressKey(email);
+  const buckets = [
+    {
+      key: `team-invite-mail:${workspaceId}`,
+      limit: INVITE_MAIL_LIMITS.perWorkspaceHour,
+      windowMs: 3600_000,
+      message: `This workspace has sent ${INVITE_MAIL_LIMITS.perWorkspaceHour} invitations this hour. Try again later.`,
+    },
+    {
+      key: `team-invite-mail-to:${workspaceId}:${address}`,
+      limit: INVITE_MAIL_LIMITS.perAddressDay,
+      windowMs: 86400_000,
+      message: `That address has been sent ${INVITE_MAIL_LIMITS.perAddressDay} invitations from this workspace today. Copy the invitation link instead.`,
+    },
+    {
+      key: `team-invite-mail-to:${address}`,
+      limit: INVITE_MAIL_LIMITS.perAddressPlatformDay,
+      windowMs: 86400_000,
+      message:
+        "That address has had too many invitations today. Copy the invitation link instead.",
+    },
+  ];
+  const taken: LimitSlot[] = [];
+  for (const bucket of buckets) {
+    const slot = {
+      key: bucket.key,
+      bucket: Math.floor(now() / bucket.windowMs),
+    };
     try {
-      await takeAccountLimit(key, limit, windowMs);
+      await takeAccountLimit(bucket.key, bucket.limit, bucket.windowMs);
+      taken.push(slot);
     } catch (error) {
-      if (error instanceof AccountError && error.status === 429)
-        throw new AccountError(message, 429);
+      // A refusal is still counted by takeAccountLimit; this call sent nothing.
+      const refused = error instanceof AccountError && error.status === 429;
+      await giveBackSlots(refused ? [...taken, slot] : taken).catch(() => {});
+      if (refused) throw new AccountError(bucket.message, 429);
       throw error;
     }
+  }
+  let released = false;
+  return {
+    release: async () => {
+      if (released) return;
+      released = true;
+      await giveBackSlots(taken);
+    },
   };
-  await bounded(
-    `team-invite-mail:${workspaceId}`,
-    INVITE_MAIL_LIMITS.perWorkspaceHour,
-    3600_000,
-    `This workspace has sent ${INVITE_MAIL_LIMITS.perWorkspaceHour} invitations this hour. Try again later.`,
-  );
-  await bounded(
-    `team-invite-mail-to:${createHash("sha256").update(email.trim().toLowerCase()).digest("hex")}`,
-    INVITE_MAIL_LIMITS.perAddressDay,
-    86400_000,
-    `That address has been sent ${INVITE_MAIL_LIMITS.perAddressDay} invitations today. Copy the invitation link instead.`,
-  );
+}
+function mailboxKey() {
+  const secret = process.env.KEYRING_SECRET;
+  if (!secret && process.env.NODE_ENV === "production")
+    throw new Error("KEYRING_SECRET is not set.");
+  return createHash("sha256")
+    .update("particl-invite-mailbox:" + (secret ?? "particl-dev-keyring"))
+    .digest();
+}
+/** Proof that someone opened the invitation from its email. It is derived
+ * from the code with a server secret, so the inviter, who can read the code,
+ * cannot make it: it only ever travels in the email to the invited address. */
+export function mailboxProof(code: string) {
+  return createHmac("sha256", mailboxKey()).update(code).digest("base64url");
+}
+export function mailboxProven(code: string, proof: unknown) {
+  if (typeof proof !== "string" || !proof || proof.length > 128) return false;
+  const want = Buffer.from(mailboxProof(code)),
+    got = Buffer.from(proof);
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+/** The link the invited address receives, carrying its mailbox proof. */
+export function invitationMailLink(origin: string, code: string) {
+  return `${origin}/invite/${encodeURIComponent(code)}?m=${mailboxProof(code)}`;
+}
+/** Email one open invitation of this workspace: its seat (for a re-send), the
+ * per-invitation cap and the mail slots are all checked before anything is
+ * sent, and the slots come back when the email never left. */
+export async function mailWorkspaceInvite(input: {
+  ws: TenantWorkspace;
+  code: string;
+  origin: string;
+  deliver: (to: string, link: string) => Promise<unknown>;
+  checkSeat?: boolean;
+}) {
+  await accountDbReady();
+  const iv = (
+    await platformDb().execute({
+      sql: "SELECT email,send_count,used_at,expires_at FROM workspace_invites WHERE code=? AND workspace_id=?",
+      args: [input.code, input.ws.id],
+    })
+  ).rows[0];
+  if (!iv || iv.used_at) throw new AccountError("No such invitation.", 404);
+  if (Number(iv.expires_at) <= now())
+    throw new AccountError(
+      "That invitation has expired — create a new one.",
+      400,
+    );
+  if (Number(iv.send_count ?? 0) >= INVITE_MAIL_LIMITS.perInvitation)
+    throw new AccountError(
+      `This invitation has been emailed ${INVITE_MAIL_LIMITS.perInvitation} times. Copy its link instead.`,
+      429,
+    );
+  if (input.checkSeat) await assertInviteSeat(input.ws);
+  const email = String(iv.email),
+    slot = await takeInviteMailSlot(input.ws.id, email);
+  try {
+    await input.deliver(email, invitationMailLink(input.origin, input.code));
+  } catch (error) {
+    await slot.release().catch(() => {});
+    throw error;
+  }
+  await platformDb().execute({
+    sql: "UPDATE workspace_invites SET sent_at=?,send_count=send_count+1 WHERE code=? AND workspace_id=?",
+    args: [now(), input.code, input.ws.id],
+  });
 }
 export async function acceptWorkspaceInvitation(input: {
   code: string;
@@ -189,6 +306,10 @@ export async function acceptWorkspaceInvitation(input: {
   acceptedPolicy?: boolean;
   signedInAccountId?: string;
   signedInSession?: string;
+  /** From the emailed link; see mailboxProof. */
+  mailboxProof?: string;
+  /** Wherever invitations can be emailed, a new account needs the proof. */
+  requireMailboxProof?: boolean;
 }) {
   const layer = await getPlatformLayer();
   const joined = await accountTransaction(async (tx) => {
@@ -259,6 +380,13 @@ export async function acceptWorkspaceInvitation(input: {
           "This address must create its account from the sign-up page first.",
           403,
         );
+      /* Nor does the link alone make an account for an address its opener may
+         not own. Where mail works, the password is chosen from the email. */
+      if (
+        input.requireMailboxProof &&
+        !mailboxProven(input.code, input.mailboxProof)
+      )
+        throw new MailboxProofNeeded();
       if (!input.acceptedPolicy)
         throw new AccountError(
           "Read the content policy and terms, and tick the box.",

@@ -6,8 +6,8 @@ import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
-import { accountFailure } from "@/lib/accountDb";
-import { createWorkspaceInvite, takeInviteMailSlot } from "@/lib/teamInvitations";
+import { accountFailure, AccountError } from "@/lib/accountDb";
+import { createWorkspaceInvite, mailWorkspaceInvite } from "@/lib/teamInvitations";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 7;
@@ -94,15 +94,17 @@ export const POST = withTenant(async function POST(req: Request) {
   // Refused before anything is written when the plan has no seat left for it.
   try { await createWorkspaceInvite({ ws, code, email, name, role, createdBy: got.user.id, expiresAt }); }
   catch (error) { return accountFailure(error); }
-  let sent = false; let mailError: string | null = null;
+  let sent = false; let mailError: string | null = null; let mailLimited = false;
   if (mailing) {
     try {
-      await takeInviteMailSlot(ws.id, email);
       const origin = inviteOrigin(req);
-      await sendMail({ to: email, ...inviteEmail({ name, inviter: `${got.user.name} (${ws.name})`, link: `${origin}/invite/${code}`, role, expiresAt, origin }) });
-      await platformDb().execute({ sql: `UPDATE workspace_invites SET sent_at = ?, send_count = send_count + 1 WHERE code = ?`, args: [now(), code] });
+      await mailWorkspaceInvite({ ws, code, origin, deliver: (to, link) => sendMail({ to, ...inviteEmail({ name, inviter: `${got.user.name} (${ws.name})`, link, role, expiresAt, origin }) }) });
       sent = true;
-    } catch (e) { mailError = (e as Error).message; }
+    } catch (e) {
+      mailError = (e as Error).message;
+      // A mail limit is not a delivery failure: its words go to the admin as they are.
+      mailLimited = e instanceof AccountError && e.status === 429;
+    }
   }
-  return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS, sent, mailError });
+  return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS, sent, mailError, mailLimited });
 }, { requireRequestScope: true });
