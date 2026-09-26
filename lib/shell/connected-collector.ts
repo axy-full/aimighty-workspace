@@ -2,7 +2,7 @@ import {
   CONNECTED_GENERATION_ENDPOINT, connectedRecoverable, connectedStatusRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
 import { checkingProblem, resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
-import { presentTimeout } from "@/lib/poll";
+import { POLL, pollAfter, pollDelay, presentTimeout, type PollRate } from "@/lib/poll";
 
 /**
  * Connected-account renders finish even when nobody is looking.
@@ -33,21 +33,50 @@ import { presentTimeout } from "@/lib/poll";
  * a read that would fail the same way every time (a job made on an earlier
  * account connection, or one that is gone) stops at once; and a job given up
  * on — here, or by its own view — is taken up again by a later listing only
- * once the listing shows it moved. Its pace is its own (at least 20 s between
- * reads, the reply's pollAfterSeconds when longer), and like every status
- * read (lib/poll) it asks nothing while the tab is hidden or offline: the read
- * that fell due is made when the page is back.
+ * once the listing shows it moved.
+ *
+ * Each job keeps lib/poll's rules at a slower rate, since nobody is waiting on
+ * these reads: about 20 s after a read, then 1.5× longer each read that finds
+ * it where it was, up to a minute; ±20% jitter, so jobs and tabs do not ask in
+ * step; the reply's pollAfterSeconds as a floor; a failed read waits a minute,
+ * then twice as long each time, up to five. A read that finds the job moved on
+ * (its status changed) starts the pace over, and so does the person opening a
+ * page of the project or coming back to the tab (the shell lists the project
+ * again). A job a view lets go of is first read one pace after the view's own
+ * last read, never inside the account's window. Nothing is asked while the tab
+ * is hidden or offline: the read that fell due is made when the page is back.
  */
 export const COLLECT_POLL_MS = 20_000;
-/** After a failed read (network, rate limit): wait this long before the next. */
+/** After a failed read (network, rate limit): wait this long before the next, and twice as long after each further one. */
 export const COLLECT_BACKOFF_MS = 60_000;
 /** A job the account has not accepted yet (dispatching, uncertain) is read this many times, then left until a listing shows it moved. */
 export const COLLECT_UNSETTLED_POLLS = 6;
+/** The pace between good reads (lib/poll's rules): 20 s, ×1.5 while nothing moves, up to a minute; a hint may hold a read back up to five. */
+export const COLLECT_PACE: PollRate = { ...POLL, startMs: COLLECT_POLL_MS, capMs: 60_000, hintCapMs: 5 * 60_000, missCapMs: 5 * 60_000 };
+/** The pace after failed reads in a row: a minute, doubling, up to five. */
+const COLLECT_MISS_PACE: PollRate = { ...COLLECT_PACE, startMs: COLLECT_BACKOFF_MS, factor: 2, capMs: 5 * 60_000 };
+
+/** A view's last read of a job it lets go of: when it was answered, and the account's pollAfterSeconds then. */
+export type LastRead = { at: number; hintSeconds: number | null };
 
 type Tracked = {
   draftId: string; nextAt: number; unsettled: number;
   /** Handed over by a view mid-submit: the server may not have seen the submit yet, so "quoted" is not final. */
   handed: boolean;
+  /** Its status when last listed or read: a read that finds another one starts the pace over. */
+  status: string | null;
+  /** Which wait of the pace follows its next good read: 0 (20 s) when the pace has just started, then 1.5× longer each. */
+  step: number;
+  /** Failed reads in a row. */
+  misses: number;
+  /** The account's pollAfterSeconds from the last good read: the next read never lands inside it. */
+  hint: number | null;
+  /** When it was last asked about (here, or by the view that let it go): a pace that starts over counts from here. */
+  lastAt: number;
+  /** A read of it is out. */
+  reading: boolean;
+  /** The pace started over while a read was out: that read's reply counts as the first. */
+  fresh: boolean;
 };
 type Timer = unknown;
 /** What a page shows about one job: its latest state, whether it is still being read (here, or by its own view), and a failed read in the product's words. */
@@ -63,6 +92,8 @@ export type CollectorDeps = {
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => Timer;
   clearTimer?: (timer: Timer) => void;
+  /** The jitter's draw, 0 ≤ n < 1 (Math.random). */
+  random?: () => number;
 };
 
 export class ConnectedCollector {
@@ -71,6 +102,8 @@ export class ConnectedCollector {
   /** The job the shell's strip shows in flight: a Generate composer is polling it. */
   private shown: string | null = null;
   private timer: Timer = null;
+  /** When the timer is due (this.now()'s clock). */
+  private timerAt = 0;
   private reading = false;
   /** A 401/403 (signed out, not the owner, or the account needs reconnecting): nothing here can read jobs, so it stops asking. */
   private disabled = false;
@@ -85,12 +118,14 @@ export class ConnectedCollector {
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => Timer;
   private readonly clearTimer: (timer: Timer) => void;
+  private readonly random: () => number;
 
   constructor(private readonly deps: CollectorDeps) {
     this.now = deps.now ?? Date.now;
     /* Never while the tab is hidden or offline (lib/poll's presentTimeout returns its own cancel). */
     this.setTimer = deps.setTimer ?? ((fn, ms) => presentTimeout(fn, ms));
     this.clearTimer = deps.clearTimer ?? ((timer) => (timer as () => void)());
+    this.random = deps.random ?? Math.random;
   }
 
   /** The ids this collector is following (for tests and the shell). */
@@ -123,13 +158,16 @@ export class ConnectedCollector {
     this.changed();
   }
 
-  /** The view let go (it settled the job, or it unmounted): a job still in flight is followed from here. */
-  release(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null) {
+  /**
+   * The view let go (it settled the job, or it unmounted): a job still in
+   * flight is followed from here — one pace after the view's own `last` read.
+   */
+  release(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null, last: LastRead | null = null) {
     if (!job) return;
     this.watched.delete(job.id);
     if (connectedRecoverable(job)) {
       /* Its view gave up on it (a read that fails the same way every time): not taken up here either. */
-      if (this.given.get(job.id) !== job.status) { this.given.delete(job.id); this.adopt(draftId, job.id, true); }
+      if (this.given.get(job.id) !== job.status) { this.given.delete(job.id); this.adopt(draftId, job.id, true, job.status, last); }
     }
     /* Settled by its view, which showed it: nothing left for a page to pick up. */
     else { this.jobs.delete(job.id); this.seen.delete(job.id); }
@@ -149,9 +187,13 @@ export class ConnectedCollector {
    * collector follows is read from here again; `forget` drops one that was
    * never sent or that the server does not know.
    */
-  unwatch(id: string, forget = false) {
+  unwatch(id: string, forget = false, last: LastRead | null = null) {
     this.watched.delete(id);
     if (forget) { this.jobs.delete(id); this.seen.delete(id); }
+    else {
+      const tracked = this.jobs.get(id);
+      if (tracked && last) this.takeOver(tracked, last);
+    }
     this.changed();
     this.reschedule();
   }
@@ -171,16 +213,29 @@ export class ConnectedCollector {
     this.reschedule();
   }
 
-  adopt(draftId: string, id: string, handed = false) {
+  /**
+   * Follow a sent job (`status` as last seen): read at once — or, taken over
+   * from a view that was reading it, one pace after the view's `last` read.
+   */
+  adopt(draftId: string, id: string, handed = false, status: string | null = null, last: LastRead | null = null) {
     if (this.disabled) return;
-    const tracked = this.jobs.get(id);
-    if (tracked) { tracked.handed ||= handed; return; }
-    this.jobs.set(id, { draftId, nextAt: this.now(), unsettled: 0, handed });
+    let tracked = this.jobs.get(id);
+    if (tracked && !last) { tracked.handed ||= handed; return; }
+    if (tracked) { tracked.handed ||= handed; tracked.status = status ?? tracked.status; }
+    else {
+      tracked = { draftId, nextAt: this.now(), unsettled: 0, handed, status, step: 0, misses: 0, hint: null, lastAt: this.now(), reading: false, fresh: false };
+      this.jobs.set(id, tracked);
+    }
+    if (last) this.takeOver(tracked, last);
     this.changed();
     this.schedule();
   }
 
-  /** Read the project's saved jobs and follow every one that was submitted and has not settled. */
+  /**
+   * Read the project's saved jobs and follow every one that was submitted and
+   * has not settled. A listing is the person opening a page of the project, or
+   * coming back to it: a job already followed starts its pace over.
+   */
   async list(draftId: string): Promise<void> {
     if (this.disabled || !draftId) return;
     let response: Response;
@@ -199,10 +254,14 @@ export class ConnectedCollector {
         /* Given up on, and still as it was: asking again would get the same answer. */
         if (this.given.get(job.id) === job.status) continue;
         this.given.delete(job.id);
-        if (!this.watched.has(job.id)) this.adopt(draftId, job.id);
+        if (this.watched.has(job.id)) continue;
+        const tracked = this.jobs.get(job.id);
+        if (tracked) this.restart(tracked, job.status);
+        else this.adopt(draftId, job.id, false, job.status);
       } else if (this.seen.has(job.id)) this.seen.set(job.id, { job, problem: null });
     }
     this.changed();
+    this.schedule();
   }
 
   stop() {
@@ -242,18 +301,64 @@ export class ConnectedCollector {
     return this.watched.has(id) || this.shown === id;
   }
 
+  /** The wait after a good read, at this job's pace. */
+  private delay(tracked: Tracked) {
+    return pollDelay(tracked.step, { rate: COLLECT_PACE, hintSeconds: tracked.hint, random: this.random });
+  }
+
+  /**
+   * The pace starts over as if the read at `from` were its first: the next
+   * read one start-wait (20 s, or the hint when longer) after it, then 1.5×
+   * longer each. `sooner`: never later than the read already planned.
+   */
+  private startOver(tracked: Tracked, from: number, sooner: boolean) {
+    tracked.step = 0;
+    tracked.misses = 0;
+    const at = from + this.delay(tracked);
+    tracked.nextAt = sooner ? Math.min(tracked.nextAt, at) : Math.max(this.now(), at);
+    tracked.step = 1;
+  }
+
+  /** Listed again (the person opened a page of the project, or came back): its pace starts over from its last read — or, with a read out, from that read's reply. */
+  private restart(tracked: Tracked, status: string) {
+    tracked.status = status;
+    if (tracked.reading) tracked.fresh = true;
+    else this.startOver(tracked, tracked.lastAt, true);
+  }
+
+  /** Taken over from the view that read it last: its pace starts over from that read, never inside the account's window. */
+  private takeOver(tracked: Tracked, last: LastRead) {
+    tracked.hint = last.hintSeconds;
+    tracked.lastAt = last.at;
+    this.startOver(tracked, last.at, false);
+  }
+
+  /** A failed read: asked again after a minute, then twice as long each time in a row, up to five. */
+  private missed(tracked: Tracked) {
+    if (tracked.fresh) { tracked.fresh = false; tracked.step = 0; tracked.misses = 0; }
+    tracked.misses++;
+    tracked.lastAt = this.now();
+    tracked.nextAt = tracked.lastAt + pollDelay(tracked.misses - 1, { rate: COLLECT_MISS_PACE, hintSeconds: tracked.hint, random: this.random });
+  }
+
   private reschedule() {
     if (this.timer !== null) this.clearTimer(this.timer);
     this.timer = null;
     this.schedule();
   }
 
+  /** One timer, for the job due first; a job that falls due sooner than it (taken up, or its pace started over) moves it. */
   private schedule() {
-    if (this.timer !== null || this.disabled) return;
+    if (this.disabled) return;
     const due = [...this.jobs].filter(([id]) => !this.leftToView(id)).map(([, job]) => job.nextAt);
     if (!due.length) return;
-    const wait = Math.max(0, Math.min(...due) - this.now());
-    this.timer = this.setTimer(() => { this.timer = null; void this.tick(); }, wait);
+    const at = Math.min(...due);
+    if (this.timer !== null) {
+      if (this.timerAt <= at) return;
+      this.clearTimer(this.timer);
+    }
+    this.timerAt = at;
+    this.timer = this.setTimer(() => { this.timer = null; void this.tick(); }, Math.max(0, at - this.now()));
   }
 
   /** Read every job that is due, once, in turn. */
@@ -265,7 +370,8 @@ export class ConnectedCollector {
         if (this.disabled) break;
         /* Stopped, settled or released since the loop began: not this loop's to read. */
         if (this.jobs.get(id) !== tracked || this.leftToView(id) || tracked.nextAt > this.now()) continue;
-        await this.read(id, tracked);
+        tracked.reading = true;
+        try { await this.read(id, tracked); } finally { tracked.reading = false; }
       }
     } finally {
       this.reading = false;
@@ -282,7 +388,7 @@ export class ConnectedCollector {
       });
     } catch (error) {
       if (this.jobs.get(id) !== tracked) return;
-      tracked.nextAt = this.now() + COLLECT_BACKOFF_MS;
+      this.missed(tracked);
       this.trouble(id, checkingProblem(error));
       this.changed();
       return;
@@ -297,7 +403,7 @@ export class ConnectedCollector {
          fail the same way, so asking stops. Anything else (an outage, a rate limit, full storage) is read again later. */
       if (resumeGivesUp(failure)) this.giveUp(id, this.seen.get(id)?.job.status ?? "", resumeProblem(failure, body?.error));
       /* Said in fixed words (lib/higgsfield-consumer/resume `checkingProblem`), never the route's own text. */
-      else { tracked.nextAt = this.now() + COLLECT_BACKOFF_MS; this.trouble(id, checkingProblem(failure)); }
+      else { this.missed(tracked); this.trouble(id, checkingProblem(failure)); }
       this.changed();
       return;
     }
@@ -316,8 +422,16 @@ export class ConnectedCollector {
     /* Accepted jobs are read until they settle; one the account has not accepted is left after a few reads. */
     tracked.unsettled = job.status === "accepted" ? 0 : tracked.unsettled + 1;
     if (tracked.unsettled >= COLLECT_UNSETTLED_POLLS) { this.giveUp(id, job.status, null); this.changed(); return; }
-    const after = typeof body.pollAfterSeconds === "number" && Number.isFinite(body.pollAfterSeconds) ? body.pollAfterSeconds * 1000 : 0;
-    tracked.nextAt = this.now() + Math.max(COLLECT_POLL_MS, Math.min(after, 5 * 60_000));
+    /* Moved on (its status changed), or listed again while this read was out: the pace starts over. Where it was:
+       the next wait is 1.5× longer. */
+    if (tracked.fresh || (tracked.status !== null && tracked.status !== job.status)) tracked.step = 0;
+    tracked.fresh = false;
+    tracked.status = job.status;
+    tracked.misses = 0;
+    tracked.hint = pollAfter(body);
+    tracked.lastAt = this.now();
+    tracked.nextAt = tracked.lastAt + this.delay(tracked);
+    tracked.step++;
     this.changed();
   }
 }
@@ -346,14 +460,14 @@ export function collectedJobs(draftId: string): readonly CollectedJob[] {
 export function watchConnectedJob(id: string) {
   shared?.watch(id);
 }
-export function unwatchConnectedJob(id: string, forget = false) {
-  shared?.unwatch(id, forget);
+export function unwatchConnectedJob(id: string, forget = false, last: LastRead | null = null) {
+  shared?.unwatch(id, forget, last);
 }
 export function forgoConnectedJob(id: string, status: string) {
   shared?.forgo(id, status);
 }
-export function releaseConnectedJob(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null) {
-  shared?.release(draftId, job);
+export function releaseConnectedJob(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null, last: LastRead | null = null) {
+  shared?.release(draftId, job, last);
 }
 export function showConnectedJob(id: string | null, done: boolean) {
   shared?.show(id, done);

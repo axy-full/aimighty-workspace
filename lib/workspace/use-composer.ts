@@ -7,7 +7,7 @@ import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media
 import { pendingGenerationKey } from "../workbench/pending-generation";
 import { newProject, type Asset, type Project } from "../workbench/studio";
 import { activeMediaJob, type MediaJob } from "../workbench/job-recovery";
-import { poll, pollAfter } from "../poll";
+import { movedOn, poll, pollAfter } from "../poll";
 import {
   CONNECTED_GENERATION_ENDPOINT,
   connectedEnhancedPrompt, connectedOriginal,
@@ -510,12 +510,15 @@ export function useComposer(options: {
   const [read, setRead] = useState<{ id: string; job: MediaJob } | null>(null);
   const workspaceJobId = run?.source === "workspace" ? run.jobId : null;
   const mediaJob = read && read.id === workspaceJobId ? read.job : null;
-  /* Read at lib/poll's pace until the job is in its terminal set; a missed read backs off. */
+  /* Read at lib/poll's pace until the job is in its terminal set; a changed status starts the pace over,
+     a missed read backs off. */
   useEffect(() => {
     if (!workspaceJobId) return;
+    const moved = movedOn();
     const poller = poll({
       immediate: true,
       read: (signal) => studioRequest<{ generation: MediaJob }>(`/api/jobs/${encodeURIComponent(workspaceJobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      moved: (data) => moved(workspaceJobId, data.generation.status),
       done: (data) => !activeMediaJob(data.generation),
       onValue: (data) => setRead({ id: workspaceJobId, job: data.generation }),
     });
@@ -527,6 +530,7 @@ export function useComposer(options: {
   const targetId = target?.id ?? null;
   useEffect(() => {
     if (!connectedJobId || !targetId || connectedSettled) return;
+    const moved = movedOn();
     const poller = poll({
       read: (signal) => studioRequest<{ job?: unknown; pollAfterSeconds?: number }>(CONNECTED_GENERATION_ENDPOINT, {
         method: "POST", signal,
@@ -534,6 +538,7 @@ export function useComposer(options: {
         body: JSON.stringify(connectedStatusRequest(targetId, connectedJobId)),
       }),
       hint: pollAfter,
+      moved: (data) => moved(connectedJobId, parseConnectedJob(data.job, targetId).status),
       done: (data) => !connectedRecoverable(parseConnectedJob(data.job, targetId)),
       onValue: (data) => setConnectedJob(parseConnectedJob(data.job, targetId)),
     });

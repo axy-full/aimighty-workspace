@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { POLL, poll, pollAfter, pollDelay, presentTimeout, retryDelay, turnHint, type PollClock, type PollPresence } from "../../lib/poll";
+import { POLL, movedOn, poll, pollAfter, pollDelay, presentTimeout, type PollClock, type PollPresence } from "../../lib/poll";
 import { settledState } from "../../lib/shell/use-connected-job";
 import { READ_FAILED, readFailure } from "../../lib/shell/use-business";
 import { checkingProblem } from "../../lib/higgsfield-consumer/resume";
@@ -7,12 +7,13 @@ import { activeMediaJob } from "../../lib/workbench/job-recovery";
 import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 /**
- * lib/poll: every status read in the app (Gen's takes, connected jobs, Ads,
- * Image ads, Motion Transfer, a re-edit) waits 2 s, then 1.5× longer each
- * time up to 10 s, never sooner than the server's own pollAfterSeconds;
- * ±20% jitter (upward only when the hint sets the wait); a failed read backs
- * off; nothing is asked while the tab is hidden; one read at a time; it stops
- * on the terminal set.
+ * lib/poll: every page-side status read (Gen's takes, connected jobs, Ads,
+ * Image ads, a re-edit) waits 2 s, then 1.5× longer each
+ * read that finds the job where it was, up to 10 s, never sooner than the
+ * server's own pollAfterSeconds; a changed status or a Try again starts the
+ * pace over; ±20% jitter (upward only when the hint sets the wait); a failed
+ * read backs off; nothing is asked while the tab is hidden; one read at a
+ * time; it stops on the terminal set.
  */
 const MID = () => 0.5; // no jitter
 
@@ -102,18 +103,16 @@ test("failed reads back off, doubling up to a minute", () => {
   expect(pollDelay(2, { misses: 2, random: MID })).toBe(18_000);
   expect(pollDelay(3, { misses: 3, random: MID })).toBe(54_000);
   expect(pollDelay(9, { misses: 9, random: MID })).toBe(60_000);
-  /* A one-off read (a list, a catalogue): about 2 s, 6 s, 18 s, then only Try again. */
-  expect([1, 2, 3, 4].map((n) => retryDelay(n, { random: MID }))).toEqual([2000, 6000, 18_000, null]);
-  expect(retryDelay(0, { random: MID })).toBeNull();
-  expect(retryDelay(Number.NaN, { random: MID })).toBeNull();
-  expect(retryDelay(2, { tries: 1, random: MID })).toBeNull();
 });
 
-test("reads in turn share the server's pace out across the jobs", () => {
-  expect(turnHint(15, 3)).toBe(5);
-  expect(turnHint(15, 0)).toBe(15);
-  expect(turnHint(null, 3)).toBeNull();
-  expect(turnHint(-1, 3)).toBeNull();
+test("a poller may keep its own rate under the same rules (the shell's collector: 20 s, x1.5, to a minute)", () => {
+  const rate = { ...POLL, startMs: 20_000, capMs: 60_000, hintCapMs: 300_000 };
+  expect([0, 1, 2, 3, 9].map((reads) => pollDelay(reads, { rate, random: MID }))).toEqual([20_000, 30_000, 45_000, 60_000, 60_000]);
+  expect(pollDelay(0, { rate, random: () => 0 })).toBe(16_000);
+  expect(pollDelay(0, { rate, random: () => 0.999999 })).toBe(24_000);
+  /* Its hint cap is its own: a five-minute hint holds the read back five minutes (and a half second), jittered upward only. */
+  expect(pollDelay(0, { rate, hintSeconds: 300, random: () => 0 })).toBe(300_500);
+  expect(pollDelay(0, { hintSeconds: 300, random: () => 0 })).toBe(60_500);
 });
 
 test("a poll waits its pace between reads and stops on the terminal set", async () => {
@@ -284,16 +283,49 @@ test("one read at a time: a slow reply never has a second read queued behind it;
   expect(asked).toBe(2);
 });
 
-test("now() reads at once (a Try again) and the pace continues from it", async () => {
+test("a read that finds the job moved on starts the pace over; one that finds it where it was waits longer", async () => {
+  const time = fakeClock();
+  const reads: number[] = [];
+  const replies = ["queued", "queued", "queued", "running", "running", "running", "succeeded"];
+  const moved = movedOn();
+  const poller = poll({
+    clock: time.clock, presence: null,
+    read: async () => { reads.push(time.now()); return { id: "job", status: replies[reads.length - 1] }; },
+    moved: (job) => moved(job.id, job.status),
+    done: (job) => !activeMediaJob(job), onValue: () => undefined,
+  });
+  await time.advance(120_000);
+  /* 2 s, then 3 s and 4.5 s while it queues; running: 2 s again, then 3 s and 4.5 s; succeeded ends it. */
+  expect(reads).toEqual([2000, 5000, 9500, 16_250, 18_250, 21_250, 25_750]);
+  expect(time.pending()).toBe(0);
+  poller.stop();
+});
+
+test("movedOn: the first sight of a job only notes it; a status seen before is no move; a known status seeds it", () => {
+  const moved = movedOn();
+  expect(moved("a", "accepted")).toBe(false);
+  expect(moved("a", "accepted")).toBe(false);
+  expect(moved("b", "uncertain")).toBe(false);
+  expect(moved("a", "completed")).toBe(true);
+  expect(moved("b", "accepted")).toBe(true);
+  expect(moved("b", "accepted")).toBe(false);
+  const seeded = movedOn([["c", "uncertain"]]);
+  expect(seeded("c", "accepted")).toBe(true);
+});
+
+test("now() reads at once (a Try again) and starts the pace over", async () => {
   const time = fakeClock();
   const reads: number[] = [];
   const poller = poll({ clock: time.clock, presence: null, read: async () => { reads.push(time.now()); return 1; }, done: () => false, onValue: () => undefined });
-  await time.advance(500);
+  /* 2 s, 3 s, 4.5 s, 6.75 s: the pace has grown. */
+  await time.advance(16_250);
+  expect(reads).toEqual([2000, 5000, 9500, 16_250]);
+  await time.advance(1000);
   poller.now();
   await time.flush();
-  expect(reads).toEqual([500]);
+  /* Read at once, then 3 s after it, as after a first read — not the 10 s the pace had reached. */
   await time.advance(3000);
-  expect(reads).toEqual([500, 3500]);
+  expect(reads).toEqual([2000, 5000, 9500, 16_250, 17_250, 20_250]);
   poller.stop();
 });
 

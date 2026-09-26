@@ -5,11 +5,11 @@ import {
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { checkingProblem, resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
-import { poll, pollAfter } from "@/lib/poll";
+import { movedOn, poll, pollAfter } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { autoRetryMs, quoteUsableUntil } from "./business";
-import { forgoConnectedJob, releaseConnectedJob, unwatchConnectedJob, watchConnectedJob } from "./connected-collector";
+import { forgoConnectedJob, releaseConnectedJob, unwatchConnectedJob, watchConnectedJob, type LastRead } from "./connected-collector";
 
 /**
  * One connected-account job from a Business composer (FINAL_SPEC §2), on the
@@ -33,13 +33,14 @@ import { forgoConnectedJob, releaseConnectedJob, unwatchConnectedJob, watchConne
  * is out the composer is `resuming` and prices nothing, so no newer job can
  * be submitted underneath it; and an id is only ever cleared by its own job.
  * A running job is read at lib/poll's pace (the account's own when it gives
- * one, never inside its poll lease, nothing while the tab is hidden); a read
+ * one, never inside its poll lease — the read-back's included — nothing while
+ * the tab is hidden, and a changed status starts the pace over); a read
  * that fails says so on the job while it keeps being asked after, and one
  * that cannot succeed hands the composer back. Leaving mid-render also hands
  * the job to the shell's collector (lib/shell/connected-collector.ts), which
- * keeps reading it until it lands in Takes whichever page is open. While the
- * composer reads its job back the collector leaves that job to it, so the
- * two never read it together.
+ * keeps reading it until it lands in Takes whichever page is open, starting
+ * one pace after this composer's last read. While the composer reads its job
+ * back the collector leaves that job to it, so the two never read it together.
  *
  * A completed job is filed to the project by the server; the project's
  * Library is re-read once (`scope` is the workspace scope) so Takes and the
@@ -155,6 +156,8 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
   const usableUntil = useRef(0);
   /** The remembered job this composer is reading back, if any; cleared the moment anything else takes the composer. */
   const resuming = useRef<string | null>(null);
+  /** This composer's last good status read (read-back or poll): the next read, here or the collector's, waits out the account's window. */
+  const lastRead = useRef<(LastRead & { id: string }) | null>(null);
   const key = draftId ? connectedJobKey(slot, draftId) : null;
 
   /** One POST on the route: the job, and the account's own pacing when it is a status read. */
@@ -180,16 +183,17 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
     };
     const read = async () => {
       try {
-        const job = await call(connectedStatusRequest(draftId, id));
+        const { job, pollAfterSeconds } = await post(connectedStatusRequest(draftId, id));
         if (!mine()) return;
         /* Never sent: nothing for the collector to follow either. */
         if (job.status === "quoted") { forgetJob(store(), key, id); unwatchConnectedJob(id, true); release(null); return; }
         resuming.current = null;
+        lastRead.current = { id, at: Date.now(), hintSeconds: pollAfterSeconds };
         if (!connectedRecoverable(job)) { forgetJob(store(), key, id); releaseConnectedJob(draftId, job); }
         setState((now) => resumeLands(now, settledState(job)));
-        /* Still in flight: the poll below keeps it watched. Anything else lets the collector read it again. */
+        /* Still in flight: the poll below keeps it watched. Anything else lets the collector read it again, after this read's window. */
         const now = live.current;
-        if (connectedRecoverable(job) && !(now.phase === "running" && now.job.id === id)) unwatchConnectedJob(id);
+        if (connectedRecoverable(job) && !(now.phase === "running" && now.job.id === id)) unwatchConnectedJob(id, false, lastRead.current);
       } catch (error) {
         if (!mine()) return;
         const next = resumeRetry(failureOf(error).status ?? Number.NaN, ++tries);
@@ -214,7 +218,7 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
         setState((now) => (now.phase === "resuming" ? { phase: "idle" } : now));
       }
     };
-  }, [key, draftId, call, setState, setQuotedFor]);
+  }, [key, draftId, post, setState, setQuotedFor]);
 
   /** A read-only quote for exactly this input; the key says which input it prices. Nothing is priced while a job is in flight. */
   const quote = useCallback(async (input: ConsumerGenerationInput, inputKey: string) => {
@@ -258,17 +262,25 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
   }, [phase, setQuotedFor]);
 
   /* Poll a submitted job until the account settles it, at lib/poll's pace; keyed by the job, so a read
-     that lands does not restart the pace. A missed read backs off and is said on the job. */
+     that lands does not restart the pace — a changed status does. The first read waits out the window of
+     a read made moments ago (the read-back). A missed read backs off and is said on the job. */
   const pollingId = state.phase === "running" ? state.job.id : null;
   useEffect(() => {
     if (!pollingId || !draftId) return;
     const id = pollingId;
     const mine = (now: ConnectedJobState): now is Extract<ConnectedJobState, { phase: "running" }> => now.phase === "running" && now.job.id === id;
+    const last = lastRead.current?.id === id ? lastRead.current : null;
+    const owed = last?.hintSeconds ? Math.max(0, (last.at + last.hintSeconds * 1000 - Date.now()) / 1000) : 0;
+    const start = live.current;
+    const moved = movedOn(mine(start) ? [[id, start.job.status]] : []);
     const poller = poll({
+      firstHint: owed || null,
       read: (signal) => post(connectedStatusRequest(draftId, id), signal),
       hint: (reply) => reply.pollAfterSeconds,
+      moved: (reply) => moved(id, reply.job.status),
       done: (reply) => !connectedRecoverable(reply.job),
-      onValue: ({ job }) => {
+      onValue: ({ job, pollAfterSeconds }) => {
+        lastRead.current = { id, at: Date.now(), hintSeconds: pollAfterSeconds };
         if (!connectedRecoverable(job)) forgetJob(store(), key, id);
         setState((now) => (mine(now) ? settledState(job) : now));
       },
@@ -290,7 +302,8 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
     return () => poller.stop();
   }, [pollingId, post, draftId, key, setState]);
 
-  /* While this view polls its job the shell's collector leaves it be; unmounting mid-render hands it over. */
+  /* While this view polls its job the shell's collector leaves it be; unmounting mid-render hands it over,
+     with this view's last read so the collector's first one waits out its window. */
   const runningId = state.phase === "running" || state.phase === "submitting" ? state.job.id : null;
   useEffect(() => {
     if (!runningId || !draftId) return;
@@ -301,7 +314,8 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
       const now = live.current;
       const job = (now.phase === "submitting" || now.phase === "running" || now.phase === "done" || now.phase === "failed") && now.job?.id === runningId ? now.job : null;
       const handed = !job || now.phase === "submitting" || (now.phase === "running" && job.status === "quoted");
-      releaseConnectedJob(draftId, handed ? { id: runningId, status: "dispatching" } : job);
+      const last = lastRead.current?.id === runningId ? lastRead.current : null;
+      releaseConnectedJob(draftId, handed ? { id: runningId, status: "dispatching" } : job, last);
     };
   }, [runningId, draftId]);
 

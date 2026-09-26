@@ -9,7 +9,7 @@ import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boar
 import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
-import { poll } from "@/lib/poll";
+import { movedOn, poll } from "@/lib/poll";
 import { useShell } from "@/lib/shell/state";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
@@ -130,8 +130,10 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {
     if (!pending) return;
+    const moved = movedOn();
     const poller = poll({
       read: (signal) => studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      moved: ({ generation }) => moved(pending.jobId, generation.status),
       done: ({ generation }) => !activeMediaJob(generation),
       onValue: ({ generation }) => {
         if (!alive.current) return;
