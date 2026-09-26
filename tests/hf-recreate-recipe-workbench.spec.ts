@@ -144,6 +144,8 @@ async function shot(page: Page, info: TestInfo, name: string) {
   const dir = process.env.RECREATE_SHOTS;
   if (!dir || !SHOTS.includes(info.project.name)) return;
   await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect && Number(a.effect.getTiming().iterations) !== Infinity).map((a) => a.finished)));
+  /* Two frames: a card the test has just scrolled into view is painted before it is captured. */
+  await page.evaluate(() => new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(() => painted(null)))));
   await page.screenshot({ path: `${dir}/${name}-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
 }
 
