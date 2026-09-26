@@ -272,7 +272,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
         <div className="suite-section-heading"><div><h2>Project library</h2><p>Pick the video to restyle.</p></div></div>
         <label className={styles.search}>Search assets<input aria-label="Search project assets" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
         <GenAssetLibrary workbenchProjectId={project.id} projectName={project.name} allowWorkspaceBrowse initialBrowseScope="project" search={search}
-          onUseAsset={(asset) => void addSource(asset)} onUseReference={(asset) => void addSource(libraryInput(asset))} onUsePrompt={() => {}} onEdit={() => {}} onUpscale={() => {}} />
+          onUseAsset={(asset) => void addSource(asset)} onUseReference={(asset) => void addSource(libraryInput(asset))} />
       </aside>
     </div>
     <section className="suite-panel" aria-label="Saved Shorts sessions">

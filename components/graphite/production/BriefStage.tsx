@@ -244,7 +244,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
               <div className="gx-gen-enhance">
                 {redraftQuote ? (
                   <>
-                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then(() => setNotes(""))} data-testid="brief-redraft">{runs.busy || `Redraft · up to ${redraftQuote.value.estimateCredits.toLocaleString()} credits`}</button>
+                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then((held) => { if (held) setNotes(""); })} data-testid="brief-redraft">{runs.busy || `Redraft · up to ${redraftQuote.value.estimateCredits.toLocaleString()} credits`}</button>
                     <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                     <span className="gx-hint" data-testid="brief-redraft-quote">{quoteLine(redraftQuote)}</span>
                   </>

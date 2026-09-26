@@ -134,7 +134,10 @@ export const GET = withTenant(
   async (req: Request) => {
     const owner = await requireOwner();
     if (owner.response) return owner.response;
-    const draftId = new URL(req.url).searchParams.get("draftId") ?? "";
+    const query = new URL(req.url).searchParams;
+    const draftId = query.get("draftId") ?? "";
+    /* `results=submitted`: the Viral pages list what ran, not every estimate they read. */
+    const submittedOnly = query.get("results") === "submitted";
     if (!id.safeParse(draftId).success)
       return Response.json(
         { error: "Choose a valid project." },
@@ -156,7 +159,9 @@ export const GET = withTenant(
             presetsAvailable: false,
             importsMediaForQuote: true,
           },
-          jobs: await consumerGenjutsuJobs(owner.user.id, draftId),
+          jobs: submittedOnly
+            ? await consumerGenjutsuJobs(owner.user.id, draftId, { submittedOnly })
+            : await consumerGenjutsuJobs(owner.user.id, draftId),
         },
         { headers },
       );

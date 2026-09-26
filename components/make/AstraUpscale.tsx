@@ -267,7 +267,11 @@ export default function AstraUpscale({
               type="file"
               accept=".mp4,.mov,video/mp4,video/quicktime"
               aria-label="Upload Astra source"
-              onChange={(event) => void upload(event.target.files?.[0])}
+              onChange={(event) => {
+                void upload(event.target.files?.[0]);
+                // Choosing the same file again after a failed upload must fire again.
+                event.target.value = "";
+              }}
             />
             {sourceUrl && (
               <video

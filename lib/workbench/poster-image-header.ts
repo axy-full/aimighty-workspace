@@ -63,6 +63,33 @@ export function inspectPosterImageHeader(
     return { width, height, mime };
   };
 
+  /** MPF (CIPA DC-007) index: only multi-frame types (panorama, stereo
+   * disparity, multi-angle) are a set of pictures. Gain maps and large
+   * thumbnails are auxiliary images; createImageBitmap decodes the primary. */
+  const declaresMultiFrame = (start: number, end: number) => {
+    const order = text(start, 4),
+      little = order === "II*\0";
+    if (!little && order !== "MM\0*") return false;
+    const u16 = (at: number) => view.getUint16(at, little),
+      u32 = (at: number) => view.getUint32(at, little);
+    if (!fits(start + 4, 4, end)) return false;
+    const ifd = start + u32(start + 4);
+    if (!fits(ifd, 2, end)) return false;
+    const entries = u16(ifd);
+    for (let i = 0; i < entries; i++) {
+      const entry = ifd + 2 + i * 12;
+      if (!fits(entry, 12, end)) return false;
+      if (u16(entry) !== 0xb002) continue;
+      const length = u32(entry + 4),
+        first = length <= 4 ? entry + 8 : start + u32(entry + 8);
+      if (length % 16 || length / 16 > MAX_RECORDS || !fits(first, length, end))
+        return false;
+      for (let at = first; at < first + length; at += 16)
+        if (((u32(at) >>> 16) & 0xff) === 0x02) return true;
+    }
+    return false;
+  };
+
   if (text(0, 8) === "\x89PNG\r\n\x1a\n") {
     let at = 8,
       count = 0,
@@ -85,10 +112,9 @@ export function inspectPosterImageHeader(
       } else if (!result) return invalid();
       if (type === "IDAT") data = true;
       at += size + 12;
+      // Bytes after IEND are ignored by every decoder (and by createImageBitmap).
       if (type === "IEND")
-        return size === 0 && data && at === bytes.length && result
-          ? result
-          : invalid();
+        return size === 0 && data && result ? result : invalid();
     }
     return invalid();
   }
@@ -96,6 +122,7 @@ export function inspectPosterImageHeader(
   if (bytes[0] === 0xff && bytes[1] === 0xd8) {
     let at = 2,
       count = 0,
+      scanned = false,
       result: PosterImageHeader | undefined;
     while (fits(at, 2)) {
       if (++count > MAX_RECORDS || bytes[at++] !== 0xff) return invalid();
@@ -103,17 +130,24 @@ export function inspectPosterImageHeader(
       if (!fits(at, 1)) return invalid();
       const marker = bytes[at++];
       if (marker === 0x01) continue;
+      // The primary image ends at its EOI. Anything after it (an Ultra HDR
+      // gain map, a maker trailer) is never decoded by createImageBitmap.
+      if (marker === 0xd9) return scanned && result ? result : invalid();
       if (
         marker === 0 ||
         marker === 0xd8 ||
-        marker === 0xd9 ||
         (marker >= 0xd0 && marker <= 0xd7) ||
         !fits(at, 2)
       )
         return invalid();
       const size = view.getUint16(at);
       if (size < 2 || !fits(at, size)) return invalid();
-      if (marker === 0xe2 && text(at + 2, 4) === "MPF\0") return animated();
+      if (
+        marker === 0xe2 &&
+        text(at + 2, 4) === "MPF\0" &&
+        declaresMultiFrame(at + 6, at + size)
+      )
+        return animated();
       if (
         (marker >= 0xc0 && marker <= 0xc3) ||
         (marker >= 0xc5 && marker <= 0xc7) ||
@@ -133,14 +167,21 @@ export function inspectPosterImageHeader(
           "image/jpeg",
         );
       }
-      if (marker === 0xda)
-        return result &&
-          size >= 6 &&
-          bytes[bytes.length - 2] === 0xff &&
-          bytes[bytes.length - 1] === 0xd9
-          ? result
-          : invalid();
       at += size;
+      if (marker === 0xda) {
+        if (!result || size < 6) return invalid();
+        scanned = true;
+        // Skip entropy-coded data: 0xFF is followed by a stuffed 0x00, a
+        // restart marker or fill bytes until the next real marker.
+        for (;;) {
+          at = bytes.indexOf(0xff, at);
+          if (at < 0 || !fits(at, 2)) return invalid();
+          const next = bytes[at + 1];
+          if (next === 0xff) at += 1;
+          else if (next === 0x00 || (next >= 0xd0 && next <= 0xd7)) at += 2;
+          else break;
+        }
+      }
     }
     return invalid();
   }

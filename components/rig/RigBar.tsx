@@ -71,12 +71,17 @@ export function RigStrip() {
   );
 }
 
-/** The three tabs' destinations for a project: its board, its recipe, its run. */
-export function rigHrefs(projectId: string, boardId?: string | null, runId?: string | null): Record<RigTab, string> {
+/** Where a project's runs execute. Nothing advances a Rig run (lib/runs.ts), so Run opens Pipelines. */
+export function pipelinesHref(projectId: string | null | undefined): string {
+  return projectId ? `/pipelines?projectId=${encodeURIComponent(projectId)}` : "/pipelines";
+}
+
+/** The three tabs' destinations for a project: its board, its recipe, and where it runs. */
+export function rigHrefs(projectId: string, boardId?: string | null): Record<RigTab, string> {
   return {
     canvas: boardId ? `/rig/canvas/${boardId}` : `/rig/canvas/new?project=${encodeURIComponent(projectId)}`,
     recipes: `/rig/recipes/${encodeURIComponent(projectId)}`,
-    run: runId ? `/rig/run/${runId}` : `/rig/run/latest?project=${encodeURIComponent(projectId)}`,
+    run: pipelinesHref(projectId),
   };
 }
 

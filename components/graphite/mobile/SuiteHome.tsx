@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { displayModelName } from "@/lib/models";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
+import { useFreshProject } from "@/lib/shell/use-fresh-project";
 import { assetsRowLabel, stageCards, suiteTiles } from "@/lib/shell/studio-home";
 import { INITIAL_VIRAL } from "@/lib/shell/viral";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -19,8 +20,10 @@ const VIDEO_ENGINE = "dreamina-seedance-2-5-260628";
  * Assets row. Nothing else — the stage grid lives behind the Studio tile,
  * the takes behind Assets. Every figure is the project's own.
  */
-export function SuiteHome({ project, items }: { project: Project | null; items: LibraryEntry[] }) {
+export function SuiteHome({ project: loaded, items }: { project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
+  /* The stages edit their own drafts: every fact is the project as saved now, not as first loaded. */
+  const project = useFreshProject(loaded);
   const { state } = useWorkspace();
   const scoped = useScopedFetch();
   /* The roster is one free read per project; the count is keyed to the project it answered for. */

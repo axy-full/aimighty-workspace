@@ -4,7 +4,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter, ConnectedPlan, PendingSoulBuild, SoulBuildOutcome, SoulBuildType } from "@/lib/higgsfield-consumer/soul-build";
 import { SOUL_BUILD_STILLS, SOUL_BUILD_TYPES, soulBuildBlock } from "@/lib/higgsfield-consumer/soul-build";
-import { GEN_PRESET_KEY } from "@/lib/shell/assets";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { useShell } from "@/lib/shell/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -74,7 +74,8 @@ export function SoulIdHost({ scope, items, projectId }: { scope: string; items: 
     } finally { setPhase("idle"); }
   };
   const openInGen = (character: ConnectedCharacter) => {
-    try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify({ prompt: "", type: "image", model: SOUL_MODEL[character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"], note: `Soul ID · ${character.name}` })); } catch { /* the preset is a convenience */ }
+    /* The Soul models are on the account's catalogue: Gen switches to it, then to the model, with this identity chosen. */
+    sendGenPreset({ prompt: "", type: "image", billing: "connected", model: SOUL_MODEL[character.type === "soul_cinematic" ? "soul_cinematic" : "soul_2"], soulId: character.soulId, note: `Soul ID · ${character.name}` });
     shell.goGen();
   };
 
