@@ -9,6 +9,8 @@ import type { Project } from './studio';
 import type { Client, Transaction } from '@libsql/client';
 import {publishedContext} from './published-context';
 import {referencedMedia} from '@/lib/mediaBindings';
+import {diffForTeam} from './team-canvas-model';
+import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
 
 const initialized = new WeakMap<Client, Promise<void>>();
 export async function workbenchReady() {
@@ -23,6 +25,13 @@ export async function workbenchReady() {
         owner TEXT NOT NULL, draft_id TEXT NOT NULL, node_id TEXT NOT NULL,
         project_id TEXT NOT NULL, shot_id TEXT NOT NULL,
         PRIMARY KEY(owner,draft_id,node_id))`,
+      /* One row per editor of a draft (a page's editor, the Rig, a composer): the last save it sent,
+         and the revision it landed at — or NULL once that save was checked and found not to have
+         landed, which also fences it off, so a save whose reply was lost has one known outcome. */
+      `CREATE TABLE IF NOT EXISTS workbench_draft_writes (
+        owner TEXT NOT NULL, draft_id TEXT NOT NULL, writer TEXT NOT NULL,
+        seq INTEGER NOT NULL, revision INTEGER, updated_at INTEGER NOT NULL,
+        PRIMARY KEY(owner,draft_id,writer))`,
     ], 'write');
   })().catch(error=>{initialized.delete(client);throw error;}));
   await initialized.get(client);
@@ -120,8 +129,13 @@ export async function mapNodeShot(owner:string, project:Project, nodeId:string):
 /** Another save of this draft landed first: the caller may merge its edits into the newer version and save again. */
 export class DraftConflictError extends Error { readonly code = 'revision_conflict'; }
 
+/** Which editor sent a save (a page's editor, the Rig, a composer) and its count of saves sent: lets a save whose reply was lost be checked. */
+export type DraftWriteTag = { writer: string; seq: number };
+/** How long an editor's last save stays checkable. */
+const WRITES_KEPT_MS = 30*24*60*60*1000;
+
 /** Revision zero may only insert; stale windows may never overwrite a newer draft. */
-export async function saveDraft(owner:string, project:Project, revision:number) {
+export async function saveDraft(owner:string, project:Project, revision:number, write?:DraftWriteTag) {
   await workbenchReady();
   const current=await readDraft(owner,project.id);
   if((current?.revision??0)!==revision)throw new DraftConflictError('This project changed in another window. Download your work before reloading.');
@@ -133,7 +147,13 @@ export async function saveDraft(owner:string, project:Project, revision:number) 
      says it is gone. An id the client names that this workspace never linked is still refused. */
   const gone=!!stored && !(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[stored]})).rows.length;
   const pid=gone?stored!:await linkProduction(owner,{...project,productionProjectId:stored||project.productionProjectId});
+  await teamCanvasReady();
   return workbenchTransaction(async(tx)=>{
+    if(write){
+      /* A save its editor already had checked (or one delivered twice) never lands late. */
+      const seen=(await tx.execute({sql:'SELECT seq FROM workbench_draft_writes WHERE owner=? AND draft_id=? AND writer=?',args:[owner,project.id,write.writer]})).rows[0];
+      if(seen && Number(seen.seq)>=write.seq)throw new DraftConflictError('This save was already checked. Your changes have not overwritten anything.');
+    }
     await validateStoredMedia(tx,project);
     const mappings=Object.fromEntries((await tx.execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
     const body={...project,productionProjectId:pid,shotMappings:mappings};
@@ -141,7 +161,35 @@ export async function saveDraft(owner:string, project:Project, revision:number) 
       ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at WHERE workbench_projects.revision=?`,
       args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),revision]});
     if(!result.rowsAffected)throw new DraftConflictError('A newer version exists. Your changes have not overwritten it.');
+    if(write){
+      await tx.execute({sql:`INSERT INTO workbench_draft_writes(owner,draft_id,writer,seq,revision,updated_at) VALUES (?,?,?,?,?,?)
+        ON CONFLICT(owner,draft_id,writer) DO UPDATE SET seq=excluded.seq,revision=excluded.revision,updated_at=excluded.updated_at`,
+        args:[owner,project.id,write.writer,write.seq,revision+1,now()]});
+      await tx.execute({sql:'DELETE FROM workbench_draft_writes WHERE owner=? AND draft_id=? AND updated_at<?',args:[owner,project.id,now()-WRITES_KEPT_MS]});
+    }
+    /* The production's shared Rig canvas follows every save of the draft's nodes, from whichever
+       editor made it — only what this save changed, field by field, so a teammate's edit stands. */
+    const shared=current&&!gone?diffForTeam(current.project,body,0):null;
+    if(shared)await applyTeamCanvasPatch(tx,pid,shared,owner,true).catch((error)=>{if(!(error instanceof TeamCanvasError))throw error;});
     return {revision:revision+1,productionProjectId:pid,shotMappings:mappings};
+  });
+}
+
+/**
+ * Whether an editor's save landed, when its reply was lost: the revision it
+ * landed at, or null. A save found not to have landed is fenced off in the
+ * same step, so it can never land afterwards — the answer is final.
+ */
+export async function checkDraftWrite(owner:string, draftId:string, write:DraftWriteTag):Promise<number|null> {
+  await workbenchReady();
+  return workbenchTransaction(async(tx)=>{
+    const row=(await tx.execute({sql:'SELECT seq,revision FROM workbench_draft_writes WHERE owner=? AND draft_id=? AND writer=?',args:[owner,draftId,write.writer]})).rows[0];
+    if(row && Number(row.seq)===write.seq && row.revision!==null)return Number(row.revision);
+    if(!row || Number(row.seq)<write.seq)
+      await tx.execute({sql:`INSERT INTO workbench_draft_writes(owner,draft_id,writer,seq,revision,updated_at) VALUES (?,?,?,?,NULL,?)
+        ON CONFLICT(owner,draft_id,writer) DO UPDATE SET seq=excluded.seq,revision=NULL,updated_at=excluded.updated_at`,
+        args:[owner,draftId,write.writer,write.seq,now()]});
+    return null;
   });
 }
 

@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { UploadedFile } from "../uploadClient";
-import { DraftRequestError, writeMergedDraft } from "../workbench/draft-request";
-import { rebaseDraft, sameJson } from "../workbench/merge";
+import { DraftRequestError, draftWriter, writeMergedDraft, type DraftWriter } from "../workbench/draft-request";
+import { rebaseProject } from "../workbench/draft-merge";
+import { sameJson } from "../workbench/merge";
 import type { Asset, Project } from "../workbench/studio";
 import { uploadWorkbench } from "../workbench/upload";
 
@@ -18,8 +19,9 @@ import { uploadWorkbench } from "../workbench/upload";
  * made since `base` are merged into the newer version (lib/workbench/merge.ts)
  * and saved at its revision, and the page then shows the merged draft —
  * nothing another window saved is overwritten, and no edit made here is
- * dropped. A save whose outcome is unknown is kept and tried again, reconciled
- * the same way. Any other refusal stops saving and says so.
+ * dropped. A save whose outcome is unknown is kept and tried again once the
+ * server can say whether it landed (writeMergedDraft). Any other refusal stops
+ * saving and says so.
  */
 
 export type DraftState = {
@@ -38,6 +40,8 @@ type Entry = {
   base: Project | null;
   /** Set by a refusal that saving again would not fix. */
   stopped: boolean;
+  /** This store's saves of the draft: a save whose reply was lost is checked on the server. */
+  writer: DraftWriter;
   retries: number;
   /** Moves on with every edit and every save: a read begun before either is older than the draft on screen. */
   stamp: number;
@@ -55,7 +59,7 @@ const RETRY_MAX_MS = 60_000;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, base: null, stopped: false, retries: 0, stamp: 0, listeners: new Set(), chain: Promise.resolve(true), timer: null };
+    found = { state: EMPTY, base: null, stopped: false, writer: draftWriter(), retries: 0, stamp: 0, listeners: new Set(), chain: Promise.resolve(true), timer: null };
     entries.set(key, found);
   }
   return found;
@@ -81,6 +85,7 @@ async function load(scope: string, projectId: string) {
     e.base = body.project as Project;
     e.stopped = false;
     e.retries = 0;
+    if (!e.writer.unconfirmed) e.writer = draftWriter();
     set(key, { status: "ready", project: e.base, revision: Number(body.revision) || 0, error: null });
   } catch (error) {
     set(key, { status: "error", error: error instanceof Error ? error.message : "This project could not be opened." });
@@ -98,18 +103,18 @@ function save(scope: string, projectId: string): Promise<boolean> {
     const from = e.base ?? project;
     set(key, { saving: true, dirty: false });
     try {
-      const saved = await writeMergedDraft("/api/workbench", scope, { base: from, mine: project, revision });
+      const saved = await writeMergedDraft("/api/workbench", scope, { base: from, mine: project, revision, writer: e.writer });
       e.base = saved.project;
       e.retries = 0;
       e.stamp++;
       /* The page shows what was saved — another window's edits included — with any edits made meanwhile laid over it. */
-      const next = rebaseDraft(project, e.state.project ?? project, saved.project);
+      const next = rebaseProject(project, e.state.project ?? project, saved.project);
       set(key, { saving: false, revision: saved.revision, project: next, dirty: e.state.dirty || !sameJson(next, saved.project), error: null });
       return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "This project could not be saved.";
       if (cause instanceof DraftRequestError && (cause.uncertain || cause.retryable)) {
-        /* Unknown or temporary: the edits stay, and the same save is tried again (merged, so never applied twice). */
+        /* Unknown or temporary: the edits stay, and the save is tried again once the server can say whether it landed. */
         set(key, { saving: false, dirty: true, error: message });
         const wait = Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** e.retries++);
         if (!e.timer) e.timer = setTimeout(() => void save(scope, projectId), wait);

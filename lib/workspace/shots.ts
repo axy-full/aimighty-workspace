@@ -1,7 +1,8 @@
-import { SHOT_NODE_TYPES, uid, type CanvasNode, type NodeOperation, type Project, type ShotFields } from "../workbench/studio";
+import { SHOT_NODE_TYPES, type CanvasNode, type NodeOperation, type Project, type ShotFields } from "../workbench/studio";
 import { NODE_DEFS, resolveAsset } from "../workbench/node-graph";
 import { shotEngine, clampShotSeconds, defaultShotRatio, defaultShotResolution, resolveShotSettings } from "./engines";
 import { shotEstimateKey } from "./cost";
+import { stableId } from "../workbench/stable-id";
 
 /**
  * The Rig's shot list, derived from the draft graph (Project.nodes).
@@ -228,7 +229,8 @@ export function shotPatch(project: Project, id: string, patch: ShotPatch): Proje
     if (at >= 0) next.operations = ops.map((op, i) => (i === at ? { ...op, values: { ...op.values, note: patch.note! } } : op));
     else {
       if (ops.length >= OPERATION_LIMIT) throw new ShotPatchError("This shot has reached its tool limit.");
-      next.operations = [...ops, { id: uid("op"), kind: "direction", enabled: true, values: { note: patch.note } }];
+      /* A shot has one direction note: made in two windows at once, it is still one operation (one id), not two. */
+      next.operations = [...ops, { id: stableId("op", node.id, "direction"), kind: "direction", enabled: true, values: { note: patch.note } }];
     }
   }
   if (patch.prompt !== undefined) {

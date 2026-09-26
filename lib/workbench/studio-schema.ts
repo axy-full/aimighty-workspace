@@ -338,10 +338,17 @@ export const projectSchema = z.object({
   sharedAssets: z.array(asset).max(PROJECT_LIMITS.assets).optional(),
 });
 
+/** Which editor sent a save and its count of saves sent, so a save whose reply was lost can be checked (lib/workbench/records.ts). */
+export const draftWriteTagSchema = z.object({
+  writer: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
+  seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+}).strict();
+
 export const saveSchema = z
   .object({
     project: projectSchema,
     revision: z.number().int().min(0),
+    write: draftWriteTagSchema.optional(),
   })
   .superRefine(({ project }, context) => {
     try { if (project.astraNative) validateAstraNativeBindings(project.astraNative, [...project.assets, ...(project.sharedAssets ?? [])]); } catch(error) {context.addIssue({code:"custom",path:["project","astraNative"],message:(error as Error).message});}

@@ -8,7 +8,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
+import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, sourcedCastId, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
 import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
 import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
@@ -99,7 +99,14 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     const proposals = done.result.cast;
     setCast((c) => {
       const names = new Set(c.entries.map((e) => e.name.trim().toLowerCase()));
-      const fresh = proposals.filter((e) => !names.has(e.name.trim().toLowerCase())).map((e) => newEntry(e.kind, e.name, e.description, e.prompt, { model: e.model, category: e.category }));
+      /* Each entry takes an id from this run and its name: another tab taking the same run makes the same entries, which the merge of the two saves holds once. */
+      const ids = new Set(c.entries.map((e) => e.id));
+      const fresh = proposals.filter((e) => {
+        const id = sourcedCastId(done.id, e.name);
+        if (names.has(e.name.trim().toLowerCase()) || ids.has(id)) return false;
+        ids.add(id);
+        return true;
+      }).map((e) => newEntry(e.kind, e.name, e.description, e.prompt, { model: e.model, category: e.category }, sourcedCastId(done.id, e.name)));
       return { ...c, entries: [...c.entries, ...fresh].slice(0, CAST_LIMITS.entries), agentJobId: done.id };
     });
     void editor.ensureSaved().then(() => toast(`The agent cast ${proposals.length} characters and elements`));

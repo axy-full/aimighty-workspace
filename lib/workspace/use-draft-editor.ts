@@ -1,10 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/workbench/studio";
-import { merge3, rebaseDraft, sameJson } from "@/lib/workbench/merge";
+import { mergeDraft, rebaseProject } from "@/lib/workbench/draft-merge";
+import { sameJson } from "@/lib/workbench/merge";
 import {
   DraftRequestError,
   draftRequest,
+  draftWriter,
   writeMergedDraft,
 } from "@/lib/workbench/draft-request";
 
@@ -23,9 +25,10 @@ import {
  * tab), the edits made since `base` are merged into the newer version
  * (lib/workbench/merge.ts) and saved at its revision, and the page then shows
  * the merged draft: nothing either side added or changed is lost. A save whose
- * outcome is unknown is kept and tried again, reconciled the same way. Any
- * other rejected save stops further saves and keeps the edits on screen;
- * `reload` discards them for the saved version.
+ * outcome is unknown is kept and tried again; the server is first asked
+ * whether it landed (writeMergedDraft), so what was typed or undone meanwhile
+ * is saved as such. Any other rejected save stops further saves and keeps the
+ * edits on screen; `reload` discards them for the saved version.
  */
 
 export type DraftEditor = {
@@ -51,8 +54,8 @@ const RETRY_MAX_MS = 60_000;
 
 type Loaded = { project: Project | null; revision: number };
 
-/** True when the edited draft is exactly what the server holds. */
-const settled = (edited: Project | null, saved: Project | null) => !edited || sameJson(edited, saved);
+/** True when the edited draft is exactly what the server holds (and no save of it is left unconfirmed). */
+const settled = (edited: Project | null, saved: Project | null, unconfirmed = false) => !edited || (!unconfirmed && sameJson(edited, saved));
 
 export function useDraftEditor(scope: string | null, projectId: string | null): DraftEditor {
   const [project, setProject] = useState<Project | null>(null);
@@ -68,6 +71,8 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   const revision = useRef(0);
   const failed = useRef(false);
   const retries = useRef(0);
+  /** This editor's saves of the open draft: a save whose reply was lost is checked on the server, never guessed at. */
+  const writer = useRef(draftWriter());
   const chain = useRef<Promise<boolean>>(Promise.resolve(true));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
@@ -94,6 +99,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
         current.current = data.project;
         base.current = data.project;
         revision.current = data.revision;
+        writer.current = draftWriter();
         failed.current = false;
         retries.current = 0;
         setProject(data.project);
@@ -121,17 +127,18 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       const snapshot = current.current, from = base.current;
       if (!snapshot || !from || !scope) return false;
       if (failed.current) return false;
-      if (sameJson(snapshot, from)) return true;
+      /* Back to what the server held — unless a save is unconfirmed: then the server may hold that save, and this is an edit. */
+      if (sameJson(snapshot, from) && !writer.current.unconfirmed) return true;
       if (alive.current) setSaveState("Saving");
       try {
-        const saved = await writeMergedDraft(API, scope, { base: from, mine: snapshot, revision: revision.current });
+        const saved = await writeMergedDraft(API, scope, { base: from, mine: snapshot, revision: revision.current, writer: writer.current });
         /* Another project opened meanwhile: its own draft stands. */
         if (current.current?.id !== snapshot.id) return true;
         retries.current = 0;
         revision.current = saved.revision;
         base.current = saved.project;
         /* The page shows what was saved — another window's edits included — with any edits made meanwhile laid over it. */
-        const next = rebaseDraft(snapshot, current.current, saved.project);
+        const next = rebaseProject(snapshot, current.current, saved.project);
         current.current = next;
         if (alive.current) {
           setProject(next);
@@ -142,7 +149,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       } catch (problem) {
         const message = problem instanceof Error ? problem.message : "Save failed. Your current work is preserved.";
         if (problem instanceof DraftRequestError && (problem.uncertain || problem.retryable)) {
-          /* Unknown or temporary: the edits stay, and the same save is tried again (merged, so never applied twice). */
+          /* Unknown or temporary: the edits stay, and the save is tried again once the server can say whether it landed. */
           if (alive.current) {
             setSaveState(problem.uncertain ? "Save unconfirmed" : "Not saved");
             setError(message);
@@ -183,9 +190,9 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
     /* Edits made during the write are saved by the next flush. */
     for (let pass = 0; pass < 3; pass++) {
       if (!(await flush())) return false;
-      if (settled(current.current, base.current)) return true;
+      if (settled(current.current, base.current, !!writer.current.unconfirmed)) return true;
     }
-    return settled(current.current, base.current);
+    return settled(current.current, base.current, !!writer.current.unconfirmed);
   }, [flush]);
 
   const refresh = useCallback(async () => {
@@ -198,7 +205,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       if (!data.project || current.current?.id !== id) return null;
       const edited = current.current, from = base.current;
       /* Edits made while it was read stay on screen, laid over the saved draft. */
-      const next = edited && from ? merge3(from, edited, data.project) : data.project;
+      const next = edited && from ? mergeDraft(from, edited, data.project) : data.project;
       revision.current = data.revision;
       base.current = data.project;
       current.current = next;

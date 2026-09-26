@@ -167,6 +167,13 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   const rig = useRig();
   const project = rig.project!;
   const [name, setName] = useState(shot.name);
+  /* The shot's name changed under the field (another window's rename, merged in): the field shows it,
+     unless it already says the same (a trailing space being typed stays). */
+  const [shown, setShown] = useState(shot.name);
+  if (shown !== shot.name) {
+    setShown(shot.name);
+    if (name.trim() !== shot.name) setName(shot.name);
+  }
   const [error, setError] = useState<string | null>(null);
   /* Where there is no ⌘Z (the older shell), Delete asks once more. */
   const [confirmDelete, setConfirmDelete] = useState(false);

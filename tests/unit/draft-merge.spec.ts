@@ -1,6 +1,17 @@
 import { test, expect } from "@playwright/test";
 import { merge3, rebaseDraft, sameJson } from "../../lib/workbench/merge";
-import { newProject, type CanvasNode, type Project } from "../../lib/workbench/studio";
+import { mergeDraft } from "../../lib/workbench/draft-merge";
+import { draftWriter, writeMergedDraft } from "../../lib/workbench/draft-request";
+import { saveSchema } from "../../lib/workbench/studio-schema";
+import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
+import { shotPatch } from "../../lib/workspace/shots";
+import { createSoundNode, findSoundNode } from "../../lib/workbench/sound-generate";
+import { connectNodes, graphEdges } from "../../lib/workspace/rig-graph";
+import { canConnect } from "../../lib/workbench/node-graph";
+import { removeShots, restoreShots } from "../../lib/production/rig-build";
+import { newEnvironmentEntry, sourcedPlaceId } from "../../lib/production/environment";
+import { beatSheetFrom } from "../../lib/production/beats";
+import { applyTeamPatch, diffForTeam, emptyTeamCanvas } from "../../lib/workbench/team-canvas-model";
 
 /* lib/workbench/merge.ts: how two saves of one draft come together. */
 
@@ -42,15 +53,22 @@ test.describe("which side a value comes from", () => {
     expect(merge3<unknown>("was", null, "theirs")).toBe(null);
   });
 
-  test("lists that are neither records nor distinct strings: one changed side wins, both changed keeps mine", () => {
+  test("lists of numbers are values: one changed side wins, both changed keeps mine", () => {
     expect(merge3([1, 2], [1, 2], [1, 2, 3])).toEqual([1, 2, 3]);
     expect(merge3([1, 2], [2], [1, 2])).toEqual([2]);
     /* Vectors are never mixed element by element. */
     expect(merge3([0, 0, 0], [1, 0, 0], [0, 2, 0])).toEqual([1, 0, 0]);
-    /* A list of strings that repeats one is a sequence, not a set. */
-    expect(merge3(["a", "a"], ["a", "a", "m"], ["a", "a", "t"])).toEqual(["a", "a", "m"]);
-    /* Records without any identity field fall back the same way. */
-    expect(merge3([{ page: 1 }], [{ page: 1 }, { page: 2 }], [{ page: 3 }])).toEqual([{ page: 1 }, { page: 2 }]);
+  });
+
+  test("other lists of strings, and records without an identity, merge as sequences: what each side changed elsewhere is kept", () => {
+    /* A list of strings that repeats one is a sequence, not a set: both insertions stay. */
+    expect(merge3(["a", "a"], ["a", "a", "m"], ["a", "a", "t"])).toEqual(["a", "a", "m", "t"]);
+    /* Theirs rewrote the first record, mine added a second: both. */
+    expect(merge3([{ note: "one" }], [{ note: "one" }, { note: "two" }], [{ note: "three" }])).toEqual([{ note: "three" }, { note: "two" }]);
+    /* Mine only deleted what theirs rewrote: the rewrite is kept. */
+    expect(merge3(["Open wide.", "Hold."], ["Hold."], ["Open wider.", "Hold."])).toEqual(["Open wider.", "Hold."]);
+    /* Both rewrote one stretch: mine's rewrite stands. */
+    expect(merge3(["Open wide.", "Hold."], ["Open close.", "Hold."], ["Open wider.", "Hold."])).toEqual(["Open close.", "Hold."]);
   });
 
   test("lists of distinct strings merge as sets: both sides' additions stay, both sides' removals hold", () => {
@@ -226,11 +244,12 @@ test.describe("lists of records merge by id", () => {
       .toEqual(["a1", "a0", "a2"]);
   });
 
-  test("a secondary key that repeats within a side is not an identity: the list falls back to mine", () => {
+  test("a secondary key that repeats within a side is not an identity: the list merges as a sequence", () => {
     const base = { layers: [{ assetId: "a", x: 0 }] };
     const mine = { layers: [{ assetId: "a", x: 0 }, { assetId: "a", x: 5 }] };
     const theirs = { layers: [{ assetId: "a", x: 9 }] };
-    expect(merge3(base, mine, theirs)).toEqual(mine);
+    /* Theirs moved the layer, mine added a second one: both. */
+    expect(merge3(base, mine, theirs)).toEqual({ layers: [{ assetId: "a", x: 9 }, { assetId: "a", x: 5 }] });
   });
 });
 
@@ -332,5 +351,291 @@ test.describe("guarantees", () => {
       for (const item of base) if (!mine.removed.has(item) && !theirs.removed.has(item)) expect(merged, `round ${round}: ${item} kept`).toContain(item);
       expect(merge3(base, mine.list, merged), `round ${round}: idempotent`).toEqual(merged);
     }
+  });
+});
+
+/* ── Folded from the break hunts of 26 September: each is a case a merge once got wrong. ── */
+
+test.describe("sequences, text and keys", () => {
+  test("keyframes added in two windows: both windows' keyframes are kept, in frame order", () => {
+    const key = (frame: number, x = 0) => ({ frame, position: [x, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] });
+    expect(merge3({ keyframes: [key(1)] }, { keyframes: [key(1), key(24)] }, { keyframes: [key(1), key(48)] }).keyframes.map((k) => k.frame)).toEqual([1, 24, 48]);
+    expect(merge3({ keyframes: [key(1)] }, { keyframes: [key(1), key(48)] }, { keyframes: [key(1), key(24)] }).keyframes.map((k) => k.frame)).toEqual([1, 24, 48]);
+    /* The same frame keyed in both: one keyframe, mine. */
+    expect(merge3({ keyframes: [key(1)] }, { keyframes: [key(1), key(24, 5)] }, { keyframes: [key(1), key(24, 9)] }).keyframes).toEqual([key(1), key(24, 5)]);
+  });
+
+  test("a screenplay typed in two windows, in different scenes: both scenes are kept", () => {
+    const base = { ...newProject("Script"), script: "INT. HARBOUR - DUSK\n\nIce.\n\nEXT. LIGHTHOUSE - NIGHT\n\nWind.\n" };
+    const mine = { ...base, script: base.script.replace("Ice.", "Ice. A fox crosses.") };
+    const theirs = { ...base, script: base.script.replace("Wind.", "Wind. The lamp turns.") };
+    expect(merge3(base, mine, theirs).script).toBe("INT. HARBOUR - DUSK\n\nIce. A fox crosses.\n\nEXT. LIGHTHOUSE - NIGHT\n\nWind. The lamp turns.\n");
+    /* The same line rewritten in both: mine's line. */
+    const clash = { ...base, script: base.script.replace("Ice.", "Ice cracks.") };
+    expect(merge3(base, mine, clash).script).toBe(mine.script);
+  });
+
+  test("two windows rewriting the same marketing hook keep twelve hooks: mine's rewrite", () => {
+    const hooks = Array.from({ length: 12 }, (_, i) => `Hook ${i}`);
+    const sharper = [...hooks], shorter = [...hooks];
+    sharper[3] = "Hook 3, sharper";
+    shorter[3] = "Hook 3, shorter";
+    expect(merge3(hooks, sharper, shorter)).toEqual(sharper);
+  });
+
+  test("a key named __proto__ that one side added is data: it survives the merge, and nothing's prototype changes", () => {
+    const base = JSON.parse('{"scriptReviews": {}}');
+    const mine = JSON.parse('{"scriptReviews": {"__proto__": {"sourceKey": "k", "intent": "Mine", "beats": []}}}');
+    const theirs = JSON.parse('{"scriptReviews": {"scene-2": {"sourceKey": "k", "intent": "Theirs", "beats": []}}}');
+    const merged = merge3(base, mine, theirs) as { scriptReviews: Record<string, unknown> };
+    expect(Object.keys(merged.scriptReviews).sort()).toEqual(["__proto__", "scene-2"]);
+    expect(Object.getPrototypeOf(merged.scriptReviews)).toBe(Object.prototype);
+  });
+});
+
+test.describe("a merge of two valid saves is a valid save (mergeDraft)", () => {
+  const image = (id: string): Asset => ({ id, name: id, kind: "image", category: "Reference", url: `/api/uploads/${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
+  const at = "2026-09-26T00:00:00.000Z";
+  const valid = (p: Project) => saveSchema.safeParse({ project: p, revision: 1 }).success;
+  function place(references: number, plates: number, pending: string[] = []): Project {
+    const p = project();
+    p.assets = Array.from({ length: Math.max(references, plates) + 4 }, (_, i) => image(`a${i}`));
+    p.production = { environment: { world: "", model: "gemini-3.1-flash-image", entries: [{
+      id: "env-1", name: "Harbour", notes: "", prompt: "",
+      references: p.assets.slice(0, references).map((a) => a.id),
+      plates: p.assets.slice(0, plates).map((a) => ({ assetId: a.id, at, source: "render" as const })),
+      ...(pending.length ? { pending: pending.map((jobId) => ({ jobId, at })) } : {}),
+    }] } };
+    return p;
+  }
+  const env = (p: Project) => p.production!.environment!.entries[0];
+
+  test("each window adds a reference to a place holding five of six: the saved one's stands, the merge saves", () => {
+    const base = place(5, 0);
+    const mine = clone(base); mine.assets.push(image("mine-ref")); env(mine).references.push("mine-ref");
+    const theirs = clone(base); theirs.assets.push(image("their-ref")); env(theirs).references.push("their-ref");
+    const merged = mergeDraft(base, mine, theirs);
+    expect(valid(merged)).toBe(true);
+    /* What the saved version had first, as the stage's own add would have left it; the upload itself stays in the library. */
+    expect(env(merged).references).toEqual([...env(base).references, "their-ref"]);
+    expect(merged.assets.map((a) => a.id)).toEqual(expect.arrayContaining(["mine-ref", "their-ref"]));
+  });
+
+  test("each window files a plate on a place holding thirty: both new plates, the oldest trimmed", () => {
+    const base = place(0, 30);
+    const file = (p: Project, id: string) => { p.assets.push(image(id)); env(p).plates = [{ assetId: id, at, source: "render" as const }, ...env(p).plates].slice(0, 30); };
+    const mine = clone(base); file(mine, "mine-plate");
+    const theirs = clone(base); file(theirs, "their-plate");
+    const merged = mergeDraft(base, mine, theirs);
+    expect(valid(merged)).toBe(true);
+    expect(env(merged).plates.map((x) => x.assetId).slice(0, 2)).toEqual(["mine-plate", "their-plate"]);
+    expect(env(merged).plates).toHaveLength(30);
+  });
+
+  test("each window queues renders on one place: the latest five in flight, as the stage keeps them", () => {
+    const base = place(0, 0, ["job-0", "job-1"]);
+    const mine = clone(base); env(mine).pending!.push({ jobId: "job-a", at }, { jobId: "job-b", at });
+    const theirs = clone(base); env(theirs).pending!.push({ jobId: "job-c", at }, { jobId: "job-d", at });
+    const merged = mergeDraft(base, mine, theirs);
+    expect(valid(merged)).toBe(true);
+    expect(env(merged).pending!.map((x) => x.jobId)).toEqual(["job-1", "job-c", "job-d", "job-a", "job-b"]);
+  });
+
+  test("each window files a take on a character holding twenty: both new takes, the oldest trimmed", () => {
+    const base = project((p) => { p.production = { cast: { entries: [{ ...entry("cast-1", "Mara"), takes: Array.from({ length: 20 }, (_, i) => ({ genId: `g${i}`, at })) }] } }; });
+    const file = (p: Project, genId: string) => { const e = p.production!.cast!.entries[0]; e.takes = [{ genId, at }, ...e.takes].slice(0, 20); e.selected = genId; };
+    const mine = clone(base); file(mine, "g-mine");
+    const theirs = clone(base); file(theirs, "g-theirs");
+    const merged = mergeDraft(base, mine, theirs);
+    expect(valid(merged)).toBe(true);
+    expect(merged.production!.cast!.entries[0].takes.slice(0, 2).map((t) => t.genId)).toEqual(["g-mine", "g-theirs"]);
+  });
+});
+
+test.describe("links after a merge (mergeDraft)", () => {
+  function graph(): Project {
+    return project((p) => {
+      p.nodes = [node("n1", { title: "Opening" }), node("m1", { type: "media", title: "Plate", assetId: "a1" }), node("n2", { title: "Second", linked: ["m1"] }), node("g1", { type: "grade", title: "Warm grade" })];
+      p.assets = [{ id: "a1", name: "plate.png", kind: "image", url: "/x.png", category: "Shot", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] }];
+    });
+  }
+  const dangling = (p: Project) => { const known = new Set(ids(p.nodes)); return p.nodes.flatMap((n) => n.linked.filter((id) => !known.has(id)).map((id) => `${n.id} -> ${id}`)); };
+  const wire = (p: Project, from: string, to: string) => { const out = connectNodes(clone(p), from, to); if ("error" in out) throw new Error(out.error); return out.project; };
+
+  test("mine wires Opening into a grade, theirs deleted Opening: the wire goes with it, and the grade takes another input", () => {
+    const base = graph();
+    const merged = mergeDraft(base, wire(base, "n1", "g1"), removeShots(clone(base), ["n1"]).project);
+    expect(dangling(merged)).toEqual([]);
+    expect(ids(merged.nodes)).not.toContain("n1");
+    expect(graphEdges(merged.nodes).filter((e) => e.target === "g1")).toEqual([]);
+    expect(canConnect(merged.nodes, "n2", "g1")).toBeNull();
+  });
+
+  test("theirs wires a plate into another shot, mine deleted the shot it fed (and so the plate): the plate stays, wired", () => {
+    const base = graph();
+    const mine = removeShots(clone(base), ["n2"]).project;
+    expect(ids(mine.nodes)).not.toContain("m1");
+    const merged = mergeDraft(base, mine, wire(base, "m1", "n1"));
+    expect(merged.nodes.find((n) => n.id === "n1")?.linked).toEqual(["m1"]);
+    expect(ids(merged.nodes)).toContain("m1");
+    expect(dangling(merged)).toEqual([]);
+  });
+});
+
+test.describe("what two windows make at once is made once", () => {
+  test("a shot's first direction note typed in two windows is one direction operation", () => {
+    const base = project((p) => { p.nodes = [node("n1", { title: "Opening", type: "scene" })]; });
+    const mine = shotPatch(clone(base), "n1", { note: "Note typed in the Rig" });
+    const theirs = shotPatch(clone(base), "n1", { note: "Note typed in another window" });
+    const directions = (merge3(base, mine, theirs).nodes[0].operations ?? []).filter((op) => op.kind === "direction");
+    expect(directions.map((op) => op.values.note)).toEqual(["Note typed in the Rig"]);
+  });
+
+  test("a sound lane made in two windows is one lane; a locked lane gets a new one beside it", () => {
+    const base = project();
+    const merged = merge3(base, { ...base, nodes: [...base.nodes, createSoundNode(base, "music")] }, { ...base, nodes: [...base.nodes, createSoundNode(base, "music")] });
+    expect(merged.nodes.filter((n) => n.role === findSoundNode(merged, "music")?.role)).toHaveLength(1);
+    const locked = { ...merged, nodes: merged.nodes.map((n) => (n.type === "audio" ? { ...n, locked: true } : n)) };
+    expect(createSoundNode(locked, "music").id).not.toBe(findSoundNode(merged, "music")!.id);
+  });
+
+  test("two tabs taking one agent run's places, or one breakdown, hold each once", () => {
+    const base = project((p) => { p.production = { environment: { world: "", model: "gemini-3.1-flash-image", entries: [] } }; });
+    const take = (p: Project) => { const out = clone(p); out.production!.environment!.entries = ["Harbour", "Lighthouse", "Fish market"].map((name) => newEnvironmentEntry(name, "", "", sourcedPlaceId("wb_development_job-1", name))); out.production!.environment!.agentJobId = "wb_development_job-1"; return out; };
+    const merged = merge3(base, take(base), take(base));
+    expect(merged.production!.environment!.entries.map((e) => e.name)).toEqual(["Harbour", "Lighthouse", "Fish market"]);
+    const scenes = [{ heading: "INT. HARBOUR", summary: "", beats: ["Ice."], shots: [], characters: [], locations: [], props: [] }] as unknown as Parameters<typeof beatSheetFrom>[0];
+    const a = beatSheetFrom(scenes, "0".repeat(64), "wb_development_job-2"), b = beatSheetFrom(scenes, "0".repeat(64), "wb_development_job-2");
+    const sheets = merge3<Project>(project(), { ...project(), production: { beats: a } }, { ...project(), production: { beats: { ...b, updatedAt: "2026-09-26T01:00:00.000Z" } } });
+    expect(sheets.production!.beats!.scenes).toHaveLength(1);
+    expect(sheets.production!.beats!.scenes[0].beats).toHaveLength(1);
+  });
+});
+
+test.describe("an undo that puts back a shot another window changed since", () => {
+  test("the shot merges from what it was when deleted: the other window's edit stands, once", () => {
+    const opening = node("n1", { title: "Opening", operations: [{ id: "op1", kind: "direction", enabled: true, values: { note: "Original note" } }] });
+    const before = project((p) => { p.nodes = [opening, node("n2")]; });
+    const deleted = removeShots(clone(before), ["n1"]);
+    /* Another window still held Opening, changed its note, and its merge kept the change: the server has Opening back. */
+    const theirs = { ...deleted.project, nodes: [{ ...opening, operations: [{ id: "op1", kind: "direction" as const, enabled: true, values: { note: "Teammate note" } }] }, ...deleted.project.nodes] };
+    const mine = restoreShots(clone(deleted.project), deleted.removed);
+    const ancestors = new Map(deleted.removed.removed.map((n) => [n.id, n]));
+    const merged = mergeDraft(deleted.project, mine, theirs, { ancestors });
+    expect(duplicates(ids(merged.nodes))).toEqual([]);
+    expect(merged.nodes.find((n) => n.id === "n1")?.operations?.[0].values.note).toBe("Teammate note");
+    /* Without an ancestor it would be two unrelated additions, mine winning field by field. */
+    expect(mergeDraft(deleted.project, mine, theirs).nodes.find((n) => n.id === "n1")?.operations?.[0].values.note).toBe("Original note");
+  });
+});
+
+/**
+ * A revision-checked server that records each tagged save under its writer and
+ * answers `check-write` (lib/workbench/records.ts); `afterLanding` runs once,
+ * right after the first PUT lands: another window saves on top of it. `offline`
+ * drops every request.
+ */
+function tagServer(start: Project, afterLanding?: (landed: Project) => Project) {
+  const state = { project: start, revision: 1, offline: false, dropFirst: true, calls: [] as string[], writes: new Map<string, { seq: number; revision: number | null }>() };
+  globalThis.fetch = async (_url, init) => {
+    const method = init?.method ?? "GET";
+    state.calls.push(method);
+    if (state.offline) throw new TypeError("Failed to fetch");
+    if (method === "PUT") {
+      const body = JSON.parse(String(init?.body)) as { project: Project; revision: number; write?: { writer: string; seq: number } };
+      const seen = body.write ? state.writes.get(body.write.writer) : undefined;
+      if (body.revision !== state.revision || (seen && seen.seq >= body.write!.seq)) return reply({ error: "This project changed in another window.", code: "revision_conflict" }, 409);
+      state.project = { ...body.project, productionProjectId: "production", shotMappings: {} };
+      state.revision += 1;
+      if (body.write) state.writes.set(body.write.writer, { seq: body.write.seq, revision: state.revision });
+      if (state.dropFirst) {
+        state.dropFirst = false;
+        if (afterLanding) { state.project = { ...afterLanding(structuredClone(state.project)), productionProjectId: "production", shotMappings: {} }; state.revision += 1; }
+        else state.offline = true;
+        throw new TypeError("Failed to fetch");
+      }
+      return reply({ revision: state.revision, productionProjectId: "production", shotMappings: {} });
+    }
+    if (method === "POST") {
+      const { write } = JSON.parse(String(init?.body)) as { write: { writer: string; seq: number } };
+      const row = state.writes.get(write.writer);
+      const landed = row && row.seq === write.seq && row.revision !== null ? row.revision : null;
+      if (landed === null && (!row || row.seq < write.seq)) state.writes.set(write.writer, { seq: write.seq, revision: null });
+      return reply({ landed, project: state.project, revision: state.revision });
+    }
+    return reply({ project: state.project, revision: state.revision });
+  };
+  return state;
+}
+const nativeFetch = globalThis.fetch;
+const reply = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+
+test.describe("a save whose reply was lost (writeMergedDraft)", () => {
+  test.afterEach(() => { globalThis.fetch = nativeFetch; });
+
+  test("it landed and another window built on it: what that window did stands — a rewrite, a rename, a delete", async () => {
+    const base = project((p) => { p.brief = "Original brief"; p.nodes = [node("n1")]; });
+    const cases: [Project, (landed: Project) => Project, (saved: Project) => unknown, unknown][] = [
+      [{ ...base, brief: "Brief typed here" }, (landed) => ({ ...landed, brief: "Rewritten after reading it" }), (saved) => saved.brief, "Rewritten after reading it"],
+      [{ ...base, nodes: [...base.nodes, node("m1", { title: "Added here" })] }, (landed) => ({ ...landed, nodes: landed.nodes.map((n) => (n.id === "m1" ? { ...n, title: "Renamed there" } : n)) }), (saved) => saved.nodes.find((n) => n.id === "m1")?.title, "Renamed there"],
+      [{ ...base, nodes: [...base.nodes, node("m1")] }, (landed) => ({ ...landed, nodes: landed.nodes.filter((n) => n.id !== "m1") }), (saved) => ids(saved.nodes), ["n1"]],
+    ];
+    for (const [mine, onTop, read, expected] of cases) {
+      const state = tagServer(base, onTop);
+      const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 1, writer: draftWriter() });
+      expect(read(state.project), state.calls.join(",")).toEqual(expected);
+      expect(read(saved.project)).toEqual(expected);
+      /* Checked, never sent again. */
+      expect(state.calls).toEqual(["PUT", "POST"]);
+    }
+  });
+
+  test("it landed but the check was lost too: what is changed back meanwhile (an undo, a cleared field) is saved as such", async () => {
+    const base = project((p) => { p.brief = ""; p.nodes = [node("n1"), node("keep-me", { title: "A shot the team made" })]; });
+    const cases: [Project, Project, (p: Project) => unknown, unknown][] = [
+      /* Typed, then cleared. */
+      [{ ...base, brief: "Typed" }, base, (p) => p.brief, ""],
+      /* Added, then removed again (and something else edited). */
+      [{ ...base, nodes: [...base.nodes, node("oops")] }, { ...base, brief: "Next edit" }, (p) => ids(p.nodes), ["n1", "keep-me"]],
+      /* Deleted, then brought back with ⌘Z. */
+      [{ ...base, nodes: [node("n1")] }, { ...base, brief: "Next edit" }, (p) => ids(p.nodes), ["n1", "keep-me"]],
+    ];
+    for (const [first, then, read, expected] of cases) {
+      const state = tagServer(base);
+      const writer = draftWriter();
+      await expect(writeMergedDraft("/api/workbench", "scope", { base, mine: first, revision: 1, writer })).rejects.toMatchObject({ uncertain: true });
+      expect(writer.unconfirmed).not.toBeNull();
+      state.offline = false;
+      /* The editor still holds the pre-save base; its writer settles the lost save first. */
+      const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine: then, revision: 1, writer });
+      expect(read(saved.project)).toEqual(expected);
+      expect(read(state.project)).toEqual(expected);
+      expect(writer.unconfirmed).toBeNull();
+    }
+  });
+});
+
+test.describe("the team canvas follows an edit field by field", () => {
+  test("a merge that brings in another window's title never puts a stale prompt over a teammate's", () => {
+    const opening = node("n1", { title: "Opening", text: "Original prompt" });
+    let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [opening, node("n2")], removeNodes: [], upsertAssets: [], order: null, at: 1 });
+    /* A teammate's whole-node edit, as the route takes it: it overwrites. */
+    canvas = applyTeamPatch(canvas, { upsertNodes: [{ ...opening, text: "Teammate prompt" }], removeNodes: [], upsertAssets: [], order: null, at: 2 });
+    const before = project((p) => { p.nodes = [opening, node("n2")]; });
+    const after = { ...before, nodes: [{ ...opening, title: "Opening (retitled)" }, node("n2")] };
+    const patch = diffForTeam(before, after, 3)!;
+    expect(patch.fields).toEqual({ n1: ["title"] });
+    expect(applyTeamPatch(canvas, patch).nodes.n1).toMatchObject({ title: "Opening (retitled)", text: "Teammate prompt" });
+  });
+
+  test("a shot an undo puts back joins the canvas, unless a teammate put it back first", () => {
+    const opening = node("n1", { title: "Opening", text: "Original prompt" });
+    const before = project((p) => { p.nodes = [node("n2")]; });
+    const restore = diffForTeam(before, { ...before, nodes: [node("n2"), opening] }, 5)!;
+    expect(restore.made).toEqual(["n1"]);
+    const gone = applyTeamPatch(applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [opening, node("n2")], removeNodes: [], upsertAssets: [], order: null, at: 1 }), { upsertNodes: [], removeNodes: ["n1"], upsertAssets: [], order: null, at: 2 });
+    expect(applyTeamPatch(gone, restore).nodes.n1?.text).toBe("Original prompt");
+    const back = applyTeamPatch(gone, { upsertNodes: [{ ...opening, text: "Teammate prompt" }], removeNodes: [], upsertAssets: [], order: null, at: 3 });
+    expect(applyTeamPatch(back, restore).nodes.n1?.text).toBe("Teammate prompt");
   });
 });

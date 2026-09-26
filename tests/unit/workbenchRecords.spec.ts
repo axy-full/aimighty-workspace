@@ -166,3 +166,50 @@ test('a draft whose project was deleted still saves its edits, and only its own 
   await expect(saveDraft('other',{...newProject('Claims it'),productionProjectId:first.productionProjectId},0)).rejects.toThrow(/no longer exists/);
  });
 });
+
+test('a tagged save has one known outcome: checked, it says where it landed, or it is fenced off and never lands late',async()=>{
+ const {saveDraft,readDraft,checkDraftWrite,DraftConflictError}=await import('../../lib/workbench/records');
+ const {newProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');
+ await runInTenant(workspace('write-tags'),async()=>{
+  const p=newProject('Lost replies');
+  const writer='writer-0000-aaaa';
+  await saveDraft('owner',p,0,{writer,seq:1});
+  expect(await checkDraftWrite('owner',p.id,{writer,seq:1})).toBe(1);
+  /* Another window saves on top: the first save still says it landed, at revision 1. */
+  await saveDraft('owner',{...p,brief:'On top'},1,{writer:'writer-1111-bbbb',seq:1});
+  expect(await checkDraftWrite('owner',p.id,{writer,seq:1})).toBe(1);
+  /* A save checked before it arrived: not landed, and fenced — arriving late, it is refused, as a conflict. */
+  expect(await checkDraftWrite('owner',p.id,{writer,seq:2})).toBeNull();
+  await expect(saveDraft('owner',{...p,brief:'Late'},2,{writer,seq:2})).rejects.toBeInstanceOf(DraftConflictError);
+  expect((await readDraft('owner',p.id))?.project.brief).toBe('On top');
+  /* The same writer's next save goes through. */
+  await saveDraft('owner',{...p,brief:'Next'},2,{writer,seq:3});
+  expect(await checkDraftWrite('owner',p.id,{writer,seq:3})).toBe(3);
+  /* Another owner's writer of the same id knows nothing of these. */
+  expect(await checkDraftWrite('someone-else',p.id,{writer,seq:3})).toBeNull();
+ });
+});
+
+test('a draft save carries its node edits to a shared team canvas, field by field, from any editor',async()=>{
+ const {saveDraft,readDraft}=await import('../../lib/workbench/records');
+ const {patchTeamCanvas,readTeamCanvas}=await import('../../lib/workbench/team-canvas');
+ const {newProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');
+ await runInTenant(workspace('canvas-follows'),async()=>{
+  const scene=(id:string,extra:Record<string,unknown>={})=>({id,title:id,type:'scene' as const,x:0,y:0,width:238,linked:[] as string[],...extra});
+  const p={...newProject('Shared rig'),nodes:[scene('n1',{title:'Opening',text:'Original prompt'}),scene('n2')]};
+  const first=await saveDraft('owner',p,0);
+  /* No canvas yet: a save leaves it to the first Rig that opens it. */
+  await saveDraft('owner',{...(await readDraft('owner',p.id))!.project,brief:'Only the brief'},1);
+  expect(await readTeamCanvas(first.productionProjectId)).toBeNull();
+  /* A Rig opened it; a teammate rewrote Opening's prompt there. */
+  await patchTeamCanvas(first.productionProjectId,{upsertNodes:(await readDraft('owner',p.id))!.project.nodes,removeNodes:[],upsertAssets:[],order:null},'owner');
+  await patchTeamCanvas(first.productionProjectId,{upsertNodes:[scene('n1',{title:'Opening',text:'Teammate prompt'})],removeNodes:[],upsertAssets:[],order:null},'teammate');
+  /* A Studio stage (not the Rig) retitles Opening and deletes Second in the draft. */
+  const now=(await readDraft('owner',p.id))!;
+  await saveDraft('owner',{...now.project,nodes:[{...now.project.nodes[0],title:'Opening (retitled)'}]},now.revision);
+  const canvas=(await readTeamCanvas(first.productionProjectId))!.canvas;
+  expect(canvas.nodes.n1).toMatchObject({title:'Opening (retitled)',text:'Teammate prompt'});
+  expect(canvas.nodes.n2).toBeUndefined();
+  expect(canvas.removed.n2).toBeTruthy();
+ });
+});

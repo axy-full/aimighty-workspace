@@ -9,7 +9,7 @@ import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import {
-  DEFAULT_ENVIRONMENT, ENVIRONMENT_CATEGORY, ENVIRONMENT_LIMITS, ENVIRONMENT_MODELS, environmentsFromBeats, newEnvironmentEntry, plateAsset, plateRequest,
+  DEFAULT_ENVIRONMENT, ENVIRONMENT_CATEGORY, ENVIRONMENT_LIMITS, ENVIRONMENT_MODELS, environmentsFromBeats, newEnvironmentEntry, plateAsset, plateRequest, sourcedPlaceId,
   type Environment, type EnvironmentEntry, type EnvironmentPlate,
 } from "@/lib/production/environment";
 import { entryAsset } from "@/lib/production/sequence";
@@ -81,7 +81,14 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
     let added = 0;
     setEnv((e) => {
       const names = new Set(e.entries.map((x) => x.name.trim().toLowerCase()));
-      const fresh = proposal.entries.filter((x) => !names.has(x.name.trim().toLowerCase())).map((x) => newEnvironmentEntry(x.name, x.notes, x.prompt));
+      /* Each place takes an id from this run and its name: another tab taking the same run makes the same places, which the merge of the two saves holds once. */
+      const ids = new Set(e.entries.map((x) => x.id));
+      const fresh = proposal.entries.filter((x) => {
+        const id = sourcedPlaceId(done.id, x.name);
+        if (names.has(x.name.trim().toLowerCase()) || ids.has(id)) return false;
+        ids.add(id);
+        return true;
+      }).map((x) => newEnvironmentEntry(x.name, x.notes, x.prompt, sourcedPlaceId(done.id, x.name)));
       /* A place the director named but gave no prompt takes the agent's. */
       const filled = e.entries.map((x) => {
         const theirs = proposal.entries.find((y) => y.name.trim().toLowerCase() === x.name.trim().toLowerCase());

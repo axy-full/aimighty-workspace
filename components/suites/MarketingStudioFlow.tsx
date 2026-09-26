@@ -22,6 +22,7 @@ import { generationReferenceIds } from "@/lib/workbench/node-graph";
 import { referenceAdBinding, validateReferenceAdBinding, type ReferenceAdBinding } from "@/lib/workbench/reference-ad";
 import { uid, type Asset, type Project, type Stage } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
+import { stableId } from "@/lib/workbench/stable-id";
 
 /**
  * Marketing Studio's whole flow, in one place: the four sections
@@ -351,7 +352,8 @@ export default function MarketingStudioFlow({
         ...binding.sources,
       ];
       const variant = {
-        id: uid("campaign"),
+        /* One variant per bound node: bound in two windows at once, it is still one variant (one id), not two. */
+        id: stableId("campaign", "variant", nodeId),
         nodeId,
         hook,
         castAssetId: castId,

@@ -2,6 +2,7 @@ import { PROJECT_LIMITS } from "../workbench/project-limits";
 import { createNode } from "../workbench/node-graph";
 import { uid, type Asset, type CanvasNode, type Project } from "../workbench/studio";
 import { boardShots } from "./boards";
+import { stableId } from "../workbench/stable-id";
 
 /**
  * Production › Rig operations (owner's brief, 23 September), pure so the Rig's
@@ -28,7 +29,7 @@ function roomFor(project: Project, n: number) { if (project.nodes.length + n > N
 const withAsset = (project: Project, asset: Asset) => (project.assets.some((a) => a.id === asset.id) ? project : { ...project, assets: [...project.assets, asset] });
 
 /** A media node holding the asset, linked into the shot. The asset is filed on the project if it is not already. */
-export function addInput(project: Project, shotId: string, asset: Asset, title = asset.name): Project {
+export function addInput(project: Project, shotId: string, asset: Asset, title = asset.name, id = uid("node")): Project {
   const shot = project.nodes.find((n) => n.id === shotId);
   if (!shot) throw new RigBuildError("Choose a shot first.");
   if (shot.locked) throw new RigBuildError("Unlock this shot before changing its inputs.");
@@ -38,7 +39,7 @@ export function addInput(project: Project, shotId: string, asset: Asset, title =
   if (shot.linked.length >= 100) throw new RigBuildError("This shot has reached its input limit.");
   roomFor(project, 1);
   const next = withAsset(project, asset);
-  const media: CanvasNode = { ...createNode("media", project.nodes.length, place(project, shot)), id: uid("node"), title: title.slice(0, 300), assetId: asset.id, width: MEDIA_WIDTH, linked: [] };
+  const media: CanvasNode = { ...createNode("media", project.nodes.length, place(project, shot)), id, title: title.slice(0, 300), assetId: asset.id, width: MEDIA_WIDTH, linked: [] };
   return { ...next, nodes: [...next.nodes.map((n) => (n.id === shotId ? { ...n, linked: [...n.linked, media.id] } : n)), media] };
 }
 
@@ -106,12 +107,15 @@ export function branchFromTake(project: Project, shotId: string, take: Asset): {
   return { project: next, id: node.id };
 }
 
-/** One shot per framed storyboard shot not yet in the Rig: its prompt, its frame as the input (first frame for live action). */
+/**
+ * One shot per framed storyboard shot not yet in the Rig: its prompt, its frame as the input (first frame for live action).
+ * Each shot and its frame take ids from the storyboard shot, so two windows building at once make them once.
+ */
 export function buildFromBoards(project: Project, engine: string): { project: Project; added: number } {
   const boards = project.production?.boards;
   const framed = boardShots(project.production?.beats).filter((s) => {
     const frame = boards?.frames[s.id];
-    return frame && (frame.selected ?? frame.takes[0]?.genId) && !project.nodes.some((n) => n.boardShotId === s.id);
+    return frame && (frame.selected ?? frame.takes[0]?.genId) && !project.nodes.some((n) => n.boardShotId === s.id || n.id === stableId("node", "board-shot", s.id));
   });
   if (!framed.length) throw new RigBuildError(boards ? "Every framed shot is already in the Rig." : "Frame the shots in Storyboards first.");
   roomFor(project, framed.length * 2);
@@ -122,9 +126,10 @@ export function buildFromBoards(project: Project, engine: string): { project: Pr
     const asset = next.assets.find((a) => a.id === genId) ?? { id: genId, generationId: genId, kind: "image" as const, category: "Storyboard", name: `Frame ${s.number}`, url: `/api/media/${genId}`, description: s.scene, prompt: frame.prompt, status: "Draft" as const, locked: false, version: 1, refs: [] };
     const base = createNode("scene", next.nodes.length, place(next));
     const text = [frame.prompt || s.shot.description, s.shot.movement && `Camera: ${s.shot.movement}.`, s.shot.sound && `Sound: ${s.shot.sound}.`].filter(Boolean).join("\n").slice(0, 20_000);
-    const shot: CanvasNode = { ...base, id: uid("node"), title: `${s.number} — ${s.shot.description || s.scene}`.slice(0, 300), text, mode: "Video", engine, ...(s.shot.duration ? { durationS: Math.round(s.shot.duration) } : {}), boardShotId: s.id };
+    const shot: CanvasNode = { ...base, id: stableId("node", "board-shot", s.id), title: `${s.number} — ${s.shot.description || s.scene}`.slice(0, 300), text, mode: "Video", engine, ...(s.shot.duration ? { durationS: Math.round(s.shot.duration) } : {}), boardShotId: s.id };
     next = { ...next, nodes: [...next.nodes, shot] };
-    next = addInput(next, shot.id, asset, `Frame ${s.number}`);
+    const frameId = stableId("node", "board-frame", s.id);
+    next = addInput(next, shot.id, asset, `Frame ${s.number}`, next.nodes.some((n) => n.id === frameId) ? uid("node") : frameId);
     if (boards!.style === "live") next = setFirstFrame(next, shot.id, asset.id);
   }
   return { project: next, added: framed.length };

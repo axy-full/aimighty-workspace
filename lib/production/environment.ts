@@ -3,6 +3,7 @@ import { BOARD_MODELS, stillShape, type BoardModel } from "./boards";
 import type { GenerationBodyInput, GenerationReference } from "../workbench/generation-request";
 import { mediaReferenceIdentity } from "../workbench/media-reference-input";
 import type { Asset, Project } from "../workbench/studio";
+import { stableId } from "../workbench/stable-id";
 
 /**
  * Production › Environment (owner, 24 September): where the film's world is
@@ -40,9 +41,12 @@ export type Environment = { world: string; model: BoardModel; entries: Environme
 export const DEFAULT_ENVIRONMENT: Environment = { world: "", model: "gemini-3.1-flash-image", entries: [] };
 
 const newId = () => `env-${crypto.randomUUID().slice(0, 8)}`;
-export function newEnvironmentEntry(name = "", notes = "", prompt = ""): EnvironmentEntry {
-  return { id: newId(), name: name.slice(0, ENVIRONMENT_LIMITS.name), notes: notes.slice(0, ENVIRONMENT_LIMITS.notes), prompt: prompt.slice(0, ENVIRONMENT_LIMITS.prompt), references: [], plates: [] };
+/** `id`: a place made from a source (an agent run, the beat sheet) takes an id from it, so two windows taking the same source make it once. */
+export function newEnvironmentEntry(name = "", notes = "", prompt = "", id = newId()): EnvironmentEntry {
+  return { id, name: name.slice(0, ENVIRONMENT_LIMITS.name), notes: notes.slice(0, ENVIRONMENT_LIMITS.notes), prompt: prompt.slice(0, ENVIRONMENT_LIMITS.prompt), references: [], plates: [] };
 }
+/** The id of the place `name` an agent run (or the beat sheet, `source` "beats") made. */
+export const sourcedPlaceId = (source: string, name: string) => stableId("env", source, name.trim().toLowerCase());
 
 /** A plate prompt for a place: the place, then the world it belongs to, no people. */
 export function platePrompt(entry: Pick<EnvironmentEntry, "prompt" | "name">, world: string): string {
@@ -80,10 +84,12 @@ export function environmentsFromBeats(sheet: BeatSheet | null | undefined, exist
       found.set(key, entry);
     }
   });
-  return [...found.values()].slice(0, Math.max(0, ENVIRONMENT_LIMITS.entries - existing.length)).map((f) => newEnvironmentEntry(
+  const taken = new Set(existing.map((e) => e.id));
+  return [...found.values()].filter((f) => !taken.has(sourcedPlaceId("beats", f.name))).slice(0, Math.max(0, ENVIRONMENT_LIMITS.entries - existing.length)).map((f) => newEnvironmentEntry(
     f.name,
     `Scene${f.scenes.length > 1 ? "s" : ""} ${f.scenes.join(", ")}${f.headings.length ? ` · ${f.headings.slice(0, 3).join(" · ")}` : ""}`,
     `${f.name}: the place itself, wide, in the film's light, no people.`,
+    sourcedPlaceId("beats", f.name),
   ));
 }
 

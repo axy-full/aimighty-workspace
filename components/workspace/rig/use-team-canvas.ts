@@ -3,15 +3,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Json, LiveMap, Room } from "@liveblocks/client";
 import { draftBody, draftRequest } from "@/lib/workbench/draft-request";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
-import { diffForTeam, joinTeamCanvas, orderedIds, withTeamCanvas, type TeamPatch } from "@/lib/workbench/team-canvas-model";
+import { diffForTeam, joinTeamCanvas, nodeAfterEdit, orderedIds, withTeamCanvas, type TeamPatch } from "@/lib/workbench/team-canvas-model";
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
  *
  *  - Opening a project reads its production's canvas and folds it into the
  *    person's draft; nodes the canvas never saw join it (nothing vanishes).
- *  - Every local edit is sent to the server as a per-node patch, so the
- *    canvas is the same for everyone the next time they open it.
+ *  - Every local edit is sent to the server as a per-node patch — for a node
+ *    that was already there, only the fields the edit changed — so the
+ *    canvas is the same for everyone the next time they open it, and a
+ *    teammate's edit to another field of the same node stands. (A draft save
+ *    also carries its node edits to the canvas, from any editor.)
  *  - When the owner's Liveblocks key is set, the same edits also travel
  *    through a live room and land in teammates' open windows at once, with
  *    their cursors, selections and drags shown on the graph.
@@ -42,16 +45,27 @@ const RETRY_MS = 5000;
 const KEEPALIVE_MAX = 60_000;
 const plain = <T,>(value: T): Json => JSON.parse(JSON.stringify(value)) as Json;
 
-/** Several edits between saves travel as one patch: the last write of each node wins. */
+/** Several edits between saves travel as one patch: the last write of each node wins, with every field any of them changed. */
 function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
   if (!a) return b;
   const nodes = new Map(a.upsertNodes.map((n) => [n.id, n]));
   const removed = new Set(a.removeNodes);
-  for (const n of b.upsertNodes) { nodes.set(n.id, n); removed.delete(n.id); }
-  for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); }
+  const fields = new Map(Object.entries(a.fields ?? {}));
+  const made = new Set(a.made ?? []);
+  const whole = new Set(a.upsertNodes.filter((n) => !fields.has(n.id) && !made.has(n.id)).map((n) => n.id));
+  for (const n of b.upsertNodes) {
+    nodes.set(n.id, n);
+    removed.delete(n.id);
+    const changed = b.fields?.[n.id];
+    if (b.made?.includes(n.id)) { made.add(n.id); fields.delete(n.id); whole.delete(n.id); }
+    else if (!changed) { whole.add(n.id); fields.delete(n.id); made.delete(n.id); }
+    /* Made here, then changed: still one node this window made, as it is now. */
+    else if (!made.has(n.id) && !whole.has(n.id)) fields.set(n.id, [...new Set([...(fields.get(n.id) ?? []), ...changed])]);
+  }
+  for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); fields.delete(id); made.delete(id); whole.delete(id); }
   const assets = new Map(a.upsertAssets.map((x) => [x.id, x]));
   for (const x of b.upsertAssets) assets.set(x.id, x);
-  return { upsertNodes: [...nodes.values()], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
+  return { upsertNodes: [...nodes.values()], fields: Object.fromEntries(fields), made: [...made], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
 }
 
 /** The canvas with this window's not-yet-sent edits laid over it. */
@@ -59,7 +73,7 @@ function overlay(canvas: Canvas, patch: TeamPatch | null): Canvas {
   if (!patch) return canvas;
   const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
   const removedIds = new Set(canvas.removedIds);
-  for (const n of patch.upsertNodes) { nodes[n.id] = n; removedIds.delete(n.id); }
+  for (const n of patch.upsertNodes) { nodes[n.id] = nodeAfterEdit(nodes[n.id], undefined, n, patch); removedIds.delete(n.id); }
   for (const id of patch.removeNodes) { delete nodes[id]; removedIds.add(id); }
   for (const a of patch.upsertAssets) assets[a.id] = a;
   return { nodes, assets, order: patch.order ?? canvas.order, removedIds: [...removedIds] };
@@ -108,7 +122,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     if (!patch || !pid) return;
     pending.current = null;
     try {
-      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order });
+      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order });
       /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
          (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
       const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
@@ -187,7 +201,8 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
       const write = (patch: TeamPatch) => live.batch(() => {
         const nodes = root.get("nodes"), assets = root.get("assets");
-        for (const n of patch.upsertNodes) nodes.set(n.id, plain(n));
+        /* The fields an edit changed, over the room's node: a teammate's edit to another field stands. */
+        for (const n of patch.upsertNodes) nodes.set(n.id, plain(nodeAfterEdit(nodes.get(n.id) as unknown as CanvasNode | undefined, undefined, n, patch)));
         for (const id of patch.removeNodes) nodes.delete(id);
         for (const a of patch.upsertAssets) assets.set(a.id, plain(a));
         if (patch.order) root.set("order", patch.order);
@@ -197,7 +212,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       /* Alone in the room: the saved canvas is the truth, so the room starts from it.
          With teammates already editing: the room is ahead of the server; take it, then add what only this draft had. */
       const truth = { ...canvas, ...(outgoing ? {
-        nodes: { ...canvas.nodes, ...Object.fromEntries(outgoing.upsertNodes.map((n) => [n.id, n])) },
+        nodes: { ...canvas.nodes, ...Object.fromEntries(outgoing.upsertNodes.map((n) => [n.id, nodeAfterEdit(canvas.nodes[n.id], undefined, n, outgoing)])) },
         assets: { ...canvas.assets, ...Object.fromEntries(outgoing.upsertAssets.map((a) => [a.id, a])) },
         order: outgoing.order ?? canvas.order,
       } : {}) };

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Client } from "@libsql/client";
+import type { Client, Transaction } from "@libsql/client";
 import { db, ready, now } from "@/lib/db";
 import { workbenchTransaction } from "./records";
 import { canvasAssetSchema, canvasNodeSchema } from "./studio-schema";
@@ -42,6 +42,10 @@ const ID = /^[A-Za-z0-9_-]{1,100}$/;
 export const teamPatchSchema = z.object({
   productionId: z.string().regex(ID),
   upsertNodes: z.array(canvasNodeSchema).max(PROJECT_LIMITS.nodes),
+  /* Per node an edit changed: the fields it changed (only those are written). */
+  fields: z.record(z.string().max(100), z.array(z.string().max(100)).max(200)).optional(),
+  /* Nodes an edit made: they join unless the canvas already holds them. */
+  made: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes).optional(),
   removeNodes: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes),
   upsertAssets: z.array(canvasAssetSchema).max(PROJECT_LIMITS.assets),
   order: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes).nullable(),
@@ -77,22 +81,31 @@ export async function readTeamCanvas(productionId: string): Promise<{ canvas: Te
 /** Fold one person's edit in. The server's clock orders writes, so a skewed laptop clock cannot win. */
 export async function patchTeamCanvas(productionId: string, patch: Omit<TeamPatch, "at">, userId: string) {
   await teamCanvasReady();
-  return workbenchTransaction(async (tx) => {
-    const row = (await tx.execute({ sql: "SELECT body,revision FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
-    let current = emptyTeamCanvas();
-    if (row) { try { current = parseTeamCanvas(JSON.parse(String(row.body))); } catch { current = emptyTeamCanvas(); } }
-    const at = Math.max(now(), ...Object.values(current.stamps).map(Number).filter(Number.isFinite));
-    const next = applyTeamPatch(current, { ...patch, at });
-    if (Object.keys(next.nodes).length > PROJECT_LIMITS.nodes)
-      throw new TeamCanvasError(`A canvas holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} nodes.`, 413);
-    const body = JSON.stringify(next);
-    if (body.length > PROJECT_JSON_BYTES) throw new TeamCanvasError("This canvas has reached the 24 MB project limit.", 413);
-    const revision = (row ? Number(row.revision) : 0) + 1;
-    await tx.execute({
-      sql: `INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,?,?,?)
-            ON CONFLICT(production_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
-      args: [productionId, body, revision, userId, now()],
-    });
-    return { canvas: next, revision };
+  return workbenchTransaction(async (tx) => (await applyTeamCanvasPatch(tx, productionId, patch, userId))!);
+}
+
+/**
+ * The same fold inside a transaction the caller holds (a draft save carries
+ * its node edits to the canvas this way). With `onlyIfShared`, a production
+ * whose canvas nobody has opened yet is left alone: the first Rig to open it
+ * brings the whole draft.
+ */
+export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false) {
+  const row = (await tx.execute({ sql: "SELECT body,revision FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
+  if (!row && onlyIfShared) return null;
+  let current = emptyTeamCanvas();
+  if (row) { try { current = parseTeamCanvas(JSON.parse(String(row.body))); } catch { current = emptyTeamCanvas(); } }
+  const at = Math.max(now(), ...Object.values(current.stamps).map(Number).filter(Number.isFinite));
+  const next = applyTeamPatch(current, { ...patch, at });
+  if (Object.keys(next.nodes).length > PROJECT_LIMITS.nodes)
+    throw new TeamCanvasError(`A canvas holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} nodes.`, 413);
+  const body = JSON.stringify(next);
+  if (body.length > PROJECT_JSON_BYTES) throw new TeamCanvasError("This canvas has reached the 24 MB project limit.", 413);
+  const revision = (row ? Number(row.revision) : 0) + 1;
+  await tx.execute({
+    sql: `INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,?,?,?)
+          ON CONFLICT(production_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
+    args: [productionId, body, revision, userId, now()],
   });
+  return { canvas: next, revision };
 }
