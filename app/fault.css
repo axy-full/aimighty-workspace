@@ -17,6 +17,9 @@
 .gx .gx-fault-host { flex: 1; min-height: 0; overflow: auto; padding: 0 0 12px; }
 .gx .gx-fault-host[data-kind="inspector"] { padding: 14px 16px; }
 .gx .gx-fault-host .gx-fault { margin: 0; padding: 22px 16px 18px; }
+/* Search that threw: the card is the dialog, on the veil, and scrolls itself on a short landscape phone. */
+.gx .gx-fault-dialog { width: min(460px, 100%); max-height: calc(100dvh - 12vh - 16px); display: flex; }
+.gx .gx-fault-dialog > .gx-fault { margin: 0; max-height: 100%; overflow: auto; background: var(--gx-card); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); }
 /* A whole view (Crew, Workspace) that threw: the card on the wallpaper. */
 .gx .gx-fault-view { flex: 1; min-height: 0; overflow: auto; padding: 10px 16px 40px; }
 
@@ -53,6 +56,12 @@
 }
 @media (max-width: 767px), (pointer: coarse) {
   .gx .gx-fault[data-variant="inline"] .gx-hbtn { height: 44px; }
+}
+/* On a phone every veil is a bottom sheet (flair.css): Search's card rises the same way and clears the home indicator. */
+@media (max-width: 767px) {
+  /* 100vw, not 100%: the veil's grid centres an auto track (graphite.css), which a percentage would shrink-wrap. */
+  .gx .gx-fault-dialog { width: 100vw; max-height: 82dvh; }
+  .gx .gx-fault-dialog > .gx-fault { width: 100%; border-radius: 26px 26px 0 0; border-width: 1px 0 0; padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px)); background: var(--gl-sheet, var(--gx-card)); animation: om-up .32s var(--om-ease) both; }
 }
 
 /* A take that threw keeps its tile, at its size, so the grid does not jump. */

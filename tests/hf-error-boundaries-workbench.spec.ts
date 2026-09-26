@@ -58,6 +58,13 @@ async function floorText(page: Page, project: string) {
   return PHONE.includes(project) ? smallText(page) : smallText(page, ".gx-header");
 }
 
+/* Entrance animations scale and fade a card in; measure targets once they have finished (the infinite aurora never does). */
+async function settled(page: Page) {
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+    .map((animation) => animation.finished.catch(() => undefined))));
+}
+
 async function refIsReadable(ref: Locator) {
   await expect(ref).toHaveText(/ref P-[0-9A-Z]{7}/);
   expect(Number.parseFloat(await ref.evaluate((el) => getComputedStyle(el).fontSize)), "the ref sits on the 12px floor").toBeGreaterThanOrEqual(12);
@@ -81,6 +88,7 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   const strip = page.getByRole("navigation", { name: "Pages" });
   if (PHONE.includes(info.project.name)) {
     expect(await smallText(page), "text under 12px").toEqual([]);
+    await settled(page);
     expect(await smallTargets(page, '[data-testid="panel-fault"]'), "fault targets under 44×44").toEqual([]);
   }
   await noHorizontalScroll(page);
@@ -154,6 +162,7 @@ test("phones: a Library overlay that throws still closes, and its card meets the
   const library = page.getByTestId("library");
   await expect(library).toHaveAttribute("data-faulted", "true");
   await expect(library.getByTestId("panel-fault")).toContainText("The Library stopped");
+  await settled(page);
   expect(await smallText(page), "text under 12px").toEqual([]);
   expect(await smallTargets(page, '[data-testid="library"]'), "targets under 44×44").toEqual([]);
   const box = (await library.boundingBox())!;
@@ -189,6 +198,7 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await expect(fault).toContainText("Results stopped");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("a fox crossing a frozen harbour");
   await expect(page.getByTestId("gen-generate")).toBeVisible();
+  await settled(page);
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="gen-results"]'), "targets under 44×44").toEqual([]);
 
   await arm(page, []);
@@ -197,6 +207,46 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await expect(results.getByText("Wide on the water")).toBeVisible();
   await expect(results.getByTestId("take-fault")).toHaveCount(0);
   await noHorizontalScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test("search and a whole view fail on their own: the sheet still closes, Workspace comes back on Try again", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const errors = await open(page, "/suites", ["palette"]);
+  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+
+  /* Search throws as it opens: its card sits in the sheet, and Close (or Esc) still works. */
+  await page.getByTestId("header-search").click();
+  const sheet = page.getByRole("dialog", { name: "Search" });
+  await expect(sheet.getByTestId("panel-fault")).toContainText("Search stopped");
+  await settled(page);
+  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="palette"]'), "targets under 44×44").toEqual([]);
+  const dialog = (await sheet.boundingBox())!;
+  expect(dialog.y + dialog.height, "the card fits above the fold").toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) + 1);
+  await sheet.getByRole("button", { name: "Close" }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByTestId("palette-veil")).toHaveCount(0);
+  await page.getByTestId("header-search").click();
+  await expect(sheet.getByTestId("panel-fault")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+
+  /* Fixed underneath: opening search again is a fresh go. */
+  await arm(page, []);
+  await page.getByTestId("header-search").click();
+  await expect(page.getByRole("textbox", { name: "Search" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  /* A whole view that throws keeps the header, so every suite is one tap away. (The later init script wins on load.) */
+  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["workspace"]; });
+  await page.goto("/suites?view=workspace");
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="workspace"]');
+  await expect(fault).toContainText("Workspace stopped");
+  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await noHorizontalScroll(page);
+  await arm(page, []);
+  await fault.getByTestId("fault-retry").click();
+  await expect(page.getByTestId("workspace-view")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -213,6 +263,7 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   await expect(screen.getByTestId("header-search")).toHaveAttribute("href", "/suites?find=1");
   await refIsReadable(screen.getByTestId("fault-ref"));
   expect(await floorText(page, info.project.name), "text under 12px").toEqual([]);
+  await settled(page);
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="suites-error"] main'), "targets under 44×44").toEqual([]);
   await noHorizontalScroll(page);
 
@@ -237,6 +288,7 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Takes and �
   await expect(screen.getByTestId("missing-search")).toHaveAttribute("href", "/suites?find=1");
   await expect(screen.getByText(/Go to Video|All takes/)).toHaveCount(0);
   expect(await floorText(page, info.project.name), "text under 12px").toEqual([]);
+  await settled(page);
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="not-found"] main'), "targets under 44×44").toEqual([]);
   await noHorizontalScroll(page);
 

@@ -314,7 +314,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         )}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
           <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
-            <div className="gx-sheet" role="dialog" aria-label="Search" onClick={(e) => e.stopPropagation()}>
+            <div className="gx-fault-dialog" role="dialog" aria-label="Search" onClick={(e) => e.stopPropagation()}>
               <PanelFault fault={fault} name="palette" actions={<button type="button" className="gx-hbtn" onClick={() => shell.setPalette(false)}>Close</button>} />
             </div>
           </div>
