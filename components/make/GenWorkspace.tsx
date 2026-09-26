@@ -21,7 +21,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { isAssetDrag, readDrag, type DraggedAsset } from "@/lib/dnd";
 import { GEN_ASSETS_CHANGED, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { libraryId, libraryInput, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
-import { clearComposeHandoff, readComposeHandoff } from "@/lib/composeHandoff";
+import { clearComposeHandoff, handoffFits, readComposeHandoff } from "@/lib/composeHandoff";
 import Composer, { type ComposerHandle, type ComposerKind } from "./Composer";
 import GenAssetLibrary from "./GenAssetLibrary";
 import SeedanceEdit from "./SeedanceEdit";
@@ -193,6 +193,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       composer.current.usePrompt(String(take.params.rawPrompt || take.prompt));
     }
   }, [mode.kind, toolOpen]);
+  const warnedHandoff = useRef<number | null>(null);
   /* The shot builder's hand-off (lib/composeHandoff.ts): taken once, and cleared
      only after the composer has it — a composer holding a paid request to
      recover refuses it, and the hand-off waits. It also waits while the page is
@@ -211,8 +212,15 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     const handoff = readComposeHandoff(store, workspace?.id, email);
     if (!handoff) { clearComposeHandoff(store, workspace?.id, email); return; }
     if (handoff.kind !== mode.kind) return;
+    /* Words written for one production are never composed into another's
+       project, where they would render, bill and file against its cap. They
+       wait (ten minutes) for that production's project to be chosen. */
+    if (!handoffFits(handoff, generationProject?.productionProjectId)) {
+      if (warnedHandoff.current !== handoff.at) { warnedHandoff.current = handoff.at; toast("Your Setup is for another production. Choose its project to use it."); }
+      return;
+    }
     if (composer.current.usePrompt(handoff.prompt)) clearComposeHandoff(store, workspace?.id, email);
-  }, [mode.kind, toolOpen, workspace?.id, email, scope, workbenchProjectId, requestScope, projectResult.data]);
+  }, [mode.kind, toolOpen, workspace?.id, email, scope, workbenchProjectId, requestScope, projectResult.data, generationProject?.productionProjectId, toast]);
   const receiver = () => toolOpen ? specialized.current : composer.current;
   async function addAsset(asset: DraggedAsset) {
     const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";

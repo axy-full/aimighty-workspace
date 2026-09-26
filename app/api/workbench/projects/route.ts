@@ -21,6 +21,14 @@ export const GET=withTenant(async(req:Request)=>{
   if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   await workbenchReady();
   const id=new URL(req.url).searchParams.get('id');
+  /* ?production=<id>: this person's newest Studio project for that production,
+     so a screen scoped to a production (the shot builder) opens Generate on the
+     project that files and bills there, not on whichever one Generate last had. */
+  const production=new URL(req.url).searchParams.get('production');
+  if(production){
+    const row=(await db().execute({sql:"SELECT project_id AS id FROM workbench_projects WHERE owner=? AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=? ORDER BY updated_at DESC LIMIT 1",args:[auth.user.id,production]})).rows[0];
+    return Response.json({id:row?String(row.id):null},{headers:noStore});
+  }
   const [list,productions,draft]=await Promise.all([
     db().execute({sql:'SELECT project_id AS id,name,revision,updated_at AS updatedAt FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100',args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),

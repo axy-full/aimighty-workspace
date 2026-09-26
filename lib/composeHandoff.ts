@@ -10,7 +10,11 @@
  * crosses a tab, a workspace or a person; and it goes stale after ten minutes
  * so an abandoned hand-off never ambushes a later visit.
  */
-export type ComposeHandoff = { prompt: string; kind: "video" | "image"; at: number };
+export type ComposeHandoff = {
+  prompt: string; kind: "video" | "image"; at: number;
+  /** The production project the words were written for; Generate composes them only into a project filed there. */
+  productionProjectId?: string | null;
+};
 
 const PREFIX = "particl:compose-handoff";
 export const HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -48,7 +52,7 @@ export function readComposeHandoff(store: Store | null | undefined, workspaceId:
     if (typeof value.prompt !== "string" || !value.prompt.trim()) return null;
     if (value.kind !== "video" && value.kind !== "image") return null;
     if (typeof value.at !== "number" || now - value.at > HANDOFF_TTL_MS || value.at > now + 60_000) return null;
-    return { prompt: value.prompt, kind: value.kind, at: value.at };
+    return { prompt: value.prompt, kind: value.kind, at: value.at, productionProjectId: typeof value.productionProjectId === "string" && value.productionProjectId ? value.productionProjectId : null };
   } catch {
     return null;
   }
@@ -56,4 +60,21 @@ export function readComposeHandoff(store: Store | null | undefined, workspaceId:
 
 export function clearComposeHandoff(store: Store | null | undefined, workspaceId: string | null | undefined, email: string | null | undefined): void {
   try { store?.removeItem(handoffKey(workspaceId, email)); } catch { /* storage blocked: nothing was kept */ }
+}
+
+/**
+ * Whether the project Generate has open may take this hand-off: any project
+ * when the words belong to no production, otherwise only a project filed under
+ * that production — a prompt dropped into another would render, bill and file
+ * against the wrong production's cap.
+ */
+export function handoffFits(handoff: Pick<ComposeHandoff, "productionProjectId">, openProductionProjectId: string | null | undefined): boolean {
+  return !handoff.productionProjectId || handoff.productionProjectId === openProductionProjectId;
+}
+
+/** Where the hand-off opens Generate: on this person's Studio project for the production, when there is one. */
+export function generateHrefFor(kind: ComposeHandoff["kind"], studioProjectId: string | null | undefined): string {
+  const params = new URLSearchParams({ mode: kind === "image" ? "images" : "video" });
+  if (studioProjectId) params.set("project", studioProjectId);
+  return `/generate?${params}`;
 }

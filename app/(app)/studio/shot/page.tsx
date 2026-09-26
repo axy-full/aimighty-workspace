@@ -19,7 +19,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { appAlert } from "@/components/dialog";
-import { handoffPrompt, writeComposeHandoff } from "@/lib/composeHandoff";
+import { generateHrefFor, handoffPrompt, writeComposeHandoff } from "@/lib/composeHandoff";
 import { liftLocalSetup } from "@/lib/setupLocal";
 import PaneDivider from "@/components/PaneDivider";
 import { PANES, usePaneWidth } from "@/lib/panes";
@@ -51,7 +51,7 @@ function ShotBuilder() {
   usePageTitle("Studio · Setup");
   const router = useRouter();
   const search = useSearchParams();
-  const { signedIn, workspace, email, setup: platformSetup } = useSession();
+  const { signedIn, workspace, email, requestScope, setup: platformSetup } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: shotData } = useApi<{ shots: ShotRow[] }>(signedIn && scoped ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
@@ -170,11 +170,19 @@ function ShotBuilder() {
   async function openInGenerate() {
     let store: Storage | null = null;
     try { store = window.sessionStorage; } catch { /* blocked below */ }
-    if (!writeComposeHandoff(store, workspace?.id, email, { prompt: handoffPrompt(prose, phrase), kind: "video" })) {
+    /* Scoped to a production, the words belong to it: Generate opens on this
+       person's Studio project for it and composes them into nothing else. */
+    const production = scoped ? bin : null;
+    if (!writeComposeHandoff(store, workspace?.id, email, { prompt: handoffPrompt(prose, phrase), kind: "video", productionProjectId: production })) {
       await appAlert("Not carried to Generate", "This browser blocked the hand-off. Your picks are still here.");
       return;
     }
-    router.push("/generate?mode=video");
+    let studioProject: string | null = null;
+    if (production && requestScope) {
+      const res = await fetch(`/api/workbench/projects?production=${encodeURIComponent(production)}`, { cache: "no-store", headers: { "X-Workbench-Scope": requestScope } }).catch(() => null);
+      studioProject = res?.ok ? (((await res.json().catch(() => null)) as { id?: string | null } | null)?.id ?? null) : null;
+    }
+    router.push(generateHrefFor("video", studioProject));
   }
   /* Saving a Setup is now something the whole team gets, not something this
      browser remembers. `aw_last_spec` stays local on purpose — that one is
