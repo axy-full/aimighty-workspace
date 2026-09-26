@@ -2,11 +2,16 @@ import { test, expect } from "@playwright/test";
 import { newProject } from "../../lib/workbench/studio";
 import {
   writeDraft,
+  writeMergedDraft,
   reconcileDraftWrite,
   sameDraftContent,
+  isDraftConflict,
   DraftRequestError,
   draftRequest,
+  MERGE_TRIES,
+  draftWriter,
 } from "../../lib/workbench/draft-request";
+import type { Project } from "../../lib/workbench/studio";
 const nativeFetch = globalThis.fetch;
 test.afterEach(() => {
   globalThis.fetch = nativeFetch;
@@ -236,4 +241,141 @@ test("an uncreated draft can safely retry, while explicit PUT rejection never tr
     writeDraft("/api/workbench", "scope", { project, revision: 1 }),
   ).rejects.toMatchObject({ retryable: false, uncertain: false });
   expect(methods).toEqual(["PUT"]);
+});
+
+/* writeMergedDraft: a save that another save beat is merged into the newer version, never replayed. */
+type Tag = { writer: string; seq: number };
+/**
+ * A revision-checked server that records each tagged save under its writer (lib/workbench/records.ts):
+ * `check-write` answers whether a save landed, and fences one that did not, so it never lands late.
+ */
+function server(start: { project: Project; revision: number }, options: { onPut?: (body: { project: Project; revision: number; write?: Tag }, count: number) => Response | "drop" | undefined } = {}) {
+  const state = { ...start, calls: [] as string[], puts: 0, writes: new Map<string, { seq: number; revision: number | null }>() };
+  globalThis.fetch = async (_url, init) => {
+    const method = init?.method ?? "GET";
+    state.calls.push(method);
+    if (method === "PUT") {
+      const body = JSON.parse(String(init?.body)) as { project: Project; revision: number; write?: Tag };
+      const special = options.onPut?.(body, ++state.puts);
+      if (special && special !== "drop") return special;
+      const seen = body.write ? state.writes.get(body.write.writer) : undefined;
+      if (body.revision !== state.revision || (seen && seen.seq >= body.write!.seq)) return json({ error: "This project changed in another window.", code: "revision_conflict" }, 409);
+      state.project = { ...body.project, productionProjectId: "production", shotMappings: {} };
+      state.revision += 1;
+      if (body.write) state.writes.set(body.write.writer, { seq: body.write.seq, revision: state.revision });
+      if (special === "drop") throw new TypeError("Failed to fetch");
+      return json({ revision: state.revision, productionProjectId: "production", shotMappings: {} });
+    }
+    if (method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { action: string; write: Tag };
+      const row = state.writes.get(body.write.writer);
+      const landed = row && row.seq === body.write.seq && row.revision !== null ? row.revision : null;
+      if (landed === null && (!row || row.seq < body.write.seq)) state.writes.set(body.write.writer, { seq: body.write.seq, revision: null });
+      return json({ landed, project: state.project, revision: state.revision });
+    }
+    return json({ project: state.project, revision: state.revision });
+  };
+  return state;
+}
+const node = (id: string, title = id) => ({ id, title, type: "scene" as const, x: 0, y: 0, width: 238, linked: [] as string[] });
+
+test("a save another save beat is merged into the newer version: both edits kept, sent at its revision", async () => {
+  const base = { ...newProject("Merge on conflict"), nodes: [node("n1")] };
+  const theirs = { ...base, brief: "Written in another tab", nodes: [...base.nodes, node("t1")] };
+  const state = server({ project: theirs, revision: 5 });
+  const mine = { ...base, nodes: [{ ...base.nodes[0], text: "A fox on the ice" }, node("m1")] };
+  const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 4 });
+  expect(state.calls).toEqual(["PUT", "GET", "PUT"]);
+  expect(saved.revision).toBe(6);
+  expect(saved.project.brief).toBe("Written in another tab");
+  expect(saved.project.nodes.map((n) => n.id)).toEqual(["n1", "m1", "t1"]);
+  expect(saved.project.nodes[0].text).toBe("A fox on the ice");
+  expect(state.project.nodes.map((n) => n.id)).toEqual(["n1", "m1", "t1"]);
+});
+
+test("a save whose reply was lost is checked, not guessed: it landed, so nothing is sent again over what was built on it", async () => {
+  const base = { ...newProject("Lost reply"), nodes: [node("n1")] };
+  const mine = { ...base, nodes: [...base.nodes, node("m1")] };
+  const state = server({ project: base, revision: 1 }, { onPut: (_body, count) => (count === 1 ? "drop" : undefined) });
+  /* After our PUT lands and its reply is lost, another tab saves on top of it before the check. */
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === "POST") {
+      state.project = { ...state.project, brief: "Another tab, on top of ours" };
+      state.revision += 1;
+    }
+    return realFetch(url, init);
+  };
+  const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 1 });
+  expect(state.calls).toEqual(["PUT", "POST"]);
+  expect(saved.revision).toBe(3);
+  expect(saved.project.nodes.map((n) => n.id)).toEqual(["n1", "m1"]);
+  expect(saved.project.brief).toBe("Another tab, on top of ours");
+});
+
+test("a save that never arrived is fenced when checked, then sent again, once", async () => {
+  const base = { ...newProject("Not landed"), nodes: [node("n1")] };
+  const mine = { ...base, nodes: [...base.nodes, node("m1")] };
+  let first: { project: Project; revision: number; write?: Tag } | null = null;
+  const state = server({ project: base, revision: 2 }, {
+    onPut: (body) => {
+      if (first) return undefined;
+      first = body;
+      throw new TypeError("Failed to fetch");
+    },
+  });
+  const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 2 });
+  expect(state.calls).toEqual(["PUT", "POST", "PUT"]);
+  expect(saved.revision).toBe(3);
+  expect(state.project.nodes.map((n) => n.id)).toEqual(["n1", "m1"]);
+  /* The first PUT arriving late (the network held it) is refused: the check fenced it. */
+  const late = await globalThis.fetch("/api/workbench/projects", { method: "PUT", body: JSON.stringify({ ...first!, revision: state.revision }) });
+  expect(late.status).toBe(409);
+});
+
+test("a network that stays down keeps the save unknown, on the writer, for the caller to retry", async () => {
+  const methods: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    methods.push(init?.method ?? "GET");
+    throw new TypeError("Failed to fetch");
+  };
+  const project = newProject("Offline");
+  const writer = draftWriter();
+  await expect(writeMergedDraft("/api/workbench", "scope", { base: project, mine: { ...project, brief: "Offline edit" }, revision: 1, writer }))
+    .rejects.toMatchObject({ retryable: true, uncertain: true });
+  expect(methods).toEqual(["PUT", "POST"]);
+  expect(writer.unconfirmed).toMatchObject({ projectId: project.id, seq: 1 });
+});
+
+test("conflicts that keep coming stop after a few merges, as a conflict; other refusals are never merged", async () => {
+  const base = newProject("Busy");
+  let revision = 1;
+  const methods: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    methods.push(init?.method ?? "GET");
+    if (init?.method === "PUT") return json({ error: "This project changed in another window.", code: "revision_conflict" }, 409);
+    revision += 1;
+    return json({ project: { ...base, brief: `Other save ${revision}` }, revision });
+  };
+  const error = await writeMergedDraft("/api/workbench", "scope", { base, mine: { ...base, name: "Mine" }, revision: 1 }).catch((e) => e);
+  expect(isDraftConflict(error)).toBe(true);
+  expect(methods.filter((m) => m === "PUT")).toHaveLength(MERGE_TRIES + 1);
+
+  const refused: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    refused.push(init?.method ?? "GET");
+    return json({ error: "A draft cannot change its project. Open a separate space." }, 409);
+  };
+  await expect(writeMergedDraft("/api/workbench", "scope", { base, mine: { ...base, name: "Mine" }, revision: 1 }))
+    .rejects.toMatchObject({ retryable: false, uncertain: false, status: 409 });
+  expect(refused).toEqual(["PUT"]);
+});
+
+test("nothing is sent when the newer version already holds every edit", async () => {
+  const base = { ...newProject("Same edit"), nodes: [node("n1")] };
+  const mine = { ...base, brief: "Both tabs typed this" };
+  const state = server({ project: { ...mine, productionProjectId: "production", shotMappings: {} }, revision: 9 });
+  const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 8 });
+  expect(state.calls).toEqual(["PUT", "GET"]);
+  expect(saved).toMatchObject({ revision: 9, project: { brief: "Both tabs typed this" } });
 });
