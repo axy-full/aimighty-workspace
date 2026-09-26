@@ -22,5 +22,5 @@ export const POST = withTenant(async function POST(req: Request) {
         },
       }),
     );
-  return body.quoteOnly === true ? perform() : withGenerationRequest(req, got.user.id, perform);
+  return body.quoteOnly === true ? perform() : withGenerationRequest(req, got.user.id, perform, { atomicBinding: true });
 });

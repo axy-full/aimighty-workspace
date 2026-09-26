@@ -40,20 +40,22 @@ export type CtxCapabilities = {
 
 const item = (command: CtxCommand, label: string, key?: string, danger?: boolean): CtxItem => ({ command, label, key, danger });
 
-/** What a Rig shot's menu always shows; its other commands appear only once the Rig can carry them out. */
-const NODE_ALWAYS: readonly CtxCommand[] = ["delete", "undo"];
+/** Commands every target keeps in its menu: they act on the clipboard or the history, not on the node. */
+const SHARED: CtxCommand[] = ["paste", "undo"];
 
-/** Drop separators left leading, trailing or doubled once items are filtered out. */
-function tidy(list: CtxItem[]): CtxItem[] {
-  const out: CtxItem[] = [];
-  for (const entry of list) if (!entry.sep || (out.length && !out[out.length - 1].sep)) out.push(entry);
-  if (out.length && out[out.length - 1].sep) out.pop();
-  return out;
+/** Drop leading, trailing and doubled separators left behind when items are omitted. */
+function tidy(items: CtxItem[]): CtxItem[] {
+  return items.filter((entry, i, all) => !entry.sep || (i > 0 && i < all.length - 1 && !all[i - 1].sep));
 }
 
-/** The README's order, verbatim. */
+/**
+ * The README's order, verbatim. A Rig node lists only what the Rig carries
+ * out for it (plus Paste and Undo); a command it cannot do is left out
+ * rather than shown greyed with a generic reason, unless the capabilities
+ * give it a reason of its own.
+ */
 export function ctxItems(target: CtxTarget, caps: CtxCapabilities): CtxItem[] {
-  let list: CtxItem[] = [
+  const list: CtxItem[] = [
     item("copy", "Copy", "⌘C"), item("cut", "Cut", "⌘X"), item("paste", "Paste", "⌘V"), item("duplicate", "Duplicate", "⌘D"),
     { sep: true },
   ];
@@ -61,10 +63,11 @@ export function ctxItems(target: CtxTarget, caps: CtxCapabilities): CtxItem[] {
   if (target.kind === "node") list.push(item("bypass", "Bypass"), item("unplug", "Unplug all inputs"));
   list.push(item("move", "Move to…"), item("retry", "Retry", "⌘R"), { sep: true }, item("delete", "Delete", "⌫", true), item("undo", "Undo", "⌘Z"));
   if (target.kind === "empty") list.push({ sep: true }, item("generate-here", "Generate here…"), item("open-library", "Open Library"), item("toggle-inspector", "Toggle Inspector", "⌘J"));
-  /* A Rig shot never lists a command that is always greyed out: only what the Rig has registered, plus Delete and Undo. */
-  if (target.kind === "node") list = tidy(list.filter((entry) => entry.sep || NODE_ALWAYS.includes(entry.command) || caps.can[entry.command]));
   const ALWAYS: CtxCommand[] = ["generate-here", "open-library", "toggle-inspector"];
-  return list.map((entry) => {
+  const offered = target.kind === "node"
+    ? tidy(list.filter((entry) => entry.sep || SHARED.includes(entry.command) || caps.can[entry.command] || caps.why[entry.command]))
+    : list;
+  return offered.map((entry) => {
     if (entry.sep) return entry;
     if (ALWAYS.includes(entry.command)) return entry;
     if (entry.command === "undo") return caps.canUndo ? entry : { ...entry, disabled: true, reason: "Nothing to undo." };
@@ -102,6 +105,36 @@ export function shortcutCommand(event: { key: string; metaKey: boolean; ctrlKey:
     case "r": return "retry";
     default: return null;
   }
+}
+
+/** A surface that shows the selection: the Library, the Inspector, an asset grid, the Rig. */
+const SELECTION_SURFACE = "[data-ctx], [data-testid='library'], [data-testid='inspector'], [data-testid='rig-graph'], [data-testid='rig-list']";
+export function inSelectionSurface(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return Boolean(el && typeof el.closest === "function" && el.closest(SELECTION_SURFACE));
+}
+
+/**
+ * Where a selection shortcut may act on the lingering selection. The browser
+ * keeps its own ⌘C/⌘X while text is selected. ⌫, ⌘R and ⌘D act only from a
+ * surface that shows the selection — never from another control, and never
+ * from the page when the last press landed somewhere else (there ⌘R is reload
+ * and ⌘D is the bookmark).
+ *
+ * Focus on the page itself is common, not a corner case: Safari, and Firefox
+ * on macOS, do not focus a clicked button, so a Library or Gen tile leaves
+ * focus on <body>; the Rig canvas takes none either; and Chrome drops focus to
+ * <body> on a press in the Inspector's plain text. There, where the last press
+ * landed (`pressedInSurface`) says where the person is working.
+ */
+export function shortcutApplies(cmd: CtxCommand, context: { target: EventTarget | null; textSelected: boolean; selection: CtxTarget["kind"]; pressedInSurface?: boolean }): boolean {
+  if ((cmd === "copy" || cmd === "cut") && context.textSelected) return false;
+  if (cmd !== "delete" && cmd !== "retry" && cmd !== "duplicate") return true;
+  const el = context.target as HTMLElement | null;
+  if (!el || typeof el.closest !== "function") return false;
+  if (el.closest(SELECTION_SURFACE)) return true;
+  if (el.tagName !== "BODY" && el.tagName !== "HTML") return false;
+  return context.pressedInSurface === true;
 }
 
 /** True when the event started in something a person types into. */

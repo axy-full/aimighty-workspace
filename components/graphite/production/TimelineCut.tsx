@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import LazyMedia from "@/components/LazyMedia";
@@ -16,16 +16,20 @@ import type { LibraryEntry } from "@/lib/workspace/library";
 export function TimelineCut({ project, items, onChange, scope }: { project: Project; items: LibraryEntry[]; onChange: (fn: (p: Project) => Project) => void; scope?: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [over, setOver] = useState(false);
-  const takes = items.filter((e) => (e.media === "video" || e.media === "image") && e.url);
-  /* Dropped files join the cut once the Library lists them (their upload reloads it). */
+  const takes = useMemo(() => items.filter((e) => (e.media === "video" || e.media === "image") && e.url), [items]);
+  /* Dropped files join the cut once the Library lists them (their upload reloads it) — whichever of the two comes last. */
   const pending = useRef<string[]>([]);
+  const [landed, setLanded] = useState(0);
   useEffect(() => {
     if (!pending.current.length) return;
     const ready = pending.current.map((id) => takes.find((t) => t.take.id === id)).filter((t): t is LibraryEntry => Boolean(t));
     if (!ready.length) return;
     pending.current = pending.current.filter((id) => !ready.some((t) => t.take.id === id));
-    onChange((p) => ready.reduce((acc, t) => addTakeToCut(acc, t), p));
-  });
+    /* A full cut or asset library says so, as a drop does; it never throws out of the effect. */
+    let why: string | null = null;
+    onChange((p) => ready.reduce((acc, t) => { if (why) return acc; try { return addTakeToCut(acc, t); } catch (cause) { why = cause instanceof Error ? cause.message : "It could not be added."; return acc; } }, p));
+    if (why) setProblem(why);
+  }, [takes, onChange, landed]);
   /* A take dropped on the cut goes on its end: a tile from anywhere, or picture and video files from the device. */
   const drop = (e: React.DragEvent) => {
     e.preventDefault(); setOver(false); setProblem(null);
@@ -37,6 +41,7 @@ export function TimelineCut({ project, items, onChange, scope }: { project: Proj
     if (!scope) { setProblem("Files cannot be uploaded here."); return; }
     void uploadFilesToProject(scope, project.id, files).then(({ uploads, notes }) => {
       pending.current.push(...uploads.filter((u) => u.kind === "image" || u.kind === "video").map((u) => `upload:${u.id}`));
+      setLanded((n) => n + 1);
       const skipped = uploads.filter((u) => u.kind !== "image" && u.kind !== "video").length;
       if (notes.length || skipped) setProblem([...notes, ...(skipped ? ["Sound and documents are kept in the Library; sound goes on the lanes below."] : [])].join(" "));
     }).catch((cause: unknown) => setProblem(cause instanceof Error ? cause.message : "The files could not be uploaded."));

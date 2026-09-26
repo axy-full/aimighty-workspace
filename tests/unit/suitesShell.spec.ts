@@ -4,7 +4,7 @@ import {
 } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, boundUndo, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
-import { ctxItems, parseCtx, placeMenu, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
+import { ctxItems, inSelectionSurface, parseCtx, placeMenu, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
 import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
 
 /* ── Information architecture ───────────────────────────────────────────── */
@@ -128,9 +128,9 @@ test("the menu follows the README's order for each target", () => {
   const head = ["copy", "cut", "paste", "duplicate", "—"];
   const tail = ["move", "retry", "—", "delete", "undo"];
   expect(commands(ctxItems({ kind: "asset", id: "a" }, caps()))).toEqual([...head, "use-as-reference", "open-in-inspector", ...tail]);
-  /* A Rig shot lists only what the Rig can do: Delete and Undo, and the rest once the Rig registers them. */
-  expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual(["delete", "undo"]);
-  expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, unplug: true } })))).toEqual(["bypass", "unplug", "—", "delete", "undo"]);
+  /* A Rig node lists what the Rig carries out for it: nothing wired → only Paste and Undo; the rest once the Rig registers them. */
+  expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual(["paste", "—", "undo"]);
+  expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, unplug: true } })))).toEqual(["paste", "—", "bypass", "unplug", "—", "undo"]);
   expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library", "toggle-inspector"]);
 });
 
@@ -144,6 +144,20 @@ test("a blocked item stays in the menu, disabled, with its reason", () => {
   const ready = ctxItems({ kind: "asset", id: "a" }, caps({ can: { paste: true }, hasClipboard: true, canUndo: true }));
   expect(find(ready, "paste").disabled).toBeFalsy();
   expect(find(ready, "undo").disabled).toBeFalsy();
+});
+
+test("a Rig node leaves out commands the Rig does not carry out, and keeps a blocked one that has its own reason", () => {
+  /* What SuitesShell gives a node while the Rig is on screen, and while it is not. */
+  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Rig to delete a shot." }, canUndo: true }));
+  expect(commands(onRig)).toEqual(["paste", "—", "delete", "undo"]);
+  expect(find(onRig, "delete").disabled).toBeFalsy();
+  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Rig to delete a shot." } }));
+  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Rig to delete a shot." });
+  for (const gone of ["copy", "cut", "duplicate", "bypass", "unplug", "move", "retry"]) expect(onRig.some((i) => !i.sep && i.command === gone)).toBe(false);
+  /* When Bypass is wired it appears, in the README's place. */
+  expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, delete: true } })))).toEqual(["paste", "—", "bypass", "—", "delete", "undo"]);
+  /* Assets still show every item, blocked ones with their reason. */
+  expect(ctxItems({ kind: "asset", id: "a" }, caps()).filter((i) => !i.sep)).toHaveLength(10);
 });
 
 test("empty space blocks selection commands but keeps its own three", () => {
@@ -175,6 +189,33 @@ test("shortcuts map to commands; modifiers that mean something else do not", () 
   expect(key("k")).toBeNull();
 });
 
+test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/⌘D from an unrelated button", () => {
+  /* A stand-in element: `closest` answers for the selector the shell asks about. */
+  const el = (tagName: string, inside: boolean) => ({ tagName, closest: (sel: string) => (inside && sel.includes("data-ctx") ? {} : null) }) as unknown as EventTarget;
+  const libraryThumb = el("BUTTON", true), otherButton = el("BUTTON", false), body = el("BODY", false);
+  expect(inSelectionSurface(libraryThumb)).toBe(true);
+  expect(inSelectionSurface(otherButton)).toBe(false);
+  expect(inSelectionSurface(null)).toBe(false);
+  expect(shortcutApplies("copy", { target: libraryThumb, textSelected: false, selection: "asset" })).toBe(true);
+  expect(shortcutApplies("copy", { target: body, textSelected: true, selection: "asset" })).toBe(false);
+  expect(shortcutApplies("cut", { target: body, textSelected: true, selection: "asset" })).toBe(false);
+  expect(shortcutApplies("paste", { target: body, textSelected: true, selection: "asset" })).toBe(true);
+  expect(shortcutApplies("undo", { target: otherButton, textSelected: false, selection: "empty" })).toBe(true);
+  for (const cmd of ["delete", "retry", "duplicate"] as const) {
+    /* From the tile (Chrome focuses a clicked button). */
+    expect(shortcutApplies(cmd, { target: libraryThumb, textSelected: false, selection: "asset" }), cmd).toBe(true);
+    /* Another control has focus: the key is its, whatever was pressed last. */
+    expect(shortcutApplies(cmd, { target: otherButton, textSelected: false, selection: "asset", pressedInSurface: true }), cmd).toBe(false);
+    expect(shortcutApplies(cmd, { target: otherButton, textSelected: false, selection: "node", pressedInSurface: true }), cmd).toBe(false);
+    /* Focus on the page. Safari and Firefox on macOS leave it there after a click on a tile, and the Rig canvas takes none:
+       the last press decides. Pressed in the Library, Inspector or Rig: the selection's. Pressed anywhere else: the browser's (reload, bookmark). */
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "asset", pressedInSurface: true }), cmd).toBe(true);
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "node", pressedInSurface: true }), cmd).toBe(true);
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "asset", pressedInSurface: false }), cmd).toBe(false);
+    expect(shortcutApplies(cmd, { target: body, textSelected: false, selection: "node" }), cmd).toBe(false);
+  }
+});
+
 /* ── ⌘K ─────────────────────────────────────────────────────────────────── */
 
 const rows = paletteIndex({
@@ -185,9 +226,10 @@ const rows = paletteIndex({
 test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
   expect(rows[0]).toMatchObject({ label: "Generate", run: { type: "gen" } });
   expect(rows.filter((r) => r.run.type === "suite")).toHaveLength(4);
-  /* The phone's own screens (Where to?, the Studio grid) are not desktop pages. */
+  /* The phone's own screens (Where to?, the Studio grid) are not desktop pages: no " Where to?" rows. */
   expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).length);
   expect(rows.some((r) => r.run.type === "page" && (r.run.page === "home" || r.run.page === "stages"))).toBe(false);
+  expect(rows.some((r) => r.label.trim() === "Where to?" || r.label.trim() === "Studio" && r.run.type === "page")).toBe(false);
   expect(rows.filter((r) => r.run.type === "page").every((r) => /^\d{2} \S/.test(r.label))).toBe(true);
   expect(rows.filter((r) => r.run.type === "workspace")).toHaveLength(WORKSPACE_TABS.length);
   expect(rows.some((r) => r.run.type === "model")).toBe(true);

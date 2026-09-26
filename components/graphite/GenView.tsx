@@ -109,28 +109,40 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     }
   }, [scope, dispatchComposer]);
 
-  /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, an
-     asset's Retry generation — also ⌘R while Gen is open) replaces what the
-     composer holds: wallet, kind, engine, settings, references and prompt. */
+  /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, Soul ID › Use in Gen, an
+     asset's Retry generation — also ⌘R while Gen is open) is applied the moment it arrives, then forgotten.
+     The catalogue comes first (it decides which models exist), then the kind, the model, the words,
+     the settings, the identity and the sound; a Retry's own references replace the well. */
   const [preset, setPreset] = useState<GenPreset | null>(null);
+  const presetTurn = useRef(0);
   const applyPreset = useCallback((next: GenPreset) => {
-    setPreset(next);
-    dispatchComposer({ type: "reset" });
+    const turn = ++presetTurn.current;
+    setMode("compose");
+    if (next.references) dispatchComposer({ type: "reset" });
     if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
     if (next.type) dispatchComposer({ type: "type", value: next.type });
     if (next.model) dispatchComposer({ type: "model", value: next.model });
+    /* An empty prompt (a model picked in ⌘K, Soul ID) leaves the composer's own words as they are. */
+    if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
     if (next.picks) dispatchComposer({ type: "pick", value: next.picks });
+    if (next.soulId) dispatchComposer({ type: "pick", value: { soulId: next.soulId } });
     if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
     if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
     if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
-    dispatchComposer({ type: "prompt", value: next.prompt });
-    void (async () => {
-      for (const ref of next.references ?? []) {
-        await drop(ref.id);
-        if (ref.role) dispatchComposer({ type: "referenceRole", key: ref.id, role: ref.role });
-      }
-    })();
-  }, [dispatchComposer, drop]);
+    setPreset(next);
+    setWellError(null);
+    const references = next.type === "audio" ? [] : next.references ?? [];
+    void Promise.all(references.map(async (ref) => {
+      const asset = await resolveGenInput("genId" in ref ? `generation:${ref.genId}` : `upload:${ref.uploadId}`, scope);
+      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
+      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(next.billing === "connected" && ref.role ? { role: ref.role } : {}) };
+    }).map((p) => p.catch(() => null))).then((found) => {
+      if (turn !== presetTurn.current) return;
+      for (const value of found) if (value) dispatchComposer({ type: "addReference", value });
+      const lost = found.filter((value) => !value).length;
+      if (lost) setWellError(`${lost} of this take’s references ${lost === 1 ? "is" : "are"} no longer available; the rest are back in the well.`);
+    });
+  }, [scope, dispatchComposer]);
   useGenPresetInbox(applyPreset);
   /* The engine the take was made on may not be on offer here any more: say which one stands in. */
   const presetNote = !preset?.note ? null
@@ -356,7 +368,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
-              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: "var(--gx-accent)" }} aria-hidden="true" /></span>
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>

@@ -47,16 +47,21 @@ const serverCopies = new WeakSet<Project>();
  * `projectChanged` is announced, the saved draft is read again. So the phone
  * Studio grid, Up next and the Atomik plans count what the project holds now.
  */
-export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState & { refresh: () => void } {
+export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState & { refresh: () => void; retry: () => void } {
   const [data, setData] = useState<ProjectsState>({ status: "loading", projects: [], project: null, error: null });
   const loaded = useRef<{ scope: string; id: string } | null>(null);
-  /* A full re-resolve (after a failed first read) re-runs the effect below. */
+  /* A retry, or a full re-resolve (after a failed first read), re-runs the effect below — even for the id already in the URL. */
   const [attempt, setAttempt] = useState(0);
-  /* True while that first read is out: a focus or an announcement then waits for it rather than restarting it. */
+  const answered = useRef(0);
+  /* True while that read is out: a focus or an announcement then waits for it rather than restarting it. */
   const resolving = useRef(false);
+  /* The saved revision of the copy on screen: a re-read that finds it unchanged in the list never downloads the project again. */
+  const revision = useRef<number | null>(null);
   useEffect(() => {
+    const retrying = attempt !== answered.current;
+    answered.current = attempt;
     /* The id this hook just resolved coming back through the URL is not a new request. */
-    if (projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
+    if (!retrying && projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
     const controller = new AbortController();
     resolving.current = true;
     const request = async (id: string | null) => {
@@ -67,7 +72,7 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "Projects could not be loaded.");
-      return body as { projects?: ProjectSummary[]; project?: Project | null };
+      return body as { projects?: ProjectSummary[]; project?: Project | null; revision?: number };
     };
     (async () => {
       let remembered: string | null = null;
@@ -82,6 +87,7 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
       }
       if (controller.signal.aborted) return;
       loaded.current = project ? { scope, id: project.id } : null;
+      revision.current = project && typeof body.revision === "number" ? body.revision : null;
       if (project) serverCopies.add(project);
       setData({ status: "ready", projects, project, error: null });
       if (project) onResolved(project.id);
@@ -115,9 +121,20 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     const startedAt = Date.now();
     lastRead.current = startedAt;
     try {
+      /* The list first (ids and revisions only): the project itself is read only when its revision moved. */
+      const listed = await fetch("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, cache: "no-store" })
+        .then(async (r) => (r.ok ? await r.json() as { projects?: ProjectSummary[] } : null)).catch(() => null);
+      const row = Array.isArray(listed?.projects) ? listed.projects.find((p) => p.id === open.id) : undefined;
+      if (row && typeof row.revision === "number" && row.revision === revision.current) {
+        if (loaded.current?.id !== open.id) return;
+        setData((prev) => ({ ...prev, projects: listed!.projects! }));
+        if (startedAt >= settleUntil.current) setKept(null);
+        return;
+      }
       const response = await fetch("/api/workbench/projects?id=" + encodeURIComponent(open.id), { headers: { "X-Workbench-Scope": scope }, cache: "no-store" });
-      const body = await response.json().catch(() => ({})) as { projects?: ProjectSummary[]; project?: Project | null };
+      const body = await response.json().catch(() => ({})) as { projects?: ProjectSummary[]; project?: Project | null; revision?: number };
       if (!response.ok || !body.project || loaded.current?.id !== open.id || body.project.id !== open.id) return;
+      revision.current = typeof body.revision === "number" ? body.revision : null;
       serverCopies.add(body.project);
       setData((prev) => ({ status: "ready", projects: body.projects ?? prev.projects, project: body.project!, error: null }));
       if (startedAt >= settleUntil.current) setKept(null);
@@ -176,13 +193,24 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
   }, [live, soon]);
 
   const shown = live ?? (kept && kept.id === data.project?.id ? kept : null) ?? data.project;
-  return useMemo(() => ({ ...data, project: shown, refresh: () => void reread() }), [data, shown, reread]);
+  /* Retry after a failed read: a new attempt re-runs the read even for the id already in the URL. */
+  const retry = useCallback(() => {
+    setData((prev) => ({ ...prev, status: "loading", error: null }));
+    setAttempt((n) => n + 1);
+  }, []);
+  return useMemo(() => ({ ...data, project: shown, refresh: () => void reread(), retry }), [data, shown, reread, retry]);
+}
+
+/** Ask every mounted useAccount to read /api/me now — after a change it reports, such as a rename. */
+export const ACCOUNT_REFRESH_EVENT = "particl-account-refresh";
+export function requestAccountRefresh() {
+  try { window.dispatchEvent(new Event(ACCOUNT_REFRESH_EVENT)); } catch { /* no window: nothing mounted to refresh */ }
 }
 
 /**
  * The workspace's live credit state, refreshed the same way the workbench's
  * account menu does it (components/workbench/WorkspaceMenu.tsx): on mount,
- * every 30 seconds and whenever the tab becomes visible.
+ * every 30 seconds and whenever the tab becomes visible, and at once on requestAccountRefresh().
  */
 export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount | null {
   const [account, setAccount] = useState(initial);
@@ -203,10 +231,12 @@ export function useAccount(initial: WorkspaceAccount | null): WorkspaceAccount |
     refresh();
     const timer = setInterval(refresh, 30000);
     document.addEventListener("visibilitychange", refresh);
+    window.addEventListener(ACCOUNT_REFRESH_EVENT, refresh);
     return () => {
       controller.abort();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener(ACCOUNT_REFRESH_EVENT, refresh);
     };
   }, [workspaceId]);
   return account;

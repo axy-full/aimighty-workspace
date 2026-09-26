@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { PRODUCTION_TOOLS, focusSection } from "@/lib/shell/production-tools";
+import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
@@ -52,7 +52,7 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ project = null, items, ready, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
+export function Library({ project = null, items, ready, error = null, onRetry, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; error?: string | null; onRetry?: () => void; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
   const shell = useShell();
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
@@ -65,9 +65,8 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
-  /* The shell's own library store (one per scope and project): its error, its retry and its next page. */
+  /* The shell's own library store (one per scope and project): its next page, and a later read that failed. */
   const library = useProjectLibrary(useSession().requestScope ?? "", project?.id ?? null);
-  const failed = library.state.status === "error";
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();
@@ -79,7 +78,7 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
         <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${items.length.toLocaleString("en-US")} ${items.length === 1 ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
-{shell.view === "gen" ? null : (
+{!libraryHasTools(shell.view, shell.suite.id, shell.page.id) ? null : (
             <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Library view">
         {(["tools", "assets"] as const).map((tab) => (
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>
@@ -100,6 +99,8 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
                   onClick={() => {
                     const section = "section" in item ? (item as { section: string }).section : null;
                     if (section) { if (overlay) shell.closePanels(); if (["prompt", "inputs", "versions"].includes(section) && shell.page.id === "rig") shell.openInspector(); focusSection(section); return; }
+                    /* A card with a tool opens that tool on the page; a plan card's action is the page's plan, in the Inspector. */
+                    if (openSpecCard(item.name)) { if (overlay) shell.closePanels(); return; }
                     dispatch({ type: "patch", patch: { selKind: "page", selId: state.page } }); shell.openInspector();
                   }}>
                   <span className="gx-tool-tag" aria-hidden="true">{tagOf(item.name)}</span>
@@ -119,8 +120,11 @@ export function Library({ project = null, items, ready, overlay, now, onUseAsRef
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
             after={<>
-              {!shown.length && !failed ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
-              {project ? <LibraryMore library={library} /> : null}
+              {!shown.length ? (error && !ready
+                ? <div className="gx-empty" role="alert" style={{ gridColumn: "1 / -1" }} data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
+                : <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p>) : null}
+              {/* Past the first page: a later read that failed, and Load more (the first read's failure is said above). */}
+              {project && !(error && !ready) ? <LibraryMore library={library} /> : null}
             </>}
             renderItem={(entry) => {
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;

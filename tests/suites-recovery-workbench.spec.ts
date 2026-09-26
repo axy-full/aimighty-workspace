@@ -5,11 +5,12 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 
 /**
  * The Suites shell recovers instead of sticking: Back leaves /suites after
- * the landing, a failed Library read says so with Try again, Load more reaches
+ * the landing, a failed Library read says so with Retry, Load more reaches
  * takes past the first page, Retry refills Gen while Gen is open, a plan that
- * cannot run says why, and a failed Ads quote re-arms Generate on its own
- * only when the failure passes by itself; an idle page asks the account
- * nothing. Every reply is route-mocked; nothing paid is ever sent.
+ * cannot run says why (in its sheet, and under the stage strip once the sheet
+ * is closed), and a failed Ads quote re-arms Generate on its own only when
+ * the failure passes by itself; an idle page asks the account nothing. Every
+ * reply is route-mocked; nothing paid is ever sent.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
@@ -61,16 +62,18 @@ test("the landing replaces the entry URL: one Back leaves /suites", async ({ pag
   expect(errors).toEqual([]);
 });
 
-test("a failed Library read says so with Try again; Load more reaches takes past the first page", async ({ page }, info) => {
+test("a failed Library read says so with Retry; Load more reaches takes past the first page", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   let failing = true;
   const { errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards", { pageSize: 2, failFirst: () => failing });
   await openAssets(page, WIDE.includes(info.project.name));
   const library = page.getByTestId("library");
-  await expect(library.getByTestId("library-more-error")).toContainText("The library is busy. Try again shortly.");
+  await expect(library.getByTestId("library-error")).toContainText("The library is busy. Try again shortly.");
   await expect(library.getByText("Reading this project…")).toHaveCount(0);
+  /* Said once: the end-of-list Load more stays out of the way while the first read has failed. */
+  await expect(library.getByTestId("library-more-error")).toHaveCount(0);
   failing = false;
-  await library.getByTestId("library-more-error").getByRole("button", { name: "Try again" }).click();
+  await library.getByTestId("library-error").getByRole("button", { name: "Retry" }).click();
   const tiles = library.locator(".gx-asset-thumb[data-ctx^='asset:generation:']");
   await expect(tiles).toHaveCount(2);
   await expect(library.getByTestId("library-more-button")).toHaveText("Load more · 3 shown");
@@ -146,11 +149,17 @@ test("Retry generation refills Gen while Gen is open, with that take's own input
   expect(errors).toEqual([]);
 });
 
-test("a plan that cannot run says why under the stage strip, and the note can be dismissed", async ({ page }, info) => {
+test("a plan that cannot run says why in its sheet, then under the stage strip once the sheet is closed, and the note can be dismissed", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?suite=moleculr&page=marketing&sp=ads");
   await page.getByTestId("primary-action").click();
+  /* Run stage opens the page's sheet, which says why; one gate at a time, so the row waits while it is open. */
+  const sheet = page.getByTestId("atomik-panel");
+  await expect(sheet).toContainText("Needs Marketing Studio data");
   const notice = page.getByTestId("suites-atomik-notice");
+  await expect(notice).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
   await expect(notice).toContainText("Needs Marketing Studio data");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await notice.getByRole("button", { name: "Dismiss" }).click();
@@ -158,7 +167,7 @@ test("a plan that cannot run says why under the stage strip, and the note can be
   expect(errors).toEqual([]);
 });
 
-test("Ads: a failed quote re-arms Generate on its own, and a finished ad can be made again", async ({ page }, info) => {
+test("Ads: a failed quote re-arms Generate on its own, and Price again readies a finished ad for another take", async ({ page }, info) => {
   test.skip(!WIDE.includes(info.project.name) && info.project.name !== "workbench-390x844", "one phone and the desktops: this waits out the backoff");
   test.setTimeout(90_000);
   const me = async () => {
@@ -197,10 +206,12 @@ test("Ads: a failed quote re-arms Generate on its own, and a finished ad can be 
   await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr", { timeout: 15_000 });
   await expect(page.getByTestId("ads-generate")).toBeEnabled();
   await page.getByTestId("ads-generate").click();
-  await expect(page.getByTestId("ads-done")).toContainText("Rendered.", { timeout: 15_000 });
-  /* The same ad again: a fresh quote re-arms Generate, and the note stays until then. */
-  await expect(page.getByTestId("ads-generate")).toBeEnabled({ timeout: 15_000 });
-  await expect(page.getByTestId("ads-done")).toContainText("Rendered.");
+  await expect(page.getByTestId("ads-done")).toContainText("Rendered and filed to this project.", { timeout: 15_000 });
+  /* The same ad again: a finished take never re-arms Generate by itself; Price again does, and the take stays beside the composer. */
+  await expect(page.getByTestId("ads-generate")).toBeDisabled();
+  await page.getByTestId("ads-requote").click();
+  await expect(page.getByTestId("ads-generate")).toBeEnabled();
+  await expect(page.getByTestId("ads-done")).toContainText("Rendered and filed to this project.");
   expect(quotes).toBe(3);
   expect(actions.filter((a) => a === "submit")).toHaveLength(1);
   expect(errors).toEqual([]);

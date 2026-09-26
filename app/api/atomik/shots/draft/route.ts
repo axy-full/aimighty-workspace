@@ -4,7 +4,7 @@ import { requireRender, withTenant } from "@/lib/auth";
 
 import { getTreatment } from "@/lib/atomikDocs";
 import { listCast } from "@/lib/cast";
-import { requestEffort, resolveModel } from "@/lib/atomik";
+import { billedCredits, requestEffort, resolveModel } from "@/lib/atomik";
 import { gatewayReachable } from "@/lib/gateway";
 import { specToPhrase } from "@/lib/studio";
 import { shotsFromReply, setupVocabulary, suggestEngine } from "@/lib/shotBuilder";
@@ -72,7 +72,12 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!shots) return NextResponse.json({ error: `${model} answered, but not with shots. Try once more, or another model.` }, { status: 502 });
 
   const priced = shots.map((s) => ({ ...s, takeUsd: shotCostUsd(s.engine, s.planned) }));
-  return NextResponse.json({ scene: n, shots: priced, sceneUsd: Math.round(priced.reduce((a, s) => a + s.takeUsd, 0) * 1000) / 1000, model, effort: effort ?? "auto", costUsd });
+  /* The dollars are the engines'; a workspace that pays in credits is told
+     what the writing was billed, off the ledger, and prices the takes from
+     its own rate table (lib/breakdownCost.ts). */
+  const writing = (await billedCredits([result.id])).get(result.id);
+  return NextResponse.json({ scene: n, shots: priced, sceneUsd: Math.round(priced.reduce((a, s) => a + s.takeUsd, 0) * 1000) / 1000, model, effort: effort ?? "auto", costUsd,
+    ...(writing === undefined ? {} : { writingCredits: writing }) });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);

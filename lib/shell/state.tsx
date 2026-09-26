@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { canUndo, popUndo, pushUndo, type UndoEntry } from "./undo";
+import { libraryHasTools } from "./production-tools";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 import { useSession } from "@/lib/session";
 import { projectChanged } from "@/lib/workspace/data";
@@ -179,9 +180,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   }, [place, ws.state.projectId]);
 
   const value = useMemo<Shell>(() => ({
-    /* Gen is not a stage and has no tools of its own: there the Library is
-       what you can drag in, however you arrived (tab, palette or a link). */
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: params.view === "gen" ? "assets" : libTab, libOpen, inspOpen,
+    /* Where a page has no tools of its own (Gen, the Business and Viral composers, the phone's
+       Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
+    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
@@ -193,7 +194,12 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       if (window.innerWidth >= WIDE_FROM) ws.dispatch({ type: "toggleInspector" });
       else { setInspOpen((v) => !v); setLibOpen(false); }
     },
-    openLibrary: (tab) => { if (tab) setLibTab(tab); if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); } },
+    openLibrary: (tab) => {
+      if (tab) setLibTab(tab);
+      /* Crew and Workspace have no Library: the suite page they were opened over hosts it. */
+      if (params.view === "crew" || params.view === "workspace") { setPaletteOpen(false); apply({ ...params, view: "suite" }, "push"); }
+      if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); }
+    },
     openInspector: () => {
       if (window.innerWidth >= WIDE_FROM) { if (!ws.state.inspector) ws.dispatch({ type: "toggleInspector" }); }
       else { setInspOpen(true); setLibOpen(false); }

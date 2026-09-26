@@ -48,6 +48,19 @@ type UploadStatus = {
   retryAfterMs: number;
   upload?: UploadedFile;
 };
+/** The server no longer has this saved upload's session: it expired, was
+ *  cancelled or refused, or the upload it made was deleted. */
+export class UploadGoneError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UploadGoneError";
+  }
+}
+const GONE_STATES: UploadStatus["state"][] = ["expired", "aborting", "aborted", "removed"];
+/** Answers that refuse the file itself, not the moment (quota, conflicts and outages are retried). */
+const REFUSALS = new Set([400, 413, 415, 422]);
+/** How long the same file is answered with its refusal instead of being sent again. */
+const REFUSAL_MEMORY_MS = 10 * 60_000;
 const headers = (entry: UploadEnvelope) => ({
   "X-Workbench-Scope": entry.scope,
 });
@@ -104,6 +117,25 @@ async function status(entry: UploadEnvelope): Promise<UploadStatus> {
     );
   return value;
 }
+/** A refused finish ends the server session (the route abandons it). Once
+ *  status confirms that, the saved upload is marked unavailable with the
+ *  server's own reason, so it stops holding one of the browser's slots. A
+ *  refusal of the file itself is remembered for a while, so choosing the
+ *  same file again answers at once instead of sending every byte again. */
+async function settleRefusedFinish(entry: UploadEnvelope, response: Response): Promise<never> {
+  const value = await response.json().catch(() => null);
+  const message =
+    value?.error ||
+    `Upload request failed (${response.status}). Resume it from Uploads.`;
+  const remote = await status(entry).catch(() => null);
+  if (remote && GONE_STATES.includes(remote.state))
+    await updateUploadEnvelope(entry, {
+      state: "blocked",
+      error: message,
+      ...(REFUSALS.has(response.status) ? { refusedAt: Date.now() } : {}),
+    });
+  throw new Error(message);
+}
 /** Read-only status also makes a lost successful finish visible without selecting the file again. */
 export async function checkUpload(entry: UploadEnvelope) {
   const current = readUploadEnvelope(entry);
@@ -132,6 +164,12 @@ export async function resumeUpload(
     );
   return withUploadLock(uploadRunLock(entry), async () => {
     let current = readUploadEnvelope(entry);
+    if (
+      current.state === "blocked" &&
+      current.refusedAt !== undefined &&
+      Date.now() - current.refusedAt < REFUSAL_MEMORY_MS
+    )
+      throw new Error(current.error || "This file was refused.");
     try {
       const remote: UploadStatus = current.started
         ? await status(current)
@@ -148,15 +186,13 @@ export async function resumeUpload(
         onProgress?.(100);
         return result;
       }
-      if (
-        ["expired", "aborting", "aborted", "removed"].includes(remote.state)
-      ) {
+      if (GONE_STATES.includes(remote.state)) {
         await updateUploadEnvelope(current, {
           state: "blocked",
           error:
             "This upload expired, was cancelled or was deleted. Dismiss it before choosing a new upload.",
         });
-        throw new Error(
+        throw new UploadGoneError(
           "This upload expired, was cancelled or was deleted. Dismiss it before choosing a new upload.",
         );
       }
@@ -221,24 +257,22 @@ export async function resumeUpload(
         if (failure) throw failure;
       }
       await updateUploadEnvelope(current, { state: "finishing" });
-      const result = uploaded(
-        await responseJson(
-          await fetch("/api/uploads/finish", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...headers(current),
-            },
-            body: JSON.stringify({
-              session: current.session,
-              count: current.count,
-              filename: current.file.name.slice(0, 200),
-              purpose: current.purpose,
-              mime: current.file.type || undefined,
-            }),
-          }),
-        ),
-      );
+      const finished = await fetch("/api/uploads/finish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...headers(current),
+        },
+        body: JSON.stringify({
+          session: current.session,
+          count: current.count,
+          filename: current.file.name.slice(0, 200),
+          purpose: current.purpose,
+          mime: current.file.type || undefined,
+        }),
+      });
+      if (!finished.ok) await settleRefusedFinish(current, finished);
+      const result = uploaded(await responseJson(finished));
       await updateUploadEnvelope(current, {
         state: "complete",
         result,
@@ -289,5 +323,18 @@ export async function uploadFile(
   if (!options?.scope)
     throw new Error("Sign in to the intended workspace before uploading.");
   const entry = await claimUploadEnvelope(options.scope, file, purpose);
-  return resumeUpload(entry, file, onProgress);
+  try {
+    return await resumeUpload(entry, file, onProgress);
+  } catch (error) {
+    if (!(error instanceof UploadGoneError)) throw error;
+    /* The same file, saved from an earlier upload the server no longer has
+       (deleted, purged, cancelled or refused). The person has the file in
+       hand, so the stale record is replaced with a new upload, once. */
+    await removeUploadEnvelope(entry);
+    return resumeUpload(
+      await claimUploadEnvelope(options.scope, file, purpose),
+      file,
+      onProgress,
+    );
+  }
 }

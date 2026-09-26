@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { ASSET_LABEL, GEN_PRESET_KEY, SAY, assetCapabilities, readGenPreset, referenceRole, retryBlock, retryPreset, type AssetRef } from "../../lib/shell/assets";
+import { ASSET_LABEL, SAY, assetCapabilities, referenceRole, retryBlock, retryPreset, type AssetRef, type GenPreset } from "../../lib/shell/assets";
+import { readGenPresets, sendGenPreset } from "../../lib/shell/gen-preset";
 import { ctxItems } from "../../lib/shell/context-menu";
 
 const gen: AssetRef = { id: "generation:g1", sourceId: "g1", origin: "generation", name: "Wide on the water", media: "video" };
@@ -46,36 +47,70 @@ test("delete says what really happens to each kind of asset", () => {
   expect(SAY.pasted("X", "Northline")).toBe("Pasted X into Northline");
 });
 
-test("Retry hands Gen the render's own inputs, and Gen reads old and new presets", () => {
-  const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox" }, title: "Fox" });
-  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", note: "Retry · Fox · same inputs · new seed" });
+test("Retry hands Gen the render's own inputs: words, engine, catalogue, settings, identity and references", () => {
+  const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox", ratio: "9:16", resolution: "1080p", duration: 10, references: [{ genId: "g7", role: "reference_image", kind: "image" }, { uploadId: "u3", role: "reference_video", kind: "video" }, { url: "https://elsewhere.invalid/x.png" }] }, title: "Fox" });
+  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", references: [{ genId: "g7", role: "reference_image" }, { uploadId: "u3", role: "reference_video" }], picks: { ratio: "9:16", resolution: "1080p", duration: 10 }, kept: "same inputs", note: "Retry · Fox · same inputs · new seed" });
+  expect(SAY.retry("Fox", preset.kept)).toBe("Retry Fox — same inputs, new seed. Quoted before it runs.");
   expect(retryPreset({ prompt: "p", model: "m", kind: "model" }).type).toBeUndefined();
-  expect(readGenPreset(JSON.stringify(preset))).toEqual(preset);
-  expect(readGenPreset("plain words from Crew")).toEqual({ prompt: "plain words from Crew" });
-  expect(readGenPreset(null)).toBeNull();
-  expect(GEN_PRESET_KEY).toBe("particl-gen-preset");
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image" }).references).toEqual([]);
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image" }).picks).toBeUndefined();
+  /* A catalogue render keeps its catalogue, its settings and its Soul ID (lib/higgsfield-consumer/original-identity). */
+  const soul = retryPreset({ prompt: "Mira at dusk", model: "soul_2", kind: "image", params: { task: "connected-generation", outputType: "image", settings: { aspect_ratio: "3:4", resolution: "2k", soul_id: "soul_ready" }, references: [{ uploadId: "u9", role: "image", kind: "image" }] } });
+  expect(soul).toMatchObject({ billing: "connected", model: "soul_2", soulId: "soul_ready", references: [{ uploadId: "u9", role: "image" }], picks: { ratio: "3:4", resolution: "2k" }, kept: "same inputs" });
+  /* This workspace's composer gives a reference its role from its kind: a render's frames come back as references, and it says so. */
+  const framed = retryPreset({ prompt: "p", model: "kling-3-pro", kind: "video", params: { references: [{ genId: "g1", role: "first_frame", kind: "image" }, { genId: "g2", role: "last_frame", kind: "image" }] }, title: "Door" });
+  expect(framed.kept).toBe("same inputs, frames as references");
+  expect(framed.note).toBe("Retry · Door · same inputs, frames as references · new seed");
+  /* Made by another tool (a template, a voice tool, Viral, an edit or upscale of a clip): Gen takes the words only, clears the well, and says so. */
+  for (const params of [{ task: "connected-generation", workflow: "marketing-template" }, { task: "connected-generation", workflow: "voice-tool" }, { task: "genjutsu" }, { task: "upscale", sourceGenId: "g0" }, { task: "edit", references: [{ genId: "g0" }] }]) {
+    const other = retryPreset({ prompt: "p", model: "marketing_studio_v2", kind: "image", params, title: "Poster" });
+    expect(other).toEqual({ prompt: "p", type: "image", references: [], kept: "prompt only", note: "Retry · Poster · prompt only" });
+  }
+  expect(SAY.retry("Poster", "prompt only")).toBe("Retry Poster — prompt only, new seed. Quoted before it runs.");
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: { task: "generate" } }).billing).toBe("workspace");
+  /* The render's own task column says the same where params do not. */
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: {}, task: "generate" }).kept).toBe("same inputs");
+  expect(retryPreset({ prompt: "p", model: "topaz", kind: "video", params: {}, task: "upscale" }).kept).toBe("prompt only");
+  expect(retryPreset({ prompt: "p", model: "m", kind: "image", params: { references: Array.from({ length: 14 }, (_, i) => ({ genId: `g${i}` })) } }).references).toHaveLength(10);
+});
+
+test("a preset reaches a mounted Gen at once, and waits (the newest only) for one that is not", () => {
+  const got: GenPreset[] = [];
+  sendGenPreset({ prompt: "old" });
+  sendGenPreset({ prompt: "new" });
+  const stop = readGenPresets((p) => got.push(p));
+  expect(got.map((p) => p.prompt)).toEqual(["new"]);
+  sendGenPreset({ prompt: "live" });
+  expect(got.map((p) => p.prompt)).toEqual(["new", "live"]);
+  stop();
+  /* Nothing lingers: a later Gen mount does not replay what was already applied. */
+  const later: GenPreset[] = [];
+  readGenPresets((p) => later.push(p))();
+  expect(later).toEqual([]);
 });
 
 test("Retry carries every input the render was made with: settings, references, the wallet, the sound", () => {
-  /* A workspace render: its ratio, resolution, length and references; the engine places references itself. */
+  /* A workspace render: its ratio, resolution, length and references (Gen places them itself, so its frames come back as references and it says so). */
   const workspace = retryPreset({
     prompt: "harbour at dawn", model: "seedance-2.5", kind: "video", title: "Harbour",
     params: { ratio: "9:16", resolution: "1080p", duration: 8, references: [{ genId: "g7", role: "first_frame", kind: "image" }, { uploadId: "u3", role: "reference_image", kind: "image" }] },
   });
   expect(workspace).toMatchObject({
     billing: "workspace", picks: { ratio: "9:16", resolution: "1080p", duration: 8 },
-    references: [{ id: "generation:g7" }, { id: "upload:u3" }],
+    references: [{ genId: "g7", role: "first_frame" }, { uploadId: "u3", role: "reference_image" }], kept: "same inputs, frames as references",
   });
-  expect(workspace.references![0]).not.toHaveProperty("role");
+  expect(workspace).not.toHaveProperty("sound");
   /* A connected-account render is retried on the connected account, with each reference's role. */
   const connected = retryPreset({
     prompt: "neon alley", model: "kling_3_0", kind: "video",
     params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", settings: { aspect_ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ uploadId: "u9", role: "start_image", kind: "image" }] },
   });
-  expect(connected).toMatchObject({ billing: "connected", model: "kling_3_0", picks: { ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ id: "upload:u9", role: "start_image" }] });
+  expect(connected).toMatchObject({ billing: "connected", model: "kling_3_0", picks: { ratio: "16:9", resolution: "720p", duration: 5 }, references: [{ uploadId: "u9", role: "start_image" }] });
   /* Sound: length, instrumental, voice. */
   expect(retryPreset({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { lengthMs: 45_000, instrumental: true } }).sound).toEqual({ seconds: 45, instrumental: true });
   expect(retryPreset({ prompt: "door slam", model: "eleven_sfx", kind: "audio", params: { durationSeconds: 3 } }).sound).toEqual({ seconds: 3 });
+  /* Gen's own sound tasks are the same inputs, not "prompt only". */
+  expect(retryPreset({ prompt: "Hello there", model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ" }, title: "Hello" })).toMatchObject({ kept: "same inputs", sound: { voiceId: "abc123XYZ" }, note: "Retry · Hello · same inputs · new seed" });
 });
 
 test("a take Gen cannot make again from its own inputs says why, and Retry is blocked with that reason", () => {

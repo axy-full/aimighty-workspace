@@ -5,6 +5,7 @@ import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { usd, timeAgo } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
+import { parseCeiling } from "@/lib/tokenCeiling";
 
 export type Token = {
   id: string; name: string; scope: "read" | "render";
@@ -29,12 +30,23 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
       "", "What is it for? e.g. your assistant"
     );
     if (!name?.trim()) return;
-    const cap = scope === "render"
-      ? await appPrompt("Monthly ceiling", "20", "USD — blank for no limit")
-      : null;
+    /* A token that can generate is made only once its ceiling is settled:
+       Cancel makes nothing, and anything that is not dollars asks again. */
+    let capUsd: number | null = null;
+    if (scope === "render") {
+      let typed = "20", problem: string | undefined;
+      for (;;) {
+        const answer = await appPrompt("Monthly ceiling", typed, "USD — blank for no limit", problem);
+        if (answer === null) return;
+        const ceiling = parseCeiling(answer);
+        if ("error" in ceiling) { typed = answer; problem = ceiling.error; continue; }
+        capUsd = ceiling.capUsd;
+        break;
+      }
+    }
     const res = await scopedFetch("/api/tokens", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, scope, capUsd: cap ? Number(cap) : null }),
+      body: JSON.stringify({ name, scope, capUsd }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) { appAlert("Couldn't create the token", json.error); return; }

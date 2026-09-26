@@ -2,21 +2,25 @@
 import { useState } from "react";
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { formatCredits } from "@/lib/workspace/run-engine";
+import { useWorkspace } from "@/lib/workspace/state";
 
 /**
- * The Suites shell's Atomik gate: one row under the stage strip, on every
- * page, whenever the one run the engine holds needs a word from you. A priced
+ * The Suites shell's Atomik gate, while its sheet is closed: one row under
+ * the stage strip, on every page, whenever the one run the engine holds needs
+ * a word from you. Run stage opens the sheet (components/graphite/AtomikSheet),
+ * which is the gate while it is open; close it with a run still waiting at
+ * its price, and the run would sit there with nothing on screen. So a priced
  * run waits here with Approve (the exact quote) and Not now; a plan that
- * cannot run says why; a run that failed says what failed. The legacy shells
- * have AtomikPanel and the phone sheet for this; the Suites shell had nothing,
- * so '+ Run stage' stopped at a price nobody could see or approve.
+ * cannot run says why; a run that failed says what failed. Never both at once.
  */
 export function AtomikGate() {
   const atomik = useAtomik();
+  const sheetOpen = useWorkspace().state.agentOpen;
   const run = atomik.state.run;
   const notice = atomik.state.notice;
   const [dismissed, setDismissed] = useState<string | null>(null);
   const title = run ? atomik.plan(run.page)?.title ?? "Atomik" : "Atomik";
+  if (sheetOpen) return null;
 
   if (run?.status === "waiting") {
     const price = run.quote ? formatCredits(run.quote.credits, run.quote.unit) : null;

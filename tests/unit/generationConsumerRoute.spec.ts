@@ -17,6 +17,8 @@ import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-so
 import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as contract from "../../lib/higgsfield-consumer/generation-contract";
 import * as tools from "../../lib/higgsfield-consumer/tools";
+import * as records from "../../lib/higgsfield-consumer/marketing-records";
+import { BuildInFlightError } from "../../lib/higgsfield-consumer/build-records";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -56,6 +58,8 @@ async function fixture() {
     "@/lib/higgsfield-consumer/oauth": { ConsumerOAuthError, getConsumerConnection: async (identity: unknown) => { connections.push(identity); return connection; } },
     "@/lib/higgsfield-consumer/mcp": { ConsumerDiscoveryError },
     "@/lib/higgsfield-consumer/jobs": { ConsumerJobError },
+    /* The standalone guard runs inside the quote service (tests/unit/generationConsumerService.spec.ts); the route maps its refusal. */
+    "@/lib/higgsfield-consumer/marketing-records": { ConsumerSetupError: records.ConsumerSetupError },
     "@/lib/higgsfield-consumer/video-contract": { ConsumerVideoError },
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
@@ -276,6 +280,11 @@ test("the Soul ID build: the plan gate is an owner read; the create needs render
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
   expect(f.calls).toHaveLength(2);
+  /* The same build already sent (it may be on the account): a plain 409 the card shows, never a second send. */
+  f.fail(new BuildInFlightError());
+  const again = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
+  expect(again.status).toBe(409);
+  expect(await again.json()).toEqual({ code: "build_in_flight", error: "This build was already sent and may have been accepted, so it is not sent again." });
 });
 
 test("reference elements: the list is an owner read; the create needs render, carries name · category · 1–8 sources, and is rate-limited hardest", async () => {
@@ -294,4 +303,16 @@ test("reference elements: the list is an owner read; the create needs render, ca
   expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "prop", sources: [] })).status).toBe(400);
   expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "prop", sources: [{ url: "https://x.example/a.png" }] })).status).toBe(400);
   expect(f.calls).toHaveLength(2);
+});
+
+test("the quote service's standalone refusal answers 409 setup_not_particl with its own safe words", async () => {
+  const f = await fixture();
+  const input_ = { ...input, parameters: { ...input.parameters, product_ids: ["acct_p1"] } };
+  f.fail(Object.assign(new records.ConsumerSetupError(), { cause: new Error("PRIVATE_ACCOUNT_DETAIL") }));
+  const response = await f.request("POST", { ...quote, input: input_ }, { origin: "https://particl.example" });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ code: "setup_not_particl", error: new records.ConsumerSetupError().message });
+  /* The route hands the whole input to the service, which runs the guard before anything is priced. */
+  expect(f.calls.map((call) => call.name)).toEqual(["quote"]);
+  expect(JSON.stringify(f.calls[0].args)).toContain("acct_p1");
 });

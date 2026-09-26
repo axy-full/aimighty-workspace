@@ -39,7 +39,7 @@ export const POST = withTenant(async function POST(req: Request) {
     );
   return body.quoteOnly === true
     ? perform()
-    : withGenerationRequest(req, got.user.id, perform);
+    : withGenerationRequest(req, got.user.id, perform, { atomicBinding: true });
 });
 
 /** What the Audio screen needs to draw itself: engines, terms, and — when
