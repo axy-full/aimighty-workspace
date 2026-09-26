@@ -70,8 +70,9 @@ return await withRecoveryActivity('purge', async () => {
 export const OWNED_WORKSPACE_CEILING = 5;
 /** The platform owner's undo of a workspace delete. Nothing was erased, so
  * access is all that comes back: the owner's membership returns at once, and
- * the owner turns the rest of the team back on from People. A restore never
- * takes the owner past their ceiling of workspaces, and leaves a receipt. */
+ * the owner turns the rest of the team back on from People. Review links the
+ * delete ended stay ended; the owner makes new ones. A restore never takes
+ * the owner past their ceiling of workspaces, and leaves a receipt. */
 export async function restoreDeletedWorkspace(
   id: string,
   actorId: string | null = null,

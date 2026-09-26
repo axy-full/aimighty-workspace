@@ -431,11 +431,25 @@ test("the platform can restore a deleted workspace: the owner returns, the team 
     password,
     acceptedPolicy: true,
   });
+  const share = `share-restore-${tag}`;
+  await platformDb().execute({
+    sql: "INSERT INTO p_shares(id,token_hash,workspace_id,project_id,created_at,expires_at) VALUES(?,?,?,?,?,?)",
+    args: [share, `hash-${share}`, ws.id, "prj_restore", Date.now(), Date.now() + 86400_000],
+  });
   await markWorkspaceDeleted(ws.id);
   expect((await getWorkspace(ws.id))?.deletedAt).toBeTruthy();
   await restoreDeletedWorkspace(ws.id, "platform-desk");
   await restoreDeletedWorkspace(ws.id, "platform-desk");
   expect((await getWorkspace(ws.id))?.deletedAt).toBeNull();
+  // A review link the delete ended stays ended; the owner makes a new one.
+  expect(
+    (
+      await platformDb().execute({
+        sql: "SELECT revoked_at FROM p_shares WHERE id=?",
+        args: [share],
+      })
+    ).rows[0].revoked_at,
+  ).not.toBeNull();
   const receipts = (
     await platformDb().execute({
       sql: "SELECT actor_id FROM security_audit WHERE workspace_id=? AND action='workspace.restored'",

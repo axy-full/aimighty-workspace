@@ -75,6 +75,10 @@ jobs:
       PLATFORM_DATABASE_URL: file:.data/browser-platform.db
       PW_PLATFORM_DATABASE_URL: file:.data/browser-platform.db
       TURSO_DATABASE_URL: file:.data/browser-legacy.db
+      # The platform owner is named only by the deployment. This local fixture
+      # address lets the platform-desk spec sign in as the owner; unset, the
+      # desk is shut to everyone.
+      SUPER_ADMIN_EMAIL: platform-owner@example.test
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

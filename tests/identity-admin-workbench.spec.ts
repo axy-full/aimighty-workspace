@@ -195,6 +195,9 @@ test("the platform desk marks a deleted workspace and restores it; money stays o
     expect(signup.ok(), await signup.text()).toBe(true);
   }
   const me = await page.request.get("/api/me").then((r) => r.json());
+  // Only the deployment names the platform owner; the server under test must
+  // run with SUPER_ADMIN_EMAIL set to this fixture address (CI does).
+  expect(me.superAdmin, `start the server with SUPER_ADMIN_EMAIL=${ownerEmail}`).toBe(true);
   const name = `Closing ${randomBytes(4).toString("hex")}`;
   const created = await page.request.post("/api/workspaces", {
     headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` },
