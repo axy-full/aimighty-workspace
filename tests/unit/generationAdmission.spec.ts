@@ -870,10 +870,12 @@ test("a still and a clip keep Gen's shot setup as data, trimmed to short strings
   ];
   const kept = [{ shot: "cu", lens: "35", light: "soft", ["k".repeat(24)]: "v" }, { shot: "cu", lens: "35", light: "soft", ["k".repeat(24)]: "v", move: "push" }, undefined];
   for (const [index, body] of bodies.entries()) {
+    /* Gen's path: the quote's fingerprint approves the same body, setup and all. */
     const prepared = value(await service.gen.prepareGeneration(body, actor));
-    const admitted = await service.gen.admitGeneration(prepared, actor, { requestKey: `shot-setup-${index}`, defer: noInline });
-    expect(admitted.status, JSON.stringify(admitted.body)).toBeLessThan(300);
-    const stored = (await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [admitted.body.id as string] })).rows[0];
+    const response = await route("generation", service).POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits }, `shot-setup-${index}`));
+    const accepted = await response.json();
+    expect(response.ok, JSON.stringify(accepted)).toBe(true);
+    const stored = (await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [accepted.id as string] })).rows[0];
     expect(JSON.parse(String(stored.params)).shotSpec).toEqual(kept[index]);
   }
 }));
