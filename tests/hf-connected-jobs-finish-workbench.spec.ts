@@ -12,8 +12,8 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type 
  * settles, and announces it once. Opening Gen or Ads later shows the jobs that
  * composer made from what the collector has — their state in one word with its
  * age, a problem named plainly, a finished take moved into Takes — and asks
- * nothing itself. Motion Transfer follows its own jobs. Every account reply
- * here is a route mock; nothing is paid for.
+ * nothing itself. Motion Transfer follows its own jobs, and says a failed read
+ * on the run's row. Every account reply here is a route mock; nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -290,7 +290,7 @@ test("Ads shows an ad from an earlier visit until it lands, then points to Takes
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("Motion Transfer rows move from Rendering to settled instead of sitting at accepted", async ({ page }, info) => {
+test("Motion Transfer rows move from Rendering to settled instead of sitting at accepted; a read that fails is said on the row, asked again, and cleared by the next good one", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await base(page, { uploads: [], generations: [] });
   const job = {
@@ -299,30 +299,53 @@ test("Motion Transfer rows move from Rendering to settled instead of sitting at 
     workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 34, creditUnit: "higgsfield_credits", quoteExpiresAt: 0,
     providerJobId: "22222222-2222-4222-8222-000000000021", createdAt: Date.now() - 7 * MIN,
   };
-  let state: "accepted" | "completed" = "accepted";
+  /* Rendering, then the account needs reconnecting for a while, then it has finished the job. */
+  let state: "accepted" | "reconnect" | "completed" = "accepted";
   const posts: Record<string, unknown>[] = [];
   await page.route("**/api/higgsfield/consumer/genjutsu**", async (route) => {
     const request = route.request();
-    const current = state === "accepted" ? job : { ...job, status: "completed", originalAvailable: true, originalAvailability: "available", result: { original: { generationId: GEN, asset: { generationId: GEN, url: `/api/media/${GEN}`, kind: "video", mime: "video/mp4" } } } };
+    const current = state !== "completed" ? job : { ...job, status: "completed", originalAvailable: true, originalAvailability: "available", result: { original: { generationId: GEN, asset: { generationId: GEN, url: `/api/media/${GEN}`, kind: "video", mime: "video/mp4" } } } };
     if (request.method() === "GET") return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: { resolutions: ["480p", "720p", "1080p"], minSeconds: 4, maxSeconds: 30, maxImages: 30, maxMediaBytes: 52428800 }, jobs: [current] } });
     const body = request.postDataJSON() as Record<string, unknown>;
     posts.push(body);
-    if (body.action === "status") return route.fulfill({ json: { job: current, pollAfterSeconds: 8 } });
-    return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
+    if (body.action !== "status") return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
+    /* The route's own answer while the connection needs renewing (ConsumerOAuthError "reconnect_required"). */
+    if (state === "reconnect") return route.fulfill({ status: 401, json: { code: "reconnect_required", error: "Reconnect the account in Workspace › Engines before continuing." } });
+    return route.fulfill({ json: { job: current, pollAfterSeconds: 8 } });
   });
+  const reads = () => posts.filter((p) => p.action === "status").length;
   await page.clock.install();
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
-  const row = page.getByTestId("viral-job");
+  /* Recent beside the composer: the run in words, with its credits and age. */
+  const row = page.getByTestId("viral-run");
+  const status = row.getByTestId("viral-run-status"), problem = row.getByTestId("viral-run-problem");
   await expect(row).toHaveCount(1);
-  await expect(row.locator(".gx-resumed-state")).toHaveText("Rendering · 7 min");
-  await expect.poll(() => posts.filter((p) => p.action === "status").length).toBeGreaterThan(0);
+  await expect(status).toHaveText("Rendering");
+  await expect(row).toContainText("34 cr · 7 min ago");
+  await expect.poll(reads).toBeGreaterThan(0);
   await noOverflow(page);
-  await shoot(page, info.project.name, "viral-rendering", "viral-job");
-  state = "completed";
+  await shoot(page, info.project.name, "viral-rendering", "viral-run");
+
+  /* The account needs reconnecting: the row says so plainly, still rendering, and the run keeps being asked after. */
+  state = "reconnect";
+  const before = reads();
   await page.clock.fastForward("00:10");
-  await expect(row.locator(".gx-resumed-state")).toHaveText("34 cr settled");
-  await expect(row).toHaveAttribute("data-tone", "green");
+  await expect(problem).toHaveText("Reconnect the account in Workspace › Engines to finish this take.");
+  await expect(status).toHaveText("Rendering");
+  await noOverflow(page);
+  await shoot(page, info.project.name, "viral-reconnect", "viral-run");
+  await page.clock.fastForward("01:01");
+  await expect.poll(reads).toBeGreaterThan(before + 1);
+  await expect(problem).toBeVisible();
+
+  /* Reconnected, and the account has finished it: the next good read clears the problem and settles the row. */
+  state = "completed";
+  await page.clock.fastForward("01:01");
+  await expect(status).toHaveText("Done");
+  await expect(status).toHaveAttribute("data-tone", "done");
+  await expect(row).toContainText("34 cr settled");
+  await expect(problem).toHaveCount(0);
   expect(posts.every((p) => p.action === "status" && p.id === job.id)).toBe(true);
   expect(errors).toEqual([]);
 });

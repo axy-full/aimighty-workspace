@@ -1,42 +1,72 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
-import { resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfterStatus, type ViralRun } from "./viral";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
+import { ESTIMATE_LIFETIME_MS, mergeRuns, pendingJobIds, runAfterStatus, runCannotSettle, runInFlight, viralFailure, type ViralRun } from "./viral";
 
 /**
  * The Genjutsu pages' one line to the connected account
  * (`/api/higgsfield/consumer/genjutsu`, the existing route): the connection
- * and capabilities, this project's jobs, a read-only quote for exactly the
- * current input (the *live estimate* the primary requires), submit at that
- * exact price, and polling. Nothing here invents a price. A status read
- * that fails for a job still on the account is said plainly on its row
- * (reconnect, storage, an outage) while it keeps being asked after.
+ * and capabilities, this project's runs a page at a time (its `view=runs`:
+ * estimates are not runs and never listed; beside a composer, only that
+ * page's variant), a read-only quote for exactly the current input (the
+ * *live estimate* the primary requires), submit at that exact price, and
+ * reading every run still in flight — including ones sent before this page
+ * opened — until the account settles it, at the pace the account asks for.
+ * A status read that fails for a run still on the account is said plainly
+ * on its row (reconnect, storage, an outage) while it keeps being asked
+ * after, less often; one that would fail the same way every time (the run is
+ * gone, or was made on an earlier account connection) stops and says why.
+ * A run that cannot move on its own is read a few times, then left for the
+ * person to check again. A run that lands re-reads the project's Library
+ * once, so Takes and the Library show it without a reload. A submit whose
+ * reply was lost re-reads the list, and the run follows the account once the
+ * list shows the job was taken. Nothing here invents a price or sends a job
+ * twice.
  */
 export type GenjutsuJob = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
   input: ConsumerGenjutsuInput; workspaceName: string; workspaceId: string; quoteCredits: number; creditUnit: string; quoteExpiresAt: number; quoteExpired?: boolean;
   providerJobId: string | null; result?: { original?: { generationId?: string; asset?: { id?: string; url?: string; kind?: string } } } | null;
-  originalAvailability?: string; originalAvailable?: boolean; createdAt: number;
-  /** The saved reply of a submit whose answer was lost, and whether an unconfirmed job was set aside. */
+  originalAvailability?: string; originalAvailable?: boolean; createdAt: number; updatedAt?: number;
+  /** The saved reply of a submit whose answer was lost, whether an unconfirmed job was set aside, and why a failed one failed. */
   providerReceipt?: unknown; setAside?: boolean; failureCode?: string | null;
 };
 export type ViralCapabilities = { resolutions: string[]; minSeconds: number; maxSeconds: number; maxImages: number; maxMediaBytes: number };
 export type Estimate = { key: string; credits: number | null; expiresAt: number; error: string | null; job: GenjutsuJob | null };
-const ENDPOINT = "/api/higgsfield/consumer/genjutsu";
-const POLL_MS = 4000;
+/** Where this project's run list stands: the first read, then older pages on request. */
+export type ViralRuns = { status: "idle" | "loading" | "ready" | "error"; nextCursor: string | null; more: "idle" | "loading" | "error" };
+type RunPhase = ViralRun<GenjutsuJob>;
+type Runs = { draftId: string; jobs: GenjutsuJob[]; status: "loading" | "ready" | "error"; error: string | null; nextCursor: string | null; pages: number; more: ViralRuns["more"] };
+type ListReply = { connection?: { connected?: boolean; requiresReconnect?: boolean }; capabilities?: ViralCapabilities; jobs?: GenjutsuJob[]; nextCursor?: string | null; error?: string } | null;
 
-export function useViral(draftId: string | null, ready: boolean) {
+const ENDPOINT = "/api/higgsfield/consumer/genjutsu";
+/** One read per tick at most, whatever is in flight. */
+const POLL_MS = 4000;
+/** The longest a run in flight waits between reads, and how many reads a run that cannot move on its own gets. */
+const POLL_MAX_MS = 60_000, STALL_READS = 3;
+type Watch = { at: number; reads: number; status: string };
+/** Why a run is no longer read on its own: nothing can move it, or a read would fail the same way every time (gone, or an earlier account connection). */
+export type Stall = "unconfirmed" | "gone";
+const UNREADABLE = "The connected account could not be read.";
+const phaseFor = (job: GenjutsuJob): RunPhase =>
+  job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: viralFailure(job) } : { phase: "running", job };
+
+export function useViral(scope: string, draftId: string | null, variant: ConsumerGenjutsuInput["variant"] | null = null) {
+  const ready = Boolean(scope);
   const scoped = useScopedFetch();
   const [connection, setConnection] = useState<{ connected: boolean; owner: boolean } | null>(null);
   const [capabilities, setCapabilities] = useState<ViralCapabilities | null>(null);
-  const [jobs, setJobs] = useState<GenjutsuJob[]>([]);
+  const [runs, setRuns] = useState<Runs | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
-  const [run, setRun] = useState<ViralRun<GenjutsuJob>>({ phase: "idle" });
-  const [listError, setListError] = useState<string | null>(null);
-  /** A failed status read for a job still in flight, in the product's words; cleared by its next good read. */
-  const [problems, setProblems] = useState<Record<string, string>>({});
+  const [run, setRun] = useState<RunPhase>({ phase: "idle" });
+  /* The project the answers belong to: a reply for a project no longer open is dropped. */
+  const draft = useRef(draftId);
+  const liveRuns = useRef(runs);
+  const liveRun = useRef(run);
+  useEffect(() => { draft.current = draftId; liveRuns.current = runs; liveRun.current = run; });
 
   const call = useCallback(async (body: unknown) => {
     const response = await scoped(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -45,22 +75,67 @@ export function useViral(draftId: string | null, ready: boolean) {
     return json.job;
   }, [scoped]);
 
+  const readPage = useCallback(async (id: string, cursor: string | null) => {
+    const query = new URLSearchParams({ draftId: id, view: "runs" });
+    if (variant) query.set("variant", variant);
+    if (cursor) query.set("cursor", cursor);
+    const response = await scoped(`${ENDPOINT}?${query}`, { cache: "no-store" });
+    const json = await response.json().catch(() => null) as ListReply;
+    if (!response.ok) throw new Error(json?.error ?? UNREADABLE);
+    return json;
+  }, [scoped, variant]);
+
+  /** The first page again, over whatever is on hand: runs settle in place and older pages stay loaded. */
   const refresh = useCallback(async () => {
     if (!draftId) return;
+    const mine = () => draft.current === draftId;
+    setRuns((prev) => (mine() && prev?.draftId === draftId && prev.status === "error" ? { ...prev, status: "loading", error: null } : prev));
     try {
       const me = await scoped("/api/me", { cache: "no-store" }).then((r) => r.json()) as { owner?: boolean };
-      if (me.owner !== true) { setConnection({ connected: false, owner: false }); return; }
-      const response = await scoped(`${ENDPOINT}?draftId=${encodeURIComponent(draftId)}&results=submitted`, { cache: "no-store" });
-      const json = await response.json().catch(() => null) as { connection?: { connected?: boolean; requiresReconnect?: boolean }; capabilities?: ViralCapabilities; jobs?: GenjutsuJob[]; error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "The connected account could not be read.");
+      if (me.owner !== true) {
+        setConnection({ connected: false, owner: false });
+        setRuns((prev) => (mine() ? { draftId, jobs: [], status: "ready", error: null, nextCursor: null, pages: 1, more: "idle" } : prev));
+        return;
+      }
+      const json = await readPage(draftId, null);
       setConnection({ connected: json?.connection?.connected === true && json?.connection?.requiresReconnect !== true, owner: true });
       if (json?.capabilities) setCapabilities(json.capabilities);
-      /* What ran, never the estimates the composer read on the way. */
-      setJobs(listedJobs(json?.jobs ?? []));
-      setListError(null);
-    } catch (error) { setListError(error instanceof Error ? error.message : "The connected account could not be read."); }
-  }, [scoped, draftId]);
+      setRuns((prev) => {
+        if (!mine()) return prev;
+        const same = prev?.draftId === draftId ? prev : null, deeper = same && same.pages > 1 ? same : null;
+        return {
+          draftId, jobs: mergeRuns(json?.jobs ?? [], same?.jobs ?? []), status: "ready", error: null,
+          nextCursor: deeper ? deeper.nextCursor : json?.nextCursor ?? null, pages: deeper ? deeper.pages : 1, more: same?.more ?? "idle",
+        };
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : UNREADABLE;
+      setRuns((prev) => {
+        if (!mine()) return prev;
+        /* Runs already on screen stay; the failure shows beside them. */
+        if (prev?.draftId === draftId && prev.jobs.length) return { ...prev, status: "ready", error: message };
+        return { draftId, jobs: [], status: "error", error: message, nextCursor: null, pages: 0, more: "idle" };
+      });
+    }
+  }, [scoped, draftId, readPage]);
   useEffect(() => { if (!ready) return; const timer = setTimeout(() => void refresh(), 0); return () => clearTimeout(timer); }, [ready, refresh]);
+
+  /** The next older page, by the cursor the last page ended on. */
+  const loadMore = useCallback(async () => {
+    const now = liveRuns.current;
+    if (!draftId || !now || now.draftId !== draftId || !now.nextCursor || now.more === "loading") return;
+    const cursor = now.nextCursor;
+    setRuns((prev) => (prev?.draftId === draftId ? { ...prev, more: "loading" } : prev));
+    try {
+      const json = await readPage(draftId, cursor);
+      /* A refresh that moved the first page's cursor meanwhile makes this page stale: dropped, and the button ready again. */
+      setRuns((prev) => (prev?.draftId !== draftId ? prev : prev.nextCursor === cursor
+        ? { ...prev, jobs: mergeRuns(json?.jobs ?? [], prev.jobs), nextCursor: json?.nextCursor ?? null, pages: prev.pages + 1, more: "idle" }
+        : { ...prev, more: "idle" }));
+    } catch {
+      setRuns((prev) => (prev?.draftId === draftId ? { ...prev, more: "error" } : prev));
+    }
+  }, [draftId, readPage]);
 
   /** A read-only quote for exactly this input; the key names the input it prices. */
   const quote = useCallback(async (input: ConsumerGenjutsuInput, key: string) => {
@@ -73,6 +148,17 @@ export function useViral(draftId: string | null, ready: boolean) {
     }
   }, [call, draftId]);
 
+  /* A run the account answered for: into the list in place, onto the primary if it is the one just sent (or one whose submit reply was lost, which the account took after all), and — once it lands — into the Library. */
+  const landed = useRef(new Set<string>());
+  const land = useCallback((job: GenjutsuJob) => {
+    setRuns((prev) => (prev?.draftId === job.draftId ? { ...prev, jobs: mergeRuns([job], prev.jobs) } : prev));
+    setRun((prev) => (prev.phase === "submitting" && prev.job.id === job.id ? phaseFor(job) : runAfterStatus(prev, job)));
+    if (job.status === "completed" && !landed.current.has(job.id)) {
+      landed.current.add(job.id);
+      if (scope) void refreshProjectLibrary(scope, job.draftId);
+    }
+  }, [scope]);
+
   const live = useRef(estimate);
   useEffect(() => { live.current = estimate; });
   /** Submit exactly the estimated job at exactly its price. */
@@ -83,42 +169,104 @@ export function useViral(draftId: string | null, ready: boolean) {
     try {
       const job = await call({ action: "submit", draftId, id: current.job.id, workspaceId: current.job.workspaceId, credits: current.credits });
       setEstimate(null);
-      setRun(job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: VIRAL_FAILED } : { phase: "running", job });
-      void refresh();
+      land(job);
     } catch (error) {
       setRun({ phase: "failed", job: current.job, error: error instanceof Error ? error.message : "The job could not be submitted." });
-      /* A lost reply may still have reached the account: the list says so, and a job it took is polled
-         like any other — this run too, which then shows it rendering. */
+      /* A lost reply may still have reached the account: the list says so, and a job it took is read
+         like any other run in flight — this run too, which then shows it rendering. */
       void refresh();
     }
-  }, [call, draftId, refresh]);
+  }, [call, draftId, land, refresh]);
 
-  /* Every job the account still holds is polled until it settles — the one submitted here and any
-     listed (another page, a reload, another tab) — one status read per tick, so a paid job is never stranded. */
-  const pending = pendingJobIds(jobs, run.phase === "running" ? run.job.id : null).join(",");
-  const turn = useRef(0);
+  const current = draftId && runs?.draftId === draftId ? runs : null;
+  const jobs = current?.jobs ?? [];
+  /* Runs no longer read on their own, by the state they stopped in (and why: unconfirmed, or a read that would fail the same way again); each shows Check again until it moves. */
+  const [stalled, setStalled] = useState<ReadonlyMap<string, { status: string; why: Stall }>>(() => new Map());
+  const stalledAs = useCallback((job: { id: string; status: string }): Stall | null => {
+    const at = stalled.get(job.id);
+    return at && at.status === job.status ? at.why : null;
+  }, [stalled]);
+  /** A failed status read for a run still in flight, in the product's words; cleared by its next good read, and moot once the run settles. */
+  const [problems, setProblems] = useState<Readonly<Record<string, string>>>({});
+  const say = useCallback((id: string, problem: string | null) => setProblems((all) => {
+    if (problem === null) { if (!(id in all)) return all; const next = { ...all }; delete next[id]; return next; }
+    return all[id] === problem ? all : { ...all, [id]: problem };
+  }), []);
+  const problemOf = useCallback((job: { id: string; status: string }): string | null => (runInFlight(job.status) ? problems[job.id] ?? null : null), [problems]);
+  const watch = useRef(new Map<string, Watch>());
+  /** When a run is read next: at the account's own pace while it renders, backing off while it is unchanged; a run that cannot move on its own, or whose read would fail the same way again, stops. */
+  const schedule = useCallback((id: string, job: GenjutsuJob | null, pollAfterSeconds?: number) => {
+    const prev = watch.current.get(id);
+    if (job && !runInFlight(job.status)) { watch.current.delete(id); return; }
+    const onHand = liveRuns.current?.jobs.find((j) => j.id === id) ?? (liveRun.current.phase !== "idle" && liveRun.current.job?.id === id ? liveRun.current.job : null);
+    const status = job?.status ?? onHand?.status ?? prev?.status ?? "";
+    const reads = prev && prev.status === status ? prev.reads + 1 : 1;
+    if (!job || (runCannotSettle(job) && reads >= STALL_READS)) {
+      watch.current.delete(id);
+      setStalled((prior) => new Map(prior).set(id, { status, why: job ? "unconfirmed" : "gone" }));
+      return;
+    }
+    const backoff = Math.min(POLL_MS * 2 ** (reads - 1), POLL_MAX_MS);
+    const wait = job.status === "accepted" && pollAfterSeconds ? Math.min(pollAfterSeconds * 1000, POLL_MAX_MS) : backoff;
+    watch.current.set(id, { at: Date.now() + wait, reads, status });
+  }, []);
+  /** Unreadable for now (the network, an outage, a reconnect, full storage, the route's budget): said on the run, and read again later, less often. */
+  const later = useCallback((id: string, problem: string) => {
+    const prev = watch.current.get(id);
+    watch.current.set(id, { at: Date.now() + Math.min(POLL_MS * 2 ** (prev?.reads ?? 0), POLL_MAX_MS), reads: (prev?.reads ?? 0) + 1, status: prev?.status ?? "" });
+    say(id, problem);
+  }, [say]);
+  const readRun = useCallback(async (id: string) => {
+    if (!draftId) return;
+    let response: Response;
+    try {
+      response = await scoped(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status", draftId, id }) });
+    } catch { later(id, resumeProblem(null)); return; }
+    const json = await response.json().catch(() => null) as { job?: GenjutsuJob; pollAfterSeconds?: number; error?: string; code?: string } | null;
+    if (!response.ok || !json?.job) {
+      const failure = { status: response.status, code: json?.code };
+      /* Gone, or made on an earlier account connection: every read would fail the same way, so it stops, saying why. */
+      if (resumeGivesUp(failure)) { say(id, resumeProblem(failure, json?.error)); schedule(id, null); }
+      else later(id, resumeProblem(failure, json?.error));
+      return;
+    }
+    say(id, null);
+    land(json.job);
+    schedule(id, json.job, json.pollAfterSeconds);
+  }, [draftId, scoped, land, schedule, later, say]);
+  /*
+   * Every run in flight is read until it settles — the one just sent and any
+   * the list found still rendering — one per tick at most, in turn, each when
+   * it is due, so four at once cost no more requests than one. A hidden tab waits.
+   */
+  const pollKey = pendingJobIds(
+    jobs.filter((j) => !stalledAs(j)),
+    run.phase === "running" && runInFlight(run.job.status) && !stalledAs(run.job) ? run.job.id : null,
+  ).join(",");
   useEffect(() => {
-    if (!pending || !draftId) return;
-    const ids = pending.split(",");
-    let stop = false;
-    const timer = setInterval(async () => {
-      const id = ids[turn.current++ % ids.length];
-      try {
-        const job = await call({ action: "status", draftId, id });
-        if (stop) return;
-        setJobs((list) => list.map((j) => (j.id === job.id ? job : j)));
-        setProblems((all) => { if (!(job.id in all)) return all; const next = { ...all }; delete next[job.id]; return next; });
-        setRun((current) => runAfterStatus(current, job));
-        if (job.status === "completed") void refresh();
-      } catch (error) {
-        /* Retried on its next turn; meanwhile the row says what is wrong and who can fix it. */
-        if (stop) return;
-        const problem = resumeProblem(error);
-        setProblems((all) => (all[id] === problem ? all : { ...all, [id]: problem }));
-      }
+    if (!draftId || !pollKey) return;
+    const ids = pollKey.split(",");
+    let turn = 0, busy = false;
+    const timer = setInterval(() => {
+      if (busy || document.hidden) return;
+      const now = Date.now();
+      const next = ids.map((_, k) => (turn + k) % ids.length).find((i) => (watch.current.get(ids[i])?.at ?? 0) <= now);
+      if (next === undefined) return;
+      turn = next + 1;
+      busy = true;
+      readRun(ids[next]).catch(() => undefined).finally(() => { busy = false; });
     }, POLL_MS);
-    return () => { stop = true; clearInterval(timer); };
-  }, [pending, call, draftId, refresh]);
+    return () => clearInterval(timer);
+  }, [draftId, pollKey, readRun]);
+  /** A run left alone is read again, from the start. */
+  const recheck = useCallback((id: string) => {
+    watch.current.delete(id);
+    setStalled((prior) => { const next = new Map(prior); next.delete(id); return next; });
+  }, []);
 
-  return { connection, capabilities, jobs, problems, estimate, run, listError, quote, submit, refresh, reset: () => setRun({ phase: "idle" }) };
+  const list: ViralRuns = { status: !draftId ? "idle" : current?.status ?? "loading", nextCursor: current?.nextCursor ?? null, more: current?.more ?? "idle" };
+  return {
+    connection, capabilities, jobs, list, listError: current?.error ?? null, estimate, run, stalledAs, problemOf,
+    quote, submit, refresh, loadMore, recheck, reset: () => setRun({ phase: "idle" }),
+  };
 }
