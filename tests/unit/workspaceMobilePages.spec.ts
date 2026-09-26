@@ -18,11 +18,15 @@ import {
   EMPTY_CREATIVE,
   FORM_BLOCKED,
   FORM_QUOTE_NOTE,
+  estimateAction,
   formBlocked,
   formDraftKey,
   formInput,
   formQuote,
+  formQuoteAttemptKey,
+  formQuoteBody,
   formQuoteLabel,
+  readQuoteAttempt,
   formSummary,
   readFormCreative,
   withReference,
@@ -240,6 +244,31 @@ test("a missing or stale quote blocks submission, and the reason is the honest o
     expect(FORM_BLOCKED[state]).not.toBe(FORM_QUOTE_NOTE[state]);
     expect(FORM_BLOCKED[state]).toMatch(/estimate/i);
   }
+});
+
+test("the phone takes its own estimate: a new one only when none is usable, an unfinished one finished with its own key", () => {
+  const none = formQuote([], request, 1_000);
+  const ready = formQuote([job()], request, 1_000);
+  /* No usable quote: take one for exactly this composition. */
+  expect(estimateAction({ request, quote: none, stored: null, jobs: [] })).toEqual({ kind: "take", input: request });
+  expect(estimateAction({ request, quote: { state: "expired", credits: null, expiresAt: 1 }, stored: null, jobs: [] }).kind).toBe("take");
+  /* A usable quote, or nothing the engine accepts yet: nothing to take. */
+  expect(estimateAction({ request, quote: ready, stored: null, jobs: [job()] })).toEqual({ kind: "none" });
+  expect(estimateAction({ request: null, quote: none, stored: null, jobs: [] })).toEqual({ kind: "none" });
+  /* Something still being confirmed blocks a new estimate, as it does on the desktop. */
+  expect(estimateAction({ request, quote: none, stored: null, jobs: [job({ status: "uncertain" })] }).kind).toBe("blocked");
+  /* An unfinished attempt (the answer was lost) is finished first, with its own key and input. */
+  const attempt = { key: "0b7c7c6e-1f7d-4c8e-9a51-6f1f2b9f6a10", input: request };
+  expect(readQuoteAttempt(JSON.stringify(attempt))).toEqual(attempt);
+  expect(estimateAction({ request: null, quote: none, stored: attempt, jobs: [] })).toEqual({ kind: "recover", attempt });
+  /* A record that cannot be read is never overwritten: it may name originals already copied. */
+  expect(readQuoteAttempt("{")).toBe("unreadable");
+  expect(readQuoteAttempt(JSON.stringify({ key: "not-a-uuid", input: request }))).toBe("unreadable");
+  expect(readQuoteAttempt(null)).toBeNull();
+  expect(estimateAction({ request, quote: none, stored: "unreadable", jobs: [] }).kind).toBe("blocked");
+  /* The route's strict quote body, and the desktop's own recovery record. */
+  expect(formQuoteBody("ws-1", attempt)).toEqual({ action: "quote", draftId: "ws-1", input: request, idempotencyKey: attempt.key });
+  expect(formQuoteAttemptKey("u:w", "ws 1")).toBe("particl-consumer-genjutsu:u%3Aw:ws%201:attempts:quote");
 });
 
 /* ── Edit & Sound, and the primary's reason ──────────────────────────────── */

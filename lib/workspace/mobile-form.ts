@@ -253,3 +253,64 @@ export function withReference(creative: FormCreative, ref: FormRef): FormCreativ
 export function withoutReference(creative: FormCreative, id: string): FormCreative {
   return { ...creative, references: creative.references.filter((item) => item.id !== id) };
 }
+
+/* ── Taking the estimate on the phone ──────────────────────────────────────
+   The desktop's quote step, kept literally: POST the form's own request to the
+   endpoint's `quote` action with an idempotency key, and keep {key, input} in
+   the SAME browser record ConsumerGenjutsu keeps, so a lost answer is finished
+   with the same key (on either surface) instead of copying the originals twice.
+   A quote copies the chosen originals to the connected account and prices them;
+   it never submits a transform. */
+
+export type QuoteAttempt = { key: string; input: ConsumerGenjutsuInput };
+
+/** ConsumerGenjutsu's `quoteAttemptKey`, byte for byte. */
+export const formQuoteAttemptKey = (scope: string, projectId: string) =>
+  `particl-consumer-genjutsu:${encodeURIComponent(scope)}:${encodeURIComponent(projectId)}:attempts:quote`;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The stored attempt, none, or "unreadable" (never overwritten: it may name originals already copied). */
+export function readQuoteAttempt(raw: string | null): QuoteAttempt | null | "unreadable" {
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!object(value) || typeof value.key !== "string" || !UUID.test(value.key)) return "unreadable";
+    const input = consumerGenjutsuInputSchema.safeParse(value.input);
+    return input.success ? { key: value.key, input: input.data } : "unreadable";
+  } catch {
+    return "unreadable";
+  }
+}
+
+export type EstimateAction =
+  | { kind: "none" }
+  | { kind: "blocked"; reason: string }
+  /** A new estimate for this composition; its idempotency key is made when it is taken. */
+  | { kind: "take"; input: ConsumerGenjutsuInput }
+  /** An unfinished one, finished with its own key and input. */
+  | { kind: "recover"; attempt: QuoteAttempt };
+
+/**
+ * What the estimate control does now. An unfinished attempt is always finished
+ * first, with its own key and input; a new one is taken only for a composition
+ * the engine accepts, with no usable quote, and nothing still being confirmed.
+ */
+export function estimateAction(input: {
+  request: ConsumerGenjutsuInput | null;
+  quote: FormQuote;
+  stored: QuoteAttempt | null | "unreadable";
+  jobs: readonly FormJob[];
+}): EstimateAction {
+  if (input.stored === "unreadable") return { kind: "blocked", reason: "The saved estimate record could not be read. Finish it on a computer." };
+  if (input.stored) return { kind: "recover", attempt: input.stored };
+  if (!input.request || input.quote.state === "ready") return { kind: "none" };
+  if (input.jobs.some((job) => job.status === "dispatching" || job.status === "uncertain"))
+    return { kind: "blocked", reason: "A transform is still being confirmed. Take a new estimate once it settles." };
+  return { kind: "take", input: input.request };
+}
+
+/** The endpoint's own quote body (the route's strict `quote` schema). */
+export function formQuoteBody(projectId: string, attempt: QuoteAttempt) {
+  return { action: "quote" as const, draftId: projectId, input: attempt.input, idempotencyKey: attempt.key };
+}
