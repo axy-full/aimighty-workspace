@@ -6,7 +6,7 @@ import type { JSONObject } from '@ai-sdk/provider';
 import { db, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { atomikModels, getAtomikProject } from './atomik-server';
-import { atomikReasoningRequest } from '../atomik-reasoning';
+import { atomikReasoningAllowance, atomikReasoningRequest } from '../atomik-reasoning';
 import { gatewayReachable } from '../gateway';
 import { languageAuth, languageModel } from '../language-provider';
 import { allowanceCheck } from '../allowance';
@@ -196,27 +196,32 @@ function promptForSource(snapshot: Snapshot, input: DevelopmentRequest, chunk: D
     })) }), ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
 }
 /**
- * The pictures the Rig agent may wire, most relevant first: what the shot
- * already uses, its storyboard frame, the cast's and the places' chosen
- * pictures, then the newest of the rest (assets are appended as they are
- * made, so the oldest are the least likely to belong to this shot).
+ * The pictures the Rig agent may wire, most relevant first, in tiers so one
+ * long take history never crowds out the rest: what the shot already uses and
+ * its board frame's pick; every cast entry's and every place's chosen picture
+ * and references; the frame's other takes; then every entry's remaining takes
+ * and plates, each entry's newest before any entry's older (takes and plates
+ * are stored newest first); then the newest of the rest (assets are appended
+ * as they are made, so the oldest are the least likely to belong to this shot).
  */
 export function rigAssetChoices(project: Pick<Project, 'assets' | 'nodes' | 'production'>, node: Project['nodes'][number], cap = 150): Project['assets'] {
   const pictures = project.assets.filter((a) => a.kind === 'image' || a.kind === 'video');
   const byId = new Map<string, Project['assets'][number]>();
   for (const a of pictures) { if (a.generationId && !byId.has(a.generationId)) byId.set(a.generationId, a); }
   for (const a of pictures) byId.set(a.id, a);
-  const wanted: (string | undefined)[] = [];
-  const linked = node.linked.map((id) => project.nodes.find((n) => n.id === id));
-  wanted.push(node.firstFrameId, node.assetId, ...linked.flatMap((n) => [n?.assetId, n?.firstFrameId]));
+  const cast = project.production?.cast?.entries ?? [], places = project.production?.environment?.entries ?? [];
   const frame = node.boardShotId ? project.production?.boards?.frames[node.boardShotId] : undefined;
-  const newest = <T,>(list: T[] | undefined) => [...(list ?? [])].reverse();
-  if (frame) wanted.push(frame.selected, ...newest(frame.takes).map((t) => t.genId), frame.sketch?.assetId);
-  for (const e of project.production?.cast?.entries ?? []) wanted.push(e.selected, e.referenceAssetId, ...newest(e.takes).map((t) => t.genId));
-  for (const e of project.production?.environment?.entries ?? []) wanted.push(e.selected, ...newest(e.plates).map((p) => p.assetId), ...(e.references ?? []));
+  const linked = node.linked.map((id) => project.nodes.find((n) => n.id === id));
+  const history = [...cast.map((e) => e.takes.map((t) => t.genId)), ...places.map((e) => e.plates.map((p) => p.assetId))];
+  const tiers: (string | undefined)[][] = [
+    [node.firstFrameId, node.assetId, ...linked.flatMap((n) => [n?.assetId, n?.firstFrameId]), frame?.selected],
+    [...cast.map((e) => e.selected), ...places.map((e) => e.selected), ...cast.map((e) => e.referenceAssetId), ...places.flatMap((e) => [...(e.references ?? [])].reverse())],
+    [...(frame?.takes ?? []).map((t) => t.genId), frame?.sketch?.assetId],
+    Array.from({ length: Math.max(0, ...history.map((list) => list.length)) }, (_, depth) => history.map((list) => list[depth])).flat(),
+  ];
   const out: Project['assets'] = [], seen = new Set<string>();
   const add = (a: Project['assets'][number] | undefined) => { if (a && !seen.has(a.id) && out.length < cap) { seen.add(a.id); out.push(a); } };
-  for (const id of wanted) if (id) add(byId.get(id));
+  for (const tier of tiers) for (const id of tier) if (id) add(byId.get(id));
   for (let i = pictures.length - 1; i >= 0 && out.length < cap; i--) add(pictures[i]);
   return out;
 }
@@ -338,9 +343,15 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can read the drawing.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
-  /* A redraft returns the whole script: one too long for the answer would fail only after it is paid for. */
-  const tooLong = input.kind === 'write' && base.trim() ? redraftTooLong(base.length, Math.min(answer, reasoning.maxTokens)) : null;
-  if (tooLong) throw new DevelopmentError(`This script is too long to redraft in one pass: about ${tooLong.pages} pages, and ${model.name} returns up to about ${tooLong.maxPages}. Edit it in Brief & Script instead.`, 422);
+  /* A redraft returns the whole script: one too long for the answer would fail only after it is paid for.
+     Reasoning shares the answer's ceiling, so the script can count only on what the reasoning allowance leaves. */
+  if (input.kind === 'write' && base.trim()) {
+    const room = Math.min(answer, reasoning.maxTokens - atomikReasoningAllowance(model, input.effort));
+    const tooLong = redraftTooLong(base.length, room);
+    if (tooLong && !redraftTooLong(base.length, Math.min(answer, reasoning.maxTokens)))
+      throw new DevelopmentError(`This script is too long for ${model.name} to redraft whole at this effort: about ${tooLong.pages} pages. Choose a lower effort, or edit it in Brief & Script.`, 422);
+    if (tooLong) throw new DevelopmentError(`This script is too long to redraft in one pass: about ${tooLong.pages} pages, and ${model.name} returns up to about ${tooLong.maxPages}. Edit it in Brief & Script instead.`, 422);
+  }
   /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
   const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
   const resultBytes = developmentResultBytes(input.kind);
@@ -413,8 +424,10 @@ async function publicJobs(rows: Row[], offset: number, withResult: (row: Row) =>
 /**
  * How much history a list poll carries. Every Production stage reads its own
  * kind from one list, so the newest runs of EACH kind are kept (ten Rig shots
- * wired in a row must not push the Brief's draft out), with the newest run for
- * every Rig shot and storyboard shot, and anything still running.
+ * wired in a row must not push the Brief's draft out), with anything still
+ * running, and the newest run and newest finished run of every Rig shot and
+ * storyboard shot. Past the cap, targeted runs give way first: a production
+ * with hundreds of wired shots still lists its Brief draft and its cast.
  */
 export const DEVELOPMENT_LIST_PER_KIND = 10;
 export const DEVELOPMENT_LIST_MAX = 200;
@@ -738,18 +751,31 @@ export async function listDevelopmentJobs(owner: string, projectId: string, requ
   // Polling does not need the complete screenplay or model snapshot. Keep
   // those large immutable columns off the database-to-function response.
   const kind = "json_extract(request_body,'$.kind')", target = "COALESCE(json_extract(request_body,'$.nodeId'),json_extract(request_body,'$.shotId'))";
-  const rows = (requestId || jobId
+  const listed = !requestId && !jobId;
+  const rows = (!listed
     ? await db().execute({ sql: `SELECT ${JOB_COLUMNS} FROM workbench_development_jobs WHERE owner=? AND project_id=?` + (requestId ? ' AND request_id=?' : '') + (jobId ? ' AND id=?' : '') + ' ORDER BY created_at DESC LIMIT 10', args })
-    : await db().execute({ sql: `WITH ranked AS (SELECT ${JOB_COLUMNS}, ${target} AS target,
+    /* Kept by rank, cut by priority, returned newest first. with_result marks the results a poll carries:
+       the newest draft, the Studio panel's saved runs, and the newest finished run of each kind and target.
+       Rig wirings are read by id when the selected shot applies one; the rest load by id when opened. */
+    : await db().execute({ sql: `WITH ranked AS (SELECT ${JOB_COLUMNS}, ${kind} AS job_kind, ${target} AS target,
         ROW_NUMBER() OVER (PARTITION BY ${kind} ORDER BY created_at DESC, id DESC) AS kind_rank,
-        ROW_NUMBER() OVER (PARTITION BY ${kind}, ${target} ORDER BY created_at DESC, id DESC) AS target_rank
-        FROM workbench_development_jobs WHERE owner=? AND project_id=?)
-      SELECT ${JOB_COLUMNS} FROM ranked WHERE kind_rank<=? OR status IN ('queued','running') OR (target IS NOT NULL AND target_rank=1)
-      ORDER BY created_at DESC LIMIT ?`, args: [owner, projectId, DEVELOPMENT_LIST_PER_KIND, DEVELOPMENT_LIST_MAX] })).rows as Row[];
+        ROW_NUMBER() OVER (PARTITION BY ${kind}, ${target} ORDER BY created_at DESC, id DESC) AS target_rank,
+        ROW_NUMBER() OVER (PARTITION BY ${kind}, ${target}, status='succeeded' ORDER BY created_at DESC, id DESC) AS outcome_rank
+        FROM workbench_development_jobs WHERE owner=?1 AND project_id=?2),
+      kept AS (SELECT * FROM ranked
+        WHERE kind_rank<=?3 OR status IN ('queued','running') OR (target IS NOT NULL AND (target_rank=1 OR (status='succeeded' AND outcome_rank=1)))
+        ORDER BY kind_rank<=?3 DESC, status IN ('queued','running') DESC, target_rank=1 DESC, created_at DESC, id DESC LIMIT ?4)
+      SELECT ${JOB_COLUMNS}, CASE
+          WHEN job_kind='write' THEN kind_rank=1
+          WHEN job_kind='rig' THEN 0
+          WHEN job_kind IN ('idea','screenplay','adfilm') THEN kind_rank<=?3
+          ELSE status='succeeded' AND outcome_rank=1 END AS with_result
+        FROM kept ORDER BY created_at DESC, id DESC`, args: [owner, projectId, DEVELOPMENT_LIST_PER_KIND, DEVELOPMENT_LIST_MAX] })).rows as Row[];
   for (const row of rows) if (['succeeded', 'failed', 'uncertain'].includes(String(row.status))) await settleDevelopment(row, deps);
   if (jobId && rows.length && offset >= JSON.parse(String(rows[0].chunks)).length) throw new DevelopmentError('This result section does not exist.', 404);
   const newestDraft = rows.find(row => (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'write')?.id;
-  const jobs = await publicJobs(rows, offset, (row) => Boolean(jobId) || row.id === newestDraft || (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind !== 'write');
+  const jobs = await publicJobs(rows, offset, (row) => listed ? Number(row.with_result) === 1
+    : Boolean(jobId) || row.id === newestDraft || (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind !== 'write');
   // Present reserved jobs waiting between calls as resumable. Admission rows
   // retain queued but have no runnable provider phases until reservation commits.
   for (let index = 0; index < jobs.length; index++) if (jobs[index].status === 'running') {
