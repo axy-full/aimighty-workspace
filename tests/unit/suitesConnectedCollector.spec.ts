@@ -110,6 +110,54 @@ test("a job the account never accepts is left after a few reads; a 403 stops the
   expect(denied.calls.filter((c) => c.method === "GET")).toHaveLength(1);
 });
 
+test("a job handed over mid-submit that still reads quoted is kept, and followed once the submit lands", async () => {
+  /* The view unmounted while its submit was out: the server has not taken it yet on the first read. */
+  const { collector, calls, settled, advance } = harness([], { [uuid(8)]: [job(8, "quoted"), job(8, "accepted"), job(8, "completed")] });
+  collector.watch(uuid(8));
+  collector.release(DRAFT, { id: uuid(8), status: "dispatching" });
+  await advance(0);
+  expect(collector.tracking()).toEqual([uuid(8)]);
+  await advance(COLLECT_POLL_MS);
+  await advance(COLLECT_POLL_MS);
+  expect(settled.map((j) => j.id)).toEqual([uuid(8)]);
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(3);
+  /* A submit that never reached the server is left after a few reads. */
+  const never = harness([], { [uuid(9)]: Array.from({ length: 20 }, () => job(9, "quoted")) });
+  never.collector.release(DRAFT, { id: uuid(9), status: "dispatching" });
+  await never.advance(0);
+  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 3; i++) await never.advance(COLLECT_POLL_MS);
+  expect(never.calls.filter((c) => c.method === "POST")).toHaveLength(COLLECT_UNSETTLED_POLLS);
+  expect(never.collector.tracking()).toEqual([]);
+  /* A quote the listing finds was never submitted: it is not followed. */
+  const listed = harness([job(10, "quoted")], {});
+  await listed.collector.list(DRAFT);
+  expect(listed.collector.tracking()).toEqual([]);
+});
+
+test("the strip's job is its composer's: not read while in flight, forgotten without a toast once it settles there", async () => {
+  const { collector, calls, settled, advance } = harness([job(11, "accepted")], { [uuid(11)]: [job(11, "completed")] });
+  collector.show(uuid(11), false);
+  await collector.list(DRAFT);
+  await advance(COLLECT_POLL_MS * 3);
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  /* The composer settles it and says so: the collector drops it, no second read, no second toast. */
+  collector.show(uuid(11), true);
+  expect(collector.tracking()).toEqual([]);
+  await advance(COLLECT_POLL_MS * 3);
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  expect(settled).toHaveLength(0);
+
+  /* The strip moves on while the job is still in flight (Gen closed mid-render): the collector reads it. */
+  const left = harness([job(12, "accepted")], { [uuid(12)]: [job(12, "completed")] });
+  left.collector.show(uuid(12), false);
+  await left.collector.list(DRAFT);
+  await left.advance(COLLECT_POLL_MS);
+  expect(left.settled).toHaveLength(0);
+  left.collector.show(null, false);
+  await left.advance(0);
+  expect(left.settled.map((j) => j.id)).toEqual([uuid(12)]);
+});
+
 test("the toast says where a finished render went, and that a failed one was not billed", () => {
   const done = { ...job(1, "completed"), originalAvailable: true, originalAvailability: "available" } as unknown as ConnectedJob;
   expect(settledToast(done)).toBe("Kling 3.0 finished on the connected account.");

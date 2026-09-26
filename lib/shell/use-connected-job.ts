@@ -5,7 +5,7 @@ import {
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { retryAfterMs } from "./business";
+import { autoRetryMs, quoteUsableUntil } from "./business";
 import { releaseConnectedJob, watchConnectedJob } from "./connected-collector";
 
 /**
@@ -15,10 +15,14 @@ import { releaseConnectedJob, watchConnectedJob } from "./connected-collector";
  * anything; a moved price refuses at the server and comes back as an error.
  *
  * The price on the button is always for what is on screen: `submit(key)`
- * refuses a quote taken for another composition, a quote about to expire is
- * taken again, and after a failure or a finished take a fresh quote re-arms
- * Generate. Leaving mid-render hands the job to the shell's collector, which
- * keeps reading it until it lands in Takes.
+ * refuses a quote taken for another composition, and a quote too close to
+ * expiry is taken again when the user comes back to the page or presses
+ * Generate — never on a timer while the page sits idle (every quote is a call
+ * to the account and imports the references again). A failed quote is asked
+ * again on its own only when the failure passes by itself, a few times; any
+ * other failure waits for Try again. A finished take re-arms Generate with
+ * one fresh quote. Leaving mid-render hands the job to the shell's collector,
+ * which keeps reading it until it lands in Takes.
  */
 export type ConnectedJobState =
   | { phase: "idle" }
@@ -27,18 +31,23 @@ export type ConnectedJobState =
   | { phase: "submitting"; job: ConnectedJob }
   | { phase: "running"; job: ConnectedJob }
   | { phase: "done"; job: ConnectedJob }
-  | { phase: "failed"; job: ConnectedJob | null; error: string; /** The submit may have reached the account: this composition is not re-armed on its own. */ uncertain?: true };
+  | {
+    phase: "failed"; job: ConnectedJob | null; error: string;
+    /** The submit may have reached the account: this composition is not re-armed on its own. */ uncertain?: true;
+    /** A failed quote that passes on its own is asked again after this long; without it, only Try again asks. */ retryInMs?: number;
+  };
 
 const POLL_MS = 4000;
-/** A quote is taken again this long before the account says it expires. */
-export const QUOTE_MARGIN_MS = 20_000;
-/** How long a finished take or a failure stays on screen before a fresh quote re-arms Generate. */
+/** How long a finished take or a refused submit stays on screen before a fresh quote re-arms Generate. */
 export const SETTLED_HOLD_MS = 5000;
 const FAILED_COPY = "The connected account reported this job as failed. Failed renders are not billed.";
 
 class ConnectedCallError extends Error {
-  constructor(message: string, readonly code?: string) { super(message); }
+  constructor(message: string, readonly code: string | undefined, readonly status: number) { super(message); }
 }
+/** What a failed call says about itself: its HTTP status (null when the network failed) and the account's code. */
+const failureOf = (error: unknown): { status: number | null; code?: string } =>
+  error instanceof ConnectedCallError ? { status: error.status, code: error.code } : error instanceof TypeError ? { status: null } : { status: 0 };
 
 export function useConnectedJob(draftId: string | null) {
   const scoped = useScopedFetch();
@@ -56,12 +65,15 @@ export function useConnectedJob(draftId: string | null) {
     else if (next.phase === "submitting" || next.phase === "idle") setLanded(null);
   }, []);
   const setQuotedFor = useCallback((key: string | null) => { quotedRef.current = key; setQuotedRaw(key); }, []);
+  /* Failed quotes in a row for one composition, and when the current quote stops being usable (this device's clock). */
   const quoteFailures = useRef(0);
+  const failedKey = useRef<string | null>(null);
+  const usableUntil = useRef(0);
 
   const call = useCallback(async (body: unknown) => {
     const response = await scoped(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const json = await response.json().catch(() => null) as { job?: unknown; error?: string; code?: string } | null;
-    if (!response.ok || !json?.job) throw new ConnectedCallError(json?.error ?? "The connected account could not complete this request.", json?.code);
+    if (!response.ok || !json?.job) throw new ConnectedCallError(json?.error ?? "The connected account could not complete this request.", json?.code, response.status);
     return parseConnectedJob(json.job, draftId!);
   }, [scoped, draftId]);
 
@@ -69,35 +81,45 @@ export function useConnectedJob(draftId: string | null) {
   const quote = useCallback(async (input: ConsumerGenerationInput, key: string) => {
     if (!draftId) return;
     setState({ phase: "quoting" });
+    if (key !== failedKey.current) quoteFailures.current = 0;
     try {
       const job = await call(connectedQuoteRequest(draftId, input));
-      quoteFailures.current = 0;
+      quoteFailures.current = 0; failedKey.current = null;
+      usableUntil.current = quoteUsableUntil(job, Date.now());
       setState({ phase: "quoted", job }); setQuotedFor(key);
     } catch (error) {
-      quoteFailures.current += 1;
-      setState({ phase: "failed", job: null, error: error instanceof Error ? error.message : "The price could not be read." }); setQuotedFor(key);
+      quoteFailures.current += 1; failedKey.current = key;
+      const retryInMs = autoRetryMs(failureOf(error), quoteFailures.current);
+      setState({ phase: "failed", job: null, error: error instanceof Error ? error.message : "The price could not be read.", ...(retryInMs === null ? {} : { retryInMs }) });
+      setQuotedFor(key);
     }
   }, [call, draftId, setState, setQuotedFor]);
 
-  /* After a failure, and a moment after a finished take, the composition is priced again (the view re-quotes
-     whenever quotedFor no longer names what is on screen); a failed quote waits longer each time. */
+  /* The view re-quotes whenever quotedFor no longer names what is on screen. A failed quote that passes on its
+     own is asked again after its wait; a refused submit or a finished take re-arms once, a moment later. */
   const phase = state.phase;
   const settledJob = state.phase === "failed" || state.phase === "done" ? state.job : null;
   const uncertain = state.phase === "failed" && state.uncertain === true;
+  const retryInMs = state.phase === "failed" ? state.retryInMs : undefined;
   useEffect(() => {
     if ((phase !== "failed" && phase !== "done") || uncertain) return;
-    const wait = phase === "failed" && !settledJob ? retryAfterMs(quoteFailures.current) : SETTLED_HOLD_MS;
+    const wait = phase === "failed" && !settledJob ? retryInMs : SETTLED_HOLD_MS;
+    if (wait === undefined) return;
     const timer = setTimeout(() => setQuotedFor(null), wait);
     return () => clearTimeout(timer);
-  }, [phase, settledJob, uncertain, setQuotedFor]);
+  }, [phase, settledJob, uncertain, retryInMs, setQuotedFor]);
 
-  /* A quote the view has not used re-prices before the account would refuse it as expired. */
-  const quotedJob = state.phase === "quoted" ? state.job : null;
+  /* A quote too close to expiry is taken again when the user comes back to the page (and on Generate, in submit);
+     an idle or hidden page asks the account nothing. */
   useEffect(() => {
-    if (!quotedJob) return;
-    const timer = setTimeout(() => setQuotedFor(null), Math.max(0, quotedJob.quoteExpiresAt - QUOTE_MARGIN_MS - Date.now()));
-    return () => clearTimeout(timer);
-  }, [quotedJob, setQuotedFor]);
+    if (phase !== "quoted") return;
+    const back = () => {
+      if (document.visibilityState === "visible" && live.current.phase === "quoted" && Date.now() >= usableUntil.current) setQuotedFor(null);
+    };
+    window.addEventListener("focus", back);
+    document.addEventListener("visibilitychange", back);
+    return () => { window.removeEventListener("focus", back); document.removeEventListener("visibilitychange", back); };
+  }, [phase, setQuotedFor]);
 
   /* Poll a submitted job until the account settles it. */
   useEffect(() => {
@@ -136,7 +158,8 @@ export function useConnectedJob(draftId: string | null) {
     const now = live.current;
     if (now.phase !== "quoted" || !draftId) return;
     if (key !== undefined && quotedRef.current !== key) return;
-    if (now.job.quoteExpiresAt - QUOTE_MARGIN_MS <= Date.now()) { setQuotedFor(null); return; }
+    /* Too close to expiry: price it again; the user approves the fresh price with the next press. */
+    if (Date.now() >= usableUntil.current) { setQuotedFor(null); return; }
     setState({ phase: "submitting", job: now.job });
     try {
       const job = await call(connectedSubmitRequest(draftId, now.job));
@@ -163,5 +186,8 @@ export function useConnectedJob(draftId: string | null) {
   }, [call, draftId, setState, setQuotedFor]);
 
   const reset = useCallback(() => { setState({ phase: "idle" }); setQuotedFor(null); }, [setState, setQuotedFor]);
-  return { state, quotedFor, landed, quote, submit, reset };
+  /** Try again after a failure nothing re-arms on its own: the view prices what is on screen afresh. */
+  const retry = useCallback(() => { quoteFailures.current = 0; setQuotedFor(null); }, [setQuotedFor]);
+  const canRetry = state.phase === "failed" && (state.uncertain === true || (state.job === null && state.retryInMs === undefined));
+  return { state, quotedFor, landed, quote, submit, reset, retry, canRetry };
 }

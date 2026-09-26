@@ -85,6 +85,19 @@ test("a take Gen cannot make again from its own inputs says why, and Retry is bl
   expect(retryBlock({ prompt: "p", model: "marketing_studio_v2", kind: "image", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", workflow: "marketing-template" } })).toContain("connected tool");
   expect(retryBlock({ prompt: "p", model: "marketing_studio_video", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toContain("Business");
   expect(retryBlock({ prompt: "p", model: "m", kind: "model", params: {} })).not.toBeNull();
+  /* Audio takes as /api/audio stores them (lib/audioAdmission.ts): params.task is always set. */
+  expect(retryBlock({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } })).toBeNull();
+  expect(retryBlock({ prompt: "door slam", model: "eleven_sfx", kind: "audio", params: { task: "sound", durationSeconds: 3, loop: false } })).toBeNull();
+  expect(retryBlock({ prompt: "Hello there", model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ", settings: {} } })).toBeNull();
+  expect(retryBlock({ prompt: "", model: "eleven_v3", kind: "audio", params: { task: "dialogue", lines: [{ text: "Hi", voiceId: "v1" }] } })).toContain("dialogue");
+  expect(retryBlock({ prompt: "", model: "eleven_sts", kind: "audio", params: { task: "voiceChange", voiceId: "v1", sourceGenId: "g2" } })).toContain("source clip");
+  expect(retryBlock({ prompt: "", model: "dub", kind: "audio", params: { task: "dub", sourceKind: "generation", sourceId: "g3" } })).toContain("source clip");
+  for (const task of ["edit", "motion", "upscale", "reframe", "genjutsu"])
+    expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: { task } })).toContain("source clip");
+  expect(retryBlock({ prompt: "p", model: "seedance-2.5", kind: "video", params: { task: "generate" } })).toBeNull();
+  expect(retryBlock({ prompt: "p", model: "kling_3_0", kind: "video", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })).toBeNull();
+  /* The music preset is reachable from a real take: Gen gets its length and instrumental flag. */
+  expect(retryPreset({ prompt: "rain on tin", model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } })).toMatchObject({ type: "audio", model: "eleven_music", sound: { seconds: 45, instrumental: true } });
   const edited: AssetRef = { ...gen, retryBlock: "This take was made from a source clip. Run that tool again from Takes." };
   const caps = assetCapabilities({ ...base, asset: edited });
   expect(caps.can.retry).toBeUndefined();

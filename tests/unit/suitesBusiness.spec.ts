@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   AD_DURATIONS, AD_MODES, INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_MODES, WHY, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock,
-  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH, catalogueBlock, retryAfterMs, ADS_MODEL } from "../../lib/shell/business";
+  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH, catalogueBlock, retryAfterMs, ADS_MODEL, AUTO_RETRIES, QUOTE_MARGIN_MS, autoRetryMs, quoteUsableUntil } from "../../lib/shell/business";
 import { consumerVideoInputSchema, consumerVideoOriginalResult, consumerVideoParams } from "../../lib/higgsfield-consumer/video-contract";
 import { parseSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 
@@ -107,4 +107,27 @@ test("a composer's catalogue line never says Reading… for ever: a failure says
   expect(at({ connected: false })).toBeNull();
   /* Re-reads after a failure back off to once a minute. */
   expect([1, 2, 3, 4, 9].map(retryAfterMs)).toEqual([5000, 15000, 45000, 60000, 60000]);
+});
+
+test("a failed quote is asked again on its own only when the failure passes by itself, and only a few times", () => {
+  /* The network, a rate limit, an unavailable or busy account: 5 s, 15 s, 45 s, then Try again. */
+  expect([1, 2, 3].map((n) => autoRetryMs({ status: null }, n))).toEqual([5000, 15000, 45000]);
+  expect(autoRetryMs({ status: null }, AUTO_RETRIES + 1)).toBeNull();
+  for (const status of [429, 502, 503, 504]) expect(autoRetryMs({ status }, 1)).toBe(5000);
+  expect(autoRetryMs({ status: 409, code: "connection_busy" }, 2)).toBe(15000);
+  /* The account refused the input itself: asking again would be refused again, and every quote re-imports the references. */
+  for (const code of ["parameter_invalid", "model_unknown", "reconnect_required", "insufficient_credits"])
+    expect(autoRetryMs({ status: 400, code }, 1)).toBeNull();
+  expect(autoRetryMs({ status: 0 }, 1)).toBeNull();
+});
+
+test("a quote's usable window is its lifetime on the server, measured on this device from when it arrived", () => {
+  /* Server clock: made at 1,000,000, expires five minutes later. */
+  const job = { createdAt: 1_000_000, quoteExpiresAt: 1_000_000 + 300_000 };
+  expect(quoteUsableUntil(job, 5_000)).toBe(5_000 + 300_000 - QUOTE_MARGIN_MS);
+  /* A device clock hours fast or slow does not change the window. */
+  const fast = Date.parse("2030-01-01T00:00:00Z");
+  expect(quoteUsableUntil(job, fast) - fast).toBe(300_000 - QUOTE_MARGIN_MS);
+  /* A malformed lifetime never reads as usable. */
+  expect(quoteUsableUntil({ createdAt: 10, quoteExpiresAt: 5 }, 100)).toBeLessThan(100);
 });

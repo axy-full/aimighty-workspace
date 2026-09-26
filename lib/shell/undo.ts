@@ -43,3 +43,19 @@ export function popUndo(stack: readonly UndoEntry[], projectId?: string | null):
 export function canUndo(stack: readonly UndoEntry[], projectId?: string | null): boolean {
   return stack.some((entry) => belongs(entry, projectId));
 }
+
+/**
+ * A step bound to the draft it was made in: it runs only while `current()`
+ * still names project `made`, and otherwise throws `why` — the shell then
+ * puts it back on the stack and says so. The Rig uses this: coming back to a
+ * project, the Rig holds the previous project's draft until the new one loads.
+ */
+export function boundUndo(entry: UndoEntry, made: string | null, current: () => string | null, why: string): UndoEntry {
+  return {
+    ...entry, projectId: made,
+    undo: () => {
+      if (current() !== made) throw new Error(why);
+      return entry.undo();
+    },
+  };
+}

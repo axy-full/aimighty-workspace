@@ -1,7 +1,7 @@
 "use client";
-import { rigDeleteHandler, setRigUndoSink } from "@/lib/shell/rig-commands";
+import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
@@ -14,6 +14,7 @@ import { PAGE_BODIES } from "@/components/workspace/pages/registry";
 import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { useShell } from "@/lib/shell/state";
+import { boundUndo } from "@/lib/shell/undo";
 import { ContextMenu } from "./ContextMenu";
 import { AtomikGate } from "./AtomikGate";
 import { BusinessView } from "./business/BusinessView";
@@ -44,6 +45,7 @@ import { EnvironmentStage } from "./production/EnvironmentStage";
 import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
+import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -123,8 +125,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       default: toast(caps.why[cmd] ?? "Not available for this selection.");
     }
   };
+  /* A Rig step undoes only into the draft it was made in. Coming back to a project, the Rig still holds the
+     previous project's draft until the new one loads: the step then refuses and stays on the stack. */
+  const rigProjectId = useRig().project?.id ?? null;
+  const rigProject = useRef(rigProjectId);
+  useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
+  const sinkRigUndo = (entry: RigUndo) =>
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
-  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink((entry) => shell.pushUndo(entry)); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
+  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
   /* A file dropped where no target took it (components/DragLayer) is kept in this project's Library. */
   const projectId = project?.id ?? null;

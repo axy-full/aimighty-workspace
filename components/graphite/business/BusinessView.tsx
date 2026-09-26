@@ -171,6 +171,22 @@ function SetupError({ error, onRetry }: { error: string; onRetry: () => void }) 
   );
 }
 
+/** A failed quote or submit: the account's words, and Try again when nothing prices it again on its own. */
+function JobError({ job, testId }: { job: ReturnType<typeof useConnectedJob>; testId: string }) {
+  if (job.state.phase !== "failed") return null;
+  return (
+    <div className="gx-retry" role="alert" data-testid={testId}>
+      <span className="gx-gen-error" data-testid={`${testId}-text`}>{job.state.error}</span>
+      {job.canRetry ? <button type="button" className="gx-hbtn" onClick={job.retry}>Try again</button> : null}
+    </div>
+  );
+}
+
+/** After a few failed catalogue reads, the account is asked again only on request. */
+function CatalogueAgain({ business }: { business: Business }) {
+  return <div className="gx-retry"><button type="button" className="gx-hbtn" onClick={business.readCatalogue} data-testid="catalogue-again">Read again</button></div>;
+}
+
 /* ── Ads ─────────────────────────────────────────────────────────────── */
 function AdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
   const shell = useShell();
@@ -264,7 +280,8 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         <Well scope={scope} projectId={project?.id} medias={s.medias} roles={AD_MEDIA_ROLES} max={AD_MEDIA_MAX} hint="Reference stills · optional"
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
+        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
+        <JobError job={job} testId="ads-error" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit(inputKey)} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
@@ -357,7 +374,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert">{job.state.error}</p> : null}
+        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
+        <JobError job={job} testId="dtc-error" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit(inputKey)} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>

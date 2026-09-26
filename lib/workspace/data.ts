@@ -30,6 +30,8 @@ export function projectChanged(projectId?: string | null) {
 /** Focus and visibility re-reads are at most this often; announced changes, this soon after the last read. */
 const FOCUS_REREAD_MS = 10_000;
 const CHANGED_REREAD_MS = 1_500;
+/** A closed stage's edits save within the draft editor's debounce (700 ms) and one request; reads wait this long. */
+const STAGE_SETTLE_MS = 2_500;
 /* Every copy of a project this hook read from the server. A page that only mirrors one of these back
    through spec-store is not a newer draft, so it never hides a later read. */
 const serverCopies = new WeakSet<Project>();
@@ -95,6 +97,10 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
   /* A quiet re-read of the open project: the screen keeps what it has until the newer copy lands. */
   const reading = useRef(false);
   const lastRead = useRef(0);
+  /* Until this moment a closed stage's last edits may still be saving: reads wait for it, and its copy stays on screen. */
+  const settleUntil = useRef(0);
+  /* The closed stage's last copy, shown until a read that began after its edits had time to save lands. */
+  const [kept, setKept] = useState<Project | null>(null);
   const reread = useCallback(async () => {
     const open = loaded.current;
     if (!open || open.scope !== scope) {
@@ -106,24 +112,32 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     }
     if (reading.current) return;
     reading.current = true;
-    lastRead.current = Date.now();
+    const startedAt = Date.now();
+    lastRead.current = startedAt;
     try {
       const response = await fetch("/api/workbench/projects?id=" + encodeURIComponent(open.id), { headers: { "X-Workbench-Scope": scope }, cache: "no-store" });
       const body = await response.json().catch(() => ({})) as { projects?: ProjectSummary[]; project?: Project | null };
       if (!response.ok || !body.project || loaded.current?.id !== open.id || body.project.id !== open.id) return;
       serverCopies.add(body.project);
       setData((prev) => ({ status: "ready", projects: body.projects ?? prev.projects, project: body.project!, error: null }));
+      if (startedAt >= settleUntil.current) setKept(null);
     } catch { /* The copy on screen stays; the next focus or change reads again. */ }
     finally { reading.current = false; }
   }, [scope]);
 
+  /* One pending re-read at a time, never sooner than CHANGED_REREAD_MS after the last one, nor before a
+     closed stage's edits have had time to save. */
+  const pending = useRef<{ timer: ReturnType<typeof setTimeout>; at: number } | null>(null);
+  const soon = useCallback(() => {
+    const at = Math.max(Date.now(), lastRead.current + CHANGED_REREAD_MS, settleUntil.current);
+    if (pending.current && pending.current.at >= at) return;
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = { at, timer: setTimeout(() => { pending.current = null; void reread(); }, at - Date.now()) };
+  }, [reread]);
+  useEffect(() => () => { if (pending.current) clearTimeout(pending.current.timer); }, []);
+
   useEffect(() => {
     /* Announcements that come in a burst (a page change, then a plan finishing) read once, shortly after. */
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const soon = () => {
-      if (timer) return;
-      timer = setTimeout(() => { timer = null; void reread(); }, Math.max(0, lastRead.current + CHANGED_REREAD_MS - Date.now()));
-    };
     const onFocus = () => {
       if (document.visibilityState === "hidden" || Date.now() - lastRead.current < FOCUS_REREAD_MS) return;
       soon();
@@ -136,24 +150,33 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     document.addEventListener("visibilitychange", onFocus);
     window.addEventListener(PROJECT_CHANGED_EVENT, onChanged);
     return () => {
-      if (timer) clearTimeout(timer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
       window.removeEventListener(PROJECT_CHANGED_EVENT, onChanged);
     };
-  }, [reread]);
+  }, [soon]);
 
   /* A stage's live draft of this project wins while it is on screen (a copy this hook read, mirrored back,
-     does not); when the stage closes, read what it saved. */
+     does not). When the stage closes, its last copy stays on screen — its edits save a moment later
+     (the editor's debounce, then the request) — and the saved draft is read once they have had time to land. */
   const published = usePublishedProject();
   const live = published && data.project && published.id === data.project.id && !serverCopies.has(published) ? published : null;
+  const [lastLive, setLastLive] = useState<Project | null>(null);
+  if (live !== lastLive && (live || lastLive)) {
+    setLastLive(live);
+    setKept(live ? null : lastLive);
+  }
   const wasLive = useRef(false);
   useEffect(() => {
-    if (wasLive.current && !live) void reread();
+    if (wasLive.current && !live) {
+      settleUntil.current = Date.now() + STAGE_SETTLE_MS;
+      soon();
+    }
     wasLive.current = Boolean(live);
-  }, [live, reread]);
+  }, [live, soon]);
 
-  return useMemo(() => ({ ...data, project: live ?? data.project, refresh: () => void reread() }), [data, live, reread]);
+  const shown = live ?? (kept && kept.id === data.project?.id ? kept : null) ?? data.project;
+  return useMemo(() => ({ ...data, project: shown, refresh: () => void reread() }), [data, shown, reread]);
 }
 
 /**

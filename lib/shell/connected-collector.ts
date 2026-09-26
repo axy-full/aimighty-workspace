@@ -16,7 +16,10 @@ import {
  * Never a paid call: `status` only reads the job, and the route leases each
  * provider read, so a view and the collector reading the same job cannot
  * double anything. A view that is polling its own job says so (watch), and
- * the collector leaves that job to it until the view lets go.
+ * the collector leaves that job to it until the view lets go. The shell's
+ * strip names the job a Generate composer is polling (show): the collector
+ * leaves that one be too, and forgets it once the composer has settled and
+ * announced it.
  */
 export const COLLECT_POLL_MS = 20_000;
 /** After a failed read (network, rate limit): wait this long before the next. */
@@ -24,7 +27,11 @@ export const COLLECT_BACKOFF_MS = 60_000;
 /** A job the account has not accepted yet (dispatching, uncertain) is read this many times, then left for the next listing. */
 export const COLLECT_UNSETTLED_POLLS = 6;
 
-type Tracked = { draftId: string; nextAt: number; unsettled: number };
+type Tracked = {
+  draftId: string; nextAt: number; unsettled: number;
+  /** Handed over by a view mid-submit: the server may not have seen the submit yet, so "quoted" is not final. */
+  handed: boolean;
+};
 type Timer = unknown;
 
 export type CollectorDeps = {
@@ -40,6 +47,8 @@ export type CollectorDeps = {
 export class ConnectedCollector {
   private readonly jobs = new Map<string, Tracked>();
   private readonly watched = new Set<string>();
+  /** The job the shell's strip shows in flight: a Generate composer is polling it. */
+  private shown: string | null = null;
   private timer: Timer = null;
   private reading = false;
   /** A 401/403 (signed out, not the owner): nothing here can read jobs, so it stops asking. */
@@ -68,14 +77,30 @@ export class ConnectedCollector {
   release(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null) {
     if (!job) return;
     this.watched.delete(job.id);
-    if (connectedRecoverable(job)) this.adopt(draftId, job.id);
+    if (connectedRecoverable(job)) this.adopt(draftId, job.id, true);
     else this.jobs.delete(job.id);
     this.schedule();
   }
 
-  adopt(draftId: string, id: string) {
-    if (this.disabled || this.jobs.has(id)) return;
-    this.jobs.set(id, { draftId, nextAt: this.now(), unsettled: 0 });
+  /**
+   * The strip's job: in flight, a composer is polling it, so it is not read
+   * here; settled (done), the composer has announced it, so it is forgotten
+   * without a second toast. Once the strip moves on while the job is still in
+   * flight, it is read from here.
+   */
+  show(id: string | null, done: boolean) {
+    if (done && id) this.jobs.delete(id);
+    const next = done ? null : id;
+    if (next === this.shown) return;
+    this.shown = next;
+    this.reschedule();
+  }
+
+  adopt(draftId: string, id: string, handed = false) {
+    if (this.disabled) return;
+    const tracked = this.jobs.get(id);
+    if (tracked) { tracked.handed ||= handed; return; }
+    this.jobs.set(id, { draftId, nextAt: this.now(), unsettled: 0, handed });
     this.schedule();
   }
 
@@ -102,10 +127,20 @@ export class ConnectedCollector {
     this.jobs.clear();
   }
 
+  /** A job a view reads itself (watched, or the strip's) is not read here. */
+  private leftToView(id: string) {
+    return this.watched.has(id) || this.shown === id;
+  }
+
+  private reschedule() {
+    if (this.timer !== null) this.clearTimer(this.timer);
+    this.timer = null;
+    this.schedule();
+  }
+
   private schedule() {
     if (this.timer !== null || this.disabled) return;
-    /* A job a view is watching is not due here: that view reads it. */
-    const due = [...this.jobs].filter(([id]) => !this.watched.has(id)).map(([, job]) => job.nextAt);
+    const due = [...this.jobs].filter(([id]) => !this.leftToView(id)).map(([, job]) => job.nextAt);
     if (!due.length) return;
     const wait = Math.max(0, Math.min(...due) - this.now());
     this.timer = this.setTimer(() => { this.timer = null; void this.tick(); }, wait);
@@ -119,7 +154,7 @@ export class ConnectedCollector {
       for (const [id, tracked] of [...this.jobs]) {
         if (this.disabled) break;
         /* Stopped, settled or released since the loop began: not this loop's to read. */
-        if (this.jobs.get(id) !== tracked || this.watched.has(id) || tracked.nextAt > this.now()) continue;
+        if (this.jobs.get(id) !== tracked || this.leftToView(id) || tracked.nextAt > this.now()) continue;
         await this.read(id, tracked);
       }
     } finally {
@@ -156,7 +191,8 @@ export class ConnectedCollector {
       this.deps.onSettled(job);
       return;
     }
-    if (!connectedRecoverable(job)) { this.jobs.delete(id); return; }
+    /* A job handed over mid-submit may still read "quoted" until the server has taken the submit. */
+    if (!connectedRecoverable(job) && !(tracked.handed && job.status === "quoted")) { this.jobs.delete(id); return; }
     /* Accepted jobs are read until they settle; one the account has not accepted is left after a few reads. */
     tracked.unsettled = job.status === "accepted" ? 0 : tracked.unsettled + 1;
     if (tracked.unsettled >= COLLECT_UNSETTLED_POLLS) { this.jobs.delete(id); return; }
@@ -175,6 +211,9 @@ export function watchConnectedJob(id: string) {
 }
 export function releaseConnectedJob(draftId: string, job: Pick<ConnectedJob, "id" | "status"> | null) {
   shared?.release(draftId, job);
+}
+export function showConnectedJob(id: string | null, done: boolean) {
+  shared?.show(id, done);
 }
 export function listConnectedJobs(draftId: string): Promise<void> {
   return shared ? shared.list(draftId) : Promise.resolve();

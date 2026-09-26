@@ -166,7 +166,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
      shell's copy of the project is read again. */
   const session = useSession();
   const place = `${params.view}:${page.id}`;
-  useConnectedCollector({ scope: session.requestScope ?? null, owner: session.owner, projectId: ws.state.projectId, place, toast: ws.toast });
+  const strip = ws.state.gen;
+  useConnectedCollector({
+    scope: session.requestScope ?? null, owner: session.owner, projectId: ws.state.projectId, place, toast: ws.toast,
+    strip: strip ? { id: strip.id, done: strip.tone === "green" || strip.tone === "red" } : null,
+  });
   const placed = useRef(place);
   useEffect(() => {
     if (placed.current === place) return;

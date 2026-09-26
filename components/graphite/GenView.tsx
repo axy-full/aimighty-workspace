@@ -26,6 +26,8 @@ import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 
+/** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
+const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
@@ -46,6 +48,26 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
+     "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
+     read it, so the strip lets go of a connected job this view started and the collector follows it. */
+  const strip = ws.state.gen, wsDispatch = ws.dispatch;
+  const [stripAtMount] = useState(() => ws.state.gen?.id ?? null);
+  const stripNow = useRef(strip);
+  const sendNow = useRef(wsDispatch);
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    stripNow.current = strip;
+    sendNow.current = wsDispatch;
+    if (strip && strip.tone === "blue" && strip.id !== stripAtMount && CONNECTED_JOB_ID.test(strip.id)) started.current.add(strip.id);
+  }, [strip, stripAtMount, wsDispatch]);
+  useEffect(() => {
+    const last = stripNow, send = sendNow, mine = started.current;
+    return () => {
+      const left = last.current;
+      if (left && left.tone === "blue" && mine.has(left.id)) send.current({ type: "patch", patch: { gen: null } });
+    };
+  }, []);
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);

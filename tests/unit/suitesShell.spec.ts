@@ -3,7 +3,7 @@ import {
   ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, WORKSPACE_TABS, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy,
 } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
-import { UNDO_DEPTH, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
+import { UNDO_DEPTH, boundUndo, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 import { ctxItems, parseCtx, placeMenu, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
 import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
 
@@ -94,6 +94,22 @@ test("⌘Z undoes the open project's newest step; another project's steps wait f
   const loose = pushUndo(stack, { label: "anywhere", undo: () => {} });
   expect(popUndo(loose, "a")!.entry.label).toBe("anywhere");
   expect(popUndo(stack)!.entry.label).toBe("B: take restored");
+});
+
+test("a Rig step refuses while the Rig still holds another project's draft, and runs once A's draft is back", async () => {
+  /* Delete in A, switch to B, back to A: until A's draft loads, the Rig holds B (or nothing). */
+  let rig: string | null = "a";
+  let restored = 0;
+  const step = boundUndo({ label: "Shot 2 is back in the Rig", undo: () => { restored++; } }, "a", () => rig, "the Rig is still opening this project.");
+  expect(step.projectId).toBe("a");
+  rig = "b";
+  expect(() => step.undo()).toThrow("the Rig is still opening this project.");
+  rig = null;
+  expect(() => step.undo()).toThrow();
+  expect(restored).toBe(0);
+  rig = "a";
+  await step.undo();
+  expect(restored).toBe(1);
 });
 
 /* ── Right-click menu ───────────────────────────────────────────────────── */

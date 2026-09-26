@@ -105,6 +105,13 @@ const BUSINESS_MODELS = new Set(["marketing_studio_video", "marketing_studio_ima
 const connectedGeneration = (p: Record<string, unknown>) => p.task === "connected-generation" && p.consumerCreditUnit === "higgsfield_credits";
 
 /**
+ * The tasks that work on a source clip (lib/tasks.ts TaskId, lib/dubbing.ts,
+ * the audio route's voiceChange). Every other task — generate, a connected
+ * generation, speech, sound, music — is a plain generation Gen composes.
+ */
+const SOURCE_TASKS = new Set(["edit", "extend", "motion", "upscale", "reframe", "genjutsu", "dub", "voiceChange"]);
+
+/**
  * Why Gen cannot make this take again from its own inputs, or null when it
  * can. Gen composes plain generations; a take made from a source clip (an
  * edit, an extend, a dub), by a connected tool or as a dialogue is run again
@@ -113,11 +120,11 @@ const connectedGeneration = (p: Record<string, unknown>) => p.task === "connecte
 export function retryBlock(generation: RetrySource): string | null {
   const p = generation.params ?? {};
   if (generation.kind !== "image" && generation.kind !== "video" && generation.kind !== "audio") return "Gen makes pictures, videos and sound; this take is neither.";
-  if (p.sourceGenId || p.sourceUploadId || (typeof p.task === "string" && p.task !== "connected-generation" && p.task !== "generate"))
+  if (p.task === "dialogue" || Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
+  if (p.sourceGenId || p.sourceUploadId || (typeof p.task === "string" && SOURCE_TASKS.has(p.task)))
     return "This take was made from a source clip. Run that tool again from Takes.";
   if (connectedGeneration(p) && p.workflow) return "This take came from a connected tool, not Gen. Run that tool again.";
   if (BUSINESS_MODELS.has(generation.model)) return "This ad was made in Business, with its product and setup. Make it again from Ads.";
-  if (Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
   return null;
 }
 

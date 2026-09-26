@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
-import { ConnectedCollector, listConnectedJobs, setSharedCollector } from "./connected-collector";
+import { ConnectedCollector, listConnectedJobs, setSharedCollector, showConnectedJob } from "./connected-collector";
 
 /** A re-listing on focus is at most this often. */
 const FOCUS_LIST_MS = 30_000;
@@ -20,9 +20,15 @@ export function settledToast(job: ConnectedJob): string {
  * the open project's jobs when the project opens, whenever the page or view
  * changes (the moment a composer that was polling its own job unmounts), and
  * when the tab comes back; a finished job refreshes that project's library.
+ * The job the shell's strip shows is a Generate composer's own: the collector
+ * leaves it to that composer while it is in flight.
  */
-export function useConnectedCollector(input: { scope: string | null; owner: boolean; projectId: string | null; place: string; toast: (text: string) => void }) {
-  const { scope, owner, projectId, place, toast } = input;
+export function useConnectedCollector(input: {
+  scope: string | null; owner: boolean; projectId: string | null; place: string; toast: (text: string) => void;
+  /** The shell strip's job (ws.state.gen): its id, and whether it has settled (green or red). */
+  strip: { id: string; done: boolean } | null;
+}) {
+  const { scope, owner, projectId, place, toast, strip } = input;
   const toastRef = useRef(toast);
   useEffect(() => { toastRef.current = toast; }, [toast]);
   useEffect(() => {
@@ -41,6 +47,9 @@ export function useConnectedCollector(input: { scope: string | null; owner: bool
     setSharedCollector(collector);
     return () => { collector.stop(); setSharedCollector(null); };
   }, [scope, owner]);
+
+  const stripId = strip?.id ?? null, stripDone = strip?.done ?? false;
+  useEffect(() => { showConnectedJob(stripId, stripDone); }, [scope, owner, stripId, stripDone]);
 
   /* The open project, and every time the page changes under it. */
   useEffect(() => {

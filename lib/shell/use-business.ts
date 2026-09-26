@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL, catalogueBlock, retryAfterMs, type CatalogueStatus } from "./business";
+import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL, catalogueBlock, retryAfterMs, AUTO_RETRIES, type CatalogueStatus } from "./business";
 
 /**
  * What the Business pages read before they can compose (FINAL_SPEC §2):
@@ -38,10 +38,11 @@ export function useBusiness(scopeReady: boolean) {
     return () => { live = false; };
   }, [scoped, scopeReady]);
 
-  /* The two Marketing Studio entries, from the live catalogue. A failed read is tried again, further apart each time. */
+  /* The two Marketing Studio entries, from the live catalogue. A failed read is tried again a few times, further
+     apart each time; after that only Read again (readCatalogue) asks the account. */
   const connected = connection?.connected ?? false;
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || catalogueFailures > AUTO_RETRIES) return;
     let live = true;
     const timer = setTimeout(() => void (async () => {
       try {
@@ -63,6 +64,9 @@ export function useBusiness(scopeReady: boolean) {
     return () => { live = false; clearTimeout(timer); };
   }, [scoped, connected, catalogueFailures]);
 
+  const catalogueStalled = catalogueStatus === "error" && catalogueFailures > AUTO_RETRIES;
+  const readCatalogue = useCallback(() => setCatalogueFailures(0), []);
+
   /** Why a composer cannot use this catalogue model yet (null when it can). */
   const modelBlock = useCallback((model: string) => catalogueBlock({ connected, status: catalogueStatus, error: catalogueError, offered: Boolean(models[model]), model }), [connected, catalogueStatus, catalogueError, models]);
 
@@ -83,5 +87,5 @@ export function useBusiness(scopeReady: boolean) {
     } finally { reading.current = false; }
   }, [scoped]);
 
-  return { connection, models, catalogueError, modelBlock, setup, readSetup, setupTypes: SETUP_TYPES };
+  return { connection, models, catalogueError, catalogueStalled, readCatalogue, modelBlock, setup, readSetup, setupTypes: SETUP_TYPES };
 }
