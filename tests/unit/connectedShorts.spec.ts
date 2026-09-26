@@ -95,7 +95,8 @@ test("the Shorts contract takes one project video, an advertised style and orien
 test("the style listing follows next_cursor, drops preview media and never calls a paid tool", async () => {
   const f = fixture();
   const listing = await readShortsPresets("fixture-private-access", { fetch: f.fetch });
-  expect(listing.presets.map((p) => p.source)).toEqual(["cms", "cms", "cms", "user"]);
+  // The second page's "user" style was saved on the account itself: its own library, never listed in Particl.
+  expect(listing.presets.map((p) => p.source)).toEqual(["cms", "cms", "cms"]);
   expect(listing.complete).toBe(true);
   expect(f.named("shorts_studio_list_presets").map((p) => p.params.arguments)).toEqual([{}, { cursor: ":8" }]);
   expect(f.tools()).toEqual(["shorts_studio_list_presets", "shorts_studio_list_presets"]);

@@ -15,7 +15,7 @@ async function setup(page: Page) {
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${account.workspace.id}-${me.id}`;
   const headers = { "X-Workbench-Scope": scope, "Content-Type": "application/json" };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl = "";
   try {
     await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Grok voice test", "admin", "test", Date.now()] });
@@ -26,7 +26,7 @@ async function setup(page: Page) {
   expect(saved.ok(), await saved.text()).toBe(true);
   const production = String((await saved.json()).productionProjectId);
   const row = async (id: string) => { const db = createClient({ url: tenantUrl }); try { return (await db.execute({ sql: "SELECT status, provider, billed_to, cost_usd, duration_s FROM generations WHERE id=?", args: [id] })).rows[0]; } finally { db.close(); } };
-  const meterRow = async (model: string) => { const db = createClient({ url: localPlatformDbUrl() }); try { return (await db.execute({ sql: "SELECT engine, status, engine_cost_usd FROM meter_events WHERE workspace_id=? AND model=? ORDER BY rowid DESC LIMIT 1", args: [account.workspace.id, model] })).rows[0]; } finally { db.close(); } };
+  const meterRow = async (model: string) => { const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 }); try { return (await db.execute({ sql: "SELECT engine, status, engine_cost_usd FROM meter_events WHERE workspace_id=? AND model=? ORDER BY rowid DESC LIMIT 1", args: [account.workspace.id, model] })).rows[0]; } finally { db.close(); } };
   return { headers, scope, project, production, row, meterRow };
 }
 

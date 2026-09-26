@@ -58,6 +58,8 @@ async function serviceFixture() {
     "./video-service": await import("../../lib/higgsfield-consumer/video-service"),
     "./video-contract": contract,
     "./video-original": {
+      uncollectableOriginal: original.uncollectableOriginal,
+      CONSUMER_ORIGINAL_SECONDS: 600,
       collectConsumerVideoOriginal: async (job: { id: string; userId: string; draftId: string; providerJobId: string; quoteCredits: number }, url: string) => {
         state.collectCount++;
         expect(url).toBe("https://media.example.com/qualified-template.png");
@@ -211,7 +213,7 @@ test("an ambiguous acknowledgement or an interrupted paid request stays uncertai
     expect(f.state.paidCount).toBe(2);
   }));
 
-test("polling collects the verified original once as a template variant, records provider failure, and keeps a job accepted when collection is out of bounds", async () =>
+test("polling collects the verified original once as a template variant, records provider failure, keeps a job accepted while collection can pass, and settles a result that can never be kept", async () =>
   fixtureRun(async (f) => {
     const quote = await f.service.quoteConsumerMarketingTemplate(identity.userId, identity.draftId, request, randomUUID());
     const accepted = await f.service.submitConsumerMarketingTemplateJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
@@ -225,8 +227,8 @@ test("polling collects the verified original once as a template variant, records
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
     f.state.pollRaw = { job_id: f.state.providerJobId, status: "completed", result_url: "https://media.example.com/qualified-template.png" };
     const original = await import("../../lib/higgsfield-consumer/video-original");
-    f.state.collectorError = new original.ConsumerOriginalError("invalid_video");
-    await expect(f.service.pollConsumerMarketingTemplate(scoped(quote.id))).rejects.toMatchObject({ code: "invalid_video" });
+    f.state.collectorError = new original.ConsumerOriginalError("quota");
+    await expect(f.service.pollConsumerMarketingTemplate(scoped(quote.id))).rejects.toMatchObject({ code: "quota" });
     expect((await f.jobs.getConsumerJob(scoped(quote.id)))!.status).toBe("accepted");
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
     f.state.collectorError = undefined;

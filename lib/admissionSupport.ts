@@ -214,6 +214,8 @@ export async function admitPrepared(
               : undefined,
         }),
       ),
+    // Generation and audio admission bind the claim in the same write as the job row.
+    { atomicBinding: true },
   );
   const body = await response.json();
   // A historical route failure may omit its already-created ID. The domain

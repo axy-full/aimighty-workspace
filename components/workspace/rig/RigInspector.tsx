@@ -15,6 +15,7 @@ import { useRig } from "./RigProvider";
 import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
 import "./rig.css";
 
 /** The Inspector for a selected shot (03, "Inspector"). */
@@ -111,7 +112,13 @@ function ShotInspector({ shot }: { shot: RigShot }) {
   const project = rig.project!;
   const node = rig.selectedNode;
   const inputs = useMemo(() => shotInputs(project, shot.id), [project, shot.id]);
-  const versions = useMemo(() => shotVersions(project, shot.id, rig.jobs), [project, shot.id, rig.jobs]);
+  /* A discarded held take reads as what it now is at once; the jobs poll
+     confirms it within seconds. */
+  const [discarded, setDiscarded] = useState<ReadonlySet<string>>(() => new Set());
+  const jobs = useMemo(() => discarded.size
+    ? rig.jobs.map((job) => discarded.has(job.id) && job.status === "held" ? { ...job, status: "cancelled", creditsBilled: 0, error: undefined } : job)
+    : rig.jobs, [rig.jobs, discarded]);
+  const versions = useMemo(() => shotVersions(project, shot.id, jobs), [project, shot.id, jobs]);
   const tab = state.inspTab;
   /* The Library's Rig tools land on this shot's prompt, inputs or versions. */
   useEffect(() => {
@@ -155,14 +162,43 @@ function ShotInspector({ shot }: { shot: RigShot }) {
           {versions.length ? versions.map((row) => (
             <div className="pxw-insp-version" key={row.id} data-current={row.current || undefined} data-state={row.state} data-section="versions">
               <span className="pxw-insp-version-v">{row.v}</span>
-              <span className="pxw-insp-version-label">{row.label}</span>
+              <span className="pxw-insp-version-label" title={row.note}>{row.label}</span>
               <span className="pxw-insp-version-meta">{row.meta}</span>
               <BranchFromTake shot={shot} assetId={row.id} />
+              {row.held ? <DiscardHeld jobId={row.id} onDiscarded={() => setDiscarded((ids) => new Set(ids).add(row.id))} /> : null}
             </div>
           )) : <p className="pxw-inspector-note" style={{ marginTop: 0 }}>No takes yet. Generate one to start the version history.</p>}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A held take waits for credits or a slot and never ends on its own; nothing was charged, so taking it out of the line is free. */
+function DiscardHeld({ jobId, onDiscarded }: { jobId: string; onDiscarded: () => void }) {
+  const rig = useRig();
+  const { toast } = useWorkspace();
+  const [busy, setBusy] = useState(false);
+  const discard = async () => {
+    setBusy(true);
+    try {
+      await studioRequest(`/api/jobs/${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": rig.scope },
+        body: JSON.stringify({ discard: true }),
+      });
+      onDiscarded();
+      toast("Discarded · nothing was charged");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The take could not be discarded.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" className="pxw-link-button" disabled={busy} onClick={() => void discard()} data-testid="rig-discard-held">
+      {busy ? "Discarding…" : "Discard"}
+    </button>
   );
 }
 

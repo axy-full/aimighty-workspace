@@ -54,7 +54,7 @@ export const POST = withTenant(async (req: Request, ctx: Ctx) => {
     if (error instanceof SyntaxError) return Response.json({ error: "Send a valid approval." }, { status: 400, headers });
     const status = Number((error as { status?: number })?.status);
     if ((error as { code?: string })?.code === "capacity")
-      return Response.json({ code: "capacity", error: "Four connected-account jobs are already active. Try again when one finishes." }, { status: 429, headers });
+      return Response.json({ code: "capacity", error: "All four connected-account slots are in use. Workspace › Engines lists yours." }, { status: 429, headers });
     return Response.json(
       { code: (error as { code?: string })?.code ?? "unavailable", error: neutralReason(error instanceof Error ? error.message : "The connected account could not complete this request.") },
       { status: Number.isInteger(status) && status >= 400 && status < 600 ? status : 503, headers },

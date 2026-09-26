@@ -7,6 +7,7 @@ import { newProject } from "../../lib/workbench/studio";
 import { saveSchema } from "../../lib/workbench/studio-schema";
 import * as requestBody from "../../lib/workbench/request-body";
 import * as requestScope from "../../lib/workbench/request-scope";
+import * as saveProblem from "../../lib/workbench/save-problem";
 
 /** Execute the real route with storage spies: a rejected tab must not reach data. */
 function route() {
@@ -28,6 +29,7 @@ function route() {
     "@/lib/workbench/request-scope": requestScope,
     "@/lib/db": { db: () => ({ execute: record("query", { rows: [] }) }) },
     "@/lib/workbench/studio-schema": { saveSchema },
+    "@/lib/workbench/save-problem": saveProblem,
     "@/lib/workbench/studio": { newProject },
     /* Real: a large project answer leaves gzipped. */
     "node:zlib": zlib,
@@ -151,4 +153,17 @@ test("the current captured account can save and publish; ordinary GET clients st
     (await exports.GET(new Request("http://localhost/api/workbench/projects")))
       .status,
   ).toBe(200);
+});
+
+test("a save the schema refuses says which rule it broke, not a generic line", async () => {
+  const { exports, calls, draft } = route();
+  const headers = { "X-Workbench-Scope": requestScope.workbenchScopeFor("current-workspace", "new-account") };
+  const put = async (project: unknown) => {
+    const response = await exports.PUT(new Request("http://localhost/api/workbench/projects", { method: "PUT", headers, body: JSON.stringify({ project, revision: 0 }) }));
+    return { status: response.status, error: ((await response.json()) as { error: string }).error };
+  };
+  expect(await put({ ...draft, name: "x".repeat(101) })).toEqual({ status: 400, error: "Check the project's name: keep it to 100 characters." });
+  expect(await put({ ...draft, scriptSource: { assetId: "missing", filename: "script.pdf", sha256: "a".repeat(64), pages: [], importedAt: "2026-09-25", edited: false, acknowledgedEmptyPages: [] } })).toEqual({ status: 400, error: "Keep the uploaded screenplay source in the asset library." });
+  expect(await put({ ...draft, fps: 23 })).toEqual({ status: 400, error: "Check the project's fps: it is not valid." });
+  expect(calls).not.toContain("save");
 });

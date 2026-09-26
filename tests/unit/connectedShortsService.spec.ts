@@ -61,7 +61,9 @@ async function serviceFixture() {
   const net = transport();
   const state = {
     generation: randomUUID(), wallet: randomUUID(), session: randomUUID(), mediaId: randomUUID(), clips: [randomUUID(), randomUUID(), randomUUID()],
-    quoteCount: 0, importCount: 0, paidCount: 0, sessionReads: 0, clipReads: 0, collectCalls: 0,
+    quoteCount: 0, importCount: 0, paidCount: 0, sessionReads: 0, clipReads: 0, collectCalls: 0, presetReads: 0,
+    /** A collection failure to raise for a clip index (the collector is otherwise real). */
+    collectFailures: {} as Record<number, Error>,
     sessionStatus: "processing", clipStatus: {} as Record<string, "completed" | "failed" | "processing">,
   };
   const deps: Record<string, unknown> = {
@@ -80,6 +82,8 @@ async function serviceFixture() {
     // The real clip-keyed collector, fetching through the fixture transport.
     "./video-original": { ...originals, collectConsumerVideoOriginal: (job: Parameters<typeof originals.collectConsumerVideoOriginal>[0], url: string, options: Parameters<typeof originals.collectConsumerVideoOriginal>[2]) => {
       state.collectCalls++;
+      const failure = options?.clip ? state.collectFailures[options.clip.index] : undefined;
+      if (failure) return Promise.reject(failure);
       return originals.collectConsumerVideoOriginal(job, url, { ...options, fetchDependencies: net.deps });
     } },
     "./oauth": {
@@ -91,7 +95,7 @@ async function serviceFixture() {
       },
     },
     "./mcp": {
-      readShortsPresets: async () => ({ presets: [{ id: shorts.preset.id, name: "Bold Urban", source: "cms" }], complete: true, fetchedAt: Date.now() }),
+      readShortsPresets: async () => { state.presetReads++; return { presets: [{ id: shorts.preset.id, name: "Bold Urban", source: "cms" }], complete: true, fetchedAt: Date.now() }; },
       getConsumerShortsQuote: async (_t: string, input: ConsumerShortsInput, source: { url: string; type: string; durationSeconds?: number }, options: { resolveMedia: (w: string, perform: () => Promise<string>) => Promise<string> }) => {
         state.quoteCount++;
         expect(source).toEqual({ url: "https://fixtures.particl.invalid/uploads/clip.mp4", type: "video", durationSeconds: 31 });
@@ -215,4 +219,41 @@ test("a session whose every clip failed settles as failed; the collector refuses
     const job = (await f.jobs.getConsumerJob(scoped(quote.id)))!;
     await expect(f.originals.collectConsumerVideoOriginal(job, "https://media.example.com/x.mp4", { fetchDependencies: f.net.deps })).rejects.toMatchObject({ code: "not_found" });
     await expect(f.originals.collectConsumerVideoOriginal(job, "https://media.example.com/x.mp4", { clip: { index: 25, providerJobId: randomUUID() }, fetchDependencies: f.net.deps })).rejects.toMatchObject({ code: "not_found" });
+  }));
+
+test("only a style the account lists as a library style is quoted, whatever source the request claims", async () =>
+  fixture(async (f) => {
+    const unlisted = { ...shorts, preset: { ...shorts.preset, id: randomUUID() } };
+    const owned = { ...shorts, preset: { ...shorts.preset, source: "user" as const } };
+    for (const bad of [unlisted, owned])
+      await expect(f.service.quoteConsumerShorts(identity.userId, identity.draftId, bad, randomUUID())).rejects.toMatchObject({ code: "invalid_input" });
+    expect([f.state.quoteCount, f.state.importCount]).toEqual([0, 0]);
+    // The listing is read once an hour, not once a quote.
+    await f.service.quoteConsumerShorts(identity.userId, identity.draftId, shorts, randomUUID());
+    await f.service.quoteConsumerShorts(identity.userId, identity.draftId, { ...shorts, preset: { ...shorts.preset, id: shorts.preset.id.toUpperCase() } }, randomUUID());
+    expect(f.state.presetReads).toBe(1);
+    expect(f.state.quoteCount).toBe(2);
+  }));
+
+test("a clip that can never be kept settles as failed with its reason; one that can pass later keeps the session open and says why", async () =>
+  fixture(async (f) => {
+    const originalError = (await import("../../lib/higgsfield-consumer/video-original")).ConsumerOriginalError;
+    const quote = await f.service.quoteConsumerShorts(identity.userId, identity.draftId, shorts, randomUUID());
+    await f.service.submitConsumerShortsJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: 40 });
+    f.state.sessionStatus = "completed";
+    f.state.collectFailures = { 0: new originalError("too_large"), 1: new originalError("quota") };
+    const held = await f.service.pollConsumerShorts(scoped(quote.id));
+    // Storage full is retried on the next poll, and the owner is told why.
+    expect(held.job).toMatchObject({ status: "accepted", progress: { clips: 3, collected: 1 } });
+    expect(held).toMatchObject({ collection: { code: "quota" } });
+    expect(f.state.paidCount).toBe(1);
+    f.state.collectFailures = { 0: new originalError("too_large") };
+    await unlease(f, quote.id);
+    const done = await f.service.pollConsumerShorts(scoped(quote.id));
+    expect(done).not.toHaveProperty("collection");
+    expect(done.job).toMatchObject({ status: "completed", settlement: { clips: 3, collected: 2, failed: 1 } });
+    expect(done.job.clips.map((clip) => [clip.index, clip.state])).toEqual([[0, "failed"], [1, "collected"], [2, "collected"]]);
+    expect(done.job.clips[0]).toMatchObject({ reason: "too_large" });
+    saved.push(...done.job.clips.flatMap((clip) => (clip.state === "collected" ? [(clip.original as { generationId: string }).generationId] : [])));
+    expect(f.state.paidCount).toBe(1);
   }));

@@ -7,6 +7,8 @@ import { creditsApply } from '@/lib/credits';
 import { readBoundedText, RequestBodyError } from '@/lib/requestBody';
 import { reserveRecoveryContinuation } from '@/lib/recovery';
 import { engineMock } from '@/lib/mock';
+import { paidByPlatform } from '@/lib/platformSpend';
+import { textVendor } from '@/lib/openai-direct';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
 import { DevelopmentError, developmentRequestSchema, developmentState, listDevelopmentJobs, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep } from '@/lib/workbench/development-server';
 import { enqueueDevelopmentJob } from '@/lib/workbench/development-worker';
@@ -14,7 +16,7 @@ import { enqueueDevelopmentJob } from '@/lib/workbench/development-worker';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
-const response = (data: unknown, status = 200) => Response.json(atomikPublicResponse(data, creditsApply(currentTenant()?.workspace)), { status, headers: { 'Cache-Control': 'no-store' } });
+const response = (data: unknown, status = 200, credits = creditsApply(currentTenant()?.workspace)) => Response.json(atomikPublicResponse(data, credits), { status, headers: { 'Cache-Control': 'no-store' } });
 function scopeError(req: Request, owner: string) {
   const scope = req.headers.get('X-Workbench-Scope');
   return scope && scope !== `particl-active-${currentTenant()?.workspace?.id}-${owner}`;
@@ -77,7 +79,8 @@ export const POST = withTenant(async (req: Request) => {
     const parsed = developmentRequestSchema.extend({ quoteOnly: z.boolean().optional() }).safeParse(value);
     if (!parsed.success) return response({ error: 'Check the development mode, model, effort and instructions.' }, 400);
     const { quoteOnly, ...input } = parsed.data;
-    if (quoteOnly) return response(await quoteDevelopmentJob(input, auth.user.id));
+    /* A model on the workspace's own key bills its dollars, not credits: the quote keeps the dollar ceiling the start must lock. */
+    if (quoteOnly) return response(await quoteDevelopmentJob(input, auth.user.id), 200, creditsApply(currentTenant()?.workspace) && paidByPlatform(textVendor(input.model)));
     const prepared = await prepareDevelopmentJob(input, auth.user.id, auth.token);
     if (prepared.scheduled) await schedule(prepared.job.id, auth.user.id);
     return response({ job: prepared.job }, ['queued', 'running'].includes(prepared.job.status) ? 202 : 200);
