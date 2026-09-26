@@ -93,8 +93,9 @@ test("length is every second the engine allows, the sheet lists both catalogues,
   const sheet = page.getByRole("dialog", { name: "Choose a model" });
   await expect(sheet.getByRole("tab")).toHaveText(["Studio engines", "Higgsfield catalogue"]);
   await expect(sheet.getByRole("option").first()).toBeVisible();
+  /* With a pointer the search holds focus, so Escape alone closes it; elsewhere Close does. */
   await page.keyboard.press("Escape");
-  await sheet.getByRole("button", { name: "Close" }).click().catch(() => {});
+  await sheet.getByRole("button", { name: "Close" }).click({ timeout: 2_000 }).catch(() => {});
   await expect(sheet).toHaveCount(0);
 
   /* The Library opens on Assets in Gen; its tile's text/plain id lands in the well. */

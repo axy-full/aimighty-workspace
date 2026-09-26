@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import AtomikSuite from "@/components/suites/AtomikSuite";
 import { SuiteAgentPanel } from "@/components/suites/SuiteAgentPanel";
 import type { AtomikPage } from "@/components/suites/atomik-suite-data";
@@ -29,7 +29,8 @@ export default function AtomikTool({
 }) {
   const [input, setInput] = useState<ConsumerGenerationInput | null>(null);
   const onInput = useCallback((next: ConsumerGenerationInput | null) => setInput(next), []);
-  usePlanRequest("generation", page === "generate" && input ? { ...input } : undefined);
+  const request = useMemo(() => (page === "generate" && input ? { ...input } : undefined), [page, input]);
+  usePlanRequest("generation", request);
 
   if (page === "agent")
     return (

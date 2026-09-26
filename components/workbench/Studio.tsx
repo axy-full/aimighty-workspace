@@ -178,6 +178,7 @@ import {DRAFT_UPLOAD_ACCEPT,draftUploadAsset} from '@/lib/workbench/draft-upload
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
 import {SoundGenerate} from './SoundGenerate';
+import {useSoundPlacements} from './use-sound-placements';
 import {AssetBins,AssetBinPicker} from './AssetBins';
 import {EditVersions} from './EditVersions';
 import {applyEdit,type EditVersion} from '@/lib/workbench/editorial';
@@ -536,7 +537,8 @@ export default function Studio({
   );
   const settle = useCallback(() => { coalescing.current = null; }, []);
   // Bible version and shared snapshots are server state: a local step back must not offer a stale version to the next publish.
-  const withServerState=(entry:Project,current:Project):Project=>entry.bibleVersion===current.bibleVersion?entry:{...entry,bibleVersion:current.bibleVersion};
+  // So is the production link and its node-to-shot mapping: a step back must not hide a queued take from the job feed.
+  const withServerState=(entry:Project,current:Project):Project=>entry.bibleVersion===current.bibleVersion&&entry.productionProjectId===current.productionProjectId&&entry.shotMappings===current.shotMappings?entry:{...entry,bibleVersion:current.bibleVersion,productionProjectId:current.productionProjectId,shotMappings:current.shotMappings};
   const undo = useCallback(() => {
     if(transitioningRef.current)return;
     coalescing.current=null;
@@ -559,6 +561,9 @@ export default function Studio({
   const activeStorageKey=useRef(storageKey);
   useLayoutEffect(()=>{activeStorageKey.current=storageKey;},[storageKey]);
   const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change,storageKey);
+  // Generated sound lands on its lane whichever stage is open, not only while the sound composer is mounted.
+  const pauseTransport=useCallback(()=>setPlaying(false),[]);
+  useSoundPlacements({scope:storageKey,project:p,jobs:jobs.mediaJobs,onChange:change,onPause:pauseTransport,onPlaced:toast.success,onFailed:toast.error});
   const identityList = identities?.projectId === p.id ? identities.list : null;
   const identitiesActive = !!identityList?.some(identity => identity.status === 'submitting' || identity.status === 'training');
   useEffect(() => {
@@ -2453,7 +2458,7 @@ export default function Studio({
                               ))}
                             </div>
                           </div>
-                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundGenerate key={'gen:'+p.id+storageKey} scope={storageKey} project={p} frame={frame} jobs={jobs.mediaJobs} enabled={ready&&signedIn&&!transitioning} onChange={change} onPause={()=>setPlaying(false)} onSave={refresh=>ensureSaved(p.id,refresh)} onQueued={()=>void jobs.refresh()}/><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
+                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundGenerate key={'gen:'+p.id+storageKey} scope={storageKey} project={p} frame={frame} jobs={jobs.mediaJobs} enabled={ready&&signedIn&&!transitioning} onChange={change} onSave={refresh=>ensureSaved(p.id,refresh)} onQueued={()=>void jobs.refresh()}/><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
                         </div>
                       </div>
                     )}
@@ -2813,8 +2818,7 @@ export default function Studio({
                                   : "Build in my space"}
                               </Button>
                               <span className="plan-meta">
-                                {thinkingModelName(plan.model,jobs.models)} · {plan.depth} exploration · Sample
-                                workflow
+                                {thinkingModelName(plan.model,jobs.models)} · {plan.depth} exploration
                               </span>
                             </div>
                           </div>

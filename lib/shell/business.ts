@@ -381,3 +381,56 @@ export function pruneImageAds(state: ImageAdsState, reads: SetupReads): ImageAds
   const productIds = state.productIds.filter((id) => listed(reads, "product", id));
   return styleId === state.styleId && brandKitId === state.brandKitId && productIds.length === state.productIds.length ? state : { ...state, styleId, brandKitId, productIds };
 }
+
+/* ── The connected catalogue ─────────────────────────────────────────── */
+
+export type CatalogueStatus = "idle" | "loading" | "ready" | "error";
+/** What each composer calls its catalogue model when the account does not offer it. */
+export const CATALOGUE_LABEL: Record<string, string> = {
+  [ADS_MODEL]: "Marketing Studio video",
+  [IMAGE_ADS_MODEL]: "Marketing Studio Image",
+  [DTC_ADS_MODEL]: "DTC Ads",
+};
+/**
+ * Why a composer cannot use its catalogue model yet, or null when it can (or
+ * when the account is not connected — that has its own line). A read that
+ * failed says so, and one that succeeded without the model says the account
+ * does not offer it: never "Reading…" for ever.
+ */
+export function catalogueBlock(input: { connected: boolean; status: CatalogueStatus; error: string | null; offered: boolean; model: string }): string | null {
+  if (input.offered || !input.connected) return null;
+  if (input.status === "error") return input.error ?? "The connected catalogue could not be read.";
+  if (input.status === "ready") return `The connected account does not offer ${CATALOGUE_LABEL[input.model] ?? input.model}.`;
+  return "Reading the connected catalogue…";
+}
+/** Waits before asking the account again after a failed read or quote: 5 s, 15 s, 45 s, then every minute. */
+export const retryAfterMs = (failures: number) => Math.min(60_000, 5000 * 3 ** Math.max(0, failures - 1));
+/** How many failed reads or quotes in a row are asked again on their own; after that the page waits for Try again. */
+export const AUTO_RETRIES = 3;
+/** Refusals that pass on their own (the account busy, its preflight down); every other code refuses the input itself. */
+const TRANSIENT_CODES = new Set(["connection_busy", "preflight_unavailable"]);
+/**
+ * When to quote again on its own after the `failures`-th failure in a row, or
+ * null when only the user should: a network failure (status null), a rate
+ * limit or an unavailable account is asked again a few times; an input the
+ * account refuses (parameter_invalid, model_unknown, reconnect_required…)
+ * would be refused again, and every quote imports the references again.
+ */
+export function autoRetryMs(failure: { status: number | null; code?: string }, failures: number): number | null {
+  const transient = failure.status === null || failure.status === 429 || (failure.status >= 502 && failure.status <= 504)
+    || (failure.code !== undefined && TRANSIENT_CODES.has(failure.code));
+  return transient && failures <= AUTO_RETRIES ? retryAfterMs(failures) : null;
+}
+
+/** A quote is taken again this long before the account says it expires. */
+export const QUOTE_MARGIN_MS = 20_000;
+/**
+ * The moment, on this device's clock, after which a quote received at
+ * `receivedAt` is too close to expiry to submit. It uses the account's
+ * lifetime for the quote (its expiry less its creation, both on the server's
+ * clock), never the server's timestamp read against this clock, which may run
+ * fast or slow.
+ */
+export function quoteUsableUntil(job: { quoteExpiresAt: number; createdAt: number }, receivedAt: number): number {
+  return receivedAt + Math.max(0, job.quoteExpiresAt - job.createdAt) - QUOTE_MARGIN_MS;
+}
