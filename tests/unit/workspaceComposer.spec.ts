@@ -17,6 +17,7 @@ import {
   type ComposerState,
   type EngineRow,
   secondsIn,
+  audioSeconds,
 } from "../../lib/workspace/composer";
 import { INITIAL_STATE, generateTarget } from "../../lib/workspace/navigation";
 import { WORKSPACE_BINDINGS, inKeyboardOverlay, keyContextFor, resolveKey } from "../../lib/workspace/keys";
@@ -217,6 +218,28 @@ test("changing type drops what the new type cannot use, and reset keeps the sour
   expect(noticed.notice).toBeNull();
   /* Any edit clears a stale notice, so a moved price is never shown beside new inputs. */
   expect(composerReducer({ ...state, notice: "The price moved." }, { type: "prompt", value: "x" }).notice).toBeNull();
+});
+
+test("the sound and music length is held to what the audio route bills, so the seconds shown are the seconds charged", () => {
+  let state = composerReducer(INITIAL_COMPOSER, { type: "type", value: "audio" });
+  state = composerReducer(state, { type: "model", value: "eleven_music" });
+  /* Music has a ten-second floor and a five-minute ceiling. */
+  expect(composerReducer(state, { type: "seconds", value: 5, task: "music" }).seconds).toBe(10);
+  expect(composerReducer(state, { type: "seconds", value: 999, task: "music" }).seconds).toBe(300);
+  expect(composerReducer(state, { type: "seconds", value: 45.4, task: "music" }).seconds).toBe(45);
+  /* A sound effect runs 1–30 s. */
+  expect(composerReducer(state, { type: "seconds", value: 999, task: "sound" }).seconds).toBe(30);
+  expect(composerReducer(state, { type: "seconds", value: 0, task: "sound" }).seconds).toBe(1);
+  /* Switching model holds the length already typed to the new model's range. */
+  const long = composerReducer(state, { type: "seconds", value: 200, task: "music" });
+  expect(composerReducer(long, { type: "model", value: "eleven_sfx" }).seconds).toBe(30);
+  const short = composerReducer(composerReducer(state, { type: "model", value: "eleven_sfx" }), { type: "seconds", value: 3, task: "sound" });
+  expect(short.seconds).toBe(3);
+  expect(composerReducer(short, { type: "model", value: "eleven_music" }).seconds).toBe(10);
+  /* A model with no length leaves it alone. */
+  expect(audioSeconds("speech", 3)).toBe(3);
+  expect(audioSeconds(undefined, 3)).toBe(3);
+  expect(audioSeconds("music", Number.NaN)).toBe(10);
 });
 
 /* ── The keymap and the palette ─────────────────────────────────────────── */

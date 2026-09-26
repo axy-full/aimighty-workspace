@@ -45,7 +45,7 @@ export function SpecTool({
     case "brief":
       return (
         <>
-          <BriefTool key={id} tool={tool} projectId={id} scope={scope} onProject={onProject} onRig={() => go("particl", "rig")} />
+          <BriefTool key={id} tool={tool} projectId={id} scope={scope} onProject={onProject} onRig={() => go("particl", "rig")} onAgent={() => go("atomik", "agent")} />
           <Toaster theme="dark" position="bottom-center" />
         </>
       );

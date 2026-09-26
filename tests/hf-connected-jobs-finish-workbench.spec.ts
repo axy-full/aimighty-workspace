@@ -6,12 +6,14 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type LibraryRoute } from "./helpers/workspaceFixtures";
 
 /**
- * Connected-account jobs finish after the page is left. Opening Gen, Ads or
- * Motion Transfer later lists the project's saved jobs once, follows every one
- * this composer made that is still in flight with the same status read the
- * composer uses (never a quote, never a submit), says its state in one word
- * with its age, names a problem plainly, and moves a finished take into
- * Takes. Every account reply here is a route mock; nothing is paid for.
+ * Connected-account jobs finish after the page is left. The shell's collector
+ * lists the open project's saved jobs and reads each sent one with the same
+ * status read the composer uses (never a quote, never a submit) until it
+ * settles, and announces it once. Opening Gen or Ads later shows the jobs that
+ * composer made from what the collector has — their state in one word with its
+ * age, a problem named plainly, a finished take moved into Takes — and asks
+ * nothing itself. Motion Transfer follows its own jobs. Every account reply
+ * here is a route mock; nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -19,6 +21,9 @@ const SHOTS: Record<string, string> = Object.fromEntries(SIZES.map((name) => [na
 const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const MIN = 60_000;
 const DRAFT = "ws-jobs";
+/* The collector's pace (lib/shell/connected-collector.ts): 20 s between reads, a few reads for a job the account has not accepted. */
+const NEXT_READ = "00:21";
+const UNSETTLED_READS = 6;
 const fixture = (): Project => ({ ...newProject("Harbour night shoot"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
 const uuid = (n: number) => `9d2b3c4e-5f60-4a7b-8c9d-${String(n).padStart(12, "0")}`;
 const GEN = "gen_hfc_" + "c".repeat(40);
@@ -105,7 +110,7 @@ async function shoot(page: Page, project: string, name: string, target: string, 
   await element.screenshot({ path: path.join(dir, `${name}-${size}-element.png`) });
 }
 
-test("Gen picks up takes left rendering, follows only what a read can move, shows the rest as they are, and files a finished one into Takes", async ({ page }, info) => {
+test("Gen shows the takes left rendering as the collector reads them, bounds the asking, and a finished one lands in Takes without writing the draft", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   const narrow = phone;
@@ -118,17 +123,22 @@ test("Gen picks up takes left rendering, follows only what a read can move, show
   const earlier = connected(5, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Fog rolling in past the lighthouse", ago: 3 * 24 * 60 * MIN, composer: "gen" });
   const ad = connected(6, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "An ad from Business", ago: 5 * MIN });
   const priced = connected(7, { status: "quoted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Only priced, never sent", ago: 2 * MIN, composer: "gen" });
-  let phase: "first" | "done" = "first";
+  let rendered = false, confirmed = false;
   const asked: string[] = [];
   const { posts } = await mockGeneration(page, [rendering, confirming, unconfirmed, setAside, earlier, ad, priced], (id) => {
     asked.push(id);
-    if (id === rendering.id) return phase === "first" ? { json: { job: rendering, pollAfterSeconds: 8 } } : { json: { job: completed(rendering), pollAfterSeconds: 15 } };
-    if (id === confirming.id) return phase === "first"
-      ? { status: 401, json: { code: "reconnect_required", error: "Reconnect the connected account." } }
-      : { json: { job: { ...confirming, status: "failed", failureCode: "provider_failed" } } };
+    if (id === rendering.id) return rendered ? { json: { job: completed(rendering), pollAfterSeconds: 15 } } : { json: { job: rendering, pollAfterSeconds: 8 } };
+    if (id === confirming.id) return confirmed
+      ? { json: { job: { ...confirming, status: "failed", failureCode: "provider_failed" } } }
+      : { status: 429, json: { error: "Too many requests. Try again shortly." } };
+    /* A read cannot move these: the service answers with the saved job as it is. */
+    if (id === unconfirmed.id) return { json: { job: unconfirmed } };
+    if (id === setAside.id) return { json: { job: setAside } };
     if (id === earlier.id) return { status: 409, json: { code: "connection_changed", error: "The account connection changed." } };
-    return { status: 404, json: { error: "not this composer's job" } };
+    if (id === ad.id) return { json: { job: ad, pollAfterSeconds: 8 } };
+    return { status: 404, json: { error: "not on record" } };
   });
+  const reads = (job: Job) => asked.filter((id) => id === job.id).length;
   const saves: string[] = [];
   page.on("request", (request) => { if (request.method() === "PUT" && request.url().includes("/api/workbench/projects")) saves.push(request.url()); });
   await page.clock.install();
@@ -143,23 +153,29 @@ test("Gen picks up takes left rendering, follows only what a read can move, show
   /* Cut on a word, never mid-word; the full prompt is on hover. */
   await expect(card("A slow dolly").locator(".gx-asset-name")).toHaveText("A slow dolly push across the wet harbour at blue hour…");
   await expect(card("A slow dolly").locator(".gx-asset-meta")).toHaveText("Rendering · 12 min");
+  await expect(card("A slow dolly").getByRole("status")).toHaveCount(0);
+  await expect(page.getByText("Nothing generated in this project yet.")).toHaveCount(0);
+  /* A passing problem is said plainly; the card stays and is asked again. */
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Confirming · 3 h");
-  /* Nothing a read can move is asked after: it says so, and can be dismissed. */
+  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Too many requests. Try again shortly.");
+  /* A take from an earlier account connection cannot be checked: said once, never asked again, dismissable. */
+  await expect(card("Fog rolling").locator(".gx-asset-meta")).toHaveText("Can't be checked");
+  await expect(card("Fog rolling").getByRole("status")).toHaveText("Started on an earlier account connection, so it can't be checked from here.");
+  /* No invented progress: the same solid ring as the composer's own run. */
+  expect(await card("A slow dolly").locator(".gx-ring").evaluate((el) => getComputedStyle(el).backgroundImage)).toBe("none");
+
+  /* A job the account has not confirmed is read a few times, then left as it is: said so, with Dismiss. */
+  await expect.poll(() => reads(unconfirmed)).toBe(1);
+  for (let read = 2; read <= UNSETTLED_READS; read++) {
+    await page.clock.fastForward(NEXT_READ);
+    await expect.poll(() => reads(unconfirmed)).toBe(read);
+  }
   await expect(card("Gulls").locator(".gx-asset-meta")).toHaveText("Not confirmed · never sent twice");
   await expect(card("Gulls").getByRole("status")).toHaveText("Free its slot in Workspace › Engines.");
   await expect(card("Nets drying").locator(".gx-asset-meta")).toHaveText("Set aside · never sent again");
   await expect(card("Nets drying").getByRole("status")).toHaveCount(0);
-  await expect(page.getByText("Nothing generated in this project yet.")).toHaveCount(0);
-  /* A problem is said plainly, with what to do; the card stays and keeps asking. */
-  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Reconnect the account in Workspace › Engines to finish this take.");
-  await expect(card("A slow dolly").getByRole("status")).toHaveCount(0);
-  /* A take from an earlier account connection cannot be checked: said once, never asked again, dismissable. */
-  await expect(card("Fog rolling").locator(".gx-asset-meta")).toHaveText("Can't be checked");
-  await expect(card("Fog rolling").getByRole("status")).toHaveText("Started on an earlier account connection, so it can't be checked from here.");
   for (const prompt of ["Gulls", "Nets drying", "Fog rolling"]) await expect(card(prompt).getByRole("button", { name: /^Dismiss/ })).toBeVisible();
   for (const prompt of ["A slow dolly", "Rain on the quay"]) await expect(card(prompt).getByRole("button", { name: /^Dismiss/ })).toHaveCount(0);
-  /* No invented progress: the same solid ring as the composer's own run. */
-  expect(await card("A slow dolly").locator(".gx-ring").evaluate((el) => getComputedStyle(el).backgroundImage)).toBe("none");
   /* On a narrow screen the results sit under the composer: its top says takes are still out and jumps to them. */
   const jump = page.getByTestId("gen-resumed-jump");
   await shootTop(page, info.project.name, "gen-top");
@@ -175,19 +191,26 @@ test("Gen picks up takes left rendering, follows only what a read can move, show
   await noOverflow(page);
   await shoot(page, info.project.name, "gen-picked-up", "gen-resumed", 1);
 
-  /* Six minutes on: the stopped cards were read at most once, and never again. */
-  await page.clock.fastForward("06:00");
-  expect(asked.filter((id) => id === earlier.id)).toHaveLength(1);
-  expect(asked.filter((id) => id === unconfirmed.id || id === setAside.id)).toHaveLength(0);
+  /* Well past the asking: the stopped jobs are never read again, and a job only priced never was. */
+  await page.clock.fastForward("02:00");
+  await page.clock.fastForward(NEXT_READ);
+  expect(reads(earlier)).toBe(1);
+  expect(reads(unconfirmed)).toBe(UNSETTLED_READS);
+  expect(reads(setAside)).toBe(UNSETTLED_READS);
+  expect(reads(priced)).toBe(0);
 
-  /* The account finishes both: the rendered take lands in Takes, the failed one says it was not billed. */
-  phase = "done";
+  /* The account finishes the rendering take: announced once, gone from the cards, in the results. */
+  rendered = true;
   library.generations = [generation({ id: GEN, kind: "video", title: "Harbour at dusk", prompt: "A slow dolly push across the wet harbour", projectId: "prod-ws" })];
-  await page.clock.fastForward("02:05");
-  await expect(page.getByTestId("toast")).toHaveText("Seedance 2.5 take rendered. Filed in Takes for review.");
+  await page.clock.fastForward(NEXT_READ);
+  await expect(page.getByTestId("toast")).toHaveText("Seedance 2.5 rendered on the connected account. It is in Takes.");
   await expect(cards).toHaveCount(4);
-  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
   await expect(page.getByTestId("gen-view").locator(".gx-gen-grid .gx-asset:not([data-testid])")).toHaveCount(1);
+  /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
+  confirmed = true;
+  await page.clock.fastForward("01:01");
+  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
+  await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
   if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
   await shoot(page, info.project.name, "gen-landed", "gen-resumed");
   if (phone) await thumbSized(page, "Dismiss Rain on the quay, a lantern swings", "gen-view");
@@ -203,14 +226,13 @@ test("Gen picks up takes left rendering, follows only what a read can move, show
   await expect(card("Gulls")).toHaveCount(0);
   await expect(card("Rain on the quay")).toHaveCount(0);
 
-  /* Status reads only, for the three a read could move: nothing priced or sent again, and no draft written. */
+  /* Status reads only: nothing priced or sent again, and no draft written. */
   expect(posts.map((p) => p.action).filter((a) => a !== "catalogue").every((a) => a === "status")).toBe(true);
-  expect(new Set(asked)).toEqual(new Set([rendering.id, confirming.id, earlier.id]));
   expect(saves).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("Ads follows an ad from an earlier visit until it lands, then points to Takes; the ad its button resumes is its button's alone", async ({ page }, info) => {
+test("Ads shows an ad from an earlier visit until it lands, then points to Takes; the ad its button reads back is its button's alone", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   const errors = await base(page, { uploads: [], generations: [] });
@@ -238,9 +260,10 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
   await shoot(page, info.project.name, "ads-earlier", "ads-earlier");
 
   done = true;
-  await page.clock.fastForward("00:10");
+  await page.clock.fastForward(NEXT_READ);
   await expect(rows.locator(".gx-resumed-state")).toHaveText("Complete");
-  await expect(page.getByTestId("toast")).toHaveText("Ad rendered. Filed in Takes for review.");
+  /* The collector's one announcement. */
+  await expect(page.getByTestId("toast")).toHaveText("Marketing Studio rendered on the connected account. It is in Takes.");
   if (phone) {
     await thumbSized(page, "Open Takes", "ads-earlier");
     await thumbSized(page, "Dismiss Unboxing the trail runner on a kitchen counter, morning light through the…", "ads-earlier");
@@ -254,11 +277,14 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
   expect(row!.x + row!.width - (dismiss!.x + dismiss!.width)).toBeLessThanOrEqual(16);
   await noOverflow(page);
   await shoot(page, info.project.name, "ads-complete", "ads-earlier");
+  /* The collector reads every open job of the project (the Gen take too); this page shows only its own. */
+  expect(posts.filter((p) => p.action === "status").every((p) => p.id === ad.id || p.id === remembered.id || p.id === genTake.id)).toBe(true);
+  /* One reader per job: while the button reads the remembered ad back (its reply is held open), only the button asked, once. */
+  expect(posts.filter((p) => p.action === "status" && p.id === remembered.id)).toHaveLength(1);
   await rows.getByRole("button", { name: "Open Takes" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  expect(posts.filter((p) => p.action === "status").every((p) => p.id === ad.id || p.id === remembered.id)).toBe(true);
-  /* One poller per job: the remembered ad was read by its button only, once (its reply is held open). */
-  expect(posts.filter((p) => p.action === "status" && p.id === remembered.id)).toHaveLength(1);
+  /* Leaving the page lets the button's job go: from here only the collector may read it. */
+  expect(posts.filter((p) => p.action === "status" && p.id === remembered.id).length).toBeLessThanOrEqual(2);
   expect(posts.some((p) => p.action === "quote" || p.action === "submit")).toBe(false);
   expect(errors).toEqual([]);
   await page.unrouteAll({ behavior: "ignoreErrors" });

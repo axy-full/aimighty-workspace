@@ -18,7 +18,7 @@ async function seeded(page: Page) {
   const signed = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl = "";
   try {
     await platform.execute({ sql: "UPDATE workspaces SET concurrency=1 WHERE id=?", args: [signed.workspace.id] });
@@ -27,7 +27,7 @@ async function seeded(page: Page) {
     platform.close();
   }
   expect(tenantUrl).toMatch(/^file:/);
-  const tenant = createClient({ url: tenantUrl });
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   try {
     await tenant.execute({
       sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",

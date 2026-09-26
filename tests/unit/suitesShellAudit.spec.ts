@@ -2,10 +2,10 @@ import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision, type RigWiring } from "../../lib/shell/rig-wire";
-import { DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, imageAdsFromPreset, presetKey, readPreset } from "../../lib/shell/business";
+import { AUTO_RETRIES, DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, autoRetryMs, imageAdsFromPreset, parsePreset, presetFor, type BusinessPage, type SetupType } from "../../lib/shell/business";
 import { MIRROR_ECHO_MS, listedJobs, mirrorSeek, pendingJobIds, runAfterStatus, type MirrorMark, type ViralRun } from "../../lib/shell/viral";
 import { libraryHasTools } from "../../lib/shell/production-tools";
-import { QUOTE_RETRY_MS, RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
+import { RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
 import { branchFromTake } from "../../lib/production/rig-build";
 import { atomikSheetRuns } from "../../lib/shell/atomik-sheet";
 import { freshOver, freshRead } from "../../lib/shell/use-fresh-project";
@@ -61,19 +61,23 @@ test("the agent's wiring lands once: prompt, notes, inputs and first frame, with
 });
 
 /* Business › Setup → a composer. */
+/* The pick names its page (lib/shell/business.ts › Setup → Ads / Image ads; the rest of that model is in businessStandalone.spec.ts). */
 test("Setup's picks reach the composer they were meant for, and only what that composer takes", () => {
-  expect(presetKey("ads")).not.toBe(presetKey("dtc"));
+  const NOW = 1_800_000_000_000;
+  const pick = (type: SetupType, id: string, page: BusinessPage) => presetFor({ id, type, name: id, meta: "", previewUrl: null }, page, NOW);
+  const raw = (type: SetupType, id: string, page: BusinessPage) => JSON.stringify(pick(type, id, page));
+  expect(parsePreset(raw("hook", "h1", "ads"), "dtc", NOW)).toBeNull();
   expect(PRESET_TYPES.dtc).not.toContain("avatar");
-  expect(readPreset(JSON.stringify({ type: "avatar", id: "a1" }), "ads")).toEqual({ type: "avatar", id: "a1" });
-  expect(readPreset(JSON.stringify({ type: "avatar", id: "a1" }), "dtc")).toBeNull();
-  expect(readPreset("not json", "ads")).toBeNull();
-  expect(readPreset(null, "dtc")).toBeNull();
-  expect(adsFromPreset({ type: "product", id: "p1" })).toEqual({ ...INITIAL_ADS, productId: "p1" });
+  expect(parsePreset(raw("avatar", "a1", "ads"), "ads", NOW)).toMatchObject({ type: "avatar", id: "a1" });
+  expect(parsePreset(raw("avatar", "a1", "dtc"), "dtc", NOW)).toBeNull();
+  expect(parsePreset("not json", "ads", NOW)).toBeNull();
+  expect(parsePreset(null, "dtc", NOW)).toBeNull();
+  expect(adsFromPreset(pick("product", "p1", "ads"))).toEqual({ ...INITIAL_ADS, productId: "p1" });
   expect(adsFromPreset(null)).toBe(INITIAL_ADS);
   /* Products, brand kits and styles ride only on the DTC engine, so a pick of one switches to it. */
-  expect(imageAdsFromPreset({ type: "product", id: "p1" })).toEqual({ ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL, productIds: ["p1"] });
-  expect(imageAdsFromPreset({ type: "brand_kit", id: "bk1" })).toMatchObject({ engine: DTC_ADS_MODEL, brandKitId: "bk1" });
-  expect(imageAdsFromPreset({ type: "image_style", id: "st1" })).toMatchObject({ engine: DTC_ADS_MODEL, styleId: "st1" });
+  expect(imageAdsFromPreset(pick("product", "p1", "dtc"))).toEqual({ ...INITIAL_IMAGE_ADS, engine: DTC_ADS_MODEL, productIds: ["p1"] });
+  expect(imageAdsFromPreset(pick("brand_kit", "bk1", "dtc"))).toMatchObject({ engine: DTC_ADS_MODEL, brandKitId: "bk1" });
+  expect(imageAdsFromPreset(pick("image_style", "st1", "dtc"))).toMatchObject({ engine: DTC_ADS_MODEL, styleId: "st1" });
   expect(imageAdsFromPreset(null)).toBe(INITIAL_IMAGE_ADS);
 });
 
@@ -86,7 +90,10 @@ test("a Business job is remembered per project and composer, and a status read s
   expect(settledState(job("uncertain")).phase).toBe("running");
   expect(settledState(job("completed")).phase).toBe("done");
   expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("not billed") });
-  expect(QUOTE_RETRY_MS).toBeGreaterThanOrEqual(10_000);
+  /* A failed quote is asked again on its own only when the failure passes by itself, spaced out and a few times (the route allows six a minute); a refusal of the input waits for Try again. */
+  expect(autoRetryMs({ status: 503 }, 1)).toBeGreaterThanOrEqual(5_000);
+  expect(autoRetryMs({ status: 503 }, AUTO_RETRIES + 1)).toBeNull();
+  expect(autoRetryMs({ status: 400, code: "parameter_invalid" }, 1)).toBeNull();
   /* A price read while a remembered job was being resumed never replaces it (its polling would stop). */
   const running = settledState(job("accepted"));
   expect(quoteLands(running, { phase: "quoted", job: job("quoted") })).toBe(running);
@@ -135,6 +142,9 @@ test("a resumed Business job lands only on the composer still waiting for it, an
   expect(submitRefused(429)).toBe(true);
   expect(submitRefused(503)).toBe(false);
   expect(submitRefused(Number.NaN)).toBe(false);
+  /* Another request did send it: read, not dropped. */
+  expect(submitRefused(409, "already_submitted")).toBe(false);
+  expect(submitRefused(409, "approval_changed")).toBe(true);
 });
 
 /* Viral › History lists what ran and keeps polling what the account still holds. */

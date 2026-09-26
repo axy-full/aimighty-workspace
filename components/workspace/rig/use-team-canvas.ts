@@ -4,6 +4,8 @@ import type { Json, LiveMap, Room } from "@liveblocks/client";
 import { draftBody, draftRequest } from "@/lib/workbench/draft-request";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
 import { diffForTeam, joinTeamCanvas, orderedIds, withTeamCanvas, type TeamPatch } from "@/lib/workbench/team-canvas-model";
+import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
+import { useWorkspace } from "@/lib/workspace/state";
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
@@ -41,18 +43,6 @@ const RETRY_MS = 5000;
 /** Browsers cap the bodies of keepalive requests in flight at 64 KB. */
 const KEEPALIVE_MAX = 60_000;
 const plain = <T,>(value: T): Json => JSON.parse(JSON.stringify(value)) as Json;
-
-/** Several edits between saves travel as one patch: the last write of each node wins. */
-function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
-  if (!a) return b;
-  const nodes = new Map(a.upsertNodes.map((n) => [n.id, n]));
-  const removed = new Set(a.removeNodes);
-  for (const n of b.upsertNodes) { nodes.set(n.id, n); removed.delete(n.id); }
-  for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); }
-  const assets = new Map(a.upsertAssets.map((x) => [x.id, x]));
-  for (const x of b.upsertAssets) assets.set(x.id, x);
-  return { upsertNodes: [...nodes.values()], removeNodes: [...removed], upsertAssets: [...assets.values()], order: b.order ?? a.order, at: b.at };
-}
 
 /** The canvas with this window's not-yet-sent edits laid over it. */
 function overlay(canvas: Canvas, patch: TeamPatch | null): Canvas {
@@ -93,8 +83,10 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const [joinedState, setJoinedState] = useState<{ pid: string; mode: "saved" | "live"; peers: Peer[] } | null>(null);
   const mode: TeamCanvasApi["mode"] = productionId && joinedState?.pid === productionId ? joinedState.mode : "off";
   const peers = useMemo(() => (productionId && joinedState?.pid === productionId ? joinedState.peers : []), [productionId, joinedState]);
+  const { toast } = useWorkspace();
   const retry = useRef<() => void>(() => {});
-  const pending = useRef<TeamPatch | null>(null);
+  /* Each waiting edit keeps the production it was made in: it is sent there and nowhere else. */
+  const [outbox] = useState(() => new TeamOutbox());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joined = useRef<string | null>(null);
   const room = useRef<LiveRoom | null>(null);
@@ -104,35 +96,46 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
   const send = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-    const patch = pending.current, pid = joined.current;
-    if (!patch || !pid) return;
-    pending.current = null;
-    try {
-      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order });
-      /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
-         (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
-      const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
-      await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
-    } catch {
-      /* Keep it and try again; a later edit rides along. */
-      pending.current = mergePatches(patch, pending.current ?? { ...patch, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null });
-      timer.current = setTimeout(() => retry.current(), RETRY_MS);
-    }
-  }, [scope]);
+    const batch = outbox.take();
+    if (!batch.length) return;
+    let again = false;
+    await Promise.all(batch.map(async ([pid, patch]) => {
+      try {
+        const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order });
+        /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
+           (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
+        const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
+        await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
+      } catch (error) {
+        if (sendFailure(error) === "refused") {
+          /* It would be refused again, and riding along it would sink every later edit: dropped.
+             The draft holds it only until the production next opens, when the team canvas wins
+             for every node it knows (joinTeamCanvas). A 401 is dropped too: draftRequest carries
+             no status to tell it apart, and its message says to save the work before signing in. */
+          toast(`Your last Rig edit did not reach the team, and the team's version replaces it when this production next opens. ${error instanceof Error ? error.message : ""}`.trim());
+          return;
+        }
+        /* Keep it for its own production and try again, less anything a later send carried; a later edit rides along. */
+        outbox.keep(pid, patch);
+        again = true;
+      }
+    }));
+    if (again && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
+  }, [scope, outbox, toast]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
 
   /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
   useEffect(() => {
-    const onHide = () => { if (pending.current) void send(); };
+    const onHide = () => { if (outbox.size) void send(); };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
-  }, [send]);
+  }, [send, outbox]);
 
-  const queue = useCallback((patch: TeamPatch) => {
-    pending.current = mergePatches(pending.current, patch);
+  const queue = useCallback((pid: string, patch: TeamPatch) => {
+    outbox.add(pid, patch);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void send(), SAVE_MS);
-  }, [send]);
+  }, [send, outbox]);
 
   /* Open the production's canvas, fold it in, then join its live room if there is one. */
   useEffect(() => {
@@ -157,7 +160,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       const outgoing = mine && joinedCanvas.patch ? mergePatches(mine, joinedCanvas.patch) : mine ?? joinedCanvas.patch;
       joined.current = productionId;
       fold((p) => joinTeamCanvas(p, canvas, Date.now()).project);
-      if (outgoing) queue(outgoing);
+      if (outgoing) queue(productionId, outgoing);
       setJoinedState({ pid: productionId, mode: "saved", peers: [] });
       if (!saved.room) return;
 
@@ -247,7 +250,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       return;
     }
     writeLive.current?.(patch);
-    queue(patch);
+    queue(pid, patch);
   }, [queue]);
 
   const presence = useCallback((patch: Partial<Presence>) => { room.current?.updatePresence(patch); }, []);

@@ -141,6 +141,8 @@ export type ComposerHost = {
   /** One line about a project the composer had to create. */
   projectNotice: string | null;
   generate: () => void;
+  /** Read the engine list again after a failed read (Gen's model sheet › Try again). */
+  retryEngines: () => void;
   scope: string;
 };
 
@@ -169,6 +171,7 @@ export function useComposer(options: {
     (type) => (type ? { ...INITIAL_COMPOSER, type } : INITIAL_COMPOSER),
   );
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
+  const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
   const [capability, setCapability] = useState<ConnectedCapability | null>(null);
   const [catalogue, setCatalogue] = useState<{ rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
@@ -196,7 +199,8 @@ export function useComposer(options: {
         setEngines({ rows: [], loading: false, error: neutralCopy(error instanceof Error ? error.message : "The available models could not be read.", "The available models could not be read.") });
       });
     return () => controller.abort();
-  }, [open, scope]);
+  }, [open, scope, enginesRead]);
+  const retryEngines = useCallback(() => { setEngines({ rows: [], error: null, loading: true }); setEnginesRead((n) => n + 1); }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -297,6 +301,10 @@ export function useComposer(options: {
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
   const connectedKey = connectedInput ? JSON.stringify(connectedInput) : "";
+  /* A connected quote is a call to the account. One is asked per project and exact body and held
+     until it expires, so coming back to the same body (the model sheet's catalogue switched away
+     and back) shows the figure already given instead of asking again. Generate re-quotes anyway. */
+  const heldQuotes = useRef(new Map<string, { credits: number; expiresAt: number }>());
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
@@ -306,12 +314,16 @@ export function useComposer(options: {
       const ask = async (): Promise<ComposerQuote> => {
         if (state.billing === "connected") {
           if (!connectedInput || !target) throw new Error("Open or create a project before pricing this generation.");
+          const heldKey = `${target.id}\n${connectedKey}`;
+          const held = heldQuotes.current.get(heldKey);
+          if (held && held.expiresAt > Date.now()) return { key: quoteKey, credits: held.credits, state: "ready", reason: null };
           const result = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
             method: "POST", signal: controller.signal,
             headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
             body: JSON.stringify(connectedQuoteRequest(target.id, connectedInput)),
           });
           const job = parseConnectedJob(result.job, target.id);
+          heldQuotes.current.set(heldKey, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt });
           setWalletName(job.workspaceName);
           return { key: quoteKey, credits: job.quoteCredits, state: "ready", reason: null };
         }
@@ -357,8 +369,8 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -405,6 +417,8 @@ export function useComposer(options: {
             body: JSON.stringify(connectedQuoteRequest(project.id, input, { composer: "gen" })),
           });
           const job = parseConnectedJob(quoted.job, project.id);
+          /* The figure this click was given is the one held for this body from now on. */
+          heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt });
           if (shown === null || job.quoteCredits !== shown) {
             setQuote({ key: now.quoteKey, credits: job.quoteCredits, state: "ready", reason: null });
             dispatch({ type: "notice", value: `The price is now ${job.quoteCredits.toLocaleString("en-US")} connected cr. Press Generate again to approve it.` });
@@ -587,7 +601,7 @@ export function useComposer(options: {
     buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, capability, project: target, projectNotice, generate, scope,
+    audio, capability, project: target, projectNotice, generate, retryEngines, scope,
   };
 }
 

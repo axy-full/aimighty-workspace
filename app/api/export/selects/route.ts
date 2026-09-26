@@ -75,6 +75,8 @@ export const GET = withTenant(async function GET(req: Request) {
   const stem = (production || "production").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "production";
   if (!rows.length) return NextResponse.json({ error: "Nothing is approved in this production yet." }, { status: 404 });
 
+  /* How many takes a package would hold, counted here rather than from CSV lines a prompt's line break would split. */
+  if (format === "count") return NextResponse.json({ approved: rows.length }, { headers: { "Cache-Control": "no-store" } });
   if (format === "csv") {
     return new Response(selectsCsv(rows, unit), {
       headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${stem}_selects.csv"`, "Cache-Control": "no-store" },
