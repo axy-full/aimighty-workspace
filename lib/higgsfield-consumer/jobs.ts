@@ -447,6 +447,58 @@ export async function listConsumerJobs(
   };
 }
 
+/** A run page's cursor as one opaque query value: `<createdAt>.<id>`. */
+export function formatConsumerJobCursor(cursor: ConsumerJobCursor): string {
+  return `${cursor.createdAt}.${cursor.id}`;
+}
+export function parseConsumerJobCursor(value: string): ConsumerJobCursor {
+  const match = /^(\d{1,16})\.([A-Za-z0-9-]{1,200})$/.exec(value);
+  const createdAt = match ? Number(match[1]) : NaN;
+  if (!match || !Number.isSafeInteger(createdAt)) return invalid();
+  return { createdAt, id: match[2] };
+}
+const IN_FLIGHT = "('dispatching','accepted','uncertain')";
+/**
+ * One project's runs of a workflow, newest first, paged by cursor. A quote is
+ * an estimate, not a run: it stays in the ledger and is only left out here,
+ * so estimates never push a result out of the window. The first page also
+ * carries every admitted job still awaiting reconciliation, however old, so
+ * paging can never hide a paid operation (a later page may repeat one).
+ */
+export async function listConsumerRuns(
+  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; before?: ConsumerJobCursor },
+): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {
+  scope(input);
+  const limit = input.limit ?? 25;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
+      !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
+  const before = input.before;
+  if (before) {
+    identifier(before.id);
+    if (!Number.isSafeInteger(before.createdAt) || before.createdAt < 0) invalid();
+  }
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const owned = [input.userId, input.draftId, input.workflow];
+    const page = (await tx.execute({
+      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? AND status<>'quoted'
+      ${before ? "AND (created_at < ? OR (created_at = ? AND id < ?))" : ""}
+      ORDER BY created_at DESC,id DESC LIMIT ?`,
+      args: [...owned, ...(before ? [before.createdAt, before.createdAt, before.id] : []), limit + 1],
+    })).rows;
+    const items = page.slice(0, limit).map(asJob), last = items.at(-1);
+    const nextCursor = page.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null;
+    if (before) return { items, nextCursor };
+    const pinned = (await tx.execute({
+      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? AND status IN ${IN_FLIGHT}
+      ORDER BY created_at DESC,id DESC LIMIT 50`,
+      args: owned,
+    })).rows.map(asJob);
+    const shown = new Set(items.map((job) => job.id));
+    return { items: [...items, ...pinned.filter((job) => !shown.has(job.id))], nextCursor };
+  });
+}
+
 /** A durable dispatch claim has no expiry/reclaim path: a crash may have submitted. */
 export async function claimConsumerDispatch(
   input: ConsumerJobScope,

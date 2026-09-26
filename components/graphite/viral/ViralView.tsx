@@ -2,14 +2,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
-import { uploadFilesToProject } from "@/lib/workspace/library";
+import { refreshProjectLibrary, uploadFilesToProject } from "@/lib/workspace/library";
 import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
 import { useViral, type GenjutsuJob } from "@/lib/shell/use-viral";
 import {
-  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, moveReference, viralBlock, viralMedia,
+  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, moveReference, runInFlight, runStatus, viralBlock, viralMedia,
   type ViralMedia, type ViralPage, type ViralResolution, type ViralState,
 } from "@/lib/shell/viral";
+import { ago } from "@/lib/workspace/activity";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -20,15 +21,20 @@ import { useWorkspace } from "@/lib/workspace/state";
  * video (4–30 s, index 0) and up to 30 ordered reference images, a
  * resolution, an optional prompt — and the primary carries the account's
  * live estimate; a stale or missing estimate blocks it with the reason.
- * History is this project's Genjutsu results with Recreate · Compare · Send
- * to Edit.
+ * History is this project's Genjutsu runs — never its estimates — a page at
+ * a time, each in words (Queued · Rendering · Checking · Failed · not billed
+ * · Done), with Recreate · Compare · Send to Edit (which opens the take in
+ * Takes). Runs still in flight are read until they land, even ones sent
+ * before the page opened.
  */
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 const PRESET_KEY = "particl-viral-preset";
+const when = (at: number, now: number) => { const t = ago(at, now); return t === "just now" ? t : `${t} ago`; };
+const refs = (n: number) => `${n} ${n === 1 ? "ref" : "refs"}`;
 
 export function ViralView({ scope, project, page, items }: { scope: string; project: Project | null; page: ViralPage | "history"; items: LibraryEntry[] }) {
-  const viral = useViral(project?.id ?? null, Boolean(scope));
-  if (page === "history") return <HistoryView viral={viral} items={items} />;
+  const viral = useViral(scope, project?.id ?? null);
+  if (page === "history") return <HistoryView scope={scope} project={project} viral={viral} items={items} />;
   return <Composer key={page} scope={scope} page={page} project={project} viral={viral} items={items} />;
 }
 type Viral = ReturnType<typeof useViral>;
@@ -38,10 +44,31 @@ function findMedia(items: LibraryEntry[], id: string): ViralMedia | null {
   return entry ? viralMedia(entry) : null;
 }
 
-function Composer({ scope, page, project, viral, items }: { scope: string; page: ViralPage; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
+/** A finished result opens in Takes, where a take is re-edited; the Library is re-read if it has not caught up. */
+function useSendToTakes(scope: string, project: Project | null, items: LibraryEntry[]) {
   const shell = useShell();
   const ws = useWorkspace();
+  return (job: GenjutsuJob) => {
+    const id = job.result?.original?.generationId;
+    if (!id) { ws.toast("This result's original is not available yet."); return; }
+    const take = `generation:${id}`;
+    ws.dispatch({ type: "patch", patch: { selKind: "take", selId: take } });
+    if (project && !items.some((e) => e.take.id === take)) void refreshProjectLibrary(scope, project.id);
+    shell.goSuite("studio", "takes");
+  };
+}
+
+/** A clock for "5 min ago" that ticks while the page is open. */
+function useNow(every = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), every); return () => clearInterval(t); }, [every]);
+  return now;
+}
+
+function Composer({ scope, page, project, viral, items }: { scope: string; page: ViralPage; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
+  const shell = useShell();
   const copy = VIRAL_COPY[page];
+  const sendToTakes = useSendToTakes(scope, project, items);
   const [s, set] = useState<ViralState>(() => {
     /* Recreate hands over the finished job's own inputs; they are resolved against the Library below. */
     try {
@@ -104,7 +131,6 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
     <div className="gx-gen vr gx-enter" data-testid="viral-view" data-page={page}>
       <section className="gx-gen-card" aria-label={copy.title}>
         <p className="bz-intro">{copy.intro}</p>
-        {viral.listError ? <p className="gx-gen-error" role="alert">{viral.listError}</p> : null}
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">Resolution</span>
           <div className="gx-chips" role="group" aria-label="Resolution">
@@ -148,35 +174,69 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
         {viral.run.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="viral-error">{viral.run.error}</p> : null}
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || viral.run.phase === "submitting" || viral.run.phase === "running"} aria-describedby={reason ? "vr-reason" : undefined} onClick={() => void viral.submit()} data-testid="viral-generate">{label}</button>
         {credits != null && viral.estimate?.job ? <p className="gx-gen-foot">{viral.estimate.job.workspaceName} · the account’s own estimate · saved to your takes</p> : null}
-        {viral.run.phase === "done" ? <p className="gx-gen-note" role="status" data-testid="viral-done">Rendered. It is in History, in Takes and in Library › Assets. <button type="button" className="cw-link" onClick={() => { viral.reset(); shell.goSuite("viral", "history"); }}>Open History</button></p> : null}
+        {viral.run.phase === "done" ? (
+          <div className="vr-done" role="status" data-testid="viral-done">
+            <span className="gx-gen-note">Rendered.</span>
+            <span className="vr-done-actions">
+              <button type="button" className="gx-hbtn" onClick={() => { const job = viral.run.phase === "done" ? viral.run.job : null; viral.reset(); if (job) sendToTakes(job); }} data-testid="viral-open-takes">Open in Takes</button>
+              <button type="button" className="gx-hbtn" onClick={() => { viral.reset(); shell.goSuite("viral", "history"); }}>Open History</button>
+            </span>
+          </div>
+        ) : null}
       </section>
-      <section className="gx-gen-results" aria-label="Recent">
-        <div className="gx-gen-results-head"><span className="gx-panel-title">Recent</span><button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "history")}>Open History</button></div>
-        {viral.jobs.filter((j) => j.input.variant === (page === "motion" ? "motion-transfer" : "object-swap")).slice(0, 4).map((job) => <JobRow key={job.id} job={job} />)}
-        {!viral.jobs.length ? <p className="cw-dim">Nothing run in this project yet.</p> : null}
-        {ws.state.projectId ? null : <p className="cw-dim">Open a project to see its results.</p>}
-      </section>
+      <Recent page={page} project={project} viral={viral} />
     </div>
   );
 }
 
-function JobRow({ job }: { job: GenjutsuJob }) {
+/** The last four runs of this page's variant, each in words, beside the composer. */
+function Recent({ page, project, viral }: { page: ViralPage; project: Project | null; viral: Viral }) {
+  const shell = useShell();
+  const now = useNow();
+  const mine = viral.jobs.filter((j) => j.input.variant === VIRAL_PAGES[page]);
+  const { status } = viral.list;
   return (
-    <div className="vr-job" data-status={job.status}>
-      <span className="cw-dot cw-dot--sm" style={{ background: job.status === "completed" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#0A84FF" }} aria-hidden="true" />
-      <span className="vr-job-name">{job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"} · {job.input.resolution}</span>
-      <span className="cw-dim">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? "Failed · not billed" : job.status}</span>
+    <section className="gx-gen-results" aria-label="Recent" data-testid="viral-recent" aria-busy={status === "loading"}>
+      <div className="gx-gen-results-head"><span className="gx-panel-title">Recent</span><button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "history")}>Open History</button></div>
+      {!project ? <p className="cw-dim">Open a project to see its runs.</p>
+        : status === "loading" ? <><span className="vr-job vr-skel" aria-hidden="true" /><span className="vr-job vr-skel" aria-hidden="true" /></>
+        : status === "error" ? <ListError viral={viral} />
+        : mine.length ? mine.slice(0, 4).map((job) => <RunRow key={job.id} job={job} now={now} />)
+        : <p className="cw-dim" data-testid="viral-recent-empty">No {VIRAL_COPY[page].title} runs yet.</p>}
+      {status === "ready" && viral.listError ? <ListError viral={viral} /> : null}
+    </section>
+  );
+}
+
+function ListError({ viral }: { viral: Viral }) {
+  return (
+    <div className="vr-list-error" role="alert" data-testid="viral-list-error">
+      <span className="gx-gen-error">{viral.listError ?? "The connected account could not be read."}</span>
+      <button type="button" className="gx-hbtn" onClick={() => void viral.refresh()}>Try again</button>
+    </div>
+  );
+}
+
+function RunRow({ job, now }: { job: GenjutsuJob; now: number }) {
+  const status = runStatus(job.status);
+  return (
+    <div className="vr-job" data-status={job.status} data-testid="viral-run">
+      <span className="vr-dot" data-tone={status.tone} aria-hidden="true" />
+      {/* Recent is one variant's list, so a row names what differs: resolution and references. */}
+      <span className="vr-job-name" title={job.input.prompt || VARIANT_NAME[job.input.variant]}>{job.input.resolution} · {refs(job.input.references.length)}</span>
+      <span className="vr-status" data-tone={status.tone} data-testid="viral-run-status">{status.label}</span>
+      <span className="cw-dim vr-job-meta">{job.status === "failed" ? when(job.createdAt, now) : `${cr(job.quoteCredits)} · ${when(job.createdAt, now)}`}</span>
     </div>
   );
 }
 
 /* ── History ─────────────────────────────────────────────────────────── */
-function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) {
+function HistoryView({ scope, project, viral, items }: { scope: string; project: Project | null; viral: Viral; items: LibraryEntry[] }) {
   const shell = useShell();
   const ws = useWorkspace();
+  const now = useNow();
+  const sendToTakes = useSendToTakes(scope, project, items);
   const [compare, setCompare] = useState<GenjutsuJob | null>(null);
-  const finished = viral.jobs.filter((j) => j.status === "completed");
-  const others = viral.jobs.filter((j) => j.status !== "completed");
   const resultUrl = (job: GenjutsuJob) => (job.originalAvailable && typeof job.result?.original?.asset?.url === "string" ? job.result.original.asset.url : null);
   const sourceMedia = (job: GenjutsuJob) => { const id = job.input.source.genId ? `generation:${job.input.source.genId}` : `upload:${job.input.source.uploadId}`; return findMedia(items, id); };
   const recreate = (job: GenjutsuJob) => {
@@ -187,36 +247,72 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
     shell.goSuite("viral", job.input.variant === "motion-transfer" ? "motion" : "swap");
     ws.toast("Same inputs loaded — the account prices it again before it runs.");
   };
-  const sendToEdit = (job: GenjutsuJob) => {
-    const id = job.result?.original?.generationId;
-    if (!id) { ws.toast("This result's original is not available yet."); return; }
-    ws.dispatch({ type: "patch", patch: { selKind: "take", selId: `generation:${id}` } });
-    shell.goSuite("studio", "edit");
-  };
-  return (
-    <div className="vr-history gx-enter" data-testid="history-view">
-      {viral.listError ? <p className="gx-gen-error" role="alert">{viral.listError}</p> : null}
-      {!viral.jobs.length ? <p className="cw-empty">{viral.connection ? "No Genjutsu results in this project yet. Motion Transfer and Object Swap results land here, retained as original bytes." : "Reading the connected account…"}</p> : null}
+  const { status, nextCursor, more } = viral.list;
+  const owner = viral.connection?.owner ?? true;
+
+  let body: React.ReactNode;
+  if (!project) body = <p className="gx-empty" data-testid="history-no-project">Open or create a project to see its runs.</p>;
+  else if (status === "loading") body = (
+    <div className="gx-gen-grid" aria-hidden="true" data-testid="history-loading">
+      {[0, 1, 2, 3].map((i) => <div className="gx-asset" key={i}><div className="gx-asset-thumb vr-skel" /><span className="vr-skel vr-skel--line" /><span className="vr-skel vr-skel--line vr-skel--short" /></div>)}
+    </div>
+  );
+  else if (status === "error") body = <ListError viral={viral} />;
+  else if (!owner) body = <p className="gx-empty">Only the workspace owner runs the connected account.</p>;
+  else if (!viral.jobs.length) body = (
+    <div className="cw-empty vr-empty" data-testid="history-empty">
+      <span>No runs in this project yet.</span>
+      <span className="vr-empty-actions">
+        <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "motion")}>Motion Transfer</button>
+        <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "swap")}>Object Swap</button>
+      </span>
+    </div>
+  );
+  else body = (
+    <>
+      {viral.listError ? <ListError viral={viral} /> : null}
       <div className="gx-gen-grid">
-        {finished.map((job) => {
-          const url = resultUrl(job);
-          return (
-            <div className="gx-asset" key={job.id} data-testid="history-result">
-              <div className="gx-asset-thumb">{url ? <LazyMedia url={url} kind="video" alt="" className="gx-lazy" /> : <span className="gx-badge">RETAINED</span>}</div>
-              <span className="gx-asset-name">{job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"} · {job.input.resolution}</span>
-              <span className="gx-asset-meta">{cr(job.quoteCredits)} settled · {job.input.references.length} refs</span>
-              <div className="cw-sol-actions">
-                {HISTORY_ACTIONS.map((a) => (
-                  <button key={a} type="button" className="gx-hbtn" onClick={() => (a === "Recreate" ? recreate(job) : a === "Compare" ? setCompare(job) : sendToEdit(job))}
-                    disabled={a === "Compare" && !url} title={a === "Compare" && !url ? "The result’s original is not available yet." : undefined}>{a}</button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        {viral.jobs.map((job) => <RunCard key={job.id} job={job} now={now} url={resultUrl(job)} onRecreate={recreate} onCompare={setCompare} onSend={sendToTakes} />)}
       </div>
-      {others.length ? <div className="vr-others">{others.map((job) => <JobRow key={job.id} job={job} />)}</div> : null}
+      {nextCursor ? (
+        <div className="vr-more">
+          <button type="button" className="gx-hbtn" disabled={more === "loading"} onClick={() => void viral.loadMore()} data-testid="history-more">{more === "loading" ? "Loading…" : "Load older runs"}</button>
+          {more === "error" ? <span className="gx-gen-error" role="alert">Older runs could not be read. Try again.</span> : null}
+        </div>
+      ) : null}
+    </>
+  );
+  return (
+    <div className="vr-history gx-enter" data-testid="history-view" aria-busy={status === "loading"}>
+      {body}
       {compare ? <CompareSheet job={compare} source={sourceMedia(compare)?.url ?? null} result={resultUrl(compare)} onClose={() => setCompare(null)} /> : null}
+    </div>
+  );
+}
+
+/** One run: the result and its next steps once it lands; until then, where it stands. */
+function RunCard({ job, now, url, onRecreate, onCompare, onSend }: { job: GenjutsuJob; now: number; url: string | null; onRecreate: (job: GenjutsuJob) => void; onCompare: (job: GenjutsuJob) => void; onSend: (job: GenjutsuJob) => void }) {
+  const status = runStatus(job.status);
+  const done = job.status === "completed", flying = runInFlight(job.status);
+  const meta = [done ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? null : cr(job.quoteCredits), when(job.createdAt, now)].filter(Boolean).join(" · ");
+  return (
+    <div className="gx-asset vr-run" data-testid={done ? "history-result" : "history-run"} data-status={job.status}>
+      <div className="gx-asset-thumb">
+        {done ? (url ? <LazyMedia url={url} kind="video" alt="" className="gx-lazy" /> : <span className="gx-badge">RETAINED</span>)
+          : <span className="vr-veil" data-tone={status.tone} data-flying={flying} title={job.status === "uncertain" ? "Confirming the account has it. It is never sent twice." : undefined}><span className="vr-status" data-tone={status.tone} data-testid="history-run-status">{status.label}</span></span>}
+      </div>
+      <span className="gx-asset-name">{VARIANT_NAME[job.input.variant]} · {job.input.resolution}</span>
+      <span className="gx-asset-meta" title={`${refs(job.input.references.length)} · ${new Date(job.createdAt).toLocaleString()}`}>{meta}</span>
+      {done ? (
+        <div className="cw-sol-actions">
+          {HISTORY_ACTIONS.map((a) => (
+            <button key={a} type="button" className="gx-hbtn" onClick={() => (a === "Recreate" ? onRecreate(job) : a === "Compare" ? onCompare(job) : onSend(job))}
+              disabled={a === "Compare" && !url} title={a === "Compare" && !url ? "The result’s original is not available yet." : undefined}>{a}</button>
+          ))}
+        </div>
+      ) : job.status === "failed" ? (
+        <div className="cw-sol-actions"><button type="button" className="gx-hbtn" onClick={() => onRecreate(job)}>Recreate</button></div>
+      ) : null}
     </div>
   );
 }

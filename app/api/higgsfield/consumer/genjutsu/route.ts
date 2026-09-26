@@ -17,6 +17,7 @@ import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original"
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import {
   consumerGenjutsuJobs,
+  consumerGenjutsuRuns,
   quoteConsumerGenjutsu,
   submitConsumerGenjutsuJob,
   pollConsumerGenjutsu,
@@ -34,6 +35,10 @@ const id = z
   .min(1)
   .max(200)
   .regex(/^[A-Za-z0-9_-]+$/);
+const runCursor = z
+  .string()
+  .max(240)
+  .regex(/^\d{1,16}\.[A-Za-z0-9-]{1,200}$/);
 const quote = z
   .object({
     action: z.literal("quote"),
@@ -134,19 +139,37 @@ export const GET = withTenant(
   async (req: Request) => {
     const owner = await requireOwner();
     if (owner.response) return owner.response;
-    const draftId = new URL(req.url).searchParams.get("draftId") ?? "";
+    const query = new URL(req.url).searchParams;
+    const draftId = query.get("draftId") ?? "";
     if (!id.safeParse(draftId).success)
       return Response.json(
         { error: "Choose a valid project." },
         { status: 400, headers },
       );
+    /* `view=runs` is Viral's Recent and History: runs only (never
+       estimates), paged by the cursor the last page ended on. Without it the
+       saved jobs, quotes included, are listed as before. */
+    const view = query.get("view"), cursor = query.get("cursor");
+    if (
+      (view !== null && view !== "runs") ||
+      (cursor !== null && (view !== "runs" || !runCursor.safeParse(cursor).success))
+    )
+      return Response.json(
+        { error: "Choose a valid page of runs." },
+        { status: 400, headers },
+      );
     try {
+      const connection = await getConsumerConnection({
+        workspaceId: requireTenant().id,
+        userId: owner.user.id,
+      });
+      const runs =
+        view === "runs"
+          ? await consumerGenjutsuRuns(owner.user.id, draftId, cursor)
+          : null;
       return Response.json(
         {
-          connection: await getConsumerConnection({
-            workspaceId: requireTenant().id,
-            userId: owner.user.id,
-          }),
+          connection,
           capabilities: {
             resolutions: CONSUMER_GENJUTSU_RESOLUTIONS,
             minSeconds: 4,
@@ -156,7 +179,9 @@ export const GET = withTenant(
             presetsAvailable: false,
             importsMediaForQuote: true,
           },
-          jobs: await consumerGenjutsuJobs(owner.user.id, draftId),
+          ...(runs
+            ? { jobs: runs.jobs, nextCursor: runs.nextCursor }
+            : { jobs: await consumerGenjutsuJobs(owner.user.id, draftId) }),
         },
         { headers },
       );

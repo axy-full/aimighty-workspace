@@ -6,7 +6,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3) in the browser: the well's rule
  * (one 4–30 s video, ≥1 image), the live estimate on the button, submit at
- * that exact price, and History with Recreate · Compare · Send to Edit.
+ * that exact price, and History with Recreate · Compare · Send to Edit (to Takes).
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
@@ -121,6 +121,6 @@ test("Object Swap has its own words; History offers Recreate, Compare and Send t
   await expect(page.getByTestId("viral-generate")).toHaveText("Swap object · 22 cr");
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /History/ }).click();
   await page.getByTestId("history-result").getByRole("button", { name: "Send to Edit" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
   if (wide) await expect(page.getByTestId("inspector")).toBeVisible();
 });

@@ -95,3 +95,36 @@ export function estimateReason(estimate: { key: string; expiresAt: number; credi
 }
 
 export const HISTORY_ACTIONS = ["Recreate", "Compare", "Send to Edit"] as const;
+
+/* ── Runs ─────────────────────────────────────────────────────────────── */
+export type RunStatus = "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
+export type RunTone = "idle" | "waiting" | "active" | "failed" | "done";
+/** Every state the account reports, in the words a person reads — never the raw code. */
+export const RUN_STATUS: Record<RunStatus, { label: string; tone: RunTone }> = {
+  quoted: { label: "Estimate", tone: "idle" },
+  dispatching: { label: "Queued", tone: "waiting" },
+  accepted: { label: "Rendering", tone: "active" },
+  uncertain: { label: "Checking", tone: "waiting" },
+  failed: { label: "Failed · not billed", tone: "failed" },
+  completed: { label: "Done", tone: "done" },
+};
+export function runStatus(status: string): { label: string; tone: RunTone } {
+  return RUN_STATUS[status as RunStatus] ?? RUN_STATUS.uncertain;
+}
+/** Sent and not settled yet: read again until the account settles it; never sent twice. */
+export const runInFlight = (status: string) => status === "dispatching" || status === "accepted" || status === "uncertain";
+export const VARIANT_NAME: Record<string, string> = { "motion-transfer": "Motion Transfer", "object-swap": "Object Swap" };
+
+type Run = { id: string; status: string; createdAt: number };
+/**
+ * Fresh runs over the ones on hand: one row per job, the fresher copy wins,
+ * newest first. An estimate is never a run, so a quoted row never shows.
+ */
+export function mergeRuns<T extends Run>(fresh: T[], current: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const job of current) byId.set(job.id, job);
+  for (const job of fresh) byId.set(job.id, job);
+  return [...byId.values()]
+    .filter((job) => job.status !== "quoted")
+    .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}

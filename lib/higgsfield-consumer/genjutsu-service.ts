@@ -6,6 +6,9 @@ import {
   getConsumerJob,
   getConsumerJobByKey,
   listConsumerRecoveryJobs,
+  listConsumerRuns,
+  formatConsumerJobCursor,
+  parseConsumerJobCursor,
   readConsumerJobAfterAdmissions,
   claimConsumerDispatch,
   markConsumerAccepted,
@@ -426,4 +429,34 @@ export async function consumerGenjutsuJobs(userId: string, draftId: string) {
   return jobs.map((job) =>
     presentGenjutsu(job, availability.get(job.id)!, observedAt),
   );
+}
+/** How many runs one History page carries. */
+export const GENJUTSU_RUN_PAGE = 24;
+/**
+ * This project's Genjutsu runs, newest first, a page at a time — what Viral's
+ * Recent and History show. Estimates (status `quoted`) are left out; they
+ * stay in the ledger, and `consumerGenjutsuJobs` still lists them for the
+ * surfaces that price from saved quotes. Every job still awaiting
+ * reconciliation rides on the first page.
+ */
+export async function consumerGenjutsuRuns(
+  userId: string,
+  draftId: string,
+  cursor: string | null = null,
+) {
+  const observedAt = Date.now();
+  const { items, nextCursor } = await listConsumerRuns({
+    userId,
+    draftId,
+    workflow: "genjutsu",
+    limit: GENJUTSU_RUN_PAGE,
+    before: cursor ? parseConsumerJobCursor(cursor) : undefined,
+  });
+  const availability = await consumerOriginalAvailability(items);
+  return {
+    jobs: items.map((job) =>
+      presentGenjutsu(job, availability.get(job.id)!, observedAt),
+    ),
+    nextCursor: nextCursor ? formatConsumerJobCursor(nextCursor) : null,
+  };
 }

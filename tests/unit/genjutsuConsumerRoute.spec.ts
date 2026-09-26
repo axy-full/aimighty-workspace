@@ -59,6 +59,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/genjutsu-service": {
       consumerGenjutsuJobs: service("list", [job]),
+      consumerGenjutsuRuns: service("runs", { jobs: [{ ...job, status: "completed" }], nextCursor: `1700000000000.${key}` }),
       quoteConsumerGenjutsu: service("quote", job),
       submitConsumerGenjutsuJob: service("submit", { ...job, status: "accepted" }),
       pollConsumerGenjutsu: service("status", { job: { ...job, status: "accepted" } }),
@@ -156,7 +157,27 @@ test("strict Genjutsu schemas reject remote URLs, spoofed identities, duplicate 
   for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 150)).toBe(400);
   for (const draftId of ["", "../other", "a".repeat(201)])
     expect((await f.request("GET", undefined, { query: `?draftId=${encodeURIComponent(draftId)}` })).status).toBe(400);
+  for (const cursor of ["", "abc", "12", "12.", ".abc", "12.a b", "12.../x", "1e3.abc", "99999999999999999.abc", `12.${"a".repeat(201)}`])
+    expect((await f.request("GET", undefined, { query: `?draftId=draft-1&view=runs&cursor=${encodeURIComponent(cursor)}` })).status, cursor).toBe(400);
+  /* A cursor pages runs only, and there is one other view: none. */
+  for (const query of [`?draftId=draft-1&cursor=1700000000000.${key}`, "?draftId=draft-1&view=all", "?draftId=draft-1&view="])
+    expect((await f.request("GET", undefined, { query })).status, query).toBe(400);
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+});
+
+test("Viral's runs view lists runs only and pages by the cursor the last page ended on, for the signed-in owner only", async () => {
+  const f = await fixture();
+  const first = await f.request("GET", undefined, { query: "?draftId=draft-1&view=runs&userId=other" });
+  expect(first.status).toBe(200);
+  const page = await first.json();
+  expect(page).toMatchObject({ connection: f.connection, jobs: [{ id: key, status: "completed" }], nextCursor: `1700000000000.${key}` });
+  const cursor = page.nextCursor as string;
+  expect((await f.request("GET", undefined, { query: `?draftId=draft-1&view=runs&cursor=${encodeURIComponent(cursor)}` })).status).toBe(200);
+  expect(f.calls).toEqual([
+    { name: "runs", args: ["owner", "draft-1", null], workspace: "workspace" },
+    { name: "runs", args: ["owner", "draft-1", cursor], workspace: "workspace" },
+  ]);
+  expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }, { workspaceId: "workspace", userId: "owner" }]);
 });
 
 test("valid Genjutsu boundaries retain ordered source identities without adding provider-controlled fields", async () => {
