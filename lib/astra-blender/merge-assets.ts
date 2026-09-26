@@ -1,5 +1,6 @@
 import type { Project } from '../workbench/studio';
 import { sameDraftContent } from '../workbench/draft-request';
+import { PROJECT_LIMITS } from '../workbench/project-limits';
 
 function stable(value: unknown): string {
   return JSON.stringify(value, (_, part) => part && typeof part === 'object' && !Array.isArray(part) ? Object.fromEntries(Object.entries(part).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b))) : part);
@@ -17,6 +18,6 @@ export function mergeRegisteredAstraAssets(base: Project, current: Project, remo
     if (local.has(asset.id) && stable(local.get(asset.id)) !== stable(asset)) throw new Error('A saved output conflicts with a local asset. Your current edits have been kept.');
     local.set(asset.id, asset);
   }
-  if (local.size > 500) throw new Error('The project asset limit was reached. The render originals remain available in the library.');
+  if (local.size > PROJECT_LIMITS.assets) throw new Error('The project asset limit was reached. The render originals remain available in the library.');
   return { ...current, assets: [...local.values()], productionProjectId: remote.productionProjectId, shotMappings: remote.shotMappings };
 }

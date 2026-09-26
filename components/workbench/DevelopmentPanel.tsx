@@ -6,7 +6,8 @@ import { ArrowRight, Download, RefreshCw, Sparkles } from 'lucide-react';
 import { ModelPicker, EffortPicker, thinkingModelName, effortLabel, type ThinkingModel } from '@/components/atomik/ModelPicker';
 import type { Project } from '@/lib/workbench/studio';
 import { sourceCanonical, type DevelopmentJob, type DevelopmentKind, type DevelopmentQuote, type DevelopmentRequest, type DevelopmentState } from '@/lib/workbench/development-types';
-import { clearDevelopment, developmentInput, developmentSourceHash, readDevelopment, recordDevelopment, withDevelopmentLock, type PendingDevelopment } from '@/lib/workbench/development-client';
+import { clearDevelopment, developmentInput, developmentSourceHash, readKindDevelopment, recordDevelopment, withDevelopmentLock, type PendingDevelopment } from '@/lib/workbench/development-client';
+import { PROJECT_LIMITS } from '@/lib/workbench/project-limits';
 import { studioRequest } from './GenerationDialog';
 import styles from './development-panel.module.css';
 
@@ -14,6 +15,8 @@ type ApplyChoice = { idea: number } | { scenes: string[] };
 const endpoint = '/api/workbench/development';
 const statusLabel = { queued: 'Queued', running: 'Developing', succeeded: 'Complete', failed: 'Needs attention', uncertain: 'Unconfirmed' };
 const stageLabel = { draft: 'Drafting', critique: 'Reviewing', refine: 'Refining', complete: 'Complete' };
+/** The reasoning lines the development workflow serves (developmentModels): only those with a connected model are offered. */
+const PROVIDERS = [{ id: 'anthropic', label: 'Claude' }, { id: 'openai', label: 'GPT' }, { id: 'spacexai', label: 'Grok' }] as const;
 const kindLabel = (kind: DevelopmentKind) => kind === 'idea' ? 'Idea development' : kind === 'adfilm' ? 'Ad-film breakdown' : 'Screenplay breakdown';
 export function DevelopmentPanel({ project, kind, scope, enabled, models: connectedModels, onSave, onApply, change }: {
   project: Project; kind: DevelopmentKind; scope: string; enabled: boolean; models: ThinkingModel[];
@@ -21,7 +24,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
   /** When given, the instructions box takes pictures and text files the agent sees (owner, 25 September). */
   change?: (fn: (p: Project) => Project) => void;
 }) {
-  const [provider, setProvider] = useState('anthropic');
+  const [provider, setProvider] = useState<string>('anthropic');
   const [pickedModel, setPickedModel] = useState('');
   const [effort, setEffort] = useState('auto');
   const [instructions, setInstructions] = useState('');
@@ -40,13 +43,18 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
   const currentCanonical = useRef(canonical);
   useEffect(() => { callbacks.current = { onSave, onApply }; currentCanonical.current = canonical; }, [onSave, onApply, canonical]);
   const headers = { 'Content-Type': 'application/json', 'X-Workbench-Scope': scope };
-  const models = (state?.models ?? connectedModels).filter(model => model.id.startsWith(provider + '/'));
+  const catalogue = state?.models ?? connectedModels;
+  const connected = PROVIDERS.filter(value => catalogue.some(model => model.id.startsWith(value.id + '/')));
+  const providers = connected.length ? connected : PROVIDERS;
+  const activeProvider = providers.some(value => value.id === provider) ? provider : providers[0].id;
+  const models = catalogue.filter(model => model.id.startsWith(activeProvider + '/'));
   const model = models.find(value => value.id === pickedModel)?.id ?? [...models].sort((a, b) => ((b as ThinkingModel).released ?? 0) - ((a as ThinkingModel).released ?? 0))[0]?.id ?? '';
   const selectedModel = models.find(value => value.id === model);
   const sourceHash = identity.canonical === canonical ? identity.hash : '';
   const shownQuote = quote && quote.value.sourceHash === sourceHash && quote.input.kind === kind && quote.input.model === model && quote.input.effort === effort && quote.input.instructions === instructions && JSON.stringify(quote.input.attachmentAssetIds ?? []) === JSON.stringify(attach.ids) ? quote : null;
   const runs = state?.jobs.filter(job => job.kind === kind).map(job => resultPages[job.id] ?? job) ?? [];
-  const running = state?.jobs.some(job => job.status === 'queued' || job.status === 'running');
+  // Only this panel's own kind: another surface's agent run on the project never blocks the breakdown.
+  const running = !!state?.jobs.some(job => job.kind === kind && (job.status === 'queued' || job.status === 'running'));
   const completeSource = kind === 'idea' ? !!project.brief.trim() : !!project.script?.trim();
 
   useEffect(() => {
@@ -68,20 +76,20 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
         const epoch = requestEpoch.current;
         let record: PendingDevelopment | null = null;
         let storageFailure = '';
-        try { record = readDevelopment(window.localStorage, scope, project.id); }
+        try { record = readKindDevelopment(window.localStorage, scope, project.id, kind); }
         catch (cause) { storageFailure = cause instanceof Error ? cause.message : 'Recovery storage is unavailable. Saved runs can still be reviewed.'; }
         const query = new URLSearchParams({ projectId: project.id });
         if (record) query.set('requestId', developmentInput(record).requestId);
         const next = await studioRequest<DevelopmentState>(`${endpoint}?${query}`, { headers: requestHeaders });
         if (cancelled || epoch !== requestEpoch.current) return;
-        if (!storageFailure && readDevelopment(window.localStorage, scope, project.id)?.body !== record?.body) return;
+        if (!storageFailure && readKindDevelopment(window.localStorage, scope, project.id, kind)?.body !== record?.body) return;
         setState(next); setLoaded(!storageFailure); setPending(record);
         if (storageFailure) setError(storageFailure + ' Saved runs are shown below; new paid requests remain paused.');
         const accepted = record && next.jobs.find(job => job.requestId === developmentInput(record).requestId);
         if (record && accepted) {
           clearDevelopment(window.localStorage, record, accepted.requestId); setPending(null);
         }
-        const queued = next.jobs.find(job => job.status === 'queued');
+        const queued = next.jobs.find(job => job.kind === kind && job.status === 'queued');
         if (queued) {
           await studioRequest(endpoint, { method: 'POST', headers: { ...requestHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ resume: true, projectId: project.id, jobId: queued.id }) });
         }
@@ -92,7 +100,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
     void refresh();
     const timer = setInterval(() => void refresh(), 6000);
     return () => { cancelled = true; active.current = false; clearInterval(timer); };
-  }, [enabled, project.id, scope]);
+  }, [enabled, project.id, scope, kind]);
 
   async function review() {
     if (busy || !sourceHash || !model || !completeSource || pending || running) return;
@@ -127,7 +135,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
     setBusy(pending ? 'Recovering…' : 'Starting…'); setError('');
     try {
       await withDevelopmentLock(scope, project.id, async () => {
-        const record = pending ?? recordDevelopment(window.localStorage, scope, project.id, JSON.stringify({ ...shownQuote!.input, sourceHash: shownQuote!.value.sourceHash, maxCredits: shownQuote!.value.estimateCredits, ...(shownQuote!.value.estimateUsd == null ? {} : { maxUsd: shownQuote!.value.estimateUsd }) }));
+        const record = pending ?? recordDevelopment(window.localStorage, scope, project.id, JSON.stringify({ ...shownQuote!.input, sourceHash: shownQuote!.value.sourceHash, maxCredits: shownQuote!.value.estimateCredits, ...(shownQuote!.value.estimateUsd == null ? {} : { maxUsd: shownQuote!.value.estimateUsd }) }), kind);
         if (active.current) setPending(record);
         if (pending) {
           const next = await lookup(record), known = next.jobs.find(job => job.requestId === developmentInput(record).requestId);
@@ -191,8 +199,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
   return <section className={styles.panel} aria-label={kindLabel(kind)}>
     <div className={styles.heading}><span className={styles.icon}><Sparkles size={17}/></span><div><h3>{kind === 'idea' ? 'Develop with an agent' : 'Agentic script breakdown'}</h3><p>{kind === 'idea' ? 'Explore creative routes, challenge them, then refine the strongest direction.' : 'Read the full source, draft the breakdown, critique it, then refine beats and coverage.'}</p></div></div>
     <div className={styles.providers} role="group" aria-label={`${kindLabel(kind)} provider`}>
-      <button type="button" aria-pressed={provider === 'anthropic'} disabled={!!busy || !!pending} onClick={() => { setProvider('anthropic'); setPickedModel(''); setEffort('auto'); }}>Claude <small>Thinking models</small></button>
-      <button type="button" aria-pressed={provider === 'openai'} disabled={!!busy || !!pending} onClick={() => { setProvider('openai'); setPickedModel(''); setEffort('auto'); }}>GPT <small>Thinking models</small></button>
+      {providers.map(value => <button key={value.id} type="button" aria-pressed={activeProvider === value.id} disabled={!!busy || !!pending} onClick={() => { setProvider(value.id); setPickedModel(''); setEffort('auto'); }}>{value.label} <small>Thinking models</small></button>)}
     </div>
     <div className={styles.controls}>
       <div><label>Model</label><ModelPicker label={`${kindLabel(kind)} model`} value={model} models={models} allowAuto={false} disabled={!enabled || !models.length || !!busy || !!pending} onPick={value => { setPickedModel(value); setEffort('auto'); }} /></div>
@@ -217,7 +224,7 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
           <p>{job.result.summary}</p><p>{job.result.recommendation}</p>
           {stale && <p className={styles.notice}>The source or creative brief has changed since this run. The saved result remains available; run development again before applying it.</p>}
           {job.result.ideas.map((idea, ideaIndex) => <article key={ideaIndex} className={styles.scene}><h4>{idea.title}</h4><p>{idea.logline}</p><p>{idea.treatment}</p><h5>Visual direction</h5><p>{idea.visualDirection}</p><h5>Creative review</h5><p>{idea.critique}</p><button type="button" disabled={!!busy || stale || !sourceHash || project.developmentApplications?.includes(`${job.id}:idea:${ideaIndex}`)} onClick={() => void apply(job, { idea: ideaIndex })}>Add to creative direction <ArrowRight size={14}/></button></article>)}
-          {!!job.result.scenes.length && <><div className={styles.actions}><strong>{job.result.scenes.length} {job.result.scenes.length === 1 ? 'scene / sequence' : 'scenes / sequences'}</strong><button type="button" disabled={!!busy || stale || !sourceHash || !unapplied.length || project.nodes.length + unapplied.length > 250} onClick={() => void apply(job, { scenes: unapplied.map(scene => scene.id) })}>Add {unapplied.length} scene {unapplied.length === 1 ? 'node' : 'nodes'}</button></div>{job.result.scenes.map(scene => <details key={scene.id} className={styles.scene}><summary>{scene.heading}</summary><p>{scene.summary}</p><h5>Beats</h5><ol>{scene.beats.map((beat, i) => <li key={i}>{beat}</li>)}</ol><h5>Proposed coverage</h5><ol>{scene.shots.map((shot, i) => <li key={i}><strong>{shot.description}</strong><p>{shot.framing} · {shot.movement}</p><p>Lighting: {shot.lighting}<br/>Sound: {shot.sound}</p></li>)}</ol><p>Characters: {scene.characters.join(', ') || '—'}<br/>Props: {scene.props.join(', ') || '—'}<br/>Locations: {scene.locations.join(', ') || '—'}</p><ul>{scene.productionNotes.map((note, i) => <li key={i}>{note}</li>)}</ul><button type="button" disabled={!!busy || stale || !sourceHash || project.nodes.length >= 250 || !unapplied.some(value => value.id === scene.id)} onClick={() => void apply(job, { scenes: [scene.id] })}>Add scene to canvas <ArrowRight size={14}/></button></details>)}</>}
+          {!!job.result.scenes.length && <><div className={styles.actions}><strong>{job.result.scenes.length} {job.result.scenes.length === 1 ? 'scene / sequence' : 'scenes / sequences'}</strong><button type="button" disabled={!!busy || stale || !sourceHash || !unapplied.length || project.nodes.length + unapplied.length > PROJECT_LIMITS.nodes} onClick={() => void apply(job, { scenes: unapplied.map(scene => scene.id) })}>Add {unapplied.length} scene {unapplied.length === 1 ? 'node' : 'nodes'}</button></div>{job.result.scenes.map(scene => <details key={scene.id} className={styles.scene}><summary>{scene.heading}</summary><p>{scene.summary}</p><h5>Beats</h5><ol>{scene.beats.map((beat, i) => <li key={i}>{beat}</li>)}</ol><h5>Proposed coverage</h5><ol>{scene.shots.map((shot, i) => <li key={i}><strong>{shot.description}</strong><p>{shot.framing} · {shot.movement}</p><p>Lighting: {shot.lighting}<br/>Sound: {shot.sound}</p></li>)}</ol><p>Characters: {scene.characters.join(', ') || '—'}<br/>Props: {scene.props.join(', ') || '—'}<br/>Locations: {scene.locations.join(', ') || '—'}</p><ul>{scene.productionNotes.map((note, i) => <li key={i}>{note}</li>)}</ul><button type="button" disabled={!!busy || stale || !sourceHash || project.nodes.length >= PROJECT_LIMITS.nodes || !unapplied.some(value => value.id === scene.id)} onClick={() => void apply(job, { scenes: [scene.id] })}>Add scene to canvas <ArrowRight size={14}/></button></details>)}</>}
           {!!job.result.critique.length && <details><summary>Review notes</summary><ul>{job.result.critique.map((note, i) => <li key={i}>{note}</li>)}</ul></details>}
           {!!job.result.assumptions.length && <details><summary>Assumptions to check</summary><ul>{job.result.assumptions.map((note, i) => <li key={i}>{note}</li>)}</ul></details>}
           <button type="button" disabled={!!busy} onClick={() => void download(job)}><Download size={14}/>Download complete breakdown</button>

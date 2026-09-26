@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, FileText, AudioLines, Film, Image as ImageIcon, X } from 'lucide-react';
+import { Download, ExternalLink, FileText, AudioLines, Film, Image as ImageIcon, X } from 'lucide-react';
 import GenAssetLibrary, { type GenAssetLibraryProps } from '@/components/make/GenAssetLibrary';
 import type { LibrarySource } from '@/lib/genLibrary';
 import { ASSET_GROUPS } from '@/lib/genLibrary';
@@ -17,14 +17,12 @@ export type ProjectAssetLibraryProps = Omit<GenAssetLibraryProps,'search'|'workb
   onClose?: () => void;
   /** Existing private source files retain their authenticated workbench URLs. */
   fallbackAssets?: Asset[];
-  onUseProjectAsset?: (asset: Asset) => void;
-  onEditProjectAsset?: (asset: Asset) => void;
 };
 export default function ProjectAssetLibrary(props: ProjectAssetLibraryProps) {
   const { requestScope } = useSession();
   return <ProjectLibrary key={`${requestScope}:${props.projectId}`} {...props}/>;
 }
-function ProjectLibrary({projectId,projectName,onClose,fallbackAssets=[],onUseProjectAsset,onEditProjectAsset,...props}: ProjectAssetLibraryProps) {
+function ProjectLibrary({projectId,projectName,onClose,fallbackAssets=[],...props}: ProjectAssetLibraryProps) {
   const [search,setSearch] = useState(''), [source,setSource] = useState<LibrarySource>(props.initialSource ?? 'uploads');
   const legacy = fallbackAssets.filter(asset=>/^\/api\/workbench\/media\/[A-Za-z0-9_-]+(?:[?#]|$)/.test(asset.url)
     && (asset.generationId||asset.parentId||asset.category==='Shot'?'generations':'uploads')===source
@@ -45,8 +43,8 @@ function ProjectLibrary({projectId,projectName,onClose,fallbackAssets=[],onUsePr
             {assets.map(asset=>{const download=originalAssetDownload(asset);return <article key={asset.id} className={styles.legacyCard}>
               <div className={styles.legacyMedia}>{asset.kind==='image'?<ImageIcon size={28}/>:asset.kind==='video'?<Film size={28}/>:asset.kind==='audio'?<AudioLines size={28}/>:<FileText size={28}/>}</div>
               <strong>{asset.name}</strong><div className={styles.legacyActions}>
-                {onUseProjectAsset&&<button type="button" onClick={()=>onUseProjectAsset(asset)}>Use in project</button>}
-                {onEditProjectAsset&&<button type="button" onClick={()=>onEditProjectAsset(asset)}>Open asset</button>}
+                {/* The stored original itself, in a new tab: these earlier files are not in the Takes list. */}
+                <a href={asset.url} target="_blank" rel="noopener" aria-label={`Open ${asset.name}`}><ExternalLink size={16}/>Open</a>
                 {download&&<a href={download.url} download={download.filename} aria-label={`Download ${asset.name}`}><Download size={16}/>Original</a>}
               </div>
             </article>;})}

@@ -8,13 +8,16 @@ import { libraryInput } from "@/lib/genLibrary";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import type { Project } from "@/lib/workbench/studio";
 import {
+  AUDIO_SECONDS,
   BILLING_LABELS,
   COMPOSER_TYPES,
   TYPE_LABELS,
+  audioSeconds,
   type BillingSource,
   type ComposerType,
 } from "@/lib/workspace/composer";
 import { useComposer } from "@/lib/workspace/use-composer";
+import { useSecondsField } from "@/lib/workspace/use-seconds-field";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Button, Field, Input, Segmented, Select } from "./ui";
 
@@ -52,6 +55,8 @@ export function GenerateComposer({
   const prompt = useRef<HTMLTextAreaElement | null>(null);
   const [search, setSearch] = useState("");
   const [referenceError, setReferenceError] = useState<string | null>(null);
+  /* Held to the model's range by the reducer: the length shown is the length billed. */
+  const seconds = useSecondsField(audioSeconds(composer.model?.audioTask, composer.state.seconds), (value) => composer.dispatch({ type: "seconds", value, task: composer.model?.audioTask }));
 
   const close = () => ws.dispatch({ type: "patch", patch: { composer: false } });
 
@@ -93,7 +98,6 @@ export function GenerateComposer({
   const { state, model, offered, blocked, buttonLabel, credits, submitting } = composer;
   const audioTask = model?.audioTask;
   const wantsVoice = audioTask === "speech";
-  const wantsSeconds = audioTask === "sound" || audioTask === "music";
 
   /* The prompt takes media: pictures and videos become references (not for sound); the rest stays in the Library. */
   const attachToComposer = async (attached: Attached) => {
@@ -177,18 +181,18 @@ export function GenerateComposer({
               )}
             </Field>
 
-            {wantsSeconds ? (
+            {audioTask === "sound" || audioTask === "music" ? (
               <Field label="Seconds">
                 {(id) => (
                   <Input
                     id={id}
                     aria-label="Seconds"
                     type="number"
-                    min={audioTask === "music" ? 10 : 1}
-                    max={audioTask === "music" ? 300 : 30}
-                    value={state.seconds}
+                    min={AUDIO_SECONDS[audioTask].min}
+                    max={AUDIO_SECONDS[audioTask].max}
+                    step={1}
+                    {...seconds}
                     disabled={submitting}
-                    onChange={(event) => composer.dispatch({ type: "seconds", value: Math.max(1, Number(event.target.value) || 1) })}
                   />
                 )}
               </Field>

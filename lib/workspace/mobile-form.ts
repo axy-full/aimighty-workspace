@@ -253,3 +253,111 @@ export function withReference(creative: FormCreative, ref: FormRef): FormCreativ
 export function withoutReference(creative: FormCreative, id: string): FormCreative {
   return { ...creative, references: creative.references.filter((item) => item.id !== id) };
 }
+
+/* ── Taking the estimate on the phone ──────────────────────────────────────
+   The desktop's quote step, kept literally: POST the form's own request to the
+   endpoint's `quote` action with an idempotency key, and keep {key, input} in
+   the SAME browser record ConsumerGenjutsu keeps, so a lost answer is finished
+   with the same key (on either surface) instead of copying the originals twice.
+   A quote copies the chosen originals to the connected account and prices them;
+   it never submits a transform.
+
+   The record goes only as the desktop lets it go: once an estimate is in, or
+   when the person discards it knowing what that means. An error never clears
+   it, a refusal included: on this route several refusals come after originals
+   may already be copied ("An earlier media transfer could not be confirmed",
+   a busy original or connection), and a fresh key would copy them again. */
+
+export type QuoteAttempt = { key: string; input: ConsumerGenjutsuInput };
+
+/**
+ * What the browser's record holds: an attempt, none, one that cannot be read
+ * (never overwritten: it may name originals already copied), or "unavailable"
+ * when this browser keeps no site data, so no record can be kept at all.
+ */
+export type StoredAttempt = QuoteAttempt | null | "unreadable" | "unavailable";
+
+/** ConsumerGenjutsu's `quoteAttemptKey`, byte for byte. */
+export const formQuoteAttemptKey = (scope: string, projectId: string) =>
+  `particl-consumer-genjutsu:${encodeURIComponent(scope)}:${encodeURIComponent(projectId)}:attempts:quote`;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The stored attempt, none, or "unreadable". */
+export function readQuoteAttempt(raw: string | null): QuoteAttempt | null | "unreadable" {
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!object(value) || typeof value.key !== "string" || !UUID.test(value.key)) return "unreadable";
+    const input = consumerGenjutsuInputSchema.safeParse(value.input);
+    return input.success ? { key: value.key, input: input.data } : "unreadable";
+  } catch {
+    return "unreadable";
+  }
+}
+
+export type EstimateAction =
+  | { kind: "none" }
+  | { kind: "blocked"; reason: string }
+  /** A new estimate for this composition; its idempotency key is made when it is taken. */
+  | { kind: "take"; input: ConsumerGenjutsuInput }
+  /** An unfinished one, finished with its own key and input (or discarded). */
+  | { kind: "recover"; attempt: QuoteAttempt }
+  /** A record that cannot be read: it locks new estimates until it is discarded. */
+  | { kind: "unreadable" };
+
+/** Why no estimate can be taken while this browser keeps no site data. */
+export const ESTIMATE_NEEDS_STORAGE = "Allow this site to keep data in this browser to take an estimate, so a lost answer can be finished.";
+
+/**
+ * What the estimate control does now. An unfinished attempt is always finished
+ * (or discarded) first, with its own key and input; a new one is taken only for
+ * a composition the engine accepts, with no usable quote, nothing still being
+ * confirmed, and a browser that can keep its record.
+ */
+export function estimateAction(input: {
+  request: ConsumerGenjutsuInput | null;
+  quote: FormQuote;
+  stored: StoredAttempt;
+  jobs: readonly FormJob[];
+}): EstimateAction {
+  if (input.stored === "unreadable") return { kind: "unreadable" };
+  if (input.stored && input.stored !== "unavailable") return { kind: "recover", attempt: input.stored };
+  if (!input.request || input.quote.state === "ready") return { kind: "none" };
+  if (input.jobs.some((job) => job.status === "dispatching" || job.status === "uncertain"))
+    return { kind: "blocked", reason: "A transform is still being confirmed. Take a new estimate once it settles." };
+  if (input.stored === "unavailable") return { kind: "blocked", reason: ESTIMATE_NEEDS_STORAGE };
+  return { kind: "take", input: input.request };
+}
+
+/** The endpoint's own quote body (the route's strict `quote` schema). */
+export function formQuoteBody(projectId: string, attempt: QuoteAttempt) {
+  return { action: "quote" as const, draftId: projectId, input: attempt.input, idempotencyKey: attempt.key };
+}
+
+const ESTIMATE_LOST = "The estimate's answer did not arrive. Finish the last estimate to check it with the same request.";
+
+/**
+ * Take (or finish) one estimate. The record is written before the request and
+ * cleared only once an estimate is in; any error keeps it, so pressing again
+ * finishes the SAME request (the same idempotency key) instead of minting a
+ * new one. `post` resolves with the route's answer and rejects when none came.
+ */
+export async function takeEstimate(
+  projectId: string,
+  attempt: QuoteAttempt,
+  io: {
+    save: (value: QuoteAttempt | null) => void;
+    post: (body: ReturnType<typeof formQuoteBody>) => Promise<{ ok: boolean; error: string | null }>;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try { io.save(attempt); }
+  catch { return { ok: false, error: ESTIMATE_NEEDS_STORAGE }; }
+  let answer: { ok: boolean; error: string | null };
+  try { answer = await io.post(formQuoteBody(projectId, attempt)); }
+  catch (cause) { return { ok: false, error: cause instanceof Error && !(cause instanceof TypeError) ? cause.message : ESTIMATE_LOST }; }
+  if (!answer.ok) return { ok: false, error: answer.error ?? "The estimate could not be taken." };
+  try { io.save(null); }
+  catch { return { ok: false, error: "The estimate is in, but this browser kept its record. Finish the last estimate again before a new one." }; }
+  return { ok: true };
+}

@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { notifySoundStorage as notifyStorage, readSoundStorage as readRaw, subscribeSoundStorage as subscribeStorage, useSoundLanding, useSoundPlacementList } from "./use-sound-placements";
+import { NumberDraftInput } from "./NumberDraftInput";
 import { PromptAttach, keptNote, resolveAttached } from "@/components/PromptAttach";
 import { studioRequest, StudioRequestError } from "./GenerationDialog";
 import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
@@ -16,28 +18,22 @@ import {
   SOUND_TOOLS,
   SOUND_SECONDS,
   SOUND_CLIP_LIMIT,
-  clampSeconds,
   createSoundNode,
   dubBody,
   expectedSeconds,
   findSoundNode,
   isSoundTool,
-  parseSoundPlacements,
-  placeGeneratedClip,
   readSoundPlacements,
   replaceableClips,
   soundGenerationBody,
   soundJobLabel,
-  soundPlacementsKey,
   soundSources,
   soundTask,
   soundTool,
   timecodeOf,
   voiceChangeBody,
-  writeSoundPlacements,
   type SoundJobTask,
   type SoundLane,
-  type SoundPlacement,
 } from "@/lib/workbench/sound-generate";
 import { DEFAULT_DUBBING_MODE, DUBBING_LANGUAGES, DUBBING_MODE_OPTIONS, DUBBING_SOURCE_AUTO, dubbingLanguageLabel } from "@/lib/workbench/dubbing-options";
 import { audioClips } from "@/lib/workbench/audio";
@@ -47,50 +43,7 @@ import styles from "./SoundGenerate.module.css";
 
 type Voice = { id: string; name: string; category?: string };
 
-/* Local storage as an external store: the pending claim and the queued
-   placements are read through it, so a reload or a second tab sees the same
-   request and never spends twice. */
-const listeners = new Set<() => void>();
-const notifyStorage = () => listeners.forEach((listener) => listener());
-function subscribeStorage(listener: () => void) {
-  listeners.add(listener);
-  window.addEventListener("storage", listener);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener("storage", listener);
-  };
-}
-function readRaw(key: string | null): string {
-  if (!key) return "";
-  try {
-    return window.localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-}
 const noStore = () => "";
-
-/** The file's own length, read from its header; null when it cannot be read in time. */
-function probeSeconds(url: string, timeoutMs = 8000): Promise<number | null> {
-  return new Promise((resolve) => {
-    if (typeof document === "undefined") return resolve(null);
-    const el = document.createElement("audio");
-    let done = false;
-    const finish = (value: number | null) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      el.removeAttribute("src");
-      resolve(value);
-    };
-    const timer = setTimeout(() => finish(null), timeoutMs);
-    el.preload = "metadata";
-    el.onloadedmetadata = () =>
-      finish(Number.isFinite(el.duration) && el.duration > 0 ? el.duration : null);
-    el.onerror = () => finish(null);
-    el.src = url;
-  });
-}
 
 /** The account's voices, with a refresh — shared by Voice-over and Change voice. */
 function VoicePicker({ voices, voiceId, disabled, busy, onChange, onRefresh }: { voices: Voice[]; voiceId: string; disabled: boolean; busy: boolean; onChange: (id: string) => void; onRefresh: () => void }) {
@@ -137,7 +90,8 @@ function dubbingWord(status: string | undefined): string | null {
  * Generate sound straight onto the timeline: a voice-over, a sound effect or
  * a piece of music, quoted first, submitted through the same audio admission
  * as every other track, filed as a take of the lane's Rig node, and placed on
- * its lane at the playhead the moment its bytes exist. Two tools sit beside
+ * its lane at the playhead the moment its bytes exist (the page's
+ * useSoundPlacements does the landing, open composer or not). Two tools sit beside
  * them — Change voice (a stored track re-voiced, replacing or joining a
  * dialogue clip) and Dub (an asynchronous project that lands on the dialogue
  * lane when the vendor is done) — quoted per minute of the chosen original.
@@ -149,7 +103,6 @@ export function SoundGenerate({
   jobs,
   enabled,
   onChange,
-  onPause,
   onSave,
   onQueued,
   initialTask = "speech",
@@ -164,8 +117,8 @@ export function SoundGenerate({
   frame: number;
   jobs: MediaJob[];
   enabled: boolean;
-  onChange: (fn: (p: Project) => Project) => void;
-  onPause: () => void;
+  /** `remember: false` marks server state that must not become an undo step (Studio's change). */
+  onChange: (fn: (p: Project) => Project, remember?: boolean) => void;
   onSave: (refresh?: boolean) => Promise<boolean>;
   onQueued: () => void;
 }) {
@@ -202,10 +155,17 @@ export function SoundGenerate({
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const placementsKey = soundPlacementsKey(scope, project.id);
+  const { key: placementsKey, placements, remember } = useSoundPlacementList(scope, project.id);
+  /* A track that lands while this composer is open reports here, as it always did. */
+  const landing = useSoundLanding(placementsKey);
+  const [shownLanding, setShownLanding] = useState(landing);
+  if (landing !== shownLanding) {
+    setShownLanding(landing);
+    if (landing?.error) setError(landing.text);
+    else if (landing) setStatus(landing.text);
+  }
   const frameRef = useRef(frame);
   const projectRef = useRef(project);
-  const placing = useRef(new Set<string>());
   useLayoutEffect(() => {
     frameRef.current = frame;
     projectRef.current = project;
@@ -213,8 +173,6 @@ export function SoundGenerate({
 
   const node = findSoundNode(project, task);
   const pendingKey = node ? pendingGenerationKey(scope, project.id, node.id) : null;
-  const placementsRaw = useSyncExternalStore(subscribeStorage, () => readRaw(placementsKey), noStore);
-  const placements = useMemo(() => parseSoundPlacements(placementsRaw), [placementsRaw]);
   const pendingRaw = useSyncExternalStore(subscribeStorage, () => readRaw(pendingKey), noStore);
   const { pending, pendingProblem } = useMemo(() => {
     if (!pendingKey || !pendingRaw) return { pending: null as PendingGeneration | null, pendingProblem: "" };
@@ -364,48 +322,6 @@ export function SoundGenerate({
     };
   }, [enabled, pending, ready, body, bodyKey, scope, endpoint]);
 
-  const remember = useCallback(
-    (next: SoundPlacement[]) => {
-      writeSoundPlacements(window.localStorage, placementsKey, next);
-      notifyStorage();
-    },
-    [placementsKey],
-  );
-
-  /* When a queued generation's asset arrives, it becomes a clip at the remembered playhead. */
-  useEffect(() => {
-    if (!placements.length) return;
-    for (const placement of placements) {
-      if (placing.current.has(placement.jobId)) continue;
-      const asset = project.assets.find((a) => a.generationId === placement.jobId);
-      if (asset) {
-        placing.current.add(placement.jobId);
-        void probeSeconds(asset.url).then((measured) => {
-          try {
-            onPause();
-            const replacing = placement.replaceClipId && audioClips(projectRef.current).some((c) => c.id === placement.replaceClipId);
-            onChange((p) => placeGeneratedClip(p, placement, asset, measured ?? asset.seconds ?? placement.seconds));
-            setStatus(
-              replacing
-                ? `${placement.label} replaced its dialogue clip in place.`
-                : `${placement.label} placed on the ${placement.lane === "sfx" ? "SFX" : placement.lane} lane at ${timecodeOf(placement.startFrame, projectRef.current.fps)}.`,
-            );
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "The clip could not be placed.");
-          }
-          remember(readSoundPlacements(window.localStorage, placementsKey).filter((p) => p.jobId !== placement.jobId));
-          placing.current.delete(placement.jobId);
-        });
-        continue;
-      }
-      const job = jobs.find((j) => j.id === placement.jobId);
-      if (job && (job.status === "failed" || job.status === "cancelled")) {
-        setError(job.error || `${placement.label} did not finish. Nothing was placed.`);
-        remember(placements.filter((p) => p.jobId !== placement.jobId));
-      }
-    }
-  }, [placements, project.assets, jobs, onChange, onPause, remember, placementsKey]);
-
   async function submit() {
     if (busy || !enabled || (!pending && cost == null)) return;
     setBusy(true);
@@ -418,6 +334,7 @@ export function SoundGenerate({
     const asked = tool ? Math.max(1, Math.ceil(quote?.seconds ?? source?.seconds ?? 5)) : expectedSeconds(genTask, text, seconds[genTask]);
     const replaceId = tool?.id === "voiceChange" && replaceClipId && replaceable.some((c) => c.id === replaceClipId) ? replaceClipId : undefined;
     const placementLane: SoundLane = tool ? "dialogue" : lane;
+    const projectId = project.id;
     try {
       attempt = key ? readPendingGeneration(window.localStorage, key) : null;
       if (!attempt) {
@@ -436,6 +353,18 @@ export function SoundGenerate({
           body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.id }),
         });
         if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
+        /* The mapping is made after the save, so the draft does not hold it yet. Without it the
+           job feed (use-production-jobs) and asset recovery never see this lane's takes. It is
+           server state, not an edit (no undo step), and only for the project that asked: the
+           page may have opened another one during the awaits above. */
+        const nodeId = target.id;
+        onChange(
+          (p) =>
+            p.id !== projectId || (p.shotMappings?.[nodeId] === mapping.shotId && p.productionProjectId === mapping.productionProjectId)
+              ? p
+              : { ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...p.shotMappings, [nodeId]: mapping.shotId } },
+          false,
+        );
         key = pendingGenerationKey(scope, project.id, target.id);
         attempt = claimPendingGeneration(window.localStorage, key, {
           key: crypto.randomUUID(),
@@ -660,15 +589,14 @@ export function SoundGenerate({
         {!tool && task !== "speech" && (
           <label>
             Length · seconds
-            <input
-              type="number"
+            <NumberDraftInput
               aria-label="Length in seconds"
               min={bounds.min}
               max={bounds.max}
               step={bounds.step}
               value={seconds[genTask]}
               disabled={disabled}
-              onChange={(e) => setSeconds((s) => ({ ...s, [genTask]: clampSeconds(genTask, e.target.valueAsNumber) }))}
+              onCommit={(value) => setSeconds((s) => ({ ...s, [genTask]: value }))}
             />
           </label>
         )}
