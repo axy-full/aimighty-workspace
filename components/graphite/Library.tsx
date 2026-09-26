@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { PRODUCTION_TOOLS, focusSection } from "@/lib/shell/production-tools";
+import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
@@ -74,7 +74,7 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
         <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${items.length.toLocaleString("en-US")} ${items.length === 1 ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
-{shell.view === "gen" ? null : (
+{!libraryHasTools(shell.view, shell.suite.id, shell.page.id) ? null : (
             <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Library view">
         {(["tools", "assets"] as const).map((tab) => (
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>
@@ -95,6 +95,8 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
                   onClick={() => {
                     const section = "section" in item ? (item as { section: string }).section : null;
                     if (section) { if (overlay) shell.closePanels(); if (["prompt", "inputs", "versions"].includes(section) && shell.page.id === "rig") shell.openInspector(); focusSection(section); return; }
+                    /* A card with a tool opens that tool on the page; a plan card's action is the page's plan, in the Inspector. */
+                    if (openSpecCard(item.name)) { if (overlay) shell.closePanels(); return; }
                     dispatch({ type: "patch", patch: { selKind: "page", selId: state.page } }); shell.openInspector();
                   }}>
                   <span className="gx-tool-tag" aria-hidden="true">{tagOf(item.name)}</span>

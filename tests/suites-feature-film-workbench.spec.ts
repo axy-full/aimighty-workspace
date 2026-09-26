@@ -19,7 +19,7 @@ async function seed(page: Page, rig: boolean) {
   const first = await page.request.put("/api/workbench/projects", { headers, data: { project: { ...project, assets: [], nodes: [], shots: [], production: undefined }, revision: 0 } });
   expect(first.ok(), await first.text()).toBe(true);
   const production = String((await first.json()).productionProjectId);
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0].db_url);
   platform.close();
   const tenant = createClient({ url: tenantUrl });

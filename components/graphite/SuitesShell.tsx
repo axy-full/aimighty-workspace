@@ -16,6 +16,7 @@ import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand
 import { AtomikPanel } from "@/components/workspace/AtomikPanel";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
 import { BusinessView } from "./business/BusinessView";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
@@ -163,10 +164,11 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         else if (shell.palette) shell.setPalette(false);
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (state.composer) dispatch({ type: "patch", patch: { composer: false } });
+        else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (shell.libOpen || shell.inspOpen) shell.closePanels();
         return;
       }
-      if (shell.palette || state.composer || inField(event.target)) return;
+      if (shell.palette || state.composer || state.agentOpen || inField(event.target)) return;
       const cmd = shortcutCommand(event);
       if (!cmd) return;
       const target = selection();
@@ -322,6 +324,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
           <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
         </div>
+        {/* The page's Atomik plan: "Run stage" and the Inspector's Approve open it; its gate approves. */}
+        <AtomikSheet />
         <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (
           <div className="gx-veil" onClick={() => setMoving(null)} data-testid="move-veil">

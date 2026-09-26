@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MODELS, displayModelName } from "@/lib/models";
-import { sendGenPreset } from "@/lib/shell/gen-preset-inbox";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { paletteIndex, searchPalette, type PaletteRun } from "@/lib/shell/palette";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";

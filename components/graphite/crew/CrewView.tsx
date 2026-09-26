@@ -6,6 +6,7 @@ import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS
 import { useCrew, type CrewRoom, type RoomMessage } from "@/lib/crew/use-crew";
 import { CREW_PAGES } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uploadToProject } from "@/lib/workspace/library";
@@ -72,10 +73,9 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
     if (to === "brief") { ws.toast("Added to the Brief."); shell.goSuite("studio", "brief"); }
     else if (to === "boards") { ws.toast("A draft frame is on Boards."); shell.goSuite("studio", "boards"); }
     else {
-      try { sessionStorage.setItem("particl-gen-preset", routed.prompt ?? ""); } catch { /* the clipboard still carries it */ }
-      let copied = false;
-      try { await navigator.clipboard.writeText(routed.prompt ?? ""); copied = true; } catch { /* no clipboard permission */ }
-      ws.toast(copied ? "Solution copied — paste it as the prompt in Gen." : "Opened Gen.");
+      /* The solution becomes Gen's prompt, whether Gen is open yet or not. */
+      sendGenPreset({ prompt: routed.prompt ?? "" });
+      ws.toast("The solution is the prompt in Gen.");
       shell.goGen();
     }
   };

@@ -21,7 +21,7 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}`, "Content-Type": "application/json" };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Dashboard test", "admin", "test", Date.now()] }); }
   finally { platform.close(); }
   const project = newProject(`Dashboard ${randomUUID().slice(0, 6)}`);

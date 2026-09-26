@@ -414,13 +414,18 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
     });
   }
 }
-export async function consumerGenjutsuJobs(userId: string, draftId: string) {
+export async function consumerGenjutsuJobs(
+  userId: string,
+  draftId: string,
+  options: { submittedOnly?: boolean } = {},
+) {
   const observedAt = Date.now();
   const jobs = await listConsumerRecoveryJobs({
     userId,
     draftId,
     workflow: "genjutsu",
     limit: 25,
+    ...(options.submittedOnly ? { submittedOnly: true } : {}),
   });
   const availability = await consumerOriginalAvailability(jobs);
   return jobs.map((job) =>
