@@ -86,20 +86,40 @@ test("the server canvas: only a production of this workspace, patches merged per
   expect(store.teamPatchSchema.safeParse({ productionId: "../prod", upsertNodes: [], removeNodes: [], upsertAssets: [], order: null }).success).toBe(false);
 });
 
-test("an asset no node uses any more leaves the canvas; a node taken off keeps its own so it comes back whole", () => {
+test("an asset no node uses any more is retired, not erased; a node taken off keeps its own so it comes back whole", () => {
   let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [node("a", { assetId: "p1" }), node("b", { assetId: "p2" })], removeNodes: [], upsertAssets: [asset("p1"), asset("p2"), asset("take", { nodeId: "a" })], order: ["a", "b"], at: 10 });
   expect(Object.keys(canvas.assets).sort()).toEqual(["p1", "p2", "take"]);
   // "a" now shows another picture: the one it left is no longer shared.
   canvas = applyTeamPatch(canvas, { upsertNodes: [node("a", { assetId: "p3" })], removeNodes: [], upsertAssets: [asset("p3")], order: null, at: 20 });
   expect(Object.keys(canvas.assets).sort()).toEqual(["p2", "p3", "take"]);
-  expect(canvas.stamps["a:p1"]).toBeUndefined();
+  expect(Object.keys(canvas.retired)).toEqual(["p1"]);
+  expect(canvas.stamps["a:p1"]).toBe(10);
   // "b" is taken off: kept whole with its picture, but no draft is handed that picture while it is off.
   canvas = applyTeamPatch(canvas, { upsertNodes: [], removeNodes: ["b"], upsertAssets: [], order: null, at: 30 });
   expect(Object.keys(canvas.assets).sort()).toEqual(["p2", "p3", "take"]);
   expect(liveCanvasAssets(canvas).map((a) => a.id).sort()).toEqual(["p3", "take"]);
-  // An asset sent with no node that uses it is not kept.
+  // An asset sent with no node that uses it is not shared, only kept.
   canvas = applyTeamPatch(canvas, { upsertNodes: [], removeNodes: [], upsertAssets: [asset("stray")], order: null, at: 40 });
   expect(canvas.assets.stray).toBeUndefined();
+  expect(canvas.retired.stray).toEqual(asset("stray"));
+});
+
+test("a teammate's stale edit that points a node back at a retired asset brings the asset back", () => {
+  let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [node("x", { assetId: "a1" })], removeNodes: [], upsertAssets: [asset("a1")], order: ["x"], at: 10 });
+  // B moves x to another picture: a1 is retired.
+  canvas = applyTeamPatch(canvas, { upsertNodes: [node("x", { assetId: "a2" })], removeNodes: [], upsertAssets: [asset("a2")], order: null, at: 20 });
+  expect(canvas.assets.a1).toBeUndefined();
+  // A, still showing x on a1, edits its prompt; a1 is not resent, since A's view already had it.
+  const stale = project([node("x", { assetId: "a1" })], [asset("a1")]);
+  const patch = diffForTeam(stale, { ...stale, nodes: [node("x", { assetId: "a1", text: "Push in." })] }, 30)!;
+  expect(patch.upsertAssets).toEqual([]);
+  canvas = applyTeamPatch(canvas, patch);
+  expect(canvas.nodes.x.assetId).toBe("a1");
+  expect(canvas.assets.a1).toEqual(asset("a1"));
+  expect(Object.keys(canvas.retired)).toEqual(["a2"]);
+  // A teammate who joins now gets the picture the node shows.
+  const joined = withTeamCanvas(project([], []), canvas);
+  expect(joined.assets.map((a) => a.id)).toEqual(["a1"]);
 });
 
 test("folding the canvas in never puts back an asset the draft removed and no live node uses", () => {
@@ -125,6 +145,12 @@ test("media on a live canvas node cannot be deleted from the Library; once off t
     await store.patchTeamCanvas("prod-1", { upsertNodes: [node("a", { assetId: "take-1" })], removeNodes: [], upsertAssets: [take], order: ["a"] }, "ana");
     expect(await workbenchTransaction((tx) => mediaBindingProblem(tx, "generation", "gen-take"))).toMatch(/shared Rig canvas/);
     await store.patchTeamCanvas("prod-1", { upsertNodes: [node("a")], removeNodes: [], upsertAssets: [], order: null }, "ana");
+    expect((await store.readTeamCanvas("prod-1"))!.canvas.retired["take-1"]).toEqual(take);
     expect(await workbenchTransaction((tx) => mediaBindingProblem(tx, "generation", "gen-take"))).toBeNull();
+    /* Only a canvas that names the media is read: a damaged one blocks only the media it mentions. */
+    await db().execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES('prod-2','Other',0)", args: [] });
+    await db().execute({ sql: "INSERT INTO workbench_team_canvas(production_id,body,revision,updated_at) VALUES('prod-2','{\"nodes\":{\"b\":{\"assetId\":\"/api/media/gen-other\"',1,0)", args: [] });
+    expect(await workbenchTransaction((tx) => mediaBindingProblem(tx, "generation", "gen-take"))).toBeNull();
+    expect(await workbenchTransaction((tx) => mediaBindingProblem(tx, "generation", "gen-other"))).toMatch(/could not be checked/);
   });
 });

@@ -121,9 +121,10 @@ export async function mediaBindingProblem(
     )
       return "This media is used by a project draft, retained edit version or published shared context. Remove draft references first; retained source media must be kept.";
   }
-  /* A production's shared Rig canvas folds its nodes' media into every teammate's draft. */
+  /* A production's shared Rig canvas folds its nodes' media into every teammate's draft.
+     Only a canvas that names the id at all is read (a reference is the id's own text, in a URL or an id field). */
   if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workbench_team_canvas'")).rows.length) {
-    for (const row of (await tx.execute("SELECT body FROM workbench_team_canvas")).rows) {
+    for (const row of (await tx.execute({ sql: "SELECT body FROM workbench_team_canvas WHERE instr(body, ?) > 0", args: [id] })).rows) {
       let refs: ReturnType<typeof referencedMedia>;
       try { const canvas = parseTeamCanvas(JSON.parse(String(row.body))); refs = referencedMedia({ nodes: canvas.nodes, assets: liveCanvasAssets(canvas) }); }
       catch { return "A shared Rig canvas could not be checked. Keep this media until the canvas is repaired."; }

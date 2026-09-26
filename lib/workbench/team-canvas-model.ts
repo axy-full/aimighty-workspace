@@ -18,6 +18,8 @@ export type TeamCanvas = {
   order: string[];
   /** Nodes taken off the canvas, kept whole: nothing a team makes is erased. */
   removed: Record<string, CanvasNode>;
+  /** Assets no node uses any more, kept whole: off every draft, back when a node points at one again. */
+  retired: Record<string, Asset>;
   /** When each node or asset was last written (ms), for last-write-wins. */
   stamps: Record<string, number>;
 };
@@ -30,7 +32,7 @@ export type TeamPatch = {
   at: number;
 };
 
-export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, stamps: {} });
+export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, retired: {}, stamps: {} });
 
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -66,7 +68,7 @@ export function diffForTeam(before: Project, after: Project, at: number): TeamPa
 
 /** Fold a patch in. A write older than what the canvas already holds for that item is ignored. */
 export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas {
-  const out: TeamCanvas = { nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, stamps: { ...canvas.stamps } };
+  const out: TeamCanvas = { nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, retired: { ...canvas.retired }, stamps: { ...canvas.stamps } };
   const newer = (key: string) => (out.stamps[key] ?? 0) <= patch.at;
   for (const node of patch.upsertNodes) {
     const key = `n:${node.id}`;
@@ -87,6 +89,7 @@ export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas
     const key = `a:${asset.id}`;
     if (!newer(key)) continue;
     out.assets[asset.id] = asset;
+    delete out.retired[asset.id];
     out.stamps[key] = patch.at;
   }
   if (patch.order && newer("order")) {
@@ -94,14 +97,12 @@ export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas
     out.stamps.order = patch.at;
   }
   out.order = orderedIds(out);
-  /* Only what a node points at stays shared (a node taken off keeps its own, so it can come back whole):
-     an asset no node uses any more would otherwise be folded into every draft forever. */
-  const kept = referencedAssetIds([...Object.values(out.nodes), ...Object.values(out.removed)], Object.values(out.assets));
-  for (const id of Object.keys(out.assets)) {
-    if (kept.has(id)) continue;
-    delete out.assets[id];
-    delete out.stamps[`a:${id}`];
-  }
+  /* Only what a node points at stays shared (a node taken off keeps its own, so it can come back whole).
+     An asset no node uses any more is retired, not erased: it would otherwise be folded into every draft
+     forever, and a teammate's stale edit that points a node back at it brings it back. */
+  const used = referencedAssetIds([...Object.values(out.nodes), ...Object.values(out.removed)], [...Object.values(out.assets), ...Object.values(out.retired)]);
+  for (const [id, asset] of Object.entries(out.retired)) if (used.has(id)) { out.assets[id] = asset; delete out.retired[id]; }
+  for (const [id, asset] of Object.entries(out.assets)) if (!used.has(id)) { out.retired[id] = asset; delete out.assets[id]; }
   return out;
 }
 
@@ -147,6 +148,7 @@ export function parseTeamCanvas(value: unknown): TeamCanvas {
     assets: record<Asset>(v.assets),
     order: Array.isArray(v.order) ? v.order.filter((id): id is string => typeof id === "string") : [],
     removed: record<CanvasNode>(v.removed),
+    retired: record<Asset>(v.retired),
     stamps: record<number>(v.stamps),
   };
 }
