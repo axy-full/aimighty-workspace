@@ -30,7 +30,7 @@ import {
   KIND_TAG, KIND_WORD, ADDABLE_KINDS, NODE_W, TAKES_DOT_LEFT, isGen, isRunnable,
   outputDotTop, outputPoint, portPoint, wirePath, wireMid, endpoints, newNode, nid,
 } from "@/components/rig/nodes";
-import { createBoardSaver, type BoardSaver, type SaveState } from "@/lib/boardSaver";
+import { createBoardSaver, reapplyAdditions, type BoardSaver, type Graph, type SaveState } from "@/lib/boardSaver";
 import { boardUrlFor } from "@/lib/rigCanvasUrl";
 
 /**
@@ -144,6 +144,9 @@ function Canvas() {
      keeps the graph until the server has it and sends the revision it was edited from (lib/boardSaver.ts). */
   const [saveState, setSaveState] = useState<SaveState>({ kind: "saved" });
   const saver = useRef<{ id: string; saver: BoardSaver } | null>(null);
+  /* The graph the server holds at `updatedAt` — as loaded, or as reloaded after a conflict. */
+  const baseGraph = useRef<{ id: string; graph: Graph } | null>(null);
+  useEffect(() => { if (loaded && baseGraph.current?.id !== loaded.board.id) baseGraph.current = { id: loaded.board.id, graph: { nodes: loaded.board.nodes, wires: loaded.board.wires } }; }, [loaded]);
   const commit = useCallback((next: Board) => {
     setBoard(next);
     latest.current = next;
@@ -154,6 +157,7 @@ function Canvas() {
           id: next.id,
           saver: createBoardSaver({
             baseUpdatedAt: next.updatedAt,
+            baseGraph: baseGraph.current?.id === next.id ? baseGraph.current.graph : undefined,
             onState: setSaveState,
             put: (body) => fetch(`/api/rig/boards/${encodeURIComponent(next.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body }),
           }),
@@ -162,6 +166,31 @@ function Canvas() {
       saver.current.saver.save({ nodes: next.nodes, wires: next.wires });
     }, 400);
   }, []);
+  /* A teammate saved first: take the board as it stands, and put back the nodes
+     this person added since (lib/boardSaver.ts › reapplyAdditions). Their moves
+     and edits of existing nodes are not merged, and the banner said so. */
+  const reloadAfterConflict = useCallback(async () => {
+    const b = latest.current;
+    if (!b) { window.location.reload(); return; }
+    const res = await fetch(`/api/rig/boards/${encodeURIComponent(b.id)}`, { cache: "no-store" }).catch(() => null);
+    const json = res?.ok ? ((await res.json().catch(() => null)) as { board?: Board } | null) : null;
+    if (!json?.board) { window.location.reload(); return; }
+    const server = json.board;
+    const accepted = saver.current?.id === b.id ? saver.current.saver.accepted() : baseGraph.current?.id === b.id ? baseGraph.current.graph : { nodes: [], wires: [] };
+    const merged = reapplyAdditions(server, { nodes: b.nodes, wires: b.wires }, accepted);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saver.current = null;
+    baseGraph.current = { id: server.id, graph: { nodes: server.nodes, wires: server.wires } };
+    setSaveState({ kind: "saved" });
+    const next: Board = { ...server, nodes: merged.nodes, wires: merged.wires };
+    if (merged.added) {
+      commit(next);
+      toast(`Reloaded · ${merged.added} ${merged.added === 1 ? "node" : "nodes"} you added put back`);
+    } else {
+      setBoard(next);
+      latest.current = next;
+    }
+  }, [commit, toast]);
   /* An unsaved graph is not left behind without a word. */
   useEffect(() => {
     if (saveState.kind !== "failed") return;
@@ -434,7 +463,7 @@ function Canvas() {
           chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">·</span> {b.name}</>}
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
-        <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} />
+        <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
         <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
           slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
           onRebind={(assetNodeId, portId, versionId, version) => {
@@ -468,7 +497,7 @@ function Canvas() {
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={() => navigator.clipboard?.writeText(location.href).then(() => toast("Link copied"))}>Share</Button>
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={saveAsRecipe}>Save as recipe</Button>
         </>} />
-      <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} />
+      <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px]">
         <RigStrip />
         <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
@@ -817,13 +846,13 @@ function Stuck({ line, onRetry }: { line: string; onRetry?: () => void }) {
   );
 }
 
-function SaveBanner({ state, onRetry }: { state: SaveState; onRetry: () => void }) {
+function SaveBanner({ state, onRetry, onReload }: { state: SaveState; onRetry: () => void; onReload: () => void }) {
   if (state.kind !== "failed" && state.kind !== "conflict") return null;
   return (
     <div role="alert" className="flex flex-none flex-wrap items-center gap-x-[12px] gap-y-[6px] border-b border-border bg-card px-[16px] py-[6px] text-[13px] leading-[1.4] text-ink">
-      <span className="min-w-0 flex-1">{state.kind === "conflict" ? "Someone else changed this board. Your latest edits here are not saved." : `Not saved · ${state.message}`}</span>
+      <span className="min-w-0 flex-1">{state.kind === "conflict" ? "Someone else changed this board. Reloading keeps the nodes you added; your other edits here are not saved." : `Not saved · ${state.message}`}</span>
       {state.kind === "conflict"
-        ? <button type="button" onClick={() => window.location.reload()} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Reload the board</button>
+        ? <button type="button" onClick={onReload} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Reload the board</button>
         : <button type="button" onClick={onRetry} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Retry</button>}
     </div>
   );

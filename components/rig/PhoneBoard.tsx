@@ -11,7 +11,7 @@ import { Mono } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
-import { KIND_TAG, KIND_WORD } from "@/components/rig/nodes";
+import { KIND_TAG, KIND_WORD, isRunnable } from "@/components/rig/nodes";
 
 /**
  * The Rig on a phone (design/particl-v2-mobile/README.md, board M5):
@@ -122,6 +122,8 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
             /* image · video · edit · upscale · audio · voice · compare */
             const done = Boolean(n.output?.genId);
             const busy = running.has(n.id);
+            /* Edit, upscale, audio, voice and compare have no runner and no price on a board (components/rig/nodes.ts). */
+            const runnable = isRunnable(n.kind);
             const on = selected === n.id;
             const secs = Number(n.settings.seconds ?? 5);
             const filedTo = n.output?.filedTo ? board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot" : null;
@@ -153,10 +155,10 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                     ) : <Mono>{n.state === "stale" ? "Stale · upstream changed" : "Not run"}</Mono>}
                   </div>
                 )}
-                <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy}
-                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo ? "text-ink-body" : "text-ink"}`}>
-                  <span className="truncate">{done ? (filedTo ? `Filed · ${filedTo} v${n.output!.filedTo!.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
-                  <Mono cost>{fmt(done ? n.credits : priceOf(n))}</Mono>
+                <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy || !runnable}
+                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo || !runnable ? "text-ink-body" : "text-ink"}`}>
+                  <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (filedTo ? `Filed · ${filedTo} v${n.output!.filedTo!.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
+                  {runnable && <Mono cost>{fmt(done ? n.credits : priceOf(n))}</Mono>}
                 </button>
                 {!last && dot("bottom")}
               </div>
