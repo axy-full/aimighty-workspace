@@ -98,6 +98,9 @@ jobs:
       # next.config.ts turns Turbopack's source maps off for these dev
       # servers: they are half the native memory a compiled route holds.
       CI_DEV_SOURCE_MAPS: 'off'
+      # A stopped server's telemetry flush writes into .next while the job
+      # copies it for the next server.
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -171,8 +174,7 @@ jobs:
             # each starts from the first one's copy, and a server that does not
             # know an API route starts again on an empty .next.
             if [ -d "$RUNNER_TEMP/next-first" ]; then
-              rm -rf .next
-              cp -a "$RUNNER_TEMP/next-first" .next
+              rm -rf .next && cp -a "$RUNNER_TEMP/next-first" .next || true
             fi
             ready=
             for try in 1 2; do
@@ -191,7 +193,7 @@ jobs:
             awk -v k="$k/36" -v total="$(free -m | awk '/Mem:/{print $2}')" -v from="$specs_from" 'BEGIN {mem = 0; srv = 0; warm = 0; specs = 0; at = "-"} $2 > mem {mem = $2} $3 > srv {srv = $3; at = $1} $1 < from && $3 > warm {warm = $3} $1 >= from && $3 > specs {specs = $3} END {printf "[resources] %s peak: next-server %d MB at %s, mem %d/%d MB (5 s samples; warm-up %d MB, specs %d MB)\n", k, srv, at, mem, total, warm, specs}' "$samples"
             if [ -n "$ready" ]; then
               stop_server
-              [ -d "$RUNNER_TEMP/next-first" ] || cp -a .next "$RUNNER_TEMP/next-first"
+              [ -d "$RUNNER_TEMP/next-first" ] || cp -a .next "$RUNNER_TEMP/next-first" || rm -rf "$RUNNER_TEMP/next-first"
             fi
           done
           if [ ${#failed[@]} -gt 0 ]; then
