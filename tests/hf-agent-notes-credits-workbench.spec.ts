@@ -294,12 +294,16 @@ test("Beats: a delete goes on the undo stack with a toast Undo, ⌘Z brings it b
   await expect(page.getByLabel("Scene 1 beat 2")).toHaveValue("Scene 1, beat 2.");
   await expect.poll(async () => (await saved()).production?.beats?.scenes[0].beats.map((b) => b.id)).toEqual(["beat-1-1", "beat-1-2"]);
 
-  /* Delete a shot, walk away to Brief, press ⌘Z: Beats opens and the shot is back, in its place. */
+  /* Delete a shot and walk straight to Brief, its save still pending: Brief opens on the saved delete, and its own edit saves too. */
   await page.getByLabel("Delete shot 1.1").click();
   await expect(counts).toHaveText("2 scenes · 4 beats · 3 shots");
-  await expect.poll(async () => (await saved()).production?.beats?.scenes[0].shots.length).toBe(1);
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Brief/ }).click();
   await expect(page.getByTestId("brief-stage")).toBeVisible();
+  await page.getByTestId("brief-audience").fill("Families, late evening.");
+  await expect(page.getByTestId("brief-save")).toHaveText("Saved");
+  await expect.poll(async () => { const now = await saved(); return [now.audience, now.production?.beats?.scenes[0].shots.length]; }).toEqual(["Families, late evening.", 1]);
+  /* ⌘Z there: Beats opens and the shot is back, in its place. */
+  await page.getByTestId("brief-stage").click({ position: { x: 4, y: 4 } });
   await page.keyboard.press("ControlOrMeta+z");
   await expect(page.getByTestId("beats-stage")).toBeVisible();
   await expect(counts).toHaveText("2 scenes · 4 beats · 4 shots");

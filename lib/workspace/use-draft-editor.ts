@@ -38,6 +38,16 @@ export type DraftEditor = {
 const API = "/api/workbench";
 const SAVE_DELAY_MS = 650;
 
+/*
+ * Stages hand a project over: the stage that closes flushes what it still
+ * held as the next one opens (Beats clearing its notes, say, then Brief). The
+ * next stage reads the project only once that write has landed — reading
+ * before it, it would hold a revision that is about to change, and its own
+ * first save would be refused as another window's.
+ */
+const writing = new Map<string, Promise<unknown>>();
+const writeKey = (scope: string, projectId: string) => JSON.stringify([scope, projectId]);
+
 type Loaded = { project: Project | null; revision: number };
 
 export function useDraftEditor(scope: string | null, projectId: string | null): DraftEditor {
@@ -70,7 +80,9 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   useEffect(() => {
     if (!scope || !projectId) return;
     let active = true;
-    read(projectId)
+    (writing.get(writeKey(scope, projectId)) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => read(projectId))
       .then((data) => {
         if (!active) return;
         current.current = data.project;
@@ -130,6 +142,12 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
         return false;
       }
     });
+    const id = current.current?.id;
+    if (scope && id) {
+      const key = writeKey(scope, id), mine = chain.current;
+      writing.set(key, mine);
+      void mine.finally(() => { if (writing.get(key) === mine) writing.delete(key); });
+    }
     return chain.current;
   }, [scope]);
 
