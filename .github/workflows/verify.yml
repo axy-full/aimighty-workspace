@@ -93,6 +93,11 @@ jobs:
         # (the platform desk, Library › Elements) from ~2 GB to 14 GB of the
         # runner's 16 in one compile, and the runner was shut down. The same
         # specs run locally on webpack dev servers that stay within a few GB.
+        # A 10 GB heap (of the runner's 16): Next's dev server restarts itself
+        # near Node's default heap limit, which drops every connection and every
+        # compiled page mid-suite ("approaching the used memory threshold").
+        env:
+          NODE_OPTIONS: --max-old-space-size=10240
         run: |
           npm run dev -- --webpack -p 4551 > dev-ci.log 2>&1 &
           for attempt in {1..90}; do
