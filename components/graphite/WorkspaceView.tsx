@@ -10,6 +10,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
 import { ManagementDashboard } from "./ManagementDashboard";
+import { RulesCard } from "./RulesCard";
 
 /**
  * Workspace (FINAL_SPEC §5): General · People · Plans & credits · Usage · Dashboard ·
@@ -72,6 +73,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
           ))}
         </div>
         {shell.wsTab === "general" ? <General name={name} /> : null}
+        {shell.wsTab === "general" ? <RulesCard /> : null}
         {shell.wsTab === "people" ? <People /> : null}
         {shell.wsTab === "credits" ? <Plans credits={credits} /> : null}
         {shell.wsTab === "usage" ? <Usage /> : null}

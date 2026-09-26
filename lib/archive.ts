@@ -56,9 +56,10 @@ export async function archiveStatement(
   const columns = (await ex.execute(`PRAGMA table_info(${table})`)).rows.map((row) => String(row.name));
   if (!columns.length || columns.some((name) => !IDENT.test(name)))
     throw new Error(`Cannot archive ${table}.`);
-  // JSON cannot hold a BLOB; hex keeps the bytes recoverable.
+  // JSON cannot hold a BLOB; hex keeps the bytes recoverable. Column names are
+  // quoted: a column may be called by a keyword (workspace_rules has "on").
   const body = columns
-    .map((name) => `'${name}', CASE WHEN typeof(${name})='blob' THEN hex(${name}) ELSE ${name} END`)
+    .map((name) => `'${name}', CASE WHEN typeof("${name}")='blob' THEN hex("${name}") ELSE "${name}" END`)
     .join(", ");
   const key = columns.includes("id") ? "CAST(id AS TEXT)" : "CAST(rowid AS TEXT)";
   const leading = [table, meta.reason ?? "deleted", meta.by ?? null, Date.now()];
