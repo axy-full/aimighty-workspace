@@ -98,10 +98,28 @@ export async function prepareWorkspace(
       args: [key],
     })
   ).rows[0] as unknown as ProvisionRow | undefined;
-  if (previous) {
+  if (previous && !input.requestKey && previous.state === "ready") {
+    /* A name-keyed request only repeats while the workspace it made is still
+       live under that exact name. Once that workspace is deleted or renamed,
+       or the new name differs in case, this is a new workspace: the old
+       request's key is retired (suffixed with its own id, never removed). */
+    const made = (
+      await tx.execute({
+        sql: "SELECT name FROM workspaces WHERE id=? AND deleted_at IS NULL",
+        args: [previous.workspace_id],
+      })
+    ).rows[0];
+    if (made && String(made.name) === name) return previous.request_id;
+    await tx.execute({
+      sql: "UPDATE workspace_provisioning SET request_key=request_key||':'||request_id,updated_at=? WHERE request_id=?",
+      args: [now(), previous.request_id],
+    });
+  } else if (previous) {
     if (previous.name !== name)
       throw new AccountError(
-        "This request already names a different workspace.",
+        input.requestKey
+          ? "This request already names a different workspace."
+          : `“${previous.name}” is still being set up. Finish that request, or choose another name.`,
         409,
       );
     return previous.request_id;

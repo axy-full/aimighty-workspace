@@ -58,6 +58,42 @@ return await withRecoveryActivity('purge', async () => {
 
 });
 }
+/** The platform owner's undo of a workspace delete. Nothing was erased, so
+ * access is all that comes back: the owner's membership returns at once, and
+ * the owner turns the rest of the team back on from People. */
+export async function restoreDeletedWorkspace(id: string): Promise<void> {
+return await withRecoveryActivity('purge', async () => {
+
+  await purgeReady();
+  const p = platformDb(),
+    ts = now();
+  const row = (
+    await p.execute({
+      sql: `SELECT owner_id,deleted_at,purged_at,legacy FROM workspaces WHERE id=?`,
+      args: [id],
+    })
+  ).rows[0];
+  if (!row || Number(row.legacy) === 1)
+    throw new Error("This workspace cannot be restored.");
+  if (row.deleted_at == null) return;
+  if (row.purged_at != null)
+    throw new Error("This workspace's database is gone; it cannot be restored.");
+  await p.batch(
+    [
+      {
+        sql: `UPDATE workspaces SET deleted_at=NULL,updated_at=? WHERE id=? AND legacy=0 AND purged_at IS NULL`,
+        args: [ts, id],
+      },
+      {
+        sql: `UPDATE memberships SET disabled=0 WHERE workspace_id=? AND account_id=? AND role='owner'`,
+        args: [id, String(row.owner_id)],
+      },
+    ],
+    "write",
+  );
+
+});
+}
 export type PurgeReport = {
   files: number;
   uploads: number;

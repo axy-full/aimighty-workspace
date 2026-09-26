@@ -5,6 +5,7 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
+import { restoreDeletedWorkspace } from "@/lib/purge";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,16 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   const ws = await getWorkspace(id);
   if (!ws) return NextResponse.json({ error: "No such workspace." }, { status: 404 });
   const body = await req.json().catch(() => ({}));
+  /* A deleted workspace keeps its database and files, so the one change it
+     takes is being restored. Credits, plans and limits wait until then: a
+     grant to a workspace nobody can open is money on a closed door. */
+  if (body.restore === true) {
+    if (!ws.deletedAt) return NextResponse.json({ error: "This workspace is not deleted." }, { status: 400 });
+    try { await restoreDeletedWorkspace(id); }
+    catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 409 }); }
+    return NextResponse.json({ ok: true, restored: true });
+  }
+  if (ws.deletedAt) return NextResponse.json({ error: "This workspace was deleted. Restore it before changing it." }, { status: 409 });
   /* The studio's own workspace pays its vendors directly, so an allowance, a
      mode or a credit grant means nothing there. Everything else — suspending
      it, its limits, its flags, and whether it is the platform's test

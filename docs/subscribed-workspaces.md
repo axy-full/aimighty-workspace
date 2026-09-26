@@ -27,7 +27,7 @@ Tenant content remains in a separate database per workspace; platform billing/ac
 
 The JSON export includes shared productions, shots, assets, published bibles, and the requesting owner's private workbench drafts and mappings. Other collaborators' private drafts, authentication records and credentials remain excluded. Media bytes have a separate authorized master manifest.
 
-Deletion revokes access first. Cleanup waits ten minutes for running functions, then removes files, revokes any minted gateway key and drops the tenant database. Stage acknowledgments are durable; failed cleanup retains the credentials and identifiers needed for retry. Cron retries unfinished cleanup. A workspace is marked purged only after every stage succeeds.
+Deletion ends access at once: memberships are disabled and sessions leave the workspace. Nothing is erased (owner, 2026-09-24): the tenant database, its files and billing records are kept, and after ten minutes the cron only revokes any minted gateway key. `purgeWorkspace` exists but is not wired to a route or cron. The platform owner can restore a deleted, unpurged workspace from the admin desk; its owner's membership returns, the owner turns the rest of the team back on from People, and credits, plans and limits cannot be changed on it until then.
 
 ## Configuration and release gates
 
