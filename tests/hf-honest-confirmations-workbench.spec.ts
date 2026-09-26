@@ -22,6 +22,12 @@ const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "wor
 const SHOTS = process.env.HONEST_SHOTS;
 const GOAL = "Open the film without dialogue and still make the product unmistakable inside the first four seconds.";
 
+/* Opt-in: PW_CPU_THROTTLE=4 slows the page's CPU as a CI runner's is (Chrome's Emulation.setCPUThrottlingRate). */
+test.beforeEach(async ({ page }) => {
+  const rate = Number(process.env.PW_CPU_THROTTLE);
+  if (rate > 1) await (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate });
+});
+
 async function shot(page: Page, name: string, project: string) {
   const size = SHOT_AT[project];
   if (!SHOTS || !size) return;
@@ -266,9 +272,9 @@ test("Crew › Open in Gen while the browser refuses to store anything for the s
 test("Crew › Open Rig on a phone whose page head stands taller: the shot still lands wholly above the tab bar", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-360x640", "the smallest phone");
   const { errors, solutions } = await roomWithSolutions(page);
-  /* The Rig's scroll frame starts 53px lower, as it did on CI's fonts: the middle of the frame then falls behind the tab bar,
-     so a shot centred in the frame (not in what can be seen of it) would sit under the bar. */
-  await page.addStyleTag({ content: ".gx .gx-stage { margin-top: 53px !important; }" });
+  /* The Rig's scroll frame starts at 425px, where CI's fonts put it, whatever this machine's fonts make of the page head:
+     the middle of the frame then falls behind the tab bar, so a shot centred in the frame (not in what can be seen of it) sits under the bar. */
+  await page.addStyleTag({ content: ".gx .gx-stage { position: fixed !important; top: 425px !important; bottom: 0 !important; left: 0 !important; right: 0 !important; }" });
   const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
@@ -277,8 +283,10 @@ test("Crew › Open Rig on a phone whose page head stands taller: the shot still
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await stopped(page, row);
+  expect((await page.locator(".gx-stage").boundingBox())!.y, "the frame is where CI put it").toBe(425);
   await expect(row).toBeInViewport();
   const landed = (await row.boundingBox())!;
+  expect(landed.y, "the row is below the frame's top").toBeGreaterThanOrEqual(425);
   expect(landed.y + landed.height, "the row clears the tab bar").toBeLessThanOrEqual((await page.locator(".gx-tabbar").boundingBox())!.y);
   await noSideScroll(page);
   expect(errors).toEqual([]);

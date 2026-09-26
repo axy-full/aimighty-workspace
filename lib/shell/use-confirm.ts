@@ -79,12 +79,13 @@ function centre(found: HTMLElement, onlyIfOut = false) {
   const box = found.getBoundingClientRect(), frame = scroller?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
   const top = Math.max(frame.top, 0);
   let bottom = Math.min(frame.bottom, window.innerHeight);
-  /* The fixed foot covers the list's end: the row is centred above it (one too high to leave room for the row is not a foot). */
+  /* The fixed foot covers the list's end: what can be seen stops at it. */
   for (const over of footOver()) {
     const at = over.getBoundingClientRect().top;
-    if (at >= top + box.height && at < bottom) bottom = at;
+    if (at > top && at < bottom) bottom = at;
   }
   if (onlyIfOut && box.top >= top && box.bottom <= bottom) return;
+  /* In the middle of what can be seen; a row taller than that goes to its top, so as much of it as can be is in the clear. */
   const by = box.top - top - Math.max(0, (bottom - top - box.height) / 2);
   if (scroller) scroller.scrollBy({ top: by }); else window.scrollBy({ top: by });
 }
