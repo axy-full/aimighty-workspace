@@ -32,7 +32,7 @@ import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/re
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
 import Boundary from "@/components/Boundary";
-import { FaultIcon, PanelFault } from "./PanelFault";
+import { PanelFault, TileFault } from "./PanelFault";
 
 /** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
 const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -468,15 +468,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           ) : null}
           </>}
           renderItem={(entry) => (
-            <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => (
-              <div className="gx-asset" data-faulted="true" data-testid="take-fault" role="alert">
-                <button type="button" className="gx-asset-thumb gx-fault-tile" onClick={fault.retry} aria-label={`Try ${entry.take.name} again`} title={`ref ${fault.ref}`}>
-                  <FaultIcon /><span>Try again</span>
-                </button>
-                <span className="gx-asset-name">{entry.take.name}</span>
-                <span className="gx-asset-meta">ref {fault.ref}</span>
-              </div>
-            )}>
+            <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />}>
             <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
               <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}

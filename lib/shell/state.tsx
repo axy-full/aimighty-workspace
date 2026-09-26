@@ -106,8 +106,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const [libTab, setLibTab] = useState<LibTab>("tools");
   const [libOpen, setLibOpen] = useState(false);
   const [inspOpen, setInspOpen] = useState(false);
-  /* `?find=1` (the 404's and the error page's Search) lands with ⌘K open. */
-  const [palette, setPaletteOpen] = useState(() => typeof window !== "undefined" && findRequested(window.location.search));
+  /* `?find=1` (the 404's and the error page's Search) lands with ⌘K open — read from the opening URL, like the params above. */
+  const [palette, setPaletteOpen] = useState(() => findRequested(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
   const [ctx, setCtx] = useState<CtxState | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoState] = useState<UndoEntry[]>([]);

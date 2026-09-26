@@ -12,6 +12,37 @@ import { shellSuite, type ShellSuiteId } from "./ia";
 export type FaultError = { name?: string; message?: string; digest?: string } | null | undefined;
 
 /**
+ * What a boundary caught, as an Error. React hands a boundary whatever was
+ * thrown, and not every throw is an Error (a string, a plain object from a
+ * library, `undefined`); the card, the ref and Copy details all need one.
+ * Its message may be empty — then the card shows the ref alone.
+ */
+export function asError(thrown: unknown): Error & { digest?: string } {
+  if (thrown instanceof Error) return thrown;
+  const record = thrown !== null && typeof thrown === "object" ? (thrown as Record<string, unknown>) : null;
+  const message = typeof thrown === "string" ? thrown : typeof record?.message === "string" ? record.message : "";
+  const error: Error & { digest?: string } = new Error(message);
+  if (typeof record?.name === "string" && record.name) error.name = record.name;
+  if (typeof record?.digest === "string") error.digest = record.digest;
+  return error;
+}
+
+/**
+ * Try again presses, counted for one resetKey: a panel that moves on to
+ * another page, project or take starts again from none. Kept outside the
+ * boundary, because a render that fails again remounts the whole fallback.
+ */
+export type Tries = { key: unknown; count: number };
+
+export function attemptsFor(tries: Tries, key: unknown): number {
+  return Object.is(tries.key, key) ? tries.count : 0;
+}
+
+export function countTry(tries: Tries, key: unknown): Tries {
+  return { key, count: attemptsFor(tries, key) + 1 };
+}
+
+/**
  * A short reference that matches the console line (and, for a server error,
  * the server log): Next's digest when there is one, else a stable hash of the
  * error's name and message — the same failure gets the same ref every time.
@@ -74,6 +105,8 @@ export const TAKES_HREF = "/suites?page=takes&sp=takes";
 /** `?find=1` opens ⌘K search as the shell lands (lib/shell/state.tsx), so a page outside the shell can offer it. */
 export const FIND_PARAM = "find";
 export const FIND_HREF = `/suites?${FIND_PARAM}=1`;
+/** A visitor (no session) on a dead link: the public site's front page, where proxy.ts serves the site. */
+export const HOME_HREF = "/";
 
 export type SegmentId = ShellSuiteId | "gen" | "crew";
 
@@ -99,22 +132,46 @@ export function withoutFind(search: string): string {
 
 /* ── Crash probes (development only) ────────────────────────────────────── */
 
-/** The global the browser specs arm: `window.__particlCrash = ["library"]`. */
+/**
+ * The global the browser specs arm: `window.__particlCrash = ["library"]`. An
+ * entry may also name the error to throw — `{ name: "library", message: "…",
+ * errorName: "ChunkLoadError" }` — for the long-message and stale-build cards.
+ */
 export const CRASH_PROBE = "__particlCrash";
+
+type Armed = { message: string; errorName?: string };
+
+function armedProbe(name: string, scope: unknown): Armed | null {
+  if (process.env.NODE_ENV === "production") return null;
+  const armed = (scope as Record<string, unknown> | null | undefined)?.[CRASH_PROBE];
+  if (!Array.isArray(armed)) return null;
+  for (const entry of armed as unknown[]) {
+    if (entry === name) return { message: `Crash probe: ${name}` };
+    const probe = entry !== null && typeof entry === "object" ? (entry as Record<string, unknown>) : null;
+    if (probe?.name !== name) continue;
+    return {
+      message: typeof probe.message === "string" ? probe.message : `Crash probe: ${name}`,
+      errorName: typeof probe.errorName === "string" ? probe.errorName : undefined,
+    };
+  }
+  return null;
+}
 
 /**
  * Whether a named boundary should throw on its next render. Development and
  * test builds only: in production `process.env.NODE_ENV` is inlined and the
- * rest of this function is dead code, so no URL, cookie or storage key can
- * ever arm it on the live site.
+ * rest of the lookup is dead code, so no URL, cookie or storage key can ever
+ * arm it on the live site.
  */
 export function probeArmed(name: string, scope: unknown = globalThis): boolean {
-  if (process.env.NODE_ENV === "production") return false;
-  const armed = (scope as Record<string, unknown> | null | undefined)?.[CRASH_PROBE];
-  return Array.isArray(armed) && armed.includes(name);
+  return armedProbe(name, scope) !== null;
 }
 
 /** Throw during render when the probe is armed — the failure a boundary exists for. */
 export function throwIfArmed(name: string, scope: unknown = globalThis): void {
-  if (probeArmed(name, scope)) throw new Error(`Crash probe: ${name}`);
+  const armed = armedProbe(name, scope);
+  if (!armed) return;
+  const error = new Error(armed.message);
+  if (armed.errorName) error.name = armed.errorName;
+  throw error;
 }

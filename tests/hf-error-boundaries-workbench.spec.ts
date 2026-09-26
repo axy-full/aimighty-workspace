@@ -5,31 +5,35 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Error boundaries per panel (components/Boundary.tsx inside
- * components/graphite/SuitesShell.tsx), the Suites error page
+ * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
+ * inside components/graphite/SuitesShell.tsx), the Suites error page
  * (app/suites/error.tsx) and the 404 (app/not-found.tsx).
  *
  * Before: any throw in a stage body unmounted the whole /suites shell into
  * the generic root error page, and the 404 offered legacy destinations. Now a
  * panel that throws shows its own fault card inside its own frame and the rest
  * of the shell keeps working; a throw in the chrome lands on a page that keeps
- * the header; a link to nothing offers Studio, Takes and ⌘K search.
+ * the header; a link to nothing offers Studio, Takes and ⌘K search — or, to a
+ * visitor, the front page.
  *
  * Failures are injected with the development-only crash probes
  * (lib/shell/fault.ts › probeArmed): `window.__particlCrash = ["library"]`
- * makes the boundary named "library" throw on its next render. Nothing is
- * generated; paid routes fail the test.
+ * makes the boundary named "library" throw on its next render; an entry can
+ * also name the error (`{ name, message, errorName }`). Nothing is generated;
+ * paid routes fail the test.
  */
 
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 
+type Armed = string | { name: string; message?: string; errorName?: string };
+
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-faults", productionProjectId: "prod-ws", shotMappings: {} });
 
-async function arm(page: Page, names: string[]) {
-  await page.evaluate((list) => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = list; }, names);
+async function arm(page: Page, list: Armed[]) {
+  await page.evaluate((armed) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = armed; }, list);
 }
 
-async function open(page: Page, path = "/suites", armed: string[] = []) {
+async function open(page: Page, path = "/suites", armed: Armed[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -42,7 +46,7 @@ async function open(page: Page, path = "/suites", armed: string[] = []) {
     ],
   });
   /* Armed before the first render, so the boundary throws as the shell mounts. */
-  if (armed.length) await page.addInitScript((list) => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = list; }, armed);
+  if (armed.length) await page.addInitScript((list) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = list; }, armed);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(path);
@@ -65,12 +69,31 @@ async function settled(page: Page) {
     .map((animation) => animation.finished.catch(() => undefined))));
 }
 
+/* The ref is what a person quotes: 12px or more, and no dimmer than #7C7C84 even composited over black. */
 async function refIsReadable(ref: Locator) {
   await expect(ref).toHaveText(/ref P-[0-9A-Z]{7}/);
-  expect(Number.parseFloat(await ref.evaluate((el) => getComputedStyle(el).fontSize)), "the ref sits on the 12px floor").toBeGreaterThanOrEqual(12);
+  const { size, lum } = await ref.evaluate((el) => {
+    const [r, g, b, a = 1] = (getComputedStyle(el).color.match(/[\d.]+/g) ?? []).map(Number);
+    return { size: Number.parseFloat(getComputedStyle(el).fontSize), lum: a * (0.2126 * r + 0.7152 * g + 0.0722 * b) };
+  });
+  expect(size, "the ref sits on the 12px floor").toBeGreaterThanOrEqual(12);
+  expect(lum, "the ref is no dimmer than #7C7C84").toBeGreaterThanOrEqual(0.2126 * 0x7c + 0.7152 * 0x7c + 0.0722 * 0x84 - 0.5);
 }
 
-test("a stage that throws keeps the shell: its own card, the strip still moves, and Try again brings it back", async ({ page }, info) => {
+/* The one next step is on screen and nothing (the phone's tab bar, a pinned dock) sits over it. */
+async function reachable(page: Page, target: Locator) {
+  await target.scrollIntoViewIfNeeded().catch(() => undefined);
+  const hit = await target.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const top = document.elementFromPoint(x, y);
+    return { inView: box.top >= 0 && box.bottom <= innerHeight + 0.5, onTop: Boolean(top && (top === el || el.contains(top))) };
+  });
+  expect(hit, "the next step is on screen and uncovered").toEqual({ inView: true, onTop: true });
+}
+
+test("a stage that throws keeps the shell: its own card, the strip still moves, and Try again is Next's retry", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites", ["stage:brief"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
@@ -78,7 +101,7 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:brief"]');
   await expect(fault).toBeVisible();
   await expect(fault).toContainText("Brief & Script stopped");
-  await expect(fault.getByTestId("fault-retry")).toBeVisible();
+  await expect(fault).toContainText("Takes in progress keep generating.");
   await expect(fault.getByTestId("fault-copy")).toHaveText("Copy details");
   await refIsReadable(fault.getByTestId("fault-ref"));
 
@@ -86,9 +109,11 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   const strip = page.getByRole("navigation", { name: "Pages" });
+  await settled(page);
+  /* Try again is above the fold at every size — at 360×640 and 844×390 too, where the stage under the page head is short. */
+  await reachable(page, fault.getByTestId("fault-retry"));
   if (PHONE.includes(info.project.name)) {
     expect(await smallText(page), "text under 12px").toEqual([]);
-    await settled(page);
     expect(await smallTargets(page, '[data-testid="panel-fault"]'), "fault targets under 44×44").toEqual([]);
   }
   await noHorizontalScroll(page);
@@ -98,12 +123,32 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   await expect(page.getByTestId("page-title")).toHaveText("Beats & Shots");
   await expect(page.getByTestId("panel-fault")).toHaveCount(0);
 
-  /* Back on the broken stage, Try again while it still throws counts the attempt and offers Reload. */
+  /* Back on the broken stage, Try again fetches the route again (Next's retry): while the refresh is on its way
+     the button says so and ignores presses; when it fails again the attempt is counted, Reload is offered and
+     focus is on the new Try again. */
   await strip.getByRole("button", { name: /Brief/ }).click();
   await expect(fault).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const refreshes: string[] = [];
+  const refresh = (url: URL) => url.pathname === "/suites" && url.searchParams.has("_rsc");
+  await page.route(refresh, async (route) => {
+    refreshes.push(route.request().url());
+    await held;
+    await route.continue();
+  });
   await fault.getByTestId("fault-retry").click();
+  const retry = fault.getByTestId("fault-retry");
+  await expect(retry).toHaveText("Trying…");
+  await expect(retry).toHaveAttribute("aria-disabled", "true");
+  /* A second press while it is on its way is ignored (forced: Playwright waits out aria-disabled itself). */
+  await retry.click({ force: true });
+  expect(refreshes, "one Try again, one refresh of the route").toHaveLength(1);
+  release();
   await expect(fault).toHaveAttribute("data-attempts", "1");
   await expect(fault.getByTestId("fault-reload")).toBeVisible();
+  await expect(fault.getByTestId("fault-retry")).toBeFocused();
+  await page.unroute(refresh);
 
   /* Fixed underneath: Try again renders the stage. */
   await arm(page, []);
@@ -111,6 +156,28 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   await expect(page.getByTestId("panel-fault")).toHaveCount(0);
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   expect(errors, "a caught throw never reaches the window").toEqual([]);
+});
+
+test("a stale build asks for Reload, and a long message stays inside its card", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const long = "TypeError: Cannot read properties of undefined (reading 'shots') while laying out beat 14 of the second act, where the note carries an_unbroken_identifier_that_never_wraps_on_its_own_and_keeps_going";
+  const errors = await open(page, "/suites", [{ name: "stage:brief", errorName: "ChunkLoadError", message: "Loading chunk 812 failed." }]);
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:brief"]');
+  await expect(fault).toContainText("Particl was updated. Reload to carry on.");
+  await expect(fault.getByTestId("fault-reload")).toBeVisible();
+  await expect(fault.getByTestId("fault-retry")).toHaveCount(0);
+
+  await arm(page, [{ name: "stage:beats", message: long }]);
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Beats/ }).click();
+  const beats = page.locator('[data-testid="panel-fault"][data-fault="stage:beats"]');
+  await expect(beats.getByTestId("fault-ref")).toContainText("…");
+  await settled(page);
+  const card = (await beats.boundingBox())!;
+  const ref = (await beats.getByTestId("fault-ref").boundingBox())!;
+  expect(ref.x + ref.width, "the message wraps inside the card").toBeLessThanOrEqual(card.x + card.width + 1);
+  await reachable(page, beats.getByTestId("fault-retry"));
+  await noHorizontalScroll(page);
+  expect(errors).toEqual([]);
 });
 
 test("desktop: the Library and the Inspector fail inside their own columns and the grid does not move", async ({ page }, info) => {
@@ -156,7 +223,7 @@ test("desktop: the Library and the Inspector fail inside their own columns and t
 
 test("phones: a Library overlay that throws still closes, and its card meets the floors", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "the overlay panels");
-  const errors = await open(page, "/suites", ["library"]);
+  const errors = await open(page, "/suites", ["library", "inspector"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   await page.getByTestId("toggle-library").click();
   const library = page.getByTestId("library");
@@ -167,8 +234,18 @@ test("phones: a Library overlay that throws still closes, and its card meets the
   expect(await smallTargets(page, '[data-testid="library"]'), "targets under 44×44").toEqual([]);
   const box = (await library.boundingBox())!;
   expect(box.x + box.width, "the overlay stays on screen").toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);
+  await reachable(page, library.getByTestId("fault-retry"));
   await library.getByTestId("close-library").click();
   await expect(page.getByTestId("library")).toHaveCount(0);
+
+  /* The Inspector overlay the same way. */
+  await page.getByTestId("toggle-inspector").click();
+  const inspector = page.getByTestId("inspector");
+  await expect(inspector.getByTestId("panel-fault")).toContainText("The Inspector stopped");
+  await settled(page);
+  expect(await smallTargets(page, '[data-testid="inspector"]'), "targets under 44×44").toEqual([]);
+  await inspector.getByTestId("close-inspector").click();
+  await expect(page.getByTestId("inspector")).toHaveCount(0);
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   await noHorizontalScroll(page);
   expect(errors).toEqual([]);
@@ -181,7 +258,8 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByText("Wide on the water")).toBeVisible();
-  await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
+  const prompt = page.getByTestId("gen-prompt");
+  await prompt.fill("a fox crossing a frozen harbour");
 
   /* One take throws: its tile keeps its place, the others render. */
   await arm(page, ["take:generation:gen_wide"]);
@@ -190,13 +268,25 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await expect(tile).toHaveCount(1);
   await expect(tile).toContainText("Wide on the water");
   await expect(results.getByText("Close on the rope")).toBeVisible();
+  await refIsReadable(tile.locator(".gx-asset-meta"));
+
+  /* Its Try again brings it back once fixed; failing again later on its own does not take focus from the prompt. */
+  await arm(page, []);
+  await tile.getByRole("button", { name: /Wide on the water could not be shown/ }).click();
+  await expect(results.getByTestId("take-fault")).toHaveCount(0);
+  await prompt.focus();
+  await arm(page, ["take:generation:gen_wide"]);
+  await prompt.pressSequentially(" at dawn");
+  await expect(results.getByTestId("take-fault")).toHaveCount(1);
+  await expect(prompt, "a panel failing on its own never steals the keyboard").toBeFocused();
+  await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");
 
   /* The whole grid throws: the card replaces the grid, the composer and the prompt stay. */
   await arm(page, ["gen-results"]);
   await results.getByRole("button", { name: "All", exact: true }).click();
   const fault = page.locator('[data-testid="panel-fault"][data-fault="gen-results"]');
   await expect(fault).toContainText("Results stopped");
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("a fox crossing a frozen harbour");
+  await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");
   await expect(page.getByTestId("gen-generate")).toBeVisible();
   await settled(page);
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="gen-results"]'), "targets under 44×44").toEqual([]);
@@ -210,15 +300,19 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   expect(errors).toEqual([]);
 });
 
-test("search and a whole view fail on their own: the sheet still closes, Workspace comes back on Try again", async ({ page }, info) => {
+test("search and a whole view fail on their own: the sheet takes focus and still closes, Workspace and Crew come back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites", ["palette"]);
+  const errors = await open(page, "/suites", ["palette", "composer"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  /* The composer is closed, so its failure shows nothing and costs nothing. */
+  await expect(page.locator('[data-fault="composer"]')).toHaveCount(0);
 
-  /* Search throws as it opens: its card sits in the sheet, and Close (or Esc) still works. */
+  /* Search throws as it opens: its card is the dialog, it takes focus, and Close (or Esc) still works. */
   await page.getByTestId("header-search").click();
   const sheet = page.getByRole("dialog", { name: "Search" });
   await expect(sheet.getByTestId("panel-fault")).toContainText("Search stopped");
+  await expect(sheet).toHaveAttribute("aria-modal", "true");
+  await expect(sheet.getByTestId("fault-retry")).toBeFocused();
   await settled(page);
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="palette"]'), "targets under 44×44").toEqual([]);
   const dialog = (await sheet.boundingBox())!;
@@ -238,15 +332,64 @@ test("search and a whole view fail on their own: the sheet still closes, Workspa
   await page.keyboard.press("Escape");
 
   /* A whole view that throws keeps the header, so every suite is one tap away. (The later init script wins on load.) */
-  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["workspace"]; });
+  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["workspace", "crew"]; });
   await page.goto("/suites?view=workspace");
   const fault = page.locator('[data-testid="panel-fault"][data-fault="workspace"]');
   await expect(fault).toContainText("Workspace stopped");
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
+
+  /* Crew is walled off the same way, and its room strip stays. */
+  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: /Crew/ }).click();
+  const crew = page.locator('[data-testid="panel-fault"][data-fault="crew"]');
+  await expect(crew).toContainText("Crew stopped");
+  await reachable(page, crew.getByTestId("fault-retry"));
   await arm(page, []);
-  await fault.getByTestId("fault-retry").click();
+  await crew.getByTestId("fault-retry").click();
+  await expect(crew).toHaveCount(0);
+
+  await page.getByTestId("workspace-avatar").click();
   await expect(page.getByTestId("workspace-view")).toBeVisible();
+  await expect(page.locator('[data-fault="workspace"]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("Atomik: the gate row and the plan sheet fail on their own, and the sheet still closes", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const errors = await open(page, "/suites", ["atomik-gate", "atomik-sheet", "strip"]);
+  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+
+  /* The gate row and the run strip fail in their own rows; the stage between them works. */
+  const gate = page.locator('[data-testid="panel-fault"][data-fault="atomik-gate"]');
+  await expect(gate).toContainText("The Atomik gate stopped");
+  await expect(page.locator('[data-fault="strip"]')).toContainText("The run strip stopped");
+  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await settled(page);
+  await reachable(page, gate.getByTestId("fault-retry"));
+  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="atomik-gate"]'), "targets under 44×44").toEqual([]);
+
+  /* The plan sheet throws as it opens: its card is the dialog, and Esc closes it. Nothing is priced or run. */
+  if (!DESKTOP.includes(info.project.name)) await page.getByTestId("toggle-inspector").click();
+  await page.getByRole("button", { name: "Run with Atomik" }).click();
+  const sheet = page.getByRole("dialog", { name: "Atomik" });
+  await expect(sheet.getByTestId("panel-fault")).toContainText("Atomik stopped");
+  await expect(sheet.getByTestId("fault-retry")).toBeFocused();
+  await settled(page);
+  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="atomik-sheet"]'), "targets under 44×44").toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  /* On a phone the Inspector overlay is still open over the page: Esc again closes it. */
+  if (!DESKTOP.includes(info.project.name)) {
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("inspector")).toHaveCount(0);
+  }
+
+  /* Fixed underneath: the gate's Try again brings the row back to what it would say. */
+  await arm(page, []);
+  await gate.getByTestId("fault-retry").click();
+  await expect(gate).toHaveCount(0);
+  await noHorizontalScroll(page);
   expect(errors).toEqual([]);
 });
 
@@ -256,6 +399,7 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   const screen = page.getByTestId("suites-error");
   await expect(screen).toBeVisible();
   await expect(screen.getByRole("heading", { name: "This screen stopped" })).toBeVisible();
+  await expect(screen).toContainText("Your work is safe. Takes in progress keep generating.");
   const suites = screen.getByRole("navigation", { name: "Suites" });
   await expect(suites.getByRole("link")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
   await expect(suites.getByRole("link", { name: "Business" })).toHaveAttribute("href", "/suites?suite=moleculr");
@@ -264,10 +408,11 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   await refIsReadable(screen.getByTestId("fault-ref"));
   expect(await floorText(page, info.project.name), "text under 12px").toEqual([]);
   await settled(page);
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="suites-error"] main'), "targets under 44×44").toEqual([]);
+  await reachable(page, screen.getByTestId("fault-retry"));
+  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="suites-error"]'), "targets under 44×44").toEqual([]);
   await noHorizontalScroll(page);
 
-  /* Fixed underneath: Try again re-renders the shell in place. */
+  /* Fixed underneath: Try again (Next's retry) re-renders the shell in place. */
   await arm(page, []);
   await screen.getByTestId("fault-retry").click();
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
@@ -289,7 +434,8 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Takes and �
   await expect(screen.getByText(/Go to Video|All takes/)).toHaveCount(0);
   expect(await floorText(page, info.project.name), "text under 12px").toEqual([]);
   await settled(page);
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="not-found"] main'), "targets under 44×44").toEqual([]);
+  await reachable(page, screen.getByTestId("missing-studio"));
+  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="not-found"]'), "targets under 44×44").toEqual([]);
   await noHorizontalScroll(page);
 
   /* Search lands in the shell with ⌘K open, once: the URL drops the request. */
@@ -312,4 +458,25 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Takes and �
     await page.keyboard.press("ControlOrMeta+k");
     await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
   }
+});
+
+test("a visitor on a dead link gets the front page and Sign in, not the suites", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* Never signed in: this page's context has no session cookie. */
+  expect((await page.context().cookies()).length).toBe(0);
+  const response = await page.goto("/pricng");
+  expect(response?.status()).toBe(404);
+  const screen = page.getByTestId("not-found");
+  await expect(screen.getByRole("heading", { name: "Nothing here" })).toBeVisible();
+  await expect(screen.getByTestId("missing-home")).toHaveAttribute("href", "/");
+  await expect(screen.getByTestId("header-sign-in")).toHaveAttribute("href", "/login");
+  /* No suite links, no Search, no Studio: each would only send a visitor to sign in. */
+  await expect(screen.getByRole("navigation", { name: "Suites" })).toHaveCount(0);
+  await expect(screen.getByText(/Back to Studio|Open Takes|Search/)).toHaveCount(0);
+  await expect(screen.getByRole("link", { name: "Sign in" })).toHaveCount(1);
+  expect(await floorText(page, info.project.name), "text under 12px").toEqual([]);
+  await settled(page);
+  await reachable(page, screen.getByTestId("missing-home"));
+  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="not-found"]'), "targets under 44×44").toEqual([]);
+  await noHorizontalScroll(page);
 });

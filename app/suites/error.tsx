@@ -11,11 +11,10 @@ import { faultRef } from "@/lib/shell/fault";
  * and re-renders the segment), a clean load of Studio, and the ref that
  * matches the console line or, for a server failure, the server log.
  */
-export default function SuitesError({
-  error, retry, reset,
-}: { error: Error & { digest?: string }; retry?: () => void; reset: () => void }) {
+export default function SuitesError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
+  /* Next logs the error itself; this line ties it to the ref on the page. */
   useEffect(() => {
-    console.error(`[particl] the Suites shell failed (ref ${faultRef(error)}):`, error);
+    console.error(`[particl] the Suites shell stopped (ref ${faultRef(error)})`);
   }, [error]);
-  return <FaultPage kind="error" error={error} onRetry={() => (retry ?? reset)()} />;
+  return <FaultPage kind="error" error={error} onRetry={retry} />;
 }

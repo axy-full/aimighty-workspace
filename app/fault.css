@@ -10,8 +10,11 @@
 .gx .gx-fault-sub { margin: 0; max-width: 40ch; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); }
 .gx .gx-fault-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
 .gx .gx-fault-actions > a { text-decoration: none; }
-.gx .gx-fault-ref { margin: 6px 0 0; max-width: 100%; font-family: var(--gx-mono); font-size: 12px; line-height: 1.5; color: var(--gx-text-3); overflow-wrap: anywhere; }
-.gx .gx-fault-msg { color: var(--gx-text-3); }
+/* The ref is what a person quotes: text-2, not text-3 — text-3 composites under the #7C7C84 floor on this ground. */
+.gx .gx-fault-ref { margin: 6px 0 0; max-width: 100%; font-family: var(--gx-mono); font-size: 12px; line-height: 1.5; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx .gx-fault-msg { color: var(--gx-text-2); }
+/* A Try again on its way: it says so, stays focusable, and ignores presses (PanelFault.tsx). */
+.gx .gx-fault [aria-disabled="true"], .gx .gx-fault-tile[aria-disabled="true"] { opacity: .6; cursor: progress; }
 
 /* In a 280/320px side panel: the card fills the column. */
 .gx .gx-fault-host { flex: 1; min-height: 0; overflow: auto; padding: 0 0 12px; }
@@ -29,20 +32,22 @@
 .gx .gx-fault[data-variant="inline"] .gx-fault-icon svg { width: 16px; height: 16px; }
 .gx .gx-fault-line { flex: 1 1 140px; min-width: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .gx .gx-fault-line strong { font-weight: 600; }
-.gx .gx-fault-ref-inline { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); white-space: nowrap; }
+.gx .gx-fault-ref-inline { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); white-space: nowrap; }
 .gx .gx-fault-dock { padding: 8px 10px; }
 
 /* ── Outside the live shell: the Suites error page and the 404 ─────────── */
 .gx.gx-outside a { color: inherit; text-decoration: none; }
+/* The live header's brand carries the context badge on a phone; this one is the mark alone, so it keeps a 44px target. */
+.gx.gx-outside .gx-brand { min-width: 44px; justify-content: center; }
 .gx .gx-outside-body { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 24px 16px max(40px, env(safe-area-inset-bottom)); }
 .gx .gx-outside-body .gx-fault { margin: 0; width: min(520px, 100%); padding: 36px 28px 26px; gap: 12px; border-radius: 24px; }
-.gx .gx-fault-eyebrow { font-family: var(--gx-mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gx-text-3); }
+.gx .gx-fault-eyebrow { font-family: var(--gx-mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gx-text-2); }
 .gx .gx-outside-body .gx-fault-title { font-size: 24px; letter-spacing: -.02em; }
 .gx .gx-outside-body .gx-fault-sub { font-size: 14px; }
 .gx .gx-outside-body .gx-fault-icon { width: 52px; height: 52px; }
 .gx .gx-outside .gx-header .gx-seg-btn > span.gx-seg-label { color: var(--gx-text-2); font-weight: 500; }
 .gx .gx-outside .gx-header .gx-seg-btn:hover::before { opacity: .6; }
-.gx .gx-fault-kbd { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); }
+.gx .gx-fault-kbd { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
 .gx .gx-primary .gx-fault-kbd { color: rgba(255, 255, 255, .75); }
 
 @media (max-width: 767px) {
@@ -57,6 +62,22 @@
 @media (max-width: 767px), (pointer: coarse) {
   .gx .gx-fault[data-variant="inline"] .gx-hbtn { height: 44px; }
 }
+/* A phone, or a phone on its side: the stage under the page head is short
+   (about 180px at 360×640, 130px at 844×390), so the card reads what stopped,
+   then what to do, then the details — Try again above the fold, not under the
+   tab bar. Visual order only; the DOM keeps title, line, actions, ref. */
+@media (max-width: 767px), (max-height: 500px) {
+  .gx .gx-fault[data-variant="panel"] { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 10px; text-align: left; margin: 12px auto; padding: 14px 16px 16px; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-icon { width: 36px; height: 36px; box-shadow: none; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-icon svg { width: 18px; height: 18px; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-title { margin: 0; font-size: 16px; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-actions { grid-column: 1 / -1; order: 3; margin-top: 0; justify-content: flex-start; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-sub { grid-column: 1 / -1; order: 4; max-width: none; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-ref { grid-column: 1 / -1; order: 5; margin: 0; }
+  .gx .gx-fault-host .gx-fault[data-variant="panel"] { margin: 0; }
+  /* In Search's or Atomik's sheet the card is the sheet: flush, and clear of the home indicator. */
+  .gx .gx-fault-dialog > .gx-fault[data-variant="panel"] { margin: 0; padding-bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px)); }
+}
 /* On a phone every veil is a bottom sheet (flair.css): Search's card rises the same way and clears the home indicator. */
 @media (max-width: 767px) {
   /* 100vw, not 100%: the veil's grid centres an auto track (graphite.css), which a percentage would shrink-wrap. */
@@ -69,3 +90,5 @@
 .gx .gx-fault-tile .gx-fault-icon { width: 32px; height: 32px; box-shadow: none; }
 .gx .gx-fault-tile .gx-fault-icon svg { width: 16px; height: 16px; }
 .gx .gx-fault-tile:hover { color: var(--gx-text); }
+/* Its ref is what a person quotes: text-2, above the floor, where a tile's meta line is text-3. */
+.gx .gx-asset[data-faulted="true"] .gx-asset-meta { color: var(--gx-text-2); }

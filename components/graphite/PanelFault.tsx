@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { Fault } from "@/components/Boundary";
 import { faultMessage, faultPrimary, faultReport, isStaleBuild } from "@/lib/shell/fault";
 import "@/app/fault.css";
@@ -45,25 +45,60 @@ function where(): string | null {
 }
 
 /**
+ * Where focus goes when a card appears. A card is mounted afresh by every
+ * failure, so after a Try again that failed the pressed button is gone and
+ * focus has fallen back to the page: it goes to the replacement. A card that
+ * appears on its own leaves focus where the person is — typing in the
+ * composer is never interrupted. A card that is the whole of a dialog the
+ * person just opened (Search, Atomik) takes focus, as the dialog would have.
+ */
+function useFocusOnMount(attempts: number, dialog: boolean) {
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (dialog || (attempts > 0 && lost)) first.current?.focus();
+  }, [attempts, dialog]);
+  return first;
+}
+
+/**
+ * Try again, or Reload once trying has failed twice or a deploy replaced the
+ * code. While a retry is on its way it says so and ignores presses; it stays
+ * focusable (aria-disabled, not disabled) so the keyboard keeps its place.
+ */
+function PrimaryAction({ fault, className, button }: { fault: Fault; className: string; button: Ref<HTMLButtonElement> }) {
+  if (faultPrimary(fault.error, fault.attempts) === "reload") {
+    return <button ref={button} type="button" className={className} onClick={() => window.location.reload()} data-testid="fault-reload">Reload</button>;
+  }
+  return (
+    <button ref={button} type="button" className={className} onClick={() => { if (!fault.pending) fault.retry(); }} aria-disabled={fault.pending || undefined} data-testid="fault-retry">
+      {fault.pending ? "Trying…" : "Try again"}
+    </button>
+  );
+}
+
+/**
  * `panel` sits in a stage or a side panel; `inline` is one row for a tile or a
  * strip. `actions` adds the panel's own way out (Close) after the retry.
  */
-export function PanelFault({ fault, name, variant = "panel", title, actions }: {
+export function PanelFault({ fault, name, variant = "panel", title, actions, dialog = false }: {
   fault: Fault; name: string; variant?: "panel" | "inline"; title?: string; actions?: ReactNode;
+  /** The card is the whole of a dialog the person just opened: it takes focus. */
+  dialog?: boolean;
 }) {
+  const first = useFocusOnMount(fault.attempts, dialog);
   const stale = isStaleBuild(fault.error);
-  const primary = faultPrimary(fault.error, fault.attempts);
+  const retrying = faultPrimary(fault.error, fault.attempts) === "retry";
   const message = faultMessage(fault.error);
   const heading = title ?? `${fault.what} stopped`;
-  const reload = () => window.location.reload();
   const report = () => faultReport({ what: fault.what, error: fault.error, where: where() });
 
   if (variant === "inline") {
     return (
-      <div className="gx-fault" data-variant="inline" role="alert" data-testid="panel-fault" data-fault={name}>
+      <div className="gx-fault" data-variant="inline" role="alert" data-testid="panel-fault" data-fault={name} data-attempts={fault.attempts}>
         <FaultIcon />
-        <span className="gx-fault-line"><strong>{heading}</strong> <span className="gx-fault-ref-inline">ref {fault.ref}</span></span>
-        <button type="button" className="gx-hbtn" onClick={primary === "reload" ? reload : fault.retry} data-testid="fault-retry">{primary === "reload" ? "Reload" : "Try again"}</button>
+        <span className="gx-fault-line"><strong>{heading}</strong> <span className="gx-fault-ref-inline" data-testid="fault-ref">ref {fault.ref}</span></span>
+        <PrimaryAction fault={fault} className="gx-hbtn" button={first} />
         {actions}
       </div>
     );
@@ -73,20 +108,34 @@ export function PanelFault({ fault, name, variant = "panel", title, actions }: {
     <div className="gx-fault" data-variant="panel" role="alert" data-testid="panel-fault" data-fault={name} data-attempts={fault.attempts}>
       <FaultIcon />
       <p className="gx-fault-title">{heading}</p>
-      <p className="gx-fault-sub">{stale ? "Particl was updated. Reload to carry on." : "Everything else still works. Renders in flight carry on."}</p>
+      <p className="gx-fault-sub">{stale ? "Particl was updated. Reload to carry on." : "Everything else still works. Takes in progress keep generating."}</p>
       <div className="gx-fault-actions">
-        {primary === "reload" ? (
-          <button type="button" className="gx-primary" onClick={reload} data-testid="fault-reload">Reload</button>
-        ) : (
-          <button type="button" className="gx-primary" onClick={fault.retry} data-testid="fault-retry">Try again</button>
-        )}
-        {primary === "retry" && fault.attempts > 0 ? <button type="button" className="gx-hbtn" onClick={reload} data-testid="fault-reload">Reload</button> : null}
+        <PrimaryAction fault={fault} className="gx-primary" button={first} />
+        {retrying && fault.attempts > 0 ? <button type="button" className="gx-hbtn" onClick={() => window.location.reload()} data-testid="fault-reload">Reload</button> : null}
         {actions}
         <CopyDetails text={report} />
       </div>
       <p className="gx-fault-ref" data-testid="fault-ref" title={message ?? undefined}>
         <span>ref {fault.ref}</span>{message ? <span className="gx-fault-msg"> · {message}</span> : null}
       </p>
+    </div>
+  );
+}
+
+/**
+ * One take that threw keeps its tile — same size, same place, its name — so
+ * the grid does not jump; the whole thumbnail is its Try again.
+ */
+export function TileFault({ fault, name }: { fault: Fault; name: string }) {
+  const first = useFocusOnMount(fault.attempts, false);
+  return (
+    <div className="gx-asset" data-faulted="true" data-testid="take-fault" role="alert">
+      <button ref={first} type="button" className="gx-asset-thumb gx-fault-tile" onClick={() => { if (!fault.pending) fault.retry(); }} aria-disabled={fault.pending || undefined}
+        aria-label={`${name} could not be shown. Try again`} title={`ref ${fault.ref}`}>
+        <FaultIcon /><span>{fault.pending ? "Trying…" : "Try again"}</span>
+      </button>
+      <span className="gx-asset-name">{name}</span>
+      <span className="gx-asset-meta">ref {fault.ref}</span>
     </div>
   );
 }

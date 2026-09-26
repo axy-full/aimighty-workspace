@@ -246,7 +246,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        <AtomikGate />
+        {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
+        <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
+          <AtomikGate />
+        </Boundary>
         {shell.view === "crew" ? <><CrewStrip room={crew} />
           <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
             <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
@@ -362,23 +365,32 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         )}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
           <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
-            <div className="gx-fault-dialog" role="dialog" aria-label="Search" onClick={(e) => e.stopPropagation()}>
-              <PanelFault fault={fault} name="palette" actions={<button type="button" className="gx-hbtn" onClick={() => shell.setPalette(false)}>Close</button>} />
+            <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Search" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="palette" dialog actions={<button type="button" className="gx-hbtn" onClick={() => shell.setPalette(false)}>Close</button>} />
             </div>
           </div>
         )}>
           <Palette items={items} onAsk={ask} />
         </Boundary>
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
-          <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => (
+          {/* Closed, the composer shows nothing, so a failure there shows nothing either until it is opened — like Search and Atomik. */}
+          <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => !state.composer ? null : (
             <div className="gx-fault-dock"><PanelFault fault={fault} name="composer" variant="inline"
-              actions={state.composer ? <button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { composer: false } })}>Close</button> : null} /></div>
+              actions={<button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { composer: false } })}>Close</button>} /></div>
           )}>
             <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
           </Boundary>
         </div>
         {/* The page's Atomik plan: "Run stage" and the Inspector's Approve open it; its gate approves. */}
-        <AtomikSheet />
+        <Boundary what="Atomik" probe="atomik-sheet" resetKey={state.agentOpen ? "open" : "closed"} fallback={(fault) => !state.agentOpen ? null : (
+          <div className="gx-veil" onClick={() => dispatch({ type: "patch", patch: { agentOpen: false } })} data-testid="atomik-veil">
+            <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Atomik" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="atomik-sheet" dialog actions={<button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { agentOpen: false } })}>Close</button>} />
+            </div>
+          </div>
+        )}>
+          <AtomikSheet />
+        </Boundary>
         <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (
           <div className="gx-veil" onClick={() => setMoving(null)} data-testid="move-veil">

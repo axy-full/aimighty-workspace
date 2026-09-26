@@ -14,8 +14,8 @@ import { STUDIO_HREF, faultMessage, faultRef } from "@/lib/shell/fault";
  * cron; the wall picks it up whenever the screen comes back.
  */
 export default function AppError({
-  error, retry, reset,
-}: { error: Error & { digest?: string }; retry?: () => void; reset: () => void }) {
+  error, retry,
+}: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
     console.error(`[particl] screen failed (ref ${faultRef(error)}):`, error);
   }, [error]);
@@ -31,16 +31,16 @@ export default function AppError({
         </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          <button type="button" onClick={() => (retry ?? reset)()} className="btn-render h-[38px] px-5 text-[14px]">
+          <button type="button" onClick={() => retry()} className="btn-render h-[44px] px-5 text-[14px]">
             Try again
           </button>
-          <Link href={STUDIO_HREF} className="chip">Back to Studio</Link>
-          <button type="button" onClick={() => window.location.reload()} className="chip">
+          <Link href={STUDIO_HREF} className="chip min-h-[44px]">Back to Studio</Link>
+          <button type="button" onClick={() => window.location.reload()} className="chip min-h-[44px]">
             Reload the page
           </button>
         </div>
 
-        <p className="mt-5 break-words font-mono text-[12px] leading-relaxed text-mute">
+        <p className="mt-5 break-words font-mono text-[12px] leading-relaxed text-dim">
           {faultMessage(error) ? <>{faultMessage(error)}<br /></> : null}
           ref {faultRef(error)}
         </p>
