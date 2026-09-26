@@ -14,9 +14,10 @@
 // answers itself without running a handler, so a 404 there means the server
 // does not know the route. A server restored from .next has answered every
 // sign-up, and other API routes, with the not-found page. So this exits 1
-// when the sign-up or sign-in routes or the proxy do not answer, or when the
-// server does not know an API route. Pages are fetched but not judged: a
-// page's own 404 can depend on the data the specs have written.
+// when /api/health and /api/me do not answer JSON, when the sign-up or
+// sign-in routes or the proxy do not answer, or when the server does not know
+// an API route. Pages are fetched but not judged: the same page has answered
+// with a redirect on one server and its own 404 on the next.
 //
 //   node scripts/warm-dev-routes.mjs [base URL]
 import { readdirSync } from "node:fs";
@@ -76,24 +77,33 @@ async function settle() {
   return now;
 }
 
+/* The status, and whether the body was JSON. */
 async function request(url, method) {
   try {
     const response = await fetch(base + url, {
       method,
       redirect: "manual",
-      headers: { accept: method === "GET" ? "text/html" : "*/*" },
+      headers: { accept: url.startsWith("/api/") ? "application/json" : "text/html" },
       signal: AbortSignal.timeout(120_000),
     });
-    await response.arrayBuffer();
-    return response.status;
+    const body = await response.text();
+    let json = false;
+    try {
+      JSON.parse(body);
+      json = true;
+    } catch {}
+    return { status: response.status, json };
   } catch (error) {
-    return error.name;
+    return { status: error.name, json: false };
   }
 }
 
-/* What every spec relies on: the sign-up and sign-in routes, and the proxy,
-   which shows a visitor the public site at / and sends /site there. */
+/* What every spec relies on: API routes that run and answer JSON, the sign-up
+   and sign-in routes, and the proxy, which shows a visitor the public site at
+   / and sends /site there. */
 const targets = [
+  { url: "/api/health", method: "GET", ok: [200], json: true },
+  { url: "/api/me", method: "GET", ok: [401], json: true },
   { url: "/api/auth/signup", method: "OPTIONS", ok: [204] },
   { url: "/api/auth/login", method: "OPTIONS", ok: [204] },
   { url: "/login", method: "GET", ok: [200] },
@@ -115,10 +125,11 @@ let floor = serverMemory();
 let peak = floor;
 let pauses = 0;
 const missing = [];
-for (const { url, method, ok, known } of targets) {
-  const status = await request(url, method);
+for (const { url, method, ok, known, json } of targets) {
+  const answer = await request(url, method);
+  const status = answer.status;
   /* A route that fails to load fails its own specs; only an unknown one stops the run. */
-  if ((ok && !ok.includes(status)) || (known && status === 404)) missing.push(`${method} ${url} ${status}`);
+  if ((ok && !ok.includes(status)) || (json && !answer.json) || (known && status === 404)) missing.push(`${method} ${url} ${status}${json && !answer.json ? " (not JSON)" : ""}`);
   const memory = serverMemory();
   peak = Math.max(peak, memory);
   if (memory > Math.min(floor + budget, cap)) {

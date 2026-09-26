@@ -192,8 +192,9 @@ jobs:
             echo "::error::Failed sub-shards: ${failed[*]}"
             exit 1
           fi
+      # Also when the job times out: a cancelled job left nothing to read.
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: browser-failure-${{ matrix.suite }}-${{ matrix.shard }}
           path: |
