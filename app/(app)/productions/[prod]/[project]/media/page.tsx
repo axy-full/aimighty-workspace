@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { downloadHref } from "@/lib/format";
+import { downloadHref, isOwnMedia } from "@/lib/format";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
@@ -104,7 +104,12 @@ export default function ProjectMediaPage() {
     }
     return [...by.values()].sort((a, b) => a.code.localeCompare(b.code));
   }, [shown]);
-  const masters = items.filter((m) => m.kind === "master" && m.url);
+  /* Only a stored master downloads from here: its /api/media address is this
+     origin's, which is what lets the `download` attribute name and save it. A
+     master still on the engine's own host would navigate the tab instead (a
+     browser ignores `download` across origins) and cut the rest short; it
+     opens from its own tile until it is stored. */
+  const masters = items.filter((m) => m.kind === "master" && m.url && isOwnMedia(m.url));
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to see this project.</div>;
   if (!prods || !jobs) return <PageLoader what={`Opening · ${project?.name ?? "project"}`} />;

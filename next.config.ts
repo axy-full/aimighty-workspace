@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { NOINDEX_HEADER, NOINDEX_PATHS } from "./lib/site";
 
 /**
  * Security headers on every response. The content policy stops the app
@@ -80,6 +81,8 @@ const nextConfig: NextConfig = {
     );
     return [
       { source: "/(.*)", headers },
+      /* A client's review link is open to its preview card and closed to every index (lib/site.ts). */
+      ...NOINDEX_PATHS.map((source) => ({ source, headers: [NOINDEX_HEADER] })),
       { source: "/workbench/movie", headers: movieHeaders },
       { source: "/vendor/tesseract-7.0.0/worker.min.js", headers: [
         { key: "Content-Security-Policy", value: "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" },

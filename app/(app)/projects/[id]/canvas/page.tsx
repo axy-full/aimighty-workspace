@@ -27,7 +27,7 @@ import { useOnChange } from "@/lib/changes";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { timeAgo, downloadHref, posterSrc } from "@/lib/format";
+import { timeAgo, downloadHref, isOwnMedia, posterSrc } from "@/lib/format";
 import LazyMedia from "@/components/LazyMedia";
 import ProductionNav from "@/components/ProductionNav";
 import PaneDivider from "@/components/PaneDivider";
@@ -127,10 +127,11 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
     return () => { live = false; el.removeEventListener("loadedmetadata", fromTheTop); };
   }, [playing]);
 
+  /* Stored masters only: a file on the engine's own host would navigate the tab
+     (a browser ignores `download` across origins) and cut the rest short. */
+  const downloadable = approvedHeroes.map((g) => g.storedUrl ?? g.sourceUrl).filter((url): url is string => isOwnMedia(url));
   function downloadAll() {
-    approvedHeroes.forEach((g, i) => {
-      const url = g.storedUrl ?? g.sourceUrl;
-      if (!url) return;
+    downloadable.forEach((url, i) => {
       setTimeout(() => {
         const a = document.createElement("a");
         a.href = downloadHref(url); a.download = ""; a.rel = "noopener";
@@ -184,8 +185,8 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                 onClick={() => setSeq(seq == null ? 0 : null)}>
                 {seq == null ? "▶ Play approved" : "■ Stop"}
               </button>
-              <button type="button" className="btn-secondary" disabled={!approvedHeroes.length} onClick={downloadAll}>
-                Download {approvedHeroes.length} master{approvedHeroes.length === 1 ? "" : "s"} ↓
+              <button type="button" className="btn-secondary" disabled={!downloadable.length} onClick={downloadAll}>
+                Download {downloadable.length} master{downloadable.length === 1 ? "" : "s"} ↓
               </button>
             </div>
           </div>

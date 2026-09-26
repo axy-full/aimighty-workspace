@@ -49,7 +49,11 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   const { data: shotData } =
     useApi<{ shots: ShotRow[] }>(`/api/shots?projectId=${encodeURIComponent(id)}`, 30000);
 
-  const project = projects?.projects.find((p) => p.id === id);
+  const listed = projects?.projects.find((p) => p.id === id);
+  /* The list is memoised for 15 s per server instance, so a project made a
+     moment ago can be missing from it; the project's own row decides. */
+  const direct = useApi<{ project: Project }>(projects && !listed ? `/api/projects/${encodeURIComponent(id)}` : null, 0);
+  const project = listed ?? (direct.data?.project.id === id ? direct.data.project : undefined);
 
 
 
@@ -88,6 +92,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
      be gone. The analytics route answers zeros for any id, so without this the
      page drew an empty dashboard whose every control then failed. */
   if (projects && !project) {
+    if (direct.status !== 404) return direct.error ? <Trouble label="The project didn't load" detail={direct.error} onRetry={direct.refresh} /> : <Waiting label="Reading the project" />;
     return (
       <div className="screen">
         <p className="mx-auto w-full max-w-[1120px] pt-6 text-[14px] text-dim">

@@ -24,8 +24,18 @@ export const SITE_DESCRIPTION = "A production studio for generated film: brief, 
 /** The pages anyone may open without an account, for the sitemap. */
 export const PUBLIC_PATHS = ["/", "/welcome", "/login", "/signup", "/pricing", "/terms", "/privacy", "/policy", "/report"] as const;
 
-/** Never crawled: the API, a client's review page, one-time links, and account and platform screens. */
-export const PRIVATE_PATHS = ["/api/", "/review/", "/invite/", "/reset/", "/account/", "/admin", "/setup"] as const;
+/** Never crawled: the API, one-time links, and account and platform screens. */
+export const PRIVATE_PATHS = ["/api/", "/invite/", "/reset/", "/account/", "/admin", "/setup"] as const;
+
+/**
+ * A client's review page is NOT in robots.txt, on purpose. Its link preview
+ * (lib/reviewMetadata.ts) is fetched by bots that honour robots.txt, and a
+ * crawler that may not fetch a page never reads its noindex either, so a
+ * leaked link could still be listed by URL alone. It is kept out of every
+ * index by its own noindex meta and by this header (next.config.ts).
+ */
+export const NOINDEX_PATHS = ["/review/:path*"] as const;
+export const NOINDEX_HEADER = { key: "X-Robots-Tag", value: "noindex, nofollow" } as const;
 
 /**
  * Server metadata for a public page whose body is a client component: what a
