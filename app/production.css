@@ -56,6 +56,9 @@
 .gx .pd-gate .gx-hint { margin: 0; }
 .gx .pd-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .gx .pd-offer .gx-hint { flex: 1; min-width: 220px; margin: 0; }
+/* A redraft that could not finish: the reason, and the notes offered back. */
+.gx .pd-failed { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx .pd-failed .gx-gen-error { flex: 1; min-width: 200px; }
 .gx .pd-board { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx .pd-scene { gap: 12px; border-left: 3px solid var(--gx-accent); }
 .gx .pd-scene:nth-child(4n+2) { border-left-color: #BF5AF2; }

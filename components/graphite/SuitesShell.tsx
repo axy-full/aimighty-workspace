@@ -44,6 +44,7 @@ import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
 import { TabBar } from "./TabBar";
+import { ShellToast } from "./ShellToast";
 import { WorkspaceView } from "./WorkspaceView";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
@@ -300,7 +301,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </div>
         ) : null}
         <TabBar />
-        {state.toast ? <div className="gx-toast" role="status" data-testid="toast">{state.toast}</div> : null}
+        <ShellToast text={state.toast} />
       </div>
     </AtomikHost>
   );

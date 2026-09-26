@@ -86,27 +86,34 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
     if (job.error) setError(job.error);
   }, []);
 
-  /** Starts the quoted request, or recovers the unconfirmed one — never both, never twice. */
-  const start = useCallback(async () => {
-    if (!loaded || (!pending && !quote)) return;
+  /**
+   * Starts the quoted request, or recovers the unconfirmed one — never both,
+   * never twice. Resolves true once the server holds the run (so the caller
+   * may clear what went with it, like the director's notes), false when it
+   * does not: refused, failed on arrival, or unconfirmed.
+   */
+  const start = useCallback(async (): Promise<boolean> => {
+    if (!loaded || (!pending && !quote)) return false;
     epoch.current++;
     setBusy(pending ? "Recovering…" : "Starting…"); setError("");
+    let held = false;
+    const take = (record: PendingDevelopment, job: DevelopmentJob) => { accept(record, job); held = job.status !== "failed" && job.status !== "uncertain"; };
     try {
       await withDevelopmentLock(scope, projectId, async () => {
         const record = pending ?? recordDevelopment(window.localStorage, scope, projectId, JSON.stringify({ ...quote!.input, sourceHash: quote!.value.sourceHash, maxCredits: quote!.value.estimateCredits, ...(quote!.value.estimateUsd == null ? {} : { maxUsd: quote!.value.estimateUsd }) }));
         if (active.current) setPending(record);
         if (pending) {
           const known = (await lookup(record)).jobs.find((job) => job.requestId === developmentInput(record).requestId);
-          if (known) { accept(record, known); return; }
+          if (known) { take(record, known); return; }
         }
         try {
           const next = await studioRequest<{ job: DevelopmentJob }>(ENDPOINT, { method: "POST", headers: headers(), body: record.body });
-          accept(record, next.job);
+          take(record, next.job);
         } catch (cause) {
           let absent = false;
           try {
             const known = (await lookup(record)).jobs.find((job) => job.requestId === developmentInput(record).requestId);
-            if (known) { accept(record, known); return; }
+            if (known) { take(record, known); return; }
             absent = true;
           } catch { /* an ambiguous failure keeps the exact request for recovery */ }
           const status = Number((cause as { status?: number })?.status);
@@ -117,8 +124,9 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
           throw cause;
         }
       });
-    } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : "The request is unconfirmed. Recover it before starting another."); }
+    } catch (cause) { held = false; if (active.current) setError(cause instanceof Error ? cause.message : "The request is unconfirmed. Recover it before starting another."); }
     finally { epoch.current++; if (active.current) setBusy(""); }
+    return held;
   }, [accept, headers, loaded, lookup, pending, projectId, quote, scope]);
 
   /** One finished run in full (an older writer draft is listed without its script). */

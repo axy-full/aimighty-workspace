@@ -79,8 +79,8 @@ function Condense({ shotId, full }: { shotId: string; full: string }) {
   return (
     <div className="pxw-rig-condense" data-testid="rig-condense">
       <p className="pxw-inspector-note">This shot sends {full.trim().length.toLocaleString()} characters; engines take {ENGINE_PROMPT_LIMIT.toLocaleString()}. The agent condenses it and keeps every visual instruction.</p>
-      <AgentAction id="rig-condense" secondary estimateLabel="Estimate the condensation" startLabel={(c) => `Condense · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-        describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+      <AgentAction id="rig-condense" secondary estimateLabel="Estimate the condensation" startLabel={(price) => `Condense · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+        describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
         onEstimate={() => void runs.estimate({ kind: "condense", model: model!.id, effort: agent.effort, nodeId: shotId })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       {runs.error ? <p className="pxw-insp-error" role="alert">{runs.error}</p> : null}
     </div>
@@ -326,8 +326,8 @@ export function WireShot({ shot }: { shot: RigShot }) {
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed." : active ? "The agent is wiring this shot." : !model ? "Choose an agent in Brief & Script." : null;
   return (
     <div className="pxw-rig-condense" data-testid="rig-wire">
-      <AgentAction id="rig-wire" secondary estimateLabel="Let the agent wire this shot" startLabel={(c) => `Wire it · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-        describe={(qq) => `Prompt, notes and inputs from the beat, the frame and the cast · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+      <AgentAction id="rig-wire" secondary estimateLabel="Let the agent wire this shot" startLabel={(price) => `Wire it · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+        describe={(qq, price) => `Prompt, notes and inputs from the beat, the frame and the cast · ${thinkingModelName(qq.input.model)} · up to ${price}`}
         onEstimate={() => void runs.estimate({ kind: "rig", model: model!.id, effort: agent.effort, nodeId: shot.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       {runs.error ? <p className="pxw-insp-error" role="alert">{runs.error}</p> : null}
     </div>

@@ -207,6 +207,14 @@
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
 .gx-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+/* An undo toast carries its own Undo — the phone's ⌘Z; the "⌘Z to undo" half is for keyboards only. */
+.gx-toast[data-undo] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
+.gx-toast-text { min-width: 0; }
+.gx-toast-undo { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(10, 132, 255, .45); background: rgba(10, 132, 255, .16); color: var(--gx-accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+.gx-toast-undo:hover { background: rgba(10, 132, 255, .26); }
+@media (hover: none), (pointer: coarse) { .gx-toast-kbd { display: none; } .gx-toast-undo { height: 44px; min-width: 72px; } }
+/* On a phone the toast sits above the floating tab bar, never over it. */
+@media (max-width: 767px) { .gx .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); } }
 
 /* ── Workspace view ────────────────────────────────────────────────────── */
 .gx-ws { flex: 1; min-height: 0; overflow: auto; background: var(--gx-panel); }

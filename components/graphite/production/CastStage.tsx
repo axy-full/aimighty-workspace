@@ -285,8 +285,8 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <button type="button" className="gx-hbtn" onClick={() => setCast((c) => ({ ...c, entries: [...c.entries, newEntry("element")].slice(0, CAST_LIMITS.entries) }))} data-testid="cast-add-element">+ Element</button>
         </div>
         {activeCast ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeCast.model) ?? "claude")} is casting · step {Math.min(activeCast.completedSteps + 1, activeCast.totalSteps)} of {activeCast.totalSteps}</p> : null}
-        <AgentAction id="cast-agent" secondary estimateLabel="Have the agent cast the film" startLabel={(c) => `Cast it · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-          describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+        <AgentAction id="cast-agent" secondary estimateLabel="Have the agent cast the film" startLabel={(price) => `Cast it · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+          describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
           onEstimate={() => void runs.estimate({ kind: "cast", model: agentModel!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       </section>
 

@@ -281,8 +281,8 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
         <span className="gx-eyebrow" data-functional-label="">Build it with the agent · optional</span>
         <p className="gx-hint">The agent reads the brief, the script and the beat sheet and writes the world’s rules and every place with a plate prompt. What you wrote is kept; you can also build the world entirely by hand.</p>
         {activeEnv ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeEnv.model) ?? "claude")} is building the world · step {Math.min(activeEnv.completedSteps + 1, activeEnv.totalSteps)} of {activeEnv.totalSteps}</p> : null}
-        <AgentAction id="environment-agent" secondary estimateLabel="Have the agent build the world" startLabel={(c) => `Build the world · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-          describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+        <AgentAction id="environment-agent" secondary estimateLabel="Have the agent build the world" startLabel={(price) => `Build the world · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+          describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
           onEstimate={() => void runs.estimate({ kind: "environment", model: agentModel!.id, effort: agent.effort, ...attach.input })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       </section>
 

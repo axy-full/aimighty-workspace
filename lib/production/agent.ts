@@ -53,3 +53,29 @@ export function readAgent(): AgentChoice {
 export function writeAgent(choice: AgentChoice) {
   try { localStorage.setItem(AGENT_KEY, JSON.stringify(choice)); } catch { /* a convenience; the choice still holds for this page */ }
 }
+
+/**
+ * An agent run's price, in the unit this workspace pays in. A workspace on
+ * the platform's keys sees credits and only credits — never the provider's
+ * dollars, even if a figure arrived with them. A workspace that pays its
+ * vendors in dollars sees the provider's dollar ceiling (its credit figure
+ * is 0, not a price).
+ */
+export function agentPrice(value: { estimateCredits: number; estimateUsd?: number | null }, inCredits: boolean): string {
+  if (!inCredits && value.estimateUsd != null && Number.isFinite(value.estimateUsd)) return dollars(value.estimateUsd);
+  return `${Math.max(0, Math.round(value.estimateCredits)).toLocaleString("en-US")} cr`;
+}
+/** What a finished run cost, in the same unit; null while it is still settling. */
+export function agentCharged(job: { credits: number | null; costUsd?: number | null }, inCredits: boolean): string | null {
+  if (!inCredits) return job.costUsd != null && Number.isFinite(job.costUsd) ? dollars(job.costUsd) : null;
+  return job.credits == null ? null : `${Math.max(0, Math.round(job.credits)).toLocaleString("en-US")} cr`;
+}
+function dollars(n: number): string {
+  return `$${Math.max(0, n).toFixed(n >= 1 ? 2 : 4)}`;
+}
+
+/** The director's notes went with this request (so the box can be cleared once it is confirmed). */
+export function notesSent(input: { instructions?: string } | null | undefined, notes: string): boolean {
+  const said = notes.trim();
+  return Boolean(input && said && (input.instructions ?? "").trim() === said);
+}

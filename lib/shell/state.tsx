@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
-import { popUndo, pushUndo, type UndoEntry } from "./undo";
+import { popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 
 /**
@@ -41,6 +41,8 @@ type Shell = {
   ctx: CtxState | null;
   clip: Clip | null;
   canUndo: boolean;
+  /** The toast that offers its own Undo button: the one `pushUndo` said, while its entry is the newest. */
+  undoToast: string | null;
   goSuite: (suite: ShellSuiteId, page?: string) => void;
   goGen: () => void;
   goCrew: (page?: CrewPageId) => void;
@@ -55,7 +57,8 @@ type Shell = {
   openCtx: (ctx: CtxState) => void;
   closeCtx: () => void;
   setClip: (clip: Clip | null) => void;
-  pushUndo: (entry: UndoEntry) => void;
+  /** Records an inverse. With `say`, the shell toasts it and the toast carries an Undo button (a phone has no ⌘Z). */
+  pushUndo: (entry: UndoEntry, say?: string) => void;
   /** The shell's command path (SuitesShell registers it), so panels never grow a second one. */
   runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
   setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
@@ -105,6 +108,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const [ctx, setCtx] = useState<CtxState | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const [undoToast, setUndoToast] = useState<string | null>(null);
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
   const undoRef = useRef(undoStack);
   useEffect(() => { undoRef.current = undoStack; }, [undoStack]);
@@ -154,7 +158,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     /* Gen is not a stage and has no tools of its own: there the Library is
        what you can drag in, however you arrived (tab, palette or a link). */
     view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: params.view === "gen" ? "assets" : libTab, libOpen, inspOpen,
-    inspector: ws.state.inspector, palette, ctx, clip, canUndo: undoStack.length > 0,
+    inspector: ws.state.inspector, palette, ctx, clip, canUndo: undoStack.length > 0, undoToast: undoStack.length ? undoToast : null,
     goSuite,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
     goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp }, "push"); },
@@ -175,17 +179,23 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     openCtx: (next) => setCtx(next),
     closeCtx: () => setCtx(null),
     setClip,
-    pushUndo: (entry) => setUndoStack((stack) => pushUndo(stack, entry)),
+    pushUndo: (entry, say) => {
+      setUndoStack((stack) => pushUndo(stack, entry));
+      setUndoToast(say ?? null);
+      if (say) ws.toast(say);
+    },
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
     undo: async () => {
       const popped = popUndo(undoRef.current);
       if (!popped) { ws.toast("Nothing to undo."); return; }
+      /* Taken off at once, so a double tap on the toast's Undo cannot undo one entry twice. */
+      undoRef.current = popped.rest;
       setUndoStack(popped.rest);
-      await popped.entry.undo();
-      ws.toast(popped.entry.label);
+      setUndoToast(null);
+      ws.toast(undoneLabel(popped.entry, await popped.entry.undo()));
     },
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack.length, goSuite, apply, ws]);
+  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack.length, undoToast, goSuite, apply, ws]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
 }

@@ -9,7 +9,8 @@ import { applyDevelopment } from "@/lib/workbench/development-apply";
 import { developmentSourceHash } from "@/lib/workbench/development-client";
 import { sourceCanonical } from "@/lib/workbench/development-types";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
-import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
+import { agentCharged, agentFamilyOf, agentLabel, agentPrice, notesSent } from "@/lib/production/agent";
+import { useMoney } from "@/lib/price";
 import { sha256Hex } from "@/lib/production/hash";
 import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { ScreenplayImport, ScriptScene } from "@/lib/workbench/screenplay";
@@ -44,6 +45,7 @@ export function BriefStage({ projectId, scope, onBeats }: { projectId: string; s
 function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDraftEditor>; scope: string; onBeats?: () => void }) {
   const p = editor.project!;
   const { toast, go } = useWorkspace();
+  const { inCredits } = useMoney();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   /* Pictures and text files attached to the prompt or the notes go with the writer's next run. */
@@ -133,7 +135,13 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
     } catch (error) { toast(error instanceof Error ? error.message : "Could not build these scenes."); }
   }
 
-  const quoteLine = (q: NonNullable<typeof quote>) => `${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${q.value.estimateCredits.toLocaleString()} credits${q.value.estimateUsd != null ? ` · $${q.value.estimateUsd.toFixed(4)} ceiling` : ""}`;
+  /* Prices in the unit this workspace pays in: credits, or a provider's dollar ceiling for a workspace that pays its vendors in dollars — never both. */
+  const price = (q: NonNullable<typeof quote>) => agentPrice(q.value, inCredits);
+  const quoteLine = (q: NonNullable<typeof quote>) => `${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${price(q)}`;
+  /* Notes leave the box only once the server holds the run they went with; a refused or failed start keeps them. */
+  const clearSent = (sent: { instructions?: string } | null | undefined) => (held: boolean) => { if (held) setNotes((now) => (notesSent(sent, now) ? "" : now)); };
+  /* The newest draft is a redraft that could not finish: say so beside the notes, and offer them back. */
+  const failedRedraft = failed && shown ? failed : null;
 
   return (
     <div className="pd-stage gx-enter" data-testid="brief-stage">
@@ -145,7 +153,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
       {runs.pending ? (
         <div className="gx-gen-card pd-recover" role="alert" data-testid="agent-recover">
           <p className="gx-hint">An earlier {runs.pendingInput?.kind === "write" ? "script" : "agent"} request was sent but not confirmed. Recovering it re-reads that exact request; it is never sent twice.</p>
-          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => void runs.start()}>{runs.busy || "Recover the request"}</button>
+          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => { const sent = runs.pendingInput; void runs.start().then(clearSent(sent)); }}>{runs.busy || "Recover the request"}</button>
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
@@ -184,7 +192,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             <div className="gx-gen-enhance">
               {writeQuote ? (
                 <>
-                  <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} onClick={() => void runs.start()} data-testid="brief-write">{runs.busy || `Write the script · up to ${writeQuote.value.estimateCredits.toLocaleString()} credits`}</button>
+                  <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} onClick={() => void runs.start()} data-testid="brief-write">{runs.busy || `Write the script · up to ${price(writeQuote)}`}</button>
                   <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                   <span className="gx-hint" data-testid="brief-quote">{quoteLine(writeQuote)}</span>
                 </>
@@ -200,7 +208,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             <section className="gx-gen-card pd-progress" role="status" aria-label="The agent is writing" data-testid="brief-progress">
               <span className="gx-eyebrow" data-functional-label="">{agentLabel(agentFamilyOf(active.model) ?? "claude")} is {STAGE[active.currentStage] ?? "writing"}</span>
               <div className="pd-meter" aria-hidden="true"><span style={{ width: `${Math.round(((active.completedSteps + 0.5) / Math.max(1, active.totalSteps)) * 100)}%` }} /></div>
-              <span className="gx-hint">Step {Math.min(active.completedSteps + 1, active.totalSteps)} of {active.totalSteps} · {thinkingModelName(active.model)} · reserved up to {active.estimateCredits.toLocaleString()} credits</span>
+              <span className="gx-hint">Step {Math.min(active.completedSteps + 1, active.totalSteps)} of {active.totalSteps} · {thinkingModelName(active.model)} · reserved up to {agentPrice(active, inCredits)}</span>
             </section>
           ) : failed && !shown ? <p className="gx-gen-error" role="alert" data-testid="brief-failed">{failed.error ?? "The agent could not finish this script."}</p> : null}
 
@@ -224,7 +232,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                   <ul>{shown.result.script.notes.map((n, i) => <li key={`n${i}`}>{n}</li>)}{shown.result.assumptions.map((n, i) => <li key={`a${i}`} className="pd-assume">Assumed: {n}</li>)}</ul>
                 </div>
               ) : null}
-              <p className="gx-hint">{thinkingModelName(shown.model)} · {shown.credits != null ? `${shown.credits.toLocaleString()} credits` : "settling"}{shown.instructions ? ` · redrafted from: “${shown.instructions.slice(0, 120)}${shown.instructions.length > 120 ? "…" : ""}”` : ""}</p>
+              <p className="gx-hint">{thinkingModelName(shown.model)} · {agentCharged(shown, inCredits) ?? "settling"}{shown.instructions ? ` · redrafted from: “${shown.instructions.slice(0, 120)}${shown.instructions.length > 120 ? "…" : ""}”` : ""}</p>
 
               <div className="gx-gen-enhance">
                 {approved && approval?.jobId === shown.id ? (
@@ -241,10 +249,16 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                 <span className="gx-eyebrow" data-functional-label="">Not there yet? Notes for the next draft</span>
                 <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="brief-notes-attach"><textarea className="gx-textarea pd-small" maxLength={NOTES_LIMIT} value={notes} placeholder="What should change — a scene, a character’s voice, the ending, the length…" onChange={(e) => setNotes(e.target.value)} data-testid="brief-notes" /></PromptAttach>
               </label>
+              {failedRedraft ? (
+                <div className="pd-failed" role="alert" data-testid="brief-redraft-failed">
+                  <p className="gx-gen-error">{failedRedraft.error ?? "The agent could not finish its last draft."}</p>
+                  {failedRedraft.source === "draft" && failedRedraft.instructions && !notes.trim() ? <button type="button" className="gx-hbtn" onClick={() => setNotes(failedRedraft.instructions)} data-testid="brief-notes-restore">Use those notes again</button> : null}
+                </div>
+              ) : null}
               <div className="gx-gen-enhance">
                 {redraftQuote ? (
                   <>
-                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then(() => setNotes(""))} data-testid="brief-redraft">{runs.busy || `Redraft · up to ${redraftQuote.value.estimateCredits.toLocaleString()} credits`}</button>
+                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then(clearSent(redraftQuote.input))} data-testid="brief-redraft">{runs.busy || `Redraft · up to ${price(redraftQuote)}`}</button>
                     <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                     <span className="gx-hint" data-testid="brief-redraft-quote">{quoteLine(redraftQuote)}</span>
                   </>

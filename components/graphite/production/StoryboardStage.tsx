@@ -370,8 +370,8 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         <span className="gx-eyebrow" data-functional-label="">Frame prompts</span>
         <p className="gx-hint">The agent writes a prompt for every shot from the beat sheet, the direction and the cast. Prompts you have written yourself are kept.</p>
         {activePrompts ? <p className="gx-hint" role="status" data-testid="boards-prompts-progress">{agentLabel(agentFamilyOf(activePrompts.model) ?? "claude")} is writing the prompts · step {Math.min(activePrompts.completedSteps + 1, activePrompts.totalSteps)} of {activePrompts.totalSteps}</p> : null}
-        <AgentAction id="boards-prompts" estimateLabel="Estimate the frame prompts" startLabel={(c) => `Write every prompt · up to ${c} credits`} quote={promptsQuote} busy={runs.busy} blocked={blocked}
-          describe={(qq) => `${shots.length} shots · ${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+        <AgentAction id="boards-prompts" estimateLabel="Estimate the frame prompts" startLabel={(price) => `Write every prompt · up to ${price}`} quote={promptsQuote} busy={runs.busy} blocked={blocked}
+          describe={(qq, price) => `${shots.length} shots · ${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
           onEstimate={() => void runs.estimate({ kind: "frames", model: model!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
         <div className="gx-gen-enhance">
           {batch?.from === "missing" ? (
@@ -429,9 +429,9 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                         {BOARD_STYLES.map((st) => <button key={st.id} type="button" role="radio" className="gx-seg-btn" aria-checked={look === st.id} onClick={() => setFrame(shot.id, (f) => ({ ...f, style: st.id }))} data-testid={`drawing-look-${st.id}`}><span>{st.label}</span></button>)}
                       </div>
                       {frame.reading ? <p className="gx-hint pd-reading" data-testid="drawing-reading"><strong>The agent read:</strong> {frame.reading}</p> : null}
-                      <AgentAction id={`drawing-read-${drawing.id}`} secondary estimateLabel={frame.reading ? "Read it again" : "1 · The agent reads the drawing"} startLabel={(c) => `Read it · up to ${c} credits`}
+                      <AgentAction id={`drawing-read-${drawing.id}`} secondary estimateLabel={frame.reading ? "Read it again" : "1 · The agent reads the drawing"} startLabel={(price) => `Read it · up to ${price}`}
                         quote={readQuote} busy={runs.busy} blocked={blocked ?? (!model?.vision ? `${model?.name ?? "This model"} cannot see images. Choose an agent model that can.` : null)}
-                        describe={(qq) => `${qq.value.calls} agent steps with the drawing · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+                        describe={(qq, price) => `${qq.value.calls} agent steps with the drawing · ${thinkingModelName(qq.input.model)} · up to ${price}`}
                         onEstimate={() => void runs.estimate({ kind: "sketch", model: model!.id, effort: agent.effort, shotId: shot.id, sketchAssetId: drawing.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
                       <div className="gx-gen-enhance">
                         {quote ? (
@@ -505,9 +505,9 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                   <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || !frame.prompt.trim()} title={!frame.prompt.trim() ? "Write this frame’s prompt first." : undefined} onClick={() => void quoteFrame(shot)} data-testid="frame-price">{working[shot.id] || (frame.takes.length ? "Price another frame" : "Price this frame")}</button>
                 )}
               </div>
-              <AgentAction id={`frame-agent-${shot.id}`} secondary estimateLabel="Prompt with the agent" startLabel={(c) => `Write it · up to ${c} credits`}
+              <AgentAction id={`frame-agent-${shot.id}`} secondary estimateLabel="Prompt with the agent" startLabel={(price) => `Write it · up to ${price}`}
                 quote={q && q.input.kind === "frames" && q.input.shotId === shot.id ? q : null} busy={runs.busy} blocked={blocked}
-                describe={(qq) => `The agent reads beat ${shot.number} · ${qq.value.calls} steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+                describe={(qq, price) => `The agent reads beat ${shot.number} · ${qq.value.calls} steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
                 onEstimate={() => void runs.estimate({ kind: "frames", model: model!.id, effort: agent.effort, shotId: shot.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
               {!frame.prompt.trim() && open !== shot.id ? <span className="gx-reason">Write this frame’s prompt first.</span> : null}
               {shot.id in revising ? (
@@ -547,9 +547,9 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                     {sketchAsset ? (
                       <>
                         {frame.reading ? <p className="gx-hint pd-reading" data-testid="frame-reading"><strong>The agent read:</strong> {frame.reading}</p> : null}
-                        <AgentAction id={`frame-read-${shot.id}`} secondary estimateLabel={frame.reading ? "Read the drawing again" : "Have the agent read the drawing"} startLabel={(c) => `Read it · up to ${c} credits`}
+                        <AgentAction id={`frame-read-${shot.id}`} secondary estimateLabel={frame.reading ? "Read the drawing again" : "Have the agent read the drawing"} startLabel={(price) => `Read it · up to ${price}`}
                           quote={sketchQuote} busy={runs.busy} blocked={blocked ?? (!canSee ? `${model?.name ?? "This model"} cannot see images. Choose an agent model that can.` : null)}
-                          describe={(qq) => `${qq.value.calls} agent steps with the drawing · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+                          describe={(qq, price) => `${qq.value.calls} agent steps with the drawing · ${thinkingModelName(qq.input.model)} · up to ${price}`}
                           onEstimate={() => void runs.estimate({ kind: "sketch", model: model!.id, effort: agent.effort, shotId: shot.id, sketchAssetId: frame.sketch!.assetId })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
                         {activeSketch ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeSketch.model) ?? "claude")} is reading the drawing…</p> : null}
                       </>
