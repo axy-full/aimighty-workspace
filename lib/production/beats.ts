@@ -1,4 +1,5 @@
 import type { DevelopmentScene } from "../workbench/development-types";
+import { stableId } from "../workbench/stable-id";
 
 /**
  * Production › Beats (owner's brief, 23 September): the agent breaks the
@@ -24,14 +25,19 @@ export function newShot(): BeatShot { return { id: id("shot"), description: "", 
 export function newBeat(): Beat { return { id: id("beat"), text: "" }; }
 export function newScene(): BeatScene { return { id: id("scene"), heading: "", summary: "", beats: [newBeat()], shots: [newShot()], characters: [], locations: [], props: [] }; }
 
-/** The agent's breakdown, every section of it, as a beat sheet with its own ids. */
+/**
+ * The agent's breakdown, every section of it, as a beat sheet with its own ids —
+ * ids made from the run (or the source) and the position, so two windows taking
+ * the same breakdown make the same sheet, which a merge holds once.
+ */
 export function beatSheetFrom(scenes: DevelopmentScene[], scriptSha256: string, jobId?: string, upload?: string): BeatSheet {
+  const source = jobId ?? `${scriptSha256}:${upload ?? ""}`;
   return {
     ...(jobId ? { jobId } : {}), scriptSha256, updatedAt: new Date().toISOString(), ...(upload !== undefined ? { source: "upload" as const, sourceName: upload.slice(0, 300) } : {}),
-    scenes: scenes.slice(0, BEAT_LIMITS.scenes).map((scene) => ({
-      id: id("scene"), heading: cut(scene.heading, BEAT_LIMITS.heading), summary: cut(scene.summary, BEAT_LIMITS.summary), ...(scene.act ? { act: scene.act } : {}),
-      beats: scene.beats.slice(0, BEAT_LIMITS.beats).map((text) => ({ id: id("beat"), text: cut(text, BEAT_LIMITS.beat) })),
-      shots: scene.shots.slice(0, BEAT_LIMITS.shots).map((shot) => ({ id: id("shot"), description: cut(shot.description, BEAT_LIMITS.description), framing: cut(shot.framing, BEAT_LIMITS.field), movement: cut(shot.movement, BEAT_LIMITS.field), lighting: cut(shot.lighting, BEAT_LIMITS.field), sound: cut(shot.sound, BEAT_LIMITS.field) })),
+    scenes: scenes.slice(0, BEAT_LIMITS.scenes).map((scene, si) => ({
+      id: stableId("scene", source, si), heading: cut(scene.heading, BEAT_LIMITS.heading), summary: cut(scene.summary, BEAT_LIMITS.summary), ...(scene.act ? { act: scene.act } : {}),
+      beats: scene.beats.slice(0, BEAT_LIMITS.beats).map((text, bi) => ({ id: stableId("beat", source, si, bi), text: cut(text, BEAT_LIMITS.beat) })),
+      shots: scene.shots.slice(0, BEAT_LIMITS.shots).map((shot, hi) => ({ id: stableId("shot", source, si, hi), description: cut(shot.description, BEAT_LIMITS.description), framing: cut(shot.framing, BEAT_LIMITS.field), movement: cut(shot.movement, BEAT_LIMITS.field), lighting: cut(shot.lighting, BEAT_LIMITS.field), sound: cut(shot.sound, BEAT_LIMITS.field) })),
       characters: names(scene.characters, BEAT_LIMITS.names), locations: names(scene.locations, 15), props: names(scene.props, BEAT_LIMITS.names),
     })),
   };
