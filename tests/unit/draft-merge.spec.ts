@@ -910,6 +910,114 @@ test.describe("text merged line by line", () => {
     }
   });
 
+  test("a redraft of a whole act in one window and a one-word fix to the old act in another: the redraft stands, and this window's fix is never lost", () => {
+    const act = (n: number, line: (i: number) => string) => Array.from({ length: n }, (_, i) => line(i)).join("\n");
+    const base = act(300, (i) => `Old act line ${i}.`), redraft = act(280, (i) => `Redrafted line ${i}.`), fixed = base.replace("Old act line 5.", "Old act line 5, fixed.");
+    const count = (text: string) => ({ redraft: (text.match(/^Redrafted line \d+\.$/gm) ?? []).length, fix: text.split("\n").filter((l) => l === "Old act line 5, fixed.").length, old: (text.match(/^Old act line \d+\.$/gm) ?? []).length });
+    /* The fix typed here, the redraft saved elsewhere: the redraft stands and the fixed line stays beside it. */
+    const kept = merge3(base, fixed, redraft);
+    expect(count(kept)).toEqual({ redraft: 280, fix: 1, old: 0 });
+    expect(merge3(base, fixed, kept), "merging again changes nothing").toBe(kept);
+    /* The redraft made here over a line the other window fixed: both changed that line, and this window's redraft stands. */
+    const redrafted = merge3(base, redraft, fixed);
+    expect(count(redrafted)).toEqual({ redraft: 280, fix: 0, old: 0 });
+    expect(merge3(base, redraft, redrafted)).toBe(redrafted);
+  });
+
+  test("a rename across 600 lines where no line is unique, and one line typed in another window: both are kept, with or without a line added", () => {
+    const base = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "MARA" : i % 5 === 3 ? "JONAS" : i % 5 === 2 ? "" : "(beat)")).join("\n");
+    const renamed = base.replace(/^MARA$/gm, "NORA");
+    const typed = base.split("\n").map((l, i) => (i === 1501 ? "(beat, then a long pause)" : l)).join("\n");
+    for (const theirs of [renamed, `${renamed}\nTHE END`, `FADE IN:\n${renamed}`]) {
+      const merged = merge3(base, typed, theirs);
+      expect({ mara: (merged.match(/^MARA$/gm) ?? []).length, nora: (merged.match(/^NORA$/gm) ?? []).length, typed: merged.split("\n").filter((l) => l === "(beat, then a long pause)").length, lines: merged.split("\n").length })
+        .toEqual({ mara: 0, nora: 600, typed: 1, lines: theirs.split("\n").length });
+      expect(merge3(base, typed, merged)).toBe(merged);
+    }
+  });
+
+  test("a paragraph corrected line by line in one window, one of its lines edited in another: the other lines' corrections stay, the line both edited is this window's", () => {
+    const base = ["Title", "Audience: famillies", "Lenght: 90 seconds", "Tone: quite", "End"].join("\n");
+    const corrected = ["Title", "Audience: families", "Length: 90 seconds", "Tone: quiet", "End"].join("\n");
+    const mine = ["Title", "Audience: famillies aged 6+", "Lenght: 90 seconds", "Tone: quite", "End"].join("\n");
+    expect(merge3(base, mine, corrected)).toBe(["Title", "Audience: famillies aged 6+", "Length: 90 seconds", "Tone: quiet", "End"].join("\n"));
+    expect(merge3(base, corrected, mine)).toBe(corrected);
+  });
+
+  test("a paragraph rewritten anew in one window, one of its old lines edited in another: nothing either wrote is lost", () => {
+    const base = ["Title", "Audience: families", "Length: 90s", "Tone: quiet", "End"].join("\n");
+    const rewritten = ["Title", "For: families with kids", "Runs 90 seconds", "Quiet, warm", "End"].join("\n");
+    const mine = ["Title", "Audience: families 6+", "Length: 90s", "Tone: quiet", "End"].join("\n");
+    expect(merge3(base, mine, rewritten)).toBe(["Title", "Audience: families 6+", "For: families with kids", "Runs 90 seconds", "Quiet, warm", "End"].join("\n"));
+    /* Rewritten here: the other window's edit was to a line this window rewrote too — this window's stands. */
+    expect(merge3(base, rewritten, mine)).toBe(rewritten);
+  });
+
+  /* A seeded walk over random line edits on both sides, overlapping or not. */
+  test("random line edits on both sides: this window's lines are never lost, the other's are lost only to a line this window rewrote too, deletions hold, merging again changes nothing", () => {
+    let seed = 0x51ed2701;
+    const random = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    let fresh = 0;
+    type Side = { lines: string[]; rewrote: Map<number, string>; deleted: Set<number>; inserted: Set<string> };
+    /* Edits on base line numbers: lines rewritten or deleted, then new lines put in between two lines the side left as they
+       were (a new line where a deleted one was is a rewrite, as far as any diff can tell); each new line is unique. */
+    const edit = (base: string[], tag: string, span: [number, number]): Side => {
+      const side: Side = { lines: [], rewrote: new Map(), deleted: new Set(), inserted: new Set() };
+      const after = new Map<number, string[]>();
+      const touched = (i: number) => side.rewrote.has(i) || side.deleted.has(i);
+      for (let n = 1 + Math.floor(random() * 5); n > 0; n--) {
+        const i = span[0] + Math.floor(random() * (span[1] - span[0]));
+        if (touched(i)) continue;
+        if (random() < 0.6) side.rewrote.set(i, `${tag} rewrote ${i} #${fresh++}`);
+        else side.deleted.add(i);
+      }
+      for (let n = Math.floor(random() * 3); n > 0; n--) {
+        const i = span[0] + Math.floor(random() * (span[1] - span[0]));
+        if (touched(i) || (i + 1 < base.length && touched(i + 1))) continue;
+        const line = `${tag} put in ${fresh++}`;
+        after.set(i, [...(after.get(i) ?? []), line]);
+        side.inserted.add(line);
+      }
+      base.forEach((line, i) => {
+        if (side.rewrote.has(i)) side.lines.push(side.rewrote.get(i)!);
+        else if (!side.deleted.has(i)) side.lines.push(line);
+        side.lines.push(...(after.get(i) ?? []));
+      });
+      return side;
+    };
+    for (let round = 0; round < 500; round++) {
+      const length = 4 + Math.floor(random() * 40);
+      const base = Array.from({ length }, (_, i) => `Base line ${i}.`);
+      const overlap = random() < 0.6;
+      const cut = 1 + Math.floor(random() * (length - 2));
+      const mine = edit(base, "m", overlap ? [0, length] : [0, cut]), theirs = edit(base, "t", overlap ? [0, length] : [cut + 1, length]);
+      const merged = merge3(base.join("\n"), mine.lines.join("\n"), theirs.lines.join("\n"));
+      const out = merged.split("\n");
+      const count = (line: string) => out.filter((l) => l === line).length;
+      for (const line of [...mine.rewrote.values(), ...mine.inserted]) expect(count(line), `round ${round}: mine's "${line}"`).toBe(1);
+      for (const line of theirs.inserted) expect(count(line), `round ${round}: theirs' "${line}"`).toBe(1);
+      /* Lines mine rewrote, with the lines it deleted beside them, are one block as any diff sees them: theirs' rewrite of a line
+         in such a block may go to mine's (unless it is bound up with theirs' changes to lines mine left alone); anywhere else it stays. */
+      const block = new Set<number>();
+      for (let i = 0; i < length;) {
+        let j = i, rewrote = false;
+        for (; j < length && (mine.rewrote.has(j) || mine.deleted.has(j)); j++) if (mine.rewrote.has(j)) rewrote = true;
+        if (rewrote) for (let k = i; k < j; k++) block.add(k);
+        i = Math.max(j, i + 1);
+      }
+      for (const [i, line] of theirs.rewrote) expect(count(line), `round ${round}: theirs' "${line}"`).toBe(block.has(i) ? Math.min(count(line), 1) : 1);
+      base.forEach((line, i) => {
+        const gone = mine.rewrote.has(i) || mine.deleted.has(i) || theirs.rewrote.has(i) || theirs.deleted.has(i);
+        expect(count(line), `round ${round}: base line ${i}`).toBe(gone ? 0 : 1);
+      });
+      /* What neither side touched keeps base's order. */
+      const kept = out.filter((l) => l.startsWith("Base line "));
+      expect(kept, `round ${round}: order`).toEqual([...kept].sort((a, b) => parseInt(a.slice(10)) - parseInt(b.slice(10))));
+      expect(merge3(base.join("\n"), mine.lines.join("\n"), merged), `round ${round}: idempotent`).toBe(merged);
+      if (!overlap) expect(merge3(base.join("\n"), theirs.lines.join("\n"), mine.lines.join("\n")), `round ${round}: apart, either order`).toBe(merged);
+    }
+  });
+
   test("a one-line text both changed: mine, unless theirs went on from the same edit (the agent's world, then more)", () => {
     expect(merge3("", "Winter, always dusk.", "Winter, always dusk. Fog rolls in at six.")).toBe("Winter, always dusk. Fog rolls in at six.");
     expect(merge3("Opening", "Opening A", "Opening (retitled)")).toBe("Opening A");
@@ -1041,6 +1149,135 @@ test.describe("a merge of two valid saves is a save the server takes, and keeps 
     const present = new Set(ids(merged.nodes));
     expect({ valid: valid(merged).success, count: merged.nodes.length, dangling: merged.nodes.flatMap((n) => n.linked.filter((id) => !present.has(id))) }).toEqual({ valid: true, count: 4000, dangling: [] });
     expect(notes.join(" ")).toContain("pic.png");
+  });
+
+  /* Rules no list limit or repair above covers: the saved version of the part the rule is about stands — never this window's
+     undoing another window's saved edit without a word — and this window is told what of its own did not. */
+  const clip = (id: string, extra: Partial<NonNullable<Project["audioClips"]>[number]> = {}) => ({ id, assetId: "music", lane: "music" as const, startFrame: 0, sourceIn: 0, duration: 48, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false, ...extra });
+  const withMusic = (count: number) => project((p) => {
+    p.assets = [image("music", { kind: "audio", name: "music.mp3", url: "https://example.com/music.mp3" })];
+    p.audioClips = Array.from({ length: count }, (_, i) => clip(`clip-${i}`));
+  });
+
+  test("sound clips added in two windows past the 64 an edit holds, a legacy soundtrack among them: the saved window's all stay, this window's fill what is left, and the rest are named", () => {
+    for (const legacy of [false, true]) {
+      const base = withMusic(59);
+      if (legacy) base.audioAssetId = "music";
+      const mine = clone(base); mine.audioClips!.push(clip("mine-1"), clip("mine-2"), clip("mine-3"));
+      const theirs = clone(base); theirs.audioClips!.push(clip("theirs-1"), clip("theirs-2"));
+      expect([issues(mine), issues(theirs)]).toEqual([[], []]);
+      const notes: string[] = [];
+      const merged = mergeDraft(base, mine, theirs, { notes });
+      expect(issues(merged)).toEqual([]);
+      const got = ids(merged.audioClips!);
+      expect({ count: got.length, theirs: ["theirs-1", "theirs-2"].filter((id) => got.includes(id)), mine: got.filter((id) => id.startsWith("mine-")) })
+        .toEqual({ count: legacy ? 63 : 64, theirs: ["theirs-1", "theirs-2"], mine: legacy ? ["mine-1", "mine-2"] : ["mine-1", "mine-2", "mine-3"] });
+      expect(notes, `legacy soundtrack: ${legacy}`).toEqual(legacy ? ["An edit holds 64 sound clips, and another window filled it first: 1 of this window's clips was not added."] : []);
+    }
+    /* Past the list's own limit: the same, in the same words. */
+    const base = withMusic(60);
+    const mine = clone(base); mine.audioClips!.push(clip("mine-1"), clip("mine-2"), clip("mine-3"));
+    const theirs = clone(base); theirs.audioClips!.push(clip("theirs-1"), clip("theirs-2"), clip("theirs-3"));
+    const notes: string[] = [];
+    const merged = mergeDraft(base, mine, theirs, { notes });
+    expect(issues(merged)).toEqual([]);
+    expect(ids(merged.audioClips!).filter((id) => !id.startsWith("clip-"))).toEqual(["mine-1", "theirs-1", "theirs-2", "theirs-3"].filter((id) => ids(merged.audioClips!).includes(id)));
+    expect(ids(merged.audioClips!).filter((id) => id.startsWith("theirs-"))).toEqual(["theirs-1", "theirs-2", "theirs-3"]);
+    expect(notes).toEqual(["An edit holds 64 sound clips, and another window filled it first: 2 of this window's clips were not added."]);
+  });
+
+  test("OCR of a different screenplay page requested in each window: both pages stay recognized, and the merge saves", () => {
+    const script = "Page one.\nPage two.\nPage three.\nPage four.";
+    const ends = [10, 20, 32, script.length];
+    const base = project((p) => {
+      p.assets = [{ ...image("up-script", { kind: "document", name: "draft.pdf" }), uploadId: "up-script" }];
+      p.script = script;
+      p.scriptSource = { assetId: "up-script", filename: "draft.pdf", sha256: "b".repeat(64), pages: ends.map((end, i) => ({ page: i + 1, start: i ? ends[i - 1] : 0, end })), importedAt: "2026-09-26T00:00:00.000Z", edited: false, acknowledgedEmptyPages: [],
+        ocr: { engine: "tesseract-7.0.0", language: "eng", requestedPages: [1], pages: [{ page: 1, confidence: 90, reviewed: true, corrected: false }] } };
+    });
+    expect(issues(base)).toEqual([]);
+    const read = (p: Project, page: number) => { const out = clone(p); out.scriptSource!.ocr!.requestedPages.push(page); out.scriptSource!.ocr!.pages.push({ page, confidence: 80, reviewed: true, corrected: false }); return out; };
+    const merged = mergeDraft(base, read(base, 3), read(base, 4));
+    expect(issues(merged)).toEqual([]);
+    expect({ requested: merged.scriptSource!.ocr!.requestedPages, recognized: merged.scriptSource!.ocr!.pages.map((p) => p.page) }).toEqual({ requested: [1, 3, 4], recognized: [1, 3, 4] });
+  });
+
+  test("a campaign variant made an image here while another window bound a reference ad to it: the saved binding stands, this window's other edits stay, and it is told", () => {
+    const video = { ...image("ad-vid", { kind: "video", name: "reference.mp4" }), uploadId: "ad-vid" };
+    const base = project((p) => {
+      p.assets = [video];
+      p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", hooks: ["Cold, clean, yours"], variants: [{ id: "variant-1", nodeId: "n1", hook: "Cold, clean, yours", kind: "video" }] } as Project["moleculr"];
+    });
+    expect(issues(base)).toEqual([]);
+    const mine = clone(base); mine.moleculr!.variants[0].kind = "image"; mine.moleculr!.hooks.push("Still water, still you");
+    const theirs = clone(base); theirs.moleculr!.variants[0].referenceVideo = { assetId: "ad-vid", sourceKey: JSON.stringify({ uploadId: "ad-vid" }) };
+    expect(issues(theirs)).toEqual([]);
+    const notes: string[] = [];
+    const merged = mergeDraft(base, mine, theirs, { notes });
+    expect(issues(merged)).toEqual([]);
+    expect({ kind: merged.moleculr!.variants[0].kind, bound: !!merged.moleculr!.variants[0].referenceVideo, hooks: merged.moleculr!.hooks }).toEqual({ kind: "video", bound: true, hooks: ["Cold, clean, yours", "Still water, still you"] });
+    expect(notes.join(" ")).toContain("Cold, clean, yours");
+  });
+
+  /* A seeded walk: two valid saves of one edit, each changing clips, fades, lengths, gains, a place's references, hooks and bins. */
+  test("random valid saves in two windows always merge into a save the server takes: the saved window's clips and gains stand, this window's additions are kept or named", () => {
+    let seed = 0x1b873593;
+    const random = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const int = (n: number) => Math.floor(random() * n);
+    let fresh = 0;
+    const start = () => project((p) => {
+      p.assets = [image("music", { kind: "audio", name: "music.mp3", url: "https://example.com/music.mp3" }), ...["r1", "r2", "r3", "r4"].map((id) => image(id))];
+      const legacy = random() < 0.5;
+      if (legacy) p.audioAssetId = "music";
+      p.audioClips = Array.from({ length: 56 + int(legacy ? 7 : 8) }, (_, i) => clip(`clip-${i}`, { duration: 24 + int(48) }));
+      p.production = { environment: { world: "", model: "gemini-3.1-flash-image", entries: [{ id: "env-1", name: "Harbour", notes: "", prompt: "", references: ["r1", "r2", "r3", "r4"], plates: [] }] } };
+      p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", hooks: Array.from({ length: 9 }, (_, i) => `Hook ${i}`) };
+      p.bins = [{ id: "bin-1", name: "Selects", assetIds: ["r1"] }] as Project["bins"];
+    });
+    type Side = { project: Project; gains: Map<string, number>; added: Set<string> };
+    const edit = (base: Project, tag: string): Side => {
+      const p = clone(base), side: Side = { project: p, gains: new Map(), added: new Set() };
+      const clips = p.audioClips!;
+      for (let n = 1 + int(6); n > 0; n--) {
+        const roll = random(), c = clips[int(clips.length)];
+        if (roll < 0.2 && clips.length < (p.audioAssetId ? 63 : 64)) { const id = `${tag}-clip-${fresh++}`; clips.push(clip(id)); side.added.add(id); }
+        else if (roll < 0.35) c.fadeIn = int(c.duration - c.fadeOut + 1);
+        else if (roll < 0.5) c.fadeOut = int(c.duration - c.fadeIn + 1);
+        else if (roll < 0.6) c.duration = Math.max(1, c.fadeIn + c.fadeOut, int(96));
+        else if (roll < 0.7) { c.gainDb = -int(30); side.gains.set(c.id, c.gainDb); }
+        else if (roll < 0.8) { const refs = p.production!.environment!.entries[0].references; if (refs.length < 6) { const id = `${tag}-ref-${fresh++}`; p.assets.push(image(id)); refs.push(id); side.added.add(id); } }
+        else if (roll < 0.9) { const hooks = p.moleculr!.hooks; if (hooks.length < 12) { const hook = `${tag} hook ${fresh++}`; hooks.splice(int(hooks.length + 1), 0, hook); side.added.add(hook); } }
+        else { const bins = p.bins!; if (bins.length < 4) bins.push({ id: `${tag}-bin-${fresh++}`, name: `Bin ${int(3)}`, assetIds: [] } as NonNullable<Project["bins"]>[number]); }
+      }
+      if (new Set(p.bins!.map((b) => b.name.toLowerCase())).size !== p.bins!.length) p.bins = base.bins;
+      return side;
+    };
+    for (let round = 0; round < 250; round++) {
+      const base = start();
+      const mine = edit(base, "m"), theirs = edit(base, "t");
+      expect(issues(mine.project), `round ${round}: mine is a valid save`).toEqual([]);
+      expect(issues(theirs.project), `round ${round}: theirs is a valid save`).toEqual([]);
+      const notes: string[] = [];
+      const merged = mergeDraft(base, mine.project, theirs.project, { notes });
+      expect(issues(merged), `round ${round}: the merge is a save the server takes`).toEqual([]);
+      const clipIds = new Set(ids(merged.audioClips!));
+      for (const c of theirs.project.audioClips!) expect(clipIds.has(c.id), `round ${round}: saved clip ${c.id}`).toBe(true);
+      for (const [id, gain] of theirs.gains) if (!mine.gains.has(id)) expect(merged.audioClips!.find((c) => c.id === id)!.gainDb, `round ${round}: saved gain of ${id}`).toBe(gain);
+      const present = new Set([...clipIds, ...merged.production!.environment!.entries[0].references, ...merged.moleculr!.hooks]);
+      const missing = [...mine.added].filter((item) => !present.has(item));
+      if (missing.length) expect(notes.length, `round ${round}: ${missing.join(", ")} not added, and said so`).toBeGreaterThan(0);
+    }
+  });
+
+  test("text past its limit once merged: the saved text stands and this window is told, never its own text over the other window's", () => {
+    const base = project((p) => { p.brief = "x".repeat(29_000); });
+    const mine = clone(base); mine.brief = `${base.brief}\n${"m".repeat(900)}`;
+    const theirs = clone(base); theirs.brief = `${"t".repeat(900)}\n${base.brief}`;
+    const notes: string[] = [];
+    const merged = mergeDraft(base, mine, theirs, { notes });
+    expect(issues(merged)).toEqual([]);
+    expect(merged.brief).toBe(theirs.brief);
+    expect(notes.join(" ")).toMatch(/brief/i);
   });
 });
 

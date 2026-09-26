@@ -34,9 +34,17 @@ import { isStableId } from "./stable-id";
  *    insertions are kept, mine's first; where one side only took items out,
  *    they stay out of the other side's version; where both rewrote the same
  *    items, mine's stand — theirs' when theirs went on from mine's (it
- *    contains mine's edit).
+ *    contains mine's edit). Mine's stands only over what mine rewrote: a
+ *    rewrite of theirs that also changed items mine left alone stays, beside
+ *    mine's (a redraft is never undone by a fix to one of its old lines).
+ *    Items rewritten one for one, each reading as an edit of the one it
+ *    replaced, are edits in place, item by item.
  *  - Text with several lines (a brief, a script, notes) merges the same way,
- *    line by line: two windows editing different lines keep both.
+ *    line by line: two windows editing different lines keep both. A long text
+ *    whose lines all repeat (cues, "(beat)", blank lines) aligns on the lines
+ *    neither side touched, so a rename on every cue survives a word typed
+ *    elsewhere. Where lines repeat, which of two equal lines a change touched
+ *    is a guess, and merging a merged text again may move one of them.
  *  - A one-line string both sides changed: mine — theirs' when theirs went on
  *    from mine's edit (the same words, then more).
  *  - Anything else both sides changed (a number, a vector): mine wins.
@@ -339,10 +347,11 @@ type Hunk = { side: 0 | 1; start: number; end: number; from: number; to: number 
 
 /**
  * diff3 over sequences (list items, or the lines of a text). Each side's
- * changes are hunks over base; hunks that touch different items apply side by
- * side, and only hunks over the same items (or insertions at one place) are
- * resolved together (resolveStretch). With `distinct` (no input repeats an
- * item), an item never appears twice in the result either.
+ * changes are hunks over base; a hunk that put in as many items as it took
+ * out is an edit of each in place, item by item. Hunks that touch different
+ * items apply side by side, and only hunks over the same items (or insertions
+ * at one place) are resolved together (resolveStretch). With `distinct` (no
+ * input repeats an item), an item never appears twice in the result either.
  */
 function mergeSequence<T>(base: T[], mine: T[], theirs: T[], { distinct = true, text = false }: { distinct?: boolean; text?: boolean } = {}): T[] {
   const codes = new Map<string, number>();
@@ -353,7 +362,10 @@ function mergeSequence<T>(base: T[], mine: T[], theirs: T[], { distinct = true, 
     return code;
   });
   const b = encode(base), m = encode(mine), t = encode(theirs);
-  const hunks = [...hunksOf(align(b, m), m.length, 0), ...hunksOf(align(b, t), t.length, 1)]
+  const toM = align(b, m), toT = align(b, t);
+  /* Theirs already holds every change mine made (a merge that took mine's, or went on from it): theirs, as it is. */
+  if (holdsAll(b, m, t, toM, toT)) return theirs;
+  const hunks = [...inPlace(hunksOf(toM, m.length, 0), b, m, base, mine), ...inPlace(hunksOf(toT, t.length, 1), b, t, base, theirs)]
     .sort((x, y) => x.start - y.start || x.end - y.end || x.side - y.side);
   const sides = [{ codes: m, items: mine }, { codes: t, items: theirs }];
   /* Each item out, and whether mine put it there (a repeat keeps mine's place: where both moved one item, mine's move stands). */
@@ -382,7 +394,8 @@ function mergeSequence<T>(base: T[], mine: T[], theirs: T[], { distinct = true, 
         for (; at < end; at++) { stretch.codes.push(b[at]); stretch.items.push(base[at]); }
         return stretch;
       };
-      for (const [item, fromMine] of resolveStretch({ codes: b.slice(start, end), items: base.slice(start, end) }, version(0), version(1), text)) emit(item, fromMine);
+      const run = (c: Hunk): Run<T> => ({ hunk: c, codes: sides[c.side].codes.slice(c.from, c.to), items: sides[c.side].items.slice(c.from, c.to) });
+      for (const [item, fromMine] of resolveStretch({ codes: b.slice(start, end), items: base.slice(start, end) }, version(0), version(1), text, cluster.map(run))) emit(item, fromMine);
     }
     pos = Math.max(pos, end);
   }
@@ -407,6 +420,67 @@ function overlaps(a: Hunk, b: Hunk): boolean {
   return a.start < b.end && b.start < a.end;
 }
 
+/**
+ * Whether theirs already holds every change mine made to base, each where mine
+ * made it: what mine took out is out of theirs too, and what mine put in is in
+ * theirs between the same items of base. Theirs is then a merge that took
+ * mine's, or went on from it, and merging mine into it changes nothing.
+ */
+function holdsAll(b: number[], m: number[], t: number[], toM: Int32Array, toT: Int32Array): boolean {
+  const hunks = hunksOf(toM, m.length, 0);
+  if (!hunks.length) return true;
+  /* For each place in base: where in theirs the nearest item of base it kept sits, before it and at or after it. */
+  const before = new Int32Array(b.length + 1), after = new Int32Array(b.length + 1);
+  for (let i = 0, last = -1; i <= b.length; i++) { before[i] = last; if (i < b.length && toT[i] >= 0) last = toT[i]; }
+  for (let i = b.length, next = t.length; i >= 0; i--) { if (i < b.length && toT[i] >= 0) next = toT[i]; after[i] = next; }
+  for (const h of hunks) {
+    for (let i = h.start; i < h.end; i++) if (toT[i] >= 0) return false;
+    if (h.to > h.from && indexOfRun(t.slice(before[h.start] + 1, after[h.end]), m.slice(h.from, h.to), 0) < 0) return false;
+  }
+  return true;
+}
+
+/**
+ * A hunk that put in as many items as it took out, each reading as the item
+ * it replaced edited in place (a typo fixed, a name changed), is an edit of
+ * each: one hunk per item. So a paragraph one window corrected line by line
+ * and one of its lines edited in another conflict on that line only. Items
+ * that read as new (a redraft) stay one hunk: a line both windows changed
+ * never puts one old line into the other's new text.
+ */
+function inPlace<T>(hunks: Hunk[], base: number[], side: number[], baseItems: T[], sideItems: T[]): Hunk[] {
+  const read = (item: T) => (typeof item === "string" ? item : canonical(item));
+  return hunks.flatMap((h) => {
+    const n = h.end - h.start;
+    if (n < 2 || h.to - h.from !== n) return [h];
+    const out: Hunk[] = [];
+    for (let k = 0; k < n;) {
+      if (base[h.start + k] === side[h.from + k]) { k++; continue; }
+      if (edited(read(baseItems[h.start + k]), read(sideItems[h.from + k]))) {
+        out.push({ side: h.side, start: h.start + k, end: h.start + k + 1, from: h.from + k, to: h.from + k + 1 });
+        k++;
+        continue;
+      }
+      /* A stretch of new items: one hunk. */
+      let j = k + 1;
+      while (j < n && base[h.start + j] !== side[h.from + j] && !edited(read(baseItems[h.start + j]), read(sideItems[h.from + j]))) j++;
+      out.push({ side: h.side, start: h.start + k, end: h.start + j, from: h.from + k, to: h.from + j });
+      k = j;
+    }
+    return out;
+  });
+}
+
+/** Whether `after` reads as `before` edited in place: at least half of the longer is the same at its start and end. */
+function edited(before: string, after: string): boolean {
+  const max = Math.max(before.length, after.length);
+  let p = 0;
+  while (p < before.length && p < after.length && before.charCodeAt(p) === after.charCodeAt(p)) p++;
+  let s = 0;
+  while (s < before.length - p && s < after.length - p && before.charCodeAt(before.length - 1 - s) === after.charCodeAt(after.length - 1 - s)) s++;
+  return max > 0 && (p + s) * 2 >= max;
+}
+
 /** A side's hunks, from its alignment to base (base index → side index, or -1). */
 function hunksOf(to: Int32Array, length: number, side: 0 | 1): Hunk[] {
   const out: Hunk[] = [];
@@ -421,8 +495,11 @@ function hunksOf(to: Int32Array, length: number, side: 0 | 1): Hunk[] {
   return out;
 }
 
-/** One stretch both sides changed: which items stand, each with whether it is mine's. */
-function resolveStretch<T>(base: Stretch<T>, mine: Stretch<T>, theirs: Stretch<T>, text: boolean): [T, boolean][] {
+/** What one hunk put in: its items, and their codes. */
+type Run<T> = { hunk: Hunk; codes: number[]; items: T[] };
+
+/** One stretch both sides changed: which items stand, each with whether it is mine's. `runs` are both sides' hunks over it, with what each put in. */
+function resolveStretch<T>(base: Stretch<T>, mine: Stretch<T>, theirs: Stretch<T>, text: boolean, runs: Run<T>[]): [T, boolean][] {
   const same = (a: Stretch<T>, b: Stretch<T>) => a.codes.length === b.codes.length && a.codes.every((value, i) => value === b.codes[i]);
   const all = (items: T[], fromMine: boolean) => items.map((item) => [item, fromMine] as [T, boolean]);
   if (same(mine, base)) return all(theirs.items, false);
@@ -433,9 +510,71 @@ function resolveStretch<T>(base: Stretch<T>, mine: Stretch<T>, theirs: Stretch<T
   /* One side only put items in (base's all still there, in order): its additions join the other side's version. */
   if (subsequence(base.codes, theirs.codes)) return [...all(mine.items, true), ...all(beyond(theirs, base, mine), false)];
   if (subsequence(base.codes, mine.codes)) return [...all(theirs.items, false), ...all(beyond(mine, base, theirs), true)];
-  /* Both rewrote it: mine stands — theirs when it went on from mine's edit. */
+  /* Both rewrote some of it: theirs when it went on from mine's edit; otherwise each side's changes, mine's where both rewrote the same items. */
   if (text && continues((base.items as string[]).join("\n"), (mine.items as string[]).join("\n"), (theirs.items as string[]).join("\n"))) return all(theirs.items, false);
-  return all(mine.items, true);
+  return rewrites(base, runs);
+}
+
+/**
+ * A stretch both sides rewrote parts of. Mine's stands only over what mine
+ * rewrote: a rewrite of theirs that touches nothing else goes (the conflict),
+ * but one that also rewrote items mine left alone stays — a window's redraft
+ * of a whole act is never undone by a one-word fix typed into the old act in
+ * another; the fix stays beside it. Items either side took out stay out; what
+ * each side put in goes where that side put it (after what it replaced), and
+ * a run of mine that a rewrite of theirs over it already holds (theirs is a
+ * merge that took mine's) goes in once, so merging again changes nothing.
+ */
+function rewrites<T>(base: Stretch<T>, runs: Run<T>[]): [T, boolean][] {
+  const at = Math.min(...runs.map((r) => r.hunk.start)), end = at + base.codes.length;
+  const mineRewrote = new Set<number>(), gone = new Set<number>();
+  for (const { hunk } of runs)
+    for (let i = hunk.start; i < hunk.end; i++) {
+      gone.add(i);
+      if (hunk.side === 0 && hunk.to > hunk.from) mineRewrote.add(i);
+    }
+  const onlyMine = (h: Hunk) => { for (let i = h.start; i < h.end; i++) if (!mineRewrote.has(i)) return false; return true; };
+  let kept = runs.filter(({ hunk }) => hunk.to > hunk.from && !(hunk.side === 1 && hunk.end > hunk.start && onlyMine(hunk)));
+  const held = new Set<Run<T>>();
+  for (const over of kept) {
+    if (over.hunk.side !== 1 || over.hunk.end === over.hunk.start) continue;
+    let from = 0;
+    for (const r of kept) {
+      if (r.hunk.side !== 0 || held.has(r) || r.hunk.start < over.hunk.start || r.hunk.end > over.hunk.end) continue;
+      const found = indexOfRun(over.codes, r.codes, from);
+      if (found < 0) continue;
+      held.add(r);
+      from = found + r.codes.length;
+    }
+  }
+  kept = kept.filter((r) => !held.has(r));
+  const out: [T, boolean][] = [];
+  for (let gap = at; gap <= end; gap++) {
+    const here = kept.filter((r) => r.hunk.end === gap);
+    /* What replaced items before this point, the earliest first (mine's first where two start together)… */
+    for (const r of here.filter((r) => r.hunk.end > r.hunk.start).sort((x, y) => x.hunk.start - y.hunk.start || x.hunk.side - y.hunk.side))
+      for (const item of r.items) out.push([item, r.hunk.side === 0]);
+    /* …then what was put in at it: both, mine's first, each once. */
+    const own = here.find((r) => r.hunk.side === 0 && r.hunk.end === r.hunk.start), other = here.find((r) => r.hunk.side === 1 && r.hunk.end === r.hunk.start);
+    if (own) for (const item of own.items) out.push([item, true]);
+    if (other) for (const item of own ? besides(other, own) : other.items) out.push([item, false]);
+    if (gap < end && !gone.has(gap)) out.push([base.items[gap - at], true]);
+  }
+  return out;
+}
+
+/** Where `needle` first occurs whole, in one run, in `haystack` at or after `from`; -1 when it does not (or is empty). */
+function indexOfRun(haystack: number[], needle: number[], from: number): number {
+  if (!needle.length) return -1;
+  for (let s = from; s + needle.length <= haystack.length; s++) if (needle.every((code, j) => haystack[s + j] === code)) return s;
+  return -1;
+}
+
+/** What `other` put in at a place where `own` put something in too, less `own`'s run where `other` holds it whole (or all of it, where `own` holds `other`'s): each insertion once. */
+function besides<T>(other: Run<T>, own: Run<T>): T[] {
+  const s = indexOfRun(other.codes, own.codes, 0);
+  if (s >= 0) return other.items.filter((_, i) => i < s || i >= s + own.codes.length);
+  return indexOfRun(own.codes, other.codes, 0) >= 0 ? [] : other.items;
 }
 
 /** `other`'s version without the base items `taker` took out. */
@@ -494,14 +633,16 @@ function continues(base: string, mine: string, theirs: string): boolean {
   return t.text.includes(base.slice(t.from, m.from) + m.text + base.slice(m.to, t.to));
 }
 
-/** Past this many edits between two stretches with nothing unique to anchor on, they are not aligned item by item. */
+/** Past this many edits between two stretches with nothing to anchor on, they are not aligned item by item. */
 const DIFF_LIMIT = 1000;
 
 /**
  * For each index of `a`, the index of `b` it is matched to, or -1: common
- * start and end, then items that occur once in each (patience anchors), then
- * Myers' difference between anchors. A stretch too different to align within
- * DIFF_LIMIT is left unmatched (one side rewrote it), never the whole list.
+ * start and end, then items that occur once in each (patience anchors; in a
+ * long stretch with none, items that occur as often in each), then Myers'
+ * difference between anchors. A stretch too different to align within
+ * DIFF_LIMIT is left unmatched (one side rewrote it), never the whole list —
+ * and a rewrite the other side did not also make is kept (resolveStretch).
  */
 function align(a: number[], b: number[]): Int32Array {
   const to = new Int32Array(a.length).fill(-1);
@@ -529,24 +670,33 @@ function align(a: number[], b: number[]): Int32Array {
   return to;
 }
 
-/** Items that occur exactly once in a[a0..a1) and once in b[b0..b1), the longest run of them in the same order. */
+/**
+ * Items that occur exactly once in a[a0..a1) and once in b[b0..b1), the
+ * longest run of them in the same order. A stretch too long for Myers to be
+ * sure of with none such (a script whose every line repeats: cues, "(beat)",
+ * blank lines) anchors instead on the items that occur as often on both sides,
+ * the n-th with the n-th — what neither side touched lines up, so a rename of
+ * every cue still aligns line by line.
+ */
 function uniqueAnchors(a: number[], b: number[], a0: number, a1: number, b0: number, b1: number): [number, number][] {
-  const seen = new Map<number, { na: number; ia: number; nb: number; ib: number }>();
+  const seen = new Map<number, { ia: number[]; ib: number[] }>();
   for (let i = a0; i < a1; i++) {
     const entry = seen.get(a[i]);
-    if (entry) entry.na++;
-    else seen.set(a[i], { na: 1, ia: i, nb: 0, ib: -1 });
+    if (entry) entry.ia.push(i);
+    else seen.set(a[i], { ia: [i], ib: [] });
   }
-  for (let j = b0; j < b1; j++) {
-    const entry = seen.get(b[j]);
-    if (entry) { entry.nb++; entry.ib = j; }
+  for (let j = b0; j < b1; j++) seen.get(b[j])?.ib.push(j);
+  let pairs: [number, number][] = [];
+  for (const { ia, ib } of seen.values()) if (ia.length === 1 && ib.length === 1) pairs.push([ia[0], ib[0]]);
+  if (!pairs.length && a1 - a0 + (b1 - b0) > DIFF_LIMIT) {
+    for (const { ia, ib } of seen.values()) if (ia.length === ib.length) ia.forEach((i, n) => pairs.push([i, ib[n]]));
+    pairs.sort((x, y) => x[0] - y[0]);
   }
-  const pairs: [number, number][] = [];
-  for (const entry of seen.values()) if (entry.na === 1 && entry.nb === 1) pairs.push([entry.ia, entry.ib]);
   if (!pairs.length) return pairs;
   /* Patience: the longest run of them in the same order on both sides. */
   const run = new Set(longestRun(pairs.map(([, j]) => j)));
-  return pairs.filter(([, j]) => run.has(j));
+  pairs = pairs.filter(([, j]) => run.has(j));
+  return pairs;
 }
 
 /** Myers' O(ND) difference: the matched index pairs of a[a0..a1) and b[b0..b1), in order. Null past DIFF_LIMIT edits. */

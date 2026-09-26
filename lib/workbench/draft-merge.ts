@@ -1,4 +1,4 @@
-import { merge3, sameJson, type MergeOptions } from "./merge";
+import { identityKey, merge3, sameJson, type MergeOptions } from "./merge";
 import { NODE_INPUTS } from "./node-graph";
 import type { Asset, CanvasNode, Project } from "./studio";
 import { saveSchema } from "./studio-schema";
@@ -24,18 +24,23 @@ import { saveSchema } from "./studio-schema";
  *    node takes no more inputs than it holds (mine's first), and a wire from
  *    the other side that would close a loop is left out.
  *  - A sound clip whose fades both sides changed keeps this side's fade and
- *    shortens the other to fit the clip; two bins given one name keep both,
- *    this side's renamed; an imported screenplay whose text the merge changed
- *    is marked edited, as typing into it would.
+ *    shortens the other to fit the clip; sound clips past what an edit holds
+ *    (a legacy soundtrack counts) keep the saved version's, then this side's;
+ *    two bins given one name keep both, this side's renamed; an imported
+ *    screenplay whose text the merge changed is marked edited, as typing into
+ *    it would; OCR pages asked for in two windows are all asked for.
  *  - A list merged past what the project holds is fitted the way its own
  *    stage fits it: takes and plates keep the newest, renders in flight the
  *    latest five, and any other list keeps what the saved version already
  *    had, then what this side added, up to its limit — and says, in `notes`,
- *    what of this side's did not fit. Text merged past its limit is this
- *    side's.
+ *    what of this side's did not fit. Text merged past its limit is the saved
+ *    version's, and this side is told.
  *
- * Each side was a valid save, so the merge is one as well; a rule no repair
- * above covers takes this side's value for that field, then the saved one.
+ * Each side was a valid save, so the merge is one as well. A rule no repair
+ * above covers puts the saved version back where the merge broke it, the
+ * smallest part first (a record, a field, the whole field), and tells this
+ * side what of its own did not stand: another window's saved edit is never
+ * undone without a word.
  */
 export type DraftMergeOptions = MergeOptions & {
   /** Filled with what this side added that the merged draft had no room for, said plainly. */
@@ -55,8 +60,10 @@ export function mergeDraft(base: Project, mine: Project, theirs: Project, option
   merged = keepLinkedInputs(merged, mine, theirs);
   merged = obeyGraph(merged, mine);
   merged = fitFades(merged, base, mine);
+  merged = fitClips(merged, theirs, notes);
   merged = distinctBins(merged, theirs);
   merged = markEditedScript(merged);
+  merged = recognizedPages(merged);
   if (valid(merged)) return merged;
   merged = fitDraft(merged, mine, theirs, notes);
   merged = keepLinkedInputs(merged, mine, theirs, false);
@@ -219,6 +226,31 @@ function fitFades(merged: Project, base: Project, mine: Project): Project {
   };
 }
 
+/** How many sound clips an edit holds (lib/workbench/audio.ts validateAudio), a legacy soundtrack included. */
+const CLIPS_HELD = 64;
+
+/** Sound clips added in two windows past what an edit holds: the saved version's all stay, then this side's additions, up to the limit — the rest named. */
+function fitClips(merged: Project, theirs: Project, notes?: string[]): Project {
+  const room = CLIPS_HELD - (merged.audioAssetId ? 1 : 0);
+  const clips = merged.audioClips ?? [];
+  if (clips.length <= room) return merged;
+  const saved = new Set((theirs.audioClips ?? []).map((c) => c.id));
+  let spare = room - clips.filter((c) => saved.has(c.id)).length;
+  const kept = clips.filter((c) => saved.has(c.id) || spare-- > 0);
+  const left = clips.length - kept.length;
+  if (left) notes?.push(`An edit holds ${CLIPS_HELD} sound clips, and another window filled it first: ${left} of this window's clips ${left === 1 ? "was" : "were"} not added.`);
+  return { ...merged, audioClips: kept };
+}
+
+/** OCR of screenplay pages asked for in two windows: every page recognized in the merge is one asked for (each side's were). */
+function recognizedPages(merged: Project): Project {
+  const ocr = merged.scriptSource?.ocr;
+  if (!ocr) return merged;
+  const pages = [...new Set(ocr.pages.map((p) => p.page))].sort((a, b) => a - b);
+  if (sameJson([...ocr.requestedPages].sort((a, b) => a - b), pages) && new Set(ocr.requestedPages).size === ocr.requestedPages.length) return merged;
+  return { ...merged, scriptSource: { ...merged.scriptSource!, ocr: { ...ocr, requestedPages: pages } } };
+}
+
 /** Two bins given one name in two windows: both kept, the one the saved version did not have renamed. */
 function distinctBins(merged: Project, theirs: Project): Project {
   const bins = merged.bins;
@@ -296,8 +328,11 @@ function fitDraft(merged: Project, mine: Project, theirs: Project, notes?: strin
         out = setAt(out, path, kept);
         changed = true;
       } else if (typeof value === "string") {
+        /* The saved text stands — never this side's over the other window's saved words — and this side is told. */
         const own = at(mine, path), saved = at(theirs, path);
-        out = setAt(out, path, typeof own === "string" && own.length <= limit ? own : typeof saved === "string" ? saved : value.slice(0, limit));
+        const next = typeof saved === "string" && saved.length <= limit ? saved : typeof own === "string" && own.length <= limit ? own : value.slice(0, limit);
+        if (next !== own) notes?.push(`${labelOf(path)} holds ${limit.toLocaleString("en-US")} characters, and another window's text filled it first: your edit to it was not added.`);
+        out = setAt(out, path, next);
         changed = true;
       }
     }
@@ -308,6 +343,9 @@ function fitDraft(merged: Project, mine: Project, theirs: Project, notes?: strin
 
 /** What of this side's did not fit a full list, in the words the page uses. */
 function fitNote(project: Project, mine: Project, path: Path, limit: number, lost: unknown[]): string {
+  /* Sound clips have no names to give: how many. */
+  if (path.length === 1 && path[0] === "audioClips")
+    return `An edit holds ${CLIPS_HELD} sound clips, and another window filled it first: ${lost.length} of this window's clips ${lost.length === 1 ? "was" : "were"} not added.`;
   const assets = new Map([...mine.assets, ...project.assets].map((a) => [a.id, a]));
   const named = lost.map((item) => {
     if (typeof item === "string") return assets.get(item)?.name ?? `“${item.slice(0, 60)}”`;
@@ -330,27 +368,96 @@ function fitNote(project: Project, mine: Project, path: Path, limit: number, los
   return `${what}, and another window filled it first: ${named.join(", ")} not added.`;
 }
 
-/** The project fields the server would refuse. */
-function refused(project: Project): string[] {
-  const parsed = saveSchema.safeParse({ project, revision: 0 });
-  if (parsed.success) return [];
-  return [...new Set(parsed.error.issues.filter((issue) => issue.path[0] === "project" && typeof issue.path[1] === "string").map((issue) => issue.path[1] as string))];
+/** A field of the project, in the words the page uses. */
+function labelOf(path: Path): string {
+  const key = String(path[path.length - 1] ?? path[0]);
+  const words: Record<string, string> = { brief: "The brief", script: "The script", notes: "The notes", text: "The shot's text", description: "The description", prompt: "The prompt", world: "The world" };
+  return words[key] ?? `The ${key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}`;
 }
 
+/** The project fields the server would refuse, and how many problems it finds. */
+function problems(project: Project): { keys: string[]; count: number } {
+  const parsed = saveSchema.safeParse({ project, revision: 0 });
+  if (parsed.success) return { keys: [], count: 0 };
+  const issues = parsed.error.issues.filter((issue) => issue.path[0] === "project");
+  return { keys: [...new Set(issues.filter((issue) => typeof issue.path[1] === "string").map((issue) => issue.path[1] as string))], count: parsed.error.issues.length };
+}
+
+/** A part of the merged draft that differs from the saved version, and how to put the saved version back there. */
+type Part = { label: string; mine: boolean; whole: boolean; apply: (project: Project) => Project };
+
+/** The parts of `key` where the merge differs from the saved version, smallest first: each record of a list (by its identity), each field of a record or group, then the whole field. */
+function partsOf(key: string, merged: Project, mine: Project, theirs: Project): Part[] {
+  const parts: Part[] = [];
+  const name = (row: unknown, fallback: string) => {
+    const r = (row ?? {}) as Record<string, unknown>;
+    const said = [r.name, r.title, r.hook, r.heading, r.id].find((value) => typeof value === "string" && value.trim());
+    return said ? `“${String(said).slice(0, 60)}”` : fallback;
+  };
+  const walk = (path: Path, now: unknown, saved: unknown, own: unknown, depth: number) => {
+    if (sameJson(now, saved)) return;
+    if (Array.isArray(now) && Array.isArray(saved) && depth < 3) {
+      const key = identityKey(now, saved);
+      if (key) {
+        const savedBy = new Map(saved.map((row) => [String((row as Record<string, unknown>)[key]), row]));
+        const ownBy = new Map((Array.isArray(own) ? own : []).map((row) => [String((row as Record<string, unknown>)[key]), row]));
+        for (const row of now) {
+          const id = String((row as Record<string, unknown>)[key]), was = savedBy.get(id);
+          if (was !== undefined && sameJson(row, was)) continue;
+          parts.push({
+            label: name(row, labelOf([...path, 0]).toLowerCase()),
+            mine: ownBy.has(id) && !sameJson(ownBy.get(id), was),
+            whole: false,
+            apply: (project) => setAt(project, path, (at(project, path) as unknown[]).flatMap((item) => (String((item as Record<string, unknown>)[key]) !== id ? [item] : was === undefined ? [] : [was]))),
+          });
+        }
+      }
+    } else if (now && saved && typeof now === "object" && typeof saved === "object" && !Array.isArray(now) && !Array.isArray(saved) && depth < 3) {
+      for (const field of new Set([...Object.keys(now), ...Object.keys(saved)])) {
+        const a = (now as Record<string, unknown>)[field], b = (saved as Record<string, unknown>)[field];
+        walk([...path, field], a, b, own && typeof own === "object" ? (own as Record<string, unknown>)[field] : undefined, depth + 1);
+      }
+    }
+    parts.push({ label: labelOf(path).toLowerCase(), mine: !sameJson(own, saved), whole: depth === 0, apply: (project) => setAt(project, path, saved) });
+  };
+  walk([key], merged[key as keyof Project], theirs[key as keyof Project], mine[key as keyof Project], 0);
+  return parts;
+}
+
+/** How many parts are tried one by one before whole fields are put back: each try is a full check of the draft. */
+const PARTS_TRIED = 24;
+
 /**
- * A rule no repair above covers: for each field the server would refuse, this
- * side's value, else the saved one — never a save the server turns away.
+ * A rule no repair above covers. The saved version is put back where the merge
+ * broke it, the smallest part first — a record, a field, then the whole field
+ * — never this side's value over another window's saved edit without a word,
+ * and this side is told what of its own did not stand. When the field a rule
+ * names already holds the saved version, what the merge did elsewhere broke
+ * it, and those parts are put back instead. A draft no part fixes is left as
+ * it is: the save is refused, and the edits stay here, unsaved, saying why.
  */
 function lastResort(merged: Project, mine: Project, theirs: Project, notes?: string[]): Project {
   let out = merged;
-  for (const key of refused(out)) {
-    for (const side of [mine, theirs]) {
-      const next = { ...out, [key]: side[key as keyof Project] } as Project;
-      if (refused(next).includes(key)) continue;
-      if (side === theirs && !sameJson(mine[key as keyof Project], theirs[key as keyof Project])) notes?.push(`Your change to ${key} could not be combined with another window's; the saved version is kept.`);
+  let found = problems(out);
+  const told: string[] = [];
+  for (let round = 0; round < 4 && found.count; round++) {
+    const named = found.keys.filter((key) => !sameJson(out[key as keyof Project], theirs[key as keyof Project]));
+    const scope = named.length ? named : Object.keys(out).filter((key) => !SERVER_KEYS.has(key) && !sameJson(out[key as keyof Project], theirs[key as keyof Project]));
+    const parts = scope.flatMap((key) => partsOf(key, out, mine, theirs));
+    let fixed = false;
+    for (const part of [...parts.filter((part) => !part.whole).slice(0, PARTS_TRIED), ...parts.filter((part) => part.whole)]) {
+      const next = part.apply(out), now = problems(next);
+      if (now.count >= found.count || now.keys.some((key) => !found.keys.includes(key))) continue;
+      if (part.mine) told.push(`Your change to ${part.label} could not be combined with another window's; the saved version is kept.`);
       out = next;
+      found = now;
+      fixed = true;
       break;
     }
+    if (!fixed) break;
   }
+  /* Only a save the server takes is worth putting anything back for; otherwise the merge is left exactly as it was. */
+  if (found.count) return merged;
+  notes?.push(...told);
   return out;
 }
