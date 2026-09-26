@@ -19,6 +19,10 @@
  *    due is made the moment the page is back;
  *  - it stops on the terminal set the caller names.
  *
+ * A connected-account job is never read within 6 s of its last read: its
+ * pollers pass CONNECTED_READ_FLOOR_S (higgsfield-consumer/generation-client)
+ * as the least hint, since the route allows a person 30 status reads a minute.
+ *
  * The shell's collector (lib/shell/connected-collector.ts) and Viral's runs
  * (lib/shell/use-viral.ts) keep the same rules at their own rates. Status
  * reads only. A quote or a submit costs money or spends a price, and nothing

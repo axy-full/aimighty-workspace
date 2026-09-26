@@ -7,7 +7,8 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 
 /**
  * Polling with back-off and jitter, on the connected-job model: a composer
- * reads the job it is rendering itself (lib/poll: 2 s, then 1.5× longer to
+ * reads the job it is rendering itself (lib/poll: never within 6 s of the last
+ * read — the route allows a person 30 status reads a minute — then longer to
  * 10 s), and the shell's collector reads every job no view is reading —
  * one left rendering on an earlier visit, or one a composer let go of — at
  * its own slower rate (20 s, then 1.5× longer to a minute). Both: a read that
@@ -406,15 +407,15 @@ test("the shell's collector: two ads asked in the same round are next asked apar
 
 /* ── A composer's own job, and the hand-over ───────────────────────────── */
 
-test("Ads: the ad being rendered is read by its composer at the page's pace, started over by a changed status, backs off and says so when a read fails, never reads inside the account's window or while the tab is hidden, and leaving the page hands it to the collector one pace after its last read; the price is sent once", async ({ page }, info) => {
+test("Ads: the ad being rendered is read by its composer never within 6 s of the last read, longer while it is unchanged, started over by a changed status, backs off and says so when a read fails, never reads inside the account's window or while the tab is hidden, and leaving the page hands it to the collector one pace after its last read; the price is sent once", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   let submitted: Job | null = null;
-  /* What the account says to status read n: unconfirmed twice, then accepted; a dropped connection and a 503;
-     a 15 s window twice; then, read by the collector, accepted and finally rendered. */
+  /* What the account says to status read n: unconfirmed five times, then accepted; a dropped connection and a 503;
+     a 15 s window; then, read by the collector, accepted and finally rendered. */
   const replies: Record<number, Reply> = {
-    1: { json: "uncertain" }, 2: { json: "uncertain" }, 3: { json: "accepted" }, 4: { json: "accepted" },
-    5: { abort: true }, 6: { status: 503, json: { error: ROUTE_FALLBACK } },
-    7: { json: "accepted-15" }, 8: { json: "accepted" }, 9: { json: "accepted-15" }, 10: { json: "accepted-15" }, 11: { json: "completed" },
+    1: { json: "uncertain" }, 2: { json: "uncertain" }, 3: { json: "uncertain" }, 4: { json: "uncertain" }, 5: { json: "uncertain" },
+    6: { json: "accepted" }, 7: { abort: true }, 8: { status: 503, json: { error: ROUTE_FALLBACK } },
+    9: { json: "accepted-15" }, 10: { json: "accepted" }, 11: { json: "accepted-15" }, 12: { json: "accepted-15" }, 13: { json: "completed" },
   };
   const { errors, posts, seen } = await openBusiness(page, "ads", {
     listed: () => (submitted ? [submitted] : []),
@@ -440,25 +441,25 @@ test("Ads: the ad being rendered is read by its composer at the page's pace, sta
   await expect(generate).toHaveText("Rendering…");
   await settled(page);
 
-  /* 2 s after the submit, then 3 s and 4.5 s while the account has not confirmed it. */
-  await nextRead(page, 2000, reads);
-  await nextRead(page, 3000, reads);
-  await nextRead(page, 4500, reads);
-  /* Confirmed: it moved on, so the pace starts over at 2 s, then 3 s. */
-  await nextRead(page, 2000, reads);
-  await nextRead(page, 3000, reads);
-  /* That read never reached the server: said in plain words, not the browser's error, and the wait doubles (9 s). */
+  /* The route allows a person 30 status reads a minute, so a connected job is never read within 6 s of the last
+     read: the floor and half a second, jittered upward only (7.15 s at this draw). While the account has not
+     confirmed it the pace grows past the floor: 7.15 s three times, then 6.75 s and 10 s. */
+  for (const wait of [7150, 7150, 7150, 6750, 10_000]) await nextRead(page, wait, reads);
+  /* Still unconfirmed: 10 s again. Then confirmed: it moved on, so the pace starts over at the floor (7.15 s, not 10 s). */
+  await nextRead(page, 10_000, reads);
+  await nextRead(page, 7150, reads);
+  /* That read never reached the server: said in plain words, not the browser's error, and the wait doubles (12 s). */
   const problem = page.getByTestId("ads-problem");
   await expect(problem).toHaveText("The connection dropped. Checking again shortly.");
   await expect(generate).toHaveText("Rendering…");
   await shoot(page, info.project.name, "ads-read-dropped", "ads-problem");
-  await nextRead(page, 9000, reads);
-  /* The route's catch-all (a 503): one fixed line, not its advice about a saved job; the wait doubles again (27 s). */
+  await nextRead(page, 12_000, reads);
+  /* The route's catch-all (a 503): one fixed line, not its advice about a saved job; the wait doubles again (24 s). */
   await expect(problem).toHaveText("Could not check this take. Checking again shortly.");
   await noOverflow(page);
   await shoot(page, info.project.name, "ads-read-failed", "ads-problem");
   await draw(page, 0);
-  await nextRead(page, 27_000, reads);
+  await nextRead(page, 24_000, reads);
   await expect(problem).toBeHidden();
   /* The account asked for 15 s and holds the job until then: even at the bottom of the jitter the next read is 15.5 s on. */
   await draw(page, 0.5);
@@ -467,10 +468,10 @@ test("Ads: the ad being rendered is read by its composer at the page's pace, sta
   /* Hidden: nothing, however long. Back: the read that fell due, at once. */
   await setHidden(page, true);
   await page.clock.runFor(5 * MIN);
-  expect(await statusReads(page, JOB_ID)).toHaveLength(8);
+  expect(await statusReads(page, JOB_ID)).toHaveLength(10);
   await setHidden(page, false);
-  expect(await statusReads(page, JOB_ID)).toHaveLength(9);
-  await expect.poll(reads).toBe(9);
+  expect(await statusReads(page, JOB_ID)).toHaveLength(11);
+  await expect.poll(reads).toBe(11);
   await settled(page);
 
   /* Leaving the page lets the composer go: it reads nothing more, and the shell's collector's first read comes one pace
@@ -482,8 +483,11 @@ test("Ads: the ad being rendered is read by its composer at the page's pace, sta
   await nextRead(page, 30_000, reads);
   await expect(page.getByTestId("toast")).toHaveText("Marketing Studio rendered on the connected account. It is in Takes.");
   await page.clock.runFor(10 * MIN);
-  expect(await statusReads(page, JOB_ID)).toHaveLength(11);
-  expect(reads()).toBe(11);
+  expect(await statusReads(page, JOB_ID)).toHaveLength(13);
+  expect(reads()).toBe(13);
+  /* Never two reads of it closer than the floor. */
+  const times = (await statusReads(page, JOB_ID)).map((r) => r.at);
+  for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(6500);
 
   /* Priced before, sent once, then only status reads — never two of them at a time. */
   const actions = posts.map((p) => p.action).filter((a) => a !== "catalogue");
@@ -494,7 +498,7 @@ test("Ads: the ad being rendered is read by its composer at the page's pace, sta
   expect(errors).toEqual([]);
 });
 
-test("Ads: an ad read back after a reload is next read when the account's window is up, not 2 s later", async ({ page }, info) => {
+test("Ads: an ad read back after a reload is next read when the account's window is up, not at the floor's 7 s", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   /* The ad this device submitted before the reload: the composer remembers it and reads it back on open. */
   await page.addInitScript(([key, id]) => { try { localStorage.setItem(key, id); } catch { /* private mode */ } }, [`particl:connected-job:ads:${DRAFT}`, JOB_ID]);
@@ -512,11 +516,11 @@ test("Ads: an ad read back after a reload is next read when the account's window
   await draw(page, 0);
   release();
   await settled(page);
-  /* The composer's first read of its own waits that out: 15.5 s at the bottom of the jitter — not its usual 2 s. */
+  /* The composer's first read of its own waits that out: 15.5 s at the bottom of the jitter — not its usual 6.5–7.8 s. */
   await draw(page, 0.5);
   await nextRead(page, 15_500, reads);
-  /* Then its own pace (3 s), and the rendered ad ends the reads. */
-  await nextRead(page, 3000, reads);
+  /* Then its own pace (the floor: 7.15 s), and the rendered ad ends the reads. */
+  await nextRead(page, 7150, reads);
   await expect(page.getByTestId("ads-done")).toBeVisible();
   await page.clock.runFor(10 * MIN);
   expect(await statusReads(page, JOB_ID)).toHaveLength(3);
@@ -594,7 +598,8 @@ test("Ads: a catalogue that did not load says so plainly, is tried again a few t
   await page.getByTestId("ads-generate").click();
   await expect(page.getByTestId("ads-generate")).toHaveText("Rendering…");
   await settled(page);
-  await nextRead(page, 2000, () => seen(JOB_ID));
+  /* Its first read, at the connected floor (7.15 s at this draw), finds nothing on record. */
+  await nextRead(page, 7150, () => seen(JOB_ID));
   await expect(page.getByTestId("ads-error")).toHaveText("This job can no longer be checked from here.");
   await expect(page.getByTestId("ads-requote")).toBeVisible();
   await shoot(page, info.project.name, "ads-job-gone", "ads-requote");

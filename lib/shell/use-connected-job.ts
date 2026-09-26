@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
+  CONNECTED_GENERATION_ENDPOINT, CONNECTED_READ_FLOOR_S, connectedFailureText, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { checkingProblem, resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
@@ -32,9 +32,10 @@ import { forgoConnectedJob, releaseConnectedJob, unwatchConnectedJob, watchConne
  * either way, and Particl settles it only on a status read. While that read
  * is out the composer is `resuming` and prices nothing, so no newer job can
  * be submitted underneath it; and an id is only ever cleared by its own job.
- * A running job is read at lib/poll's pace (the account's own when it gives
- * one, never inside its poll lease — the read-back's included — nothing while
- * the tab is hidden, and a changed status starts the pace over); a read
+ * A running job is read at lib/poll's pace (never within 6 s of the last read
+ * — CONNECTED_READ_FLOOR_S, the route's allowance — the account's own when it
+ * gives a longer one, never inside its poll lease, the read-back's included;
+ * nothing while the tab is hidden; a changed status starts the pace over); a read
  * that fails says so on the job while it keeps being asked after, and one
  * that cannot succeed hands the composer back. Leaving mid-render also hands
  * the job to the shell's collector (lib/shell/connected-collector.ts), which
@@ -274,9 +275,9 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
     const start = live.current;
     const moved = movedOn(mine(start) ? [[id, start.job.status]] : []);
     const poller = poll({
-      firstHint: owed || null,
+      firstHint: Math.max(owed, CONNECTED_READ_FLOOR_S),
       read: (signal) => post(connectedStatusRequest(draftId, id), signal),
-      hint: (reply) => reply.pollAfterSeconds,
+      hint: (reply) => Math.max(reply.pollAfterSeconds ?? 0, CONNECTED_READ_FLOOR_S),
       moved: (reply) => moved(id, reply.job.status),
       done: (reply) => !connectedRecoverable(reply.job),
       onValue: ({ job, pollAfterSeconds }) => {
