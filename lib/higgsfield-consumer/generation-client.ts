@@ -31,6 +31,8 @@ export type ConnectedJob = {
   model: { id: string; name: string; outputType: ConnectedOutputType };
   tool: ConnectedJobTool | null;
   sources: ConnectedJobSource[];
+  /** Which composer quoted it ("gen": the Gen page), so a page picking jobs back up follows only its own. */
+  composer?: "gen" | null;
   workspaceId: string;
   workspaceName: string;
   quoteCredits: number;
@@ -42,6 +44,10 @@ export type ConnectedJob = {
   providerReceipt?: unknown;
   originalAvailable?: boolean;
   originalAvailability?: string;
+  /** Why a failed job failed: the account refused it, or it finished but its result could not be kept. */
+  failureCode?: string | null;
+  /** Unsettled but set aside (by its owner, or past the capacity window): it no longer gates new spend. */
+  setAside?: boolean;
   createdAt: number;
 };
 
@@ -61,12 +67,19 @@ export function parseConnectedJob(value: unknown, draftId: string): ConnectedJob
   const sources: ConnectedJobSource[] = Array.isArray(value.sources)
     ? value.sources.flatMap((item) => record(item) && typeof item.role === "string" && typeof item.name === "string" ? [{ role: item.role, kind: String(item.kind), name: item.name.slice(0, 160) }] : []).slice(0, 30)
     : [];
-  return { ...value, tool, sources, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
+  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
 }
 
-/** Request one exact price for this input. The schema parse is the contract. */
-export function connectedQuoteRequest(draftId: string, input: ConsumerGenerationInput) {
-  return { action: "quote" as const, draftId, input: consumerGenerationInputSchema.parse(input), idempotencyKey: crypto.randomUUID() };
+/**
+ * Request one exact price for this input. The schema parse is the contract.
+ * `composer` names the page quoting it, so that page can pick its own jobs
+ * back up after it was left (the Gen composer's takes).
+ */
+export function connectedQuoteRequest(draftId: string, input: ConsumerGenerationInput, options: { composer?: "gen" } = {}) {
+  return {
+    action: "quote" as const, draftId, input: consumerGenerationInputSchema.parse(input), idempotencyKey: crypto.randomUUID(),
+    ...(options.composer ? { composer: options.composer } : {}),
+  };
 }
 
 /**
@@ -81,6 +94,13 @@ export function connectedStatusRequest(draftId: string, id: string) {
   return { action: "status" as const, draftId, id };
 }
 
+/** What a failed job means for the owner: a refused render is not billed; a
+ * result the account finished but Particl could not keep may have been. */
+export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
+  return job.failureCode === "invalid_result"
+    ? "The account finished this job, but its result could not be kept. Its receipt is saved."
+    : "The connected account reported this job as failed. Failed renders are not billed.";
+}
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);
 

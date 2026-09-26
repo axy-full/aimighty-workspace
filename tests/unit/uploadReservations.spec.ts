@@ -528,3 +528,85 @@ test("existing upload session rows survive the additive cleanup fairness migrati
     expect(await api.reservedUploadBytes()).toBe(0);
   });
 });
+
+test("cancelling frees an upload slot at once, and the cap counts one person's unfinished uploads, not the workspace's", async () => {
+  const api = await load(),
+    { runInTenant } = await import("../../lib/tenant");
+  const sessionN = (n: number) =>
+    `12345678-1234-1234-1234-${String(n).padStart(12, "0")}`;
+  const chunk = (owner: string, n: number) =>
+    api.reserveUploadChunk({
+      owner,
+      session: sessionN(n),
+      index: 0,
+      bytes: 1,
+      sha256: hash,
+    });
+  await runInTenant(workspace("slots", 10_000), async () => {
+    for (let n = 0; n < 32; n++) {
+      const c = await chunk("owner", n);
+      await api.markUploadChunkStored(c.key, 0, c.lease);
+    }
+    await expect(chunk("owner", 99)).rejects.toThrow(/Too many unfinished uploads/);
+    // A colleague's uploads are not held up by someone else's batch.
+    await chunk("colleague", 99);
+    // Cancel: the session is released now, not when the cron next drains five.
+    await api.abortUploadSession("owner", sessionN(0));
+    expect(api.deleted).toContain("owner/" + sessionN(0));
+    const released = await api.uploadSessionStatus("owner", sessionN(0));
+    expect(released?.state).toBe("aborted");
+    await chunk("owner", 99);
+    // A refused finish with nothing staged releases its slot the same way.
+    await expect(chunk("owner", 100)).rejects.toThrow(/Too many unfinished uploads/);
+    const direct = await api.beginDirectUpload("colleague", 1);
+    await api.abandonUpload(direct);
+    const c1 = await chunk("owner", 1);
+    expect(c1.stored).toBe(true);
+    const claim = await api.beginUploadFinish("owner", sessionN(1), {
+      count: 1,
+      filename: "voice.webm",
+      purpose: "reference",
+    });
+    await api.abandonUpload(claim);
+    expect((await api.uploadSessionStatus("owner", sessionN(1)))?.state).toBe(
+      "aborted",
+    );
+    await chunk("owner", 100);
+  });
+});
+
+test("an .m4a stored as a video before its brand was read is relabelled audio, and nothing else changes", async () => {
+  const api = await load(),
+    { runInTenant } = await import("../../lib/tenant"),
+    { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("m4a-backfill"), async () => {
+    await ready();
+    const insert = (id: string, ext: string, kind: string, mime: string) =>
+      db().execute({
+        sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,1,'x',NULL,NULL,?,?,NULL,0)",
+        args: [id, `${id}.${ext}`, mime, ext, `/api/uploads/${id}`, kind],
+      });
+    await insert("memo", "m4a", "video", "video/mp4");
+    await insert("book", "M4B", "video", "video/mp4");
+    await insert("clip", "mp4", "video", "video/mp4");
+    await insert("song", "m4a", "audio", "audio/mp4");
+    // A reference upload stored the sniffed 'mp4'; the name it arrived with says m4a.
+    await db().execute({
+      sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,1,'x',NULL,NULL,?,?,NULL,0)",
+      args: ["refmemo", "Voice Memo.M4A", "video/mp4", "mp4", "/api/uploads/refmemo", "video"],
+    });
+    await api.uploadReservationsReady();
+    const rows = Object.fromEntries(
+      (await db().execute("SELECT id,kind,mime FROM uploads ORDER BY id")).rows.map(
+        (r) => [String(r.id), `${r.kind} ${r.mime}`],
+      ),
+    );
+    expect(rows).toEqual({
+      book: "audio audio/mp4",
+      clip: "video video/mp4",
+      memo: "audio audio/mp4",
+      refmemo: "audio audio/mp4",
+      song: "audio audio/mp4",
+    });
+  });
+});

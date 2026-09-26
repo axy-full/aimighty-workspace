@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { peopleIn, nicknames, splitMentions, isNamed } from "../../lib/mentions";
+import { peopleIn, nicknames, splitMentions, isNamed, unknownMentions } from "../../lib/mentions";
 
 const team = [
   { id: "u1", name: "Ana Ruiz" },
@@ -27,4 +27,17 @@ test("only a name the note resolved reads as a mention", () => {
   expect(mail.some((p) => isNamed(p, ["Ana"]))).toBe(false);
   expect(isNamed({ text: "@Ana", mention: true }, ["ana"])).toBe(true);
   expect(isNamed({ text: "plain", mention: false }, ["plain"])).toBe(false);
+});
+
+/* The composer's "@Maya needs a reference" (components/make/Composer). Its
+   own parser joined capitalised words after a name and read addresses as
+   names, so ordinary prompts greyed out Generate for good. */
+test("an unknown name is one word unless a known one is longer, and never an address or an engine citation", () => {
+  expect(unknownMentions("Close on @Maya Walks toward camera", [])).toEqual(["Maya"]);
+  expect(unknownMentions("Close on @Maya Walks toward camera", ["Maya"])).toEqual([]);
+  expect(unknownMentions("@Lantern Pro shoes on a plinth", ["lantern"])).toEqual([]);
+  expect(unknownMentions("Email studio@acme.com for the plates", [])).toEqual([]);
+  expect(unknownMentions("@Coast road at dawn, @Cass waits", ["Coast road"])).toEqual(["Cass"]);
+  expect(unknownMentions("Match @Image1 and @video2, voice @Audio1", [])).toEqual([]);
+  expect(unknownMentions("(@Iver) turns; @iver again", [])).toEqual(["Iver"]);
 });

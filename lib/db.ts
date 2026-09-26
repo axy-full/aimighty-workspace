@@ -1077,8 +1077,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          The LIKE clause matters: deleting a member mangles the address to
          "<email>#deleted-<ts>", so a super admin deleted before this existed
          would otherwise never be found again. This restores the address too. */
-      try {
-        const superEmail = (process.env.SUPER_ADMIN_EMAIL ?? "axy@akshaypanchal.com").trim().toLowerCase();
+      const superEmail = (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
+      if (superEmail) try {
         await c.execute({
           sql: `UPDATE users
                 SET role='admin', disabled=0, deleted_at=NULL,

@@ -1,4 +1,6 @@
 import { audioVendor } from "./xaiVoice";
+import { xaiSubmissionRejected } from "./xaiErrors";
+import { PreflightError } from "./preflight";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
@@ -364,11 +366,13 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     }
     // A synchronous vendor may have charged before the connection failed.
     // Leave the claim intact: automatic retries must never buy it again.
+    // A refusal the vendor sent, or a request that never left, charged nothing.
     await failJob(
       job.genId,
       (error as Error).message,
-      error instanceof FundingSourceChangedError || falSubmissionRejected(error) || higgsfieldSubmissionRejected(error) ||
-        (error instanceof ElevenLabsError && error.rejectedBeforeGeneration),
+      error instanceof FundingSourceChangedError || error instanceof PreflightError || falSubmissionRejected(error) ||
+        higgsfieldSubmissionRejected(error) || (error instanceof ElevenLabsError && error.rejectedBeforeGeneration) ||
+        xaiSubmissionRejected(error),
     );
     throw error;
   }
@@ -455,6 +459,8 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
     });
     if (!claim.rows.length) return;
     const params = JSON.parse(String(claim.rows[0].params));
+    // Once the image is in hand, a failure is ours (storage), never the vendor's: it does not count toward giving up.
+    let inHand = false;
     try {
       const job = await loadJob(genId);
       if (!job || job.kind !== "image") return;
@@ -473,14 +479,18 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
         return;
       }
       if (state.status !== "succeeded") {
-        await db().execute({ sql: "UPDATE generations SET status=?,error=NULL,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+        // The vendor answered: it is still working, and any run of failed polls is over.
+        await db().execute({ sql: `UPDATE generations SET status=?,error=NULL,params=json_remove(params,'$.higgsfieldStillCollection'),updated_at=?
+            WHERE id=? AND status IN ('queued','running') AND deleted=0`,
           args: [state.status, now(), genId] });
         return;
       }
       if (!state.imageUrl || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
         throw new Error("The connected-account request needs its saved image and verified price before collection can finish.");
+      const bytes = await engine.fetchMaster!(state.imageUrl);
+      inHand = true;
       const out = await finishStill(job, {
-        bytes: await engine.fetchMaster!(state.imageUrl), mime: "image/png",
+        bytes, mime: "image/png",
         costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
       }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
@@ -491,8 +501,18 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       // Transport, connection rotation and storage failures never imply a refund.
       // Preserve both the original request handle and its existing reservation.
       const message = error instanceof Error ? error.message : "Soul collection could not complete.";
-      await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
-        args: [message.slice(0, 600), now(), genId] });
+      /* The run of failed collections is counted — since when, the latest,
+         how many — so the pending sweep ends a take only while it is
+         actually failing (lib/jobs.ts). A storage failure with the image in
+         hand ends the run instead: the image is there to collect. */
+      const t = now();
+      await db().execute(inHand
+        ? { sql: `UPDATE generations SET error=?,params=json_remove(params,'$.higgsfieldStillCollection'),updated_at=?
+              WHERE id=? AND status IN ('queued','running') AND deleted=0`, args: [message.slice(0, 600), t, genId] }
+        : { sql: `UPDATE generations SET error=?,updated_at=?,params=json_set(params,'$.higgsfieldStillCollection',json_object(
+                'since',COALESCE(json_extract(params,'$.higgsfieldStillCollection.since'),?),'last',?,
+                'failures',COALESCE(json_extract(params,'$.higgsfieldStillCollection.failures'),0)+1))
+              WHERE id=? AND status IN ('queued','running') AND deleted=0`, args: [message.slice(0, 600), t, t, t, genId] });
       throw error;
     } finally {
       await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.higgsfieldStillPollUntil') WHERE id=? AND json_extract(params,'$.higgsfieldStillPollUntil')=?",
@@ -740,7 +760,9 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
  * The estimated cost goes on the row even in failure: if the engine drew it
  * or the voice spoke it, the money is gone whether or not we managed to keep
  * the file, and dropping it here is how a real charge disappears from the
- * ledger.
+ * ledger. But only once the paid step was claimed: a render that failed
+ * before claimRender (a lost row, a database error, a missing source) was
+ * never sent to anyone, and it is failed at no charge.
  */
 export async function failJob(
   genId: string,
@@ -751,8 +773,24 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
 
   await ready();
   const job = await loadJob(genId).catch(() => null);
-  const ms = job ? Math.max(0, now() - job.startedAt) : null;
-  const spentUsd = rejectedBeforeGeneration
+  // The row itself says whether a vendor was ever asked; a job that cannot be loaded still ends.
+  const row = (await db().execute({
+    sql: `SELECT kind, model, created_at, json_extract(params,'$.task') AS task,
+            json_extract(params,'$.paidClaim') AS claim, json_extract(params,'$.producedOutcome') AS produced
+          FROM generations WHERE id=? AND deleted=0 AND status NOT IN ('succeeded','failed','cancelled')`,
+    args: [genId],
+  })).rows[0];
+  // Nothing left to end (already over, hidden, or a dubbing project its own workflow owns).
+  if (!row || (row.kind === "audio" && row.task === "dub")) {
+    await deliverGenerationSettlement(genId);
+    return;
+  }
+  const unsent = row.claim == null && row.produced == null;
+  const free = rejectedBeforeGeneration || unsent;
+  const kind = job?.kind ?? (row.kind === "audio" ? "audio" : "image");
+  const modelId = job?.modelId ?? String(row.model);
+  const ms = Math.max(0, now() - (job?.startedAt ?? Number(row.created_at)));
+  const spentUsd = free
     ? 0
     : job?.kind === "audio"
       ? (job.estUsd ?? usdForCredits(job.estCredits, null))
@@ -760,34 +798,35 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
         ? (isHiggsfieldImageModel(job.modelId) ? (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd) ?? null : estimateImageCostUsd(job.modelId, job.size, job.references.length)
             ?.net ?? null)
         : null;
-  const spentCredits = rejectedBeforeGeneration
+  const spentCredits = free
     ? 0
     : job?.kind === "audio"
       ? job.estCredits || null
       : null;
-  if (!job) {
-    await deliverGenerationSettlement(genId);
-    return;
+  let engine: string;
+  try {
+    engine = kind === "audio" ? audioVendor(modelId) : billedTo(getModel(modelId).provider);
+  } catch {
+    engine = kind === "audio" ? "elevenlabs" : "byteplus";
   }
   await writeGenerationOutcome(
     {
+      // An unsent refund holds only while nothing has claimed the paid step since.
       sql: `UPDATE generations
       SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?),
           cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?), updated_at=?
-      WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      WHERE id=? AND status NOT IN ('succeeded','cancelled')${unsent && !rejectedBeforeGeneration
+        ? " AND json_extract(params,'$.paidClaim') IS NULL AND json_extract(params,'$.producedOutcome') IS NULL" : ""}`,
       args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
     },
     {
       id: genId,
-      kind: job.kind,
-      engine:
-        job.kind === "audio"
-          ? "elevenlabs"
-          : billedTo(getModel(job.modelId).provider),
-      model: job.modelId,
+      kind,
+      engine,
+      model: modelId,
       status: "failed",
       // Retain the original reservation for an ambiguous provider/storage failure.
-      engineCostUsd: rejectedBeforeGeneration ? 0 : null,
+      engineCostUsd: free ? 0 : null,
       durationMs: ms,
     },
   );

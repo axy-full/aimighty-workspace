@@ -1,24 +1,33 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { cleanRule } from "@/lib/approvalRule";
+import { MODELS, displayModelName } from "@/lib/models";
+import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/platformLayer";
+import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS } from "@/lib/settingValues";
 import { WORKSPACE_TABS } from "@/lib/shell/ia";
 import { ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
 import { useShell } from "@/lib/shell/state";
+import {
+  auditEntries, checkoutUrl, keyStatus, packLine, planLine, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
+  type BillingPlan, type BillingSubscription, type KeyMode, type SecurityBody, type Topups, type UsageBody,
+} from "@/lib/shell/workspace-view";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditsLabel } from "@/lib/workspace/format";
-import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { takesWithin, type WorkspaceReach } from "@/lib/mediaReach";
-import type { PlansResponse } from "@/components/commercial/PricingClient";
+import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
+import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
+import type { RateGroup, WorkspaceReach } from "@/lib/mediaReach";
 import { RateCard, ReachTile } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
+import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
 /**
  * Workspace (FINAL_SPEC §5): General · People · Plans & credits · Usage · Dashboard ·
  * Engines · Security, each in Graphite on the route that already serves it.
- * Nothing links out to a legacy page any more; what a route does not offer
- * is said on the tab, never faked.
+ * The one page it opens is a month's printable statement; what a route does
+ * not offer is said on the tab, never faked.
  */
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "—";
@@ -39,6 +48,18 @@ function useRead<T>(url: string | null) {
   }, [scoped, url]);
   useEffect(() => { const t = setTimeout(() => void read(), 0); return () => clearTimeout(t); }, [read]);
   return { data, error, read };
+}
+
+/** One write to a route; the refusal comes back as the sentence to show. */
+function useWrite() {
+  const scoped = useScopedFetch();
+  return useCallback(async <T,>(url: string, method: string, body?: unknown): Promise<{ json: T | null; error: string | null }> => {
+    try {
+      const response = await scoped(url, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+      const json = await response.json().catch(() => null) as (T & { error?: string }) | null;
+      return response.ok ? { json, error: null } : { json: null, error: json?.error ?? "That change could not be made." };
+    } catch (caught) { return { json: null, error: caught instanceof Error ? caught.message : "That change could not be made." }; }
+  }, [scoped]);
 }
 
 export function WorkspaceView({ account }: { account: WorkspaceAccount | null }) {
@@ -64,7 +85,11 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
   };
   const current = account?.workspace?.id ?? session.workspace?.id ?? null;
   const others = (session.workspaces ?? []).filter((w) => w.id !== current);
-  const name = account?.workspace?.name ?? session.workspace?.name ?? "Workspace";
+  /* A rename shows at once, here and on General's field, while /api/me catches up; the account's own name wins once it differs from what was renamed. */
+  const known = account?.workspace?.name ?? session.workspace?.name ?? "Workspace";
+  const [renamed, setRenamed] = useState<{ id: string | null; from: string; to: string } | null>(null);
+  const name = renamed && renamed.id === current && renamed.from === known ? renamed.to : known;
+  const onRenamed = (to: string) => { setRenamed({ id: current, from: known, to }); requestAccountRefresh(); };
   return (
     <div className="gx-workspace gx-scroll" data-testid="workspace-view">
       <div className="wsx">
@@ -74,7 +99,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
             <button key={t.id} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.wsTab === t.id} onClick={() => shell.goWorkspace(t.id)}><span>{t.label}</span></button>
           ))}
         </div>
-        {shell.wsTab === "general" ? <General name={name} /> : null}
+        {shell.wsTab === "general" ? <><General name={name} onRenamed={onRenamed} /><Rules /></> : null}
         {shell.wsTab === "people" ? <People /> : null}
         {shell.wsTab === "credits" ? <Plans credits={credits} /> : null}
         {shell.wsTab === "usage" ? <Usage /> : null}
@@ -98,133 +123,296 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
 
 /* ── General ─────────────────────────────────────────────────────────── */
 type Settings = { settings: Record<string, string>; defaults: Record<string, string> };
-function General({ name }: { name: string }) {
-  const scoped = useScopedFetch();
+/** What the server enforces for a stored value, so the select shows the rule in force — not the first option. */
+function inForce(key: string, raw: string): string {
+  if (key === "approvalRule") return cleanRule(raw);
+  if (key === "editOutputFormat") return raw === "mov" ? "mov" : "mp4";
+  if (key === "atCap") return raw === "stop" || raw === "warn" ? raw : "producer";
+  return raw;
+}
+const ENGINES = (kind: "video" | "image") => MODELS.filter((m) => m.kind === kind && !m.hidden);
+function General({ name, onRenamed }: { name: string; onRenamed: (name: string) => void }) {
   const session = useSession();
+  const write = useWrite();
   const { data, error, read } = useRead<Settings>("/api/settings");
   const [draft, setDraft] = useState<Record<string, string>>({});
+  /* null until the owner types: the field shows the workspace's name as it stands. */
+  const [title, setTitle] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const admin = session.role === "admin" || session.role === "owner";
-  const value = (key: string) => draft[key] ?? data?.settings[key] ?? data?.defaults[key] ?? "";
-  const dirty = Object.keys(draft).some((k) => draft[k] !== (data?.settings[k] ?? data?.defaults[k] ?? ""));
+  const owner = session.role === "owner";
+  const stored = (key: string) => inForce(key, data?.settings[key] ?? data?.defaults[key] ?? "");
+  const value = (key: string) => draft[key] ?? stored(key);
+  const set = (key: string, next: string) => setDraft({ ...draft, [key]: next });
+  const changed = Object.keys(draft).filter((k) => draft[k] !== stored(k));
+  const typed = (title ?? name).trim();
+  const renamed = owner && typed !== name && typed.length > 0;
   const save = async () => {
     setSaving(true); setNote(null);
     try {
-      const response = await scoped("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) });
-      const json = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "The settings could not be saved.");
-      setDraft({}); setNote("Saved."); void read();
+      if (renamed) {
+        const { error: refused } = await write("/api/workspaces", "PATCH", { name: typed });
+        if (refused) throw new Error(refused);
+        onRenamed(typed); setTitle(null);
+      }
+      if (changed.length) {
+        const { error: refused } = await write("/api/settings", "PATCH", Object.fromEntries(changed.map((k) => [k, draft[k]])));
+        if (refused) throw new Error(refused);
+        setDraft({}); void read();
+      }
+      setNote("Saved.");
     } catch (caught) { setNote(caught instanceof Error ? caught.message : "The settings could not be saved."); }
     finally { setSaving(false); }
   };
   const enhancer: EnhancerProvider = isEnhancerProvider(value("promptEnhancer")) ? (value("promptEnhancer") as EnhancerProvider) : "higgsfield";
+  const select = (key: string, label: string, options: readonly (readonly [string, string])[], testId?: string, off = false) => (
+    <label className="wsx-label"><span className="gx-eyebrow">{label}</span>
+      <select className="cw-select" value={value(key)} disabled={!admin || off} onChange={(e) => set(key, e.target.value)} data-testid={testId}>
+        {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+      </select>
+    </label>
+  );
   return (
     <div className="wsx-card" data-testid="ws-general">
       <span className="gx-eyebrow">General</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       <div className="wsx-grid">
-        <label className="wsx-label"><span className="gx-eyebrow">Workspace name</span><input className="gx-field" value={name} readOnly title="Renaming lives with the platform; the name here is the workspace’s own." /></label>
-        <label className="wsx-label"><span className="gx-eyebrow">Default delivery format</span>
-          <select className="cw-select" value={value("editOutputFormat")} disabled={!admin} onChange={(e) => setDraft({ ...draft, editOutputFormat: e.target.value })} data-testid="ws-format"><option value="mp4">MP4 · H.264</option><option value="mov">MOV · ProRes</option><option value="webm">WebM · VP9</option></select>
+        <label className="wsx-label"><span className="gx-eyebrow">Workspace name</span>
+          <input className="gx-field" value={title ?? name} maxLength={80} readOnly={!owner} title={owner ? undefined : "The owner names the workspace."} onChange={(e) => setTitle(e.target.value)} data-testid="ws-name" />
         </label>
-        <label className="wsx-label"><span className="gx-eyebrow">Cost approval</span>
-          <select className="cw-select" value={value("approvalRule")} disabled={!admin} onChange={(e) => setDraft({ ...draft, approvalRule: e.target.value })} data-testid="ws-approval"><option value="always">Every paid job asks first</option><option value="cap">Ask above a per-shot cap</option><option value="never">Members render freely</option></select>
-        </label>
-        <label className="wsx-label"><span className="gx-eyebrow">Per-shot cap (cr)</span><input className="gx-field" inputMode="numeric" value={value("shotCapCredits")} disabled={!admin || value("approvalRule") !== "cap"} onChange={(e) => setDraft({ ...draft, shotCapCredits: e.target.value.replace(/[^0-9]/g, "") })} /></label>
+        {select("approvalRule", "Cost approval", APPROVAL_OPTIONS, "ws-approval")}
+        <label className="wsx-label"><span className="gx-eyebrow">Per-shot cap (cr)</span><input className="gx-field" inputMode="numeric" value={value("shotCapCredits")} disabled={!admin || value("approvalRule") !== "cap"} onChange={(e) => set("shotCapCredits", e.target.value.replace(/[^0-9]/g, ""))} data-testid="ws-shot-cap" /></label>
+        {select("capWarnPct", "Warn at", CAP_WARN_OPTIONS.some(([v]) => v === value("capWarnPct")) ? CAP_WARN_OPTIONS : [...CAP_WARN_OPTIONS, [value("capWarnPct"), `${value("capWarnPct")}% of the cap`] as const], "ws-cap-warn")}
+        {select("atCap", "At a project's cap", AT_CAP_OPTIONS, "ws-at-cap")}
+        {select("defaultVideoModel", "Default video engine", [["", "Platform default"], ...ENGINES("video").map((m) => [m.id, displayModelName(m.id)] as const)], "ws-default-video")}
+        {select("defaultImageModel", "Default image engine", [["", "Platform default"], ...ENGINES("image").map((m) => [m.id, displayModelName(m.id)] as const)], "ws-default-image")}
+        {select("editOutputFormat", "Edit & extend container", EDIT_FORMAT_OPTIONS, "ws-format")}
       </div>
       <div className="wsx-label">
         <span className="gx-eyebrow">Prompt enhancer</span>
         <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Prompt enhancer" style={{ alignSelf: "flex-start" }}>
-          {ENHANCER_PROVIDERS.map((p) => <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gx-seg-btn" disabled={!admin} onClick={() => setDraft({ ...draft, promptEnhancer: p })} data-testid={`ws-enhancer-${p}`}><span>{ENHANCER_LABEL[p]}</span></button>)}
+          {ENHANCER_PROVIDERS.map((p) => <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gx-seg-btn" disabled={!admin} onClick={() => set("promptEnhancer", p)} data-testid={`ws-enhancer-${p}`}><span>{ENHANCER_LABEL[p]}</span></button>)}
         </div>
         <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr; a connected model that enhances on the account does it inside the render.</span>
       </div>
       <div className="wsx-actions">
-        <button type="button" className="gx-primary" disabled={!admin || !dirty || saving} onClick={() => void save()} data-testid="ws-save">{saving ? "Saving…" : "Save"}</button>
+        <button type="button" className="gx-primary" disabled={!admin || (!changed.length && !renamed) || saving} onClick={() => void save()} data-testid="ws-save">{saving ? "Saving…" : "Save"}</button>
         {!admin ? <span className="gx-reason">Workspace settings are an admin’s to change.</span> : null}
         {note ? <span className="cw-dim" role="status" data-testid="ws-note">{note}</span> : null}
       </div>
+      {owner ? (
+        <div className="wsx-actions" data-testid="ws-export">
+          <span className="gx-eyebrow">Export</span>
+          <a className="gx-hbtn" href="/api/export" download>Workspace · JSON</a>
+          <a className="gx-hbtn" href="/api/export?format=csv" download>Takes · CSV</a>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-/* ── People ──────────────────────────────────────────────────────────── */
-type Team = { canSeeRoles: boolean; users: { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean; locked: boolean; lastSeen: number | null; clips: number }[]; invites: { code: string; email: string; name: string; role?: string; expiresAt: number }[] };
-function People() {
-  const scoped = useScopedFetch();
+/* ── Prompt rules ────────────────────────────────────────────────────── */
+/* GET /api/rules: lib/platformLayer.ts EffectiveRule. The team's rules edit in full; the platform's switch off or on.
+   Every member reads them; only an admin changes them (the routes answer anyone else 403). */
+type Rule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean; source: "platform" | "workspace" };
+function Rules() {
   const session = useSession();
-  const { data, error, read } = useRead<Team>("/api/team");
-  const [invite, setInvite] = useState({ name: "", email: "", role: "member" });
-  const [link, setLink] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const admin = session.role === "admin" || session.role === "owner";
-  const patch = async (id: string, body: Record<string, unknown>) => {
-    setNote(null);
-    try {
-      const response = await scoped(`/api/team/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const json = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "That change could not be made.");
-      void read();
-    } catch (caught) { setNote(caught instanceof Error ? caught.message : "That change could not be made."); }
+  const write = useWrite();
+  const { data, error, read } = useRead<{ rules: Rule[] }>("/api/rules");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [showInherited, setShowInherited] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const rules = data?.rules ?? [];
+  const mine = rules.filter((r) => r.source === "workspace");
+  const inherited = rules.filter((r) => r.source !== "workspace");
+  const off = inherited.filter((r) => !r.on).length;
+  const act = async (key: string, url: string, method: string, body?: unknown) => {
+    setBusy(key); setNote(null); setRemoving(null);
+    const { error: refused } = await write(url, method, body);
+    setBusy(null);
+    if (refused) { setNote(refused); return false; }
+    await read();
+    return true;
   };
-  const send = async () => {
-    setNote(null); setLink(null);
-    try {
-      const response = await scoped("/api/team", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(invite) });
-      const json = await response.json().catch(() => null) as { code?: string; error?: string } | null;
-      if (!response.ok || !json?.code) throw new Error(json?.error ?? "The invitation could not be made.");
-      setLink(`${window.location.origin}/invite/${json.code}`); setInvite({ name: "", email: "", role: "member" }); void read();
-    } catch (caught) { setNote(caught instanceof Error ? caught.message : "The invitation could not be made."); }
+  const at = (r: Rule) => `/api/rules/${encodeURIComponent(r.id)}`;
+  const row = (r: Rule) => {
+    const own = r.source === "workspace";
+    return (
+      <div className="wsx-actions" key={r.id} data-testid="ws-rule" data-source={r.source} style={{ opacity: r.on ? 1 : 0.6 }}>
+        <button type="button" role="switch" className="gx-toggle" aria-checked={r.on} aria-label={r.on ? "Switch this rule off" : "Switch this rule on"} disabled={!admin || busy != null} onClick={() => void act(r.id, at(r), "PATCH", { on: !r.on })}>
+          <span className="gx-toggle-dot" aria-hidden="true" />{r.on ? "On" : "Off"}
+        </button>
+        {own && admin ? (
+          <>
+            <input className="gx-field" defaultValue={r.text} maxLength={400} aria-label="Rule" disabled={busy != null} style={{ flex: "1 1 220px", width: "auto" }}
+              onBlur={(e) => { const next = e.target.value.trim(); if (next && next !== r.text) void act(r.id, at(r), "PATCH", { text: next }); }} />
+            <select className="cw-select" value={r.scope} aria-label="Scope" disabled={busy != null} style={{ width: "auto" }} onChange={(e) => void act(r.id, at(r), "PATCH", { scope: e.target.value })}>
+              {RULE_SCOPES.map((s) => <option key={s} value={s}>{RULE_SCOPE_LABELS[s]}</option>)}
+            </select>
+            <select className="cw-select" value={r.apply} aria-label="Applies to" disabled={busy != null} style={{ width: "auto" }} onChange={(e) => void act(r.id, at(r), "PATCH", { apply: e.target.value })}>
+              <option value="writer">for the writer</option><option value="prompt">in the prompt</option>
+            </select>
+            {/* Removed rules are archived (lib/rules.ts deleteRule), never erased; the second press confirms. */}
+            <button type="button" className="gx-hbtn gx-hbtn--danger" disabled={busy != null} onClick={() => (removing === r.id ? void act(r.id, at(r), "DELETE") : setRemoving(r.id))} data-testid="ws-rule-remove">
+              {removing === r.id ? "Remove it" : "Remove"}
+            </button>
+          </>
+        ) : (
+          <span style={{ flex: "1 1 220px", minWidth: 0 }}>{r.text} <span className="cw-dim">· {RULE_SCOPE_LABELS[r.scope]} · {r.apply === "writer" ? "for the writer" : "in the prompt"}</span></span>
+        )}
+      </div>
+    );
+  };
+  const add = async () => {
+    const next = text.trim();
+    if (next && await act("add", "/api/rules", "POST", { text: next, scope: "all", apply: "prompt" })) setText("");
   };
   return (
-    <div className="wsx-card" data-testid="ws-people">
-      <span className="gx-eyebrow">People</span>
+    <div className="wsx-card" data-testid="ws-rules">
+      <span className="gx-eyebrow">Prompt rules</span>
+      <span className="cw-dim">Added to every prompt in scope.</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
-      {(data?.users ?? []).map((u) => (
-        <div className="wsx-row" key={u.id} data-testid="ws-member">
-          <span className="wsx-initials" aria-hidden="true">{initials(u.name)}</span>
-          <span style={{ minWidth: 0 }}><span className="wsx-name">{u.name}</span><span className="cw-dim">{u.email} · last seen {when(u.lastSeen)} · {u.clips} {u.clips === 1 ? "clip" : "clips"}{u.disabled ? " · disabled" : ""}{u.locked ? " · locked" : ""}</span></span>
-          <span className="wsx-actions">
-            {u.role ? <span className="gx-pill">{u.standing === "owner" ? "owner" : u.role}</span> : null}
-            {admin && data?.canSeeRoles && !u.permanent && u.role === "member" ? <button type="button" className="gx-hbtn" onClick={() => void patch(u.id, { role: "admin" })}>Promote</button> : null}
-            {admin && u.locked ? <button type="button" className="gx-hbtn" onClick={() => void patch(u.id, { unlock: true })}>Unlock</button> : null}
-          </span>
-        </div>
-      ))}
-      {(data?.invites ?? []).map((i) => (
-        <div className="wsx-row" key={i.code}><span className="wsx-initials" aria-hidden="true">…</span><span style={{ minWidth: 0 }}><span className="wsx-name">{i.name}</span><span className="cw-dim">{i.email} · invited · expires {when(i.expiresAt)}</span></span><span className="gx-pill">{i.role ?? "invited"}</span></div>
-      ))}
-      {admin ? (
-        <div className="wsx-grid" style={{ alignItems: "end" }}>
-          <label className="wsx-label"><span className="gx-eyebrow">Name</span><input className="gx-field" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} data-testid="ws-invite-name" /></label>
-          <label className="wsx-label"><span className="gx-eyebrow">Email</span><input className="gx-field" type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} data-testid="ws-invite-email" /></label>
-          <button type="button" className="gx-hbtn" disabled={!invite.name.trim() || !invite.email.trim()} onClick={() => void send()} data-testid="ws-invite">Invite · one-time link</button>
-        </div>
-      ) : <span className="gx-reason">Inviting is an admin’s to do.</span>}
-      {link ? <p className="gx-gen-note" role="status" data-testid="ws-invite-link">One-time link: <code className="cw-mono">{link}</code></p> : null}
+      {data ? mine.map(row) : !error ? <span className="cw-dim">Reading…</span> : null}
+      <div className="wsx-actions">
+        {admin ? (
+          <>
+            <input className="gx-field" value={text} maxLength={400} placeholder="A rule, as one sentence" aria-label="New rule" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void add(); }} style={{ flex: "1 1 220px", width: "auto" }} data-testid="ws-rule-text" />
+            <button type="button" className="gx-hbtn" disabled={!text.trim() || busy != null} onClick={() => void add()} data-testid="ws-rule-add">Add rule</button>
+          </>
+        ) : null}
+        {inherited.length ? (
+          <button type="button" className="gx-hbtn" aria-expanded={showInherited} onClick={() => setShowInherited((v) => !v)} data-testid="ws-rules-inherited">
+            {showInherited ? "Hide" : "Show"} {inherited.length} inherited{off ? ` · ${off} off` : ""}
+          </button>
+        ) : null}
+      </div>
+      {showInherited ? inherited.map(row) : null}
       {note ? <p className="gx-gen-error" role="alert">{note}</p> : null}
     </div>
   );
 }
 
+/* ── People ──────────────────────────────────────────────────────────── */
+type Member = { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean; locked: boolean; lastSeen: number | null; clips: number };
+type Invite = { code: string; email: string; name: string; role?: string; expiresAt: number; sendCount?: number };
+type Team = { canSeeRoles: boolean; mail?: { configured: boolean }; users: Member[]; invites: Invite[] };
+function People() {
+  const session = useSession();
+  const write = useWrite();
+  const admin = session.role === "admin" || session.role === "owner";
+  /* The roster is the owner's and admins' (GET /api/team is admin-only); a member is told so, not shown a refusal. */
+  const { data, error, read } = useRead<Team>(admin ? "/api/team" : null);
+  const [invite, setInvite] = useState({ name: "", email: "", role: "member" });
+  const [link, setLink] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = async (key: string, url: string, method: string, body?: unknown, done?: string) => {
+    setBusy(key); setNote(null);
+    const { error: refused } = await write(url, method, body);
+    setBusy(null);
+    if (refused) { setNote({ ok: false, text: refused }); return; }
+    if (done) setNote({ ok: true, text: done });
+    void read();
+  };
+  const send = async () => {
+    setNote(null); setLink(null);
+    const { json, error: refused } = await write<{ code?: string }>("/api/team", "POST", invite);
+    if (refused || !json?.code) { setNote({ ok: false, text: refused ?? "The invitation could not be made." }); return; }
+    setLink(`${window.location.origin}/invite/${json.code}`); setInvite({ name: "", email: "", role: "member" }); void read();
+  };
+  if (!admin) return <div className="wsx-card" data-testid="ws-people"><span className="gx-eyebrow">People</span><span className="gx-reason">The team is the owner’s and admins’ to manage.</span></div>;
+  const roles = Boolean(data?.canSeeRoles);
+  return (
+    <div className="wsx-card" data-testid="ws-people">
+      <span className="gx-eyebrow">People</span>
+      {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
+      {(data?.users ?? []).map((u) => {
+        const self = Boolean(session.email) && u.email === session.email;
+        const fixed = Boolean(u.permanent) || u.standing === "owner";
+        return (
+          <div className="wsx-row" key={u.id} data-testid="ws-member">
+            <span className="wsx-initials" aria-hidden="true">{initials(u.name)}</span>
+            <span style={{ minWidth: 0 }}><span className="wsx-name">{u.name}</span><span className="cw-dim">{u.email} · last seen {when(u.lastSeen)} · {u.clips} {u.clips === 1 ? "clip" : "clips"}{u.disabled ? " · disabled" : ""}{u.locked ? " · locked" : ""}</span></span>
+            <span className="wsx-actions">
+              {u.role ? <span className="gx-pill">{u.standing === "owner" ? "owner" : u.role}</span> : null}
+              {roles && !fixed && u.role === "member" ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(u.id, `/api/team/${encodeURIComponent(u.id)}`, "PATCH", { role: "admin" })}>Promote</button> : null}
+              {roles && !fixed && u.role === "admin" ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(u.id, `/api/team/${encodeURIComponent(u.id)}`, "PATCH", { role: "member" })}>Make member</button> : null}
+              {u.locked ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(u.id, `/api/team/${encodeURIComponent(u.id)}`, "PATCH", { unlock: true })}>Unlock</button> : null}
+              {/* Disabling ends access and keeps everything they made; it is undone the same way. Offered where the
+                  roster says who owns the workspace (the owner's view), so the owner's own row never carries a refusal. */}
+              {roles && !fixed && !self ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(u.id, `/api/team/${encodeURIComponent(u.id)}`, "PATCH", { disabled: !u.disabled }, u.disabled ? `${u.name} can sign in again.` : `${u.name} is disabled; their work stays.`)} data-testid="ws-member-disable">{u.disabled ? "Enable" : "Disable"}</button> : null}
+            </span>
+          </div>
+        );
+      })}
+      {(data?.invites ?? []).map((i) => (
+        <div className="wsx-row" key={i.code} data-testid="ws-invite-row">
+          <span className="wsx-initials" aria-hidden="true">…</span>
+          <span style={{ minWidth: 0 }}><span className="wsx-name">{i.name}</span><span className="cw-dim">{i.email} · invited · expires {when(i.expiresAt)}</span></span>
+          <span className="wsx-actions">
+            <span className="gx-pill">{i.role ?? "invited"}</span>
+            {data?.mail?.configured ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email} again.`)}>Resend</button> : null}
+            <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email} no longer works.`)} data-testid="ws-invite-revoke">Revoke</button>
+          </span>
+        </div>
+      ))}
+      <div className="wsx-grid" style={{ alignItems: "end" }}>
+        <label className="wsx-label"><span className="gx-eyebrow">Name</span><input className="gx-field" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} data-testid="ws-invite-name" /></label>
+        <label className="wsx-label"><span className="gx-eyebrow">Email</span><input className="gx-field" type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} data-testid="ws-invite-email" /></label>
+        <button type="button" className="gx-hbtn" disabled={!invite.name.trim() || !invite.email.trim()} onClick={() => void send()} data-testid="ws-invite">Invite · one-time link</button>
+      </div>
+      {link ? <p className="gx-gen-note" role="status" data-testid="ws-invite-link">One-time link: <code className="cw-mono">{link}</code></p> : null}
+      {note ? <p className={note.ok ? "gx-gen-note" : "gx-gen-error"} role={note.ok ? "status" : "alert"} data-testid="ws-people-note">{note.text}</p> : null}
+    </div>
+  );
+}
+
 /* ── Plans & credits ─────────────────────────────────────────────────── */
-type Billing = { canManage: boolean; plans?: { id: string; label?: string; name?: string; includedCredits?: number }[]; packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[]; subscription?: { plan?: string; status?: string; renewsAt?: number } | null; credits?: { balance?: number; granted?: number; used?: number }; reach?: WorkspaceReach | null };
-const basisNote = (basis: "usual" | "default") => (basis === "usual" ? "at your usual settings" : "at the default settings");
+type Billing = { canManage: boolean; plans?: BillingPlan[]; subscription?: BillingSubscription | null; reach?: WorkspaceReach | null; rates?: RateGroup[] | null };
 function Plans({ credits }: { credits: { text: string; title: string } }) {
   const session = useSession();
-  const inCredits = session.rates.unit !== "usd";
+  const write = useWrite();
+  const admin = session.role === "admin" || session.role === "owner";
   const { data, error } = useRead<Billing>("/api/billing");
-  const { data: statements } = useRead<{ months?: string[] }>("/api/statements");
-  const [ratesOpen, setRatesOpen] = useState(false);
-  const plan = data?.plans?.find((p) => p.id === data.subscription?.plan);
-  const reach = inCredits ? data?.reach ?? null : null;
-  const monthly = takesWithin(plan?.includedCredits ?? null, reach?.video?.credits);
+  /* Statements are the owner's and admins' (the route answers 403 to anyone else). */
+  const statements = useRead<unknown>(admin ? "/api/statements" : null);
+  const topups = useRead<Topups>("/api/workspaces/topups");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const months = statementMonthsOf(statements.data);
+  const packs = topups.data?.applies ? topups.data.packs : [];
+  const open = (topups.data?.requests ?? []).filter((r) => r.status === "requested");
+  /* The balance as takes. The route sends none to a workspace billed in dollars. */
+  const inCredits = session.rates.unit !== "usd";
+  const reach = data?.reach ?? null;
+  const request = async (packId: string) => {
+    setBusy(packId); setNote(null);
+    const { json, error: refused } = await write<{ checkout?: { kind: string; url?: string } }>("/api/workspaces/topups", "POST", { packId });
+    setBusy(null);
+    if (refused) { setNote({ ok: false, text: refused }); return; }
+    const url = json?.checkout?.kind === "redirect" ? checkoutUrl(json.checkout.url, window.location.origin) : null;
+    if (json?.checkout?.kind === "redirect") {
+      if (url) { window.location.assign(url); return; }
+      setNote({ ok: false, text: "Checkout returned an address this page will not open." }); return;
+    }
+    setNote({ ok: true, text: "Requested. The balance updates once the platform confirms payment." });
+    void topups.read();
+  };
+  const withdraw = async (id: string) => {
+    setBusy(id); setNote(null);
+    const { error: refused } = await write(`/api/workspaces/topups?id=${encodeURIComponent(id)}`, "DELETE");
+    setBusy(null);
+    setNote(refused ? { ok: false, text: refused } : { ok: true, text: "Request withdrawn." });
+    void topups.read();
+  };
   return (
     <div className="wsx-card" data-testid="ws-plans">
       <span className="gx-eyebrow">Balance</span>
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
-      {/* The balance as takes: what it buys at the settings this workspace actually renders. */}
       {inCredits && !data && !error ? <span className="cw-dim" role="status" data-testid="workspace-reach-loading">Counting what that buys…</span> : null}
       {reach && (reach.video || reach.image) ? (
         <div className="mr-tiles wsx-reach" data-testid="workspace-reach">
@@ -232,125 +420,162 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
           {reach.image ? <ReachTile kind="image" count={reach.image.left} take={reach.image} suffix="left" note={basisNote(reach.image.basis)} testId="workspace-reach-image" /> : null}
         </div>
       ) : null}
-      <span className="cw-dim" data-testid="workspace-plan">{plan ? `${plan.label ?? plan.name ?? plan.id} plan` : data?.subscription?.plan ? `${data.subscription.plan} plan` : "No plan on record"}{data?.subscription?.status ? ` · ${data.subscription.status}` : ""}{plan?.includedCredits ? ` · ${cr(plan.includedCredits)} a month` : ""}{monthly != null && plan?.includedCredits ? ` ≈ ${monthly.toLocaleString("en-US")} ${monthly === 1 ? "video" : "videos"}` : ""}</span>
+      <span className="cw-dim" data-testid="ws-plan-line">{planLine(data?.plans, data?.subscription)}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
-      {inCredits ? (
-        <details className="wsx-rates" data-testid="workspace-rates" onToggle={(e) => setRatesOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      {data?.rates ? (
+        <details className="wsx-rates" data-testid="workspace-rates">
           <summary><span>Credits per take</span><span aria-hidden="true" className="wsx-rates-chev">›</span></summary>
-          {ratesOpen ? <Rates reach={reach} /> : null}
+          <RateCard groups={data.rates} reference={reach} legend="Your balance is counted at the outlined prices." testId="workspace-rate-card" />
         </details>
       ) : null}
-      {/* Packs are not listed: the app has no purchase route, and a feature with no API workflow behind it is not shown (owner's rule, 22 September). */}
-      <span className="gx-eyebrow">Statements</span>
-      <div className="wsx-actions">
-        {(statements?.months ?? []).slice(0, 12).map((m) => <a key={m} className="gx-hbtn" href={`/api/statements?month=${m}`}>{m}</a>)}
-        {!statements?.months?.length ? <span className="cw-dim">Statements are the owner’s and admins’ to read; none yet.</span> : null}
-      </div>
+      {packs.length ? (
+        <>
+          <span className="gx-eyebrow">Add credits</span>
+          <div className="wsx-packs">
+            {packs.map((p) => (
+              <div className="wsx-pack" key={p.id} data-testid="ws-pack">
+                <span className="wsx-name">{p.label}</span>
+                <span className="cw-mono">{packLine(p)}</span>
+                <button type="button" className="gx-hbtn" disabled={!topups.data?.canRequest || busy != null} onClick={() => void request(p.id)} data-testid="ws-pack-request">
+                  {busy === p.id ? "Requesting…" : topups.data?.provider === "manual" ? "Request pack" : "Buy credits"}
+                </button>
+              </div>
+            ))}
+          </div>
+          {!topups.data?.canRequest ? <span className="gx-reason">The owner or an admin asks for credits.</span> : null}
+          {open.map((r) => (
+            <div className="wsx-actions" key={r.id} data-testid="ws-topup-request">
+              <span className="cw-dim">{r.label} · {cr(r.credits + r.bonus)} · waiting on the platform</span>
+              {topups.data?.canRequest ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void withdraw(r.id)}>Withdraw</button> : null}
+            </div>
+          ))}
+        </>
+      ) : null}
+      {note ? <p className={note.ok ? "gx-gen-note" : "gx-gen-error"} role={note.ok ? "status" : "alert"} data-testid="ws-plans-note">{note.text}</p> : null}
+      {admin ? (
+        <>
+          <span className="gx-eyebrow">Statements</span>
+          <div className="wsx-actions">
+            {months.slice(0, 12).map((m) => (
+              <span className="wsx-actions" key={m.month}>
+                <a className="gx-hbtn" href={statementHref(m.month)} data-testid="ws-statement">{m.month}</a>
+                <a className="gx-hbtn" href={statementCsvHref(m.month)} download aria-label={`${m.month} as CSV`}>CSV</a>
+              </span>
+            ))}
+            {statements.data && !months.length ? <span className="cw-dim">Nothing billed yet.</span> : null}
+            {statements.error ? <span className="gx-gen-error" role="alert">{statements.error}</span> : null}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
-
-/** Every engine's credits per take, read when opened; this workspace's own takes outlined. */
-function Rates({ reach }: { reach: WorkspaceReach | null }) {
-  const { data, error, read } = useRead<PlansResponse>("/api/plans");
-  if (error) return <p className="gx-gen-error" role="alert">{error} <button type="button" className="gx-hbtn" onClick={() => void read()}>Try again</button></p>;
-  if (!data) return <span className="cw-dim" role="status">Reading rates…</span>;
-  return <RateCard groups={data.rates ?? []} reference={reach} legend="Your balance is counted at the outlined prices." testId="workspace-rate-card" />;
-}
+const basisNote = (basis: "usual" | "default") => (basis === "usual" ? "at your usual settings" : "at the default settings");
 
 /* ── Usage ───────────────────────────────────────────────────────────── */
-type UsageData = { unit?: string; spentCredits?: number; credits?: { balance?: number; used?: number; granted?: number }; models?: { model: string; engine?: string; kind?: string; n?: number; credits?: number }[]; vendors?: { id: string; label: string; spent?: number; models?: { model: string; label?: string; n?: number; spend?: number }[] }[] };
 function Usage() {
-  const { data, error } = useRead<UsageData>("/api/usage");
-  const rows = data?.models?.length
-    ? data.models.map((m) => ({ id: `${m.engine ?? ""}/${m.model}`, label: m.model, n: m.n ?? 0, amount: m.credits ?? 0, unit: "cr" }))
-    : (data?.vendors ?? []).flatMap((v) => (v.models ?? []).map((m) => ({ id: `${v.id}/${m.model}`, label: `${m.label ?? m.model} · ${v.label}`, n: m.n ?? 0, amount: m.spend ?? 0, unit: "$" })));
-  const max = Math.max(1, ...rows.map((r) => r.amount));
-  const total = rows.reduce((n, r) => n + r.amount, 0);
-  const unit = rows[0]?.unit ?? "cr";
+  const { data, error } = useRead<UsageBody>("/api/usage");
+  const { unit, rows, total } = usageRows(data);
+  const money = (n: number) => (unit === "cr" ? cr(Math.round(n)) : `$${n.toFixed(2)}`);
+  const shown = rows.filter((r) => r.amount > 0 || r.n > 0).sort((a, b) => b.amount - a.amount);
+  const max = Math.max(1, ...shown.map((r) => r.amount));
   return (
     <div className="wsx-card" data-testid="ws-usage">
       <span className="gx-eyebrow">Usage</span>
-      <span className="cw-dim">Settled spend · {unit === "cr" ? cr(Math.round(total)) : `$${total.toFixed(2)}`} · failed renders not billed</span>
+      <span className="cw-dim">Settled spend · {money(total)} · failed renders not billed</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
-      {rows.filter((r) => r.amount > 0 || r.n > 0).sort((a, b) => b.amount - a.amount).map((r) => (
+      {shown.map((r) => (
         <div className="wsx-bar" key={r.id} data-testid="ws-usage-bar">
           <span title={r.label}>{r.label}</span>
           <span className="wsx-bar-track"><span className="wsx-bar-fill" style={{ width: `${Math.max(2, (r.amount / max) * 100)}%` }} /></span>
-          <span className="cw-mono">{unit === "cr" ? cr(Math.round(r.amount)) : `$${r.amount.toFixed(2)}`} · {r.n}</span>
+          <span className="cw-mono">{money(r.amount)} · {r.n}</span>
         </div>
       ))}
-      {data && !rows.length ? <span className="cw-dim">Nothing settled yet.</span> : null}
+      {data && !shown.length ? <span className="cw-dim">Nothing settled yet.</span> : null}
     </div>
   );
 }
 
 /* ── Engines ─────────────────────────────────────────────────────────── */
-type Keys = { keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[]; allowance?: { usd: number; spentUsd: number } | null };
+type Keys = { mode?: KeyMode; keyring?: boolean; keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[] };
 function Engines() {
-  const scoped = useScopedFetch();
   const session = useSession();
-  const { data, error, read } = useRead<Keys>("/api/workspaces/keys");
+  const write = useWrite();
+  const owner = session.role === "owner";
+  /* The keys and the account connection are the owner's (both routes answer 403 to anyone else). */
+  const { data, error, read } = useRead<Keys>(owner ? "/api/workspaces/keys" : null);
   const [entering, setEntering] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  const owner = session.role === "owner";
+  /* The account row reads the connection; the developer-API row follows it. */
+  const [linked, setLinked] = useState<boolean | null>(null);
   const save = async (name: string) => {
     setNote(null);
-    try {
-      const response = await scoped("/api/workspaces/keys", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, value: key.trim() }) });
-      const json = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "The key could not be saved.");
-      setKey(""); setEntering(null); setNote("Key saved."); void read();
-    } catch (caught) { setNote(caught instanceof Error ? caught.message : "The key could not be saved."); }
+    const { error: refused } = await write("/api/workspaces/keys", "PUT", { name, value: key.trim() });
+    if (refused) { setNote(refused); return; }
+    setKey(""); setEntering(null); setNote("Key saved."); void read();
   };
   return (
     <>
       <div className="wsx-card" data-testid="ws-engines">
         <span className="gx-eyebrow">Engines</span>
+        {!owner ? <span className="gx-reason">Engine keys and the connected account are the owner’s to change.</span> : null}
         {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
-        {(data?.keys ?? []).filter((k) => k.name !== "xai").map((k) => (
-          <div className="wsx-row" key={k.name} data-testid="ws-engine">
-            <span className="cw-engine" data-ok={k.set}><span className="cw-engine-dot" aria-hidden="true" /></span>
-            <span style={{ minWidth: 0 }}><span className="wsx-name">{k.label} · {k.set ? "connected" : "platform key"}</span><span className="cw-dim">{k.does}{k.masked ? ` · ${k.masked}` : ""}</span></span>
-            <span className="wsx-actions">
-              {owner ? <button type="button" className="gx-hbtn" onClick={() => { setEntering(entering === k.name ? null : k.name); setKey(""); }}>{k.set ? "Replace key" : "Connect"}</button> : null}
-            </span>
-            {entering === k.name ? (
-              <div className="wsx-actions" style={{ gridColumn: "1 / -1" }}>
-                <input className="gx-field" type="password" autoComplete="off" aria-label={`${k.label} key`} placeholder={k.name === "higgsfield" ? "KEY_ID:KEY_SECRET" : "API key"} value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: "1 1 220px", width: "auto" }} />
-                <button type="button" className="gx-hbtn" disabled={key.trim().length < 8} onClick={() => void save(k.name)}>Save key</button>
-              </div>
-            ) : null}
-          </div>
-        ))}
-        <span className="cw-dim">Keys are encrypted and never returned. Verify checks access categories and quotes only — it never trains, generates or spends.{owner ? "" : " Keys are the owner’s to change."}</span>
+        {(data?.keys ?? []).filter((k) => k.name !== "xai").map((k) => {
+          const status = keyStatus(data?.mode, k.set);
+          return (
+            <div className="wsx-row" key={k.name} data-testid="ws-engine">
+              <span className="cw-engine" data-ok={k.set || status.label !== "not connected"}><span className="cw-engine-dot" aria-hidden="true" /></span>
+              <span style={{ minWidth: 0 }}><span className="wsx-name">{k.label} · {status.label}</span><span className="cw-dim">{k.does}{k.masked ? ` · ${k.masked}` : ""}</span></span>
+              <span className="wsx-actions">
+                {status.canConnect ? <button type="button" className="gx-hbtn" onClick={() => { setEntering(entering === k.name ? null : k.name); setKey(""); }}>{k.set ? "Replace key" : "Connect"}</button> : null}
+              </span>
+              {entering === k.name ? (
+                <div className="wsx-actions" style={{ gridColumn: "1 / -1" }}>
+                  <input className="gx-field" type="password" autoComplete="off" aria-label={`${k.label} key`} placeholder={k.name === "higgsfield" ? "KEY_ID:KEY_SECRET" : "API key"} value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: "1 1 220px", width: "auto" }} />
+                  <button type="button" className="gx-hbtn" disabled={key.trim().length < 8} onClick={() => void save(k.name)}>Save key</button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {owner ? <span className="cw-dim">{data?.mode === "legacy" ? "This workspace runs on the deployment’s keys." : "Keys are encrypted and never returned."}</span> : null}
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
+      <ConnectedAccountRow owner={owner} onLinked={setLinked} />
       <XaiEngineRow />
-      <DeveloperApiRow />
+      {owner ? <DeveloperApiRow connected={linked} /> : null}
     </>
   );
 }
 
 /* ── Security ────────────────────────────────────────────────────────── */
-type SecurityData = { sessions?: { id: string; current?: boolean; createdAt?: number; lastSeen?: number; agent?: string }[]; mfa?: { enabled?: boolean; required?: boolean } | boolean; passwordPolicy?: Record<string, unknown>; audit?: { at: number; event: string }[]; [key: string]: unknown };
 function Security() {
-  const { data, error } = useRead<SecurityData>("/api/account/security");
+  const session = useSession();
+  const admin = session.role === "admin" || session.role === "owner";
+  const { data, error } = useRead<SecurityBody>("/api/account/security");
+  const audit = useRead<unknown>(admin ? "/api/workspaces/audit?limit=5" : null);
   const shell = useShell();
-  const sessions = Array.isArray(data?.sessions) ? data!.sessions! : [];
-  const mfa = typeof data?.mfa === "object" && data?.mfa ? data.mfa : null;
+  const sessions = sessionRows(data);
+  const twoStep = twoStepLine(data);
+  const events = auditEntries(audit.data, AUDIT_LABELS);
   return (
     <div className="wsx-card" data-testid="ws-security">
       <span className="gx-eyebrow">Security</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       <div className="wsx-grid">
         <div className="wsx-label"><span className="gx-eyebrow">Sessions</span><span className="cw-dim">{data ? `${sessions.length || 1} signed in` : "Reading…"}</span>
-          {sessions.slice(0, 8).map((s) => <span key={s.id} className="cw-dim">{s.current ? "This browser" : s.agent ?? "Session"} · {when(s.lastSeen ?? s.createdAt)}</span>)}
+          {sessions.slice(0, 8).map((s) => <span key={s.id} className="cw-dim" data-testid="ws-session">{s.label} · since {when(s.since)}</span>)}
         </div>
-        <div className="wsx-label"><span className="gx-eyebrow">Two-step sign-in</span><span className="cw-dim">{mfa ? (mfa.enabled ? "On" : "Off") + (mfa.required ? " · required by the workspace" : "") : data ? "See the account’s security page" : "Reading…"}</span></div>
+        <div className="wsx-label"><span className="gx-eyebrow">Two-step sign-in</span><span className="cw-dim" data-testid="ws-two-step">{twoStep ?? (data ? "Not reported" : "Reading…")}</span></div>
         <div className="wsx-label"><span className="gx-eyebrow">Media access</span><span className="cw-dim">Originals are served signed, per workspace, never public.</span></div>
-        <div className="wsx-label"><span className="gx-eyebrow">Audit</span><span className="cw-dim">{Array.isArray(data?.audit) && data!.audit!.length ? data!.audit!.slice(0, 5).map((a) => `${a.event} · ${when(a.at)}`).join(" · ") : "Sign-ins, key changes and role changes are kept with the account."}</span></div>
+        {admin ? (
+          <div className="wsx-label" data-testid="ws-audit"><span className="gx-eyebrow">Recent activity</span>
+            {events.map((e) => <span key={e.id} className="cw-dim">{e.label} · {when(e.at)}</span>)}
+            {audit.data && !events.length ? <span className="cw-dim">Nothing recorded yet.</span> : null}
+            {audit.error ? <span className="gx-gen-error" role="alert">{audit.error}</span> : null}
+          </div>
+        ) : null}
       </div>
       <span className="cw-dim">Password, two-step enrolment and session sign-out change with your account, on the account’s own security page — the one place a password is ever typed. <a className="cw-link" href="/account/security">Open account security</a></span>
       <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={() => shell.goWorkspace("general")}>Back to General</button>

@@ -5,6 +5,10 @@ import { refPayload } from "./gemini";
 import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
 import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId, mockStartedAt } from "./mock";
+import { preflight } from "./preflight";
+import { XaiHttpError } from "./xaiErrors";
+/* The typed xAI failure is shared with Grok Voice (lib/xaiErrors.ts); importers of this module keep it here too. */
+export { XaiHttpError, xaiSubmissionRejected } from "./xaiErrors";
 
 /**
  * xAI's Grok Imagine Video (owner, 23 September: Grok APIs wherever
@@ -25,12 +29,18 @@ async function dataUrl(ref: Reference): Promise<string> {
   return `data:${mime};base64,${b64}`;
 }
 
-/** What xAI is sent: the prompt, length, shape and size; a first frame animates, reference images guide (at most 720p). */
+/**
+ * What xAI is sent: the prompt, length, shape and size; a first frame
+ * animates (no last frame), reference images guide (at most 720p). Admission
+ * refuses the same shapes first (videoReferenceProblem); these throws are the
+ * backstop, raised inside the submit's preflight, before anything is sent.
+ */
 export async function xaiVideoBody(model: ModelDef, prompt: string, params: VideoParams, references: Reference[]) {
   const body: Record<string, unknown> = { model: model.id, prompt, duration: params.duration, aspect_ratio: params.ratio, resolution: params.resolution };
   const first = references.find((ref) => ref.kind === "image" && ref.role === "first_frame");
   const guides = references.filter((ref) => ref.kind === "image" && ref.role === "reference_image");
   if (references.some((ref) => ref.kind === "video")) throw new Error(`${model.label} takes images, not videos, as references.`);
+  if (references.some((ref) => ref.role === "last_frame")) throw new Error(`${model.label} animates a first frame; it takes no last frame.`);
   if (first && guides.length) throw new Error(`${model.label} takes a first frame or reference images, not both.`);
   if (first) body.image = { url: await dataUrl(first) };
   else if (guides.length) {
@@ -42,16 +52,20 @@ export async function xaiVideoBody(model: ModelDef, prompt: string, params: Vide
 
 export async function submitXaiVideo(model: ModelDef, prompt: string, params: VideoParams, references: Reference[]): Promise<string> {
   if (engineMock()) return mockJobId("xai", `${params.resolution}-${params.duration}`);
-  const body = await xaiVideoBody(model, prompt, params, references);
+  // Everything up to the POST: a failure here was never sent.
+  const { body, authorization } = await preflight(async () => ({
+    body: await xaiVideoBody(model, prompt, params, references),
+    authorization: `Bearer ${key()}`,
+  }));
   const res = await recoveryFetch(`${BASE()}/videos/generations`, {
-    method: "POST", headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+    method: "POST", headers: { Authorization: authorization, "Content-Type": "application/json" },
     body: JSON.stringify(body), signal: AbortSignal.timeout(120_000), redirect: "error",
   });
   const text = await res.text();
   if (!res.ok) {
     let message = text.slice(0, 400);
     try { const parsed = JSON.parse(text); message = parsed?.error?.message ?? parsed?.error ?? parsed?.message ?? message; } catch { /* raw */ }
-    throw Object.assign(new Error(`Grok Imagine Video refused the request (${res.status}): ${message}`), { status: res.status });
+    throw new XaiHttpError(res.status, `Grok Imagine Video refused the request (${res.status}): ${message}`);
   }
   const id = (JSON.parse(text) as { request_id?: string }).request_id;
   if (!id) throw new Error("Grok Imagine Video returned no request id.");

@@ -55,6 +55,24 @@ export async function listCast(projectId?: string | null): Promise<CastMember[]>
   return rs.rows.map(rowToCast);
 }
 
+/**
+ * Would this name make an @citation ambiguous? A production's own name
+ * clashes with the same name in that production or workspace-wide; a
+ * workspace-wide name clashes with the same name anywhere, because every
+ * production would see both. `exceptId` leaves out the member being renamed.
+ */
+export async function castNameClash(
+  exec: { execute: (stmt: { sql: string; args: (string | null)[] }) => Promise<{ rows: unknown[] }> },
+  name: string, projectId: string | null, exceptId?: string,
+): Promise<boolean> {
+  const rs = await exec.execute({
+    sql: `SELECT id FROM cast_members
+          WHERE LOWER(name) = ? AND id <> ?${projectId ? " AND (project_id = ? OR project_id IS NULL)" : ""} LIMIT 1`,
+    args: projectId ? [name.trim().toLowerCase(), exceptId ?? "", projectId] : [name.trim().toLowerCase(), exceptId ?? ""],
+  });
+  return rs.rows.length > 0;
+}
+
 /** A name is citable if it can't be confused with @Image1 / @Video2. */
 export function nameProblem(name: string): string | null {
   const n = name.trim();

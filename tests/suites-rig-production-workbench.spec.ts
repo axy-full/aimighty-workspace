@@ -28,10 +28,12 @@ function fixture(): Project {
   };
 }
 
-async function open(page: Page) {
+const WIRED_ID = "wb_development_11111111-2222-3333-4444-555555555555";
+async function open(page: Page, options: { store?: { current: Project }; wiring?: { status: "running" | "succeeded" } } = {}) {
   await signInLocally(page.request);
   await mockMedia(page);
-  const store = { current: fixture() };
+  const store = options.store ?? { current: fixture() };
+  const wiring = options.wiring ?? { status: "succeeded" };
   await mockProjects(page, store);
   await mockLibrary(page, { uploads: [], generations: [
     generation({ id: "gen_clip", title: "Harbour plate", prompt: "Harbour plate", kind: "video", model: "dreamina-seedance-2-5-260628", durationS: 5, projectId: "prod-rig" }),
@@ -39,9 +41,13 @@ async function open(page: Page) {
   ] });
   await page.route(/\/api\/workbench\/engines\?/, (route) => route.fulfill({ json: { models: [], credits: 12 } }));
   /* A finished wiring run for the old shot: the agent's prompt, notes and one input. */
-  const wired = { id: "wb_development_11111111-2222-3333-4444-555555555555", requestId: "req-wired-1", projectId: "ws-rig", kind: "rig", nodeId: "n-old", model: "anthropic/claude-sonnet-4.6", effort: "auto", instructions: "", status: "succeeded", completedChunks: 1, totalChunks: 1, currentStage: "complete", completedSteps: 3, totalSteps: 3, estimateCredits: 2, credits: 1, error: null, createdAt: 1, updatedAt: 1,
+  const wired = { id: WIRED_ID, requestId: "req-wired-1", projectId: "ws-rig", kind: "rig", nodeId: "n-old", model: "anthropic/claude-sonnet-4.6", effort: "auto", instructions: "", status: "succeeded", completedChunks: 1, totalChunks: 1, currentStage: "complete", completedSteps: 3, totalSteps: 3, estimateCredits: 2, credits: 1, error: null, createdAt: 1, updatedAt: 1,
     result: { summary: "", recommendation: "", ideas: [], scenes: [], critique: [], assumptions: [], rig: { nodeId: "n-old", prompt: "Wired: Mara watches the fox from the hut window.", notes: "Hold on her eyes.", inputs: ["gen_mara"], firstFrame: null } } };
-  await page.route(/\/api\/workbench\/development/, (route) => route.fulfill({ json: { configured: true, models: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "auto", label: "Auto" }] }], jobs: [wired] } }));
+  const running = { ...wired, status: "running", completedChunks: 0, currentStage: "planning", completedSteps: 1, credits: null, result: null };
+  /* The run list leaves wirings off (as the server does); the shot reads the one it takes by its id. */
+  await page.route(/\/api\/workbench\/development/, (route) => new URL(route.request().url()).searchParams.get("jobId") === WIRED_ID
+    ? route.fulfill({ json: { job: wired } })
+    : route.fulfill({ json: { configured: true, models: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "auto", label: "Auto" }] }], jobs: [wiring.status === "running" ? running : { ...wired, result: null }] } }));
   const posts: { url: string; body: Record<string, unknown> }[] = [];
   await page.route(/\/api\/generate(\/quote)?$/, (route) => {
     const request = route.request();
@@ -96,11 +102,17 @@ test("Rig: shots from Storyboards, prompt and inputs, the first-frame rule, the 
   expect(String(sent.prompt)).toMatch(/^A red fox crosses the frozen harbour at dusk; hold wide, then push in on its eyes\.\n\nInputs:\nInput 1 — Frame 1\.1 \(storyboard\): reference image/);
   expect(sent.references).toEqual(expect.arrayContaining([{ genId: "gen_frame", role: "reference_image" }, { genId: "gen_clip", role: "reference_video" }, { genId: "gen_mara", role: "reference_image" }]));
 
-  /* The agent's wiring of the old shot lands on it: prompt, notes, an input from the cast. */
+  /* A wiring of the old shot that finished before this tab watched it (and the shot never recorded one) is offered, not laid over the shot. */
   await list.getByText("Old shot", { exact: true }).click();
   await tabs.getByRole("button", { name: /Controls/ }).click();
+  await expect(page.getByTestId("rig-wire-offer")).toBeVisible();
+  await expect(page.getByTestId("rig-prompt-input")).not.toHaveValue("Wired: Mara watches the fox from the hut window.");
+  /* Applied on request: prompt, notes, an input from the cast, and the run recorded on the shot. */
+  await page.getByTestId("rig-wire-apply").click();
   await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Mara watches the fox from the hut window.");
   await expect(page.getByLabel("Direction note")).toHaveValue("Hold on her eyes.");
+  await expect(page.getByTestId("rig-wire-offer")).toHaveCount(0);
+  await expect.poll(() => store.current.nodes.find((n) => n.id === "n-old")?.wiredJobId ?? null, { timeout: 15_000 }).toBe(WIRED_ID);
   await tabs.getByRole("button", { name: /Inputs/ }).click();
   await expect(page.getByTestId("rig-input")).toContainText("Mara");
 
@@ -141,5 +153,39 @@ test("Rig: a shot can be deleted — from its Inspector, the right-click menu or
   await page.keyboard.press("Backspace");
   await expect(row()).toHaveCount(0);
   await expect.poll(saved, { timeout: 15_000 }).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("Rig: the agent's wiring lands once, when this tab watched it finish; a hand edit survives a new tab", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "the Rig's list and inspector on a desktop");
+  const store = { current: fixture() };
+  const wiring: { status: "running" | "succeeded" } = { status: "running" };
+  const { errors } = await open(page, { store, wiring });
+  const list = page.getByTestId("rig-list");
+  const tabs = page.getByRole("group", { name: "Inspector tabs" });
+  await list.getByText("Old shot", { exact: true }).click();
+  await tabs.getByRole("button", { name: /Controls/ }).click();
+  await expect(page.getByTestId("rig-wire")).toContainText("The agent is wiring this shot.");
+  /* It finishes while the shot is open: laid on at once, and recorded. */
+  wiring.status = "succeeded";
+  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Mara watches the fox from the hut window.", { timeout: 15_000 });
+  await expect(page.getByTestId("toast")).toContainText("The agent wired Old shot: 1 input");
+  await expect(page.getByTestId("rig-wire-offer")).toHaveCount(0);
+  await expect.poll(() => store.current.nodes.find((n) => n.id === "n-old")?.wiredJobId ?? null, { timeout: 15_000 }).toBe(WIRED_ID);
+
+  /* The director rewrites it; a new tab (a reload, another device, a teammate) never lays the old wiring back over it. */
+  await page.getByTestId("rig-prompt-input").fill("Mine: the keeper lowers the lamp.");
+  await expect.poll(() => store.current.nodes.find((n) => n.id === "n-old")?.text ?? null, { timeout: 15_000 }).toBe("Mine: the keeper lowers the lamp.");
+  /* A new tab: nothing of this one's session survives, only what the draft saved. */
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour rig");
+  await list.getByText("Old shot", { exact: true }).click();
+  await tabs.getByRole("button", { name: /Controls/ }).click();
+  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Mine: the keeper lowers the lamp.");
+  await expect(page.getByTestId("rig-wire-offer")).toHaveCount(0);
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Mine: the keeper lowers the lamp.");
+  expect(store.current.nodes.find((n) => n.id === "n-old")?.text).toBe("Mine: the keeper lowers the lamp.");
   expect(errors).toEqual([]);
 });

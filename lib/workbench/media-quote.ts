@@ -4,6 +4,8 @@ import { estimateCostUsd, estimateImageCostUsd } from '../vendorPricing';
 import { generatedReferenceSeconds, videoReferenceSeconds } from '../referenceDuration';
 import { billCredits } from '../creditTerms';
 import { soulCharacterGenerationEnabled } from '../vendorRates';
+import { elevenConfigured, musicCredits, sfxCredits, usdForCredits } from '../elevenlabs';
+import { composerSettings, type ComposerPicks } from '../workspace/composer';
 
 export class MediaQuoteError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'MediaQuoteError'; }
@@ -66,4 +68,78 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
   const estimate = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)
     : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' });
   return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput };
+}
+
+/**
+ * Whether a take from this engine carries sound as the workbench renders it,
+ * for the model sheet's Audio chip. xAI's video always does and so has no
+ * switch (lib/models.ts › XAI_VIDEO_MODELS). An engine with an audio switch
+ * (supportsAudio) renders silent here: the workbench never sends
+ * generateAudio (lib/generationAdmission.ts defaults it to false) and its
+ * rate is the silent one, so a chip would promise sound the take lacks.
+ */
+export function rendersSound(model: ModelDef): boolean {
+  return model.kind === 'video' && model.provider === 'xai';
+}
+
+/**
+ * The engine's one-liner as Gen shows it. An engine with an audio switch
+ * renders silent here (rendersSound), so its "native audio" is dropped rather
+ * than promised; a line that would still claim sound is not shown at all.
+ * The Make composer, which has the switch, keeps reading `use` as written.
+ */
+export function workbenchUse(model: ModelDef): string | undefined {
+  if (!model.use) return undefined;
+  if (rendersSound(model)) return model.use;
+  const line = model.use.replace(/,?\s*(?:with\s+)?native audio\b/gi, '').replace(/\s+([.,])/g, '$1').trim();
+  return /audio|sound/i.test(line) ? undefined : line;
+}
+
+/** What an engine is priced at, and what it costs, in credits only. */
+export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+/** Where the model sheet prices the list: the composer's picks, the project's aspect, its references. */
+export type RateAt = { picks?: ComposerPicks; aspect?: string };
+export const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false };
+
+/**
+ * The price the model sheet prints beside an engine, before anything is written:
+ * the settings the composer would render THIS engine with — composerSettings
+ * itself, so the pick where the engine offers it, then the project's aspect,
+ * then the engine's default — and the composer's references, through the same
+ * quoteWorkbenchMedia the button uses. Picking the row therefore shows this
+ * figure on Generate. It reads no row and reserves nothing; only credits leave
+ * the server. Null where only a live quote can price the engine (campaign and
+ * identity engines), or where these settings or references cannot be priced.
+ */
+export function workbenchRate(model: ModelDef, at: RateAt = {}, refs: ReferencePrices = NO_REFERENCES): WorkbenchRate | null {
+  if (model.marketing || model.soulIdentity) return null;
+  if (!model.resolutions.length || !model.ratios.length || (model.kind === 'video' && !model.durations.length)) return null;
+  const { resolution, ratio, duration } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations }, at.aspect, at.picks);
+  try {
+    const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration }, refs);
+    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null };
+  } catch (error) {
+    if (error instanceof MediaQuoteError) return null;
+    throw error;
+  }
+}
+
+/** A sound engine's price: flat for an effect, by length for music. */
+export type AudioRate = { credits: number; seconds: number | null };
+
+/**
+ * Sound effects and music as the audio admission prices them
+ * (lib/audioAdmission.ts › estimatedCredits, which the composer's quoteOnly
+ * read returns): an effect costs the same at any length, music is billed by
+ * its length with a 10 s floor — the length the composer sends. Speech is
+ * priced by the words, so it waits for the button. Null when sound is not
+ * connected.
+ */
+export function workbenchAudioRates(seconds: number): { sound: AudioRate; music: AudioRate } | null {
+  if (!elevenConfigured()) return null;
+  const music = Math.max(10, Math.min(300, Number.isFinite(seconds) ? seconds : 10));
+  return {
+    sound: { credits: billCredits(usdForCredits(sfxCredits(), null), 'elevenlabs'), seconds: null },
+    music: { credits: billCredits(usdForCredits(musicCredits(music * 1000), null), 'elevenlabs'), seconds: music },
+  };
 }

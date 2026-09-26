@@ -14,7 +14,8 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { TranscribePanel } from "./TranscribePanel";
@@ -57,6 +58,8 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  */
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
+  /* The same store the shell reads `items` from: Load more and Try again here fill Takes and the Library together. */
+  const library = useProjectLibrary(scope, projectId);
   const { toast, state } = useWorkspace();
   const shell = useShell();
   const project = draft.project;
@@ -67,9 +70,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A take sent here (Viral's Send to Edit, the Library) opens first. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
   const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
-  const entry = items.find((e) => e.take.id === picked && editable(e)) ?? generations.find(editable) ?? null;
+  /* Sound is picked for its transcript only; the cut and the re-edits are for pictures. */
+  const pickable = (e: LibraryEntry) => editable(e) || (e.media === "audio" && Boolean(e.url));
+  const entry = items.find((e) => e.take.id === picked && pickable(e)) ?? generations.find(editable) ?? null;
   const pick = (e: LibraryEntry) => {
-    if (!editable(e)) { toast(e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit."); return; }
+    if (!pickable(e)) { toast("This file has no picture or sound to edit."); return; }
     setPicked(e.take.id); setQuote(null); setError("");
     requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   };
@@ -161,8 +166,10 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         <>
           <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
           <div className="gx-gen-enhance">
-            <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
-            <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+            {entry.media === "audio" ? null : <>
+              <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
+              <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+            </>}
             <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
           </div>
           {entry.media === "video" || entry.media === "audio" ? (
@@ -211,7 +218,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">All assets</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{items.length} in this project</span>
+          <span className="gx-hint">{items.length}{library.hasMore ? "+" : ""} in this project</span>
         </div>
         {groups.length ? groups.map((group) => (
           <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
@@ -226,7 +233,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             ))}
             </div>
           </div>
-        )) : <p className="gx-empty">No assets yet.</p>}
+        )) : library.state.status === "error" ? null : <p className="gx-empty">No assets yet.</p>}
+        <LibraryMore library={library} testId="takes-more" />
       </section>
     </div>
   );

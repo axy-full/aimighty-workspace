@@ -23,11 +23,11 @@ Reservations, concurrent balance checks and debit allocations commit together. C
 
 ## Customer data and deletion
 
-Tenant content remains in a separate database per workspace; platform billing/account tables filter by workspace identifier. Bearer callers require an active platform account and membership. Read tokens cannot mutate, and account/team/key/owner operations require browser sessions. Team invitation consumption and seat enforcement share a transaction.
+Tenant content remains in a separate database per workspace; platform billing/account tables filter by workspace identifier. Bearer callers require an active platform account and membership. Read tokens cannot mutate, and account/team/key/owner operations require browser sessions. Team invitation consumption and seat enforcement share a transaction; an open invitation holds a seat until it is used or expires. Where mail is configured, an invitation creates a new account only from the link in its email, whose `m` proof is derived from the code with a server secret, so an inviter holding the code cannot claim someone else's address; a copied link offers to email that link to the invited address. Invitation email is capped at 20 per workspace an hour, 3 per address per workspace a day, 20 per address across the platform a day, and 5 per invitation.
 
 The JSON export includes shared productions, shots, assets, published bibles, and the requesting owner's private workbench drafts and mappings. Other collaborators' private drafts, authentication records and credentials remain excluded. Media bytes have a separate authorized master manifest.
 
-Deletion revokes access first. Cleanup waits ten minutes for running functions, then removes files, revokes any minted gateway key and drops the tenant database. Stage acknowledgments are durable; failed cleanup retains the credentials and identifiers needed for retry. Cron retries unfinished cleanup. A workspace is marked purged only after every stage succeeds.
+Deletion ends access at once: memberships are disabled and sessions leave the workspace. Nothing is erased (owner, 2026-09-24): the tenant database, its files and billing records are kept, and after ten minutes the cron only revokes any minted gateway key. `purgeWorkspace` exists but is not wired to a route or cron. The platform owner can restore a deleted, unpurged workspace from the admin desk, provided its owner is still under the five-owned-workspace ceiling; the restore leaves a `workspace.restored` receipt, its owner's membership returns, and the owner turns the rest of the team back on from People. Until then, credits, plans, limits and top-up approvals cannot be applied to it; it can still be suspended or flagged.
 
 ## Configuration and release gates
 

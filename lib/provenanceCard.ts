@@ -73,10 +73,21 @@ export function canRepeatExactly(r: Recorded | null): boolean {
   return Boolean(r && r.conditions.seed != null);
 }
 
-/** The footnote under the primary, which changes with the answer above. */
+/**
+ * Where "Make another from this" goes: Generate, in the take's own mode,
+ * with its prompt loaded (GenWorkspace's `promptFrom` handoff), where the
+ * new take is priced on its own button. Null for a kind Generate does not
+ * make. An exact repeat (same versions, Setup, rules and seed) is not built,
+ * so the card does not promise one.
+ */
+export function makeAnotherHref(take: { id: string; kind: string }): string | null {
+  const mode = take.kind === "image" ? "images" : take.kind === "video" || take.kind === "audio" ? take.kind : null;
+  return mode ? `/generate?${new URLSearchParams({ mode, promptFrom: take.id })}` : null;
+}
+
+/** The footnote under the primary: what "Make another" carries, and what it does not. */
 export function repeatNote(r: Recorded | null): string {
-  if (!r) return "Nothing was recorded for this take, so it cannot be repeated exactly.";
-  return canRepeatExactly(r)
-    ? "Same versions, Setup and rules. Same seed."
-    : "Same versions, Setup and rules. New seed, because none was recorded.";
+  return r
+    ? "Starts from this prompt in Generate. Engine, Setup and seed are set again there."
+    : "Starts from this take's prompt in Generate. Nothing else was recorded for it.";
 }

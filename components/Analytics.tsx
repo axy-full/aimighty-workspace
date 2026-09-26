@@ -57,7 +57,9 @@ export function BarList({ rows, empty }: {
 }) {
   const money = useMoney();
   if (!rows.length) return <p className="px-4 py-6 text-center text-[14px] text-mute">{empty}</p>;
-  const max = Math.max(...rows.map((r) => r.value), 0.000001);
+  /* Sized in the unit shown: a credit workspace's analytics carry no vendor dollars. */
+  const size = (r: (typeof rows)[number]) => (money.inCredits ? r.credits ?? 0 : r.value ?? 0);
+  const max = Math.max(...rows.map(size), 0.000001);
   return (
     <div className="flex flex-col gap-3">
       {rows.map((r) => (
@@ -69,7 +71,7 @@ export function BarList({ rows, empty }: {
           </div>
           <div className="mt-1.5 h-[6px] overflow-hidden rounded-full bg-chip">
             <span className="block h-full rounded-full bg-blue"
-                  style={{ width: `${Math.max(2, (r.value / max) * 100)}%` }} />
+                  style={{ width: `${Math.max(2, (size(r) / max) * 100)}%` }} />
           </div>
         </div>
       ))}

@@ -15,6 +15,35 @@ function u32(value: number) {
   out.writeUInt32BE(value);
   return out;
 }
+/** APP2 "MPF" segment (big-endian TIFF) with one MP entry per attribute. */
+function mpf(attributes: number[]) {
+  const entries = attributes.length * 16,
+    ifd = Buffer.alloc(2 + 3 * 12 + 4);
+  ifd.writeUInt16BE(3);
+  const tag = (i: number, id: number, type: number, count: number, value: Buffer) => {
+    const at = 2 + i * 12;
+    ifd.writeUInt16BE(id, at);
+    ifd.writeUInt16BE(type, at + 2);
+    ifd.writeUInt32BE(count, at + 4);
+    value.copy(ifd, at + 8);
+  };
+  tag(0, 0xb000, 7, 4, Buffer.from("0100"));
+  tag(1, 0xb001, 4, 1, u32(attributes.length));
+  tag(2, 0xb002, 7, entries, u32(8 + ifd.length));
+  const list = Buffer.concat(
+    attributes.map((attribute) => Buffer.concat([u32(attribute), Buffer.alloc(12)])),
+  );
+  const tiff = Buffer.concat([Buffer.from("MM\0*"), u32(8), ifd, list]);
+  const head = Buffer.from([0xff, 0xe2, 0, 0]);
+  head.writeUInt16BE(2 + 4 + tiff.length, 2);
+  return Buffer.concat([head, Buffer.from("MPF\0"), tiff]);
+}
+async function still(width: number, height: number, options: { progressive?: boolean } = {}) {
+  return sharp({ create: { width, height, channels: 3, background: "#3d7389" } })
+    .jpeg(options)
+    .toBuffer();
+}
+
 function avif(width: number, height: number, primaryProperty = 2) {
   return Buffer.concat([
     box("ftyp", Buffer.from("avif"), u32(0), Buffer.from("avifmif1")),
@@ -148,13 +177,50 @@ test("animated and multi-image headers cannot silently use a first frame", async
   })
     .jpeg()
     .toBuffer();
-  const mpo = Buffer.concat([
-    jpeg.subarray(0, 2),
-    Buffer.from([255, 226, 0, 6]),
-    Buffer.from("MPF\0"),
-    jpeg.subarray(2),
+  // A stereo MPO declares two disparity images; a panorama is the same class.
+  for (const type of [0x020002, 0x020001, 0x020003]) {
+    const mpo = Buffer.concat([
+      jpeg.subarray(0, 2),
+      mpf([0x20000000 | type, type]),
+      jpeg.subarray(2),
+      jpeg,
+    ]);
+    expect(() => inspectPosterImageHeader(mpo)).toThrow("multi-image");
+  }
+});
+
+test("phone HDR JPEGs with an MPF gain map, maker trailers and PNG trailing bytes use the primary image", async () => {
+  const primary = await still(4032, 3024),
+    gainMap = await still(1008, 756);
+  // Ultra HDR: primary (Baseline MP Primary) + gain map (undefined type) after the primary EOI.
+  const ultraHdr = Buffer.concat([
+    primary.subarray(0, 2),
+    mpf([0x20030000, 0x000000]),
+    primary.subarray(2),
+    gainMap,
   ]);
-  expect(() => inspectPosterImageHeader(mpo)).toThrow("multi-image");
+  expect(inspectPosterImageHeader(ultraHdr)).toEqual({ width: 4032, height: 3024, mime: "image/jpeg" });
+  // Large thumbnails are auxiliary too.
+  const thumbnailed = Buffer.concat([primary.subarray(0, 2), mpf([0x20030000, 0x010001]), primary.subarray(2), gainMap]);
+  expect(inspectPosterImageHeader(thumbnailed).width).toBe(4032);
+  // A bare or unreadable MPF index does not declare a multi-frame set.
+  const bare = Buffer.concat([primary.subarray(0, 2), Buffer.from([255, 226, 0, 6]), Buffer.from("MPF\0"), primary.subarray(2)]);
+  expect(inspectPosterImageHeader(bare).height).toBe(3024);
+  // A maker trailer after EOI (the file no longer ends in FFD9).
+  const trailer = Buffer.concat([primary, Buffer.from("SEFH\0\0\0\x01trailer data"), Buffer.alloc(64, 7)]);
+  expect(inspectPosterImageHeader(trailer).width).toBe(4032);
+  // Progressive scans are walked to the primary EOI, then trailing data is ignored.
+  const progressive = await still(640, 480, { progressive: true });
+  expect(inspectPosterImageHeader(Buffer.concat([progressive, Buffer.from([1, 2, 3])])).height).toBe(480);
+  // A primary cut off before its EOI still fails, whatever follows the cut.
+  expect(() => inspectPosterImageHeader(primary.subarray(0, primary.length - 2))).toThrow("unreadable");
+  expect(() => inspectPosterImageHeader(ultraHdr.subarray(0, 40 + Math.floor(primary.length / 2)))).toThrow("unreadable");
+  // PNG: bytes after IEND are ignored, a missing IEND is not.
+  const png = await sharp({ create: { width: 320, height: 240, channels: 3, background: "#3d7389" } }).png().toBuffer();
+  expect(inspectPosterImageHeader(Buffer.concat([png, Buffer.from("trailing bytes")])).width).toBe(320);
+  expect(() => inspectPosterImageHeader(png.subarray(0, png.length - 12))).toThrow("unreadable");
+  // Oversize primaries still fail on the pixel budget.
+  expect(() => inspectPosterImageHeader(ultraHdr, 4032 * 3024 - 1)).toThrow("40-megapixel");
 });
 
 test("unknown dimensions, corrupt lengths, unbounded box counts and truncated headers fail closed", async () => {

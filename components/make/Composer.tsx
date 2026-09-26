@@ -30,11 +30,14 @@ import { saveDraft, clearDraft } from "@/lib/draft";
 import { useUploadFile } from "@/lib/useUploadFile";
 import type { RefItem } from "@/lib/refs";
 import { referenceKey, selectFirstFrame, videoReferenceProblem } from "@/lib/generationReferences";
+import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
+import { audioTaskAvailable, speechVoiceFor, speechVoicesFor, usableAudioTask } from "@/lib/workbench/generation-audio";
 import type { DraggedAsset } from "@/lib/dnd";
 import type { GenerationProject } from "@/lib/generationProject";
 import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useGenAssetInput, inputAsReference, referenceIdentity, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import type { CastMember } from "@/lib/cast";
+import { unknownMentions } from "@/lib/mentions";
 import { appPrompt } from "@/components/dialog";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
@@ -94,10 +97,13 @@ type SpeechModel = {
 };
 type AudioSetup = {
   configured: boolean;
+  vendors?: { elevenlabs: boolean; xai: boolean };
   speechModels: SpeechModel[];
   defaultSpeechModel: string;
   voices: Voice[];
+  grokVoices?: Voice[];
   voicesError: string | null;
+  grokVoicesError?: string | null;
   account: { usdPerCredit: number } | null;
   terms: { sfxCredits: number; musicCreditsPerMinute: number };
 };
@@ -126,9 +132,6 @@ const TRACKS: { id: Track; label: string; placeholder: string }[] = [
 const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
-
-/** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
-const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
 export type ComposerHandle = GenAssetInputHandle & {
   usePrompt: (text: string) => boolean;
@@ -303,7 +306,6 @@ function ScopedComposer({
   );
   const modelId = batchDisplay?.modelId ?? modelChoice;
   const model = getModel(modelId);
-  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs) : null;
   const chooseFirstFrame = (key: string | null) => {
     if (busy || pendingAudio || pendingBatch || uploading) return;
     const next = selectFirstFrame(attachedRefs.current, key);
@@ -331,6 +333,7 @@ function ScopedComposer({
         : model.resolutions[0],
   );
   const resolution = batchDisplay?.resolution ?? resolutionChoice;
+  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs, resolution) : null;
   const [countChoice, setCount] = useState(1);
   const count = batchDisplay?.count ?? countChoice;
   const [audioChoice, setAudio] = useState(true);
@@ -443,24 +446,20 @@ function ScopedComposer({
   }>(signedIn && kind !== "audio" ? "/api/rig/elements" : null, 60_000);
   /* 3b: a name the prompt cites that nobody has made yet. */
   const known = useMemo(
-    () =>
-      new Set([
-        ...cast.map((m) => m.name.toLowerCase()),
-        ...(elsData?.elements ?? []).map((e) => e.name.toLowerCase()),
-      ]),
+    () => [
+      ...cast.map((m) => m.name),
+      ...(elsData?.elements ?? []).map((e) => e.name),
+    ],
     [cast, elsData],
   );
+  /* One word per name unless a known name is longer, and never an address
+     or an engine's own @Image1 (lib/mentions), so a sentence after a name
+     cannot grey out Generate. */
   const unknown = useMemo(
     () =>
       kind === "audio" || !signedIn || !!pendingBatch
         ? []
-        : [
-            ...new Set(
-              [...prompt.matchAll(NAME_RE)]
-                .map((m) => m[1])
-                .filter((n) => !known.has(n.toLowerCase())),
-            ),
-          ],
+        : unknownMentions(prompt, known),
     [prompt, known, kind, signedIn, pendingBatch],
   );
   const [sheetFor, setSheetFor] = useState<string | null>(null);
@@ -508,7 +507,8 @@ function ScopedComposer({
     0,
   );
   const [trackChoice, setTrack] = useState<Track>("speech");
-  const track: Track = recoveredBody?.task ?? trackChoice;
+  /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone lands on a spoken line. */
+  const track: Track = recoveredBody?.task ?? usableAudioTask(audioSetup, trackChoice);
   const [voiceChoice, setVoiceId] = useState("");
   const voiceId: string = recoveredBody?.voiceId ?? voiceChoice;
   const [voiceQuery, setVoiceQuery] = useState("");
@@ -527,8 +527,22 @@ function ScopedComposer({
     recoveredBody?.instrumental ?? instrumentalChoice;
   const sample = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
-  const voices = useMemo(() => audioSetup?.voices ?? [], [audioSetup]);
-  const voice = voices.find((v) => v.id === (voiceId || voices[0]?.id)) ?? null;
+  const sModel =
+    (audioSetup?.speechModels ?? []).find(
+      (m) => m.id === (speechModel || audioSetup?.defaultSpeechModel),
+    ) ??
+    audioSetup?.speechModels[0] ??
+    null;
+  /* Each speech model reads in its own vendor's voices: the list swaps with the model. */
+  const voices = useMemo(
+    () => speechVoicesFor(audioSetup, sModel?.id ?? ""),
+    [audioSetup, sModel?.id],
+  );
+  const voice = speechVoiceFor(voices, voiceId);
+  const voicesError =
+    sModel?.id === GROK_TTS_MODEL
+      ? audioSetup?.grokVoicesError
+      : audioSetup?.voicesError;
   const shownVoices = useMemo(() => {
     const q = voiceQuery.trim().toLowerCase();
     return q
@@ -539,12 +553,6 @@ function ScopedComposer({
         )
       : voices;
   }, [voices, voiceQuery]);
-  const sModel =
-    (audioSetup?.speechModels ?? []).find(
-      (m) => m.id === (speechModel || audioSetup?.defaultSpeechModel),
-    ) ??
-    audioSetup?.speechModels[0] ??
-    null;
   const spokenS = Math.max(1, Math.round(words(prompt) / 2.5));
   const audioLen =
     track === "speech"
@@ -993,6 +1001,10 @@ function ScopedComposer({
                     key={t.id}
                     type="button"
                     aria-pressed={track === t.id}
+                    disabled={
+                      !!audioSetup?.configured &&
+                      !audioTaskAvailable(audioSetup, t.id)
+                    }
                     onClick={() => setTrack(t.id)}
                   >
                     {t.label}
@@ -1128,8 +1140,8 @@ function ScopedComposer({
                   <span>{kind === "video" ? "…or a clip for motion" : "Drop a composition reference"}</span>
                 </button>}
               </div>
-              <div className={styles.referenceHint}>
-                {kind === "video" ? (
+              {kind === "video" && (
+                <div className={styles.referenceHint}>
                   <label>First frame
                     <select aria-label="First frame" value={refs.find(ref => ref.role === "first_frame") ? referenceKey(refs.find(ref => ref.role === "first_frame")!) : ""}
                       disabled={locked} onChange={event => chooseFirstFrame(event.target.value || null)}>
@@ -1138,30 +1150,8 @@ function ScopedComposer({
                     </select>
                     <span> Right-click an image to choose its role. Reference images do not set the opening frame.</span>
                   </label>
-                ) : (
-                  <div
-                    className={styles.trackTabs}
-                    role="group"
-                    aria-label="Reference use"
-                  >
-                    {(
-                      [
-                        { id: "loose", label: "Loose" },
-                        { id: "first", label: "Exact" },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        aria-pressed={useAs === item.id}
-                        onClick={() => setUseAs(item.id)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
               {referenceProblem && <p className={styles.notice} role="alert">{referenceProblem}</p>}
             </div>
           )}
@@ -1206,6 +1196,34 @@ function ScopedComposer({
                   )}
                   {setting("Variations", "count", `×${count}`)}
                 </div>
+                {kind === "image" && (
+                  /* The new still's role on the production (params.useAs, the
+                     takes wall's First frames / Loose filter). An output
+                     setting, not a reference role: it does not change how
+                     closely the engine follows the references. */
+                  <div className={styles.toggle} role="group" aria-label="Save still as" style={{ flexWrap: "wrap" }}>
+                    <span style={{ whiteSpace: "nowrap" }}>Save still as</span>
+                    <div className={styles.trackTabs} style={{ margin: 0, flexWrap: "nowrap" }}>
+                      {(
+                        [
+                          { id: "loose", label: "Loose" },
+                          { id: "first", label: "First frame" },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          aria-pressed={useAs === item.id}
+                          disabled={locked}
+                          onClick={() => setUseAs(item.id)}
+                          style={{ whiteSpace: "nowrap" }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {kind === "video" && model.supportsAudio && (
                   <label className={styles.toggle}>
                     <span>
@@ -1293,7 +1311,7 @@ function ScopedComposer({
                         ))
                       ) : (
                         <p>
-                          {audioSetup?.voicesError ??
+                          {voicesError ??
                             (signedIn
                               ? "No voices available."
                               : "Sign in to choose a voice.")}

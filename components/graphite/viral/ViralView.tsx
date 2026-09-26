@@ -7,12 +7,14 @@ import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
 import { useViral, type GenjutsuJob } from "@/lib/shell/use-viral";
 import {
-  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, moveReference, viralBlock, viralMedia,
+  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, VIRAL_COPY, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, mirrorSeek, moveReference, type MirrorMark, viralBlock, viralMedia,
   type ViralMedia, type ViralPage, type ViralResolution, type ViralState,
 } from "@/lib/shell/viral";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { resumeLine, resumePhase } from "@/lib/higgsfield-consumer/resume";
+import { useClock } from "../ResumedJobs";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on the existing genjutsu-service:
@@ -152,7 +154,7 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
       </section>
       <section className="gx-gen-results" aria-label="Recent">
         <div className="gx-gen-results-head"><span className="gx-panel-title">Recent</span><button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "history")}>Open History</button></div>
-        {viral.jobs.filter((j) => j.input.variant === (page === "motion" ? "motion-transfer" : "object-swap")).slice(0, 4).map((job) => <JobRow key={job.id} job={job} />)}
+        {viral.jobs.filter((j) => j.input.variant === (page === "motion" ? "motion-transfer" : "object-swap")).slice(0, 4).map((job) => <JobRow key={job.id} job={job} problem={viral.problems[job.id]} now={now} />)}
         {!viral.jobs.length ? <p className="cw-dim">Nothing run in this project yet.</p> : null}
         {ws.state.projectId ? null : <p className="cw-dim">Open a project to see its results.</p>}
       </section>
@@ -160,12 +162,14 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
   );
 }
 
-function JobRow({ job }: { job: GenjutsuJob }) {
+/** One job: its state in one word and how long it has been going; a problem says what to do. */
+function JobRow({ job, problem, now }: { job: GenjutsuJob; problem?: string; now: number }) {
   return (
-    <div className="vr-job" data-status={job.status}>
-      <span className="cw-dot cw-dot--sm" style={{ background: job.status === "completed" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#0A84FF" }} aria-hidden="true" />
+    <div className="vr-job gx-resumed-row" data-status={job.status} data-tone={resumePhase(job).tone} data-testid="viral-job">
+      <span className="gx-resumed-dot" aria-hidden="true" />
       <span className="vr-job-name">{job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"} · {job.input.resolution}</span>
-      <span className="cw-dim">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? "Failed · not billed" : job.status}</span>
+      <span className="gx-resumed-state">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : resumeLine(job, now)}</span>
+      {problem ? <p className="gx-resumed-problem" role="status">{problem}</p> : null}
     </div>
   );
 }
@@ -177,6 +181,7 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
   const [compare, setCompare] = useState<GenjutsuJob | null>(null);
   const finished = viral.jobs.filter((j) => j.status === "completed");
   const others = viral.jobs.filter((j) => j.status !== "completed");
+  const now = useClock(others.length ? 30_000 : 0);
   const resultUrl = (job: GenjutsuJob) => (job.originalAvailable && typeof job.result?.original?.asset?.url === "string" ? job.result.original.asset.url : null);
   const sourceMedia = (job: GenjutsuJob) => { const id = job.input.source.genId ? `generation:${job.input.source.genId}` : `upload:${job.input.source.uploadId}`; return findMedia(items, id); };
   const recreate = (job: GenjutsuJob) => {
@@ -191,7 +196,8 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
     const id = job.result?.original?.generationId;
     if (!id) { ws.toast("This result's original is not available yet."); return; }
     ws.dispatch({ type: "patch", patch: { selKind: "take", selId: `generation:${id}` } });
-    shell.goSuite("studio", "edit");
+    /* Takes opens the selected take in Seedance Edit; Edit & Sound is the cut. */
+    shell.goSuite("studio", "takes");
   };
   return (
     <div className="vr-history gx-enter" data-testid="history-view">
@@ -215,7 +221,7 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
           );
         })}
       </div>
-      {others.length ? <div className="vr-others">{others.map((job) => <JobRow key={job.id} job={job} />)}</div> : null}
+      {others.length ? <div className="vr-others">{others.map((job) => <JobRow key={job.id} job={job} problem={viral.problems[job.id]} now={now} />)}</div> : null}
       {compare ? <CompareSheet job={compare} source={sourceMedia(compare)?.url ?? null} result={resultUrl(compare)} onClose={() => setCompare(null)} /> : null}
     </div>
   );
@@ -225,6 +231,9 @@ function HistoryView({ viral, items }: { viral: Viral; items: LibraryEntry[] }) 
 function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; source: string | null; result: string | null; onClose: () => void }) {
   const a = useRef<HTMLVideoElement>(null), b = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
+  /* A seek mirrored onto the other player fires its own `seeked`; that one is not mirrored back. */
+  const mirrored = useRef<MirrorMark<HTMLVideoElement>>(null);
+  const follow = (from: HTMLVideoElement, to: HTMLVideoElement | null) => { mirrorSeek(from, to, mirrored); };
   const both = (fn: (v: HTMLVideoElement) => void) => [a.current, b.current].forEach((v) => v && fn(v));
   const toggle = () => { if (playing) { both((v) => v.pause()); setPlaying(false); } else { both((v) => { void v.play().catch(() => undefined); }); setPlaying(true); } };
   return (
@@ -232,8 +241,8 @@ function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; sour
       <div className="gx-sheet vr-compare" role="dialog" aria-modal="true" aria-label="Compare" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
         <div className="gx-sheet-head"><span className="gx-panel-title">Compare · {job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"}</span><button type="button" className="gx-hbtn" onClick={toggle}>{playing ? "Pause" : "Play both"}</button><button type="button" className="gx-hbtn" onClick={onClose}>Close</button></div>
         <div className="vr-compare-grid">
-          <figure><figcaption className="gx-eyebrow">Original</figcaption>{source ? <video ref={a} src={source} playsInline preload="metadata" onSeeked={(e) => { if (b.current) b.current.currentTime = e.currentTarget.currentTime; }} controls /> : <p className="cw-dim">The source is no longer in this project.</p>}</figure>
-          <figure><figcaption className="gx-eyebrow">Result</figcaption>{result ? <video ref={b} src={result} playsInline preload="metadata" onSeeked={(e) => { if (a.current) a.current.currentTime = e.currentTarget.currentTime; }} controls /> : <p className="cw-dim">The result’s original is not available yet.</p>}</figure>
+          <figure><figcaption className="gx-eyebrow">Original</figcaption>{source ? <video ref={a} src={source} playsInline preload="metadata" onSeeked={(e) => follow(e.currentTarget, b.current)} controls /> : <p className="cw-dim">The source is no longer in this project.</p>}</figure>
+          <figure><figcaption className="gx-eyebrow">Result</figcaption>{result ? <video ref={b} src={result} playsInline preload="metadata" onSeeked={(e) => follow(e.currentTarget, a.current)} controls /> : <p className="cw-dim">The result’s original is not available yet.</p>}</figure>
         </div>
       </div>
     </div>

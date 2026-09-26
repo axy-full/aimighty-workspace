@@ -135,6 +135,8 @@ export type ModelDef = {
   paramStyle: ParamStyle;
 
   resolutions: string[];
+  /** Sizes the vendor lists that have never been rendered here: offered, but never the engine's headline size. */
+  untestedResolutions?: string[];
   ratios: string[];
   durations: number[];
   supportsAudio: boolean;
@@ -211,6 +213,7 @@ export const MODELS: ModelDef[] = [
     kind: "video",
     paramStyle: "fields",
     resolutions: ["480p", "720p", "1080p", "4k"],
+    untestedResolutions: ["4k"],
     ratios: ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
     // "Dreamina Seedance 2.0 series: Default 5; supports [4, 15] or -1."
     durations: seconds(4, 15),
@@ -534,6 +537,7 @@ export const AUDIO_LABELS: Record<string, { label: string; short: string }> = {
   eleven_turbo_v2_5:      { label: "Eleven Turbo v2.5",      short: "11 TURBO" },
   eleven_sfx:             { label: "Eleven Sound Effects",   short: "11 SFX" },
   eleven_music:           { label: "Eleven Music",           short: "11 MUSIC" },
+  "grok-tts":             { label: "Grok Voice",             short: "GROK VOICE" },
 };
 
 /**

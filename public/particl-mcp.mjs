@@ -185,7 +185,14 @@ async function cli(argv) {
     console.log(out);
     if (rest.includes("--wait")) {
       const id = out.match(/id: (\S+)/)?.[1];
-      if (id) console.log("\n" + await tool("wait_for_render", { id, timeout_seconds: 480 }));
+      // One wait is bounded by the workspace (it answers "Still …" before its
+      // request would be cut off), so keep asking — for up to 20 minutes.
+      let reply = "";
+      for (let round = 0; id && round < 5; round++) {
+        reply = await tool("wait_for_render", { id, timeout_seconds: 240 });
+        if (!reply.startsWith("Still ")) break;
+      }
+      if (reply) console.log("\n" + reply);
     }
     return;
   }

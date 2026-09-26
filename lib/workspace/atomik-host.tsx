@@ -25,6 +25,7 @@ import {
 } from "react";
 import type { Project } from "../workbench/studio";
 import { loadActivity, mergeActivity } from "./activity";
+import { projectChanged } from "./data";
 import { priceText } from "./atomik-view";
 import { stableKey } from "./plan-helpers";
 import { mergeRequests, projectRequests, withRequestGate, type RequestKey } from "./plan-requests";
@@ -80,6 +81,8 @@ export type AtomikHostValue = {
   start: (page?: string) => void;
   approve: () => Promise<void>;
   decline: () => void;
+  /** Clear a refusal once it has been read (the engine also clears it on a page change). */
+  dismissNotice: () => void;
   activity: ActivityEntry[];
   rendering: { name: string } | null;
   /** A page body publishes its current request (usePlanRequest). */
@@ -102,11 +105,16 @@ export function useAtomik(): AtomikHostValue {
 export function usePlanRequest<K extends RequestKey>(key: K, value: PlanRequest[K] | undefined) {
   const host = useContext(AtomikContext);
   const publish = host?.publish;
+  /* A new value replaces the old one in place (publish ignores an equal one). Withdrawing on
+     every change would make two state updates per render, and a caller that builds its value
+     afresh on each render would then re-render the host, and itself, without end. */
+  useEffect(() => {
+    if (publish) publish(key, value);
+  }, [publish, key, value]);
   useEffect(() => {
     if (!publish) return;
-    publish(key, value);
     return () => publish(key, undefined);
-  }, [publish, key, value]);
+  }, [publish, key]);
 }
 
 const ACTIVITY_POLL_MS = 20_000;
@@ -265,6 +273,15 @@ export function AtomikHost({
   const decline = useCallback(() => {
     engine.decline();
   }, [engine]);
+  const dismissNotice = useCallback(() => {
+    engine.clearNotice();
+  }, [engine]);
+
+  /* A finished run may have written the draft (a script, beats, a plan): the shell's copy re-reads it. */
+  const finished = state.run?.status === "done" ? state.run.id : null;
+  useEffect(() => {
+    if (finished) projectChanged(projectId);
+  }, [finished, projectId]);
 
   /* The live PlanSource other surfaces read through useWorkspace().plans. */
   useEffect(() => {
@@ -286,8 +303,8 @@ export function AtomikHost({
   }, [bridge, plan, state.run, ctx]);
 
   const value = useMemo<AtomikHostValue>(
-    () => ({ state, ctx, plan, runnable, runFor, start, approve, decline, activity, rendering: feed.rendering, publish }),
-    [state, ctx, plan, runnable, runFor, start, approve, decline, activity, feed.rendering, publish],
+    () => ({ state, ctx, plan, runnable, runFor, start, approve, decline, dismissNotice, activity, rendering: feed.rendering, publish }),
+    [state, ctx, plan, runnable, runFor, start, approve, decline, dismissNotice, activity, feed.rendering, publish],
   );
   return <AtomikContext.Provider value={value}>{children}</AtomikContext.Provider>;
 }

@@ -4,12 +4,13 @@ import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender, withTenant } from "@/lib/auth";
-import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS, RENDER_USD_PER_MP } from "@/lib/identities";
+import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS, renderUsdForRatio } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { meter } from "@/lib/meter";
 
-import { withGenerationRequest, bindGenerationRequest, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
+import { withGenerationRequest, claimBinding, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
+import type { InStatement } from "@libsql/client";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
      through on one credit. It also ran outside the rate limit entirely, so
      nothing bounded how many times a second it could be asked.
      Same walls, same order, as every other paid route. */
-  const estUsd = Math.round(RENDER_USD_PER_MP * count * 10_000) / 10_000;
+  const eachUsd = renderUsdForRatio(ratio);
+  const estUsd = Math.round(eachUsd * count * 10_000) / 10_000;
   const allowance = await allowanceCheck("fal", estUsd, RENDERER);
   if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const lim = await checkLimits();
@@ -58,10 +60,11 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
 
   const ids: string[] = [];
   const ts = now();
+  const rows: InStatement[] = [];
   for (let i = 0; i < count; i++) {
     const genId = newId("gen");
     ids.push(genId);
-    await db().execute({
+    rows.push({
       sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
              created_at, updated_at, token_id, provider, task, billed_to)
@@ -76,13 +79,14 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
              "running", got.user.id, ts, ts, got.token?.id ?? null, "fal", "generate", "fal"],
     });
   }
-  await bindGenerationRequest(requestClaim, ids[0]);
+  // The claim is bound in the same write: a claim naming no job proves there is none.
+  await db().batch([...rows, ...(await claimBinding(requestClaim, ids[0]))], "write");
   invalidate(PROJECTS_KEY);
   const reserved: string[] = [];
   try {
     for (const gid of ids) {
       await reserveGenerationSpend({ id: gid, kind: "image", engine: "fal", model: RENDERER, status: "running",
-                    engineCostUsd: RENDER_USD_PER_MP, projectId, createdBy: got.user.id }, { token: got.token });
+                    engineCostUsd: eachUsd, projectId, createdBy: got.user.id }, { token: got.token });
       reserved.push(gid);
     }
   } catch (e) {
@@ -115,5 +119,5 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   })));
 
   return NextResponse.json({ ids, status: "running" });
-  });
+  }, { atomicBinding: true });
 });

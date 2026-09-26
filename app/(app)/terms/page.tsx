@@ -7,16 +7,16 @@ export default function TermsPage() {
   return (
     <PolicyPage
       title="Terms"
-      updated="13 September 2026"
+      updated="25 September 2026"
       intro="The working terms between a workspace and the platform, in plain sentences."
     >
       <P title="Your account and workspace">
         <p>
           Registration requires a verified email address. Each production house
           has its own workspace, team and settings. The owner can export or
-          delete the workspace from Settings › Account. Deletion removes access
-          immediately; file and database cleanup follows and is retried if a
-          storage service is unavailable.
+          delete the workspace from Settings › Account. Deletion ends access
+          immediately; the workspace&rsquo;s files, database and billing
+          records are kept, not erased, and the platform can restore it.
         </p>
       </P>
       <P title="Credits">

@@ -26,6 +26,7 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -56,14 +57,16 @@ import {
   type ConnectedOutputType,
 } from "./catalogue";
 import { loadConnectedCatalogue } from "./catalogue-cache";
-import { describeConsumerGenerationSources, resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
+import { describeConsumerGenerationSources, longestVideoSourceSeconds, resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
 import { requireConnectedTool, type ConnectedToolName } from "./tools";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { sameConsumerValue } from "./video-contract";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { CONSUMER_ORIGINAL_SECONDS, collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
 import { requireConnectedPreset } from "./presets";
+import { setupIdsOfParameters } from "./marketing-records";
+import { refuseForeignMarketingSetup } from "./marketing-setup";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 type Snapshot = {
@@ -75,6 +78,8 @@ type Snapshot = {
   tool?: { name: ConnectedToolName; label: string; model: string; suffix: string };
   /** Display names of the request's reference files, in request order. */
   sources?: { role: string; kind: string; name: string }[];
+  /** The page that quoted it, when it asked to pick its jobs back up ("gen"). */
+  composer?: "gen";
 };
 function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvailability, observedAt: number) {
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -89,6 +94,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     model: snapshot.model,
     tool: snapshot.tool ?? null,
     sources: snapshot.sources ?? [],
+    composer: snapshot.composer === "gen" ? "gen" : null,
     workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId,
     quoteCredits: job.quoteCredits,
@@ -101,6 +107,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }
@@ -146,8 +153,10 @@ async function requireModel(userId: string, input: ConsumerGenerationInput): Pro
 const sameInput = (a: unknown, b: ConsumerGenerationInput) =>
   sameConsumerValue(parseConsumerGenerationInput(a), b);
 const PLACEHOLDER_MEDIA = "00000000-0000-4000-8000-000000000000";
-export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string) {
+export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string, options: { composer?: "gen" | null } = {}) {
   const normalized = parseConsumerGenerationInput(input);
+  // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
+  await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
@@ -159,6 +168,15 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
   const model = await requireModel(userId, normalized);
   // Catalogue validation precedes source resolution, imports and pricing.
   consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
+  // A voice the owner made on the account (voice_type "element") is its own
+  // library, never Particl's: only the account's preset voices are used.
+  if (normalized.parameters.voice_type !== undefined && normalized.parameters.voice_type !== "preset")
+    throw new CatalogueError("parameter_invalid", "Choose one of the account's preset voices.");
+  // A video tool returns a result as long as its source; one longer than
+  // Particl can keep would be paid for and never collected.
+  const longest = await longestVideoSourceSeconds(normalized);
+  if (longest !== null && longest > CONSUMER_ORIGINAL_SECONDS)
+    throw new CatalogueError("tool_source", `Choose a video up to ${CONSUMER_ORIGINAL_SECONDS / 60} minutes long; a longer result cannot be kept.`);
   const access = await connected(userId);
   // A motion preset must be one the connected account lists right now.
   if (normalized.presetId !== undefined) await requireConnectedPreset(userId, access, normalized.presetId);
@@ -180,6 +198,7 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
     workspaceName: quote.workspace.name ?? "Connected wallet",
     model: { id: model.id, name: model.name, outputType: model.outputType },
     sources: described,
+    ...(options.composer === "gen" ? { composer: "gen" as const } : {}),
   };
   if (normalized.tool) {
     const tool = requireConnectedTool(normalized.tool.name);
@@ -295,7 +314,16 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
     if (terminal) {
       await connected(scope.userId, claim.job.connectionGeneration);
       const enhancedPrompt = consumerGenerationEnhancedPrompt(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
-      const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt });
+      let original;
+      try {
+        original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt });
+      } catch (error) {
+        // The same result would be refused on every poll: settle it once, keep
+        // its receipt, and say why, instead of holding a slot forever.
+        if (!uncollectableOriginal(error)) throw error;
+        const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+        return { job: await consumerGenerationView(settled ?? (await ownedGeneration(scope))), collection: { code: error.code, message: error.message }, pollAfterSeconds };
+      }
       const completed = await completeConsumerJob({
         ...scope,
         leaseToken: claim.leaseToken,
