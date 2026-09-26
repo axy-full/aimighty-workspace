@@ -5,6 +5,10 @@ import { BEAT_LIMITS, newBeat, newScene, newShot, removalName, removeFromSheet, 
 import { attachBeatsStage, undoBeatRemoval } from "../../lib/production/beats-undo";
 import { UNDO_HINT, popUndo, pushUndo, splitUndoHint, undoneLabel, withUndoHint, type UndoEntry } from "../../lib/shell/undo";
 import { productionSchema } from "../../lib/workbench/studio-schema";
+import { mergeDraft } from "../../lib/workbench/draft-merge";
+import { noteTakenOut, recordMade, type MadeRecords } from "../../lib/workbench/merge";
+import { beatSheetFrom } from "../../lib/production/beats";
+import { newProject, type Project } from "../../lib/workbench/studio";
 import type { DevelopmentJob } from "../../lib/workbench/development-types";
 
 /**
@@ -242,3 +246,56 @@ test("the undo toast: its keyboard half splits off, and an undo can say what rea
   expect(popUndo(stack, "p-1")?.entry).toBe(mine);
   expect(popUndo(stack, "p-1")?.rest).toEqual([other]);
 });
+
+/* ── Notes and deletes in #387's three-way merge ─────────────────────────── */
+
+function drafted(shape: (p: Project) => void = () => {}): Project {
+  const p = newProject("Notes merge");
+  p.id = "project-notes-merge";
+  p.createdAt = "2026-09-26T00:00:00Z";
+  shape(p);
+  return p;
+}
+
+test("notes three-way merge like any text: two windows' lines both stay, and a sent note leaves while another window's new line stays", () => {
+  const base = drafted((p) => { p.production = { notes: { draft: "Let the fox come back.\nShorter second act." } }; });
+  const mine = withNotes(base, "draft", "Let the fox come back at night.\nShorter second act.");
+  const theirs = withNotes(base, "draft", "Let the fox come back.\nShorter second act.\nNo narration.");
+  expect(notesOf(mergeDraft(base, mine, theirs), "draft")).toBe("Let the fox come back at night.\nShorter second act.\nNo narration.");
+  /* The boxes are separate: Brief's here, Beats' there. */
+  const beats = withNotes(base, "beats", "Keep it wordless.");
+  const merged = mergeDraft(base, beats, theirs);
+  expect(merged.production?.notes).toEqual({ draft: "Let the fox come back.\nShorter second act.\nNo narration.", beats: "Keep it wordless." });
+  /* This window's redraft was held: its notes leave; the line the other window added meanwhile stays. */
+  const sent = clearSentNotes(base, "draft", { instructions: "Let the fox come back.\nShorter second act." });
+  expect(notesOf(mergeDraft(base, sent, theirs), "draft").trim()).toBe("No narration.");
+});
+
+test("notes merged past 5,000 characters keep the saved text, and this window is told in the box's own name", () => {
+  const line = (c: string) => c.repeat(2400);
+  const base = drafted((p) => { p.production = { notes: { draft: line("a") } }; });
+  const mine = withNotes(base, "draft", `${line("a")}\n${line("m")}`);
+  const theirs = withNotes(base, "draft", `${line("t")}\n${line("a")}`);
+  const notes: string[] = [];
+  const merged = mergeDraft(base, mine, theirs, { notes });
+  expect(notesOf(merged, "draft")).toBe(notesOf(theirs, "draft"));
+  expect(notes).toEqual(["The notes box holds 5,000 characters, and another window's text filled it first: your edit to it was not added."]);
+});
+
+test("a Beats delete undone survives the merge once: the scene another window left alone is back, beside that window's edit", () => {
+  const sheet = beatSheetFrom([0, 1].map((i) => ({ id: `s${i}`, heading: `SCENE ${i + 1}`, sourceStart: 0, sourceEnd: 1, summary: "", beats: ["A beat."], shots: [], characters: [], props: [], locations: [], productionNotes: [] })), "a".repeat(64), "wb_development_job-7");
+  const base = drafted((p) => { p.production = { beats: sheet }; });
+  const made: MadeRecords = new Map();
+  /* As the editor does it: every change notes what it took out and what it made. */
+  const edit = (from: Project, fn: (p: Project) => Project) => { const next = noteTakenOut(from, fn(from)); recordMade(made, from, next); return next; };
+  const deleted = edit(base, (p) => ({ ...p, production: { ...p.production, beats: removeFromSheet(p.production!.beats!, { kind: "scene", id: sheet.scenes[1].id })!.sheet } }));
+  expect(deleted.takenOut).toEqual([sheet.scenes[1].id]);
+  const removal = removeFromSheet(base.production!.beats!, { kind: "scene", id: sheet.scenes[1].id })!.removal;
+  const undone = edit(deleted, (p) => ({ ...p, production: { ...p.production, beats: restoreToSheet(p.production!.beats, removal)! } }));
+  /* Another window renamed scene 1 meanwhile. */
+  const theirs = clone(base); theirs.production!.beats!.scenes[0].heading = "SCENE ONE";
+  const merged = mergeDraft(base, undone, theirs, { made });
+  expect(merged.production?.beats?.scenes.map((s) => [s.id, s.heading])).toEqual([[sheet.scenes[0].id, "SCENE ONE"], [sheet.scenes[1].id, "SCENE 2"]]);
+});
+
+const clone = <T,>(value: T): T => structuredClone(value);
