@@ -26,12 +26,13 @@ type AuditPage = {
   nextCursor: string | null;
   actors: Record<string, string>;
 };
-const labels: Record<string, string> = {
+export const labels: Record<string, string> = {
   "session.created": "Signed in",
   "session.revoked": "Signed out",
   "session.workspace_changed": "Switched workspace",
   "account.password_reset": "Reset password",
   "account.mfa_enabled": "Enabled two-step sign-in",
+  "account.mfa_replaced": "Replaced authenticator",
   "account.mfa_disabled": "Disabled two-step sign-in",
   "account.recovery_codes_rotated": "Replaced recovery codes",
   "account.recovery_code_used": "Used a recovery code",
@@ -43,6 +44,7 @@ const labels: Record<string, string> = {
   "workspace.mode_changed": "Changed model access",
   "workspace.mfa_required": "Required workspace two-step sign-in",
   "workspace.mfa_optional": "Made workspace two-step sign-in optional",
+  "workspace.restored": "Restored the workspace",
   "api_token.created": "Created API token",
   "api_token.revoked": "Revoked API token",
   "review_link.created": "Created review link",

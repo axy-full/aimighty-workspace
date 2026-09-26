@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { nodeHeight } from "../../lib/workbench/node-graph";
 import { type CanvasNode } from "../../lib/workbench/studio";
+import { PROJECT_LIMITS } from "../../lib/workbench/project-limits";
 import {
   CANVAS_ZOOM_MAX,
   CANVAS_ZOOM_MIN,
@@ -107,10 +108,17 @@ test("duplicate preserves external references and remaps all internal edges and 
   expect(nodes[1].operations![0].values.note).toBe("original");
   expect(
     duplicateSelectedNodes(
-      Array.from({ length: 249 }, (_, i) => node(String(i))),
+      Array.from({ length: PROJECT_LIMITS.nodes - 1 }, (_, i) => node(String(i))),
       ["0", "1"],
     ).ids,
   ).toEqual([]);
+  // The old 250-node ceiling is gone: a 300-node canvas still duplicates.
+  expect(
+    duplicateSelectedNodes(
+      Array.from({ length: 300 }, (_, i) => node(String(i))),
+      ["0", "1"],
+    ).ids,
+  ).toHaveLength(2);
 });
 test("deletion retains locked nodes and their inputs, clears downstream edges and active switch route", () => {
   const nodes = [

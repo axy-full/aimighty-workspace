@@ -21,12 +21,56 @@ export function identifyAudio(buf: Buffer): AudioMeta | null {
     return { kind: "audio", mime: "audio/mpeg", ext: "mp3" };
   // ADTS AAC: sync 0xFFF with layer 00.
   if (buf[0] === 0xff && (buf[1] & 0xf6) === 0xf0) return { kind: "audio", mime: "audio/aac", ext: "aac" };
-  // ISO BMFF with an audio-only brand (M4A / M4B); other brands are video (lib/imagemeta.ts).
-  if (ascii(buf, 4, 4) === "ftyp") {
-    const brand = ascii(buf, 8, 4);
-    if (brand === "M4A " || brand === "M4B ") return { kind: "audio", mime: "audio/mp4", ext: "m4a" };
-  }
+  // ISO BMFF that carries sound and no picture; any other is video (lib/imagemeta.ts).
+  if (mp4SoundOnly(buf)) return { kind: "audio", mime: "audio/mp4", ext: "m4a" };
   return null;
+}
+
+const SOUND_BRANDS = new Set(["M4A ", "M4B ", "M4P "]);
+
+/**
+ * An MPEG-4 container with sound and no picture: an audio-only brand (an
+ * .m4a, an iPhone voice memo, an .m4b book), or a generic isom/mp42 brand
+ * (many Android recorders) whose movie header, when it is in these bytes,
+ * lists sound tracks and no video track. A movie header written after the
+ * media is out of reach here, so that file keeps the video answer.
+ */
+export function mp4SoundOnly(buf: Buffer): boolean {
+  if (buf.length < 12 || ascii(buf, 4, 4) !== "ftyp") return false;
+  if (SOUND_BRANDS.has(ascii(buf, 8, 4))) return true;
+  try {
+    const moov = boxes(buf, 0, buf.length).find((b) => b.type === "moov");
+    if (!moov) return false;
+    const handlers = boxes(buf, moov.start, moov.end)
+      .filter((b) => b.type === "trak")
+      .map((trak) => {
+        const mdia = boxes(buf, trak.start, trak.end).find((b) => b.type === "mdia");
+        const hdlr = mdia && boxes(buf, mdia.start, mdia.end).find((b) => b.type === "hdlr");
+        // hdlr: version and flags, pre_defined, then the handler type.
+        return hdlr && hdlr.start + 12 <= hdlr.end ? ascii(buf, hdlr.start + 8, 4) : "";
+      });
+    return handlers.includes("soun") && !handlers.includes("vide");
+  } catch {
+    return false;
+  }
+}
+
+/** The boxes directly inside [start, end); stops at one that runs past the end, so a truncated header reads as absent. */
+function boxes(buf: Buffer, start: number, end: number): { type: string; start: number; end: number }[] {
+  const out: { type: string; start: number; end: number }[] = [];
+  let off = start;
+  while (off + 8 <= end) {
+    let size = buf.readUInt32BE(off), header = 8;
+    if (size === 1) {
+      if (off + 16 > end) break;
+      size = Number(buf.readBigUInt64BE(off + 8));
+      header = 16;
+    } else if (size === 0) size = end - off;
+    if (size < header || off + size > end) break;
+    out.push({ type: ascii(buf, off + 4, 4), start: off + header, end: off + size });
+    off += size;
+  }
+  return out;
 }
 
 /** File extensions the bounded inspector can read (mp3, wav, m4a/aac, plus mp4/mov audio tracks). */

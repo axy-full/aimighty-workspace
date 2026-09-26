@@ -14,11 +14,10 @@ export type InspectorBodyProps = { state: AppState; scope: string; project: Proj
 
 export const KIND_LABEL: Record<SelKind, string> = { shot: "Scene", take: "Asset", cast: "Identity", page: "Stage" };
 
-const NOTE: Record<SelKind, string> = {
+const NOTE: Record<Exclude<SelKind, "page">, string> = {
   shot: "Shot controls, inputs and versions appear here when a shot is selected.",
   take: "Asset details, settled cost or integrity, and versions appear here.",
   cast: "The locked identity, its consistency and its references appear here.",
-  page: "This page’s specification and its Atomik plan appear here.",
 };
 
 function Placeholder({ state }: InspectorBodyProps) {
@@ -29,7 +28,8 @@ function Placeholder({ state }: InspectorBodyProps) {
       <div className="pxw-preview" style={{ marginTop: 10 }} aria-hidden="true" />
       <div className="pxw-inspector-subject">{def.title}</div>
       <div className="pxw-inspector-sub">{getSuite(state.suite).name}</div>
-      <p className="pxw-inspector-note">{NOTE[state.selKind]}</p>
+      {/* A page with no specification says what the stage does; nothing is promised that will not appear. */}
+      <p className="pxw-inspector-note">{state.selKind === "page" ? def.description : NOTE[state.selKind]}</p>
     </div>
   );
 }

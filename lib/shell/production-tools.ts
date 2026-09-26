@@ -55,3 +55,27 @@ export function focusSection(section: string) {
   window.dispatchEvent(new CustomEvent(SECTION_EVENT, { detail: section }));
   requestAnimationFrame(() => document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
 }
+
+/**
+ * Where the Library has Tools at all. Gen is not a stage; the Business and
+ * Viral composers keep every control on the page (their spec cards describe
+ * the old bodies, so a row there would lead nowhere); the phone's Home and
+ * Studio grid are pickers. There the Library is its Assets.
+ */
+export function libraryHasTools(view: string, suite: string, page: string): boolean {
+  if (view === "gen") return false;
+  if (suite === "business" || suite === "viral") return false;
+  return !(suite === "studio" && (page === "home" || page === "stages"));
+}
+
+/**
+ * A Library row on a spec-card page (Deliver, the Atomik pages) opens its card
+ * on the stage — the card's own button, which brings its tool into the working
+ * area. False when the card has no tool (its action is the page's plan).
+ */
+export function openSpecCard(name: string, root: ParentNode = document): boolean {
+  const card = root.querySelector(`.gx-main [data-card="${CSS.escape(name)}"]`);
+  if (!card || card.tagName !== "BUTTON") return false;
+  (card as HTMLButtonElement).click();
+  return true;
+}

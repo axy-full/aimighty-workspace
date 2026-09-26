@@ -1,0 +1,18 @@
+{
+ "n": 6,
+ "title": "Make Takes the review desk that every toast promises",
+ "area": "Studio \u203a Takes",
+ "gap": "Every render toasts 'Filed in Takes for review'. However, EditStage.tsx:140-230 renders every take twice (Generations and All assets), is not virtualized, and has no status, filter, search, pick or approve. PATCH /api/jobs/:id {reviewState: picked|approved|changes} exists and records who reviewed, and a pick notifies admins. Only the first 60 generations and 60 uploads load (lib/workspace/library.ts:78), and nothing in components/graphite calls library.more(); the legacy TakesPage.tsx:182 had Load more. Audio can never be selected (EditStage.tsx:69 `editable` excludes it), so TranscribePanel is unreachable for audio.",
+ "target": "The Takes header gets filter chips (All / Needs review / Picked / Approved / Changes / Held / Failed), kind chips and a search box. Takes are grouped by shot, then by batch strip. The selected take gets Pick / Approve / Request changes, which call the PATCH route. Status chips come from takes.ts. The grid uses VirtualItems with a 'Load more' sentinel that calls library.more(), and the Library panel gets the same. Audio takes can be selected so TranscribePanel works for them.",
+ "files": [
+  "components/graphite/production/EditStage.tsx",
+  "lib/workspace/library.ts",
+  "lib/workspace/takes.ts",
+  "components/workspace/VirtualItems.tsx",
+  "components/graphite/Library.tsx",
+  "app/api/jobs/[id]/route.ts"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "Uses the existing review PATCH. Nothing is deleted, and review states can be cleared."
+}

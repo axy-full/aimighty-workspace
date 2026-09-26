@@ -189,21 +189,39 @@ export function expectedSeconds(task: NodeAudioTask, text: string, seconds: numb
 
 export const SOUND_CLIP_LIMIT = 64;
 
-/** The finished asset becomes a clip on its lane at the remembered playhead. */
+/** Whole frames of a file: rounding up would run the clip past its own source. */
+const sourceFrames = (seconds: number, fps: number) =>
+  Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.floor(seconds * fps + 1e-6)) : 1;
+
+/**
+ * The finished asset becomes a clip on its lane at the remembered playhead.
+ * `seconds` is the file's length; `measured` says it was read from the file,
+ * not the estimate the request was sent with (inferred when not given: the
+ * asset's stored length, or a length other than the estimate).
+ */
 export function placeGeneratedClip(
   project: Project,
   placement: SoundPlacement,
   asset: Asset,
   seconds: number,
+  measured: boolean = asset.seconds !== undefined || seconds !== placement.seconds,
 ): Project {
   const clips = audioClips(project);
+  const length = sourceFrames(seconds, project.fps);
   if (placement.replaceClipId) {
     const index = clips.findIndex((c) => c.id === placement.replaceClipId);
     if (index >= 0) {
       const current = clips[index];
       if (current.assetId === asset.id) return project;
-      // Same place, same length, same mix settings: only the voice changed.
-      const replaced = clips.map((c, i) => (i === index ? { ...c, assetId: asset.id, sourceIn: 0 } : c));
+      // Same place, same length, same mix settings: only the voice changed. Speech-to-speech
+      // keeps the source's timing, so the clip keeps its in point; a shorter file trims it.
+      // An estimate is no reason to trim: with the length unread, the clip keeps its timing.
+      if (!measured) return { ...project, audioAssetId: undefined, audioClips: clips.map((c, i) => (i === index ? { ...c, assetId: asset.id } : c)) };
+      const sourceIn = Math.min(current.sourceIn, length - 1);
+      const duration = Math.max(1, Math.min(current.duration, length - sourceIn));
+      const fadeIn = Math.min(current.fadeIn, duration);
+      const fadeOut = Math.min(current.fadeOut, duration - fadeIn);
+      const replaced = clips.map((c, i) => (i === index ? { ...c, assetId: asset.id, sourceIn, duration, fadeIn, fadeOut } : c));
       return { ...project, audioAssetId: undefined, audioClips: replaced };
     }
   }
@@ -211,12 +229,21 @@ export function placeGeneratedClip(
     return project;
   if (clips.length >= SOUND_CLIP_LIMIT)
     throw new Error(`An edit supports up to ${SOUND_CLIP_LIMIT} audio clips. Remove one before placing ${placement.label}.`);
-  const duration = Math.max(1, Math.min(216000, Math.round(seconds * project.fps)));
+  // A clip that runs past the cut stops Sound preview, WAV and the movie render, so it ends with the cut.
+  const total = project.shots.reduce((n, s) => n + s.duration, 0);
+  const startFrame = Math.min(21600000, placement.startFrame);
+  if (startFrame >= total)
+    throw new Error(
+      total
+        ? `${placement.label} is in the library, not on the timeline: the cut ends before ${timecodeOf(startFrame, project.fps)}. Add it from Sound mix.`
+        : `${placement.label} is in the library, not on the timeline: the cut is empty. Add it from Sound mix once the cut has shots.`,
+    );
+  const duration = Math.max(1, Math.min(216000, length, total - startFrame));
   const clip: AudioClip = {
     id: uid("audio"),
     assetId: asset.id,
     lane: placement.lane,
-    startFrame: Math.min(21600000, placement.startFrame),
+    startFrame,
     sourceIn: 0,
     duration,
     gainDb: 0,

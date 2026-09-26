@@ -13,6 +13,7 @@ import {
   consumerMarketingTemplateInputSchema,
   type ConsumerMarketingTemplateInput,
 } from "@/lib/higgsfield-consumer/marketing-templates";
+import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./marketing-templates.module.css";
 
 export const TEMPLATE_ASSET_CATEGORY = "Campaign template";
@@ -247,14 +248,14 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && !!normalized && JSON.stringify(selected.input) === JSON.stringify(normalized);
   const missing = attempts.filter((id) => !jobs.some((job) => job.id === id));
-  const unresolved = missing.length > 0 || jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
+  const unresolved = missing.length > 0 || jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
   const ready = enabled && !!capability?.owner && capability.connected && !capability.suspended && !busy;
   const canQuote = ready && valid && !unresolved && (!product || disclosed);
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   const change = (patch: Partial<typeof form>) => { setEdit({ ...form, ...patch }); setApproved(false); setNotice(""); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
     const byId = new Map(confirmed.map((job) => [job.id, job]));
-    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && job.quoteExpired !== true); });
+    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || awaitingReconciliation(job) || (job.status === "quoted" && job.quoteExpired !== true); });
     try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); } catch { /* Keep the guard when its resolution cannot be saved. */ }
   }, [attemptKey]);
   const saveJob = (job: Job) => { setJobs((before) => retain([job, ...before.filter((item) => item.id !== job.id)], attemptIds.current)); setSelectedId(job.id); };
@@ -304,7 +305,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save as a variant." : "The template run completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? "The connected account reported that this template run failed." : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save as a variant." : "The template run completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this template run failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -348,7 +349,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
         <button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14} />Refresh saved template jobs</button>
       </div>
-      {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+      {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
       {!!missing.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another template run.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missing[0])}>Recover earlier submission</button></div>}
       {selected?.status === "quoted" && <div className={styles.quote} aria-label="Template quote">
         <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
@@ -362,7 +363,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         const original = originalAsset(job), saved = original && project.assets.some((asset) => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
         return <article key={job.id} className={styles.job}>
-          <div><strong>{job.status === "completed" ? (original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Template run failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
+          <div><strong>{job.status === "completed" ? (original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Template run failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.input.prompt || "No description."}</p>
           <small>{job.template.name} · {job.template.category || "uncategorised"} · {job.outputKind} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}

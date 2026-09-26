@@ -62,7 +62,8 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
       {state.gen ? (
         <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
           <span className="gx-jobs-dot" aria-hidden="true" />
-          <span>{state.gen.name} · {Math.round(state.gen.pct)}%</span>
+          {/* The job's phase, not a percentage: no engine reports progress, so none is invented. */}
+          <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
         </button>
       ) : null}
       <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>

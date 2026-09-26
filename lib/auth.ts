@@ -1,4 +1,5 @@
 import { recoveryRoute } from "./recovery";
+import { SESSION_COOKIE } from "./sessionCookie";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
@@ -29,7 +30,7 @@ import {
  * as SHA-256 hashes, so a database copy hands over neither.
  */
 
-export const SESSION_COOKIE = "aw_session";
+export { SESSION_COOKIE };
 export const SUPER_ADMIN_EMAIL = PLATFORM_SUPER_ADMIN_EMAIL;
 export const isSuperAdmin = platformIsSuperAdmin;
 
@@ -326,8 +327,7 @@ export async function requireRender(): Promise<
   return got;
 }
 
-/** Month-to-date spend charged to one token, for its optional ceiling. */
-/** Midnight on the 1st, local time: where a token's monthly ceiling resets. */
+/** Midnight on the 1st, server time: where a token's monthly ceiling resets. */
 export function monthStart(at = new Date()): number {
   const start = new Date(at);
   start.setDate(1); start.setHours(0, 0, 0, 0);
@@ -345,6 +345,7 @@ export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
   return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
 }
 
+/** Month-to-date spend charged to one token in the engine's dollars, for a dollar ceiling. */
 export async function tokenSpendThisMonth(tokenId: string): Promise<number> {
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);

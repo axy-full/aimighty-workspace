@@ -114,7 +114,6 @@
 .gx-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(235, 235, 245, .25); flex: none; }
 .gx-tab[aria-current="page"] .gx-tab-dot { background: #0A84FF; box-shadow: 0 0 10px rgba(10, 132, 255, .9); }
 /* Project head: the saved dot before the meta. */
-.gx-project-saved { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: #30D158; box-shadow: 0 0 8px rgba(48, 209, 88, .8); }
 /* Workspace balance in the gradient. */
 .gx-balance { background: linear-gradient(180deg, #FFFFFF, rgba(235, 235, 245, .72)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 

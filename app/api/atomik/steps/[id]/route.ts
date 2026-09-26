@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { getStep, patchStep, type StepStatus } from "@/lib/atomik";
+import { getStep, patchStep, StepEditError, type StepStatus } from "@/lib/atomik";
 import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 export const dynamic = "force-dynamic";
@@ -53,13 +53,18 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
     return NextResponse.json({ error: "Ask Atomik for a new version of a connected step instead." }, { status: 409 });
 
   const status = STATUSES.includes(b.status) ? b.status as StepStatus : undefined;
-  const step = await patchStep(id, {
-    prompt: typeof b.prompt === "string" ? b.prompt : undefined,
-    model: typeof b.model === "string" ? b.model : undefined,
-    params: b.params && typeof b.params === "object" ? b.params : undefined,
-    status,
-    genId: b.genId === undefined ? undefined : (b.genId || null),
-    error: b.error === undefined ? undefined : (b.error || null),
-  });
-  return NextResponse.json(step);
+  try {
+    const step = await patchStep(id, {
+      prompt: typeof b.prompt === "string" ? b.prompt : undefined,
+      model: typeof b.model === "string" ? b.model : undefined,
+      params: b.params && typeof b.params === "object" && !Array.isArray(b.params) ? b.params : undefined,
+      status,
+      genId: b.genId === undefined ? undefined : (b.genId || null),
+      error: b.error === undefined ? undefined : (b.error || null),
+    });
+    return NextResponse.json(step);
+  } catch (error) {
+    if (error instanceof StepEditError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
 });

@@ -101,6 +101,20 @@ function invalidEffort(model: CatalogModel): Error & { status: number } {
   return Object.assign(new Error(`That effort setting is not available for ${model.name}. Choose one of this model's supported settings.`), { status: 422 });
 }
 
+const EFFORT_ALLOWANCE: Record<string, number> = { none: 0, minimal: 1_024, low: 4_096, medium: 8_192, high: 16_384, xhigh: 24_576, max: MAX_OUTPUT_TOKENS };
+const AUTO_ALLOWANCE = 4_096;
+/**
+ * The output tokens `atomikReasoningRequest` sets aside for reasoning on top
+ * of the visible answer. Reasoning and the answer share one ceiling, so the
+ * answer can count on `maxTokens` less this, never the whole of it.
+ */
+export function atomikReasoningAllowance(model: CatalogModel, effort: string | undefined): number {
+  if (effort === undefined) return 0;
+  if (effort === "auto") return model.tags?.includes("reasoning") || controls(model).length ? AUTO_ALLOWANCE : 0;
+  if (effort.startsWith("budget:")) return Number(effort.slice("budget:".length));
+  return EFFORT_ALLOWANCE[effort] ?? 0;
+}
+
 /**
  * Native provider options avoid Gateway's shared translation of Gemini medium
  * to high and max to xhigh. All fields here are documented for raw HTTP calls:
@@ -116,19 +130,18 @@ export function atomikReasoningRequest(model: CatalogModel, effort: string | und
   const visible = Math.min(Math.max(MAX_VISIBLE_TOKENS, maxVisible), Math.max(MIN_ANSWER_TOKENS, Math.floor(visibleTokens)));
   const limit = outputLimit(model);
   const request: AtomikReasoningRequest = { maxTokens: Math.min(visible, limit), providerOptions: {} };
+  const reserved = atomikReasoningAllowance(model, effort);
   if (effort === "auto") {
-    if (model.tags?.includes("reasoning") || controls(model).length) request.maxTokens = Math.min(limit, visible + 4_096);
+    if (reserved) request.maxTokens = Math.min(limit, visible + reserved);
     return request;
   }
   if (effort.startsWith("budget:")) {
-    const budget = Number(effort.slice("budget:".length));
-    request.maxTokens = Math.min(limit, visible + budget);
-    if (budget >= request.maxTokens) throw invalidEffort(model);
-    request.requestFields = { reasoning: { enabled: true, max_tokens: budget } };
+    request.maxTokens = Math.min(limit, visible + reserved);
+    if (reserved >= request.maxTokens) throw invalidEffort(model);
+    request.requestFields = { reasoning: { enabled: true, max_tokens: reserved } };
     return request;
   }
-  const allowance: Record<string, number> = { none: 0, minimal: 1_024, low: 4_096, medium: 8_192, high: 16_384, xhigh: 24_576, max: MAX_OUTPUT_TOKENS };
-  request.maxTokens = Math.min(limit, visible + allowance[effort]);
+  request.maxTokens = Math.min(limit, visible + reserved);
   if (effort === "none" && model.owner !== "openai") {
     request.requestFields = { reasoning: { enabled: false } };
   } else if (model.owner === "google") {

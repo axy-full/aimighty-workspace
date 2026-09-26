@@ -95,6 +95,24 @@ test("every Library asset previews: ⤢ on hover, double-click, Space; ← / →
   expect(errors).toEqual([]);
 });
 
+test("closing a preview does not pull focus back from a tile focused in the meantime", async ({ page }, info) => {
+  test.skip(!WIDE.includes(info.project.name), "desktops");
+  const { errors } = await open(page);
+  await openAssets(page, true);
+  await tile(page, "upload:up_plate").dblclick();
+  await expect(page.getByTestId("preview-dialog")).toBeVisible();
+  /* Esc and a focus on the next tile in the same task, as a slow machine lets
+     happen: the deferred hand-back to the plate must not win. */
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    document.querySelector<HTMLElement>(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']")!.focus();
+  });
+  await expect(page.getByTestId("preview-dialog")).toHaveCount(0);
+  await page.waitForTimeout(100);
+  await expect(tile(page, "generation:gen_wide")).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
 test("phone: a long-press on an asset previews it full screen, and the tap does not also open the Inspector", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "a phone");
   const { errors } = await open(page);

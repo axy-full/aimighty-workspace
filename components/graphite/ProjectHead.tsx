@@ -14,8 +14,10 @@ function initials(name: string) {
 }
 
 /** `[DS] Project ▾` — the project switcher: a list with ✓ on the current one, and New project. */
-export function ProjectHead({ project, projects, loading, onPick, onCreate }: {
+export function ProjectHead({ project, projects, loading, error = null, onRetry, onPick, onCreate }: {
   project: Project | null; projects: ProjectSummary[]; loading: boolean; onPick: (id: string) => void;
+  /** The project list could not be read: said here, with Retry, rather than "No project". */
+  error?: string | null; onRetry?: () => void;
   /** Starts a project here and opens it; returns the refusal, or null. Without it, New project opens the older dialog. */
   onCreate?: (name: string) => Promise<string | null>;
 }) {
@@ -41,17 +43,21 @@ export function ProjectHead({ project, projects, loading, onPick, onCreate }: {
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
-  const name = project?.name ?? (loading ? "Opening…" : "No project");
+  const name = project?.name ?? (loading ? "Opening…" : error ? "Projects didn’t load" : "No project");
   const meta = [project?.aspect, project?.fps ? `${project.fps} fps` : null].filter(Boolean).join(" · ");
+  /* A failed list read takes the meta's place with Retry (on a phone the meta sits at the row's right edge, where Retry goes). */
+  const failed = Boolean(error && !project && onRetry);
   return (
     <div className="gx-project" ref={box} data-row="project">
       <button type="button" className="gx-project-btn" aria-haspopup="listbox" aria-expanded={open} title="Switch project" onClick={() => setOpen((v) => !v)} data-testid="project-switcher">
         <span className="gx-project-tile" aria-hidden="true" style={posterStyle(project?.name ?? "")}>{initials(project?.name ?? "")}</span>
         <span style={{ minWidth: 0 }}>
           <span className="gx-project-name"><span data-testid="project-name">{name}</span> <span style={{ color: "var(--gx-text-3)" }} aria-hidden="true">▾</span></span>
-          <span className="gx-project-meta"><span className="gx-project-saved" aria-hidden="true" />{meta || shell.suite.name}</span>
+          {/* No "saved" dot: each stage says its own save state (Saved / Saving / Not saved) where the edit is made. */}
+          {failed ? null : <span className="gx-project-meta">{meta || shell.suite.name}</span>}
         </span>
       </button>
+      {failed ? <button type="button" className="gx-hbtn" onClick={onRetry} data-testid="projects-retry">Retry</button> : null}
       {open ? (
         <div className="gx-popover" role="listbox" aria-label="Projects">
           {projects.map((p) => (

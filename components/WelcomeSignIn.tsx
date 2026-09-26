@@ -26,6 +26,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
 import { Mark } from "@/components/ui/Mark";
+import { signInNotice } from "@/lib/authPages";
 import "./auth-mobile.css";
 
 export default function WelcomeSignIn() {
@@ -82,10 +83,10 @@ export default function WelcomeSignIn() {
 
 function SignIn() {
   const params = useSearchParams();
-  return <SignInForm next={safeNext(params.get("next"))} />;
+  return <SignInForm next={safeNext(params.get("next"))} notice={signInNotice(params)} />;
 }
 
-function SignInForm({ next }: { next: string }) {
+function SignInForm({ next, notice = null }: { next: string; notice?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -165,6 +166,11 @@ function SignInForm({ next }: { next: string }) {
         <h1 className="page-h1">Sign in</h1>
         <p className="page-sub !m-0">Open your studio workspace.</p>
       </div>
+      {notice && (
+        <p role="status" className="rail-help">
+          {notice}
+        </p>
+      )}
       <label className="wl-field">
         EMAIL
         <input

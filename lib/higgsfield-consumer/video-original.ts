@@ -11,6 +11,7 @@ import { withRecoveryActivity } from "../recovery";
 import { workbenchReady, workbenchTransaction } from "../workbench/records";
 import {
   CONSUMER_VIDEO_BYTES,
+  ProductExtractionError,
   fetchPublicConsumerOriginalBytes,
   type ProductFetchDependencies,
 } from "../workbench/product-fetch";
@@ -18,6 +19,12 @@ import { consumerJobsReady, type ConsumerJob } from "./jobs";
 import { consumerVideoIdentity, type ConsumerOriginalKind } from "./original-identity";
 
 export const CONSUMER_ORIGINAL_LEASE_MS = 180_000;
+/**
+ * The longest video original Particl keeps. It covers every connected workflow
+ * (Marketing Video runs to 120 s; tools such as upscale, deflicker or lip-sync
+ * return a result as long as their source, which is capped here at quote time).
+ */
+export const CONSUMER_ORIGINAL_SECONDS = 600;
 export const CONSUMER_ORIGINAL_DEADLINE_MS = 90_000;
 type Metadata = { width?: number; height?: number; seconds?: number; mime?: string };
 /** A retained connected-account original. Video receipts keep their original
@@ -54,7 +61,8 @@ export class ConsumerOriginalError extends Error {
       | "invalid_video"
       | "quota"
       | "timeout"
-      | "storage_unavailable",
+      | "storage_unavailable"
+      | "too_large",
   ) {
     super(
       {
@@ -66,7 +74,8 @@ export class ConsumerOriginalError extends Error {
         conflict:
           "The original video differs from its recorded receipt and was not overwritten.",
         invalid_video:
-          "The original must be an MP4 video up to 100 MB and 60 seconds with valid dimensions.",
+          "The original must be an MP4 video up to 100 MB and 10 minutes with valid dimensions.",
+        too_large: "The result is larger than the 100 MB Particl can keep.",
         quota: "There is not enough workspace storage to retain this original.",
         timeout:
           "Original video collection reached its time limit. Its receipt remains available for recovery.",
@@ -76,6 +85,15 @@ export class ConsumerOriginalError extends Error {
     );
     this.name = "ConsumerOriginalError";
   }
+}
+/**
+ * A collection failure the same provider result will always hit again: its
+ * bytes are over the limit or are not a valid original. The job is settled once
+ * (receipt kept) instead of being downloaded and refused on every poll.
+ * Quota, storage, lease and time-limit failures are not: they can pass later.
+ */
+export function uncollectableOriginal(error: unknown): error is ConsumerOriginalError {
+  return error instanceof ConsumerOriginalError && (error.code === "invalid_video" || error.code === "too_large");
 }
 const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -103,6 +121,9 @@ export async function inspectConsumerVideoOriginal(
     await import("mediabunny");
   const input = new Input({ source: new BufferSource(bytes), formats: [MP4] });
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Running out of inspection time says nothing about the bytes; only a real
+  // inspection verdict may call an original invalid (which settles its job).
+  const outOfTime = new ConsumerOriginalError("timeout");
   try {
     return await Promise.race([
       (async () => {
@@ -127,7 +148,7 @@ export async function inspectConsumerVideoOriginal(
           ![width, height, seconds].every(
             (value) => Number.isFinite(value) && value > 0,
           ) ||
-          seconds > 60 ||
+          seconds > CONSUMER_ORIGINAL_SECONDS ||
           width > 16384 ||
           height > 16384 ||
           width * height > 40_000_000
@@ -136,13 +157,11 @@ export async function inspectConsumerVideoOriginal(
         return { width, height, seconds };
       })(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new ConsumerOriginalError("invalid_video")),
-          15_000,
-        );
+        timer = setTimeout(() => reject(outOfTime), 15_000);
       }),
     ]);
-  } catch {
+  } catch (error) {
+    if (error === outOfTime) throw outOfTime;
     throw new ConsumerOriginalError("invalid_video");
   } finally {
     clearTimeout(timer);
@@ -598,6 +617,7 @@ export async function collectConsumerVideoOriginal(
           });
         }).catch(() => {});
         if (error instanceof ConsumerOriginalError) throw error;
+        if (error instanceof ProductExtractionError && error.status === 413) throw new ConsumerOriginalError("too_large");
         throw new ConsumerOriginalError("storage_unavailable");
       }
     },

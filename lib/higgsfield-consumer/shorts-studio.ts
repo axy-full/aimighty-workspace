@@ -34,7 +34,12 @@ export const SHORTS_TOOLS = Object.freeze({
   status: "shorts_studio_status",
 } as const);
 export const SHORTS_ASPECT_RATIOS = ["9:16", "16:9"] as const;
+/** Every source the account names. Saved sessions keep whichever they used. */
 export const SHORTS_PRESET_SOURCES = ["cms", "user"] as const;
+/** The styles Particl lists and quotes: the account's library styles only. A
+ * "user" style is one the owner saved on the account — its own library, which
+ * Particl never lists or reuses (standalone rule, 23 September). */
+export const SHORTS_LISTED_SOURCES: readonly ShortsPreset["source"][] = ["cms"];
 export const SHORTS_LIMITS = Object.freeze({ minSeconds: 4, maxSeconds: 120, clips: 20, presets: 200, presetPages: 5 });
 export const SHORTS_SOURCE_ROLE = "video";
 export type ShortsAspectRatio = (typeof SHORTS_ASPECT_RATIOS)[number];
@@ -61,7 +66,7 @@ export function parseShortsPresetsPage(raw: unknown): { items: ShortsPreset[]; n
     throw new ShortsStudioError("invalid_presets", "The connected account returned an unusable style list.");
   const items: ShortsPreset[] = [];
   for (const item of raw.items) {
-    if (!object(item) || typeof item.id !== "string" || !UUID.test(item.id) || !SHORTS_PRESET_SOURCES.includes(item.preset_source as ShortsPreset["source"])) continue;
+    if (!object(item) || typeof item.id !== "string" || !UUID.test(item.id) || !SHORTS_LISTED_SOURCES.includes(item.preset_source as ShortsPreset["source"])) continue;
     items.push({ id: item.id.toLowerCase(), name: clean(item.name, 120) || "Untitled style", source: item.preset_source as ShortsPreset["source"] });
   }
   const next = raw.next_cursor;

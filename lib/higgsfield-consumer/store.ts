@@ -34,6 +34,11 @@ export function consumerStoreReady() {
       state_hash TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,
       session_hash TEXT NOT NULL,authorization_id TEXT NOT NULL,verifier_enc TEXT NOT NULL,
       client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER)`);
+    // Which account a grant belongs to (a hash of the issuer and its subject),
+    // so the same account signing in again keeps its jobs' grant. Additive.
+    const columns = await tx.execute("SELECT name FROM pragma_table_info('higgsfield_consumer_connections')");
+    if (!columns.rows.some((row) => String(row.name).toLowerCase() === "subject_hash"))
+      await tx.execute("ALTER TABLE higgsfield_consumer_connections ADD COLUMN subject_hash TEXT");
   }).catch((error) => {
     ready = undefined;
     throw error;
@@ -170,21 +175,35 @@ export async function consumeAuthorization(
   });
 }
 
-/** A disconnect or newer login invalidates this CAS, including while a code is exchanging. */
+/**
+ * A disconnect or newer login invalidates this CAS, including while a code is exchanging.
+ *
+ * The grant generation that quotes and jobs pin is kept when the SAME account
+ * (same issuer subject) signs in again — a reconnect after a failed refresh, or
+ * after a disconnect — so its accepted jobs can still be read and collected. A
+ * different account, or one whose subject is unknown, gets a new generation and
+ * can never read or spend under an earlier account's jobs.
+ */
 export async function completeAuthorization(
   authorization: Authorization,
   tokens: ConsumerTokens,
   at = Date.now(),
+  subjectHash: string | null = null,
 ) {
   await consumerStoreReady();
   return accountTransaction(
     async (tx) =>
       (
         await tx.execute({
-          sql: `UPDATE higgsfield_consumer_connections SET generation=?,status='connected',tokens_enc=?,connected_at=?,expires_at=?,
+          sql: `UPDATE higgsfield_consumer_connections SET
+      generation=CASE WHEN ? IS NOT NULL AND subject_hash=? THEN generation ELSE ? END,subject_hash=?,
+      status='connected',tokens_enc=?,connected_at=?,expires_at=?,
       refresh_lease=NULL,refresh_lease_until=NULL,updated_at=? WHERE workspace_id=? AND user_id=? AND authorization_id=?`,
           args: [
+            subjectHash,
+            subjectHash,
             randomUUID(),
+            subjectHash,
             encode(authorization, tokens),
             at,
             tokens.expiresAt,
@@ -203,18 +222,20 @@ export async function consumerConnectionStatus(identity: ConsumerIdentity) {
   return accountTransaction(async (tx) => {
     const row = (
       await tx.execute({
-        sql: "SELECT status,connected_at,expires_at,refresh_lease,refresh_lease_until FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
+        sql: "SELECT status,connected_at,expires_at,subject_hash FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
         args: [identity.workspaceId, identity.userId],
       })
     ).rows[0];
-    const uncertain = Boolean(
-      row?.refresh_lease && Number(row.refresh_lease_until) <= Date.now(),
-    );
+    // A refresh interrupted mid-flight is retried on the next access with the
+    // saved refresh token; only the account's own refusal requires a reconnect.
     return {
-      connected: row?.status === "connected" && !uncertain,
-      requiresReconnect: row?.status === "reconnect_required" || uncertain,
+      connected: row?.status === "connected",
+      requiresReconnect: row?.status === "reconnect_required",
       ...(row?.connected_at ? { connectedAt: Number(row.connected_at) } : {}),
       ...(row?.expires_at ? { expiresAt: Number(row.expires_at) } : {}),
+      // Whether Particl knows which account this grant belongs to. Only then
+      // does the same account signing in again keep its running jobs.
+      ...(row ? { subjectKnown: row.subject_hash != null } : {}),
     };
   });
 }
@@ -257,11 +278,9 @@ export async function claimConsumerAccess(
     } catch {
       /* Fail closed below without exposing ciphertext. */
     }
-    if (
-      row.refresh_lease ||
-      !tokens ||
-      (tokens.expiresAt <= at + 60_000 && !tokens.refreshToken)
-    ) {
+    // A lease whose holder died (function killed mid-refresh) is taken over:
+    // the saved refresh token is tried again, and the account's answer decides.
+    if (!tokens || (tokens.expiresAt <= at + 60_000 && !tokens.refreshToken)) {
       await tx.execute({
         sql: "UPDATE higgsfield_consumer_connections SET status='reconnect_required',tokens_enc=NULL,refresh_lease=NULL,refresh_lease_until=NULL,updated_at=? WHERE workspace_id=? AND user_id=?",
         args: [at, identity.workspaceId, identity.userId],
@@ -292,23 +311,43 @@ export async function claimConsumerAccess(
   });
 }
 
+/** A refresh the account never answered (network failure, timeout, 5xx): the
+ * lease is released and the saved grant kept, so the next access tries again. */
+export async function releaseConsumerRefresh(claim: RefreshClaim) {
+  await consumerStoreReady();
+  return accountTransaction(
+    async (tx) =>
+      (
+        await tx.execute({
+          sql: "UPDATE higgsfield_consumer_connections SET refresh_lease=NULL,refresh_lease_until=NULL WHERE workspace_id=? AND user_id=? AND generation=? AND refresh_lease=? AND status='connected'",
+          args: [claim.workspaceId, claim.userId, claim.generation, claim.lease],
+        })
+      ).rowsAffected === 1,
+  );
+}
+
 export async function finishConsumerRefresh(
   claim: RefreshClaim,
   tokens: ConsumerTokens | null,
   at = Date.now(),
+  subjectHash: string | null = null,
 ) {
   await consumerStoreReady();
   return accountTransaction(
     async (tx) =>
       (
         await tx.execute({
-          sql: `UPDATE higgsfield_consumer_connections SET tokens_enc=?,expires_at=?,status=?,refresh_lease=NULL,refresh_lease_until=NULL,updated_at=?
+          // A refresh answer that names the account (its ID token) fills in a
+          // subject the grant never recorded; it never replaces a known one.
+          sql: `UPDATE higgsfield_consumer_connections SET tokens_enc=?,expires_at=?,status=?,refresh_lease=NULL,refresh_lease_until=NULL,updated_at=?,
+      subject_hash=COALESCE(subject_hash,?)
       WHERE workspace_id=? AND user_id=? AND generation=? AND refresh_lease=? AND status='connected'${tokens ? " AND refresh_lease_until>?" : ""}`,
           args: [
             tokens ? encode(claim, tokens) : null,
             tokens?.expiresAt ?? null,
             tokens ? "connected" : "reconnect_required",
             at,
+            tokens ? subjectHash : null,
             claim.workspaceId,
             claim.userId,
             claim.generation,
@@ -320,7 +359,34 @@ export async function finishConsumerRefresh(
   );
 }
 
-/** Local removal completes before any optional upstream revocation. */
+/**
+ * Record which account the CURRENT grant belongs to, when it was never
+ * recorded (connections made before subjects were kept, or a sign-in whose
+ * answer named no account). Only a connected grant of this exact generation,
+ * and only a missing subject: a known one is never replaced.
+ */
+export async function recordConsumerSubject(
+  identity: ConsumerIdentity,
+  generation: string,
+  subjectHash: string,
+) {
+  if (!/^[a-f0-9]{64}$/.test(subjectHash)) return false;
+  await consumerStoreReady();
+  return accountTransaction(
+    async (tx) =>
+      (
+        await tx.execute({
+          sql: "UPDATE higgsfield_consumer_connections SET subject_hash=?,updated_at=? WHERE workspace_id=? AND user_id=? AND generation=? AND status='connected' AND subject_hash IS NULL",
+          args: [subjectHash, Date.now(), identity.workspaceId, identity.userId, generation],
+        })
+      ).rowsAffected === 1,
+  );
+}
+
+/** Local removal completes before any optional upstream revocation. The grant
+ * generation and account subject stay, so jobs already running on this account
+ * resume if the same account connects again; while disconnected nothing can
+ * read or spend, and another account gets a new generation. */
 export async function disconnectConsumer(
   identity: ConsumerIdentity,
 ): Promise<ConsumerTokens | null> {
@@ -339,10 +405,9 @@ export async function disconnectConsumer(
       /* An unreadable secret still disconnects. */
     }
     await tx.execute({
-      sql: `UPDATE higgsfield_consumer_connections SET generation=?,authorization_id=?,status='disconnected',tokens_enc=NULL,
+      sql: `UPDATE higgsfield_consumer_connections SET authorization_id=?,status='disconnected',tokens_enc=NULL,
       connected_at=NULL,expires_at=NULL,refresh_lease=NULL,refresh_lease_until=NULL,updated_at=? WHERE workspace_id=? AND user_id=?`,
       args: [
-        randomUUID(),
         randomUUID(),
         Date.now(),
         identity.workspaceId,

@@ -29,7 +29,7 @@ async function seeded(page: Page, graph: (nodes: CanvasNode[]) => CanvasNode[] =
   const signed = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
-  const db = createClient({ url: localPlatformDbUrl() });
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
     await db.execute({
       sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
