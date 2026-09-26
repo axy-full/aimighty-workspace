@@ -46,6 +46,12 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
 /* The setup defaults a treatment carries: the four the reference shows. */
 const SETUP_KEYS = ["mood", "light", "look", "lens"];
 const docOf = (t: Treatment): Doc => ({ title: t.title, logline: t.logline, setup: t.setup, scenes: t.scenes, notes: t.notes });
+/* The document as the editor opens it: a first empty scene to type into, and
+   the production's name as the title of a treatment not yet written. */
+const opening = (t: Treatment | null, name: string): Doc => {
+  const first = { n: 1, title: "", secs: 5, prose: "" };
+  return t ? { ...docOf(t), scenes: t.scenes.length ? t.scenes : [first] } : { title: name, logline: "", setup: {}, scenes: [first], notes: [] };
+};
 
 export default function TreatmentPage() {
   usePageTitle("Atomik · Treatment");
@@ -81,23 +87,39 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   /* The server's copy the document on screen is based on, and its version:
      every save names that version, so it cannot land over a newer one. */
   const baseRef = useRef<{ doc: Doc; updatedAt: number | null } | null>(null);
+  /* The saves this tab has in flight, so the one sent on leaving goes after
+     them, from the version they landed, and never conflicts with its own. */
+  const inflight = useRef<Promise<void> | null>(null);
   useEffect(() => { docRef.current = doc; }, [doc]);
 
   // The document is the server's until someone types; then it is theirs.
   useEffect(() => {
     if (!data || doc) return;
     const t = data.treatment;
-    baseRef.current = t ? { doc: docOf(t), updatedAt: t.updatedAt } : { doc: EMPTY_TREATMENT, updatedAt: null };
-    Promise.resolve().then(() => setDoc(t
-      ? { title: t.title, logline: t.logline, setup: t.setup, scenes: t.scenes.length ? t.scenes : [{ n: 1, title: "", secs: 5, prose: "" }], notes: t.notes }
-      : { title: name, logline: "", setup: {}, scenes: [{ n: 1, title: "", secs: 5, prose: "" }], notes: [] }));
+    /* The merge base is exactly what the editor opens with, so the first
+       scene and the title it fills in are not taken for the person's edits. */
+    const start = opening(t, name);
+    baseRef.current = { doc: start, updatedAt: t ? t.updatedAt : null };
+    Promise.resolve().then(() => setDoc(start));
   }, [data, doc, name]);
 
   async function save(bump = false) {
     if (!doc) return;
+    let done!: () => void;
+    const mine = new Promise<void>((resolve) => { done = resolve; });
+    const prior = inflight.current;
+    const all = prior ? Promise.all([prior, mine]).then(() => {}) : mine;
+    inflight.current = all;
     setSaving(true);
     try {
-      let sending = doc, draft = bump;
+      /* One save at a time from this tab, each from the version the last one
+         landed: two sent together would conflict with each other and file the
+         tab's own words as another session's draft. */
+      if (prior) {
+        await prior;
+        if (!bump && !dirty.current) return;
+      }
+      let sending = prior ? docRef.current ?? doc : doc, draft = bump;
       for (let attempt = 0; attempt < 3; attempt++) {
         const res = await fetch("/api/atomik/treatment", {
           method: "PUT", headers: { "Content-Type": "application/json" },
@@ -105,7 +127,8 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
         });
         const j = await res.json().catch(() => ({})) as { treatment?: Treatment | null; error?: string };
         if (res.ok && j.treatment) {
-          baseRef.current = { doc: docOf(j.treatment), updatedAt: j.treatment.updatedAt };
+          /* Answers can arrive out of order: the base only moves forward. */
+          if ((baseRef.current?.updatedAt ?? 0) < j.treatment.updatedAt) baseRef.current = { doc: docOf(j.treatment), updatedAt: j.treatment.updatedAt };
           if (docRef.current === sending) { dirty.current = false; setHasUnsaved(false); }
           setSavedAt(Date.now());
           if (draft) refresh();
@@ -127,7 +150,11 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
       }
       throw new Error("This treatment keeps changing in another session. Try again in a moment.");
     } catch (e) { await appAlert("Not saved", (e as Error).message); }
-    finally { setSaving(false); }
+    finally {
+      setSaving(false);
+      done();
+      if (inflight.current === all) inflight.current = null;
+    }
   }
   // Autosave, 900ms after the last keystroke.
   useEffect(() => {
@@ -140,13 +167,18 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   // The unmount now flushes instead: whatever is unsaved goes out with the
   // page, on a request that outlives it.
   useEffect(() => () => {
-    if (!dirty.current || !docRef.current) return;
-    /* This save cannot wait to merge. If the treatment changed meanwhile, the
-       server keeps the other copy as a draft and carries its notes over. */
-    void fetch("/api/atomik/treatment", {
-      method: "PUT", headers: { "Content-Type": "application/json" }, keepalive: true,
-      body: JSON.stringify({ projectId, ...docRef.current, bump: false, expectedUpdatedAt: baseRef.current?.updatedAt ?? null, onConflict: "keep" }),
-    }).catch(() => { /* the next visit re-reads the server's copy */ });
+    const flush = () => {
+      if (!dirty.current || !docRef.current) return;
+      /* This save cannot wait to merge. If the treatment changed meanwhile, the
+         server keeps the other copy as a draft and carries its notes over. */
+      void fetch("/api/atomik/treatment", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, keepalive: true,
+        body: JSON.stringify({ projectId, ...docRef.current, bump: false, expectedUpdatedAt: baseRef.current?.updatedAt ?? null, onConflict: "keep" }),
+      }).catch(() => { /* the next visit re-reads the server's copy */ });
+    };
+    /* An autosave still on its way lands first: then only what it did not
+       carry is sent, against the version it made. */
+    if (inflight.current) void inflight.current.then(flush); else flush();
   }, [projectId]);
   const edit = (fn: (d: Doc) => Doc) => { if(paid.pending)return; dirty.current = true; setHasUnsaved(true); setDoc((d) => (d ? fn(d) : d)); };
 
