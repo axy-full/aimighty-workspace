@@ -9,7 +9,8 @@ import ManagementPage, {
 } from "@/components/management/ManagementPage";
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
-import { PlanReach } from "./MediaReach";
+import { PlanReach, ReachPair, ReachTile, leftAt } from "./MediaReach";
+import type { WorkspaceReach } from "@/lib/mediaReach";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRateLine } from "@/lib/creditTerms";
 
@@ -75,6 +76,8 @@ type Billing = {
     otherBalance?: number;
     nextExpiryAt: number | null;
   } | null;
+  /** The balance as takes at this workspace's usual settings (credit workspaces only). */
+  reach?: WorkspaceReach | null;
   invoiceUrl?: string;
 };
 const date = (value: number | null | undefined) =>
@@ -417,6 +420,13 @@ export default function BillingClient({
                   </>
                 )}
               </div>
+              {!direct && data.reach ? (
+                <ReachPair
+                  testId="billing-balance-reach"
+                  video={data.reach.video ? <ReachTile kind="video" count={data.reach.video.left} take={data.reach.video} suffix={leftAt(data.reach.video.basis)} /> : null}
+                  image={data.reach.image ? <ReachTile kind="image" count={data.reach.image.left} take={data.reach.image} suffix={leftAt(data.reach.image.basis)} /> : null}
+                />
+              ) : null}
               {!direct && (
                 <div className="management-grid three management-credit-breakdown">
                   <div>

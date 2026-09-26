@@ -35,9 +35,27 @@ export type TakeReach = { videos: number | null; images: number | null };
 export type ReferenceTakes = { video: PricedTake | null; image: PricedTake | null };
 
 export type RateCell = { option: string; credits: number };
-export type RateRow = { engine: string; label: string; cells: RateCell[] };
-/** One kind's rows; `seconds` is the length every video cell is priced at. */
-export type RateGroup = { kind: ReachKind; seconds: number | null; rows: RateRow[] };
+/** One engine's prices; `audio` marks the row priced with sound (only where sound moves the price). */
+export type RateRow = { engine: string; label: string; audio: boolean; cells: RateCell[] };
+/** What a group's columns are: a video's resolution, a still's pixel size, or a still's quality. */
+export type RateAxis = "resolution" | "size" | "quality";
+/** One kind's rows on one axis; `seconds` is the length every video cell is priced at. */
+export type RateGroup = { kind: ReachKind; axis: RateAxis; seconds: number | null; rows: RateRow[] };
+
+const QUALITIES = ["low", "medium", "high"];
+/** A still engine whose options are qualities (Low · Medium · High) rather than sizes. */
+export const byQuality = (options: readonly string[]) => options.length > 0 && options.every((o) => QUALITIES.includes(o.toLowerCase()));
+
+/**
+ * Whether a rate-card cell is exactly the take a figure was counted at: same
+ * engine, size, sound and length, and the same price. A take whose aspect or
+ * length prices differently from the card's cell is not outlined, so an
+ * outline never claims a price the figure did not use.
+ */
+export function isTakeCell(take: PricedTake | null | undefined, group: Pick<RateGroup, "seconds">, row: Pick<RateRow, "engine" | "audio">, cell: RateCell): boolean {
+  if (!take || take.engine !== row.engine || take.resolution !== cell.option || take.audio !== row.audio || take.credits !== cell.credits) return false;
+  return take.kind === "image" || take.durationS === group.seconds;
+}
 
 /** Whole takes a number of credits buys; null when either side is unknown. */
 export function takesWithin(credits: number | null | undefined, perTake: number | null | undefined): number | null {
@@ -80,6 +98,9 @@ export function takeSettings(take: Pick<PricedTake, "label" | "resolution" | "du
     .filter(Boolean)
     .join(" · ");
 }
+
+/** "18 cr each" — what one take at those settings is charged. */
+export const eachLine = (take: Pick<PricedTake, "credits">) => `${grouped(take.credits)} cr each`;
 
 /** "video" / "videos", "image" / "images". */
 export const nounFor = (kind: ReachKind, n: number | null) => (kind === "video" ? (n === 1 ? "video" : "videos") : n === 1 ? "image" : "images");

@@ -10,7 +10,7 @@ import {
 import { packs } from "@/lib/packs";
 import { creditsApply } from "@/lib/credits";
 import { effectiveModels } from "@/lib/defaultModels";
-import { workspaceReach } from "@/lib/workbench/media-reach";
+import { paidFromBalance, rateCard, workspaceReach } from "@/lib/workbench/media-reach";
 
 export const dynamic = "force-dynamic";
 export const GET = withTenant(async function GET() {
@@ -22,12 +22,16 @@ export const GET = withTenant(async function GET() {
     getPlatformLayer(),
   ]);
   /* The balance as takes, at this workspace's usual settings (its own recent
-     takes) or its default engines. Credit workspaces only: one billed in
-     dollars on its own keys has no credit balance to translate. Best effort —
-     billing still answers when the translation cannot be made. */
-  const reach = creditsApply(workspace)
+     takes) or its default engines, and the rate card those figures trace to —
+     both limited to engines its credits actually pay for. Credit workspaces
+     only: one billed in dollars on its own keys has no balance to translate.
+     Best effort: billing still answers when the translation cannot be made. */
+  const media = creditsApply(workspace)
     ? await effectiveModels()
-        .then((models) => workspaceReach(state.credits.balance, models))
+        .then(async (models) => ({
+          reach: await workspaceReach(state.credits.balance, models, paidFromBalance),
+          rates: rateCard(paidFromBalance),
+        }))
         .catch(() => null)
     : null;
   return NextResponse.json(
@@ -41,7 +45,8 @@ export const GET = withTenant(async function GET() {
       subscription: state.subscription,
       credits: state.credits,
       cycles: state.cycles,
-      reach,
+      reach: media?.reach ?? null,
+      rates: media?.rates ?? null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

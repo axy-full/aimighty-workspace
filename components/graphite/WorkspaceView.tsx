@@ -17,7 +17,7 @@ import { creditsLabel } from "@/lib/workspace/format";
 import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import type { RateGroup, WorkspaceReach } from "@/lib/mediaReach";
-import { RateCard, ReachTile } from "@/components/commercial/MediaReach";
+import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
@@ -414,17 +414,20 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
       <span className="gx-eyebrow">Balance</span>
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
       {inCredits && !data && !error ? <span className="cw-dim" role="status" data-testid="workspace-reach-loading">Counting what that buys…</span> : null}
-      {reach && (reach.video || reach.image) ? (
-        <div className="mr-tiles wsx-reach" data-testid="workspace-reach">
-          {reach.video ? <ReachTile kind="video" count={reach.video.left} take={reach.video} suffix="left" note={basisNote(reach.video.basis)} testId="workspace-reach-video" /> : null}
-          {reach.image ? <ReachTile kind="image" count={reach.image.left} take={reach.image} suffix="left" note={basisNote(reach.image.basis)} testId="workspace-reach-image" /> : null}
+      {reach ? (
+        <div className="wsx-reach">
+          <ReachPair
+            testId="workspace-reach"
+            video={reach.video ? <ReachTile kind="video" count={reach.video.left} take={reach.video} suffix={leftAt(reach.video.basis)} testId="workspace-reach-video" /> : null}
+            image={reach.image ? <ReachTile kind="image" count={reach.image.left} take={reach.image} suffix={leftAt(reach.image.basis)} testId="workspace-reach-image" /> : null}
+          />
         </div>
       ) : null}
       <span className="cw-dim" data-testid="ws-plan-line">{planLine(data?.plans, data?.subscription)}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       {data?.rates ? (
         <details className="wsx-rates" data-testid="workspace-rates">
-          <summary><span>Credits per take</span><span aria-hidden="true" className="wsx-rates-chev">›</span></summary>
+          <summary><span>Credits per take</span><svg className="wsx-rates-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></summary>
           <RateCard groups={data.rates} reference={reach} legend="Your balance is counted at the outlined prices." testId="workspace-rate-card" />
         </details>
       ) : null}
@@ -470,7 +473,6 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
     </div>
   );
 }
-const basisNote = (basis: "usual" | "default") => (basis === "usual" ? "at your usual settings" : "at the default settings");
 
 /* ── Usage ───────────────────────────────────────────────────────────── */
 function Usage() {
