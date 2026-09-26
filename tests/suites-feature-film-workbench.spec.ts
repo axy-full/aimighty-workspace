@@ -22,7 +22,7 @@ async function seed(page: Page, rig: boolean) {
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0].db_url);
   platform.close();
-  const tenant = createClient({ url: tenantUrl });
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   try {
     const now = Date.now();
     await tenant.batch(project.assets.map((asset) => ({ sql: "INSERT OR IGNORE INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at) VALUES(?,?,'feature-test','feature test','{}','succeeded',?,?)", args: [asset.id, production, now, now] })), "write");

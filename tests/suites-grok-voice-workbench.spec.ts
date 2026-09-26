@@ -25,7 +25,8 @@ async function setup(page: Page) {
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
   const production = String((await saved.json()).productionProjectId);
-  const row = async (id: string) => { const db = createClient({ url: tenantUrl }); try { return (await db.execute({ sql: "SELECT status, provider, billed_to, cost_usd, duration_s FROM generations WHERE id=?", args: [id] })).rows[0]; } finally { db.close(); } };
+  /* The server may hold the tenant file's write lock while the take runs: the read waits for it, as the platform's does. */
+  const row = async (id: string) => { const db = createClient({ url: tenantUrl, timeout: 10_000 }); try { return (await db.execute({ sql: "SELECT status, provider, billed_to, cost_usd, duration_s FROM generations WHERE id=?", args: [id] })).rows[0]; } finally { db.close(); } };
   const meterRow = async (model: string) => { const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 }); try { return (await db.execute({ sql: "SELECT engine, status, engine_cost_usd FROM meter_events WHERE workspace_id=? AND model=? ORDER BY rowid DESC LIMIT 1", args: [account.workspace.id, model] })).rows[0]; } finally { db.close(); } };
   return { headers, scope, project, production, row, meterRow };
 }
@@ -36,6 +37,9 @@ test("Grok Voice speaks a line in its own voice, billed as xAI", async ({ page }
   const { headers, production, row, meterRow } = await setup(page);
   const audio = await page.request.get("/api/audio", { headers }).then((r) => r.json());
   expect(audio.speechModels.map((m: { id: string }) => m.id)).toContain("grok-tts");
+  /* Grok Voice's own voices ride beside the default model's, so a picker swaps lists with the model. */
+  expect(audio.vendors).toEqual({ elevenlabs: true, xai: true });
+  expect(audio.grokVoices.map((v: { id: string }) => v.id)).toEqual(expect.arrayContaining(["eve", "ara", "rex"]));
   const voices = await page.request.get("/api/audio/voices?model=grok-tts", { headers }).then((r) => r.json());
   expect(voices.voices.map((v: { id: string }) => v.id)).toEqual(expect.arrayContaining(["eve", "ara", "rex"]));
 
@@ -51,6 +55,10 @@ test("Grok Voice speaks a line in its own voice, billed as xAI", async ({ page }
   /* A voice id that is not a Grok voice is refused before anything is priced. */
   const bad = await page.request.post("/api/audio", { headers, data: { ...line, voiceId: "!", quoteOnly: true } });
   expect(bad.status()).toBe(400);
+  /* Nor is another vendor's voice id, which has a Grok voice's shape but is not one of xAI's. */
+  const eleven = await page.request.post("/api/audio", { headers, data: { ...line, voiceId: "21m00Tcm4TlvDq8ikWAM", quoteOnly: true } });
+  expect(eleven.status()).toBe(400);
+  expect((await eleven.json()).error).toBe("Pick a Grok voice.");
 });
 
 test("Grok transcribes a take: priced by its length, words and speakers, subtitles to download", async ({ page }, info) => {

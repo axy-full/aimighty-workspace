@@ -1,11 +1,12 @@
 /**
  * Picking connected-account jobs back up after the page was left: which saved
  * jobs are still open, which of those a status read can still move, what each
- * state is called, and when to ask again.
+ * state is called, and what a failed read means for the job.
  *
- * Pure (no fetch, no React, injected timers) so Gen, Business and Viral share
- * one behaviour and a unit spec can drive it. A resumed job is only ever asked
- * for its status — the same leased read the page made before — never re-sent.
+ * Pure (no fetch, no React) so Gen, Business and Viral say one thing and a
+ * unit spec can check it. The reading itself is the shell's collector's
+ * (lib/shell/connected-collector.ts): a picked-up job is only ever asked for
+ * its status — the same leased read the page made before — never re-sent.
  */
 import { SET_ASIDE_LABEL } from "./job-state";
 
@@ -15,7 +16,6 @@ export type ResumeJob = { status: string; providerReceipt?: unknown; setAside?: 
 
 /** Sent, or maybe sent, and not settled: it may be on the account, so the page lists it. */
 export const isOpen = (status: string) => status === "dispatching" || status === "accepted" || status === "uncertain";
-export const isSettled = (status: string) => status === "completed" || status === "failed";
 /**
  * A status read can still move it: the account is rendering it (`accepted`),
  * or it is unconfirmed with a receipt the service can reconcile. A job still
@@ -23,11 +23,6 @@ export const isSettled = (status: string) => status === "completed" || status ==
  * read — asking again would only repeat the same answer.
  */
 export const canProgress = (job: ResumeJob) => job.status === "accepted" || (job.status === "uncertain" && Boolean(job.providerReceipt));
-
-/** Open jobs, newest first; `accept` narrows them to one composer's own. */
-export function resumableJobs<J extends ResumeJob & { createdAt: number }>(jobs: readonly J[], accept?: (job: J) => boolean): J[] {
-  return jobs.filter((job) => isOpen(job.status) && (!accept || accept(job))).sort((a, b) => b.createdAt - a.createdAt);
-}
 
 export type ResumeTone = "blue" | "green" | "red" | "amber" | "idle";
 export type ResumePhase = { label: string; tone: ResumeTone };
@@ -77,17 +72,6 @@ export function shortName(text: string, max = 60): string {
   return `${(space >= max * 0.5 ? cut.slice(0, space) : cut).replace(/[\s,.;:·-]+$/, "")}…`;
 }
 
-/**
- * When to ask again. A rendering job follows the server's own hint (it knows
- * the provider's pace and its poll lease), bounded to 8–60 s; a job only the
- * account can confirm is asked every 30 s. Misses back off, up to 2 minutes.
- */
-export function resumeDelayMs(status: string, hintSeconds?: number | null, misses = 0): number {
-  const hint = typeof hintSeconds === "number" && Number.isFinite(hintSeconds) ? hintSeconds : 10;
-  const base = status === "accepted" ? Math.min(60, Math.max(8, hint)) : 30;
-  return Math.min(120, base * 2 ** Math.max(0, Math.min(misses, 3))) * 1000;
-}
-
 type Failure = { code?: unknown; status?: unknown };
 const codeOf = (error: unknown) => (error && typeof error === "object" && typeof (error as Failure).code === "string" ? (error as Failure).code as string : null);
 /**
@@ -123,89 +107,4 @@ export function checkingProblem(error: unknown, what = "this take"): string {
   const said = code === "reconnect_required" || code === "original_quota" ? resumeProblem(error)
     : typeof status === "number" ? `Could not check ${what}.` : "The connection dropped.";
   return `${said} Checking again shortly.`;
-}
-
-export type ResumeReply<J> = { job: J; pollAfterSeconds?: number | null };
-export type ResumeTracker<J> = {
-  /** Start following each job a read can still move, if not already followed. */
-  track: (jobs: readonly J[]) => void;
-  /** Stop following one job (its composer follows it, or it was dismissed). */
-  forget: (id: string) => void;
-  /** Stop everything; late replies are ignored. */
-  stop: () => void;
-  followed: () => string[];
-};
-
-/**
- * Follow several jobs at once, each on its own clock: ask, report, and ask
- * again while the account is rendering it. It stops at a settled job, at a
- * read that leaves the job where no further read can move it, and at an error
- * that would repeat for this job. A passing error backs off and asks again;
- * one job's error never stops another's.
- */
-export function createResumeTracker<J extends ResumeJob & { id: string }>(deps: {
-  status: (id: string) => Promise<ResumeReply<J>>;
-  onUpdate?: (job: J) => void;
-  onSettled?: (job: J) => void;
-  /** Stopped without settling: the read cannot move it (`error` null), or it cannot be checked from here. */
-  onStalled?: (id: string, error: unknown) => void;
-  onProblem?: (id: string, error: unknown) => void;
-  /** First read soon after the page opens: a job may have finished while it was closed. */
-  firstDelayMs?: number;
-  schedule?: (fn: () => void, ms: number) => unknown;
-  cancel?: (handle: unknown) => void;
-}): ResumeTracker<J> {
-  const schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms));
-  const cancel = deps.cancel ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
-  const timers = new Map<string, unknown>();
-  let stopped = false;
-  const follow = (id: string, status: string, delay: number, misses: number) => {
-    timers.set(id, schedule(() => void ask(id, status, misses), delay));
-  };
-  const ask = async (id: string, status: string, misses: number) => {
-    if (stopped || !timers.has(id)) return;
-    try {
-      const reply = await deps.status(id);
-      if (stopped || !timers.has(id)) return;
-      deps.onUpdate?.(reply.job);
-      if (isSettled(reply.job.status)) {
-        timers.delete(id);
-        deps.onSettled?.(reply.job);
-        return;
-      }
-      /* Only a rendering job moves on the next read; anything else would answer the same again. */
-      if (reply.job.status !== "accepted") {
-        timers.delete(id);
-        deps.onStalled?.(id, null);
-        return;
-      }
-      follow(id, reply.job.status, resumeDelayMs(reply.job.status, reply.pollAfterSeconds), 0);
-    } catch (error) {
-      if (stopped || !timers.has(id)) return;
-      if (resumeGivesUp(error)) {
-        timers.delete(id);
-        deps.onStalled?.(id, error);
-        return;
-      }
-      deps.onProblem?.(id, error);
-      follow(id, status, resumeDelayMs(status, null, misses + 1), misses + 1);
-    }
-  };
-  return {
-    track(jobs) {
-      if (stopped) return;
-      for (const job of jobs) if (canProgress(job) && !timers.has(job.id)) follow(job.id, job.status, deps.firstDelayMs ?? 1200, 0);
-    },
-    forget(id) {
-      const handle = timers.get(id);
-      if (handle !== undefined) cancel(handle);
-      timers.delete(id);
-    },
-    stop() {
-      stopped = true;
-      for (const handle of timers.values()) cancel(handle);
-      timers.clear();
-    },
-    followed: () => [...timers.keys()],
-  };
 }

@@ -9,26 +9,31 @@ import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import type { GenPreset } from "@/lib/shell/assets";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
+import { displayModelName } from "@/lib/models";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { COMPOSER_TYPES, TAKES_MAX, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
+import { COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, type BillingSource, type ComposerModel, type ComposerType } from "@/lib/workspace/composer";
+import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
+import { useSession } from "@/lib/session";
+import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
-import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
 
+/** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
+const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
@@ -51,6 +56,27 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
+     "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
+     read it, so the strip lets go of a connected job this view started and the collector follows it. */
+  const strip = ws.state.gen, wsDispatch = ws.dispatch;
+  const [stripAtMount] = useState(() => ws.state.gen?.id ?? null);
+  const stripNow = useRef(strip);
+  const sendNow = useRef(wsDispatch);
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    stripNow.current = strip;
+    sendNow.current = wsDispatch;
+    if (strip && strip.tone === "blue" && strip.id !== stripAtMount && CONNECTED_JOB_ID.test(strip.id)) started.current.add(strip.id);
+  }, [strip, stripAtMount, wsDispatch]);
+  useEffect(() => {
+    const last = stripNow, send = sendNow, mine = started.current;
+    return () => {
+      const left = last.current;
+      if (left && left.tone === "blue" && mine.has(left.id)) send.current({ type: "patch", patch: { gen: null } });
+    };
+  }, []);
+  const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);
@@ -71,6 +97,50 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return () => { live = false; };
   }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
+  /* The connected catalogue is the owner's (composerBlock refuses anyone else): members are not shown the switch at all. */
+  const session = useSession();
+  const groups = session.owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
+  useEffect(() => { if (!session.owner && state.billing === "connected") dispatchComposer({ type: "billing", value: "workspace" }); }, [session.owner, state.billing, dispatchComposer]);
+  /* What this browser remembers for the sheet (recent picks, last connected quotes), read fresh each time it opens. */
+  const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
+  const modelButton = useRef<HTMLButtonElement>(null);
+  const openSheet = () => { setMemory(readPickerMemory(scope)); setSheet(true); };
+  const closeSheet = () => { setSheet(false); setSheetRates((r) => (r?.failed ? null : r)); modelButton.current?.focus({ preventScroll: true }); };
+  const used = (id: string) => writePickerMemory(scope, rememberRecent(readPickerMemory(scope), recentKey(state.billing, state.type, id)));
+  const pickModel = (m: ComposerModel) => { used(m.id); composer.dispatch({ type: "model", value: m.id }); closeSheet(); };
+  const recent = useMemo(() => recentModels(memory.recent, state.billing, state.type, offered), [memory.recent, state.billing, state.type, offered]);
+  /* Every Studio row is priced where the composer stands (its picks, the project's aspect, its references,
+     one take): the list's own rates cover the untouched composer; anything else is one read of the engines
+     route's list, priced there, while the sheet is open. It quotes nothing and reserves nothing. */
+  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: state.seconds, takes: state.count }),
+    [composer.project?.aspect, state.picks, state.references, state.seconds, state.count]);
+  const priceKey = rateQuery(priceAt);
+  const [sheetRates, setSheetRates] = useState<SheetRates | null>(null);
+  const wantsRates = sheet && state.billing === "workspace" && needsPricedRead(offered, priceAt);
+  const ratesKey = sheetRates?.key ?? null;
+  useEffect(() => {
+    if (!wantsRates || ratesKey === priceKey) return;
+    let live = true;
+    void scopedFetch(`/api/workbench/engines?${priceKey}`, { cache: "no-store" })
+      .then(async (r) => { if (!r.ok) throw new Error("unpriced"); return r.json(); })
+      .then((reply) => { if (live) setSheetRates(sheetRatesFrom(priceKey, reply)); })
+      /* An unread price leaves those rows "priced on Generate"; the next opening asks again. */
+      .catch(() => { if (live) setSheetRates({ key: priceKey, models: {}, audio: null, failed: true }); });
+    return () => { live = false; };
+  }, [wantsRates, ratesKey, priceKey, scopedFetch]);
+  const rates = sheetRates?.key === priceKey ? sheetRates : null;
+  const readingRates = wantsRates && !rates;
+  const priceOf = (m: ComposerModel) => rowPrice(m, memory.quoted, priceAt, rates, readingRates);
+  /* A connected quote the composer was actually given becomes that model's "last quote"; nothing here asks for one. */
+  const connectedCredits = state.billing === "connected" && model?.connected ? composer.credits : null;
+  const quotedAt = [model?.durations?.length ? `${settings.duration} s` : null, model?.resolutions?.length ? settings.resolution : null].filter(Boolean).join(" · ");
+  const quotedId = model?.id ?? null;
+  useEffect(() => {
+    if (connectedCredits == null || !quotedId) return;
+    const stored = readPickerMemory(scope);
+    const next = rememberQuote(stored, quotedId, { credits: connectedCredits, at: Date.now(), ...(quotedAt ? { detail: quotedAt } : {}) });
+    if (next !== stored) writePickerMemory(scope, next);
+  }, [connectedCredits, quotedId, quotedAt, scope]);
   const [wellError, setWellError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [filter, setFilter] = useState<Filter>("All");
@@ -80,7 +150,6 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     anchored, editing: state.type === "image" && state.references.length > 0,
   });
 
-  const dispatchComposer = composer.dispatch;
   const drop = useCallback(async (id: string) => {
     setWellError(null);
     try {
@@ -93,29 +162,32 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   }, [scope, dispatchComposer]);
 
   /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, Soul ID › Use in Gen, an
-     asset's Retry generation) is applied the moment it arrives — on Gen too — then forgotten.
+     asset's Retry generation — also ⌘R while Gen is open) is applied the moment it arrives, then forgotten.
      The catalogue comes first (it decides which models exist), then the kind, the model, the words,
-     the settings, the identity; a Retry's own references replace the well. */
-  const [presetNote, setPresetNote] = useState<string | null>(null);
+     the settings, the identity and the sound; a Retry's own references replace the well. */
+  const [preset, setPreset] = useState<GenPreset | null>(null);
   const presetTurn = useRef(0);
-  const applyPreset = useCallback((preset: GenPreset) => {
+  const applyPreset = useCallback((next: GenPreset) => {
     const turn = ++presetTurn.current;
     setMode("compose");
-    if (preset.references) dispatchComposer({ type: "reset" });
-    if (preset.billing) dispatchComposer({ type: "billing", value: preset.billing });
-    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
+    if (next.references) dispatchComposer({ type: "reset" });
+    if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+    if (next.type) dispatchComposer({ type: "type", value: next.type });
+    if (next.model) dispatchComposer({ type: "model", value: next.model });
     /* An empty prompt (a model picked in ⌘K, Soul ID) leaves the composer's own words as they are. */
-    if (preset.prompt) dispatchComposer({ type: "prompt", value: preset.prompt });
-    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
-    if (preset.soulId) dispatchComposer({ type: "pick", value: { soulId: preset.soulId } });
-    setPresetNote(preset.note ?? null);
+    if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
+    if (next.picks) dispatchComposer({ type: "pick", value: next.picks });
+    if (next.soulId) dispatchComposer({ type: "pick", value: { soulId: next.soulId } });
+    if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
+    if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
+    if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
+    setPreset(next);
     setWellError(null);
-    const references = preset.type === "audio" ? [] : preset.references ?? [];
+    const references = next.type === "audio" ? [] : next.references ?? [];
     void Promise.all(references.map(async (ref) => {
       const asset = await resolveGenInput("genId" in ref ? `generation:${ref.genId}` : `upload:${ref.uploadId}`, scope);
       if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
-      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(preset.billing === "connected" && ref.role ? { role: ref.role } : {}) };
+      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(next.billing === "connected" && ref.role ? { role: ref.role } : {}) };
     }).map((p) => p.catch(() => null))).then((found) => {
       if (turn !== presetTurn.current) return;
       for (const value of found) if (value) dispatchComposer({ type: "addReference", value });
@@ -124,6 +196,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     });
   }, [scope, dispatchComposer]);
   useGenPresetInbox(applyPreset);
+  /* The engine the take was made on may not be on offer here any more: say which one stands in. */
+  const presetNote = !preset?.note ? null
+    : preset.model && model && composer.models.length && model.id !== preset.model ? `${preset.note} · ${displayModelName(preset.model)} is not offered here; ${model.label} is selected` : preset.note;
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
@@ -141,6 +216,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     composer.generate();
   }, [state.prompt, composer]);
   const generate = () => {
+    /* A take that goes out makes its model a recent one. */
+    if (model && !blocked) used(model.id);
     if (enhancer.auto && enhancer.enhanced && enhancer.enhanced !== state.prompt && !isRawPrompt(state.prompt)) {
       pending.current = true;
       composer.dispatch({ type: "prompt", value: enhancer.enhanced });
@@ -156,18 +233,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
   }, [items, filter]);
   const running = ws.state.gen;
-  /* Takes still on the connected account from an earlier visit: followed until they land. The one the
-     composer is running now is the composer's alone. Collection files a take into Takes on the server. */
-  const toast = ws.toast;
-  const projectId = project?.id ?? null;
+  /* Takes still on the connected account from an earlier visit, as the shell's collector reads them until
+     they land (it announces each one and re-reads the Library). The one the composer is running now is the
+     composer's alone. Collection files a take into Takes on the server; nothing here writes the draft. */
   const resumed = useResumedConnectedJobs({
-    scope, draftId: projectId, owned: [running?.id],
+    draftId: project?.id ?? null, owned: [running?.id],
     accept: (job) => job.composer === "gen",
-    onSettled: (job) => {
-      if (job.status !== "completed" || !projectId) return;
-      toast(connectedOriginal(job) ? `${job.model.name} take rendered. Filed in Takes for review.` : `${job.model.name} take rendered, but its original is not available.`);
-      void refreshProjectLibrary(scope, projectId);
-    },
   });
   const pickedUp = resumed.jobs;
   const rendering = pickedUp.filter((item) => item.following).length;
@@ -259,7 +330,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
 
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">02 / Model</span>
-          <button type="button" className="gx-model" aria-haspopup="dialog" aria-expanded={sheet} onClick={() => setSheet(true)} data-testid="gen-model">
+          <button ref={modelButton} type="button" className="gx-model" aria-haspopup="dialog" aria-expanded={sheet} onClick={openSheet} data-testid="gen-model">
             <span className="gx-tool-tag" aria-hidden="true">{(model?.label ?? "—").slice(0, 2).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span className="gx-model-name">{model?.label ?? "Choose a model"}</span>
@@ -411,30 +482,17 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           (the sheet then rises inside the scroll region, under the phone's tab bar). It lands on the shell
           root so the tokens still reach it. */}
       {sheet ? createPortal(
-        <div className="gx-veil" onClick={() => setSheet(false)} data-testid="model-sheet-veil">
-          <div className="gx-sheet" role="dialog" aria-modal="true" aria-label="Choose a model" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSheet(false); } }}>
-            <div className="gx-sheet-head">
-              <span className="gx-panel-title">Model</span>
-              <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
-                {GROUPS.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={state.billing === g.id} onClick={() => composer.dispatch({ type: "billing", value: g.id })}><span>{g.label}</span></button>)}
-              </div>
-              <button type="button" className="gx-hbtn" onClick={() => setSheet(false)}>Close</button>
-            </div>
-            <div className="gx-sheet-list gx-scroll" role="listbox" aria-label={`${TYPE_TAB[state.type]} models`}>
-              {offered.map((m) => (
-                <button key={m.id} type="button" role="option" aria-selected={m.id === model?.id} className="gx-sheet-row" onClick={() => { composer.dispatch({ type: "model", value: m.id }); setSheet(false); }}>
-                  <span className="gx-tool-tag" aria-hidden="true">{m.label.slice(0, 2).toUpperCase()}</span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span className="gx-model-name">{m.label}</span>
-                    <span className="gx-model-sub">{m.description ? m.description.slice(0, 90) : TYPE_TAB[m.type]}</span>
-                    <span className="gx-model-sub" data-testid="gen-sheet-facts">{[m.ratios?.length ? `${m.ratios.length} aspects` : null, m.durations?.length ? (m.durations.length > 4 && m.durations[m.durations.length - 1] - m.durations[0] === m.durations.length - 1 ? `${m.durations[0]}–${m.durations[m.durations.length - 1]} s, every second` : m.durations.map((d) => `${d}`).join("/") + " s") : null, m.promptOnly ? "prompt only" : m.referenceRoles?.length ? m.referenceRoles.join(" · ") : null, m.enhanceable ? "enhances on the account" : null].filter(Boolean).join(" · ")}</span>
-                  </span>
-                  {m.id === model?.id ? <span aria-hidden="true" style={{ color: "var(--gx-accent-text)" }}>✓</span> : null}
-                </button>
-              ))}
-              {!offered.length ? <p className="gx-empty">{state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}</p> : null}
-            </div>
-          </div>
+        <div className="gx-veil" onClick={closeSheet} data-testid="model-sheet-veil">
+          <ModelSheet label={`${TYPE_TAB[state.type]} models`} groups={groups} billing={state.billing} onBilling={(value) => composer.dispatch({ type: "billing", value })}
+            offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf}
+            loading={blocked === READING_MODELS || blocked === READING_ACCOUNT}
+            empty={!offered.length && blocked ? blocked : state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}
+            emptyActions={state.billing === "connected"
+              ? [{ label: "Use Studio engines", onClick: () => composer.dispatch({ type: "billing", value: "workspace" }), testId: "gen-model-use-studio" },
+                 ...(session.owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
+              /* The engine list itself is missing (a failed read): read it again. */
+              : composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
+            onPick={pickModel} onClose={closeSheet} />
         </div>,
         document.querySelector(".gx") ?? document.body,
       ) : null}

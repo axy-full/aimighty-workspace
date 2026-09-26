@@ -4,11 +4,11 @@ import type { Project } from "@/lib/workbench/studio";
 import { suiteHref } from "@/lib/suites";
 import { avatarGradient, initialsOf } from "@/lib/workspace/format";
 import { useWorkspace } from "@/lib/workspace/state";
-import { ButtonLink, Segmented } from "./ui";
+import { ButtonLink } from "./ui";
 
 /** 62px. The real open project; the title never truncates, the subtitle does. */
 export function ProjectHeader({ project, loading }: { project: Project | null; loading: boolean }) {
-  const { state, dispatch } = useWorkspace();
+  const { state } = useWorkspace();
   const name = project?.name ?? (loading ? "Loading project…" : "No project open");
   const id = project?.id ?? state.projectId ?? "";
   return (
@@ -23,13 +23,6 @@ export function ProjectHeader({ project, loading }: { project: Project | null; l
       {project?.aspect ? <span className="pxw-chip">{project.aspect}</span> : null}
       {project?.fps ? <span className="pxw-chip">{project.fps} fps</span> : null}
       <div className="pxw-spacer" />
-      <Segmented
-        label="View scope"
-        className="pxw-scope"
-        value={state.scope}
-        onChange={(scope) => dispatch({ type: "patch", patch: { scope } })}
-        options={[{ id: "mine", label: "My space" }, { id: "shared", label: "Shared view" }]}
-      />
       <ButtonLink href="/pipelines">
         <Workflow size={13} strokeWidth={1.7} aria-hidden="true" />
         <span>Pipelines</span>

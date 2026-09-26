@@ -11,8 +11,10 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
  * up (its poll lease) — not at all while the tab is hidden, and a failed read
  * says so on the job in fixed words and backs off. Motion Transfer reads its
  * jobs in turn, sharing the hint and never asking a job inside its own lease.
- * Business Setup's read no longer loops after an error: it is tried again after
- * about 2 s, 6 s and 18 s (held while the tab is hidden), then waits for Try
+ * The shell's collector asks nothing while the tab is hidden either. Business
+ * reads say the account did not answer instead of the routes' catch-all: the
+ * catalogue is tried again a few times (5, 15, 45 s, held while the tab is
+ * hidden) and then waits for Read again; a failed Setup read waits for Try
  * again, which keeps keyboard focus. The clock is paused so every wait is
  * counted exactly; every account reply is a route mock, nothing is paid for.
  */
@@ -38,7 +40,7 @@ const SETUP_ITEMS: Record<string, { id: string; name: string; meta: string }[]> 
 type Setup = { failing: boolean; gate: Promise<void> | null; reads: number };
 const answering = (): Setup => ({ failing: false, gate: null, reads: 0 });
 type StatusReply = { status?: number; json?: unknown; abort?: boolean };
-async function open(page: Page, sp: "ads" | "setup", setup: Setup, status: (n: number) => StatusReply, catalogue: Setup = answering()) {
+async function open(page: Page, sp: "ads" | "setup", setup: Setup, status: (n: number) => StatusReply, catalogue: Setup = answering(), listed: unknown[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -56,7 +58,7 @@ async function open(page: Page, sp: "ads" | "setup", setup: Setup, status: (n: n
     quoteExpiresAt: Date.now() + 300_000, createdAt: Date.now(), providerJobId: state === "quoted" ? null : "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", tool: null, result: null, originalAvailable: false, sources: [],
   });
   await page.route(/\/api\/higgsfield\/consumer\/generation(\?.*)?$/, async (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ json: { connection: { connected: true }, capabilities: {}, jobs: [] } });
+    if (route.request().method() === "GET") return route.fulfill({ json: { connection: { connected: true }, capabilities: {}, jobs: listed } });
     const body = route.request().postDataJSON() as Record<string, unknown>;
     if (body.action === "catalogue") {
       /* One read asks for video, then image; a failed video ends that read. */
@@ -153,7 +155,7 @@ async function shoot(page: Page, project: string, name: string, target: string) 
   await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
 }
 
-test("Setup: a failed read backs off instead of looping, waits while the tab is hidden, says so with Try again, and Try again keeps focus", async ({ page }, info) => {
+test("Setup: a failed read says so in plain words with Try again, is never asked again on its own, and Try again keeps focus", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   let release: () => void = () => undefined;
@@ -165,47 +167,21 @@ test("Setup: a failed read backs off instead of looping, waits while the tab is 
   release();
   setup.gate = null;
 
-  /* The first failure: said once in the product's words (not the route's job-oriented fallback), with Try again —
-     and not read again at once, however long the page sits. */
+  /* The failure: said once in the product's words (not the route's job-oriented fallback), with Try again —
+     and not read again on its own however long the page sits, shown or hidden (a Setup read waits for the person). */
   const problem = page.getByTestId("setup-error");
   await expect(problem).toContainText("The connected account did not answer.");
   await expect(problem).not.toContainText("saved job");
   await expect(problem.getByRole("button", { name: "Try again" })).toBeEnabled();
-  await expect(page.getByTestId("setup-product")).toContainText("Not read.");
-  await page.waitForTimeout(1000);
-  expect(setup.reads).toBe(1);
-  await shoot(page, info.project.name, "setup-read-failed", "setup-error");
-
-  /* Hidden: the retry that falls due is held, however long; back: it is made at once. */
-  await setHidden(page, true);
-  await page.clock.runFor(60_000);
-  await page.waitForTimeout(500);
-  expect(setup.reads).toBe(1);
-  await setHidden(page, false);
-  await expect.poll(() => setup.reads).toBe(2);
-  await expect(problem.getByRole("button", { name: "Try again" })).toBeEnabled();
-  await settle(page);
-
-  /* Then about 6 s and 18 s (±20%), keeping the error on screen; then only Try again. */
-  await page.clock.runFor(4700);
-  await page.waitForTimeout(300);
-  expect(setup.reads).toBe(2);
-  await page.clock.runFor(2600);
-  await expect.poll(() => setup.reads).toBe(3);
-  await expect(problem.getByRole("button", { name: "Try again" })).toBeEnabled();
-  await settle(page);
-  await page.clock.runFor(14_000);
-  await page.waitForTimeout(300);
-  expect(setup.reads).toBe(3);
-  await page.clock.runFor(8000);
-  await expect.poll(() => setup.reads).toBe(4);
-  await expect(problem.getByRole("button", { name: "Try again" })).toBeEnabled();
-  await settle(page);
   await page.clock.runFor(10 * 60_000);
+  await setHidden(page, true);
+  await page.clock.runFor(10 * 60_000);
+  await setHidden(page, false);
   await page.waitForTimeout(500);
-  expect(setup.reads).toBe(4);
+  expect(setup.reads).toBe(1);
   if (phone) await thumbSized(page, "setup-error", "Try again");
   await noOverflow(page);
+  await shoot(page, info.project.name, "setup-read-failed", "setup-error");
 
   /* Try again from the keyboard: it reads now and keeps focus while the read is out; the items land, the error
      goes, and focus stays in the list it reloaded rather than falling to the top of the page. */
@@ -213,12 +189,12 @@ test("Setup: a failed read backs off instead of looping, waits while the tab is 
   setup.gate = new Promise<void>((resolve) => { release = resolve; });
   await problem.getByRole("button", { name: "Try again" }).focus();
   await page.keyboard.press("Enter");
-  await expect.poll(() => setup.reads).toBe(5);
+  await expect.poll(() => setup.reads).toBe(2);
   await expect(problem.getByRole("button", { name: "Reading…" })).toHaveAttribute("aria-disabled", "true");
   expect(await focused(page)).toMatchObject({ tag: "BUTTON", text: "Reading…", disabled: "true" });
   await page.keyboard.press("Enter");
   await page.waitForTimeout(300);
-  expect(setup.reads).toBe(5);
+  expect(setup.reads).toBe(2);
   release();
   setup.gate = null;
   await expect(problem).toBeHidden();
@@ -298,7 +274,7 @@ test("Ads: a running ad is read at the page's pace, never while the tab is hidde
   await page.clock.runFor(3300);
   await expect.poll(reads).toBe(5);
   await settle(page);
-  await expect(page.getByTestId("ads-done")).toContainText("Rendered.");
+  await expect(page.getByTestId("ads-done")).toContainText("Rendered and filed to this project.");
 
   /* Completed is terminal: no read after it. */
   await page.clock.runFor(5 * 60_000);
@@ -308,7 +284,7 @@ test("Ads: a running ad is read at the page's pace, never while the tab is hidde
   expect(errors).toEqual([]);
 });
 
-test("Ads: a catalogue that did not load is tried again, then waits for Try again; a job the account no longer knows hands the composer back", async ({ page }, info) => {
+test("Ads: a catalogue that did not load says so plainly, is tried again a few times but never while the tab is hidden, then waits for Read again; a job the account no longer knows hands the composer back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   let release: () => void = () => undefined;
@@ -323,38 +299,45 @@ test("Ads: a catalogue that did not load is tried again, then waits for Try agai
   release();
   catalogue.gate = null;
 
-  /* Failed: one row in the product's words with Try again, the composer says why it waits, and the catalogue is
-     asked again after about 2 s, 6 s and 18 s — then not again. */
-  const problem = page.getByTestId("ads-read-error");
-  await expect(problem).toHaveText(/^The connected account did not answer\.\s*Try again$/);
-  await expect(page.getByTestId("ads-blocked")).toHaveText("The connected catalogue did not load.");
+  /* Failed: the composer says why it waits in the product's words, not the route's advice about a saved job. */
+  await expect(page.getByTestId("ads-blocked")).toHaveText("The connected account did not answer.");
   await expect(page.getByTestId("ads-generate")).toBeDisabled();
-  await shoot(page, info.project.name, "ads-catalogue-failed", "ads-read-error");
+  await shoot(page, info.project.name, "ads-catalogue-failed", "ads-blocked");
   await settle(page);
-  for (const [wait, count] of [[2500, 2], [7500, 3], [22_000, 4]] as const) {
+  /* The first retry falls due (about 5 s) while the tab is hidden: held however long, made at once when it is back. */
+  await setHidden(page, true);
+  await page.clock.runFor(60_000);
+  await page.waitForTimeout(500);
+  expect(catalogue.reads).toBe(1);
+  await setHidden(page, false);
+  await expect.poll(() => catalogue.reads).toBe(2);
+  await settle(page);
+  /* Then 15 s and 45 s after each failure, and then not again: Read again asks. */
+  for (const [wait, count] of [[16_000, 3], [46_000, 4]] as const) {
     await page.clock.runFor(wait);
     await expect.poll(() => catalogue.reads).toBe(count);
-    await expect(problem.getByRole("button", { name: "Try again" })).toBeEnabled();
     await settle(page);
   }
   await page.clock.runFor(10 * 60_000);
   await page.waitForTimeout(500);
   expect(catalogue.reads).toBe(4);
-  await expect(page.getByTestId("ads-read-error")).toHaveCount(1);
-  if (phone) await thumbSized(page, "ads-read-error", "Try again");
+  const again = page.getByTestId("catalogue-again");
+  await expect(again).toBeVisible();
+  if (phone) await thumbSized(page, "ads-view", "Read again");
   await noOverflow(page);
 
-  /* Try again from the keyboard: the catalogue lands, the row goes, focus stays in the composer, and it prices. */
+  /* Read again: the catalogue lands and the composer prices. */
   catalogue.failing = false;
-  await problem.getByRole("button", { name: "Try again" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(problem).toBeHidden();
-  expect(await focused(page)).toMatchObject({ tag: "SECTION", home: true });
+  await again.click();
+  await page.clock.runFor(100);
+  await expect.poll(() => catalogue.reads).toBe(5);
   await expect(page.getByTestId("ads-blocked")).toBeHidden();
+  await expect(again).toHaveCount(0);
   await page.clock.runFor(1000);
   await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
 
-  /* The account no longer knows the job: one read, then the composer is handed back with the reason and Price again. */
+  /* The account no longer knows the job: one read, then the composer is handed back with the reason and Price again,
+     and nothing else (the shell's collector included) asks after it again. */
   await page.getByTestId("ads-generate").click();
   await expect(page.getByTestId("ads-generate")).toHaveText("Rendering…");
   await page.clock.runFor(2500);
@@ -366,6 +349,39 @@ test("Ads: a catalogue that did not load is tried again, then waits for Try agai
   await page.waitForTimeout(500);
   expect(statusReads.length).toBe(1);
   await noOverflow(page);
+  expect(errors).toEqual([]);
+});
+
+test("the shell's collector asks nothing while the tab is hidden, and makes the read that fell due when it is back", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  /* An ad from an earlier visit, still rendering: the collector follows it (at least 20 s between reads). */
+  const earlier = {
+    id: "9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c99", draftId: DRAFT, status: "accepted", model: VIDEO_MODEL, tool: null, sources: [],
+    input: { type: "video", model: "marketing_studio_video", prompt: "An ad left rendering on another visit", parameters: {}, medias: [] },
+    workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 40, creditUnit: "higgsfield_credits", quoteExpiresAt: 0,
+    createdAt: Date.now() - 6 * 60_000, providerJobId: "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c99", result: null, originalAvailable: false,
+  };
+  const { errors, statusReads } = await open(page, "ads", answering(), () => ({ json: { job: earlier, pollAfterSeconds: 15 } }), answering(), [earlier]);
+  await expect(page.getByTestId("ads-view")).toBeVisible();
+  await expect(page.getByTestId("ads-earlier-row")).toHaveCount(1);
+  await expect.poll(() => statusReads.length).toBe(1);
+  await expect(page.getByTestId("ads-earlier-row").locator(".gx-resumed-state")).toHaveText("Rendering · 6 min");
+  await pauseClock(page);
+  await settle(page);
+
+  /* Hidden: nothing is asked, however long. Back: the read that fell due is made at once, and the pace goes on. */
+  await setHidden(page, true);
+  await page.clock.runFor(5 * 60_000);
+  await page.waitForTimeout(500);
+  expect(statusReads.length).toBe(1);
+  await setHidden(page, false);
+  await expect.poll(() => statusReads.length).toBe(2);
+  await settle(page);
+  await page.clock.runFor(15_000);
+  await page.waitForTimeout(300);
+  expect(statusReads.length).toBe(2);
+  await page.clock.runFor(6000);
+  await expect.poll(() => statusReads.length).toBe(3);
   expect(errors).toEqual([]);
 });
 

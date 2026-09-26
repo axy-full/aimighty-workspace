@@ -358,6 +358,9 @@ test("a failed Setup or catalogue read says the account did not answer unless th
   expect(readFailure(429, { error: "Too many requests. Try again shortly." })).toBe("Too many requests. Try again shortly.");
   expect(readFailure(401, { code: "reconnect_required", error: "Reconnect the connected account." })).toBe("Reconnect the connected account.");
   expect(readFailure(503, { code: "discovery_unavailable", error: "The account's tools are not answering." })).toBe("The account's tools are not answering.");
+  /* A reason the route names is kept, even without a code; only the catch-all about a saved job is replaced. */
+  expect(readFailure(503, { error: "The connected catalogue is unavailable." })).toBe("The connected catalogue is unavailable.");
+  expect(readFailure(502, { error: "The connected account could not be read. Try again in a moment." })).toBe("The connected account could not be read. Try again in a moment.");
 });
 
 test("against the service's poll lease, no read is refused and a finished render is seen within one hint", async () => {

@@ -11,6 +11,7 @@ export function selectFirstFrame(refs: RefItem[], key: string | null): RefItem[]
     ref.role === "first_frame" || (!key && ref.role === "last_frame") ? "reference_image" : ref.role }));
 }
 
+/** `resolution`, when known, checks the engines whose reference rules depend on it (Grok Imagine Video: references up to 720p). */
 export function videoReferenceProblem(model: Pick<ModelDef, "kind" | "label" | "family" | "maxReferenceImages" | "maxReferenceVideos">,
   refs: { kind: string; role: string }[], resolution?: string): string | null {
   if (model.kind !== "video") return null;
@@ -23,6 +24,7 @@ export function videoReferenceProblem(model: Pick<ModelDef, "kind" | "label" | "
     return "First/last frames and reference media cannot be mixed. Choose No first frame to use references, or remove the other references.";
   if (model.family === "kling-3" && images.length)
     return `${model.label} supports image frames, not ordinary image references. Choose Use as first frame, remove the image, or choose Seedance 2.5 for references.`;
+  if (model.family === "grok-imagine" && last.length) return `${model.label} animates a first frame; it takes no last frame.`;
   if (images.length > model.maxReferenceImages) return `${model.label} accepts at most ${model.maxReferenceImages} image references.`;
   if (videos.length > model.maxReferenceVideos) return `${model.label} accepts at most ${model.maxReferenceVideos} video references.`;
   // Grok is guided by reference images at up to 720p (lib/xaiVideo.ts); a first frame may go higher.

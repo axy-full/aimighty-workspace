@@ -1,5 +1,5 @@
 "use client";
-import { rigDeleteHandler, setRigUndoSink } from "@/lib/shell/rig-commands";
+import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
@@ -15,8 +15,10 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { boundUndo } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
+import { AtomikGate } from "./AtomikGate";
 import { BusinessView } from "./business/BusinessView";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
@@ -45,6 +47,7 @@ import { EnvironmentStage } from "./production/EnvironmentStage";
 import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
+import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 
@@ -124,8 +127,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       default: toast(caps.why[cmd] ?? "Not available for this selection.");
     }
   };
+  /* A Rig step undoes only into the draft it was made in. Coming back to a project, the Rig still holds the
+     previous project's draft until the new one loads: the step then refuses and stays on the stack. */
+  const rigProjectId = useRig().project?.id ?? null;
+  const rigProject = useRef(rigProjectId);
+  useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
+  const sinkRigUndo = (entry: RigUndo) =>
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
-  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink((entry) => shell.pushUndo(entry)); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
+  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
   /* A file dropped where no target took it (components/DragLayer) is kept in this project's Library. */
   const projectId = project?.id ?? null;
@@ -227,6 +237,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
+        <AtomikGate />
         {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}

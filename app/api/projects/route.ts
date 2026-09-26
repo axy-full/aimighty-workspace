@@ -131,15 +131,14 @@ export const POST = withTenant(async function POST(req: Request) {
   if (productionId) {
     const p = await db().execute({ sql: `SELECT id FROM productions WHERE id = ?`, args: [productionId] });
     if (!p.rows.length) return NextResponse.json({ error: "No such production." }, { status: 404 });
-  } else {
-    productionId = await createProduction({ name });
   }
 
   /* Invite is one production (§7A). A workspace on no plan has no ceiling,
      which is every workspace until somebody is put on one — so this is inert
      today and becomes real the moment a plan is assigned. Counted here rather
      than trusted from the client, and counted in the workspace's OWN database,
-     which `db()` is already scoped to. */
+     which `db()` is already scoped to. Checked before anything is created, so
+     a refused request leaves no empty production behind. */
   const ws = requireTenant();
   const plan = await planOf(ws).catch(() => null);
   const ceiling = ceilingFor(plan, "productions");
@@ -149,6 +148,7 @@ export const POST = withTenant(async function POST(req: Request) {
       return NextResponse.json({ error: ceilingMessage(plan!, "productions", ceiling) }, { status: 402 });
     }
   }
+  if (!productionId) productionId = await createProduction({ name });
 
   const pid = id("prj");
   // A new production starts at the platform layer's default cap, when the workspace pays in credits.
