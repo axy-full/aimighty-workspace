@@ -1,5 +1,7 @@
 # Particl status of record
 
+> **26 September 2026: start with [`claude-takeover-2026-09-26/README.md`](claude-takeover-2026-09-26/README.md).** It has the current state (main `6d7f438c`), the open PRs with their next steps, the work in progress, the CI memory findings and the SOW. The rest of this file dates from 19 September.
+
 Updated 19 September 2026 (night). This file is the running handover: what is released, what was verified and how, and what is next. It supersedes the status sections of older handover documents where they differ. Claims are limited to what was observed; "released" means the commit is serving www.particl.app, not that every path has been exercised live.
 
 ## Released

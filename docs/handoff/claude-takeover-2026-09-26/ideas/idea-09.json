@@ -1,0 +1,17 @@
+{
+ "n": 9,
+ "title": "Atomik runs can be approved inside /suites",
+ "area": "Atomik / spec pages",
+ "gap": "PageHead.tsx:28 '+ Run stage' and SpecInspector.tsx:61 'Run with Atomik / Approve N cr' both call atomik.start(). The gate UI (Approve / Not now, components/workspace/AtomikPanel.tsx:93-98) is mounted only in WorkspaceShell.tsx:170. When a run is waiting, run-engine.ts:226 start() returns 'waiting' and nothing else happens. The button is dead on Astra, Edit & Sound, Deliver, Business, Viral and every Atomik page.",
+ "target": "When run.status==='waiting', SpecInspector shows the plan's steps and the gate: 'Approve \u00b7 N cr' calls atomik.approve() and 'Not now' calls atomik.decline(). The PageHead run button opens the Inspector on the plan. Alternatively, port AtomikPanel as a gx drawer mounted in SuitesShell. While neither exists, hide '+ Run stage' on pages that have no gate.",
+ "files": [
+  "components/workspace/spec/SpecInspector.tsx",
+  "components/graphite/PageHead.tsx",
+  "components/graphite/SuitesShell.tsx",
+  "components/workspace/AtomikPanel.tsx",
+  "lib/workspace/atomik-host.tsx"
+ ],
+ "priority": "P0",
+ "effort": "small",
+ "respects_rules": "Approval shows the exact price. The existing atomik-host approve and decline are used."
+}

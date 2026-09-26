@@ -1,0 +1,17 @@
+{
+ "n": 23,
+ "title": "Gen output coverage: voices and length for Audio, and 3D wired or dropped from the copy",
+ "area": "Gen / half-made",
+ "gap": "With a speech model, Gen \u203a Audio always shows 'Choose a voice.' (lib/workspace/composer.ts:391) because GenView has no voice control; only the legacy components/workspace/GenerateComposer.tsx:200 has one, and composer.audio.voices is already loaded. Music and SFX are fixed at 10 s and instrumental with no controls. The connected catalogue supports '3d' (lib/higgsfield-consumer/catalogue.ts:15, stored as 'model'), but COMPOSER_TYPES is image/video/audio while the copy promises 3D.",
+ "target": "The Audio tab gets a voice picker (composer.audio.voices \u2192 dispatch 'voice'), a seconds stepper ('seconds') and an Instrumental toggle ('instrumental'). Add a 3D tab for owners on connected billing using the existing '3d' type, with results filed as 'model' assets. Until that ships, remove '3D' from the hint and the tile.",
+ "files": [
+  "components/graphite/GenView.tsx",
+  "lib/workspace/composer.ts",
+  "lib/workspace/use-composer.ts",
+  "components/graphite/SuitesShell.tsx",
+  "lib/shell/studio-home.ts"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "Reuses the existing reducer actions and connected types, each priced on the button."
+}
