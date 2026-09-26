@@ -6,7 +6,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3) in the browser: the well's rule
  * (one 4–30 s video, ≥1 image), the live estimate on the button, submit at
- * that exact price, and History with Recreate · Compare · Send to Edit.
+ * that exact price, and History with Recreate · Compare · Send to Edit (to Takes).
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
@@ -21,7 +21,8 @@ async function open(page: Page, sp: "motion" | "swap" | "history", options: { jo
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, {
     uploads: [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_long", filename: "long.mp4", mime: "video/mp4", kind: "video", durationS: 45 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" })],
-    generations: [generation({ id: "gen_still", title: "Dunes still", prompt: "dunes" })],
+    /* A finished run's original is filed to the project by the account, so Send to Edit finds it there. */
+    generations: [generation({ id: "gen_still", title: "Dunes still", prompt: "dunes" }), generation({ id: GEN, title: "Swapped bottle", kind: "video", model: "genjutsu" })],
   });
   const me = await page.request.get("/api/me").then((r) => r.json());
   await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
@@ -123,6 +124,7 @@ test("Object Swap has its own words; History offers Recreate, Compare and Send t
   await page.getByTestId("history-result").getByRole("button", { name: "Send to Edit" }).click();
   /* Takes is where a take opens in Seedance Edit; Edit & Sound is the cut. */
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
   if (wide) await expect(page.getByTestId("inspector")).toBeVisible();
 });
 
@@ -138,6 +140,6 @@ test("History lists what ran, not estimates, and keeps polling a job the account
   await expect(page.getByTestId("history-result")).toContainText("Motion Transfer · 720p");
   expect(posts.find((p) => p.action === "status")).toEqual({ action: "status", draftId: "ws-viral", id: running.id });
   await expect(page.getByTestId("history-view")).not.toContainText("quoted");
-  /* The list asks for what ran, so estimates never push results off its page. */
-  expect(await page.evaluate(() => performance.getEntriesByType("resource").some((e) => /consumer\/genjutsu\?draftId=ws-viral&results=submitted/.test(e.name)))).toBe(true);
+  /* The list asks for runs (view=runs, every variant on History), so estimates never push results off its page. */
+  expect(await page.evaluate(() => performance.getEntriesByType("resource").some((e) => /consumer\/genjutsu\?draftId=ws-viral&view=runs$/.test(e.name)))).toBe(true);
 });
