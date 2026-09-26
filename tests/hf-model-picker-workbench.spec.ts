@@ -232,6 +232,8 @@ test("search narrows by name, one-liner or chip, says when nothing matches, and 
   const { errors } = await open(page);
   let sheet = await openSheet(page);
   const search = sheet.getByTestId("gen-model-search");
+  /* Count once the list has drawn: a count taken while it is still being read is 0. */
+  await expect(sheet.getByRole("option").first()).toBeVisible();
   const all = await sheet.getByRole("option").count();
   await expect(search).toHaveAttribute("placeholder", `Search ${all} models`);
   /* A pointer can type straight away; a phone keeps its keyboard down until the field is tapped. */
