@@ -52,7 +52,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
   return (
     <div className="statement">
       <div className="statement-actions">
-        <Link href="/settings#statements" className="text-[14px] text-blue">← Statements</Link>
+        <Link href="/suites?view=workspace&tab=credits" className="text-[14px] text-blue">← Statements</Link>
         <span className="ml-auto flex gap-2">
           <label className="chip-dd !py-1.5">
             <select value={project} aria-label="Project" onChange={(e) => router.push(`/statements/${month}${e.target.value ? `?project=${encodeURIComponent(e.target.value)}` : ""}`)}>

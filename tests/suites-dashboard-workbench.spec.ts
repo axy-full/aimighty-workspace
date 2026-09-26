@@ -6,10 +6,12 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
 /**
  * Owner, 24 September: the management dashboard in the Suites. Workspace ›
- * Dashboard reads the analytics the platform already records — cost in
- * dollars and credits, by project, person and model, revisions per shot,
- * where generations stall — filters by project and period, and exports CSV.
- * Real local routes, mock engine: nothing is spent.
+ * Dashboard reads the analytics the platform already records — spend in the
+ * workspace's unit (credits here: a credit workspace never sees the vendor's
+ * dollars, which beside its credits would be the margin), by project, person
+ * and model, revisions per shot, where generations stall — filters by
+ * project and period, and exports CSV. Real local routes, mock engine:
+ * nothing is spent.
  */
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
 
@@ -44,7 +46,13 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   await expect(dash).toBeVisible();
   await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute("aria-selected", "true");
   await expect(dash.getByTestId("dash-generations")).toHaveText("2", { timeout: 30_000 });
-  await expect(dash.getByTestId("dash-cost")).toHaveText(/^\$\d+\.\d\d$/);
+  await expect(dash.getByTestId("dash-credits")).toHaveText(/^\d[\d,]* cr$/);
+  await expect(dash.getByTestId("dash-cost")).toHaveCount(0);
+  await expect(dash.getByTestId("dash-models")).not.toContainText("$");
+  /* The route itself carries no vendor dollars for this workspace. */
+  const analytics = await page.request.get("/api/analytics", { headers }).then((r) => r.json());
+  expect(analytics.totals.credits).toBeGreaterThan(0);
+  expect(JSON.stringify(analytics)).not.toMatch(/"spend"|"promptSpend"|"credit":/);
   await expect(dash.getByTestId("dash-projects")).toContainText(project.name);
   await expect(dash.getByTestId("dash-people")).toContainText(String(me.name ?? ""));
   /* Two people can share a name: each row carries the email, mostly hidden, and never the full address. */
@@ -65,7 +73,11 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   /* CSV export. */
   const download = page.waitForEvent("download");
   await dash.getByTestId("dash-export").click();
-  expect((await download).suggestedFilename()).toMatch(/^particl-dashboard-.+\.csv$/);
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^particl-dashboard-.+\.csv$/);
+  const text = (await import("node:fs")).readFileSync((await file.path())!, "utf8");
+  expect(text).toContain("Credits");
+  expect(text).not.toContain("Cost (USD)");
 
   /* On a phone the tables scroll inside the card, never the page. */
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

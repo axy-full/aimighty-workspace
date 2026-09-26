@@ -1,4 +1,5 @@
 import type { LibraryEntry } from "@/lib/workspace/library";
+import type { BillingSource } from "@/lib/workspace/composer";
 import type { CtxCapabilities, CtxCommand } from "./context-menu";
 
 /**

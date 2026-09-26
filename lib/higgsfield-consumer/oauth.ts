@@ -102,8 +102,9 @@ export function consumerClientMetadata() {
     token_endpoint_auth_method: "none",
   };
 }
+/** Back to Workspace › Engines in the Suites shell, where the connection is made (components/graphite/ConnectedAccountRow.tsx). */
 export function consumerCallbackLocation(code: "connected" | ErrorCode) {
-  return `${consumerConfiguration().origin}/settings?higgsfield=${encodeURIComponent(code)}#engines`;
+  return `${consumerConfiguration().origin}/suites?view=workspace&tab=engines&higgsfield=${encodeURIComponent(code)}`;
 }
 export const consumerSessionHash = hashConsumerSecret;
 

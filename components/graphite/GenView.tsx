@@ -99,8 +99,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     if (preset.billing) dispatchComposer({ type: "billing", value: preset.billing });
     if (preset.type) dispatchComposer({ type: "type", value: preset.type });
     if (preset.model) dispatchComposer({ type: "model", value: preset.model });
-    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
-    dispatchComposer({ type: "prompt", value: preset.prompt });
+    /* An empty prompt (a model picked in ⌘K, Soul ID) leaves the composer's own words as they are. */
+    if (preset.prompt) dispatchComposer({ type: "prompt", value: preset.prompt });
     if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
     if (preset.soulId) dispatchComposer({ type: "pick", value: { soulId: preset.soulId } });
     setPresetNote(preset.note ?? null);
@@ -339,7 +339,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
-              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(var(--gx-accent) ${Math.max(2, Math.min(100, running.pct ?? 0))}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: "var(--gx-accent)" }} aria-hidden="true" /></span>
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>

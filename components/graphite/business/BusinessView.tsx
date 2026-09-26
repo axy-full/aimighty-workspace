@@ -108,7 +108,7 @@ function Chips<T extends string | number>({ label, note, options, value, onPick,
   );
 }
 
-/** A setup-item picker: the account's items when it lists them, else the reason and a field for an id from the CLI. */
+/** A setup-item picker: the account's items when it lists them, else the reason and a field for an item's id. */
 function SetupPicker({ label, note, type, business, value, onPick, disabled, why, testId }: {
   label: string; note?: string; type: SetupType; business: Business; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; testId?: string;
 }) {
@@ -128,7 +128,7 @@ function SetupPicker({ label, note, type, business, value, onPick, disabled, why
       </div>
       {read && !read.available ? (
         <div className="bz-idrow">
-          <span className="cw-dim">The connected account does not list {label.toLowerCase()}s through its tools. Paste an id from <code>higgsfield marketing-studio {SETUP_TYPES.find((t) => t[0] === type)?.[2].split(" ·")[0]} --json</code>.</span>
+          <span className="cw-dim">The connected account does not list {label.toLowerCase()}s here. Paste one’s id.</span>
           <input className="gx-field" aria-label={`${label} id`} placeholder={`${label} id`} value={typed} disabled={disabled} onChange={(e) => setTyped(e.target.value)} onBlur={() => { const id = typed.trim(); if (id) { onPick(id); setTyped(""); } }} />
         </div>
       ) : read && read.available && !items.length ? <span className="cw-dim">The account has no {label.toLowerCase()}s yet.</span> : null}
@@ -208,8 +208,8 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
             <button type="button" className="gx-chip" aria-pressed={!s.productId} onClick={() => set({ ...s, productId: null })}>None</button>
             {(business.setup.reads.product?.items ?? []).map((p) => <button key={p.id} type="button" className="gx-chip" aria-pressed={s.productId === p.id} title={p.meta} onClick={() => set({ ...s, productId: p.id })}>{p.name}</button>)}
           </div>
-          {/* Click-to-Ad (a product fetched by its page URL) is the gateway's flow, not this tool's: it returns with the developer-API grant, as a Setup item. */}
-          {business.setup.reads.product && !business.setup.reads.product.available ? <span className="cw-dim">The connected account does not list products through its tools. Products are made in Setup once the developer API is verified in Workspace › Engines.</span> : null}
+          {/* Particl makes no products of its own yet: Click-to-Ad and product creation are the gateway's flows, which nothing here calls. */}
+          {business.setup.reads.product && !business.setup.reads.product.available ? <span className="cw-dim">The connected account does not list products here.</span> : null}
         </div>
         <SetupPicker label="Avatar" note="optional for UGC · the backend can synthesise a Soul Character" type="avatar" business={business} value={s.avatarId} onPick={(id) => set({ ...s, avatarId: id })} testId="ads-avatar" />
         <SetupPicker label="Hook" note={chips.hook.disabled ? undefined : "prepended to your prompt"} type="hook" business={business} value={s.hookId} onPick={(id) => set(withSetup(s, { hookId: id }))} disabled={chips.hook.disabled} why={chips.hook.why} testId="ads-hook" />
@@ -385,14 +385,14 @@ function SetupView({ business }: { business: Business }) {
       <div className="bz-setup-list">
         {!connected && business.connection ? <p className="gx-reason">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
         {business.setup.error ? <p className="gx-gen-error" role="alert">{business.setup.error}</p> : null}
-        {SETUP_TYPES.map(([type, label, cli]) => {
+        {SETUP_TYPES.map(([type, label]) => {
           const read = business.setup.reads[type];
           return (
             <div className="bz-group" key={type} data-testid={`setup-${type}`}>
-              <div className="bz-group-head"><span className="gx-eyebrow" data-functional-label="">{label}</span><span className="cw-mono">{cli}</span></div>
+              <div className="bz-group-head"><span className="gx-eyebrow" data-functional-label="">{label}</span></div>
               {!read ? <span className="cw-dim">{business.setup.loading ? "Reading…" : connected ? "Not read yet." : "Connect the account to read these."}</span>
-                : !read.available ? <span className="cw-dim">The connected account does not list {label.toLowerCase()} through its tools. Create and list them with <code>higgsfield marketing-studio {cli}</code>.</span>
-                : !read.items.length ? <span className="cw-dim">None yet. <code>higgsfield marketing-studio {cli}</code></span>
+                : !read.available ? <span className="cw-dim">The connected account does not list {label.toLowerCase()} here.</span>
+                : !read.items.length ? <span className="cw-dim">None on the account yet.</span>
                 : read.items.map((item) => (
                   <button type="button" className="bz-row" key={item.id} aria-pressed={selected?.id === item.id} onClick={() => setSelected(item)}>
                     <span className="bz-row-name">{item.name}</span><span className="cw-dim">{item.meta}</span>
