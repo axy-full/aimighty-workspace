@@ -11,7 +11,12 @@ import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
 import { meter } from "./meter";
-import { getPlatformLayer } from "./platform";
+import { getPlatformLayer, platformDb, platformReady } from "./platform";
+import { currentTenant } from "./tenant";
+import { creditsApply } from "./credits";
+import { billCredits, marginKeyOf } from "./creditTerms";
+import { musicCredits, sfxCredits, usdForCredits } from "./elevenlabs";
+import { stepAudioTask } from "./atomikStepRender";
 import { textModelFor } from "./platformLayer";
 import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment } from "./attachments";
 import { readUploadBytes, readImageBytes } from "./storage";
@@ -56,8 +61,13 @@ export type Step = {
   /** What the person attached, carried onto the render this step makes. */
   refs: { uploadId: string; role: "reference_image" | "reference_video" }[];
   status: StepStatus; genId: string | null;
+  /** The engine's dollars, before it runs; null when it cannot be known ahead. */
   estCostUsd: number | null; error: string | null;
   createdAt: number;
+  /** Only for a workspace that pays in credits (getChat): the estimate as
+   *  admission bills it, and what the ledger billed once it ran. */
+  estCredits?: number | null;
+  billedCredits?: number | null;
 };
 
 export type Ask = { question: string; options: string[] };
@@ -76,6 +86,8 @@ export type Chat = {
   model: string; effort?: string; agentMode: AgentMode; status: ChatStatus;
   textCostUsd: number; createdBy: string;
   createdAt: number; updatedAt: number;
+  /** Only for a workspace that pays in credits (getChat): what planning was billed. */
+  textCredits?: number;
 };
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -167,7 +179,65 @@ export async function getChat(chatId: string): Promise<{
     sql: `SELECT * FROM atomik_steps WHERE chat_id = ? ORDER BY created_at ASC, position ASC`,
     args: [chatId],
   });
-  return { chat: toChat(c.rows[0]), messages: m.rows.map(toMessage), steps: s.rows.map(toStep) };
+  return inWorkspaceUnit({ chat: toChat(c.rows[0]), messages: m.rows.map(toMessage), steps: s.rows.map(toStep) });
+}
+
+/**
+ * Every figure the rail shows, in the unit this workspace pays in
+ * (lib/price.ts: "every figure that reaches this hook is ALREADY in credits").
+ *
+ * The stored estimates are the engines' dollars, and the browser has no
+ * margin to convert them with — which is how an estimate of $0.90 used to
+ * read "1 cr" on a button that then billed 14. A workspace that pays in
+ * credits gets, beside them: each step's estimate as admission bills it
+ * (the same `billCredits` at the same margin key that the /api/generate and
+ * /api/audio ceilings check), what the ledger billed for each step that ran,
+ * and what its planning turns were billed. A workspace that pays its vendors
+ * in dollars keeps the dollars and nothing is added.
+ *
+ * A proposed audio step saved before audio was priced ahead is priced here,
+ * so an old plan does not keep a blank where a price belongs.
+ */
+async function inWorkspaceUnit(loaded: { chat: Chat; messages: Message[]; steps: Step[] }) {
+  const steps = await Promise.all(loaded.steps.map(async (s) =>
+    s.estCostUsd == null && s.status === "proposed" && s.kind === "audio" && !connectedMeta(s.params)
+      ? { ...s, estCostUsd: await estimateStepUsd(s.kind, s.model, s.params) }
+      : s));
+  const ws = currentTenant()?.workspace;
+  if (!ws || !creditsApply(ws)) return { ...loaded, steps };
+  const turns = loaded.messages.filter((m) => m.role === "assistant").map((m) => m.id);
+  const billed = await ledgerCredits(ws.id, [...turns, ...steps.flatMap((s) => (s.genId ? [s.genId] : []))]);
+  return {
+    chat: { ...loaded.chat, textCredits: turns.reduce((a, id) => a + (billed.get(id) ?? 0), 0) },
+    messages: loaded.messages,
+    steps: steps.map((s) => ({
+      ...s,
+      estCredits: s.estCostUsd == null || connectedMeta(s.params) ? null : billCredits(s.estCostUsd, marginKeyOf(s.kind, s.model)),
+      billedCredits: s.genId ? (billed.get(s.genId) ?? null) : null,
+    })),
+  };
+}
+
+/** What the ledger billed the current workspace for these jobs, by job id; empty where it pays in dollars. */
+export async function billedCredits(ids: string[]): Promise<Map<string, number>> {
+  const ws = currentTenant()?.workspace;
+  return ws && creditsApply(ws) ? ledgerCredits(ws.id, ids) : new Map();
+}
+
+/** What the ledger billed this workspace, by job id. */
+async function ledgerCredits(workspaceId: string, ids: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!ids.length) return out;
+  await platformReady();
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+    const rs = await platformDb().execute({
+      sql: `SELECT id, billed_credits FROM meter_events WHERE workspace_id = ? AND id IN (${chunk.map(() => "?").join(",")})`,
+      args: [workspaceId, ...chunk],
+    });
+    for (const r of rs.rows) if (r.billed_credits != null) out.set(String(r.id), Number(r.billed_credits));
+  }
+  return out;
 }
 
 export async function patchChat(chatId: string, patch: {
@@ -307,7 +377,18 @@ export async function estimateStepUsd(
       return r ? r.net : null;
     } catch { return null; }
   }
-  if (kind === "audio" || kind === "3d") return null;   // ElevenLabs bills in credits, not dollars
+  /* ElevenLabs bills in its own credits. The rail sends a sound effect at a
+     flat charge, or music at the route's default length, so both are known
+     ahead and priced exactly as /api/audio prices them; a voice line or a
+     dialogue needs a voice or lines the planner does not give, so it has no
+     price (and the rail's live quote says why before anything is claimed). */
+  if (kind === "audio") {
+    if (model !== "elevenlabs") return null;
+    const task = stepAudioTask(params);
+    const credits = task === "sound" ? sfxCredits() : task === "music" ? musicCredits(30_000) : null;
+    return credits === null ? null : usdForCredits(credits, null);
+  }
+  if (kind === "3d") return null;
   /* A connected-account step is priced in the connected account's credits by
      its live quote (params.connected), never in Particl dollars. */
   if (isConnectedModelId(model) || connectedMeta(params)) return null;

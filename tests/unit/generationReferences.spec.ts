@@ -33,6 +33,14 @@ test('ordinary references remain references and unsupported engines fail clearly
   expect(videoReferenceProblem(seedance,[ref('one','first_frame'),ref('two')])).toContain('cannot be mixed');
   expect(videoReferenceProblem(kling,[ref('one','first_frame')])).toBeNull();
 });
+test('Grok is refused reference images at 1080p when the take is admitted, not after the reservation',()=>{
+  const grok=getModel('grok-imagine-video-1.5');
+  expect(videoReferenceProblem(grok,[ref('one')],'1080p')).toContain('up to 720p');
+  expect(videoReferenceProblem(grok,[ref('one')],'720p')).toBeNull();
+  expect(videoReferenceProblem(grok,[ref('one','first_frame')],'1080p')).toBeNull();
+  expect(videoReferenceProblem(grok,[],'1080p')).toBeNull();
+  expect(videoReferenceProblem(seedance,[ref('one')],'1080p')).toBeNull();
+});
 test('Kling sends a start image only for an explicit first frame and refuses ordinary references',async()=>{
   const {buildFalInput}=load<typeof import('../../lib/falVideo')>('lib/falVideo.ts');
   const image:Reference={id:'original',kind:'image',mime:'image/png',ext:'png',storedUrl:'/original.png',role:'first_frame'};

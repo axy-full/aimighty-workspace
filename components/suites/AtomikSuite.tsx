@@ -751,12 +751,14 @@ function SaveRecipe({ run }: { run: PublicPipelineRun }) {
 }
 /** The connected account's workflow bundles as recipes (A5 + A6): run one
  * from the Atomik composer as `/name brief`; every paid step it plans is
- * priced for approval like any other. */
+ * priced for approval like any other. Only where that composer exists — the
+ * app shell's rail; a host without it (the Suites shell) lists nothing it
+ * could not start. */
 function ConnectedRecipes() {
   const atomik = useAtomik();
-  const { data } = useApi<{ recipes: ConnectedRecipe[] }>("/api/atomik/recipes");
+  const { data } = useApi<{ recipes: ConnectedRecipe[] }>(atomik.hosted ? "/api/atomik/recipes" : null);
   const recipes = data?.recipes ?? [];
-  if (!recipes.length) return null;
+  if (!atomik.hosted || !recipes.length) return null;
   return (
     <section className={styles.panel} aria-label="Connected recipes">
       <h2>Connected recipes</h2>
@@ -1009,7 +1011,9 @@ function Models({ catalog }: { catalog: AtomikCatalog }) {
   const current = atomik.models.find((model) => model.id === atomik.model);
   return (
     <div className={styles.modelLayout}>
-      <section className={styles.panel}>
+      {/* Only where the Atomik rail it sets is open to use it: elsewhere (the
+          Suites shell) the agent picks its model with each quote. */}
+      {atomik.hosted && <section className={styles.panel}>
         <h2>Atomik thinking</h2>
         <p>
           The model and effort for the current Atomik rail. A saved request
@@ -1033,7 +1037,7 @@ function Models({ catalog }: { catalog: AtomikCatalog }) {
           Choose a model in Brief or Script for those agentic tasks. This
           control does not replace their saved requests.
         </p>
-      </section>
+      </section>}
       <section className={styles.panel}>
         <h2>Effective routing</h2>
         {settings.error ? (

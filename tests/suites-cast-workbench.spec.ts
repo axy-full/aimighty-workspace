@@ -160,3 +160,34 @@ test("Cast & Elements: from the beat sheet and the agent, built with Soul Cinema
   await page.screenshot({ path: info.outputPath("cast.png") });
   expect(errors).toEqual([]);
 });
+
+test("an element the account accepted without naming it is listed as waiting, and read again until the account names it", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
+  const { errors } = await setup(page);
+  let named = false, reads = 0;
+  /* Registered last, so it answers the element reads first; everything else falls through to the account fixture. */
+  await page.route("**/api/higgsfield/consumer/generation**", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST" || request.postDataJSON().action !== "elements") return route.fallback();
+    reads++;
+    return route.fulfill({ json: named
+      ? { connected: true, available: true, elements: [{ elementId: "el_lantern", name: "Lantern", category: "prop", previewUrl: null }], pending: [] }
+      : { connected: true, available: true, elements: [], pending: [{ id: "build-lantern", name: "Lantern", type: "prop", state: "pending", createdAt: Date.now(), stale: false }] } });
+  });
+  await page.clock.install();
+  await page.reload();
+  await expect(page.getByTestId("cast-stage")).toBeVisible();
+  await expect(page.getByTestId("element-pending-build-lantern")).toContainText("Sent · waiting for the account to name it");
+  const before = reads;
+  named = true;
+  await page.clock.fastForward(31_000);
+  await expect(page.getByTestId("element-row-el_lantern")).toContainText("<<<el_lantern>>>");
+  await expect(page.getByTestId("element-pending-build-lantern")).toHaveCount(0);
+  expect(reads).toBeGreaterThan(before);
+  /* Named: no further reads on a timer. */
+  const settled = reads;
+  await page.clock.fastForward(61_000);
+  expect(reads).toBe(settled);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(errors).toEqual([]);
+});
