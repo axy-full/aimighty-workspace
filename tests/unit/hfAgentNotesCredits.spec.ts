@@ -148,6 +148,20 @@ test("what cannot go back says why", () => {
   expect(removeFromSheet(sheet, { kind: "scene", id: "missing" })).toBeNull();
 });
 
+test("a deleted scene never goes back into a beat sheet that was replaced since (a new breakdown)", () => {
+  const a = scene("INT. HUT"), b = scene("EXT. ICE");
+  const taken = removeFromSheet(sheetOf(a, b), { kind: "scene", id: b.id })!;
+  const fresh = sheetOf(scene("EXT. NEW ROAD"), scene("INT. NEW HALL"));
+  expect(restoreToSheet(fresh, taken.removal)).toBeNull();
+  expect(restoreRefusal(fresh, taken.removal)).toBe("the beat sheet was replaced since");
+  /* Hand edits since — a scene added, another moved — are not a replacement. */
+  const edited = { ...taken.sheet, scenes: [scene("EXT. ADDED"), ...taken.sheet.scenes] };
+  expect(restoreToSheet(edited, taken.removal)!.scenes.map((x) => x.heading)).toEqual(["EXT. ADDED", "EXT. ICE", "INT. HUT"]);
+  /* The last scene of a sheet had no neighbours: it goes back into the empty sheet. */
+  const last = removeFromSheet(sheetOf(a), { kind: "scene", id: a.id })!;
+  expect(restoreToSheet(last.sheet, last.removal)!.scenes.map((x) => x.heading)).toEqual(["INT. HUT"]);
+});
+
 /* ── Beats: where an undo lands ──────────────────────────────────────────── */
 
 test("an undo goes through the open Beats stage; with none open it waits for the next one", () => {
@@ -179,6 +193,7 @@ test("an undo goes through the open Beats stage; with none open it waits for the
   /* The next Beats stage for the project puts it back as it opens. */
   const second = attachBeatsStage(scope, projectId, restore);
   expect(second.missed).toEqual([]);
+  expect(second.restored.map((r) => r.kind)).toEqual(["beat"]);
   expect(sheet.scenes[0].beats.map((x) => x.text)).toEqual(["INT. HUT beat 1", "INT. HUT beat 2", "INT. HUT beat 3"]);
 
   /* A stale stage's detach does not close the newer one. */

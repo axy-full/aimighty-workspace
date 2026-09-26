@@ -34,19 +34,19 @@ export function undoBeatRemoval(scope: string, projectId: string, removal: BeatR
 
 /**
  * A Beats stage has the project open: it restores from now on, starting with
- * what was held for it, in the order it was undone. Returns what could not
- * go back, and the closer to call when the stage leaves.
+ * what was held for it, in the order it was undone. Returns what went back,
+ * what could not, and the closer to call when the stage leaves.
  */
-export function attachBeatsStage(scope: string, projectId: string, restore: BeatRestore): { missed: { removal: BeatRemoval; why: string }[]; detach: () => void } {
+export function attachBeatsStage(scope: string, projectId: string, restore: BeatRestore): { restored: BeatRemoval[]; missed: { removal: BeatRemoval; why: string }[]; detach: () => void } {
   const key = keyOf(scope, projectId);
   const slot = { restore };
   open.set(key, slot);
   const waiting = held.get(key) ?? [];
   held.delete(key);
-  const missed: { removal: BeatRemoval; why: string }[] = [];
+  const restored: BeatRemoval[] = [], missed: { removal: BeatRemoval; why: string }[] = [];
   for (const removal of waiting) {
     const why = restore(removal);
-    if (why) missed.push({ removal, why });
+    if (why) missed.push({ removal, why }); else restored.push(removal);
   }
-  return { missed, detach: () => { if (open.get(key) === slot) open.delete(key); } };
+  return { restored, missed, detach: () => { if (open.get(key) === slot) open.delete(key); } };
 }

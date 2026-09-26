@@ -132,8 +132,10 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   }, [change]);
   const projectId = p.id;
   useEffect(() => {
-    const { missed, detach } = attachBeatsStage(scope, projectId, restore);
+    /* What ⌘Z asked for while Beats was closed goes back now, and the toast says how it went. */
+    const { restored, missed, detach } = attachBeatsStage(scope, projectId, restore);
     if (missed.length) toast(`${removalName(missed[0].removal)} could not go back: ${missed[0].why}.`);
+    else if (restored.length) toast(`${restored.map(removalName).join(", ")} ${restored.length === 1 ? "is" : "are"} back`);
     return detach;
   }, [scope, projectId, restore, toast]);
   const remove = (target: BeatTarget) => {
@@ -153,8 +155,8 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
       undo: () => {
         const result = undoBeatRemoval(scope, projectId, removal);
         if (result.done === "missed") return `${name} could not go back: ${result.why}.`;
-        /* The Beats stage has closed since: open it, and it puts the delete back as it opens. */
-        if (result.done === "held") shell.goSuite("studio", "beats");
+        /* The Beats stage has closed since: open it, and it puts the delete back as it opens (and says so). */
+        if (result.done === "held") { shell.goSuite("studio", "beats"); return `${name} goes back as Beats opens.`; }
       },
     }, withUndoHint(`${name} deleted`));
   };

@@ -53,7 +53,8 @@ export function beatCount(sheet: BeatSheet | undefined | null) { return sheet?.s
  * where it was (⌘Z). Numbers are 1-based, as the board shows them.
  */
 export type BeatRemoval =
-  | { kind: "scene"; index: number; scene: BeatScene }
+  /* `others`: the scenes beside it when it went, so it never goes back into a sheet that was since replaced. */
+  | { kind: "scene"; index: number; scene: BeatScene; others: string[] }
   | { kind: "beat"; sceneId: string; sceneNumber: number; index: number; beat: Beat }
   | { kind: "shot"; sceneId: string; sceneNumber: number; index: number; shot: BeatShot };
 export type BeatTarget = { kind: "scene"; id: string } | { kind: "beat" | "shot"; sceneId: string; id: string };
@@ -63,7 +64,8 @@ export function removeFromSheet(sheet: BeatSheet, target: BeatTarget): { sheet: 
   if (target.kind === "scene") {
     const index = sheet.scenes.findIndex((s) => s.id === target.id);
     if (index < 0) return null;
-    return { sheet: { ...sheet, scenes: sheet.scenes.filter((_, i) => i !== index) }, removal: { kind: "scene", index, scene: sheet.scenes[index] } };
+    const scenes = sheet.scenes.filter((_, i) => i !== index);
+    return { sheet: { ...sheet, scenes }, removal: { kind: "scene", index, scene: sheet.scenes[index], others: scenes.map((s) => s.id) } };
   }
   const si = sheet.scenes.findIndex((s) => s.id === target.sceneId);
   if (si < 0) return null;
@@ -90,6 +92,7 @@ export function restoreToSheet(sheet: BeatSheet | null | undefined, removal: Bea
   if (!sheet) return null;
   if (removal.kind === "scene") {
     if (sheet.scenes.some((s) => s.id === removal.scene.id)) return sheet;
+    if (replaced(sheet, removal)) return null;
     if (sheet.scenes.length >= BEAT_LIMITS.scenes) return null;
     return { ...sheet, scenes: insertAt(sheet.scenes, removal.index, removal.scene) };
   }
@@ -109,10 +112,15 @@ export function restoreToSheet(sheet: BeatSheet | null | undefined, removal: Bea
   return { ...sheet, scenes: sheet.scenes.map((s, i) => (i === si ? nextScene : s)) };
 }
 
+/** A scene's sheet was replaced (a new breakdown): not one of the scenes it sat among is left. */
+function replaced(sheet: BeatSheet, removal: Extract<BeatRemoval, { kind: "scene" }>): boolean {
+  return removal.others.length > 0 && !sheet.scenes.some((s) => removal.others.includes(s.id));
+}
+
 /** Why `restoreToSheet` could not put a removal back, for the toast. */
 export function restoreRefusal(sheet: BeatSheet | null | undefined, removal: BeatRemoval): string {
   if (!sheet) return "the beat sheet is gone";
-  if (removal.kind === "scene") return `the sheet already has ${BEAT_LIMITS.scenes} scenes`;
+  if (removal.kind === "scene") return replaced(sheet, removal) ? "the beat sheet was replaced since" : `the sheet already has ${BEAT_LIMITS.scenes} scenes`;
   if (!sheet.scenes.some((s) => s.id === removal.sceneId)) return "its scene is gone";
   return removal.kind === "beat" ? `its scene already has ${BEAT_LIMITS.beats} beats` : `its scene already has ${BEAT_LIMITS.shots} shots`;
 }

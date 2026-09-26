@@ -215,7 +215,8 @@
 .gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); }
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
-.gx-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+/* Centred by its margins, not a transform: gx-pop animates `transform` and would undo a translate. */
+.gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: fit-content; box-sizing: border-box; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
 /* An undo toast carries its own Undo — the phone's ⌘Z; the "⌘Z to undo" half is for keyboards only. */
 .gx-toast[data-undo] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
 .gx-toast-text { min-width: 0; }
