@@ -586,18 +586,56 @@ try {
     200,
   );
   assert.equal(team.sent, true);
-  assert.ok(
-    mail.some((message) => message.to.includes("teammate@example.test")),
-  );
+  // Where mail works, a new account is made only from the invitation's email:
+  // its link carries a mailbox proof the inviter, who can read the code,
+  // cannot make. The emailed link is read back from the local sink.
+  const invitationLink = (address) => {
+    const letter = mail.findLast((message) => message.to.includes(address));
+    assert.ok(letter, "No invitation email reached " + address);
+    return new URL(letter.text.match(/http:\/\/\S+\/invite\/\S+/)[0]);
+  };
+  const acceptQuery = (code, m) =>
+    "/api/auth/accept?" + new URLSearchParams(m ? { code, m } : { code });
+  const teamLink = invitationLink("teammate@example.test");
+  assert.equal(teamLink.pathname, "/invite/" + team.code);
+  const teamProof = teamLink.searchParams.get("m");
+  assert.ok(teamProof, "The invitation email carries its mailbox proof");
   const member = await context();
+  const copied = await json(await member.get(acceptQuery(team.code)), 200);
+  assert.equal(copied.hasAccount, false);
+  assert.equal(copied.mailboxNeeded, true);
   assert.equal(
-    (await json(await member.get("/api/auth/accept?code=" + team.code), 200))
-      .hasAccount,
+    (await json(await member.get(acceptQuery(team.code, teamProof)), 200))
+      .mailboxNeeded,
     false,
+  );
+  // A copied link, or a made-up proof, never chooses the password.
+  for (const m of [undefined, "made-up-proof"]) {
+    const refused = await json(
+      await member.post("/api/auth/accept", {
+        data: { code: team.code, m, password, name: "Teammate", accept: true },
+      }),
+      403,
+    );
+    assert.equal(refused.needsMailbox, true);
+  }
+  assert.equal(
+    (
+      await p.execute(
+        "SELECT id FROM accounts WHERE email='teammate@example.test'",
+      )
+    ).rows.length,
+    0,
   );
   await json(
     await member.post("/api/auth/accept", {
-      data: { code: team.code, password, name: "Teammate" },
+      data: {
+        code: team.code,
+        m: teamProof,
+        password,
+        name: "Teammate",
+        accept: true,
+      },
     }),
     200,
   );
@@ -661,31 +699,91 @@ try {
     (await json(await member.get("/api/workspaces"), 200)).active,
     first.id,
   );
-  // Two simultaneous accepts compete for the one remaining Invite seat.
-  const invitations = await Promise.all(
-    ["a", "b"].map(async (suffix) =>
-      json(
-        await api.post("/api/team", {
-          headers: ownerHeaders,
-          data: {
-            email: `concurrent-${suffix}@example.test`,
-            name: "Concurrent " + suffix,
-            send: false,
-          },
-        }),
-        200,
-      ),
-    ),
-  );
-  const invitees = await Promise.all([context(), context()]);
-  const accepted = await Promise.all(
-    invitees.map((invitee, i) =>
-      invitee.post("/api/auth/accept", {
-        data: { code: invitations[i].code, password },
+  // An open invitation holds a seat, so two invitations written at once
+  // compete for the one remaining Invite seat and only one is made.
+  const invited = await Promise.all(
+    ["a", "b"].map((suffix) =>
+      api.post("/api/team", {
+        headers: ownerHeaders,
+        data: {
+          email: `concurrent-${suffix}@example.test`,
+          name: "Concurrent " + suffix,
+          send: false,
+        },
       }),
     ),
   );
-  assert.deepEqual(accepted.map((r) => r.status()).sort(), [200, 402]);
+  assert.deepEqual(invited.map((r) => r.status()).sort(), [200, 402]);
+  const invitation = await invited.find((r) => r.status() === 200).json();
+  assert.equal(invitation.sent, false);
+  // Its copied link asks for the email; "Email me the link" sends it only to
+  // the invited address, and that email's link chooses the password.
+  const invitee = await context();
+  assert.equal(
+    (
+      await json(
+        await invitee.post("/api/auth/accept", {
+          data: { code: invitation.code, password, accept: true },
+        }),
+        403,
+      )
+    ).needsMailbox,
+    true,
+  );
+  const mailed = mail.length;
+  assert.equal(
+    (
+      await json(
+        await invitee.post("/api/auth/accept", {
+          data: { code: invitation.code, emailLink: true },
+        }),
+        200,
+      )
+    ).sent,
+    true,
+  );
+  assert.equal(mail.length, mailed + 1);
+  assert.deepEqual(mail.at(-1).to, [invitation.email]);
+  const invitationProof = invitationLink(invitation.email).searchParams.get(
+    "m",
+  );
+  // Two tabs submit the emailed link at once: one account is made, and the
+  // other is told to sign in as it.
+  const tabs = [invitee, await context()];
+  const accepted = await Promise.all(
+    tabs.map((tab) =>
+      tab.post("/api/auth/accept", {
+        data: {
+          code: invitation.code,
+          m: invitationProof,
+          password,
+          accept: true,
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(accepted.map((r) => r.status()).sort(), [200, 409]);
+  assert.equal(
+    (
+      await p.execute({
+        sql: "SELECT id FROM accounts WHERE email=?",
+        args: [invitation.email],
+      })
+    ).rows.length,
+    1,
+  );
+  // The plan is full now: owner, teammate and the new member.
+  await json(
+    await api.post("/api/team", {
+      headers: ownerHeaders,
+      data: {
+        email: "concurrent-c@example.test",
+        name: "Concurrent c",
+        send: false,
+      },
+    }),
+    402,
+  );
   // The existing-account create route creates an independent empty, zero-grant room.
   const second = (
     await json(
@@ -800,7 +898,7 @@ try {
     "Unexpected external request attempt: " + blockedHosts.join(","),
   );
   console.log(
-    "PASS: real HTTP signup/resend/verification/session/provisioning/team acceptance/revocation/rename/workspace creation and MCP read scope. The unfunded render was held without a paid submission; after local fixture funding the first mock render completed and its retry reused the same job. Mail stayed in the local sink; no checkout or external provider was called.",
+    "PASS: real HTTP signup/resend/verification/session/provisioning/team acceptance from the emailed invitation link (a copied link alone was refused)/revocation/rename/workspace creation and MCP read scope. The unfunded render was held without a paid submission; after local fixture funding the first mock render completed and its retry reused the same job. Mail stayed in the local sink; no checkout or external provider was called.",
   );
 } catch (error) {
   code = 1;

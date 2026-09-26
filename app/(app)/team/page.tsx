@@ -103,9 +103,11 @@ function TeamContent() {
       setNotice(
         result.sent
           ? `Invitation sent to ${result.email}.`
-          : result.mailError
-            ? "Invitation created. Email delivery failed; copy the invitation link."
-            : "Invitation created. Copy the link to share it.",
+          : result.mailLimited
+            ? `Invitation created, not emailed. ${result.mailError}`
+            : result.mailError
+              ? "Invitation created. Email delivery failed; copy the invitation link."
+              : "Invitation created. Copy the link to share it.",
       );
       await refresh();
     } catch (e) {
