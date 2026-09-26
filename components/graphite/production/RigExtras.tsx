@@ -17,6 +17,7 @@ import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library
 import { shotInputs, shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
+import { LibraryMore } from "../LibraryMore";
 import { AgentAction } from "./AgentAction";
 import { useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
@@ -272,7 +273,7 @@ export function RigLibrary() {
   return (
     <section className="pxw-rig-library" aria-label="Rig library" data-testid="rig-library" data-section="rig-library">
       <div className="pxw-rig-library-head">
-        <button type="button" className="pxw-link-button" aria-expanded={open} onClick={() => setOpen(!open)}>Library · {items.length}</button>
+        <button type="button" className="pxw-link-button" aria-expanded={open} onClick={() => setOpen(!open)}>Library · {items.length}{library.hasMore ? "+" : ""}</button>
         <span className="pxw-rig-library-hint">Drag onto a shot: pictures become its inputs, briefs join its prompt.{selected ? ` Or press + to add to ${selected.name}.` : ""}</span>
       </div>
       {open ? (
@@ -292,8 +293,10 @@ export function RigLibrary() {
                 <button type="button" className="pxw-link-button" disabled={!selected} aria-label={`Add ${item.label} to the shot`} onClick={() => selected && place(item, selected.id, selected.name)}>+</button>
               </div>
             ))}
-            {!shown.length ? <p className="pxw-inspector-note">Nothing here yet.</p> : null}
+            {!shown.length && library.state.status !== "error" ? <p className="pxw-inspector-note">Nothing here yet.</p> : null}
           </div>
+          {/* The same store as the Library panel and Takes: Load more here reaches older takes too. */}
+          <LibraryMore library={library} testId="rig-library-more" />
         </>
       ) : null}
     </section>

@@ -3,7 +3,7 @@
  * Nothing here knows about a particular plan.
  */
 
-import type { NamedBody, PlanContext, QuotePart } from "./plan-types";
+import type { ApprovedQuote, NamedBody, PlanContext, QuotePart } from "./plan-types";
 
 export class PlanRequestError extends Error {
   constructor(
@@ -80,9 +80,25 @@ export const newId = (ctx: PlanContext) =>
 export const wait = (ctx: PlanContext, ms: number) =>
   ctx.wait ? ctx.wait(ms) : new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Idempotency-Key the generate/audio routes accept: [A-Za-z0-9._:-]{8,160}. */
-export const idempotencyKey = (prefix: string, part: QuotePart) =>
-  `${prefix}:${part.fingerprint.replace(/[^A-Za-z0-9._:-]/g, "").slice(0, 120)}`;
+/**
+ * Idempotency-Key the generate/audio routes accept: [A-Za-z0-9._:-]{8,160}.
+ *
+ * One key per request of one approved run: the run id and the request itself
+ * (its body, and which copy of it when a run sends the same body twice).
+ * Re-sending inside the same run (a resume after an uncertain dispatch)
+ * recovers the job already admitted instead of paying twice, even when the
+ * resume's quote holds fewer parts; a new run is a new request, so running a
+ * plan again with unchanged inputs really renders again. (The quote
+ * fingerprint is deterministic over the inputs, so a key made from it alone
+ * replayed the previous run's job.)
+ */
+export const idempotencyKey = (prefix: string, part: QuotePart, approved: Pick<ApprovedQuote, "runId" | "parts">) => {
+  const run = approved.runId.replace(/[^A-Za-z0-9._:-]/g, "").slice(0, 100);
+  const request = stableKey(part.body);
+  const index = approved.parts.indexOf(part);
+  const copy = index < 0 ? 0 : approved.parts.slice(0, index).filter((other) => stableKey(other.body) === request).length;
+  return `${prefix}:${run}:${shortHash(request)}${copy ? `.${copy}` : ""}`;
+};
 
 export const bodies = (list: NamedBody[] | undefined) =>
   (list ?? []).filter(

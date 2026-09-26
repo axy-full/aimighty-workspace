@@ -2,10 +2,10 @@ import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision, type RigWiring } from "../../lib/shell/rig-wire";
-import { DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, imageAdsFromPreset, parsePreset, presetFor, type BusinessPage, type SetupType } from "../../lib/shell/business";
+import { AUTO_RETRIES, DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, autoRetryMs, imageAdsFromPreset, parsePreset, presetFor, type BusinessPage, type SetupType } from "../../lib/shell/business";
 import { MIRROR_ECHO_MS, listedJobs, mirrorSeek, pendingJobIds, runAfterStatus, type MirrorMark, type ViralRun } from "../../lib/shell/viral";
 import { libraryHasTools } from "../../lib/shell/production-tools";
-import { QUOTE_RETRY_MS, RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
+import { RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
 import { branchFromTake } from "../../lib/production/rig-build";
 import { atomikSheetRuns } from "../../lib/shell/atomik-sheet";
 import { freshOver, freshRead } from "../../lib/shell/use-fresh-project";
@@ -90,7 +90,10 @@ test("a Business job is remembered per project and composer, and a status read s
   expect(settledState(job("uncertain")).phase).toBe("running");
   expect(settledState(job("completed")).phase).toBe("done");
   expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("not billed") });
-  expect(QUOTE_RETRY_MS).toBeGreaterThanOrEqual(10_000);
+  /* A failed quote is asked again on its own only when the failure passes by itself, spaced out and a few times (the route allows six a minute); a refusal of the input waits for Try again. */
+  expect(autoRetryMs({ status: 503 }, 1)).toBeGreaterThanOrEqual(5_000);
+  expect(autoRetryMs({ status: 503 }, AUTO_RETRIES + 1)).toBeNull();
+  expect(autoRetryMs({ status: 400, code: "parameter_invalid" }, 1)).toBeNull();
   /* A price read while a remembered job was being resumed never replaces it (its polling would stop). */
   const running = settledState(job("accepted"));
   expect(quoteLands(running, { phase: "quoted", job: job("quoted") })).toBe(running);
@@ -139,6 +142,9 @@ test("a resumed Business job lands only on the composer still waiting for it, an
   expect(submitRefused(429)).toBe(true);
   expect(submitRefused(503)).toBe(false);
   expect(submitRefused(Number.NaN)).toBe(false);
+  /* Another request did send it: read, not dropped. */
+  expect(submitRefused(409, "already_submitted")).toBe(false);
+  expect(submitRefused(409, "approval_changed")).toBe(true);
 });
 
 /* Viral › History lists what ran and keeps polling what the account still holds. */
