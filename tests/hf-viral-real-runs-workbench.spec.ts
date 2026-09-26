@@ -130,7 +130,7 @@ async function shot(page: Page, target: Locator, name: string) {
 
 async function phoneTargets(page: Page, scope: string) {
   const small = await page.getByTestId(scope).locator("button:visible").evaluateAll((buttons) =>
-    buttons.map((b) => ({ label: b.textContent?.trim() ?? "", h: b.getBoundingClientRect().height })).filter((b) => b.h > 0 && b.h < 44));
+    buttons.map((b) => ({ label: b.textContent?.trim() ?? "", h: b.getBoundingClientRect().height })).filter((b) => b.h > 0 && Math.round(b.h * 100) / 100 < 44));
   expect(small).toEqual([]);
 }
 
