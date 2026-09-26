@@ -9,6 +9,7 @@ import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import type { GenPreset } from "@/lib/shell/assets";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
+import { displayModelName } from "@/lib/models";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
@@ -28,6 +29,8 @@ import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 
+/** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
+const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
@@ -48,6 +51,26 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
+     "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
+     read it, so the strip lets go of a connected job this view started and the collector follows it. */
+  const strip = ws.state.gen, wsDispatch = ws.dispatch;
+  const [stripAtMount] = useState(() => ws.state.gen?.id ?? null);
+  const stripNow = useRef(strip);
+  const sendNow = useRef(wsDispatch);
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    stripNow.current = strip;
+    sendNow.current = wsDispatch;
+    if (strip && strip.tone === "blue" && strip.id !== stripAtMount && CONNECTED_JOB_ID.test(strip.id)) started.current.add(strip.id);
+  }, [strip, stripAtMount, wsDispatch]);
+  useEffect(() => {
+    const last = stripNow, send = sendNow, mine = started.current;
+    return () => {
+      const left = last.current;
+      if (left && left.tone === "blue" && mine.has(left.id)) send.current({ type: "patch", patch: { gen: null } });
+    };
+  }, []);
   const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
@@ -134,29 +157,32 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   }, [scope, dispatchComposer]);
 
   /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, Soul ID › Use in Gen, an
-     asset's Retry generation) is applied the moment it arrives — on Gen too — then forgotten.
+     asset's Retry generation — also ⌘R while Gen is open) is applied the moment it arrives, then forgotten.
      The catalogue comes first (it decides which models exist), then the kind, the model, the words,
-     the settings, the identity; a Retry's own references replace the well. */
-  const [presetNote, setPresetNote] = useState<string | null>(null);
+     the settings, the identity and the sound; a Retry's own references replace the well. */
+  const [preset, setPreset] = useState<GenPreset | null>(null);
   const presetTurn = useRef(0);
-  const applyPreset = useCallback((preset: GenPreset) => {
+  const applyPreset = useCallback((next: GenPreset) => {
     const turn = ++presetTurn.current;
     setMode("compose");
-    if (preset.references) dispatchComposer({ type: "reset" });
-    if (preset.billing) dispatchComposer({ type: "billing", value: preset.billing });
-    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
+    if (next.references) dispatchComposer({ type: "reset" });
+    if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+    if (next.type) dispatchComposer({ type: "type", value: next.type });
+    if (next.model) dispatchComposer({ type: "model", value: next.model });
     /* An empty prompt (a model picked in ⌘K, Soul ID) leaves the composer's own words as they are. */
-    if (preset.prompt) dispatchComposer({ type: "prompt", value: preset.prompt });
-    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
-    if (preset.soulId) dispatchComposer({ type: "pick", value: { soulId: preset.soulId } });
-    setPresetNote(preset.note ?? null);
+    if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
+    if (next.picks) dispatchComposer({ type: "pick", value: next.picks });
+    if (next.soulId) dispatchComposer({ type: "pick", value: { soulId: next.soulId } });
+    if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
+    if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
+    if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
+    setPreset(next);
     setWellError(null);
-    const references = preset.type === "audio" ? [] : preset.references ?? [];
+    const references = next.type === "audio" ? [] : next.references ?? [];
     void Promise.all(references.map(async (ref) => {
       const asset = await resolveGenInput("genId" in ref ? `generation:${ref.genId}` : `upload:${ref.uploadId}`, scope);
       if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
-      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(preset.billing === "connected" && ref.role ? { role: ref.role } : {}) };
+      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(next.billing === "connected" && ref.role ? { role: ref.role } : {}) };
     }).map((p) => p.catch(() => null))).then((found) => {
       if (turn !== presetTurn.current) return;
       for (const value of found) if (value) dispatchComposer({ type: "addReference", value });
@@ -165,6 +191,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     });
   }, [scope, dispatchComposer]);
   useGenPresetInbox(applyPreset);
+  /* The engine the take was made on may not be on offer here any more: say which one stands in. */
+  const presetNote = !preset?.note ? null
+    : preset.model && model && composer.models.length && model.id !== preset.model ? `${preset.note} · ${displayModelName(preset.model)} is not offered here; ${model.label} is selected` : preset.note;
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);

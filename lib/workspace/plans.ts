@@ -162,7 +162,7 @@ function generationDispatch(prefix: string, noun: string): DispatchExecutor {
       for (const part of approved.parts) {
         const result = await call<Admitted>(ctx, "/api/generate", {
           body: { ...part.body, maxCredits: part.credits, quoteFingerprint: part.fingerprint },
-          headers: { "Idempotency-Key": idempotencyKey(prefix, part) },
+          headers: { "Idempotency-Key": idempotencyKey(prefix, part, approved) },
         });
         admitted.push({ id: result.id, status: result.status, held: result.held });
       }
@@ -256,7 +256,7 @@ const audioDispatch: DispatchExecutor = {
       const route = String(part.meta?.route ?? "/api/audio");
       const result = await call<Admitted>(ctx, route, {
         body: { ...part.body, maxCredits: part.credits },
-        headers: { "Idempotency-Key": idempotencyKey("ws-audio", part) },
+        headers: { "Idempotency-Key": idempotencyKey("ws-audio", part, approved) },
       });
       admitted.push({ id: result.id, status: result.status, held: result.held });
     }
