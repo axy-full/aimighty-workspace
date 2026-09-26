@@ -88,8 +88,12 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Start isolated mock development server
+        # Webpack, not Turbopack: Turbopack's dev server took single routes
+        # (the platform desk, Library › Elements) from ~2 GB to 14 GB of the
+        # runner's 16 in one compile, and the runner was shut down. The same
+        # specs run locally on webpack dev servers that stay within a few GB.
         run: |
-          npm run dev -- -p 4551 > dev-ci.log 2>&1 &
+          npm run dev -- --webpack -p 4551 > dev-ci.log 2>&1 &
           for attempt in {1..90}; do
             if curl --fail --silent http://localhost:4551/api/health >/dev/null; then exit 0; fi
             sleep 2
