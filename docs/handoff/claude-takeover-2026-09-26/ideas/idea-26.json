@@ -1,0 +1,16 @@
+{
+ "n": 26,
+ "title": "Lightbox browses the whole list and deep-links a take",
+ "area": "Preview",
+ "gap": "AssetInspector.tsx:57 calls openPreview([one item]), so the \u2190/\u2192 support that components/PreviewLayer.tsx:155-156 already has never fires. The selected take is not in the URL (lib/shell/state.tsx writeParams carries only view, tab, sp and cp), so a teammate cannot be sent a link to a take.",
+ "target": "Open the preview with the current filtered list and index, and add Recreate and Use as reference to the lightbox bar. Add an 'asset' param to writeParams/readParams so /suites?sp=takes&asset=<id> selects and previews that take.",
+ "files": [
+  "components/graphite/AssetInspector.tsx",
+  "components/PreviewLayer.tsx",
+  "lib/shell/state.tsx",
+  "components/graphite/production/EditStage.tsx"
+ ],
+ "priority": "P2",
+ "effort": "small",
+ "respects_rules": "Workspace-scoped links only, never public."
+}

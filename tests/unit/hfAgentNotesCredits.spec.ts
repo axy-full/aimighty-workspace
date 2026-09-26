@@ -1,8 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { agentCharged, agentPrice, notesSent } from "../../lib/production/agent";
+import { agentCharged, agentPrice, agentReserved } from "../../components/graphite/production/agent-price";
+import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, notesSent, withNotes } from "../../lib/production/notes";
 import { BEAT_LIMITS, newBeat, newScene, newShot, removalName, removeFromSheet, restoreRefusal, restoreToSheet, type BeatScene, type BeatSheet } from "../../lib/production/beats";
 import { attachBeatsStage, undoBeatRemoval } from "../../lib/production/beats-undo";
-import { UNDO_HINT, splitUndoHint, undoneLabel, withUndoHint } from "../../lib/shell/undo";
+import { UNDO_HINT, popUndo, pushUndo, splitUndoHint, undoneLabel, withUndoHint, type UndoEntry } from "../../lib/shell/undo";
+import { productionSchema } from "../../lib/workbench/studio-schema";
+import type { DevelopmentJob } from "../../lib/workbench/development-types";
 
 /**
  * Agent stages keep the director's notes and speak in credits; Beats deletes
@@ -14,36 +17,65 @@ function scene(heading: string, beats = 3, shots = 2): BeatScene {
   return { ...s, heading, beats: Array.from({ length: beats }, (_, i) => ({ ...newBeat(), text: `${heading} beat ${i + 1}` })), shots: Array.from({ length: shots }, (_, i) => ({ ...newShot(), description: `${heading} shot ${i + 1}` })) };
 }
 function sheetOf(...scenes: BeatScene[]): BeatSheet {
-  return { scriptSha256: "sha", updatedAt: "2026-09-25T00:00:00.000Z", scenes };
+  return { scriptSha256: "a".repeat(64), updatedAt: "2026-09-25T00:00:00.000Z", scenes };
 }
+type Run = Pick<DevelopmentJob, "status" | "credits" | "costUsd" | "estimateCredits" | "estimateUsd" | "ownKey">;
+const run = (over: Partial<Run>): Run => ({ status: "succeeded", credits: 9, estimateCredits: 12, ownKey: false, ...over });
 
 /* ── Price in the workspace's unit ───────────────────────────────────────── */
 
 test("a credit workspace sees credits only — even when a dollar figure arrives with the quote", () => {
-  expect(agentPrice({ estimateCredits: 12 }, true)).toBe("12 cr");
-  expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).toBe("12 cr");
-  expect(agentPrice({ estimateCredits: 1234 }, true)).toBe("1,234 cr");
+  expect(agentPrice({ estimateCredits: 12 }, true)).toBe("12 credits");
+  expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).toBe("12 credits");
+  expect(agentPrice({ estimateCredits: 1234 }, true)).toBe("1,234 credits");
+  expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
   expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).not.toContain("$");
 });
 
-test("a workspace that pays its vendors in dollars sees the dollar ceiling, never '0 credits'", () => {
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.0312 }, false)).toBe("$0.0312");
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 2.5 }, false)).toBe("$2.50");
-  /* No dollar figure (an older reply): the credit figure is all there is. */
-  expect(agentPrice({ estimateCredits: 7 }, false)).toBe("7 cr");
+test("a model on the workspace's own key names its dollars there, never '0 credits'; a dollar workspace sees dollars", () => {
+  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.0312 }, true)).toBe("$0.0312 on your key");
+  expect(agentPrice({ estimateCredits: 0, estimateUsd: 2.5 }, false)).toBe("$2.5000");
+  /* No dollar figure at all (a platform model that costs nothing): the credit figure is all there is. */
+  expect(agentPrice({ estimateCredits: 0 }, true)).toBe("0 credits");
 });
 
-test("a finished run's charge: credits, dollars, or still settling", () => {
-  expect(agentCharged({ credits: 9, costUsd: 0.02 }, true)).toBe("9 cr");
-  expect(agentCharged({ credits: null }, true)).toBeNull();
-  expect(agentCharged({ credits: 0, costUsd: 0.0213 }, false)).toBe("$0.0213");
-  /* A dollar workspace never falls back to its 0-credit figure. */
-  expect(agentCharged({ credits: 0, costUsd: null }, false)).toBeNull();
+test("a run in progress: reserved credits, or what it may cost on the workspace's own key", () => {
+  expect(agentReserved(run({ status: "running", credits: null }), true)).toBe("reserved up to 12 credits");
+  /* A credit workspace's run list carries no dollars, so an own-key run says where it is billed. */
+  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, ownKey: true }), true)).toBe("billed on your key");
+  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, estimateUsd: 0.05 }), false)).toBe("up to $0.0500");
+});
+
+test("a finished run's charge: credits, not billed when it failed, on your key, dollars, or still settling", () => {
+  expect(agentCharged(run({}), true)).toBe("9 credits");
+  expect(agentCharged(run({ credits: null }), true)).toBeNull();
+  expect(agentCharged(run({ status: "failed", credits: 0 }), true)).toBe("not billed");
+  expect(agentCharged(run({ ownKey: true, estimateCredits: 0, credits: 0 }), true)).toBe("billed on your key");
+  /* An older reply without the flag: a zero-credit estimate is the workspace's own key. */
+  expect(agentCharged(run({ ownKey: undefined, estimateCredits: 0, credits: 0 }), true)).toBe("billed on your key");
+  expect(agentCharged(run({ costUsd: 0.0213 }), false)).toBe("$0.0213");
+  expect(agentCharged(run({ costUsd: null }), false)).toBeNull();
 });
 
 /* ── Notes ───────────────────────────────────────────────────────────────── */
 
-test("notes are cleared only when they are what the confirmed request carried", () => {
+test("notes live on the project, per box, within the limit", () => {
+  const project: { production?: { notes?: { draft?: string; beats?: string } } } = {};
+  expect(notesOf(project, "draft")).toBe("");
+  const one = withNotes(project, "draft", "Let the fox come back.");
+  expect(notesOf(one, "draft")).toBe("Let the fox come back.");
+  expect(notesOf(one, "beats")).toBe("");
+  expect(withNotes(one, "draft", "Let the fox come back.")).toBe(one);
+  const both = withNotes(one, "beats", "Shorter second act.");
+  expect(both.production?.notes).toEqual({ draft: "Let the fox come back.", beats: "Shorter second act." });
+  expect(notesOf(withNotes(both, "draft", "x".repeat(NOTES_LIMIT + 50)), "draft")).toHaveLength(NOTES_LIMIT);
+  /* The project's schema keeps them, and nothing else under that key. */
+  expect(productionSchema.safeParse({ notes: both.production!.notes }).success).toBe(true);
+  expect(productionSchema.safeParse({ notes: { draft: "x".repeat(NOTES_LIMIT + 1) } }).success).toBe(false);
+  expect(productionSchema.safeParse({ notes: { other: "x" } }).success).toBe(false);
+});
+
+test("notes leave their box only when they are what the held run carried", () => {
   expect(notesSent({ instructions: "Let the fox come back." }, "Let the fox come back.")).toBe(true);
   expect(notesSent({ instructions: "Let the fox come back." }, "  Let the fox come back.\n")).toBe(true);
   /* The director kept typing while it started: their new words stay. */
@@ -51,6 +83,17 @@ test("notes are cleared only when they are what the confirmed request carried", 
   expect(notesSent({}, "")).toBe(false);
   expect(notesSent(null, "anything")).toBe(false);
   expect(notesSent({ instructions: "" }, "")).toBe(false);
+  const project = withNotes({}, "draft", "Let the fox come back.");
+  expect(notesOf(clearSentNotes(project, "draft", { instructions: "Let the fox come back." }), "draft")).toBe("");
+  expect(clearSentNotes(project, "draft", { instructions: "Something else" })).toBe(project);
+});
+
+test("a failed run's notes come back: into an empty box as they were, after what is there, never twice or over the limit", () => {
+  expect(notesBack("", "Let the fox come back.")).toBe("Let the fox come back.");
+  expect(notesBack("And the lamp.", "Let the fox come back.")).toBe("And the lamp.\n\nLet the fox come back.");
+  expect(notesBack("Let the fox come back.", "Let the fox come back.")).toBeNull();
+  expect(notesBack("x", "   ")).toBeNull();
+  expect(notesBack("x".repeat(NOTES_LIMIT - 5), "Let the fox come back.")).toBeNull();
 });
 
 /* ── Beats: delete and put back ──────────────────────────────────────────── */
@@ -108,7 +151,7 @@ test("what cannot go back says why", () => {
 /* ── Beats: where an undo lands ──────────────────────────────────────────── */
 
 test("an undo goes through the open Beats stage; with none open it waits for the next one", () => {
-  const projectId = `p-${Math.random()}`;
+  const scope = `ws-${Math.random()}`, projectId = `p-${Math.random()}`;
   const a = scene("INT. HUT"), b = scene("EXT. ICE");
   let sheet: BeatSheet = sheetOf(a, b);
   const restore = (removal: Parameters<typeof restoreToSheet>[1]) => {
@@ -119,22 +162,22 @@ test("an undo goes through the open Beats stage; with none open it waits for the
   };
 
   /* Open: restored at once. */
-  const first = attachBeatsStage(projectId, restore);
+  const first = attachBeatsStage(scope, projectId, restore);
   expect(first.missed).toEqual([]);
   let taken = removeFromSheet(sheet, { kind: "scene", id: b.id })!;
   sheet = taken.sheet;
-  expect(undoBeatRemoval(projectId, taken.removal)).toEqual({ done: "restored" });
+  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "restored" });
   expect(sheet.scenes.map((x) => x.heading)).toEqual(["INT. HUT", "EXT. ICE"]);
 
   /* Closed (the director moved to Brief): held, never written by the closed stage. */
   first.detach();
   taken = removeFromSheet(sheet, { kind: "beat", sceneId: a.id, id: a.beats[0].id })!;
   sheet = taken.sheet;
-  expect(undoBeatRemoval(projectId, taken.removal)).toEqual({ done: "held" });
+  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "held" });
   expect(sheet.scenes[0].beats).toHaveLength(2);
 
   /* The next Beats stage for the project puts it back as it opens. */
-  const second = attachBeatsStage(projectId, restore);
+  const second = attachBeatsStage(scope, projectId, restore);
   expect(second.missed).toEqual([]);
   expect(sheet.scenes[0].beats.map((x) => x.text)).toEqual(["INT. HUT beat 1", "INT. HUT beat 2", "INT. HUT beat 3"]);
 
@@ -142,24 +185,26 @@ test("an undo goes through the open Beats stage; with none open it waits for the
   first.detach();
   taken = removeFromSheet(sheet, { kind: "shot", sceneId: b.id, id: b.shots[1].id })!;
   sheet = taken.sheet;
-  expect(undoBeatRemoval(projectId, taken.removal)).toEqual({ done: "restored" });
+  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "restored" });
 
   /* Its scene is gone: it says so. */
   taken = removeFromSheet(sheet, { kind: "shot", sceneId: b.id, id: b.shots[0].id })!;
   sheet = removeFromSheet(taken.sheet, { kind: "scene", id: b.id })!.sheet;
-  expect(undoBeatRemoval(projectId, taken.removal)).toEqual({ done: "missed", why: "its scene is gone" });
+  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "missed", why: "its scene is gone" });
   second.detach();
 });
 
-test("another project's undo is held for that project, not applied to the open one", () => {
-  const open = `p-open-${Math.random()}`, other = `p-other-${Math.random()}`;
+test("another workspace's or project's undo is held for it, never applied to the open one", () => {
+  const scope = `ws-${Math.random()}`, projectId = `p-${Math.random()}`;
   const seen: string[] = [];
-  const stage = attachBeatsStage(open, (removal) => { seen.push(removal.kind); return null; });
+  const stage = attachBeatsStage(scope, projectId, (removal) => { seen.push(removal.kind); return null; });
   const a = scene("INT. HUT");
   const taken = removeFromSheet(sheetOf(a), { kind: "scene", id: a.id })!;
-  expect(undoBeatRemoval(other, taken.removal)).toEqual({ done: "held" });
+  /* The same project id in another workspace, and another project in this one. */
+  expect(undoBeatRemoval(`other-${scope}`, projectId, taken.removal)).toEqual({ done: "held" });
+  expect(undoBeatRemoval(scope, `other-${projectId}`, taken.removal)).toEqual({ done: "held" });
   expect(seen).toEqual([]);
-  const later = attachBeatsStage(other, (removal) => { seen.push(`other:${removal.kind}`); return null; });
+  const later = attachBeatsStage(`other-${scope}`, projectId, (removal) => { seen.push(`other:${removal.kind}`); return null; });
   expect(seen).toEqual(["other:scene"]);
   later.detach(); stage.detach();
 });
@@ -171,8 +216,14 @@ test("the undo toast: its keyboard half splits off, and an undo can say what rea
   expect(text).toBe("Scene 2 deleted · ⌘Z to undo");
   expect(splitUndoHint(text)).toEqual({ lead: "Scene 2 deleted", hint: UNDO_HINT });
   expect(splitUndoHint("Saved")).toEqual({ lead: "Saved", hint: "" });
-  const entry = { label: "Scene 2 is back", undo: () => {} };
+  const entry: UndoEntry = { label: "Scene 2 is back", undo: () => {} };
   expect(undoneLabel(entry, undefined)).toBe("Scene 2 is back");
   expect(undoneLabel(entry, "Scene 2 could not go back: the beat sheet is gone.")).toBe("Scene 2 could not go back: the beat sheet is gone.");
   expect(undoneLabel(entry, "  ")).toBe("Scene 2 is back");
+  /* A spent step is taken off the stack; a step for another project waits. */
+  const other: UndoEntry = { label: "Shot back", undo: () => {}, projectId: "p-2" };
+  const mine: UndoEntry = { ...entry, projectId: "p-1" };
+  const stack = pushUndo(pushUndo([], mine), other);
+  expect(popUndo(stack, "p-1")?.entry).toBe(mine);
+  expect(popUndo(stack, "p-1")?.rest).toEqual([other]);
 });

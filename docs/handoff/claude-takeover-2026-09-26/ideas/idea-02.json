@@ -1,0 +1,19 @@
+{
+ "n": 2,
+ "title": "Connected-account jobs finish and get filed after the user leaves the page",
+ "area": "Background work / money",
+ "gap": "Only the route's 'status' action and the planner call pollConsumerGeneration (lib/higgsfield-consumer/generation-service.ts:261). app/api/cron/sync/route.ts has no stage for consumer jobs. Gen (use-composer.ts:510-541), Business (use-connected-job.ts:52-67) and Viral (use-viral.ts:86-94) poll only from component state. If the user switches tab, reloads or leaves mid-render, the paid original is never collected into Takes, and Viral rows stay 'accepted' indefinitely.",
+ "target": "Add stage('connected_jobs') to the cron sync workspace loop. It selects higgsfield_consumer_jobs rows in accepted/uncertain status (bounded count, uses deadlineAt) and calls the existing pollConsumerGeneration / pollConsumerGenjutsu / pollConsumerMarketingVideo with each row's user_id. Move the draft-filing logic out of use-composer's 'filed' effect into a server lib function the poller calls on completion. On mount, each composer lists its GET jobs and resumes polling any non-terminal job it finds.",
+ "files": [
+  "app/api/cron/sync/route.ts",
+  "lib/higgsfield-consumer/generation-service.ts",
+  "lib/higgsfield-consumer/genjutsu-service.ts",
+  "lib/higgsfield-consumer/video-service.ts",
+  "lib/workspace/use-composer.ts",
+  "lib/shell/use-connected-job.ts",
+  "lib/shell/use-viral.ts"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "Extends the existing lib poll functions and the existing cron route. It only polls and never resubmits, so nothing can be charged twice."
+}

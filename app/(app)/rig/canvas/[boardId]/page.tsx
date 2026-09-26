@@ -369,7 +369,7 @@ function Canvas() {
   const spent = b.nodes.reduce((a, n) => a + (n.output?.genId ? n.credits : 0), 0);
   const unrun = b.nodes.filter((n) => (n.kind === "image" || n.kind === "video") && !n.output?.genId);
   const unrunCost = unrun.reduce((a, n) => a + priceOf(n), 0);
-  const hrefs = rigHrefs(projectId ?? "", b.id, null);
+  const hrefs = rigHrefs(projectId ?? "", b.id);
   const addItems: MenuItem[] = [
     { kind: "item", label: "New asset", keys: fmt(0), onSelect: () => setAssetSheet(true) },
     { kind: "divider" },

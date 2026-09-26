@@ -8,6 +8,8 @@ import { shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot, RigShotStatus } from "@/lib/workspace/shots";
 import { StatusPill, type Status } from "../ui";
 import { useRig } from "./RigProvider";
+import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
+import { useWorkspace } from "@/lib/workspace/state";
 import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { VirtualItems } from "../VirtualItems";
 import LazyMedia from "@/components/LazyMedia";
@@ -91,7 +93,9 @@ function Row({ shot, selected, onSelect, asset }: { shot: RigShot; selected: boo
 /** Rig — shot list (the default view). */
 export function RigList() {
   const rig = useRig();
+  const { state } = useWorkspace();
   const { shots, project, selected } = rig;
+  const load = rigLoadState({ status: rig.status, hasProject: !!project, projectId: state.projectId });
   return (
     <div className="pxw-rig-list" data-testid="rig-list" data-save-state={rig.saveState} data-section="rig-list">
       <div className="pxw-rig-head" role="presentation">
@@ -103,12 +107,12 @@ export function RigList() {
         <span className="pxw-rig-dur" data-functional-label="">DUR</span>
         <span className="pxw-rig-status" data-functional-label="">STATUS</span>
       </div>
-      {rig.status === "loading" || (rig.status === "idle" && !project) ? (
-        <p className="pxw-rig-empty">Loading shots…</p>
-      ) : rig.status === "error" ? (
+      {load === "loading" ? (
+        <p className="pxw-rig-empty" role="status">Loading shots…</p>
+      ) : load === "error" ? (
         <p className="pxw-rig-empty" role="alert">{rig.error}</p>
-      ) : !project ? (
-        <p className="pxw-rig-empty">Open a project to see its shots.</p>
+      ) : load === "no-project" || !project ? (
+        <p className="pxw-rig-empty">{RIG_NO_PROJECT}</p>
       ) : (
         <>
           <VirtualItems

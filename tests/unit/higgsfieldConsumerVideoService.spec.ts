@@ -92,7 +92,9 @@ async function serviceFixture() {
     collectorError: undefined as unknown,
     completeFailure: false as false | "before" | "after",
     originals: new Map<string, ConsumerVideoOriginal>(),
+    guardCalls: 0,
   };
+  const records = await import("../../lib/higgsfield-consumer/marketing-records");
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
     "@/lib/tenant": tenant,
@@ -116,6 +118,8 @@ async function serviceFixture() {
       },
     },
     "./video-original": {
+      uncollectableOriginal: (await import("../../lib/higgsfield-consumer/video-original")).uncollectableOriginal,
+      CONSUMER_ORIGINAL_SECONDS: 600,
       collectConsumerVideoOriginal: async (job: Parameters<typeof jobs.getConsumerJob>[0] & { providerJobId: string; quoteCredits: number }, url: string) => {
         state.collectCount++;
         expect(url).toBe("https://media.example.com/qualified-original.mp4");
@@ -146,6 +150,19 @@ async function serviceFixture() {
       },
     },
     "./video-contract": contract,
+    "./marketing-records": records,
+    /* The standalone guard with the account's presets faked: one preset avatar is listed. */
+    "./marketing-setup": {
+      refuseForeignMarketingSetup: (
+        userId: string,
+        wanted: Parameters<typeof records.refuseForeignSetup>[1],
+      ) => {
+        state.guardCalls++;
+        return records.refuseForeignSetup(userId, wanted, async () => ({
+          avatar: new Set(["av_preset"]),
+        }));
+      },
+    },
     "./oauth": {
       ConsumerOAuthError: oauth.ConsumerOAuthError,
       getConsumerAccess: async (
@@ -252,6 +269,36 @@ async function serviceFixture() {
   );
   return { service: loaded.exports, state, workspace, tenant, database, jobs };
 }
+
+test("standalone: a marketing quote naming a setup item Particl may not send is refused before the account is asked", async () => {
+  await fixture(async ({ service, state, jobs }) => {
+    for (const extra of [
+      { productIds: ["p_acct"] },
+      { adReferenceId: "r_acct" },
+      { avatars: [{ id: "av_custom", type: "custom" as const }] },
+    ])
+      await expect(
+        service.quoteConsumerMarketingVideo(
+          identity.userId,
+          identity.draftId,
+          { ...prompt, ...extra },
+          randomUUID(),
+        ),
+        JSON.stringify(extra),
+      ).rejects.toMatchObject({ code: "setup_not_particl", status: 409 });
+    expect([state.quoteCount, state.paidCount, state.accessCount]).toEqual([0, 0, 0]);
+    expect((await jobs.listConsumerJobs(identity)).items).toHaveLength(0);
+    /* The engine's preset avatar is priced as before. */
+    await service.quoteConsumerMarketingVideo(
+      identity.userId,
+      identity.draftId,
+      { ...prompt, avatars: [{ id: "av_preset", type: "preset" }] },
+      randomUUID(),
+    );
+    expect(state.quoteCount).toBe(1);
+    expect(state.guardCalls).toBe(4);
+  });
+});
 
 test("quote retry and concurrent first quotes reuse one saved job; changed input conflicts", async () => {
   await fixture(async ({ service, state, jobs }) => {
@@ -587,16 +634,66 @@ test("unknown terminal shapes, conflicting identities and changed settings remai
       { status: "failed", ...good },
       { raw_data: { ...good.raw_data, job_ids: [randomUUID()] } },
       { raw_data: { ...good.raw_data, job_set_type: "other" } },
+      // Completed, but not in a shape Particl can collect yet: the result URL
+      // not filled in, under another key, or settings echoed differently. Never
+      // settled — a later poll or a parser fix may still collect the paid video.
       { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, prompt: "Another prompt" } } },
       { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, generate_audio: false } } },
       { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, ad_reference_id: "unapproved-reference" } } },
+      { raw_data: { ...good.raw_data, result_url: null } },
+      { status: "completed", raw_data: { ...good.raw_data, result_url: null } },
       { raw_data: { ...good.raw_data, result_url: null, h264_url: good.raw_data.result_url } },
+      // Another job's failure, or a failure the outer status contradicts, is not ours to settle.
+      { raw_data: { ...good.raw_data, id: randomUUID(), status: "failed", result_url: null } },
+      { status: "completed", raw_data: { ...good.raw_data, status: "failed", result_url: null } },
     ]) {
       f.state.pollRaw = raw;
       await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
       expect(await f.service.pollConsumerMarketingVideo(scope)).toMatchObject({ job: { status: "accepted" }, providerStatus: raw });
     }
     expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
+  });
+});
+test("a video the account rejected settles as provider_failed and frees its slot", async () => {
+  for (const status of ["failed", "canceled", "nsfw", "ip_detected"]) {
+    await fixture(async f => {
+      const scope = await admitted(f), good = terminal(f.state.providerJobId);
+      f.state.pollRaw = { status, raw_data: { ...good.raw_data, status, result_url: null } };
+      const settled = await f.service.pollConsumerMarketingVideo(scope);
+      expect(settled.job).toMatchObject({ status: "failed", failureCode: "provider_failed", providerJobId: f.state.providerJobId });
+      expect(settled.providerStatus).toEqual({ status });
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
+      expect((await f.service.pollConsumerMarketingVideo(scope)).job.status).toBe("failed");
+      expect(f.state.statusCount).toBe(1); expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
+      expect((await f.jobs.consumerCapacity(identity.userId)).active).toBe(0);
+    });
+  }
+});
+test("a job its owner set aside reads as set aside in the workflow's own view, keeps polling, and is never sent again", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f);
+    const view = async () => f.service.consumerVideoView((await f.jobs.getConsumerJob(scope))!);
+    expect(await view()).toMatchObject({ status: "accepted", setAside: false });
+    expect(await f.jobs.setAsideConsumerJob({ userId: identity.userId, id: scope.id }, Date.now() + f.jobs.CONSUMER_RELEASE_GRACE_MS + 1)).toBe(true);
+    expect(await view()).toMatchObject({ status: "accepted", setAside: true, providerJobId: f.state.providerJobId });
+    // Still collected when its result arrives; never submitted a second time.
+    f.state.pollRaw = terminal(f.state.providerJobId);
+    expect((await f.service.pollConsumerMarketingVideo(scope)).job).toMatchObject({ status: "completed", setAside: false });
+    expect(await f.service.submitConsumerMarketingVideo(scope, { workspaceId: f.state.wallet, credits: f.state.credits })).toMatchObject({ status: "completed" });
+    expect(f.state.paidCount).toBe(1);
+  });
+});
+test("a result that can never be kept settles once as invalid_result with its reason; one that can still pass stays accepted", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f);
+    f.state.pollRaw = terminal(f.state.providerJobId);
+    f.state.collectorError = new ConsumerOriginalError("too_large");
+    const settled = await f.service.pollConsumerMarketingVideo(scope);
+    expect(settled.job).toMatchObject({ status: "failed", failureCode: "invalid_result", providerJobId: f.state.providerJobId });
+    expect(settled).toMatchObject({ collection: { code: "too_large" } });
+    await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
+    expect((await f.service.pollConsumerMarketingVideo(scope)).job.status).toBe("failed");
+    expect(f.state.collectCount).toBe(1); expect(f.state.paidCount).toBe(1);
   });
 });
 test("collection failures and lost completion acknowledgements recover the original job without another paid request", async () => {

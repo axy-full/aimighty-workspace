@@ -39,6 +39,7 @@ async function route(file: string): Promise<Record<string, Handler>> {
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
     "@/lib/cast": await import("../../lib/cast"),
     "@/lib/shots": await import("../../lib/shots"),
+    "@/lib/cache": await import("../../lib/cache"),
     "@/lib/workbench/request-scope":
       await import("../../lib/workbench/request-scope"),
     "@/lib/push": { sendChatPush: async () => {} },

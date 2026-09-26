@@ -1,7 +1,7 @@
 import { recoveryFetch as fetch } from "./recovery";
 import { getProvider, providerBaseUrl } from "./providers";
 import { vendorKey } from "./vendorKeys";
-import { memoGet, memoPut } from "./memo";
+import { memoDrop, memoGet, memoPut } from "./memo";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
 import { ELEVENLABS_RATES, ELEVENLABS_SOURCE_LIMIT_BYTES, type DubbingMode } from "./vendorRates";
@@ -183,7 +183,7 @@ async function elevenFetch(
   }
 }
 
-async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function callJson<T>(path: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<T> {
   const res = await elevenFetch(
     `${base()}${path}`,
     {
@@ -191,7 +191,7 @@ async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
       cache: "no-store",
       headers: { "xi-api-key": key(), ...(init.headers ?? {}) },
     },
-    30_000,
+    timeoutMs,
   );
   const text = await res.text();
   let json: unknown = null;
@@ -272,19 +272,59 @@ type VoicesResponse = {
     description?: string | null;
   }[];
   has_more?: boolean;
+  next_page_token?: string | null;
 };
+
+/** Pages of 100 read per listing: a thousand voices, own and library. */
+const VOICE_PAGES = 10;
+/** Every page together gets the time one listing always had. */
+const VOICE_LIST_MS = 30_000;
+/** A later page is not started with less time than this left. */
+const VOICE_PAGE_MIN_MS = 2_000;
 
 /** The account's voices — its own and the premade library it can use. Memoed per workspace: the key differs. */
 export async function listVoices(force = false): Promise<Voice[]> {
-  const hit = force ? null : memoGet<Voice[]>("eleven-voices", 10 * 60_000);
+  const hit = force
+    ? null
+    : (memoGet<Voice[]>("eleven-voices", 10 * 60_000) ??
+      memoGet<Voice[]>("eleven-voices-part", 60_000));
   if (hit) return hit;
-  let raw: VoicesResponse;
+  let raw: VoicesResponse["voices"] = [];
+  /* A later page that fails or runs out of time keeps the pages already
+     read; the list is then remembered for a minute, not ten. */
+  let whole = true;
+  const deadline = Date.now() + VOICE_LIST_MS;
+  const page = (token: string | null) =>
+    callJson<VoicesResponse>(
+      `/v2/voices?page_size=100${token ? `&next_page_token=${encodeURIComponent(token)}` : ""}`,
+      {},
+      Math.max(VOICE_PAGE_MIN_MS, deadline - Date.now()),
+    );
+  let first: VoicesResponse | null = null;
   try {
-    raw = await callJson<VoicesResponse>("/v2/voices?page_size=100");
+    first = await page(null);
   } catch {
-    raw = await callJson<VoicesResponse>("/v1/voices");
+    raw = (await callJson<VoicesResponse>("/v1/voices")).voices ?? [];
   }
-  const voices = (raw.voices ?? []).map((v) => ({
+  if (first) {
+    raw.push(...(first.voices ?? []));
+    let token = first.has_more && first.next_page_token ? first.next_page_token : null;
+    for (let n = 1; token && n < VOICE_PAGES; n++) {
+      if (deadline - Date.now() < VOICE_PAGE_MIN_MS) { whole = false; break; }
+      let reply: VoicesResponse;
+      try {
+        reply = await page(token);
+      } catch {
+        whole = false;
+        break;
+      }
+      raw.push(...(reply.voices ?? []));
+      token = reply.has_more && reply.next_page_token ? reply.next_page_token : null;
+    }
+  }
+  /* A voice listed on two pages (the list moved while it was read) is one voice. */
+  const unique = new Map(raw.filter((v) => typeof v.voice_id === "string").map((v) => [v.voice_id, v]));
+  const voices = [...unique.values()].map((v) => ({
     id: v.voice_id,
     name: v.name,
     category: v.category ?? "premade",
@@ -299,7 +339,13 @@ export async function listVoices(force = false): Promise<Voice[]> {
     (a, b) =>
       rank(a.category) - rank(b.category) || a.name.localeCompare(b.name),
   );
-  memoPut("eleven-voices", voices);
+  if (whole) {
+    memoPut("eleven-voices", voices);
+    memoDrop("eleven-voices-part");
+  } else {
+    memoPut("eleven-voices-part", voices);
+    memoDrop("eleven-voices");
+  }
   return voices;
 }
 

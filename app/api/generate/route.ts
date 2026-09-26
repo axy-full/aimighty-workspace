@@ -48,5 +48,5 @@ export const POST = withTenant(async function POST(req: Request) {
         },
       }),
     );
-  });
+  }, { atomicBinding: true });
 });

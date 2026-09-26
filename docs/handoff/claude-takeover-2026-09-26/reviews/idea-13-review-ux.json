@@ -1,0 +1,68 @@
+{
+ "verdict": "fix-first",
+ "issues": [
+  {
+   "severity": "major",
+   "file": "components/graphite/FilmVocabulary.tsx",
+   "problem": "The # typeahead takes over Enter and Tab after ordinary hashtags and numbers, deletes the word, eats the newline and changes a chip without asking. Any `#` after a space opens the list with the first hit already selected, and Enter or Tab picks it. The matching (lib/workspace/film-vocabulary.ts vocabularyMatches, tier 2) accepts any substring of an entry's phrase, so everyday tokens hit unrelated entries: #ad \u2192 Steadicam (because 'steADicam'), #1 \u2192 14mm, #3 \u2192 35mm, #5 \u2192 50mm, #red \u2192 Neon. Reproduced at 390x844 and 1440x900 in the running app. Typing '\u2026caption reads SUMMER DROP #ad', Enter, then 'Then the logo fades in' gives '\u2026SUMMER DROPThen the logo fades in' and Camera: Steadicam. Typing '\u2026he is the world's #1', Enter, then 'Crowd roars' gives '\u2026the world'sCrowd roars' and Lens: 14mm. A bare '#' followed by Enter picks 'Locked off'. The next Generate is charged for words the person did not write. Evidence: review-13/lx-42-hashtag-ad-open-1440x900.png, lx-43-hashtag-after-390x844.png, lx-hashtag-*.json.",
+   "fix": "Let Enter or Tab pick only after the person has moved through the list with an arrow key, or when the query is a prefix of a label or aka. Otherwise Enter inserts its newline and closes the list. For the typeahead, drop the phrase-substring tier, or require at least 3 letters before it applies. Do not open on a bare '#', or on digits that match nothing by prefix.",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "file": "lib/workspace/use-composer.ts",
+   "problem": "Recreate does not restore the setup for takes made on the Higgsfield catalogue (connected) path, and a chip change then sends contradictory camera instructions. On that path the setup is written into the words (connectedInput uses sent.prompt) but never kept as data. The connected input schema is strict, no shotSpec is sent, and original-identity.ts stores prompt = the composed words. On Recreate of such a take, the Direction box fills with the full camera and light modules (~500+ characters), all six chips read Auto, and the card has no Setup row. Reproduced at 390x844 and 1440x900 with a take stored the way original-identity.ts stores it (Push in + Soft): after Recreate, picking Camera \u2192 Pull out sends both 'The camera travels forward along its axis\u2026' and 'The camera travels backward along its axis\u2026', with shotSpec {move:'pull'}. The idea says 'Recreate restores them'; on the owner's main engine it does not, and 'change one thing and run it again' produces a self-contradicting prompt. Evidence: review-13/lx-23-recreate-account-390x844.png, lx-24-account-pull-1440x900.png, lx-recreate-*.json.",
+   "fix": "When a take has no shotSpec, recover the setup on Recreate. The scene line and module paragraphs are exact lib/studio.ts strings, so parse the trailing sceneLine/craftModules back to bank values, then strip them with withoutSetup. Alternatively, carry the setup on the connected job as a Particl-only field (like `tool`/`presetId`, never sent to the provider) and read it in lib/shell/recipe.ts recreatePreset. At the least, the card should say the setup is still in the words.",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "file": "lib/workspace/film-vocabulary.ts",
+   "problem": "'Rack focus' is allowed to combine with any camera move, which sends the engine contradictory instructions. pickOption and chipValue deliberately let Rack focus 'ride with the move' (the chip reads 'Push in + Rack focus', and tests/unit/filmVocabulary.spec.ts asserts it), but the bank's rack-focus module says 'The camera is locked off and the only change in the shot is focus \u2026 The composition itself never changes.' Reproduced at all five sizes: Camera 'Crane + Rack focus' sent '\u2026The camera rises vertically on a jib through the shot \u2026 The camera is locked off and the only change in the shot is focus\u2026'. The UI presents the pair as valid, and the person pays for a take with a self-cancelling camera spec. Evidence: review-13/lx-report-*.json ('sent.prompt'), lx-07-chips-long-*.png.",
+   "fix": "Treat rackfocus like a travelling technique in reverse: picking it drops any move except static, and picking a move drops rackfocus. Alternatively, write a move-compatible rack-focus sentence when a move is held, and update the unit test that enshrines 'Push in + Rack focus'.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "app/graphite.css",
+   "problem": "Chip values truncate on phones, and the full value is only in title/aria-label, which touch users never see. At 360x640 every long pick is cut: 'Establishi\u2026', 'Ground le\u2026', 'Orbit + R\u2026', 'Anamorp\u2026'. At 390x844, 'Orbit + Rac\u2026' and 'Teal & oran\u2026'. At both sizes the sticky Generate band also covers the second chip row at most scroll positions, so a chip that just changed is often hidden (lx-07-chips-long-360x640.png, lx-07-chips-long-390x844.png).",
+   "fix": "Use 2 columns (or 12px values) under ~400px, and let the Camera value wrap to 2 lines, or show only the technique or move on the chip face.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "components/graphite/FilmVocabulary.tsx",
+   "problem": "No loops are published on the local platform DB, so this is what a workspace without published previews sees: all 36 Camera entries fall back to drawings, and many are identical. Push in = Following = Chase; Pull out = Leading; Tracking = Low tracking = Truck right; Orbit = Arc = Bullet time; Handheld = Snorricam; Motion control = One-shot; Fly through = FPV; Zoom in = Crash zoom; Pan = Whip pan; Crane down = Aerial. Only the label tells them apart (lx-03-camera-ready-1440x900.png, lx-04-camera-end-1440x900.png). Also, only 3 of 102 bank entries have an aka (Push in, Pull out, Dolly zoom), so the 'label and aka' line the idea asks for is almost always just a name.",
+   "fix": "Give the duplicate glyph kinds a distinguishing mark (subject motion for Following/Chase/Leading, low horizon for Low tracking, speed lines for Whip pan/Crash zoom, and so on). Add akas to the bank where filmmakers search by another name (for example 'dolly' for Tracking, 'jib' for Crane).",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "components/graphite/FilmVocabulary.tsx",
+   "problem": "The grid is aria-modal but does not trap focus. Shift+Tab from its search or Close button moves into the page behind the veil: at 360/390 the tab bar's More and Assets, at 844x390 the Aspect chips, at 1440/1920 the Inspector's 'Run with Atomik' and close buttons (lx-report-*.json shiftTabTrail).",
+   "fix": "Keep focus inside the sheet (wrap Tab/Shift+Tab between its first and last focusable), or mark the rest of the page inert while the veil is open.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "app/graphite.css",
+   "problem": "The landscape phone (844x390) is cramped. The grid is a 304px centred dialog under a 47px gap. Its head takes 125px, so about one row (5 of 37 tiles) shows. The model sheet already has a 'phone on its side' rule to take the full height; the vocab sheet has none. The # pill row there also ends at y=400, past the 390px viewport, so the pills are clipped (lx-03-camera-ready-844x390.png, lx-08-hash-open-844x390.png).",
+   "fix": "Mirror the model sheet's `@media (max-height: 500px) and (min-width: 768px)` rule for .gx-sheet--vocab (full height, tighter head). Include the pill row's full height plus its margin in the typeahead's scroll-into-view check.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "app/graphite.css",
+   "problem": "Several small layout and state flaws. (1) The Recreate card's setup chip is cut mid-word with no ellipsis on phones ('\u2026 Tense \u00b7 Slow m'): the li is inline-flex, so text-overflow does not apply (lx-20z-recreate-card-390x844.png). (2) At 360x640 the 'Loops unavailable \u00b7 Try again' note pushes Close onto its own line at the left and grows the head to 172px (lx-14-loops-error-360x640.png). (3) With only chips set and no words, Generate says 'Write what to generate.', so a camera move on a start frame (Higgsfield's preset + image pattern) needs filler words.",
+   "fix": "Wrap the setup label in an inner span with overflow ellipsis, or let that li wrap. Keep Close on the title row and let the note wrap under it. Consider treating a non-empty composed setup as enough words to generate when a reference is attached.",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "file": "lib/workspace/film-vocabulary.ts",
+   "problem": "Copy that is imprecise or no longer true. (1) recipeSetup always explains a still as 'A still has no camera move', even when what was dropped is pace (Slow motion). A take carrying only a pace row would get an untrue note. (2) The video placeholder says '# picks a camera move' (it also picks shot, angle, lens, light and look), and still promises 'raw: sends your words as written', although the chip setup is appended to raw: prompts too. (3) The six chips' 'Auto' (engine decides) sits directly above the enhancer's unrelated 'Auto' toggle.",
+   "fix": "Name what was actually dropped ('A still has no camera move or pace'), or say 'A still drops camera travel'. Shorten the placeholder to '# picks a setup'. Either skip appending the setup to raw: prompts or change the raw: wording. Consider relabelling the enhancer toggle ('Auto-enhance').",
+   "reproduced": true
+  }
+ ]
+}

@@ -71,7 +71,7 @@ export default function ProductionGraph({project:p,onChange,onSettle,selectedId,
  function selectNode(id:string,additive=false){selectIds(toggleNodeSelection(selectedIds,id,additive));}
  function cancelGesture(){drag.current=null;setDraft(null);setMarquee(null);moved.current=true;}
  function selectionActions(ids=selectedIds):StudioAction[]{const editable=nodes.filter(n=>ids.includes(n.id)&&!n.locked);return [
-  {label:'Duplicate selected nodes',disabled:readonly||!editable.length||nodes.length+editable.length>250,run:()=>duplicateSelection(ids)},
+  {label:'Duplicate selected nodes',disabled:readonly||!editable.length||nodes.length+editable.length>PROJECT_LIMITS.nodes,run:()=>duplicateSelection(ids)},
   {label:'Remove selected nodes',danger:true,disabled:readonly||!removableNodeIds(nodes,ids).length,run:()=>removeSelection(ids)},
   {label:'Clear selection',run:()=>selectIds([])},
  ];}

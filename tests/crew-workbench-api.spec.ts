@@ -20,7 +20,7 @@ test("a room quotes first, streams propose → challenge → converge, settles o
   const account = await signInLocally(request);
   const me = await request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const anonymous = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL || "http://localhost:4551" });
   const events = async () => (await platform.execute({ sql: "SELECT id,status,engine,model,engine_cost_usd AS usd,billed_credits AS credits FROM meter_events WHERE workspace_id=? AND engine='xai'", args: [account.workspace.id] })).rows;
   try {

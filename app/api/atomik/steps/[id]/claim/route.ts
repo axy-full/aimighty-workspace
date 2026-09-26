@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { claimStep, getStep } from "@/lib/atomik";
+import { claimStep, getStep, reconcileRunningSteps } from "@/lib/atomik";
 import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,12 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   if (pending && connectedMeta(pending.params))
     return NextResponse.json({ error: "Approve this step at its connected-credit price.", step: pending }, { status: 409 });
 
-  const step = await claimStep(id);
+  let step = await claimStep(id);
+  /* A step left running by an approval that never reached the renderer is
+     settled first; if nothing was sent, it is proposed again and this
+     approval may take it. */
+  if (!step && pending?.status === "running" && !pending.genId && (await reconcileRunningSteps(pending.chatId)))
+    step = await claimStep(id);
   if (step) return NextResponse.json({ step });
 
   /* Nothing was claimed. Say which of the two reasons it was, because

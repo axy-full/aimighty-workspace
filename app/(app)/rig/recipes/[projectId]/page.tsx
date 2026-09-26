@@ -21,10 +21,9 @@ import { RigBar, RigStrip, rigHrefs } from "@/components/rig/RigBar";
  * reusable stage pipeline, with an engine and a price per stage — what
  * `Save as recipe` makes on the Canvas and what a Run executes. The handoff
  * draws no board for it, so it is set the way the run track is (§9): one
- * card per stage — number, name, engine, price — and the one filled
- * primary, `Run to first checkpoint · N CR`, quoted from the first paid
- * stage before it enables. Building a recipe is free; a run charges stage
- * by stage and stops at its first checkpoint for a person.
+ * card per stage — number, name, engine, price. Building a recipe is free.
+ * Nothing advances a Rig run (lib/runs.ts), so the primary opens Pipelines,
+ * where runs execute, instead of starting a run that never moves.
  */
 export default function RecipesPage() {
   return <ToastHost><Recipes /></ToastHost>;
@@ -52,9 +51,8 @@ function Recipes() {
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open the Rig.</div>;
   if (!data || !prods) return <PageLoader what="Opening · Recipes" />;
   const recipe = data.recipe;
-  const hrefs = rigHrefs(projectId, null, recipe?.runId ?? null);
+  const hrefs = rigHrefs(projectId);
   const total = recipe?.stages.reduce((a, s) => a + s.credits, 0) ?? 0;
-  const firstPaid = recipe?.stages.find((s) => s.kind !== "write") ?? recipe?.stages[0] ?? null;
 
   const make = async () => {
     setBusy(true);
@@ -62,15 +60,7 @@ function Recipes() {
     setBusy(false); refresh();
     if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error ?? "No recipe made."); } else toast("Recipe saved · eight stages");
   };
-  const run = async () => {
-    if (!recipe) return;
-    setBusy(true);
-    const r = await fetch("/api/rig/runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId }) });
-    const j = await r.json().catch(() => ({}));
-    setBusy(false);
-    if (!r.ok) { toast(j.error ?? "The run didn't start."); return; }
-    router.push(`/rig/run/${j.id}`);
-  };
+  const run = () => router.push(hrefs.run);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
@@ -78,7 +68,7 @@ function Recipes() {
         chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">›</span> {proj?.name ?? "deliverable"}</>}
         mono={recipe ? `${recipe.name} · ${recipe.stages.length} stages · ${fmt(total)} a run` : "no recipe yet"}
         phoneTitle={recipe?.name ?? proj?.name ?? "Recipes"} phoneMono={recipe ? `${recipe.stages.length} stages · ${fmt(total)} a run` : "no recipe yet"}
-        right={phone ? undefined : recipe ? <Button variant="primary" placement="header" cost={firstPaid?.credits ?? 0} busy={busy} busyLabel="Starting…" outlined={rail.open} onClick={run}>Run to first checkpoint</Button>
+        right={phone ? undefined : recipe ? <Button variant="primary" placement="header" outlined={rail.open} onClick={run}>Open Pipelines</Button>
           : <Button variant="primary" placement="header" cost={0} busy={busy} busyLabel="Saving…" outlined={rail.open} onClick={make}>Save the eight stages as a recipe</Button>} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)] max-md:grid-cols-1">
         <RigStrip />
@@ -107,7 +97,7 @@ function Recipes() {
       </div>
       <PinnedBar>
         {recipe
-          ? <PinnedPrimary cost={fmt(firstPaid?.credits ?? 0)} outlined={rail.open} busy={busy} onClick={run}>{busy ? "Starting…" : "Run to first checkpoint"}</PinnedPrimary>
+          ? <PinnedPrimary outlined={rail.open} onClick={run}>Open Pipelines</PinnedPrimary>
           : <PinnedPrimary cost={fmt(0)} outlined={rail.open} busy={busy} onClick={make}>{busy ? "Saving…" : "Save the eight stages as a recipe"}</PinnedPrimary>}
       </PinnedBar>
     </div>

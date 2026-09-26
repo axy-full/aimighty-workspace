@@ -80,6 +80,7 @@ const node = z.object({
   firstFrameId: z.string().max(100).optional(),
   condensed: z.object({ key: z.string().regex(/^[a-f0-9]{16}$/), text: z.string().max(10000) }).strict().optional(),
   boardShotId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
+  wiredJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   developmentSource: z.object({ jobId:z.string().max(100), sourceHash:z.string().regex(/^[a-f0-9]{64}$/), sceneId:z.string().max(100), sourceAssetId:z.string().max(100).optional(), sourceStart:z.number().int().min(0).max(MAX_SCRIPT_CHARS), sourceEnd:z.number().int().min(1).max(MAX_SCRIPT_CHARS) }).optional(),
   scriptScene: z
     .object({
@@ -186,6 +187,8 @@ export const productionSchema = z.object({
       characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
     }).strict()).max(1000),
   }).strict().optional(),
+  /** The director's unsent notes to the writer, per box (lib/production/notes.ts); a run that carries them keeps its own copy. */
+  notes: z.object({ draft: z.string().max(5000).optional(), beats: z.string().max(5000).optional() }).strict().optional(),
   /** An uploaded beat sheet (a Final Draft beat board PDF), as the text the browser read from it; the agent summarises it into beats. */
   beatSource: z.object({
     name: z.string().max(300), sha256: z.string().regex(/^[a-f0-9]{64}$/), pages: z.number().int().min(1).max(400), text: z.string().max(200_000), at: z.string().datetime(),

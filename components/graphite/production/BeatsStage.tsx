@@ -4,9 +4,10 @@ import { useAgentAttachments } from "./use-agent-attachments";
 import { PromptAttach } from "@/components/PromptAttach";
 import { hasFiles } from "@/lib/drop";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
-import { agentFamilyOf, agentLabel, notesSent } from "@/lib/production/agent";
+import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { BEAT_LIMITS, BEAT_SOURCE_CHARS, beatCount, beatSheetFrom, move, newBeat, newScene, newShot, removalName, removeFromSheet, restoreRefusal, restoreToSheet, shotCount, type BeatRemoval, type BeatScene, type BeatSheet, type BeatShot, type BeatSource, type BeatTarget } from "@/lib/production/beats";
 import { attachBeatsStage, undoBeatRemoval } from "@/lib/production/beats-undo";
+import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, withNotes } from "@/lib/production/notes";
 import { useShell } from "@/lib/shell/state";
 import { withUndoHint } from "@/lib/shell/undo";
 import { sha256Hex } from "@/lib/production/hash";
@@ -45,14 +46,23 @@ export function BeatsStage({ projectId, scope, onBrief, onBoards }: { projectId:
 
 function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<typeof useDraftEditor>; scope: string; onBrief: () => void; onBoards?: () => void }) {
   const p = editor.project!;
-  const { toast, selectProject } = useWorkspace();
+  const { toast } = useWorkspace();
   const shell = useShell();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
   useStageFacts("brief", p);
   const [scriptSha, setScriptSha] = useState<string | null>(null);
-  const [notes, setNotes] = useState("");
+  /* The notes live on the project draft, so a reload keeps them (lib/production/notes.ts). */
+  const notes = notesOf(p, "beats");
+  const setNotes = (text: string) => editor.change((old) => withNotes(old, "beats", text));
+  /* A start answers after a round trip; a stage closed by then never writes again (its draft's revision is old). */
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  /* Notes leave the box only once the server holds the redraft they went with, and only while they are still what was sent. */
+  const clearSent = (sent: { kind?: string; fromBeats?: boolean; instructions?: string } | null | undefined) => (held: boolean) => {
+    if (held && mounted.current && sent?.kind === "write" && sent.fromBeats) editor.change((old) => clearSentNotes(old, "beats", sent));
+  };
   const [offered, setOffered] = useState<{ job: DevelopmentJob; scenes: DevelopmentScene[]; upload?: string } | null>(null);
   const [openScene, setOpenScene] = useState<string | null>(null);
   /* Board or graph, remembered on this device. The stage renders only after the project loads, never on the server. */
@@ -122,10 +132,10 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   }, [change]);
   const projectId = p.id;
   useEffect(() => {
-    const { missed, detach } = attachBeatsStage(projectId, restore);
+    const { missed, detach } = attachBeatsStage(scope, projectId, restore);
     if (missed.length) toast(`${removalName(missed[0].removal)} could not go back: ${missed[0].why}.`);
     return detach;
-  }, [projectId, restore, toast]);
+  }, [scope, projectId, restore, toast]);
   const remove = (target: BeatTarget) => {
     const out: { removal?: BeatRemoval } = {};
     change((old) => {
@@ -136,14 +146,15 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
     });
     const removal = out.removal;
     if (!removal) return;
+    if (removal.kind === "scene" && openScene === removal.scene.id) setOpenScene(null);
     const name = removalName(removal);
     shell.pushUndo({
       label: `${name} is back`,
       undo: () => {
-        const result = undoBeatRemoval(projectId, removal);
+        const result = undoBeatRemoval(scope, projectId, removal);
         if (result.done === "missed") return `${name} could not go back: ${result.why}.`;
         /* The Beats stage has closed since: open it, and it puts the delete back as it opens. */
-        if (result.done === "held") { selectProject(projectId); shell.goSuite("studio", "beats"); }
+        if (result.done === "held") shell.goSuite("studio", "beats");
       },
     }, withUndoHint(`${name} deleted`));
   };
@@ -177,9 +188,9 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   };
   /* The newest draft came from these beats and is not the approved script yet: send the director to review it. */
   const lastRedraft = newestWrite && newestWrite.source === "beats" && newestWrite.status === "succeeded" && approval?.jobId !== newestWrite.id ? newestWrite : null;
-  /* …or it could not finish: say so here, and keep what the director wrote for it. */
+  /* …or it could not finish: said here, with what the director wrote for it offered back. */
   const failedRedraft = newestWrite && newestWrite.source === "beats" && (newestWrite.status === "failed" || newestWrite.status === "uncertain") ? newestWrite : null;
-  const recover = () => { const sent = runs.pendingInput; void runs.start().then((held) => { if (held) setNotes((now) => (notesSent(sent, now) ? "" : now)); }); };
+  const notesAgain = failedRedraft ? notesBack(notes, failedRedraft.instructions) : null;
 
   /* One scene opened to edit: its heading, act, summary, beats and shots. The board opens it in place; the graph beside the graph. */
   const sceneEditor = (scene: BeatScene, si: number) => (
@@ -249,7 +260,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
       {runs.pending ? (
         <div className="gx-gen-card pd-recover" role="alert">
           <p className="gx-hint">An earlier agent request was sent but not confirmed. Recovering it re-reads that exact request; it is never sent twice.</p>
-          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={recover}>{runs.busy || "Recover the request"}</button>
+          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => { const sent = runs.pendingInput; void runs.start().then(clearSent(sent)); }}>{runs.busy || "Recover the request"}</button>
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
@@ -370,18 +381,18 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
         <section className="gx-gen-card" aria-label="Redraft the script" data-testid="beats-redraft" data-section="redraft">
           <span className="gx-eyebrow" data-functional-label="">Redraft the script from these beats</span>
           <p className="gx-hint">The agent rewrites the script so it plays this beat sheet — your edits, in this order — and the new draft goes to Brief & Script for your review.</p>
-          <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="beats-notes-attach"><textarea className="gx-textarea pd-small" maxLength={5000} value={notes} placeholder="Anything else for the writer (optional)" onChange={(e) => setNotes(e.target.value)} data-testid="beats-notes" />{attach.chips}</PromptAttach>
+          <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="beats-notes-attach"><textarea className="gx-textarea pd-small" maxLength={NOTES_LIMIT} value={notes} placeholder="Anything else for the writer (optional)" onChange={(e) => setNotes(e.target.value)} data-testid="beats-notes" />{attach.chips}</PromptAttach>
           {activeWrite ? <p className="gx-hint" role="status" data-testid="beats-redraft-progress">{agentLabel(agentFamilyOf(activeWrite.model) ?? "claude")} is redrafting · step {Math.min(activeWrite.completedSteps + 1, activeWrite.totalSteps)} of {activeWrite.totalSteps}</p> : null}
           {failedRedraft && !activeWrite ? (
             <div className="pd-failed" role="alert" data-testid="beats-redraft-failed">
               <p className="gx-gen-error">{failedRedraft.error ?? "The redraft could not finish."}</p>
-              {failedRedraft.instructions && !notes.trim() ? <button type="button" className="gx-hbtn" onClick={() => setNotes(failedRedraft.instructions)} data-testid="beats-notes-restore">Use those notes again</button> : null}
+              {notesAgain ? <button type="button" className="gx-hbtn" onClick={() => setNotes(notesAgain)} data-testid="beats-notes-restore">{notes.trim() ? "Add those notes again" : "Use those notes again"}</button> : null}
             </div>
           ) : null}
           <AgentAction id="beats-redraft" estimateLabel="Estimate the redraft" startLabel={(price) => `Redraft the script · up to ${price}`} quote={redraftQuote} busy={runs.busy}
             blocked={blocked ?? (stale ? "Break the current script down first, or it is redrafted from beats of an older draft." : null)} secondary
             onEstimate={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromBeats: true, ...(notes.trim() ? { instructions: notes.trim() } : {}), ...attach.input })}
-            onStart={() => { const sent = redraftQuote?.input; void runs.start().then((held) => { if (held) setNotes((now) => (notesSent(sent, now) ? "" : now)); }); }} onChange={runs.clearQuote} />
+            onStart={() => void runs.start().then(clearSent(redraftQuote?.input))} onChange={runs.clearQuote} />
           {lastRedraft && !activeWrite ? <button type="button" className="gx-hbtn" onClick={onBrief} data-testid="beats-review-redraft">A new draft is ready · review it in Brief & Script ›</button> : null}
         </section>
       ) : null}

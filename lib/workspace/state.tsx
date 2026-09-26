@@ -57,8 +57,8 @@ export function reducer(state: AppState, action: Action): AppState {
 type Workspace = {
   state: AppState;
   dispatch: (action: Action) => void;
-  /** The single navigation entry point: repairs selection and pushes the URL. */
-  go: (suite: Suite, page: string) => void;
+  /** The single navigation entry point: repairs selection and pushes the URL (`replace` rewrites the current entry instead, for a landing). */
+  go: (suite: Suite, page: string, opts?: { replace?: boolean }) => void;
   home: (suite?: Suite) => void;
   switchSuite: (suite: Suite) => void;
   selectProject: (projectId: string, opts?: { replace?: boolean }) => void;
@@ -180,7 +180,7 @@ export function WorkspaceProvider({
   const value = useMemo<Workspace>(() => ({
     state,
     dispatch,
-    go: (suite, page) => commit(navigate(ref.current, suite, page), "push"),
+    go: (suite, page, opts) => commit(navigate(ref.current, suite, page), opts?.replace ? "replace" : "push"),
     home: (suite) => commit(goHome(ref.current, suite), "push"),
     switchSuite: (suite) => commit(switchSuite(ref.current, suite), "push"),
     selectProject: (projectId, opts) => {

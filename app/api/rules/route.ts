@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
+import { requireAdmin, requireUser, withTenant } from "@/lib/auth";
 import { effectiveRules, addRule, ruleProblem } from "@/lib/rules";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +11,10 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({ rules: await effectiveRules() });
 });
 
-/** A rule the team writes: one sentence, a scope, and whether it steers the writer or rides on the prompt. */
+/** A rule the team writes: one sentence, a scope, and whether it steers the writer or rides on the prompt.
+ *  It shapes every prompt in the workspace, so writing one is an admin's, in a signed-in session. */
 export const POST = withTenant(async function POST(req: Request) {
-  const got = await requireUser();
+  const got = await requireAdmin();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
   const problem = ruleProblem(body);

@@ -202,7 +202,7 @@ export async function approveConnectedStep(userId: string, stepId: string, appro
        dispatch claim into an uncertain job instead of throwing): nothing was
        spent, so the step goes back to waiting for approval, unbilled. */
     const code = (error as { code?: string })?.code;
-    const reason = code === "capacity" ? "four connected-account jobs are already active" : neutralReason(error instanceof Error ? error.message : "the connected account refused it");
+    const reason = code === "capacity" ? "all four connected-account slots are in use (Workspace › Engines lists yours)" : neutralReason(error instanceof Error ? error.message : "the connected account refused it");
     const back = await patchStep(stepId, { status: "proposed", error: `Not sent, not billed: ${reason}` });
     throw new ConnectedStepError(code === "capacity" ? "capacity" : "not_sent", `Not sent, not billed: ${reason}`, code === "capacity" ? 429 : 409, back);
   }
@@ -213,7 +213,7 @@ async function settle(stepId: string, view: ConsumerGenerationView) {
   const genId = original && typeof original === "object" && typeof (original as { generationId?: unknown }).generationId === "string" ? (original as { generationId: string }).generationId : null;
   if (view.status === "completed" && genId) return { step: await patchStep(stepId, { status: "done", genId, error: null }), job: view };
   if (view.status === "failed")
-    return { step: await patchStep(stepId, { status: "failed", error: view.failureCode === "provider_failed" ? "The connected account could not make it. Failed runs are not billed." : "It did not run. Failed runs are not billed." }), job: view };
+    return { step: await patchStep(stepId, { status: "failed", error: view.failureCode === "provider_failed" ? "The connected account could not make it. Failed runs are not billed." : view.failureCode === "invalid_result" ? "The account finished it, but its result could not be kept. Its receipt is saved." : "It did not run. Failed runs are not billed." }), job: view };
   if (view.status === "uncertain")
     return { step: await patchStep(stepId, { error: "The connected account may have accepted this run. It is kept and never sent again; check its status." }), job: view };
   return { step: await getStep(stepId), job: view };

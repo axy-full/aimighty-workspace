@@ -18,11 +18,18 @@ import {
   EMPTY_CREATIVE,
   FORM_BLOCKED,
   FORM_QUOTE_NOTE,
+  estimateAction,
   formBlocked,
   formDraftKey,
   formInput,
   formQuote,
+  formQuoteAttemptKey,
+  formQuoteBody,
   formQuoteLabel,
+  readQuoteAttempt,
+  ESTIMATE_NEEDS_STORAGE,
+  takeEstimate,
+  type QuoteAttempt,
   formSummary,
   readFormCreative,
   withReference,
@@ -240,6 +247,80 @@ test("a missing or stale quote blocks submission, and the reason is the honest o
     expect(FORM_BLOCKED[state]).not.toBe(FORM_QUOTE_NOTE[state]);
     expect(FORM_BLOCKED[state]).toMatch(/estimate/i);
   }
+});
+
+test("the phone takes its own estimate: a new one only when none is usable, an unfinished one finished with its own key", () => {
+  const none = formQuote([], request, 1_000);
+  const ready = formQuote([job()], request, 1_000);
+  /* No usable quote: take one for exactly this composition. */
+  expect(estimateAction({ request, quote: none, stored: null, jobs: [] })).toEqual({ kind: "take", input: request });
+  expect(estimateAction({ request, quote: { state: "expired", credits: null, expiresAt: 1 }, stored: null, jobs: [] }).kind).toBe("take");
+  /* A usable quote, or nothing the engine accepts yet: nothing to take. */
+  expect(estimateAction({ request, quote: ready, stored: null, jobs: [job()] })).toEqual({ kind: "none" });
+  expect(estimateAction({ request: null, quote: none, stored: null, jobs: [] })).toEqual({ kind: "none" });
+  /* Something still being confirmed blocks a new estimate, as it does on the desktop. */
+  expect(estimateAction({ request, quote: none, stored: null, jobs: [job({ status: "uncertain" })] }).kind).toBe("blocked");
+  /* An unfinished attempt (the answer was lost) is finished first, with its own key and input. */
+  const attempt = { key: "0b7c7c6e-1f7d-4c8e-9a51-6f1f2b9f6a10", input: request };
+  expect(readQuoteAttempt(JSON.stringify(attempt))).toEqual(attempt);
+  expect(estimateAction({ request: null, quote: none, stored: attempt, jobs: [] })).toEqual({ kind: "recover", attempt });
+  /* A record that cannot be read is never overwritten: it may name originals already copied. */
+  expect(readQuoteAttempt("{")).toBe("unreadable");
+  expect(readQuoteAttempt(JSON.stringify({ key: "not-a-uuid", input: request }))).toBe("unreadable");
+  expect(readQuoteAttempt(null)).toBeNull();
+  expect(estimateAction({ request, quote: none, stored: "unreadable", jobs: [] })).toEqual({ kind: "unreadable" });
+  expect(estimateAction({ request: null, quote: ready, stored: "unreadable", jobs: [] })).toEqual({ kind: "unreadable" });
+  /* A browser that keeps no site data is not an unreadable record: it only stops a new estimate, and says why. */
+  expect(estimateAction({ request, quote: none, stored: "unavailable", jobs: [] })).toEqual({ kind: "blocked", reason: ESTIMATE_NEEDS_STORAGE });
+  expect(estimateAction({ request, quote: ready, stored: "unavailable", jobs: [job()] })).toEqual({ kind: "none" });
+  /* The route's strict quote body, and the desktop's own recovery record. */
+  expect(formQuoteBody("ws-1", attempt)).toEqual({ action: "quote", draftId: "ws-1", input: request, idempotencyKey: attempt.key });
+  expect(formQuoteAttemptKey("u:w", "ws 1")).toBe("particl-consumer-genjutsu:u%3Aw:ws%201:attempts:quote");
+});
+
+test("the phone's estimate record goes only once an estimate is in: a refusal keeps it, so the next press reuses the key", async () => {
+  const attempt: QuoteAttempt = { key: "0b7c7c6e-1f7d-4c8e-9a51-6f1f2b9f6a10", input: request };
+  const none = formQuote([], request, 1_000);
+  const run = async (answer: () => Promise<{ ok: boolean; error: string | null }>) => {
+    let record: QuoteAttempt | null = null;
+    const sent: unknown[] = [];
+    const result = await takeEstimate("ws-1", attempt, {
+      save: (value) => { record = value; },
+      post: async (body) => { sent.push(body); return answer(); },
+    });
+    return { result, record: record as QuoteAttempt | null, sent };
+  };
+
+  /* The route's 409 "import_uncertain": originals may already be copied. The record survives,
+     and what the control offers next is the SAME request, never a new key. */
+  const uncertain = await run(async () => ({ ok: false, error: "An earlier media transfer could not be confirmed. It will not be retried automatically. No video was submitted." }));
+  expect(uncertain.result).toEqual({ ok: false, error: expect.stringContaining("could not be confirmed") });
+  expect(uncertain.record).toEqual(attempt);
+  expect(estimateAction({ request, quote: none, stored: uncertain.record, jobs: [] })).toEqual({ kind: "recover", attempt });
+  expect(uncertain.sent).toEqual([formQuoteBody("ws-1", attempt)]);
+
+  /* A busy original, a 5xx, a 400: every refusal keeps it. Only the person's discard lets it go. */
+  for (const error of ["The original is busy.", "Studio could not reach the connected account.", "Check the request."])
+    expect((await run(async () => ({ ok: false, error }))).record).toEqual(attempt);
+  /* No answer at all (the connection dropped): kept, and the message says to finish it. */
+  const lost = await run(async () => { throw new TypeError("Failed to fetch"); });
+  expect(lost.record).toEqual(attempt);
+  expect(lost.result.ok).toBe(false);
+  if (!lost.result.ok) expect(lost.result.error).toMatch(/Finish the last estimate/);
+
+  /* The estimate is in: the record goes. */
+  const done = await run(async () => ({ ok: true, error: null }));
+  expect(done.result).toEqual({ ok: true });
+  expect(done.record).toBeNull();
+
+  /* A browser that will not keep the record never sends: the originals are not copied without a way to finish. */
+  const sent: unknown[] = [];
+  const refused = await takeEstimate("ws-1", attempt, {
+    save: () => { throw new DOMException("blocked", "SecurityError"); },
+    post: async (body) => { sent.push(body); return { ok: true, error: null }; },
+  });
+  expect(refused).toEqual({ ok: false, error: ESTIMATE_NEEDS_STORAGE });
+  expect(sent).toEqual([]);
 });
 
 /* ── Edit & Sound, and the primary's reason ──────────────────────────────── */

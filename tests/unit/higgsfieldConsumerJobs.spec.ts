@@ -756,3 +756,59 @@ test("receipt recovery is immutable, owner-scoped, unique and never restores dis
     await expect(jobs.reconcileConsumerReceipt({ ...scope, providerJobId: randomUUID(), expectedReceipt: receipt })).rejects.toMatchObject({ code: "provider_job_conflict" });
   });
 });
+
+test("stuck jobs stop holding the four slots once their owner sets them aside or the capacity window passes; nothing is deleted or re-sent", async () => {
+  await fixture(async ({ jobs, database }) => {
+    await seed("owner", "second-draft");
+    const held: { job: ConsumerJob; claimToken: string }[] = [];
+    for (let index = 0; index < 4; index++) {
+      const { job } = await jobs.createConsumerJob(input({ draftId: index % 2 ? "second-draft" : "draft" }));
+      const claim = (await jobs.claimConsumerDispatch(key(job)))!;
+      // An uncertain dispatch with no receipt id: nothing can ever reconcile it.
+      await jobs.markConsumerUncertain({ ...key(job), claimToken: claim.claimToken });
+      held.push(claim);
+    }
+    const waiting = (await jobs.createConsumerJob(input())).job;
+    await expect(jobs.claimConsumerDispatch(key(waiting))).rejects.toMatchObject({ code: "capacity", status: 429 });
+    // The owner sees every holder across projects in one place.
+    const seen = await jobs.consumerCapacity("owner");
+    expect(seen).toMatchObject({ limit: 4, active: 4 });
+    expect(seen.mine.map((job) => job.id).sort()).toEqual(held.map((claim) => claim.job.id).sort());
+    expect(seen.mine.every((job) => job.status === "uncertain" && job.projectName === "Test draft" && !job.releasable)).toBe(true);
+    expect((await jobs.consumerCapacity("someone-else")).mine).toEqual([]);
+    // Too recent to set aside, and never by another member.
+    const target = held[0].job;
+    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target.id })).toBe(false);
+    const later = Date.now() + jobs.CONSUMER_RELEASE_GRACE_MS + 1;
+    expect((await jobs.consumerCapacity("owner", later)).mine.every((job) => job.releasable)).toBe(true);
+    expect(await jobs.setAsideConsumerJob({ userId: "someone-else", id: target.id }, later)).toBe(false);
+    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target.id }, later)).toBe(true);
+    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target.id }, later)).toBe(false);
+    // Kept exactly as it was, still listed for recovery, never dispatchable again.
+    expect(await jobs.getConsumerJob(key(target))).toMatchObject({ status: "uncertain", releasedAt: later, providerJobId: null });
+    expect(await jobs.claimConsumerDispatch(key(target))).toBeNull();
+    expect((await jobs.listConsumerRecoveryJobs({ ...owner, workflow: "marketing-video" })).some((job) => job.id === target.id)).toBe(true);
+    // Its slot admits the waiting job.
+    expect((await jobs.claimConsumerDispatch(key(waiting)))?.job.status).toBe("dispatching");
+    // A job admitted before the capacity window no longer counts either.
+    const next = (await jobs.createConsumerJob(input())).job;
+    await expect(jobs.claimConsumerDispatch(key(next))).rejects.toMatchObject({ code: "capacity" });
+    await database.db().execute({
+      sql: "UPDATE higgsfield_consumer_jobs SET created_at=? WHERE id=?",
+      args: [Date.now() - jobs.CONSUMER_CAPACITY_WINDOW_MS - 1, held[1].job.id],
+    });
+    expect((await jobs.claimConsumerDispatch(key(next)))?.job.status).toBe("dispatching");
+    expect((await jobs.getConsumerJob(key(held[1].job)))?.status).toBe("uncertain");
+    expect(Number((await database.db().execute("SELECT COUNT(*) AS n FROM higgsfield_consumer_jobs")).rows[0].n)).toBe(6);
+    // Every workflow view reads the same rule, so the set-aside job and the one
+    // past the window stop gating their project's next quote; the others still do.
+    const setAside = async (job: ConsumerJob) => jobs.consumerJobSetAside((await jobs.getConsumerJob(key(job)))!);
+    expect(await setAside(target)).toBe(true);
+    expect(await setAside(held[1].job)).toBe(true);
+    expect(await setAside(held[2].job)).toBe(false);
+    expect(await setAside(waiting)).toBe(false);
+    // A settled or merely quoted job is never "set aside", whatever its age.
+    expect(jobs.consumerJobSetAside({ status: "failed", releasedAt: later, createdAt: 0 })).toBe(false);
+    expect(jobs.consumerJobSetAside({ status: "quoted", releasedAt: null, createdAt: 0 })).toBe(false);
+  });
+});

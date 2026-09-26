@@ -95,6 +95,11 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     await page
       .getByRole("button", { name: "I have saved my recovery codes" })
       .click();
+    // The codes are activated by a request; until it lands the owner still
+    // owes a second factor, and /team would send them back to security.
+    await expect(
+      page.getByRole("button", { name: "I have saved my recovery codes" }),
+    ).toHaveCount(0);
     await page.goto("/team");
     if (testInfo.project.name === "customer-1440x900") {
       let lost = false;

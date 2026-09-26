@@ -121,6 +121,20 @@ test('duplicate submissions and worker retries reserve once and execute each pai
   });
 });
 
+test('ten newer agent runs of another kind never push a saved breakdown out of Brief & Script', async () => {
+  await runInTenant(workspace(), async () => {
+    const { project, request } = await fixture('screenplay'), h = harness();
+    const breakdown = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
+    for (let index = 0; index < 10; index++) {
+      await new Promise(resolve => setTimeout(resolve, 3));
+      await prepareDevelopmentJob(await approve({ ...request, requestId: randomUUID(), kind: 'idea' }, h.deps), 'owner', undefined, h.deps);
+    }
+    const listed = await listDevelopmentJobs('owner', project.id, undefined, h.deps);
+    expect(listed.filter(job => job.kind === 'idea')).toHaveLength(10);
+    expect(listed.filter(job => job.kind === 'screenplay').map(job => job.id)).toEqual([breakdown.job.id]);
+  });
+});
+
 test('a stale quote or another owner cannot submit or access the saved source', async () => {
   await runInTenant(workspace(), async () => {
     const { request, project } = await fixture(), h = harness(), approved = await approve(request, h.deps);
@@ -394,6 +408,44 @@ test('a definitively invalid paid answer settles its bill and resolves the accep
     expect(intent.state).toBe('resolved');
     const ledger = (await platformDb().execute({ sql: 'SELECT status,engine_cost_usd FROM meter_events WHERE id=?', args: [job.id] })).rows[0];
     expect(ledger.status).toBe('failed'); expect(Number(ledger.engine_cost_usd)).toBe(.004);
+  });
+});
+
+test('a failed run on the platform\'s keys is never billed: the vendor\'s cost is recorded, the reserved credits come back', async () => {
+  const { reserveGenerationSpend } = await import('../../lib/generationRequests');
+  const { meter } = await import('../../lib/meter');
+  const { platformDb, platformReady, rowToWorkspace, grantCredits } = await import('../../lib/platform');
+  const { billingStateFor } = await import('../../lib/billingLedger');
+  await platformReady();
+  const id = 'dev-funded-' + randomUUID();
+  await platformDb().execute({ sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,'owner',0,0)", args: [id, id, id, 'file:' + path.join(dir, id + '.db')] });
+  await grantCredits(id, 100, 'Test funds', 'owner', 'manual');
+  const ws = rowToWorkspace((await platformDb().execute({ sql: 'SELECT * FROM workspaces WHERE id=?', args: [id] })).rows[0]);
+  const balance = async () => (await billingStateFor(id)).credits.balance;
+  await runInTenant(ws, async () => {
+    const { request } = await fixture(), h = harness();
+    const deps: Partial<DevelopmentDependencies> = { models: h.deps.models, allowance: h.deps.allowance, auth: h.deps.auth, reserve: reserveGenerationSpend, meter,
+      call: async () => ({ text: '{"invalid":"paid answer"}', costUsd: .002 }) };
+    const approved = await approve(request, deps);
+    expect(approved.maxCredits).toBeGreaterThan(0);
+    expect(approved.maxUsd).toBeGreaterThan(0);
+    const { job } = await prepareDevelopmentJob(approved, 'owner', undefined, deps);
+    expect(await balance()).toBe(100 - approved.maxCredits!);
+    await runDevelopmentStep(job.id, 'owner', deps);
+    const [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, deps);
+    expect(saved.status).toBe('failed'); expect(saved.credits).toBe(0); expect(saved.costUsd).toBe(.002); expect(saved.ownKey).toBe(false);
+    expect(saved.error).toContain('It was not billed');
+    const ledger = (await platformDb().execute({ sql: 'SELECT status,engine_cost_usd,billed_credits,paid_by_platform FROM meter_events WHERE id=?', args: [job.id] })).rows[0];
+    expect(ledger.status).toBe('failed'); expect(Number(ledger.paid_by_platform)).toBe(1);
+    expect(Number(ledger.engine_cost_usd)).toBe(.002); expect(Number(ledger.billed_credits)).toBe(0);
+    expect(await balance()).toBe(100);
+    /* A run that finishes is billed as before. */
+    const second = { ...request, requestId: randomUUID() };
+    const { job: done } = await prepareDevelopmentJob(await approve(second, deps), 'owner', undefined, { ...deps, call: h.deps.call });
+    for (let step = 0; step < 3; step++) await runDevelopmentStep(done.id, 'owner', { ...deps, call: h.deps.call });
+    const [finished] = await listDevelopmentJobs('owner', request.projectId, second.requestId, deps);
+    expect(finished.status).toBe('succeeded'); expect(finished.credits).toBeGreaterThan(0);
+    expect(await balance()).toBe(100 - finished.credits!);
   });
 });
 

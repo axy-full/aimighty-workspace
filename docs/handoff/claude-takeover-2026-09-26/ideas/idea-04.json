@@ -1,0 +1,18 @@
+{
+ "n": 4,
+ "title": "A way out when credits run out: request a pack, then release held takes",
+ "area": "Credits / billing",
+ "gap": "WorkspaceView.tsx:220 hides packs because 'the app has no purchase route'. GET/POST/DELETE /api/workspaces/topups does exist (packs(), requestTopup, startCheckout 'manual', which queues the request on the platform and emails the platform admin), but only the legacy components/commercial/BillingClient.tsx uses it. At zero balance a take is parked as 'held' (lib/held.ts). It is labelled 'Held for approval' (rig.ts:132,157) and counted as 'rendering' in Takes (lib/workspace/takes.ts:70). POST /api/jobs/:id/release exists but no button in Suites calls it. The credits pill never warns about a low balance.",
+ "target": "Plans & credits lists packs (credits, bonus, USD) with 'Request N credits' for the owner and admins, open requests with Withdraw, and grant history. Members see 'Ask an admin'. Held takes get their own TakeStatus 'held' and the label 'Held \u00b7 needs N cr' (from params.held.needs), with a 'Release' button that calls the release route and shows its 402 message if the balance is still short. The header pill turns amber when the balance is below the last quoted price and links to Plans.",
+ "files": [
+  "components/graphite/WorkspaceView.tsx",
+  "components/graphite/Header.tsx",
+  "lib/workspace/rig.ts",
+  "lib/workspace/takes.ts",
+  "app/api/workspaces/topups/route.ts",
+  "app/api/jobs/[id]/release/route.ts"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "Uses the existing topup and release routes. A request charges nothing, and every pack shows its price. Withdraw cancels a request; nothing is deleted."
+}

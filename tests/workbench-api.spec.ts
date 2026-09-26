@@ -9,7 +9,7 @@ test("real local routes persist a single generated take and isolate another work
   const signed = await signInLocally(request); // refuses any non-local or non-mock deployment before writes
   const me = await request.get("/api/me").then(response => response.json());
   const scopeHeaders = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
-  const db = createClient({ url: localPlatformDbUrl() });
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   await db.execute({
     sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
     args: [randomUUID(), signed.workspace.id, 500, "Local mock integration fixture", "admin", "test", Date.now()],

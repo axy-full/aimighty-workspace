@@ -1,5 +1,7 @@
 import { db, ready, now } from "./db";
-import { usingBlob, videoPath, imagePath, audioPath } from "./storage";
+import { originalSize } from "./storage";
+import { originalKindOf } from "./originalMedia";
+import { DEMO_FIXTURE_CLIP_URL, DEMO_PREVIEW_URL_PREFIX } from "./demoProduction";
 
 /**
  * What it costs to KEEP what we have made.
@@ -89,46 +91,48 @@ export async function storageLedger(): Promise<StorageLedger> {
   };
 }
 
+/** A size lookup that found no object is not retried for this long. */
+export const SIZE_MISS_RETRY_MS = 7 * 86_400_000;
+
 /**
  * Fill in the size of renders made before anyone was recording it.
  *
  * Look up only the tenant's missing objects. A bucket-wide listing could
  * scan every customer's files and never find a non-legacy tenant's prefix.
+ *
+ * Demo takes are never looked up: their picture is shared sample media, not
+ * an object this workspace keeps, so there is nothing to measure. A take
+ * whose object is simply not there is recorded as unmeasurable and skipped
+ * for a week rather than failing the run, so it can neither mark every
+ * cron visit failed nor hold the batch's place ahead of renders that can be
+ * measured. Only a lookup that could not answer (storage unreachable) fails.
  */
-export async function backfillSizes(limit = 20): Promise<number> {
+export async function backfillSizes(limit = 20, at = now()): Promise<number> {
   await ready();
+  await db().execute(`CREATE TABLE IF NOT EXISTS storage_size_misses (gen_id TEXT PRIMARY KEY, checked_at INTEGER NOT NULL)`);
   const missing = await db().execute({
     sql: `SELECT id, COALESCE(kind,'video') AS kind FROM generations
-          WHERE deleted = 0 AND bytes IS NULL AND stored_url IS NOT NULL LIMIT ?`,
-    args: [Math.max(1, Math.min(100, limit))],
+          WHERE deleted = 0 AND bytes IS NULL AND stored_url IS NOT NULL
+            AND stored_url <> ? AND stored_url NOT LIKE ?
+            AND id NOT IN (SELECT gen_id FROM storage_size_misses WHERE checked_at > ?)
+          ORDER BY created_at DESC, id LIMIT ?`,
+    args: [DEMO_FIXTURE_CLIP_URL, `${DEMO_PREVIEW_URL_PREFIX}%`, at - SIZE_MISS_RETRY_MS, Math.max(1, Math.min(100, limit))],
   });
   if (!missing.rows.length) return 0;
 
-  const want = new Map((missing.rows as any[]).map((r) => [r.id as string, r.kind as string]));
+  const want = new Map((missing.rows as any[]).map((r) => [r.id as string, originalKindOf(r.kind)]));
   const sizes = new Map<string, number>();
+  const absent: string[] = [];
   let failures = 0;
 
-  if (usingBlob()) {
-    const { head } = await import("@vercel/blob");
-    const entries = [...want];
-    for (let offset = 0; offset < entries.length; offset += 4) {
-      const results = await Promise.allSettled(entries.slice(offset, offset + 4).map(async ([id, kind]) => {
-        const pathname = kind === "image" ? imagePath(id) : kind === "audio" ? audioPath(id) : videoPath(id);
-        const metadata = await head(pathname, { abortSignal: AbortSignal.timeout(15_000) });
-        sizes.set(id, metadata.size);
-      }));
-      failures += results.filter((result) => result.status === "rejected").length;
-    }
-  } else {
-    // Local development keeps them on disk.
-    const { stat } = await import("node:fs/promises");
-    const path = await import("node:path");
-    const dir = path.join(process.cwd(), ".data", "generations");
-    for (const [id, kind] of want) {
-      const ext = kind === "image" ? "png" : kind === "audio" ? "mp3" : "mp4";
-      try { sizes.set(id, (await stat(path.join(dir, `${id}.${ext}`))).size); }
-      catch { /* the file is gone; leave it unmeasured rather than guessing */ }
-    }
+  const entries = [...want];
+  for (let offset = 0; offset < entries.length; offset += 4) {
+    const results = await Promise.allSettled(entries.slice(offset, offset + 4).map(async ([id, kind]) => {
+      const size = await withTimeout(originalSize(kind, id), 15_000);
+      if (size == null) absent.push(id);
+      else sizes.set(id, size);
+    }));
+    failures += results.filter((result) => result.status === "rejected").length;
   }
 
   let done = 0;
@@ -139,6 +143,20 @@ export async function backfillSizes(limit = 20): Promise<number> {
     });
     done++;
   }
+  for (const id of absent) {
+    await db().execute({
+      sql: `INSERT INTO storage_size_misses (gen_id, checked_at) VALUES (?, ?) ON CONFLICT(gen_id) DO UPDATE SET checked_at = excluded.checked_at`,
+      args: [id, at],
+    });
+  }
   if (failures) throw new Error("STORAGE_SIZE_LOOKUP_FAILED");
   return done;
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("STORAGE_SIZE_LOOKUP_TIMEOUT")), ms); }),
+  ]).finally(() => clearTimeout(timer));
 }
