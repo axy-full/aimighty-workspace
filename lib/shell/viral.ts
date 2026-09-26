@@ -1,4 +1,6 @@
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
+import { connectedFailureText } from "@/lib/higgsfield-consumer/generation-client";
+import { canProgress, isOpen, resumePhase } from "@/lib/higgsfield-consumer/resume";
 import type { LibraryEntry } from "@/lib/workspace/library";
 
 /**
@@ -66,9 +68,15 @@ export function moveReference(state: ViralState, id: string, dir: -1 | 1): Viral
   return { ...state, references: next };
 }
 
-/** Why the primary is off; null when the well is complete. Prototype copy first, then the account's needs. */
-export function viralBlock(state: ViralState, extra: { connected: boolean; owner: boolean; hasProject: boolean }): string | null {
+/**
+ * Why the primary is off; null when the well is complete. Prototype copy
+ * first, then the account's needs. `account` is set while the account has
+ * not been read (being read, or the read failed) — then that is the reason,
+ * never a connect hint the account may not need.
+ */
+export function viralBlock(state: ViralState, extra: { connected: boolean; owner: boolean; hasProject: boolean; account?: string | null }): string | null {
   if (!extra.hasProject) return "Open a project first.";
+  if (extra.account) return extra.account;
   if (!extra.owner) return "Only the workspace owner can run the connected account.";
   if (!extra.connected) return "Connect the account in Workspace › Engines.";
   if (!state.source) return "Add one source video (4–30 s).";
@@ -96,8 +104,70 @@ export function estimateReason(estimate: { key: string; expiresAt: number; credi
 
 export const HISTORY_ACTIONS = ["Recreate", "Compare", "Send to Edit"] as const;
 
+/* ── Runs ─────────────────────────────────────────────────────────────── */
+export type RunStatus = "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
+export type RunTone = "idle" | "waiting" | "active" | "failed" | "done";
+/** Every state the account reports, in the words a person reads — never the raw code. */
+export const RUN_STATUS: Record<RunStatus, { label: string; tone: RunTone }> = {
+  quoted: { label: "Estimate", tone: "idle" },
+  dispatching: { label: "Queued", tone: "waiting" },
+  accepted: { label: "Rendering", tone: "active" },
+  uncertain: { label: "Checking", tone: "waiting" },
+  failed: { label: "Failed · not billed", tone: "failed" },
+  completed: { label: "Done", tone: "done" },
+};
+/**
+ * A run's state in words. A failed run says whether it was billed, as Gen and
+ * Business do (lib/higgsfield-consumer/resume.ts): a render the account
+ * refused was not; a result it finished that Particl could not keep may have
+ * been, and its receipt is saved.
+ */
+export function runStatus(status: string, failureCode?: string | null): { label: string; tone: RunTone } {
+  if (status === "failed") return { label: resumePhase({ status, failureCode }).label, tone: "failed" };
+  return RUN_STATUS[status as RunStatus] ?? RUN_STATUS.uncertain;
+}
 /** A job the account may still settle: never re-sent, only polled until it completes or fails. */
 export const PENDING_STATUSES = ["dispatching", "accepted", "uncertain"] as const;
+/** Sent and not settled yet: read again until the account settles it; never sent twice (the test Gen and Business use). */
+export const runInFlight = (status: string) => isOpen(status);
+/**
+ * In flight with nothing that can move it on its own: a dispatch the account
+ * never acknowledged, or a check with no receipt to reconcile — the jobs Gen
+ * and Business stop following too (resume.ts, canProgress). Read a few times,
+ * then left for the person to check again.
+ */
+export const runCannotSettle = (job: { status: string; providerReceipt?: unknown }) => runInFlight(job.status) && !canProgress(job);
+/** The one visible line under an in-flight run (never only a tooltip). */
+export const RUN_NOTE: Partial<Record<RunStatus, string>> = { dispatching: "Sending to the account", uncertain: "Confirming · never sent twice" };
+export const STALLED_NOTE = { unconfirmed: "Not confirmed yet · never sent twice", gone: "Could not be read" } as const;
+/** A finished run whose original is not in the project, in words. */
+export function originalNote(job: { originalAvailable?: boolean; originalAvailability?: string }): string | null {
+  if (job.originalAvailable) return null;
+  return job.originalAvailability === "deleted" ? "Archived" : "Original unavailable";
+}
+export const VARIANT_NAME: Record<string, string> = { "motion-transfer": "Motion Transfer", "object-swap": "Object Swap" };
+
+type Run = { id: string; status: string; createdAt: number; updatedAt?: number };
+/* How far along a run is. A run only ever moves forward (dispatching → uncertain → accepted → settled). */
+const RANK: Record<string, number> = { quoted: 0, dispatching: 1, uncertain: 2, accepted: 3, failed: 4, completed: 4 };
+const fresher = (a: Run, b: Run) => {
+  const ra = RANK[a.status] ?? 2, rb = RANK[b.status] ?? 2;
+  return ra !== rb ? ra > rb : (a.updatedAt ?? 0) >= (b.updatedAt ?? 0);
+};
+/**
+ * Fresh runs over the ones on hand: one row per job, the fresher copy wins —
+ * the one further along, else the later-updated — so a read that started
+ * before a run landed never sets it back. Newest first. An estimate is never
+ * a run, so a quoted row never shows.
+ */
+export function mergeRuns<T extends Run>(fresh: T[], current: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const job of current) byId.set(job.id, job);
+  for (const job of fresh) { const had = byId.get(job.id); if (!had || fresher(job, had)) byId.set(job.id, job); }
+  return listedJobs([...byId.values()])
+    .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}
+
 type Listed = { id: string; status: string };
 /** History and Recent list what ran; a read-only estimate (`quoted`) is not a result. */
 export function listedJobs<T extends Listed>(jobs: readonly T[]): T[] {
@@ -111,17 +181,18 @@ export function pendingJobIds(jobs: readonly Listed[], running: string | null): 
 
 /** The composer's run, as the page tracks it. */
 export type ViralRun<J extends Listed> = { phase: "idle" } | { phase: "submitting"; job: J } | { phase: "running"; job: J } | { phase: "done"; job: J } | { phase: "failed"; job: J | null; error: string };
-export const VIRAL_FAILED = "The connected account reported this job as failed. Failed renders are not billed.";
+/** Why the account's run failed, in the Gen and Business composers' words: a refused render is not billed; a result it finished that could not be kept may have been. */
+export const viralFailure = (job: { failureCode?: string | null }) => connectedFailureText(job);
 /**
  * Where a status read leaves the composer's run: the job submitted here, and
  * also one whose submit reply was lost (shown failed) that the list then
  * shows the account took — it is rendering after all.
  */
-export function runAfterStatus<J extends Listed>(current: ViralRun<J>, job: J): ViralRun<J> {
+export function runAfterStatus<J extends Listed & { failureCode?: string | null }>(current: ViralRun<J>, job: J): ViralRun<J> {
   const mine = (current.phase === "running" || current.phase === "failed") && current.job?.id === job.id;
   if (!mine) return current;
   if (job.status === "completed") return { phase: "done", job };
-  if (job.status === "failed") return { phase: "failed", job, error: VIRAL_FAILED };
+  if (job.status === "failed") return { phase: "failed", job, error: viralFailure(job) };
   if ((PENDING_STATUSES as readonly string[]).includes(job.status)) return { phase: "running", job };
   return current;
 }
