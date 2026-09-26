@@ -257,7 +257,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   return null;
                 }} />
               {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
-                  "Try again", never "Retry": that word is the paid re-render on a take (⌘R). */}
+                  "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
               {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
               {shell.view === "gen" ? (
                 <>

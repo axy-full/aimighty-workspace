@@ -136,9 +136,12 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   await page.getByTestId("home-suite-gen").click();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(page.getByTestId("suite-mark")).toHaveText("GEN");
-  /* The sticky Generate sits above the bar, never over the composer. */
+  /* The sticky Generate sits just above the bar, never over the composer (measured once Gen's entrance,
+     a 6px rise, has settled: the band's resting place is 4px over the bar). */
   const cta = page.locator(".gx-gen-cta");
+  await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
   const ctaBottom = await cta.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(ctaBottom).toBeGreaterThanOrEqual(barTop - 8);
   expect(ctaBottom).toBeLessThanOrEqual(barTop + 0.5);
   await page.getByTestId("gen-model").evaluate((el) => el.scrollIntoView({ block: "start" }));
   await page.getByTestId("gen-model").click();
