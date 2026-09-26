@@ -232,22 +232,31 @@ test("search narrows by name, one-liner or chip, says when nothing matches, and 
   const { errors } = await open(page);
   let sheet = await openSheet(page);
   const search = sheet.getByTestId("gen-model-search");
+  /* The sheet reads its list as it opens: count the rows once they are in and the field names the same number. */
+  await expect(async () => {
+    const rows = await sheet.getByRole("option").count();
+    expect(rows).toBeGreaterThan(0);
+    expect(await search.getAttribute("placeholder")).toBe(`Search ${rows} models`);
+  }).toPass({ timeout: 15_000 });
   const all = await sheet.getByRole("option").count();
-  await expect(search).toHaveAttribute("placeholder", `Search ${all} models`);
   /* A pointer can type straight away; a phone keeps its keyboard down until the field is tapped. */
   if (wide) await expect(search).toBeFocused();
   else await expect(search).not.toBeFocused();
 
   await search.fill("kling");
-  const kling = await sheet.locator(".gx-model-name").allTextContents();
-  expect(kling.length).toBeGreaterThan(0);
-  expect(kling.length).toBeLessThan(all);
-  for (const name of kling) expect(name).toMatch(/kling/i);
+  await expect(async () => {
+    const kling = await sheet.locator(".gx-model-name").allTextContents();
+    expect(kling.length).toBeGreaterThan(0);
+    expect(kling.length).toBeLessThan(all);
+    for (const name of kling) expect(name).toMatch(/kling/i);
+  }).toPass({ timeout: 10_000 });
   /* "audio" finds only engines whose Gen takes carry sound: each wears the chip, and no one-liner promises sound it lacks. */
   await search.fill("audio");
   const loud = sheet.getByRole("option");
-  expect(await loud.count()).toBeGreaterThan(0);
-  expect(await loud.count()).toBeLessThan(all);
+  await expect(async () => {
+    expect(await loud.count()).toBeGreaterThan(0);
+    expect(await loud.count()).toBeLessThan(all);
+  }).toPass({ timeout: 10_000 });
   await expect(loud.filter({ hasNot: page.locator('[data-spec="audio"]') })).toHaveCount(0);
   for (const chip of await sheet.locator('[data-spec="audio"]').all()) await expect(chip).toHaveAttribute("title", "Takes carry sound");
   await expect(sheet.locator(".gx-model-sub").filter({ hasText: /native audio/i })).toHaveCount(0);
@@ -265,6 +274,7 @@ test("search narrows by name, one-liner or chip, says when nothing matches, and 
 
   /* Enter takes the first match; the sheet closes and the composer carries it. */
   await search.fill("kling pro");
+  await expect(async () => expect(await sheet.getByRole("option").count()).toBeLessThan(all)).toPass({ timeout: 10_000 });
   const first = (await sheet.locator(".gx-model-name").first().textContent())!;
   await search.press("Enter");
   await expect(sheetOf(page)).toHaveCount(0);
