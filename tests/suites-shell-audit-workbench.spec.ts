@@ -46,7 +46,9 @@ test("Retry pressed on Gen lands at once, with the take's own references, and no
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
   await page.getByTestId("asset-inspector").getByRole("button", { name: "Retry generation" }).click();
-  await expect(page.getByTestId("toast")).toContainText("Retry Wide on the water");
+  /* One line (lib/shell/confirmations), and no Open: Gen is where it landed. */
+  await expect(page.getByTestId("toast")).toHaveText("Retry · Wide on the water loaded in Gen");
+  await expect(page.getByTestId("toast-open")).toHaveCount(0);
   if (!WIDE.includes(info.project.name)) await page.getByTestId("close-inspector").click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Wide on the water · same inputs · new seed");
