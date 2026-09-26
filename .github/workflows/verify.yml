@@ -81,8 +81,8 @@ jobs:
     # server had not compiled yet: Turbopack frees what a compile holds only at
     # a cache snapshot, and it snapshots only when idle. So each job's first
     # server now compiles every route, paced, before any spec runs, and the
-    # later two restore them from .next; source maps are off (env below). The
-    # first server's warm-up takes minutes, hence 40.
+    # later two restore them from a copy of its .next; source maps are off
+    # (env below). The first server's warm-up takes minutes, hence 40.
     timeout-minutes: 40
     env:
       ENGINE_MOCK: '1'
@@ -157,25 +157,29 @@ jobs:
             wait "$server" 2>/dev/null || true
             echo "[sub-shard] $k/36 dev server stopped in $((SECONDS - stopping)) s"
           }
+          export WARM_STATUS_FILE="$RUNNER_TEMP/warm-routes.json"
           failed=()
           for k in $((3 * SHARD - 2)) $((3 * SHARD - 1)) $((3 * SHARD)); do
             samples="$RUNNER_TEMP/resources-$k.txt"
             : > "$samples"
             monitor "$k/36" "$samples" &
             monitor_pid=$!
-            # The job's first server compiles every route before any spec runs
-            # (scripts/warm-dev-routes.mjs), so no spec compiles a burst of new
-            # routes; the next two restore them from .next and check only the
-            # sign-in routes and the proxy. A server missing a route starts
-            # again on an empty .next.
-            scope=--check
-            [ "$k" -eq $((3 * SHARD - 2)) ] && scope=
+            # Every server answers every route before any spec runs
+            # (scripts/warm-dev-routes.mjs). The job's first compiles them,
+            # paced, so no spec compiles a burst of new routes; the next two
+            # restore them from a copy of its .next. Servers restored from a
+            # .next that a restored server had written have lost routes, so
+            # each starts from the first one's copy, and a server that answers
+            # a known route with 404 starts again on an empty .next.
+            if [ -d "$RUNNER_TEMP/next-first" ]; then
+              rm -rf .next
+              cp -a "$RUNNER_TEMP/next-first" .next
+            fi
             ready=
             for try in 1 2; do
-              if start_server && node scripts/warm-dev-routes.mjs http://localhost:4551 $scope; then ready=1; break; fi
+              if start_server && node scripts/warm-dev-routes.mjs http://localhost:4551; then ready=1; break; fi
               stop_server
               mv .next "$RUNNER_TEMP/next-$k-$try" 2>/dev/null || true
-              scope=
             done
             specs_from=$(date -u +%T)
             if [ -n "$ready" ]; then
@@ -186,7 +190,10 @@ jobs:
             kill "$monitor_pid" 2>/dev/null || true
             wait "$monitor_pid" 2>/dev/null || true
             awk -v k="$k/36" -v total="$(free -m | awk '/Mem:/{print $2}')" -v from="$specs_from" 'BEGIN {mem = 0; srv = 0; warm = 0; specs = 0; at = "-"} $2 > mem {mem = $2} $3 > srv {srv = $3; at = $1} $1 < from && $3 > warm {warm = $3} $1 >= from && $3 > specs {specs = $3} END {printf "[resources] %s peak: next-server %d MB at %s, mem %d/%d MB (5 s samples; warm-up %d MB, specs %d MB)\n", k, srv, at, mem, total, warm, specs}' "$samples"
-            [ -n "$ready" ] && stop_server
+            if [ -n "$ready" ]; then
+              stop_server
+              [ -d "$RUNNER_TEMP/next-first" ] || cp -a .next "$RUNNER_TEMP/next-first"
+            fi
           done
           if [ ${#failed[@]} -gt 0 ]; then
             echo "::error::Failed sub-shards: ${failed[*]}"

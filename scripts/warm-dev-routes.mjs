@@ -1,5 +1,5 @@
 // Compiles every app page and API route on a fresh `next dev` server before
-// the browser specs run, then checks the routes every spec needs answer.
+// the browser specs run, then checks the server knows every route.
 //
 // Why: each route Turbopack compiles holds 0.1-0.6 GB of native memory until
 // its cache snapshot, and it snapshots (then frees the memory) only once the
@@ -12,19 +12,20 @@
 // Requests carry no session. Pages are fetched (a signed-out render or its
 // redirect compiles the whole route); API routes get OPTIONS, which Next
 // answers itself without running a handler, so a 404 there means the server
-// does not know the route. Exits 1 when the sign-up or sign-in routes or the
-// proxy do not answer, or the server does not know an API route: a restarted
-// server once answered every sign-up with the not-found page.
+// does not know the route. A server restored from .next has answered every
+// sign-up, and other routes, with the not-found page. So this exits 1 when
+// the sign-up or sign-in routes or the proxy do not answer, when an API route
+// is unknown, or when a route answers 404 that answered otherwise on the
+// job's first server (its answers are kept in `WARM_STATUS_FILE`).
 //
-//   node scripts/warm-dev-routes.mjs [base URL] [--check]
-//   --check: only those sign-in routes and the proxy, not every route.
-import { readdirSync } from "node:fs";
+//   node scripts/warm-dev-routes.mjs [base URL]
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-const base = (process.argv.find((a) => a.startsWith("http")) || "http://localhost:4551").replace(/\/$/, "");
-const checkOnly = process.argv.includes("--check");
+const base = (process.argv[2] || "http://localhost:4551").replace(/\/$/, "");
 const budget = Number(process.env.WARM_BUDGET_MB || 2000);
 const cap = Number(process.env.WARM_CAP_MB || 5000);
+const statusFile = process.env.WARM_STATUS_FILE;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /* Every page and route under app/ as a URL: groups dropped, dynamic segments
@@ -60,6 +61,8 @@ function serverMemory() {
 
 /* Wait for a snapshot to free what the compiles held: until memory falls by a
    third, or 8 s pass without it falling. */
+let freed = 0;
+let paused = 0;
 async function settle() {
   const start = serverMemory();
   const began = Date.now();
@@ -69,6 +72,8 @@ async function settle() {
     now = serverMemory();
     if (now < start * 0.67 || (Date.now() - began > 8_000 && now > start * 0.95)) break;
   }
+  if (now < start * 0.67) freed += 1;
+  paused += Date.now() - began;
   return now;
 }
 
@@ -89,49 +94,51 @@ async function request(url, method) {
 
 /* What every spec relies on: the sign-up and sign-in routes, and the proxy,
    which shows a visitor the public site at / and sends /site there. */
-const essentials = [
+const targets = [
   { url: "/api/auth/signup", method: "OPTIONS", ok: [204] },
   { url: "/api/auth/login", method: "OPTIONS", ok: [204] },
   { url: "/login", method: "GET", ok: [200] },
   { url: "/", method: "GET", ok: [200] },
   { url: "/site", method: "GET", ok: [308] },
 ];
-
-const targets = [...essentials];
-if (!checkOnly) {
-  for (const { path, api } of routes().sort((a, b) => Number(a.api) - Number(b.api) || a.path.localeCompare(b.path))) {
-    /* OPTIONS answers 404 only for a route the server does not know; a route
-       that fails to load fails its own specs. Pages are not judged. */
-    if (api) targets.push({ url: path, method: "OPTIONS", notFound: true });
-    else {
-      targets.push({ url: path, method: "GET" });
-      /* An app parameter asks the proxy for the app's page instead of the site. */
-      if (["/", "/atomik", "/workspace", "/pricing"].includes(path)) targets.push({ url: `${path}?project=warm`, method: "GET" });
-    }
+for (const { path, api } of routes().sort((a, b) => Number(a.api) - Number(b.api) || a.path.localeCompare(b.path))) {
+  if (api) targets.push({ url: path, method: "OPTIONS", known: true });
+  else {
+    targets.push({ url: path, method: "GET" });
+    /* An app parameter asks the proxy for the app's page instead of the site. */
+    if (["/", "/atomik", "/workspace", "/pricing"].includes(path)) targets.push({ url: `${path}?project=warm`, method: "GET" });
   }
-  targets.push({ url: "/favicon.ico", method: "GET" }, { url: "/warm-not-found", method: "GET" });
 }
+targets.push({ url: "/favicon.ico", method: "GET" }, { url: "/warm-not-found", method: "GET" });
 
+const before = statusFile && existsSync(statusFile) ? JSON.parse(readFileSync(statusFile, "utf8")) : null;
+const statuses = {};
 const started = Date.now();
 let floor = serverMemory();
 let peak = floor;
 let pauses = 0;
 const missing = [];
-for (const { url, method, ok, notFound } of targets) {
+for (const { url, method, ok, known } of targets) {
   const status = await request(url, method);
-  if ((ok && !ok.includes(status)) || (notFound && status === 404)) missing.push(`${method} ${url} ${status}`);
+  const key = `${method} ${url}`;
+  statuses[key] = status;
+  /* A route that fails to load fails its own specs; only an unknown one stops the run. */
+  const lost = status === 404 && (known || (before && before[key] !== undefined && before[key] !== 404));
+  if ((ok && !ok.includes(status)) || lost) missing.push(`${key} ${status}`);
   const memory = serverMemory();
   peak = Math.max(peak, memory);
-  if (!checkOnly && memory > Math.min(floor + budget, cap)) {
+  if (memory > Math.min(floor + budget, cap)) {
     floor = await settle();
     pauses += 1;
   }
 }
-if (!checkOnly) floor = await settle();
+/* Let the last snapshot free what the last compiles held before the specs start. */
+if (pauses) await settle();
 console.log(
-  `[warm] ${targets.length} routes in ${Math.round((Date.now() - started) / 1000)} s, ${pauses} pauses, next-server peak ${Math.round(peak)} MB, now ${Math.round(serverMemory())} MB`,
+  `[warm] ${targets.length} routes in ${Math.round((Date.now() - started) / 1000)} s, ${pauses} pauses (${freed} freed memory, ${Math.round(paused / 1000)} s), next-server peak ${Math.round(peak)} MB, now ${Math.round(serverMemory())} MB`,
 );
 if (missing.length) {
   console.log(`[warm] ${missing.length} routes did not answer as expected: ${missing.slice(0, 12).join("; ")}`);
   process.exit(1);
 }
+if (statusFile && !before) writeFileSync(statusFile, JSON.stringify(statuses));
