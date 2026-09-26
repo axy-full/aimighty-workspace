@@ -5,8 +5,8 @@ import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
-import { useWorkspace } from "@/lib/workspace/state";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import { JobsPill } from "./JobsTray";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -14,12 +14,12 @@ function initialsOf(name: string) {
 
 /**
  * 56px. particl trail mark + wordmark → Studio; Studio | Gen | Business | Viral |
- * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
- * job runs); the credits pill; the avatar, which opens Workspace.
+ * Atomik; the search field that opens ⌘K; the jobs pill (while something
+ * renders, is held, or finished unseen), which opens the jobs tray; the
+ * credits pill; the avatar, which opens Workspace.
  */
 export function Header({ account }: { account: WorkspaceAccount | null }) {
   const shell = useShell();
-  const { state } = useWorkspace();
   const { rates, name } = useSession();
   const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
   const selected = shell.view === "gen" ? "gen" : shell.view === "crew" ? "crew" : shell.view === "suite" ? shell.suite.id : null;
@@ -59,13 +59,7 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
         <span className="gx-key">⌘K</span>
       </button>
       <span className="gx-spacer" />
-      {state.gen ? (
-        <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
-          <span className="gx-jobs-dot" aria-hidden="true" />
-          {/* The job's phase, not a percentage: no engine reports progress, so none is invented. */}
-          <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
-        </button>
-      ) : null}
+      <JobsPill />
       <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>
         <span className="gx-credits-n">{credits.text.replace(/\s*cr$/i, "")}</span>
         {/cr$/i.test(credits.text) ? <span className="gx-credits-u">cr</span> : null}

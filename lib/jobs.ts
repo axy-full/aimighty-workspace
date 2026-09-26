@@ -209,6 +209,10 @@ export async function listGenerations(opts: {
   limit?: number;
   search?: string;
   status?: string;
+  /** Any of these statuses (GET /api/jobs?status=queued,running,held); used in place of `status`. */
+  statuses?: readonly string[];
+  /** Only rows changed at or after this time (ms): what settled recently, for the jobs tray. */
+  updatedSince?: number | null;
   kind?: string;
   /** Only renders made with this identity. */
   identityId?: string | null;
@@ -250,9 +254,16 @@ export async function listGenerations(opts: {
     const needle = `%${opts.search.toLowerCase()}%`;
     args.push(needle, needle);
   }
-  if (opts.status && opts.status !== "all") {
+  if (opts.statuses?.length) {
+    where.push(`g.status IN (${opts.statuses.map(() => "?").join(",")})`);
+    args.push(...opts.statuses);
+  } else if (opts.status && opts.status !== "all") {
     where.push("g.status = ?");
     args.push(opts.status);
+  }
+  if (opts.updatedSince) {
+    where.push("g.updated_at >= ?");
+    args.push(opts.updatedSince);
   }
   if (opts.kind === "image" || opts.kind === "video" || opts.kind === "audio") {
     where.push(opts.kind === "image" ? "g.kind = 'image'" : opts.kind === "audio" ? "g.kind = 'audio'" : "g.kind NOT IN ('image','audio','model')");

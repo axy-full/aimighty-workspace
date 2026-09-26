@@ -5,6 +5,7 @@ import { useSession } from "@/lib/session";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
 import { useFreshProject } from "@/lib/shell/use-fresh-project";
+import { useJobsTray } from "@/lib/shell/use-jobs-tray";
 import { assetsRowLabel, stageCards, suiteTiles } from "@/lib/shell/studio-home";
 import { INITIAL_VIRAL } from "@/lib/shell/viral";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -25,6 +26,7 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   const project = useFreshProject(loaded);
   const { state, dispatch } = useWorkspace();
   const session = useSession();
+  const jobs = useJobsTray();
   const scoped = useScopedFetch();
   /* The roster is one free read per project; the count is keyed to the project it answered for. */
   const [roster, setRoster] = useState<{ projectId: string; seats: number } | null>(null);
@@ -41,7 +43,8 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   const seats = roster && roster.projectId === projectId ? roster.seats : null;
   const awaiting = state.run && state.run.status === "waiting" && !state.run.approved ? 1 : 0;
   const tiles = suiteTiles(stageCards(project, items), {
-    rendering: state.gen ? 1 : 0,
+    /* Every take in flight, from any page (the jobs tray's count); the composer's own before the tray's first read. */
+    rendering: jobs?.summary?.rendering ?? (state.gen ? 1 : 0),
     videoEngine: displayModelName(session.models?.video ?? DEFAULT_MODEL_ID),
     adMode: AD_MODES.find(([id]) => id === INITIAL_ADS.mode)?.[1] ?? "UGC",
     adSeconds: INITIAL_ADS.duration,

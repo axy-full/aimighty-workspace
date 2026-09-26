@@ -8,6 +8,7 @@ import {
   type PendingGeneration,
 } from "../workbench/pending-generation";
 import { dispatchGate, neutralCopy } from "./rig";
+import { announceJob } from "../shell/jobs-bus";
 
 /**
  * THE workspace-credit dispatch: re-quote the exact body that will be sent,
@@ -102,11 +103,13 @@ export async function dispatchGeneration(options: {
     });
     if (!result.id) throw new Error("The server has not confirmed a job yet. Generate again to recover this same request.");
     clearPendingGeneration(storage, storageId, attempt.key);
+    announceJob(result.id);
     return { state: "queued", jobId: result.id, credits: attempt.credits };
   } catch (error) {
     if (attempt && error instanceof StudioRequestError) {
       if (typeof error.data.id === "string") {
         clearPendingGeneration(storage, storageId, attempt.key);
+        announceJob(error.data.id);
         return { state: "queued", jobId: error.data.id, credits: attempt.credits };
       }
       /* Only a durable, completed refusal permits a fresh request and another quote. */

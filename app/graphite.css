@@ -88,6 +88,69 @@
 .gx-credits-u { color: var(--gx-text-3); font-size: 12px; }
 .gx-jobs { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); gap: 8px; }
 .gx-jobs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
+
+/* ── Jobs pill and tray (components/graphite/JobsTray.tsx): a popover under
+   the pill on desktop, a bottom sheet on a phone. ── */
+.gx-jobs[data-tone="amber"] { background: rgba(255, 159, 10, .14); border-color: rgba(255, 159, 10, .4); color: #FFB340; }
+.gx-jobs[data-tone="green"] { background: rgba(48, 209, 88, .12); border-color: rgba(48, 209, 88, .36); color: #5BE07F; }
+.gx-jobs[data-tone="red"] { background: rgba(255, 69, 58, .12); border-color: rgba(255, 69, 58, .38); color: #FF6961; }
+.gx-jobs[data-tone="idle"] { background: var(--gx-input); border-color: var(--gx-hair); color: var(--gx-text-2); }
+.gx-jobs[data-tone="amber"] .gx-jobs-dot { background: var(--gx-waiting); }
+.gx-jobs[data-tone="green"] .gx-jobs-dot { background: var(--gx-done); animation: none; }
+.gx-jobs[data-tone="red"] .gx-jobs-dot { background: var(--gx-failed); animation: none; }
+.gx-jobs[data-tone="idle"] .gx-jobs-dot { background: var(--gx-idle); animation: none; }
+.gx-jobs-long { font-variant-numeric: tabular-nums; }
+.gx-jobs-short { display: none; font-variant-numeric: tabular-nums; }
+.gx-veil.gx-jobs-veil { z-index: 70; }
+.gx-jobs-tray:focus { outline: none; }
+.gx-jobs-head { gap: 10px; flex-wrap: nowrap; }
+.gx-jobs-count { min-width: 0; color: var(--gx-text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.gx-jobs-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.gx-jobs-row { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 8px 10px; border-radius: 10px; }
+.gx-jobs-row:hover { background: var(--gx-input); }
+.gx-jobs-thumb { position: relative; width: 52px; height: 52px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-jobs-thumb img, .gx-jobs-thumb video, .gx-jobs-thumb > * { width: 100%; height: 100%; object-fit: cover; }
+.gx-jobs-thumb > .gx-jobs-kind { width: auto; height: auto; font-family: var(--gx-mono); font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--gx-text-3); }
+.gx-jobs-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.gx-jobs-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-jobs-meta, .gx-jobs-where { font-size: 12px; color: var(--gx-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.gx-jobs-stage { font-weight: 600; color: var(--gx-text-2); }
+.gx-jobs-row[data-tone="blue"] .gx-jobs-stage { color: var(--gx-accent-text); }
+.gx-jobs-row[data-tone="amber"] .gx-jobs-stage { color: var(--gx-waiting); }
+.gx-jobs-row[data-tone="green"] .gx-jobs-stage { color: var(--gx-done); }
+.gx-jobs-row[data-tone="red"] .gx-jobs-stage { color: var(--gx-failed); }
+.gx-jobs-reason, .gx-jobs-problem { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gx-jobs-problem { color: var(--gx-waiting); }
+/* No engine reports a percentage: an indeterminate bar says it is moving, and nothing more. */
+.gx-jobs-bar { position: relative; height: 3px; margin-top: 3px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, .08); }
+.gx-jobs-bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: inherit; background: var(--gx-accent); animation: gx-jobs-slide 1.6s var(--gx-ease) infinite; }
+@keyframes gx-jobs-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.gx-jobs-ring { --p: 0; position: relative; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-family: var(--gx-mono); font-size: 9px; color: var(--gx-text-2); background: conic-gradient(var(--gx-accent) calc(var(--p) * 1turn), var(--gx-track) 0); }
+.gx-jobs-ring::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--gx-card); }
+.gx-jobs-ring { isolation: isolate; }
+.gx-jobs-ring::before { z-index: -1; }
+.gx-jobs-act { flex: none; }
+.gx-jobs-act--primary { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gx-jobs-note { margin: 0; padding: 8px 10px 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--gx-text-3); }
+.gx-jobs-note[role="alert"] { color: var(--gx-text-2); }
+.gx-jobs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0; padding: 18px 12px; }
+.gx-jobs-empty p { margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gx-jobs-bar::after { animation: none; width: 100%; opacity: .45; }
+}
+@media (min-width: 768px) {
+  .gx .gx-veil.gx-jobs-veil { display: block; padding: 0; background: transparent; backdrop-filter: none; animation: none; }
+  .gx .gx-sheet.gx-jobs-tray { position: fixed; top: var(--jobs-top, 74px); right: var(--jobs-right, 20px); width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - var(--jobs-top, 74px) - 12px); }
+}
+@media (max-width: 767px) {
+  .gx-jobs-long { display: none; }
+  .gx-jobs-short { display: inline; }
+  .gx-jobs { min-width: 44px; justify-content: center; padding: 0 12px; gap: 6px; }
+  /* The sheet is the screen's width, whatever a long name would like: the rows ellipsize inside it. */
+  .gx .gx-veil.gx-jobs-veil { grid-template-columns: minmax(0, 1fr); }
+  .gx .gx-sheet-list.gx-jobs-list { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .gx-jobs-row { border: 1px solid var(--gx-hair); border-radius: 14px; background: var(--gx-card); }
+}
 .gx-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid rgba(255, 255, 255, .12); flex: none; }
 .gx-avatar:hover { background: var(--gx-input-hover); }
 

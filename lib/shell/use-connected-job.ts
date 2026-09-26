@@ -7,6 +7,7 @@ import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generati
 import { checkingProblem, resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { poll, pollAfter } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { announceJob } from "./jobs-bus";
 
 /**
  * One connected-account job from a Business composer (FINAL_SPEC §2), on the
@@ -216,6 +217,7 @@ export function useConnectedJob(draftId: string | null, slot = "business") {
     const mine = (s: ConnectedJobState) => s.phase === "submitting" && s.job.id === id;
     try {
       const job = await call(connectedSubmitRequest(draftId, now.job));
+      announceJob(job.id);
       if (!connectedRecoverable(job)) forgetJob(store(), key, id);
       setState((s) => (mine(s) ? settledState(job) : s));
     } catch (error) {

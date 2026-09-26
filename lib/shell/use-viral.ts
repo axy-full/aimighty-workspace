@@ -5,6 +5,7 @@ import { resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { poll, pollAfter, turnHint } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, listedJobs, pendingJobIds, runAfterStatus, type ViralRun } from "./viral";
+import { announceJob } from "./jobs-bus";
 
 /**
  * The Genjutsu pages' one line to the connected account
@@ -85,6 +86,7 @@ export function useViral(draftId: string | null, ready: boolean) {
     setRun({ phase: "submitting", job: current.job });
     try {
       const job = await call({ action: "submit", draftId, id: current.job.id, workspaceId: current.job.workspaceId, credits: current.credits });
+      announceJob(job.id);
       setEstimate(null);
       setRun(job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: VIRAL_FAILED } : { phase: "running", job });
       void refresh();
