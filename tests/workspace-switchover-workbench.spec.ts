@@ -44,6 +44,10 @@ async function signedIn(page: Page) {
   );
 }
 
+/** The URL the switch sends the tab to: the first /suites document it asks for. */
+const switchTarget = (page: Page) =>
+  page.waitForRequest((r) => r.isNavigationRequest() && r.frame() === page.mainFrame() && new URL(r.url()).pathname === "/suites").then((r) => r.url());
+
 /** The old shell's root element; the new shell's is `.pxw`. */
 const legacyShell = (page: Page) => page.locator(".studio-redesign, .suite-page, .suite-home");
 
@@ -71,9 +75,16 @@ test("every old deep link lands on the page that now holds its work", async ({ p
   ];
 
   for (const one of cases) {
+    /* The switch's own target. The Suites shell then writes its canonical page
+       into the address (Generate is Agent there), and with the switch made by
+       the server that can already have happened by the time the page loads. */
+    const switched = switchTarget(page);
     await page.goto(one.from);
     await expect(page, one.from).toHaveURL(/^[^?]*\/suites\?/);
-    await expect(page, one.from).toHaveURL(one.page);
+    const target = await switched;
+    expect(target, one.from).toMatch(one.page);
+    expect(target, one.from).toMatch(new RegExp(`[?&]suite=${one.suite}(&|$)`));
+    expect(target, one.from).toMatch(new RegExp(`[?&]project=${PROJECT}(&|$)`));
     await expect(page, one.from).toHaveURL(new RegExp(`[?&]suite=${one.suite}(&|$)`));
     await expect(page, one.from).toHaveURL(new RegExp(`[?&]project=${PROJECT}(&|$)`));
     await expect(page.getByTestId("page-title"), one.from).toHaveText(one.title);
@@ -90,10 +101,10 @@ test("a bare old URL opens the workspace home, and a Moleculr section arrives as
        shell writes its own first page into the address as it opens (which,
        with the switch now made by the server, can already have happened by
        the time the page has loaded). */
-    const switched = page.waitForRequest((r) => r.isNavigationRequest() && r.frame() === page.mainFrame() && new URL(r.url()).pathname === "/suites");
+    const switched = switchTarget(page);
     await page.goto(from);
     await expect(page, from).toHaveURL(/\/suites\?/);
-    expect(new URL((await switched).url()).searchParams.has("page"), from).toBe(false);
+    expect(new URL(await switched).searchParams.has("page"), from).toBe(false);
     /* The Suites shell has no project-picker home: Studio opens on its first page. */
     await expect(page.locator(".gx"), from).toBeVisible();
     await expect(page.getByTestId("page-title"), from).toHaveText("Brief & Script");
@@ -116,9 +127,12 @@ test("a selection and any other query param survive the switch", async ({ page }
 
   /* Subatomik's connected-account override is a param the mapping does not
      own, so it is carried through untouched rather than dropped. */
+  const switched = switchTarget(page);
   await page.goto(`/subatomik?project=${PROJECT}&page=object-swap&account=particl`);
-  await expect(page).toHaveURL(/[?&]page=swap(&|$)/);
-  await expect(page).toHaveURL(/[?&]account=particl(&|$)/);
+  const target = await switched;
+  expect(target).toMatch(/[?&]page=swap(&|$)/);
+  expect(target).toMatch(/[?&]account=particl(&|$)/);
+  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
 });
 
 test("the back button leaves the redirect alone instead of bouncing", async ({ page }, info) => {
