@@ -87,8 +87,9 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["cast", "Cast", "Cast & Elements", "Built with Soul Cinema", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
     ["rig", "Rig", "Rig", "Bring it all together", "rig"],
-    /* Owner's notes (23 September): Takes lists every generation, then every asset by type, and edits them; Edit & Sound holds the cut and the sound. */
-    ["takes", "Takes", "Takes", "Every generation, then every asset", "takes"],
+    /* Owner's notes (23 September): Takes holds every take and edits them; Edit & Sound holds the cut and the sound.
+       Idea 6: Takes is the review desk every "Filed in Takes for review" points at. */
+    ["takes", "Takes", "Takes", "Review every take", "takes"],
     ["edit", "Edit & Sound", "Edit & Sound", "Cut the takes, add the sound", "edit"],
     ["deliver", "Deliver", "Deliver", "EDL · XML · the final movie", "deliver"],
   ])), ["brief", "beats", "boards", "environment", "cast", "astra", "takes", "deliver"]),

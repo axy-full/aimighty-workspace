@@ -23,7 +23,7 @@ import { takeChip, takeReasonLine, type ChipTone } from "@/lib/workspace/takes";
 type Variant = "grid" | "library" | "take";
 const KIND_BADGE = { image: "IMAGE", video: "VIDEO", audio: "AUDIO", file: "FILE" } as const;
 
-function Chip({ label, tone }: { label: string; tone: ChipTone }) {
+export function Chip({ label, tone }: { label: string; tone: ChipTone }) {
   return <span className="gx-tile-chip" data-tone={tone} data-testid="take-chip" title={label}><span className="gx-tile-chip-dot" aria-hidden="true" />{label}</span>;
 }
 
@@ -44,7 +44,7 @@ function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void
   );
 }
 
-export function TakeTile({ entry, variant, selected = false, checked = false, cut = false, fresh = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
   selected?: boolean;
@@ -52,6 +52,8 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   checked?: boolean;
   cut?: boolean;
   fresh?: boolean;
+  /** The first take of a shot's or a batch's run in a grouped grid: it starts a row (Takes). */
+  rowStart?: boolean;
   /** The Library's `+` (use as reference), beside the name. */
   action?: ReactNode;
   onOpen: () => void;
@@ -86,11 +88,11 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   const refreshButton = face === "unavailable" ? <span className="gx-tile-over"><Refresh onRefresh={refresh} name={take.name} /></span> : null;
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
   const label = [take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
-  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": "take-tile" };
+  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-take": take.id, "data-testid": "take-tile" };
 
   if (variant === "take") {
     return (
-      <div className="pd-take-cell gx-tile" {...attrs}>
+      <div className="pd-take-cell gx-tile" {...attrs} data-row-start={rowStart || undefined}>
         <button type="button" role="radio" aria-checked={checked} aria-label={label} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
           {...previewAttrs(entryPreview(entry))} {...dragAttrs(take.id, { name: take.name, kind: entry.media ?? "file" })}>
           <span className="gx-tile-media pd-take-media">{inner}</span>

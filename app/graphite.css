@@ -108,6 +108,12 @@
 .gx-panel--overlay { position: absolute; top: 0; bottom: 0; width: min(320px, 86vw); z-index: 30; animation: gx-in .3s var(--gx-ease) both; }
 .gx-panel--overlay.gx-library { left: 0; box-shadow: 1px 0 0 var(--gx-hair-strong), 24px 0 60px rgba(0, 0, 0, .6); }
 .gx-panel--overlay.gx-inspector { right: 0; box-shadow: -1px 0 0 var(--gx-hair-strong), -24px 0 60px rgba(0, 0, 0, .6); }
+/* A landscape phone leaves the Library's asset list no room under its head, tabs, search and chips (it
+   measured 0px at 844×390): the panel scrolls, and the list keeps a height of its own to scroll in. */
+@media (max-height: 500px) {
+  .gx-panel--overlay.gx-library { overflow-y: auto; }
+  .gx-panel--overlay.gx-library > .gx-assets { flex: none; height: max(240px, 70vh); }
+}
 .gx-scrim { position: absolute; inset: 0; z-index: 29; background: rgba(0, 0, 0, .35); }
 .gx-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: var(--gx-panel); }
 .gx-stage { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
