@@ -74,6 +74,7 @@ jobs:
     timeout-minutes: 30
     env:
       ENGINE_MOCK: '1'
+      NEXT_KEEP_COMPILED_PAGES: '1'
       APP_ORIGIN: http://localhost:4551
       PW_BASE_URL: http://localhost:4551
       PLATFORM_DATABASE_URL: file:.data/browser-platform.db
