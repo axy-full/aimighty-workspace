@@ -75,6 +75,9 @@ const neutral = (message: string) =>
     .replace(/\bthe connected account account\b/g, "the connected account")
     .replace(/^the connected/, "The connected");
 function problem(error: unknown) {
+  // A Soul ID or element build already sent (build-records): never sent twice.
+  if (error instanceof Error && error.name === "BuildInFlightError")
+    return Response.json({ code: "build_in_flight", error: error.message }, { status: 409, headers });
   if (error instanceof CatalogueError || error instanceof ConsumerGenjutsuError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
@@ -88,7 +91,7 @@ function problem(error: unknown) {
     return Response.json({
       code: error.code,
       error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating."
-        : error.code === "capacity" ? "Four connected-account jobs are already active or awaiting reconciliation."
+        : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)

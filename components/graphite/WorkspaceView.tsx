@@ -516,7 +516,7 @@ function Engines() {
         {owner ? <span className="cw-dim">{data?.mode === "legacy" ? "This workspace runs on the deployment’s keys." : "Keys are encrypted and never returned."}</span> : null}
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
-      {owner ? <ConnectedAccountRow onLinked={setLinked} /> : null}
+      <ConnectedAccountRow owner={owner} onLinked={setLinked} />
       <XaiEngineRow />
       {owner ? <DeveloperApiRow connected={linked} /> : null}
     </>

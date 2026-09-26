@@ -52,7 +52,12 @@ test("a create reply is parsed like the list: the new Soul ID and its status, wh
   expect(parseCharacterCreate(mira)).toMatchObject({ soulId: "soul_abc", name: "Mira", type: "soul_2", status: "training" });
   expect(parseCharacterCreate({ character: mira })).toMatchObject({ soulId: "soul_abc" });
   expect(parseCharacterCreate({ data: { id: "soul_xyz", name: "Ada", type: "soul_cinematic" } })).toMatchObject({ soulId: "soul_xyz", type: "soul_cinematic", status: null });
-  expect(parseCharacterCreate({ items: [mira] })).toMatchObject({ soulId: "soul_abc" });
+  /* A list reply is the new identity only when it holds exactly one entry with the requested name:
+     its first entry may be one the owner trained on higgsfield.ai. */
+  expect(parseCharacterCreate({ items: [mira] }, "Mira")).toMatchObject({ soulId: "soul_abc" });
+  expect(parseCharacterCreate({ items: [mira] })).toBeNull();
+  expect(parseCharacterCreate({ items: [mira] }, "Vanya")).toBeNull();
+  expect(parseCharacterCreate({ items: [{ soul_id: "soul_site", name: "Vanya", type: "soul_2" }, mira] }, "Mira")).toBeNull();
   expect(parseCharacterCreate({ ok: true })).toBeNull();
   expect(parseCharacterCreate(null)).toBeNull();
   /* Ids are bounded and shaped; a free-text id is not one. */

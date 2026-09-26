@@ -4,22 +4,36 @@ import { consumerAuthorizeUrl, connectionOutcome } from "@/lib/shell/workspace-v
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 /**
- * Workspace › Engines: the owner's Higgsfield account — the grant Cast, Business,
- * Viral and Gen's catalogue run on, and the one every "Connect the account in
- * Workspace › Engines" points at. The existing routes do the work: POST
- * /api/higgsfield/consumer/connect returns the account's own sign-in page, its
- * callback returns here with `?higgsfield=<outcome>`, and DELETE on
- * /api/higgsfield/consumer/connection lets go of the grant. Connecting starts
- * no paid job. Every read reports whether the grant is live (`onLinked`), so
- * the developer-API row below follows a disconnect at once.
+ * Workspace › Engines › Connected account: the one place in Suites that
+ * connects, reconnects and disconnects the account every connected surface
+ * points at, and shows which of the owner's jobs hold the workspace's four
+ * connected-account slots. Connecting spends nothing; a slot is set aside in
+ * the ledger only (nothing is sent, deleted or resubmitted). The sign-in
+ * callback returns here with `?higgsfield=<outcome>`; every read reports
+ * whether the grant is live (`onLinked`), so the developer-API row below
+ * follows a disconnect at once.
  */
-type Connection = { connected: boolean; requiresReconnect: boolean };
+type CapacityJob = { id: string; draftId: string; projectName: string | null; workflow: string; status: string; createdAt: number; releasable: boolean };
+type Capacity = { limit: number; active: number; mine: CapacityJob[] };
+/* subjectKnown: Particl knows which account the grant belongs to, so the same
+   account signing in again keeps its running jobs. */
+type Connection = { connected: boolean; requiresReconnect: boolean; subjectKnown?: boolean; capacity?: Capacity | null };
+const WORKFLOW: Record<string, string> = {
+  "marketing-video": "Marketing video", generation: "Generate", genjutsu: "Transform", "marketing-template": "Ad template", "voice-tool": "Voice tool", shorts: "Shorts",
+};
+const STATUS: Record<string, string> = { dispatching: "sending", accepted: "running", uncertain: "unconfirmed" };
+const since = (ms: number) => {
+  const minutes = Math.max(1, Math.round((Date.now() - ms) / 60_000));
+  return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
+};
 
-export function ConnectedAccountRow({ onLinked }: { onLinked?: (live: boolean) => void }) {
+export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLinked?: (live: boolean) => void }) {
   const scoped = useScopedFetch();
-  const [status, setStatus] = useState<Connection | null>(null);
+  const [state, setState] = useState<Connection | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"connect" | "disconnect" | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"connect" | "disconnect" | null>(null);
   /* The callback's outcome, read as the tab opens. The shell's first URL write
      (lib/workspace/state.tsx › writeUrl) keeps only its own params, so a reload
      does not repeat it. */
@@ -31,52 +45,88 @@ export function ConnectedAccountRow({ onLinked }: { onLinked?: (live: boolean) =
       const response = await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" });
       const json = await response.json().catch(() => null) as (Connection & { error?: string }) | null;
       if (!response.ok || !json) throw new Error(json?.error ?? "The connection could not be read.");
-      const next = { connected: json.connected === true, requiresReconnect: json.requiresReconnect === true };
-      setStatus(next);
-      onLinked?.(next.connected && !next.requiresReconnect);
-    } catch (caught) { setProblem(caught instanceof Error ? caught.message : "The connection could not be read."); onLinked?.(false); }
+      setState(json); setProblem(null);
+      onLinked?.(json.connected === true && json.requiresReconnect !== true);
+    } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be read."); onLinked?.(false); }
   }, [scoped, onLinked]);
-  useEffect(() => { const t = setTimeout(() => void read(), 0); return () => clearTimeout(t); }, [read]);
-  const connect = async () => {
-    setBusy("connect"); setProblem(null);
+  useEffect(() => {
+    if (!owner) return;
+    const t = setTimeout(() => void read(), 0);
+    return () => clearTimeout(t);
+  }, [read, owner]);
+  const mine = state?.capacity?.mine ?? [];
+  const running = mine.length;
+  const act = async (kind: "connect" | "disconnect") => {
+    // Jobs already running are collected under the grant they started on:
+    // say so once before a sign-in or disconnect that could replace it.
+    if (running && confirm !== kind) { setConfirm(kind); return; }
+    setConfirm(null); setBusy(kind); setNote(null); setProblem(null);
     try {
-      const response = await scoped("/api/higgsfield/consumer/connect", { method: "POST" });
+      const response = await scoped(`/api/higgsfield/consumer/${kind === "connect" ? "connect" : "connection"}`, { method: kind === "connect" ? "POST" : "DELETE" });
       const json = await response.json().catch(() => null) as { url?: string; error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "The account could not be reached.");
-      const url = consumerAuthorizeUrl(json?.url);
-      if (!url) throw new Error("The account returned a sign-in address this page will not open.");
-      window.location.assign(url);
-    } catch (caught) { setProblem(caught instanceof Error ? caught.message : "The account could not be reached."); setBusy(null); }
-  };
-  const disconnect = async () => {
-    setBusy("disconnect"); setProblem(null);
-    try {
-      const response = await scoped("/api/higgsfield/consumer/connection", { method: "DELETE" });
-      const json = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "The account could not be disconnected.");
-      await read();
-    } catch (caught) { setProblem(caught instanceof Error ? caught.message : "The account could not be disconnected."); }
+      if (!response.ok) throw new Error(json?.error ?? "The connection could not be changed.");
+      if (kind === "connect") {
+        const url = consumerAuthorizeUrl(json?.url);
+        if (!url) throw new Error("The account returned a sign-in address this page will not open.");
+        window.location.assign(url);
+        return;
+      }
+      setNote("Account disconnected."); await read();
+    } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be changed."); }
     finally { setBusy(null); }
   };
-  const live = status?.connected && !status.requiresReconnect;
+  const setAside = async (id: string) => {
+    setBusy(id); setProblem(null);
+    try {
+      const response = await scoped("/api/higgsfield/consumer/connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set-aside", id }) });
+      const json = await response.json().catch(() => null) as { capacity?: Capacity; error?: string } | null;
+      if (!response.ok || !json?.capacity) throw new Error(json?.error ?? "The job could not be set aside.");
+      setState((s) => (s ? { ...s, capacity: json.capacity } : s));
+    } catch (error) { setProblem(error instanceof Error ? error.message : "The job could not be set aside."); }
+    finally { setBusy(null); }
+  };
+
+  const connected = state?.connected === true && !state.requiresReconnect;
+  const label = !owner ? "Owner only" : state == null ? (problem ? "Status unavailable" : "Checking…") : connected ? "Connected" : state.requiresReconnect ? "Reconnect required" : "Not connected";
+  const capacity = state?.capacity;
   return (
     <div className="gx-card" data-testid="engine-connected-account">
-      <span className="gx-eyebrow">Higgsfield account</span>
+      <span className="gx-eyebrow">Connected account</span>
       <div className="cw-engine-row">
-        <span className="cw-engine" data-ok={Boolean(live)}><span className="cw-engine-dot" aria-hidden="true" />
-          {status == null ? (problem ? "Not read" : "Checking…") : live ? "Connected" : status.requiresReconnect ? "Reconnect to restore access" : "Not connected"}
-        </span>
+        <span className="cw-engine" data-ok={connected}><span className="cw-engine-dot" aria-hidden="true" />{label}</span>
         <span className="gx-spacer" />
-        <button type="button" className="gx-hbtn" disabled={busy != null || status == null} onClick={() => void connect()} data-testid="connected-account-connect">
-          {busy === "connect" ? "Opening sign-in…" : status?.connected || status?.requiresReconnect ? "Reconnect" : "Connect"}
-        </button>
-        {status?.connected || status?.requiresReconnect ? (
-          <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void disconnect()} data-testid="connected-account-disconnect">{busy === "disconnect" ? "Disconnecting…" : "Disconnect"}</button>
+        {owner && state ? (
+          <>
+            <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act("connect")} data-testid="connected-account-connect">
+              {busy === "connect" ? "Opening sign-in…" : confirm === "connect" ? "Reconnect anyway" : state.connected || state.requiresReconnect ? "Reconnect" : "Connect"}
+            </button>
+            {state.connected || state.requiresReconnect ? (
+              <button type="button" className="gx-hbtn gx-hbtn--danger" disabled={busy != null} onClick={() => void act("disconnect")} data-testid="connected-account-disconnect">
+                {busy === "disconnect" ? "Disconnecting…" : confirm === "disconnect" ? "Disconnect anyway" : "Disconnect"}
+              </button>
+            ) : null}
+          </>
         ) : null}
       </div>
-      <p className="cw-foot" style={{ padding: 0 }}>Cast, Business, Viral and Gen’s catalogue run on it. You approve its permissions on the account’s own page; connecting spends nothing.</p>
+      {confirm ? <p className="cw-notice" role="alert" data-testid="connected-account-warning">{running} of your jobs {running === 1 ? "is" : "are"} still running{state?.subjectKnown ? `. Sign back in with the same account to keep collecting ${running === 1 ? "it" : "them"}.` : ` and can't be collected after a ${confirm === "connect" ? "reconnect" : "disconnect"}.`}</p> : null}
+      {capacity ? (
+        <div data-testid="connected-account-capacity">
+          <span className="cw-dim">{capacity.active} of {capacity.limit} job slots in use</span>
+          {mine.map((job) => (
+            <div className="wsx-row" key={job.id} data-testid="connected-account-job">
+              <span className="cw-engine" data-ok={job.status === "accepted"}><span className="cw-engine-dot" aria-hidden="true" /></span>
+              <span style={{ minWidth: 0 }}><span className="wsx-name">{WORKFLOW[job.workflow] ?? "Job"} · {job.projectName ?? "Untitled project"}</span><span className="cw-dim">{STATUS[job.status] ?? job.status} · {since(job.createdAt)}</span></span>
+              <span className="wsx-actions">
+                {owner && job.releasable ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void setAside(job.id)}>{busy === job.id ? "Setting aside…" : "Set aside"}</button> : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {!owner ? <p className="cw-foot" style={{ padding: 0 }}>The workspace owner connects the account.</p> : null}
       {outcome ? <p className={outcome.ok ? "cw-notice" : "gx-gen-error"} role={outcome.ok ? "status" : "alert"} data-testid="connected-account-outcome">{outcome.line}</p> : null}
-      {problem ? <p className="gx-gen-error" role="alert">{problem}{status == null ? <> <button type="button" className="gx-hbtn" style={{ display: "inline-flex" }} onClick={() => { setProblem(null); void read(); }}>Retry</button></> : null}</p> : null}
+      {problem ? <p className="gx-gen-error" role="alert">{problem}</p> : null}
+      {note ? <p className="cw-notice" role="status" data-testid="connected-account-note">{note}</p> : null}
     </div>
   );
 }
