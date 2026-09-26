@@ -3,10 +3,11 @@ import { requireTenant } from "@/lib/tenant";
 import { tokenCeiling } from "@/lib/tokenCeiling";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import {
-  currentUser, monthStart, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
-import { billedCreditsSum } from "@/lib/creditSql";
+import { billedCreditsExpr } from "@/lib/creditSql";
+import { tokenMonthStart } from "@/lib/cycle";
+import {
+  currentUser, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -30,53 +31,41 @@ export const dynamic = "force-dynamic";
  */
 
 /*
- * The unit. A workspace on the platform's keys pays in credits, so its tokens
- * are read and capped in credits and the engine's dollars never leave the
- * server (§7A): the reply carries no dollar field at all. `legacyCeiling`
- * says a dollar ceiling set before credits still applies (admission enforces
- * it without naming the figure). A workspace on its own keys keeps dollars.
+ * The unit. A credit workspace (the platform's keys) reads each token's month
+ * in the credits its takes were billed, never the vendor's dollars behind them
+ * (see /api/analytics), and sets its ceiling in credits: the reply carries no
+ * dollar figure at all. `legacyCeiling` says a dollar ceiling set before
+ * credits still applies (the spend gate enforces it without naming the
+ * figure). A workspace on its own keys reads and caps in dollars.
  */
 export const GET = withTenant(async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
   await ready();
-  const credits = creditsApply(requireTenant());
-  const start = monthStart();
+  const inCredits = creditsApply(requireTenant());
 
   const rs = await db().execute({
-    sql: credits
-      ? `SELECT t.id, t.name, t.scope, t.cap_usd, t.cap_credits, t.last_used, t.created_at,
-                (SELECT ${billedCreditsSum("g")} FROM generations g
-                  WHERE g.token_id = t.id AND g.created_at >= ?) AS spend
-         FROM api_tokens t
-         WHERE t.user_id = ? AND t.revoked_at IS NULL
-         ORDER BY t.created_at DESC`
-      : `SELECT t.id, t.name, t.scope, t.cap_usd, t.cap_credits, t.last_used, t.created_at,
-                COALESCE((SELECT SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0))
-                          FROM generations g
-                          WHERE g.token_id = t.id AND g.created_at >= ?), 0) AS spend
-         FROM api_tokens t
-         WHERE t.user_id = ? AND t.revoked_at IS NULL
-         ORDER BY t.created_at DESC`,
-    args: [start, user.id],
+    sql: `SELECT t.id, t.name, t.scope, t.cap_usd, t.cap_credits, t.last_used, t.created_at,
+                 COALESCE((SELECT SUM(${inCredits ? billedCreditsExpr("g") : "COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)"})
+                           FROM generations g
+                           WHERE g.token_id = t.id AND g.created_at >= ?), 0) AS spend
+          FROM api_tokens t
+          WHERE t.user_id = ? AND t.revoked_at IS NULL
+          ORDER BY t.created_at DESC`,
+    args: [tokenMonthStart(), user.id],
   });
 
   return NextResponse.json({
-    unit: credits ? "credits" : "usd",
+    unit: inCredits ? "cr" : "usd",
     tokens: rs.rows.map((r: any) => ({
       id: r.id,
       name: r.name,
       scope: r.scope,
-      ...(credits
-        ? {
-            capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
-            spendCredits: Number(r.spend ?? 0),
-            legacyCeiling: r.cap_usd != null,
-          }
-        : {
-            capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
-            spendThisMonth: Number(r.spend ?? 0),
-          }),
+      /** In `unit`. */
+      spendThisMonth: Number(r.spend),
+      ...(inCredits
+        ? { capCredits: r.cap_credits == null ? null : Number(r.cap_credits), legacyCeiling: r.cap_usd != null }
+        : { capUsd: r.cap_usd == null ? null : Number(r.cap_usd) }),
       lastUsed: r.last_used == null ? null : Number(r.last_used),
       createdAt: Number(r.created_at),
     })),

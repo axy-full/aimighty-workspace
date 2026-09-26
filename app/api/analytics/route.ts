@@ -28,6 +28,8 @@ export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
+  /* A workspace billed in credits reads credits: vendor dollars beside them are the margin. */
+  const inCredits = creditsApply(requireTenant());
 
   const url = new URL(req.url);
   const raw = url.searchParams.get("projectId");
@@ -45,6 +47,8 @@ export const GET = withTenant(async function GET(req: Request) {
 
   const SPEND = `COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0)`;
   const CREDITS = billedCreditsSum("g");
+  /* Lists run in the unit on screen: an order by vendor dollars would still say what the vendor charged. */
+  const BY = inCredits ? "credits" : "spend";
 
   const [totals, byProject, byPerson, byModel, byShot, byStatus, byDay, stuck, byCategory, iteration] =
     await Promise.all([
@@ -72,7 +76,7 @@ export const GET = withTenant(async function GET(req: Request) {
                COUNT(DISTINCT g.created_by) AS people,
                COALESCE(SUM(g.duration_ms),0) AS render_ms
         FROM generations g LEFT JOIN projects p ON p.id = g.project_id ${W}
-        GROUP BY g.project_id ORDER BY spend DESC LIMIT 60`, args }),
+        GROUP BY g.project_id ORDER BY ${BY} DESC LIMIT 60`, args }),
 
       db().execute({ sql: `
         SELECT COALESCE(u.name,'Unknown') AS name, u.email AS email, g.created_by AS id,
@@ -80,14 +84,14 @@ export const GET = withTenant(async function GET(req: Request) {
                SUM(g.status='failed') AS failed,
                COUNT(DISTINCT g.project_id) AS projects
         FROM generations g LEFT JOIN users u ON u.id = g.created_by ${W}
-        GROUP BY g.created_by ORDER BY spend DESC LIMIT 60`, args }),
+        GROUP BY g.created_by ORDER BY ${BY} DESC LIMIT 60`, args }),
 
       db().execute({ sql: `
         SELECT g.model AS model, COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                AVG(NULLIF(g.duration_ms,0)) AS avg_ms
         FROM generations g ${W}
-        GROUP BY g.model ORDER BY spend DESC`, args }),
+        GROUP BY g.model ORDER BY ${BY} DESC`, args }),
 
       // R2's "revisions per shot" — the number that tells a producer which
       // setup is fighting them.
@@ -99,7 +103,7 @@ export const GET = withTenant(async function GET(req: Request) {
                SUM(g.status='failed')    AS failed,
                MAX(g.version) AS latest
         FROM generations g JOIN shots s ON s.id = g.shot_id
-        ${W} GROUP BY s.id ORDER BY takes DESC, spend DESC LIMIT 100`, args }),
+        ${W} GROUP BY s.id ORDER BY takes DESC, ${BY} DESC LIMIT 100`, args }),
 
       db().execute({ sql: `
         SELECT g.status AS status, COUNT(*) AS n FROM generations g ${W}
@@ -135,7 +139,7 @@ export const GET = withTenant(async function GET(req: Request) {
                COUNT(DISTINCT g.project_id) AS projects,
                COUNT(DISTINCT g.shot_id) AS shots
         FROM generations g LEFT JOIN projects p ON p.id = g.project_id ${W}
-        GROUP BY category ORDER BY spend DESC`, args }),
+        GROUP BY category ORDER BY ${BY} DESC`, args }),
 
       // Prompting and iteration patterns: how long prompts run, how often the
       // refine layer is bypassed, and how many takes a shot really needs.
@@ -232,6 +236,5 @@ export const GET = withTenant(async function GET(req: Request) {
       takesPerShot: shots ? filed / shots : 0,
     },
   };
-  /* A workspace billed in credits reads credits: vendor dollars beside them are the margin. */
-  return NextResponse.json(creditsApply(requireTenant()) ? withoutVendorCost(payload) : payload);
+  return NextResponse.json(inCredits ? withoutVendorCost(payload) : payload);
 });

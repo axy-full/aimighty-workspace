@@ -234,10 +234,12 @@ export function setupGuide(client: ClientId, origin: string, token: string): Set
 export type ApiToken = {
   id: string; name: string; scope: "read" | "render";
   lastUsed: number | null; createdAt: number;
-  /** Credits workspaces. */
-  capCredits?: number | null; spendCredits?: number; legacyCeiling?: boolean;
+  /** This month's spend, in the list's unit: credits billed, or the engine's dollars on a workspace's own keys. */
+  spendThisMonth: number;
+  /** Credits workspaces: the ceiling in credits, or a dollar one set before credits (never sent as a figure). */
+  capCredits?: number | null; legacyCeiling?: boolean;
   /** Workspaces on their own keys. */
-  capUsd?: number | null; spendThisMonth?: number;
+  capUsd?: number | null;
 };
 export type TokenUnit = "credits" | "usd";
 
@@ -261,12 +263,12 @@ export function tokenFacts(token: ApiToken, unit: TokenUnit, now = Date.now()): 
   const parts = [token.scope === "read" ? "Read-only" : "Can generate"];
   if (token.scope === "render") {
     if (unit === "credits") {
-      const spent = token.spendCredits ?? 0;
+      const spent = token.spendThisMonth;
       if (token.capCredits != null) parts.push(`${cr(spent)} of ${cr(token.capCredits)} this month`);
       else if (token.legacyCeiling) parts.push(`${cr(spent)} this month · ceiling set before credits`);
       else parts.push(`${cr(spent)} this month · no ceiling`);
     } else {
-      const spent = token.spendThisMonth ?? 0;
+      const spent = token.spendThisMonth;
       if (token.capUsd != null) parts.push(`${usd(spent)} of ${usd(token.capUsd)} this month`);
       else parts.push(`${usd(spent)} this month · no ceiling`);
     }
@@ -278,12 +280,12 @@ export function tokenFacts(token: ApiToken, unit: TokenUnit, now = Date.now()): 
 /** Share of the ceiling spent, 0–1, or null when there is no ceiling to measure against. */
 export function ceilingShare(token: ApiToken, unit: TokenUnit): number | null {
   const cap = unit === "credits" ? token.capCredits : token.capUsd;
-  const spent = unit === "credits" ? token.spendCredits ?? 0 : token.spendThisMonth ?? 0;
+  const spent = token.spendThisMonth;
   if (token.scope !== "render" || cap == null || cap <= 0) return null;
   return Math.min(1, Math.max(0, spent / cap));
 }
 
-/** Reads a GET /api/tokens reply defensively. */
+/** Reads a GET /api/tokens reply defensively. The route says `unit: "cr"` for a credit workspace. */
 export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken[] } | null {
   if (!value || typeof value !== "object") return null;
   const { tokens, unit } = value as { tokens?: unknown; unit?: unknown };
@@ -297,11 +299,12 @@ export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken
     out.push({
       id: r.id, name: r.name, scope: r.scope === "read" ? "read" : "render",
       lastUsed: num(r.lastUsed), createdAt: num(r.createdAt) ?? 0,
-      capCredits: num(r.capCredits), spendCredits: num(r.spendCredits) ?? 0, legacyCeiling: r.legacyCeiling === true,
-      capUsd: num(r.capUsd), spendThisMonth: num(r.spendThisMonth) ?? 0,
+      spendThisMonth: num(r.spendThisMonth) ?? 0,
+      capCredits: num(r.capCredits), legacyCeiling: r.legacyCeiling === true,
+      capUsd: num(r.capUsd),
     });
   }
-  return { unit: unit === "credits" ? "credits" : "usd", tokens: out };
+  return { unit: unit === "cr" || unit === "credits" ? "credits" : "usd", tokens: out };
 }
 
 /**

@@ -254,9 +254,9 @@ test("a token is made with a ceiling in the workspace's unit, shown once, filled
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByTestId("tools-tab-connect").click();
   await expect(page.getByTestId("tokens-empty")).toBeVisible();
-  const { unit } = await page.request.get("/api/tokens").then((r) => r.json()) as { unit: "credits" | "usd" };
+  const { unit } = await page.request.get("/api/tokens").then((r) => r.json()) as { unit: "cr" | "usd" };
   /* A new workspace pays in credits: the ceiling starts at a figure, in credits, and no dollar is named. */
-  expect(unit).toBe("credits");
+  expect(unit).toBe("cr");
   await expect(page.getByTestId("token-ceiling")).toHaveValue("500");
   await expect(page.getByTestId("connect-tokens")).not.toContainText("$");
   await expect(page.getByTestId("token-create")).toBeDisabled();

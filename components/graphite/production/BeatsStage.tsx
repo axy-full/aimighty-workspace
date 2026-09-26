@@ -338,7 +338,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
           <button type="button" className="gx-primary" disabled={!shotCount(sheet)} onClick={onBoards} data-testid="beats-to-boards">Storyboard these {shotCount(sheet)} shots ›</button>
         </div>
       ) : null}
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

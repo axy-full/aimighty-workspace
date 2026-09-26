@@ -30,8 +30,10 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture" }) },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
+    /* Dollar ceilings are a workspace on its own keys: a credit workspace sets its ceiling in credits (the test below). */
     "@/lib/credits": { creditsApply: () => false },
-    "@/lib/creditSql": { billedCreditsSum: () => "0" },
+    "@/lib/creditSql": { billedCreditsExpr: () => "0" },
+    "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/db": {
       db: () => ({ batch: async (statements: { args: unknown[] }[]) => { inserted.push(statements[0].args); } }),
       ready: async () => {}, now: () => 1, id: () => "tok_fixture",
@@ -100,7 +102,8 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture", legacy: false, usesPlatformKeys: true }) },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/credits": await import("../../lib/credits").then((m) => ({ creditsApply: m.creditsApply })),
-    "@/lib/creditSql": { billedCreditsSum: () => "0" },
+    "@/lib/creditSql": { billedCreditsExpr: () => "0" },
+    "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/db": {
       db: () => ({
         batch: async (statements: { args: unknown[] }[]) => { inserted.push(statements[0].args); },
@@ -113,7 +116,6 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
     },
     "@/lib/auth": {
       currentUser: async () => ({ id: "caller" }),
-      monthStart: () => 0,
       requireSession: async () => ({ user: { id: "caller" } }),
       mintTokenSecret: () => "secret", tokenHash: () => "hash",
       withTenant: (h: Handler) => h,
@@ -136,7 +138,8 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
 
   const list = await (await mod.exports.GET(new Request("http://localhost/api/tokens"))).json();
   expect(listed).not.toContain("cost_usd");
-  expect(list.unit).toBe("credits");
-  expect(list.tokens[0]).toEqual({ id: "tok_a", name: "Claude", scope: "render", capCredits: null, spendCredits: 42, legacyCeiling: true, lastUsed: null, createdAt: 1 });
-  expect(JSON.stringify(list)).not.toMatch(/capUsd|spendThisMonth|usd/i);
+  /* The month is the credits billed (#385), the ceiling is in credits, and a dollar ceiling set before credits is named, never shown. */
+  expect(list.unit).toBe("cr");
+  expect(list.tokens[0]).toEqual({ id: "tok_a", name: "Claude", scope: "render", spendThisMonth: 42, capCredits: null, legacyCeiling: true, lastUsed: null, createdAt: 1 });
+  expect(JSON.stringify(list)).not.toMatch(/capUsd|usd/i);
 });

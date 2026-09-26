@@ -6,7 +6,7 @@ import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypt
 import { cookies, headers } from "next/headers";
 import { db, ready, now } from "./db";
 import { billedCreditsSum } from "./creditSql";
-import { cycleBounds } from "./cycle";
+import { tokenMonthStart } from "./cycle";
 import {
   platformDb, platformReady, sessionLookup, createPlatformSession, destroyPlatformSession,
   findAccountByEmail, accountCount, createAccount, getWorkspace, legacyWorkspace,
@@ -328,20 +328,13 @@ export async function requireRender(): Promise<
   return got;
 }
 
-/** Midnight UTC on the 1st, where a token's monthly ceiling resets: the same
- *  turn the spend gate reckons from (lib/generationRequests, cycleBounds(1)),
- *  so the list, the pre-check and the gate are one figure. */
-export function monthStart(at = new Date()): number {
-  return cycleBounds(1, at.getTime()).start;
-}
-
 /** What a token has billed this month, in whole credits — the same rounding
  *  per job the ledger uses. The ceiling a credits workspace sets is read
  *  against this, never against the engine's dollars. */
 export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
   const rs = await db().execute({
     sql: `SELECT ${billedCreditsSum()} AS spend FROM generations WHERE token_id = ? AND created_at >= ?`,
-    args: [tokenId, monthStart()],
+    args: [tokenId, tokenMonthStart()],
   });
   return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
 }
@@ -351,7 +344,7 @@ export async function tokenSpendThisMonth(tokenId: string): Promise<number> {
   const rs = await db().execute({
     sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
           FROM generations WHERE token_id = ? AND created_at >= ?`,
-    args: [tokenId, monthStart()],
+    args: [tokenId, tokenMonthStart()],
   });
   return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
 }

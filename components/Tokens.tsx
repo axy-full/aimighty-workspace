@@ -4,18 +4,21 @@ import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { usd, timeAgo } from "@/lib/format";
+import { fmtCredits } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import { parseCeiling, parseCreditCeiling } from "@/lib/tokenCeiling";
 
-/** GET /api/tokens answers in the workspace's unit: credits (no dollar field at all) or dollars. */
+/** GET /api/tokens answers in the workspace's unit: a credit workspace ("cr")
+ *  gets its month and ceiling in credits and no dollar field at all; one on
+ *  its own keys ("usd") gets dollars. `spendThisMonth` is in `unit`. */
 export type Token = {
   id: string; name: string; scope: "read" | "render";
-  capUsd?: number | null; spendThisMonth?: number;
-  capCredits?: number | null; spendCredits?: number; legacyCeiling?: boolean;
+  spendThisMonth: number;
+  capUsd?: number | null;
+  capCredits?: number | null; legacyCeiling?: boolean;
   lastUsed: number | null; createdAt: number;
 };
-type Unit = "credits" | "usd";
-const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
+type Unit = "cr" | "usd";
 
 /**
  * Making and revoking the keys that let something outside a browser in.
@@ -23,7 +26,7 @@ const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
  */
 export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => void }) {
   const scopedFetch = useScopedFetch();
-  const { data, refresh } = useApi<{ unit?: Unit; tokens: Token[] }>("/api/tokens");
+  const { data, refresh } = useApi<{ tokens: Token[]; unit?: Unit }>("/api/tokens");
   const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -43,11 +46,11 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
       const unit: Unit | null = data?.unit
         ?? (await scopedFetch("/api/tokens", { cache: "no-store" }).then((r) => r.json()).then((j: { unit?: Unit }) => j.unit ?? "usd").catch(() => null));
       if (!unit) { await appAlert("Couldn't create the token", "Your tokens could not be read. Reload the page and try again."); return; }
-      let typed = unit === "credits" ? "500" : "20", problem: string | undefined;
+      let typed = unit === "cr" ? "500" : "20", problem: string | undefined;
       for (;;) {
-        const answer = await appPrompt("Monthly ceiling", typed, unit === "credits" ? "Credits — blank for no limit" : "USD — blank for no limit", problem);
+        const answer = await appPrompt("Monthly ceiling", typed, unit === "cr" ? "Credits — blank for no limit" : "USD — blank for no limit", problem);
         if (answer === null) return;
-        const read = unit === "credits" ? parseCreditCeiling(answer) : parseCeiling(answer);
+        const read = unit === "cr" ? parseCreditCeiling(answer) : parseCeiling(answer);
         if ("error" in read) { typed = answer; problem = read.error; continue; }
         ceiling = read;
         break;
@@ -81,6 +84,9 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
   }
 
   const tokens = data?.tokens ?? [];
+  /* A credit workspace's month and ceiling arrive in credits, and it is shown no dollar figure. */
+  const inCredits = data?.unit === "cr";
+  const spent = (t: Token) => (inCredits ? fmtCredits(t.spendThisMonth) : usd(t.spendThisMonth, 2));
 
   return (
     <>
@@ -113,16 +119,16 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
               <span className="truncate">{t.name}</span>
               <span className="text-[13px] text-mute">
                 {t.scope === "read" ? "Read-only" : "Can generate"}
-                {data?.unit === "credits" ? (
+                {inCredits ? (
                   <>
-                    {t.capCredits != null && ` · ${cr(t.spendCredits ?? 0)} of ${cr(t.capCredits)} this month`}
-                    {t.capCredits == null && (t.spendCredits ?? 0) > 0 && ` · ${cr(t.spendCredits ?? 0)} this month`}
+                    {t.capCredits != null && ` · ${spent(t)} of ${fmtCredits(t.capCredits)} this month`}
+                    {t.capCredits == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
                     {t.capCredits == null && t.legacyCeiling && " · ceiling set before credits"}
                   </>
                 ) : (
                   <>
-                    {t.capUsd != null && ` · ${usd(t.spendThisMonth ?? 0, 2)} of ${usd(t.capUsd, 2)} this month`}
-                    {t.capUsd == null && (t.spendThisMonth ?? 0) > 0 && ` · ${usd(t.spendThisMonth ?? 0, 2)} this month`}
+                    {t.capUsd != null && ` · ${spent(t)} of ${usd(t.capUsd, 2)} this month`}
+                    {t.capUsd == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
                   </>
                 )}
                 {" · "}{t.lastUsed ? `used ${timeAgo(t.lastUsed)}` : "never used"}

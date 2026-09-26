@@ -150,18 +150,19 @@ test("setup guides carry this workspace's address and the new token, and a deskt
 
 test("tokens read in the workspace's unit: credits never show a dollar, a blank ceiling is said on purpose", () => {
   const now = Date.UTC(2026, 8, 26, 12);
-  const render: ApiToken = { id: "t1", name: "Claude", scope: "render", lastUsed: now - 2 * 3_600_000, createdAt: 0, capCredits: 500, spendCredits: 120 };
+  const render: ApiToken = { id: "t1", name: "Claude", scope: "render", lastUsed: now - 2 * 3_600_000, createdAt: 0, capCredits: 500, spendThisMonth: 120 };
   expect(tokenFacts(render, "credits", now)).toBe("Can generate · 120 cr of 500 cr this month · used 2h ago");
   expect(ceilingShare(render, "credits")).toBeCloseTo(0.24);
   expect(tokenFacts({ ...render, capCredits: null, legacyCeiling: true }, "credits", now)).toContain("ceiling set before credits");
   expect(tokenFacts({ ...render, capCredits: null }, "credits", now)).toContain("no ceiling");
-  expect(tokenFacts({ ...render, capCredits: 500, spendCredits: 900 }, "credits", now)).not.toContain("$");
-  expect(ceilingShare({ ...render, spendCredits: 900 }, "credits")).toBe(1);
-  expect(tokenFacts({ id: "t2", name: "Reader", scope: "read", lastUsed: null, createdAt: 0 }, "credits", now)).toBe("Read-only · never used");
-  expect(ceilingShare({ id: "t2", name: "Reader", scope: "read", lastUsed: null, createdAt: 0, capCredits: 5 }, "credits")).toBeNull();
+  expect(tokenFacts({ ...render, capCredits: 500, spendThisMonth: 900 }, "credits", now)).not.toContain("$");
+  expect(ceilingShare({ ...render, spendThisMonth: 900 }, "credits")).toBe(1);
+  expect(tokenFacts({ id: "t2", name: "Reader", scope: "read", lastUsed: null, createdAt: 0, spendThisMonth: 0 }, "credits", now)).toBe("Read-only · never used");
+  expect(ceilingShare({ id: "t2", name: "Reader", scope: "read", lastUsed: null, createdAt: 0, spendThisMonth: 0, capCredits: 5 }, "credits")).toBeNull();
   expect(tokenFacts({ id: "t3", name: "Own keys", scope: "render", lastUsed: null, createdAt: 0, capUsd: 20, spendThisMonth: 4.5 }, "usd", now)).toBe("Can generate · $4.50 of $20.00 this month · never used");
 
-  expect(parseTokens({ unit: "credits", tokens: [{ id: "a", name: "A", scope: "render", capCredits: 10, spendCredits: 3, lastUsed: null, createdAt: 1 }] })).toMatchObject({ unit: "credits", tokens: [{ id: "a", capCredits: 10, spendCredits: 3 }] });
+  /* The route's own words (#385): unit "cr", the month in `spendThisMonth`. */
+  expect(parseTokens({ unit: "cr", tokens: [{ id: "a", name: "A", scope: "render", capCredits: 10, spendThisMonth: 3, lastUsed: null, createdAt: 1 }] })).toMatchObject({ unit: "credits", tokens: [{ id: "a", capCredits: 10, spendThisMonth: 3 }] });
   expect(parseTokens({ tokens: [] })).toEqual({ unit: "usd", tokens: [] });
   for (const bad of [null, { tokens: "x" }, { tokens: [{ id: 1, name: "x" }] }]) expect(parseTokens(bad)).toBeNull();
 
