@@ -13,7 +13,7 @@ import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, type BillingSource, type ComposerModel, type ComposerType } from "@/lib/workspace/composer";
-import { EMPTY_MEMORY, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, writePickerMemory, type PickerMemory } from "@/lib/workspace/model-picker";
+import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useSession } from "@/lib/session";
 import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
@@ -76,10 +76,32 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
   const modelButton = useRef<HTMLButtonElement>(null);
   const openSheet = () => { setMemory(readPickerMemory(scope)); setSheet(true); };
-  const closeSheet = () => { setSheet(false); modelButton.current?.focus({ preventScroll: true }); };
+  const closeSheet = () => { setSheet(false); setSheetRates((r) => (r?.failed ? null : r)); modelButton.current?.focus({ preventScroll: true }); };
   const used = (id: string) => writePickerMemory(scope, rememberRecent(readPickerMemory(scope), recentKey(state.billing, state.type, id)));
   const pickModel = (m: ComposerModel) => { used(m.id); composer.dispatch({ type: "model", value: m.id }); closeSheet(); };
   const recent = useMemo(() => recentModels(memory.recent, state.billing, state.type, offered), [memory.recent, state.billing, state.type, offered]);
+  /* Every Studio row is priced where the composer stands (its picks, the project's aspect, its references,
+     one take): the list's own rates cover the untouched composer; anything else is one read of the engines
+     route's list, priced there, while the sheet is open. It quotes nothing and reserves nothing. */
+  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: state.seconds, takes: state.count }),
+    [composer.project?.aspect, state.picks, state.references, state.seconds, state.count]);
+  const priceKey = rateQuery(priceAt);
+  const [sheetRates, setSheetRates] = useState<SheetRates | null>(null);
+  const wantsRates = sheet && state.billing === "workspace" && needsPricedRead(offered, priceAt);
+  const ratesKey = sheetRates?.key ?? null;
+  useEffect(() => {
+    if (!wantsRates || ratesKey === priceKey) return;
+    let live = true;
+    void scopedFetch(`/api/workbench/engines?${priceKey}`, { cache: "no-store" })
+      .then(async (r) => { if (!r.ok) throw new Error("unpriced"); return r.json(); })
+      .then((reply) => { if (live) setSheetRates(sheetRatesFrom(priceKey, reply)); })
+      /* An unread price leaves those rows "priced on Generate"; the next opening asks again. */
+      .catch(() => { if (live) setSheetRates({ key: priceKey, models: {}, audio: null, failed: true }); });
+    return () => { live = false; };
+  }, [wantsRates, ratesKey, priceKey, scopedFetch]);
+  const rates = sheetRates?.key === priceKey ? sheetRates : null;
+  const readingRates = wantsRates && !rates;
+  const priceOf = (m: ComposerModel) => rowPrice(m, memory.quoted, priceAt, rates, readingRates);
   /* A connected quote the composer was actually given becomes that model's "last quote"; nothing here asks for one. */
   const connectedCredits = state.billing === "connected" && model?.connected ? composer.credits : null;
   const quotedAt = [model?.durations?.length ? `${settings.duration} s` : null, model?.resolutions?.length ? settings.resolution : null].filter(Boolean).join(" · ");
@@ -380,9 +402,14 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       {sheet ? createPortal(
         <div className="gx-veil" onClick={closeSheet} data-testid="model-sheet-veil">
           <ModelSheet label={`${TYPE_TAB[state.type]} models`} groups={groups} billing={state.billing} onBilling={(value) => composer.dispatch({ type: "billing", value })}
-            offered={offered} recent={recent} selectedId={model?.id ?? null} quoted={memory.quoted}
+            offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf}
             loading={blocked === READING_MODELS || blocked === READING_ACCOUNT}
             empty={!offered.length && blocked ? blocked : state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}
+            emptyActions={state.billing === "connected"
+              ? [{ label: "Use Studio engines", onClick: () => composer.dispatch({ type: "billing", value: "workspace" }), testId: "gen-model-use-studio" },
+                 ...(session.owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
+              /* The engine list itself is missing (a failed read): read it again. */
+              : composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
             onPick={pickModel} onClose={closeSheet} />
         </div>,
         document.querySelector(".gx") ?? document.body,

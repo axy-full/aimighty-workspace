@@ -1,14 +1,18 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { BillingSource, ComposerModel } from "@/lib/workspace/composer";
-import { modelChips, pickerSections, rowPrice, type Quoted } from "@/lib/workspace/model-picker";
+import { modelChips, pickerSections, type RowPrice } from "@/lib/workspace/model-picker";
+
+/** A way out of an empty sheet ("Try again", "Use Studio engines"). */
+export type SheetAction = { label: string; onClick: () => void; testId?: string };
 
 /**
  * Gen's model sheet: search, Recent, and on every row what the engine does
- * (spec chips) and what it costs (lib/workspace/model-picker.ts › rowPrice),
- * so a model is chosen knowing its price rather than reading it off Generate.
+ * (spec chips) and what it costs where the composer stands
+ * (lib/workspace/model-picker.ts › rowPrice), so a model is chosen knowing its
+ * price rather than reading it off Generate.
  */
-export function ModelSheet({ label, groups, billing, onBilling, offered, recent, selectedId, quoted, empty, loading, onPick, onClose }: {
+export function ModelSheet({ label, groups, billing, onBilling, offered, recent, selectedId, priceOf, empty, emptyActions = [], loading, onPick, onClose }: {
   /** The listbox's name ("Video models"). */
   label: string;
   /** The catalogues this person may use; one hides the switch. */
@@ -18,9 +22,12 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
   offered: readonly ComposerModel[];
   recent: readonly ComposerModel[];
   selectedId: string | null;
-  quoted: Readonly<Record<string, Quoted>>;
+  /** The figure beside a row (rowPrice, where the composer stands). */
+  priceOf: (model: ComposerModel) => RowPrice;
   /** Why the list is empty (a refusal, or nothing offered for this output). */
   empty: string;
+  /** What the person can do about an empty list. */
+  emptyActions?: readonly SheetAction[];
   /** The list is still being read. */
   loading: boolean;
   onPick: (model: ComposerModel) => void;
@@ -32,11 +39,14 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
   const ids = useId();
   const { recent: lead, rest } = useMemo(() => pickerSections(offered, recent, query), [offered, recent, query]);
 
-  /* A pointer keeps typing where it is; a phone keeps its keyboard down until the field is tapped. */
+  /* A pointer keeps typing where it is; a phone keeps its keyboard down until the field is tapped.
+     The field only exists with a list, so this runs again when a list that was still being read arrives. */
+  const listed = offered.length > 0;
   useEffect(() => {
-    if (window.matchMedia?.("(pointer: fine)").matches) search.current?.focus({ preventScroll: true });
+    if (!listed) return;
+    if (window.matchMedia?.("(pointer: fine)").matches && !search.current?.closest("[role=dialog]")?.contains(document.activeElement)) search.current?.focus({ preventScroll: true });
     list.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
-  }, []);
+  }, [listed]);
 
   const options = () => Array.from(list.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? []);
   const onListKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -55,14 +65,15 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
   };
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") { e.preventDefault(); options()[0]?.focus(); return; }
-    if (e.key === "Enter") {
+    /* Enter picks the first match of a typed query: never mid-composition (an IME confirming a word), never on an empty field. */
+    if (e.key === "Enter" && !e.nativeEvent.isComposing && query.trim()) {
       const first = lead[0] ?? rest[0];
       if (first) { e.preventDefault(); onPick(first); }
     }
   };
 
   const row = (m: ComposerModel) => {
-    const price = rowPrice(m, quoted);
+    const price = priceOf(m);
     const chips = modelChips(m);
     return (
       <button key={m.id} type="button" role="option" aria-selected={m.id === selectedId} className="gx-sheet-row gx-sheet-row--spec" data-model={m.id} onClick={() => onPick(m)}>
@@ -77,8 +88,10 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
           ) : null}
         </span>
         <span className="gx-sheet-price" data-testid="gen-sheet-price" data-kind={price.kind} title={price.title}>
-          {price.credits != null ? <b>{price.credits.toLocaleString("en-US")} cr</b> : null}
-          <span>{price.detail}</span>
+          {price.kind === "loading" ? <i className="gx-sheet-price-skel" aria-hidden="true" /> : null}
+          {price.credits != null ? <b>{price.credits.toLocaleString("en-US")} {price.unit}</b> : null}
+          {price.detail ? <span>{price.detail}</span> : null}
+          {price.perTake ? <span>per take</span> : null}
         </span>
         <span className="gx-sheet-tick" aria-hidden="true">{m.id === selectedId ? "✓" : ""}</span>
       </button>
@@ -96,11 +109,13 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
           </div>
         ) : <span className="gx-spacer" />}
         <button type="button" className="gx-hbtn" onClick={onClose}>Close</button>
-        <div className="gx-sheet-find">
-          <input ref={search} type="search" className="gx-field" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey}
-            placeholder={offered.length ? `Search ${offered.length} ${offered.length === 1 ? "model" : "models"}` : "Search models"} aria-label="Search models"
-            aria-controls={`${ids}-list`} autoComplete="off" spellCheck={false} enterKeyHint="go" data-testid="gen-model-search" />
-        </div>
+        {listed ? (
+          <div className="gx-sheet-find">
+            <input ref={search} type="search" className="gx-field" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey}
+              placeholder={`Search ${offered.length} ${offered.length === 1 ? "model" : "models"}`} aria-label="Search models"
+              aria-controls={`${ids}-list`} autoComplete="off" spellCheck={false} enterKeyHint="go" data-testid="gen-model-search" />
+          </div>
+        ) : null}
       </div>
       {lead.length || rest.length ? (
         <div ref={list} id={`${ids}-list`} className="gx-sheet-list gx-scroll" role="listbox" aria-label={label} onKeyDown={onListKey}>
@@ -111,7 +126,7 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
             </div>
           ) : null}
           <div role="group" aria-labelledby={lead.length ? `${ids}-all` : undefined} aria-label={lead.length ? undefined : label} className="gx-sheet-group" data-testid="gen-model-all">
-            {lead.length ? <span id={`${ids}-all`} className="gx-sheet-group-label" data-functional-label="">All models</span> : null}
+            {lead.length ? <span id={`${ids}-all`} className="gx-sheet-group-label" data-functional-label="">More models</span> : null}
             {rest.map(row)}
           </div>
         </div>
@@ -123,7 +138,14 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
               <span className="gx-empty">{empty}</span>
             </div>
           ) : !offered.length ? (
-            <p className="gx-empty" role="status" data-testid="gen-model-empty">{empty}</p>
+            <div className="gx-sheet-empty" role="status" data-testid="gen-model-empty">
+              <p className="gx-empty">{empty}</p>
+              {emptyActions.length ? (
+                <div className="gx-sheet-actions">
+                  {emptyActions.map((a) => <button key={a.label} type="button" className="gx-hbtn" onClick={a.onClick} data-testid={a.testId}>{a.label}</button>)}
+                </div>
+              ) : null}
+            </div>
           ) : (
             <p className="gx-empty gx-sheet-none" role="status" data-testid="gen-model-none">
               <span>No model matches “{query.trim()}”.</span>

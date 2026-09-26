@@ -141,6 +141,8 @@ export type ComposerHost = {
   /** One line about a project the composer had to create. */
   projectNotice: string | null;
   generate: () => void;
+  /** Read the engine list again after a failed read (Gen's model sheet › Try again). */
+  retryEngines: () => void;
   scope: string;
 };
 
@@ -169,6 +171,7 @@ export function useComposer(options: {
     (type) => (type ? { ...INITIAL_COMPOSER, type } : INITIAL_COMPOSER),
   );
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
+  const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
   const [capability, setCapability] = useState<ConnectedCapability | null>(null);
   const [catalogue, setCatalogue] = useState<{ rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
@@ -196,7 +199,8 @@ export function useComposer(options: {
         setEngines({ rows: [], loading: false, error: neutralCopy(error instanceof Error ? error.message : "The available models could not be read.", "The available models could not be read.") });
       });
     return () => controller.abort();
-  }, [open, scope]);
+  }, [open, scope, enginesRead]);
+  const retryEngines = useCallback(() => { setEngines({ rows: [], error: null, loading: true }); setEnginesRead((n) => n + 1); }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -587,7 +591,7 @@ export function useComposer(options: {
     buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, capability, project: target, projectNotice, generate, scope,
+    audio, capability, project: target, projectNotice, generate, retryEngines, scope,
   };
 }
 

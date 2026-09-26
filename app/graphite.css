@@ -291,6 +291,13 @@
 .gx-sheet-price[data-kind="none"] span { max-width: 76px; white-space: normal; line-height: 1.25; }
 .gx-sheet-tick { flex: none; width: 12px; color: var(--gx-accent-text); }
 .gx-sheet-none { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px; }
+.gx-sheet-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 10px; }
+.gx-sheet-empty .gx-empty { padding: 0; }
+.gx-sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The price of a row still being read where the composer stands. */
+.gx-sheet-price-skel { display: block; width: 44px; height: 14px; border-radius: 4px; background: rgba(255, 255, 255, .08); animation: gx-pulse 1.4s ease-in-out infinite; }
+/* The last row never sits on the sheet's edge. */
+@media (min-width: 768px) { .gx-sheet--models .gx-sheet-list { padding-bottom: 14px; } }
 .gx-sheet-loading { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
 .gx-sheet-skel { height: 64px; border-radius: 999px; background: linear-gradient(90deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, .08), rgba(255, 255, 255, .04)); animation: gx-pulse 1.4s ease-in-out infinite; }
 @media (max-width: 767px) {
@@ -301,8 +308,16 @@
   .gx-sheet--models .gx-sheet-find { order: 3; }
   /* The name already leads the row: the two-letter tag gives its width to the chips. */
   .gx-sheet-row--spec > .gx-tool-tag { display: none; }
-  /* The row is a capsule (GLASS_SPEC): 20px sides keep its first and last lines clear of the curve. */
-  .gx-sheet-row--spec { gap: 10px; padding: 10px 20px; }
+  /* A row of two or three lines is a rounded card, not a capsule: its name and last chip stay clear of the curve. */
+  .gx-sheet-row--spec { gap: 10px; padding: 10px 16px; }
+  .gx .gx-sheet--models .gx-sheet-row--spec { border-radius: 22px; }
+}
+/* A short phone: the sheet takes more of the screen and its head packs tighter, so more rows show. */
+@media (max-width: 767px) and (max-height: 700px) {
+  .gx .gx-sheet--models { max-height: calc(100dvh - 16px); }
+  .gx .gx-sheet--models::before { margin: 6px 0 2px; }
+  .gx .gx-sheet--models .gx-sheet-head { padding: 2px 16px 8px; row-gap: 8px; }
+  .gx .gx-sheet--models .gx-sheet-list { gap: 6px; }
 }
 @media (max-width: 767px), (pointer: coarse) {
   .gx-sheet-find .gx-field { height: 44px; }
@@ -315,7 +330,7 @@
   .gx-sheet--models { max-height: calc(100dvh - 24px); }
   .gx-sheet--models .gx-sheet-head { padding: 8px 14px; gap: 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .gx-sheet-skel { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .gx-sheet-skel, .gx-sheet-price-skel { animation: none; } }
 @media (max-width: 1023px) { .gx-gen { grid-template-columns: minmax(0, 1fr); padding: 12px; } }
 
 /* ── Assets on every page (FINAL_SPEC §1 step 1) ─────────────────────── */

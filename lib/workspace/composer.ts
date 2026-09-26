@@ -50,10 +50,12 @@ export type ComposerModel = {
   /** Workspace image/video engines: the most reference images and videos the engine takes. */
   maxImages?: number;
   maxVideos?: number;
-  /** Takes carry sound: a Studio engine that always renders it (engines route › audio), or a connected schema's audio parameter. */
+  /** Takes carry sound: a Studio engine that always renders it (engines route › audio), or a connected audio parameter that defaults on. */
   audio?: boolean;
   /** Workspace image/video engines: the price at the composer's untouched settings (GET /api/workbench/engines › rate). */
   rate?: EngineRate | null;
+  /** Sizes the engine lists but that were never rendered here (lib/models.ts › untestedResolutions). */
+  untested?: string[];
 };
 
 /** A project file picked as a reference: already saved, so it is cited by id. */
@@ -181,7 +183,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 
 /* ── Model lists ──────────────────────────────────────────────────────── */
 
-/** An engine's price at the composer's untouched settings, in credits (lib/workbench/media-quote.ts › workbenchRate). */
+/** An engine's price at the settings it names, in credits (lib/workbench/media-quote.ts › workbenchRate). */
 export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null };
 
 /** A row of GET /api/workbench/engines, as the composer reads it. */
@@ -195,7 +197,8 @@ export type EngineRow = {
   marketing?: boolean;
   maxReferenceImages?: number;
   maxReferenceVideos?: number;
-  /** One line on what the engine is for. */
+  untestedResolutions?: string[];
+  /** One line on what the engine is for, as Gen renders it (lib/workbench/media-quote.ts › workbenchUse). */
   use?: string;
   /** A take from this engine carries sound as the workbench renders it (lib/workbench/media-quote.ts › rendersSound). */
   audio?: boolean;
@@ -207,7 +210,7 @@ export type ConnectedRow = {
   id: string; name: string; outputType: string; description?: string;
   medias?: { name?: string; roles: string[]; max?: number }[];
   aspectRatios?: string[]; durations?: number[]; durationRange?: { min: number; max: number };
-  parameters?: { name: string; type?: string; options?: (string | number)[]; min?: number; max?: number }[];
+  parameters?: { name: string; type?: string; options?: (string | number)[]; min?: number; max?: number; default?: string | number | boolean | null }[];
 };
 /** Every whole second of a range, for engines whose `durations` is min/max (Seedance 2.5: 4–30 s). */
 export function secondsIn(range: { min: number; max: number }): number[] {
@@ -241,12 +244,13 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ...(typeof engine.maxReferenceVideos === "number" ? { maxVideos: engine.maxReferenceVideos } : {}),
       ...(engine.audio ? { audio: true } : {}),
       ...(engine.rate ? { rate: engine.rate } : {}),
+      ...(engine.untestedResolutions?.length ? { untested: engine.untestedResolutions } : {}),
     }));
   if (audio?.configured) {
     const speech = audio.defaultSpeechModel || audio.speechModels[0]?.id || "";
-    out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound" });
-    out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music" });
-    if (speech && audio.voices.length) out.push({ id: speech, label: displayModelName(speech), type: "audio", audioTask: "speech" });
+    out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound", description: "Sound effects from a description." });
+    out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music", description: "Music from a description, 10 s and up." });
+    if (speech && audio.voices.length) out.push({ id: speech, label: displayModelName(speech), type: "audio", audioTask: "speech", description: "Your words, read in a chosen voice." });
   }
   return out;
 }
@@ -280,7 +284,8 @@ export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] 
       enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
       soulId: Boolean(row.parameters?.some((p) => p.name === "soul_id")),
       ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
-      ...(type === "video" && row.parameters?.some((p) => /audio|sound/i.test(p.name)) ? { audio: true } : {}),
+      /* The composer never sends an audio switch, so a take carries sound only where the account's default is on. */
+      ...(type === "video" && row.parameters?.some((p) => /audio|sound/i.test(p.name) && p.default === true) ? { audio: true } : {}),
     }];
   });
 }
@@ -408,7 +413,7 @@ export function composerBlock(input: {
   if (state.billing === "connected") {
     if (!input.capability) return READING_ACCOUNT;
     if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
-    if (!input.capability.connected) return "No account is connected. Connect one in Workspace settings, or use this workspace’s credits.";
+    if (!input.capability.connected) return "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
     if (input.capability.suspended) return "Rendering is paused for this workspace.";
   }
   if (input.catalogue.error) return input.catalogue.error;

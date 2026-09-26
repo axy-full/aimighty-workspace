@@ -1,12 +1,17 @@
-import type { BillingSource, ComposerModel, ComposerType } from "./composer";
+import { composerSettings, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerReference, type ComposerSettings, type ComposerType, type EngineRate } from "./composer";
+import { mediaQuoteReferences } from "../workbench/media-reference-input";
+import type { Asset } from "../workbench/studio";
 
 /**
  * Gen's model sheet, as pure data: the spec chips on every row, the price
  * beside it, the search, and the Recent group.
  *
  * Where a price comes from, one line per catalogue:
- *  - Studio engines carry `rate`, computed on the server from the engine's
- *    own rates at the composer's untouched settings (GET /api/workbench/engines);
+ *  - Studio engines are priced on the server (GET /api/workbench/engines) at
+ *    the settings the composer would render each one with — its picks, the
+ *    project's aspect, its references — so the ticked row is the figure
+ *    Generate shows for one take. A figure is only shown when the settings it
+ *    names are that engine's composerSettings; otherwise the row waits;
  *  - connected models are never priced from here — a quote on the connected
  *    account is a job row there — so a row shows the last figure this browser
  *    was actually quoted for it, and nothing when there is none.
@@ -78,8 +83,11 @@ function refsChip(m: ComposerModel): SpecChip | null {
 /** The row's chips, in one order everywhere: size, length, references, sound, enhance. */
 export function modelChips(m: ComposerModel): SpecChip[] {
   const out: SpecChip[] = [];
-  const size = maxResolution(m.resolutions);
-  if (size) out.push({ key: "resolution", text: size, title: `Up to ${size} · ${(m.resolutions ?? []).join(", ")}` });
+  /* The headline size is one that has been rendered here; a listed, untested tier is named in the title only. */
+  const untested = new Set((m.untested ?? []).map((r) => r.toLowerCase()));
+  const size = maxResolution((m.resolutions ?? []).filter((r) => !untested.has(r.toLowerCase())));
+  const listed = (m.resolutions ?? []).map((r) => (untested.has(r.toLowerCase()) ? `${r} (listed, untested)` : r)).join(", ");
+  if (size) out.push({ key: "resolution", text: size, title: `Up to ${size} · ${listed}` });
   const length = m.type === "video" ? lengthSpan(m.durations) : null;
   if (length) out.push({ key: "length", text: length, title: `Length ${length}` });
   const refs = refsChip(m);
@@ -92,29 +100,109 @@ export function modelChips(m: ComposerModel): SpecChip[] {
 /* ── The price beside a row ───────────────────────────────────────────── */
 
 export type Quoted = { credits: number; at: number; detail?: string };
-export type RowPrice = { credits: number | null; detail: string; title: string; kind: "rate" | "last" | "none" };
+export type RowPrice = {
+  credits: number | null;
+  /** The figure's unit, as Generate writes it: connected credits are the account's, not this workspace's. */
+  unit: "cr" | "connected cr";
+  detail: string;
+  /** Takes per Generate is above one: the row is one take, the button multiplies. */
+  perTake: boolean;
+  title: string;
+  kind: "rate" | "last" | "loading" | "none";
+};
 
-/** The settings a Studio rate prices, written as the composer's chips write them. */
-function rateDetail(rate: NonNullable<ComposerModel["rate"]>): string {
-  return [rate.duration != null ? `${rate.duration} s` : null, rate.resolution !== "adaptive" ? rate.resolution : null].filter(Boolean).join(" · ");
+/** Where Gen's composer stands: every Studio row is priced here, one take at a time. */
+export type PriceAt = { aspect?: string; picks: ComposerPicks; references: readonly ComposerReference[]; seconds: number; takes: number };
+export const UNTOUCHED: PriceAt = { picks: {}, references: [], seconds: 10, takes: 1 };
+/** A sound engine's price (lib/workbench/media-quote.ts › workbenchAudioRates). */
+export type AudioRate = { credits: number; seconds: number | null };
+/** The sheet's own priced read of the engines route, for the PriceAt its key names. */
+export type SheetRates = { key: string; models: Readonly<Record<string, EngineRate | null>>; audio: { sound?: AudioRate; music?: AudioRate } | null; failed?: boolean };
+
+/** A reference as the quote helpers read it: an Asset citing its saved id (as the composer's own quote does). */
+const quoteAsset = (r: ComposerReference): Asset =>
+  ({ id: r.key, name: r.name, url: r.url, kind: r.kind, ...(r.origin === "upload" ? { uploadId: r.id } : { generationId: r.id }) }) as unknown as Asset;
+
+/** The engines-route query that prices the list where the composer stands (the route's list read, never a quote). */
+export function rateQuery(at: PriceAt): string {
+  const q = new URLSearchParams();
+  if (at.picks.ratio) q.set("pickRatio", at.picks.ratio);
+  if (at.picks.resolution) q.set("pickResolution", at.picks.resolution);
+  if (at.picks.duration != null) q.set("pickDuration", String(at.picks.duration));
+  if (at.aspect) q.set("aspect", at.aspect);
+  q.set("seconds", String(at.seconds));
+  const refs = at.references.length ? mediaQuoteReferences(at.references.map(quoteAsset)) : "";
+  return [q.toString(), refs].filter(Boolean).join("&");
+}
+
+/** A rate prices this row only when it names the settings the composer would render the engine with. */
+function fits(rate: EngineRate, m: ComposerModel, want: ComposerSettings): boolean {
+  return rate.resolution === want.resolution && rate.ratio === want.ratio && (m.type !== "video" || rate.duration === want.duration);
 }
 
 /**
- * The figure beside a row: a Studio engine's rate at its untouched settings,
- * a connected model's last quote in this browser, or nothing — never a guess.
+ * Whether the rates the composer's own list read carries (untouched settings,
+ * no references) leave any Studio row unpriced where the composer stands — the
+ * sheet then asks the engines route for the list priced there.
  */
-export function rowPrice(m: ComposerModel, quoted: Readonly<Record<string, Quoted>>): RowPrice {
-  if (!m.connected && m.rate) {
-    const detail = rateDetail(m.rate);
-    const at = [detail, m.rate.ratio !== "adaptive" ? m.rate.ratio : null].filter(Boolean).join(" · ");
-    return { credits: m.rate.credits, detail, kind: "rate", title: `${m.rate.credits.toLocaleString("en-US")} cr${at ? ` at ${at}` : ""}, no references` };
-  }
-  const last = m.connected ? quoted[m.id] : undefined;
-  if (last) {
-    return { credits: last.credits, detail: "last quote", kind: "last",
+export function needsPricedRead(offered: readonly ComposerModel[], at: PriceAt): boolean {
+  return offered.some((m) => !m.connected && (
+    m.audioTask === "sound" || m.audioTask === "music"
+    || (m.type !== "audio" && (at.references.length > 0 || !m.rate || !fits(m.rate, m, composerSettings(m, at.aspect, at.picks))))
+  ));
+}
+
+/** The priced read's reply, kept by the key it was asked for. */
+export function sheetRatesFrom(key: string, reply: { models?: { id: string; rate?: EngineRate | null }[]; audio?: { sound?: AudioRate; music?: AudioRate } | null }): SheetRates {
+  return { key, models: Object.fromEntries((reply.models ?? []).map((row) => [row.id, row.rate ?? null])), audio: reply.audio ?? null };
+}
+
+/** The settings a figure is at, as Gen's chips write them; the aspect only where it is not the usual 16:9. */
+function settingsDetail(rate: EngineRate): string {
+  return [rate.duration != null ? `${rate.duration} s` : null, rate.resolution !== "adaptive" ? rate.resolution : null, rate.ratio !== "16:9" ? rate.ratio : null].filter(Boolean).join(" · ");
+}
+
+const NONE: Omit<RowPrice, "perTake"> = { credits: null, unit: "cr", detail: "priced on Generate", kind: "none", title: "The live price shows on Generate once there is a prompt" };
+const LOADING: Omit<RowPrice, "perTake"> = { credits: null, unit: "cr", detail: "", kind: "loading", title: "Pricing at these settings…" };
+
+/**
+ * The figure beside a row, never a guess: a Studio engine priced where the
+ * composer stands (the sheet's priced read, or the list's own rate when that
+ * is already at those settings), a sound engine's rate, a connected model's
+ * last quote in this browser, or nothing.
+ */
+export function rowPrice(m: ComposerModel, quoted: Readonly<Record<string, Quoted>>, at: PriceAt = UNTOUCHED, sheet: SheetRates | null = null, reading = false): RowPrice {
+  const perTake = at.takes > 1;
+  if (m.connected) {
+    const last = quoted[m.id];
+    if (!last) return { ...NONE, perTake: false };
+    return { credits: last.credits, unit: "connected cr", detail: "last quote", kind: "last", perTake,
       title: `Last quoted in this browser: ${last.credits.toLocaleString("en-US")} connected cr${last.detail ? ` at ${last.detail}` : ""}` };
   }
-  return { credits: null, detail: "priced on Generate", kind: "none", title: "The live price shows on Generate once there is a prompt" };
+  if (m.type === "audio") {
+    const rate = m.audioTask === "sound" ? sheet?.audio?.sound : m.audioTask === "music" ? sheet?.audio?.music : undefined;
+    if (rate) {
+      const detail = rate.seconds != null ? `${rate.seconds} s` : "any length";
+      return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake, title: `${rate.credits.toLocaleString("en-US")} cr per take, ${rate.seconds != null ? `at ${rate.seconds} s` : "whatever its length"}` };
+    }
+    if (reading && (m.audioTask === "sound" || m.audioTask === "music")) return { ...LOADING, perTake: false };
+    return m.audioTask === "speech"
+      ? { ...NONE, perTake: false, title: "Speech is priced by its words: the live price shows on Generate once there is a prompt" }
+      : { ...NONE, perTake: false };
+  }
+  const want = composerSettings(m, at.aspect, at.picks);
+  const fromSheet = sheet?.models[m.id];
+  const rate = fromSheet !== undefined
+    ? (fromSheet && fits(fromSheet, m, want) ? fromSheet : null)
+    : !at.references.length && m.rate && fits(m.rate, m, want) ? m.rate : null;
+  if (rate) {
+    const detail = settingsDetail(rate);
+    const refs = at.references.length ? `with the ${at.references.length === 1 ? "reference" : `${at.references.length} references`} attached` : "no references";
+    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake,
+      title: `${rate.credits.toLocaleString("en-US")} cr per take at ${[detail, rate.ratio === "16:9" ? "16:9" : null].filter(Boolean).join(" · ")}, ${refs}` };
+  }
+  if (reading && fromSheet === undefined) return { ...LOADING, perTake: false };
+  return { ...NONE, perTake: false };
 }
 
 /* ── Search and Recent ────────────────────────────────────────────────── */
