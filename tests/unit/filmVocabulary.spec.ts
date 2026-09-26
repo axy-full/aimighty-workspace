@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   FILM_CHIPS, applicableSetup, chipOptions, chipValue, chipsFor, cleanSetup, composeForSend, dropToken, extraRows, hashToken,
-  optionMatches, pickOption, setupLabels, vocabularyMatches, withoutSetup,
+  optionMatches, pickOption, recipeSetup, setupLabels, vocabularyMatches, withoutSetup,
 } from "../../lib/workspace/film-vocabulary";
 import { composePrompt } from "../../lib/studio";
 import { INITIAL_COMPOSER, composerReducer } from "../../lib/workspace/composer";
@@ -64,6 +64,24 @@ test("a still uses framing, lens, light, hour, look and mood; rows no chip shows
   expect(cleanSetup(["cu"])).toEqual({});
   expect(Object.keys(cleanSetup(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`k${i}`, "v"]))))).toHaveLength(20);
   expect(setupLabels({ shot: "ws", move: "crane", light: "back", time: "golden" })).toEqual(["Wide", "Crane", "Backlit", "Golden hour"]);
+});
+
+test("the Recreate card names the take's setup and says kept only while the chips hold exactly it for this output", () => {
+  const taken = { shot: "ws", move: "crane", light: "back", time: "golden" };
+  /* Just recreated: the chips hold what the take carried. */
+  expect(recipeSetup(taken, "video", taken, "video")).toEqual({ labels: ["Wide", "Crane", "Backlit", "Golden hour"], kept: true });
+  /* A row taken off, a pick changed or one added here: changed here. */
+  expect(recipeSetup(taken, "video", { shot: "ws", move: "crane", light: "back" }, "video")).toMatchObject({ kept: false, why: "Changed here" });
+  expect(recipeSetup(taken, "video", { ...taken, shot: "cu" }, "video")).toMatchObject({ kept: false, why: "Changed here" });
+  expect(recipeSetup(taken, "video", { ...taken, lens: "35" }, "video")).toMatchObject({ kept: false, why: "Changed here" });
+  /* Gen moved to a still: the crane is not sent, and that is the reason, not a change made here. */
+  expect(recipeSetup(taken, "video", taken, "image")).toEqual({ labels: ["Wide", "Crane", "Backlit", "Golden hour"], kept: false, why: "A still has no camera move" });
+  expect(recipeSetup(taken, "video", { ...taken, shot: "cu" }, "image")).toMatchObject({ kept: false, why: "Changed here" });
+  expect(recipeSetup(taken, "video", taken, "audio")).toMatchObject({ kept: false, why: "Sound takes no setup" });
+  /* A still's take never carried camera travel: its labels leave it out, and a still holds the rest. */
+  expect(recipeSetup(taken, "image", taken, "image")).toEqual({ labels: ["Wide", "Backlit", "Golden hour"], kept: true });
+  expect(recipeSetup(["cu"], "video", {}, "video")).toEqual({ labels: [], kept: true });
+  expect(recipeSetup({ shot: "ws" }, "image", { shot: "ws" }, "video")).toEqual({ labels: ["Wide"], kept: true });
 });
 
 test("Generate sends the words with the setup written in once, the bank's way, and the setup as data; a still never gets a camera module", () => {

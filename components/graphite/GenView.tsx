@@ -27,7 +27,7 @@ import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generat
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
-import { cleanSetup, setupLabels, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
+import { cleanSetup, recipeSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
@@ -353,13 +353,15 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     reading: blocked === READING_MODELS || blocked === READING_ACCOUNT, blocked: model ? null : blocked, identities: characters.list,
   }) : [];
   const refs = recipe?.refs ?? null;
-  const setup = recipe?.preset.shotSpec ? setupLabels(recipe.preset.shotSpec) : [];
+  /* The setup the take carried, and whether the chips still hold it for this output (a still has no camera travel). */
+  const setup = recipe?.preset.shotSpec ? recipeSetup(recipe.preset.shotSpec, recipe.preset.type ?? state.type, state.shot, state.type) : null;
   const carried = refs ? refs.total - refs.missing.length : 0;
   const gone = refs?.missing.filter((m) => m.gone) ?? [];
   const unused = refs?.missing.filter((m) => !m.gone) ?? [];
   const from = (m: MissingReference) => (m.origin === "upload" ? "upload" : "take");
   const notes = recipe && !recipe.hidden ? [
     ...chips.filter((c) => c.state === "changed" && c.why).map((c) => ({ key: c.key, label: c.label, text: c.why!, alert: false })),
+    ...(setup?.why && setup.labels.length ? [{ key: "setup", label: "Setup", text: setup.why, alert: false }] : []),
     ...(gone.length ? [{ key: "gone", label: "Not found", text: gone.map((m) => `${m.tag ?? "a sound"} (${from(m)})${orphans.includes(m) ? " · still in the prompt" : ""}`).join(", "), alert: true }] : []),
     ...(unused.length ? [{ key: "unused", label: "Not used here", text: unused.map((m) => `${m.kind === "audio" ? "a sound" : "a file"} (${from(m)})`).join(", "), alert: false }] : []),
     ...(refs?.renumbered.length ? [{ key: "renumbered", label: "Renumbered", text: refs.renumbered.map((r) => `${r.name} ${r.was} → ${r.now}`).join(", "), alert: false }] : []),
@@ -380,7 +382,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {refs.reading ? `${refs.total} ${refs.total === 1 ? "ref" : "refs"}…` : refs.missing.length ? `${carried} of ${refs.total} refs` : `${refs.total} ${refs.total === 1 ? "ref" : "refs"}`}
           </li>
         ) : null}
-        {setup.length ? <li data-state="kept" data-chip="setup" data-testid="gen-recipe-setup" title={`Setup: ${setup.join(" · ")}`}>{setup.join(" · ")}</li> : null}
+        {setup?.labels.length ? (
+          <li data-state={setup.kept ? "kept" : "changed"} data-chip="setup" data-testid="gen-recipe-setup"
+            title={`Setup: ${setup.labels.join(" · ")}${setup.why ? ` — ${setup.why}` : ""}`}>{setup.labels.join(" · ")}</li>
+        ) : null}
       </ul>
       {notes.length ? (
         <ul className="gx-recipe-why" data-testid="gen-recipe-why">

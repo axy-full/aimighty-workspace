@@ -337,6 +337,8 @@
   .gx-fv-hash { scroll-margin-bottom: 104px; border-radius: 16px; }
   .gx-gen-card:has(.gx-fv-hash) .gx-gen-cta { position: static; }
   .gx .gx-fv-extras li { border-radius: 999px; }
+  /* The veil's one column is the screen's width (it is otherwise sized by the sheet's content), so every grid rises edge to edge. */
+  .gx-veil:has(> .gx-sheet--vocab) { grid-template-columns: minmax(0, 1fr); }
   .gx-sheet.gx-sheet--vocab { width: 100%; max-height: 82vh; max-height: 82dvh; }
   .gx-fv-list { padding: 4px 16px 32px; }
   .gx-fv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

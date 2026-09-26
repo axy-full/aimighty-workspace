@@ -128,6 +128,28 @@ export function setupLabels(setup: FilmSetup): string[] {
   return [...known, ...other];
 }
 
+const sameSetup = (a: FilmSetup, b: FilmSetup) => {
+  const rows = Object.keys(a);
+  return rows.length === Object.keys(b).length && rows.every((row) => b[row] === a[row]);
+};
+
+/**
+ * The Recreate card's setup: what the take carried (as far as its own output
+ * used it), and whether the chips still hold exactly that for the output Gen
+ * is on now. When they do not, why, the way the card's other rows say it: the
+ * output Gen is on cannot use part of it (a still has no camera travel, sound
+ * no setup at all), or it was changed here.
+ */
+export function recipeSetup(taken: unknown, takenType: ComposerType, held: FilmSetup, type: ComposerType): { labels: string[]; kept: boolean; why?: string } {
+  const was = applicableSetup(cleanSetup(taken), takenType);
+  const now = applicableSetup(held, type);
+  const labels = setupLabels(was);
+  if (sameSetup(was, now)) return { labels, kept: true };
+  /* The chips hold all the output can use of it: what is missing is what this output drops. */
+  if (sameSetup(applicableSetup(was, type), now)) return { labels, kept: false, why: type === "audio" ? "Sound takes no setup" : "A still has no camera move" };
+  return { labels, kept: false, why: "Changed here" };
+}
+
 /** The setup's words (the scene line and the craft modules), when the bank has any for it. */
 function setupWords(setup: FilmSetup): string[] {
   return [sceneLine(setup), craftModules(setup)].filter(Boolean);

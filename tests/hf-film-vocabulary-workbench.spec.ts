@@ -76,10 +76,11 @@ async function open(page: Page, options: Options = {}) {
 const chip = (page: Page, key: string) => page.getByTestId(`gen-film-${key}`);
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
-async function shot(page: Page, info: TestInfo, name: string, top = false) {
+/** `centre`: the test id to bring into the middle of the screen first. */
+async function shot(page: Page, info: TestInfo, name: string, centre?: string) {
   const dir = process.env.FILM_SHOTS;
   if (!dir || !SHOTS.includes(info.project.name)) return;
-  if (top) await page.getByTestId("gen-film").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  if (centre) await page.getByTestId(centre).evaluate((el) => el.scrollIntoView({ block: "center" }));
   await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect && Number(a.effect.getTiming().iterations) !== Infinity).map((a) => a.finished.catch(() => null))));
   await page.screenshot({ path: `${dir}/${name}-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
 }
@@ -192,7 +193,7 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
   await sheet.locator("[data-option='light:soft']").click();
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Auto");
 
-  await shot(page, info, "film-chips", true);
+  await shot(page, info, "film-chips", "gen-film");
   expect(await noOverflow(page)).toBe(true);
   if (phone) {
     expect(await smallTargets(page, ".gx-fv"), "chip targets under 44×44").toEqual([]);
@@ -219,6 +220,7 @@ test("Recreate brings a take's setup back onto the chips and out of the words; a
   const inspector = page.getByTestId("asset-inspector");
   await inspector.getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Wide · Crane · Backlit · Golden hour");
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "kept");
   const prompt = page.getByTestId("gen-prompt");
   await expect(prompt).toHaveValue("harbour at dusk, a boat drifts.");
   await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Wide");
@@ -231,8 +233,22 @@ test("Recreate brings a take's setup back onto the chips and out of the words; a
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
   expect(priced[0]).toMatchObject({ prompt: composePrompt("harbour at dusk, a boat drifts.", SETUP), shotSpec: SETUP });
+  const setupNote = page.getByTestId("gen-recipe-why").locator("[data-note='setup']");
+  await expect(setupNote).toHaveCount(0);
+  /* On a still the crane is not sent: the card says so, and it is not a change made here. */
+  await page.getByRole("tab", { name: "Images" }).click();
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "changed");
+  await expect(setupNote).toHaveText("Setup A still has no camera move");
+  await page.getByRole("tab", { name: "Video" }).click();
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "kept");
+  await expect(setupNote).toHaveCount(0);
   await extras.getByRole("button", { name: "Remove Time of day: Golden hour" }).click();
   await expect(extras).toHaveCount(0);
+  /* The card still names what the take carried, and now says the chips no longer hold it. */
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Wide · Crane · Backlit · Golden hour");
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "changed");
+  await expect(setupNote).toHaveText("Setup Changed here");
+  await shot(page, info, "film-recreate", "gen-recipe");
 
   await page.getByTestId("gen-recipe-undo").click();
   for (const key of ["shot", "camera", "light"]) await expect(chip(page, key)).toHaveAttribute("aria-label", /: Auto$/);
@@ -292,6 +308,8 @@ test("every grid draws every entry it offers, and picks from the keyboard", asyn
       return !t.querySelector("video") && (!svg || svg.childElementCount === 0 || !svg.getBoundingClientRect().width);
     }).map((t) => t.getAttribute("data-option")));
     expect(blank, `${key}: tiles with nothing drawn`).toEqual([]);
+    /* On a phone every grid rises edge to edge, whatever its content (not only the one with a search). */
+    if (PHONES.includes(info.project.name)) expect(Math.round((await sheet.boundingBox())!.width), `${key}: sheet width`).toBe(page.viewportSize()!.width);
     await shot(page, info, `film-grid-${key}`);
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
