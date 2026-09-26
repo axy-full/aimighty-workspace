@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { localPlatformDbUrl } from "./workbenchLocal";
 
-/** Shared by tests/identity-admin.spec.ts and tests/platform-desk.spec.ts. */
+/** Shared by tests/account-identity.spec.ts and tests/platform-desk.spec.ts. */
 export const password = "a local browser test passphrase 42";
 export const noSideScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);

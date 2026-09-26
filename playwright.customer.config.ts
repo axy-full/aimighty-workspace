@@ -9,7 +9,7 @@ const sizes = [
 export default defineConfig({
   testDir: "tests",
   testMatch:
-    /(astra-gen|topaz-gen|account-security|workspace-security|pipelines|gen|gen-asset-library|customer|composer-audio|composer-batch|paid-action|recovery-race|upload-recovery|workspace-audit|management-scope|identity-admin|platform-desk)\.spec\.ts$/,
+    /(astra-gen|topaz-gen|account-security|workspace-security|pipelines|gen|gen-asset-library|customer|composer-audio|composer-batch|paid-action|recovery-race|upload-recovery|workspace-audit|management-scope|account-identity|platform-desk)\.spec\.ts$/,
   timeout: 90_000,
   expect: { timeout: 15_000 },
   workers: 1,

@@ -6,7 +6,9 @@ import { password, noSideScroll, signupInvite } from "./helpers/identityAdmin";
 
 /* Identity fixes, in the browser at every size the customer config runs (its
    shards already serve the account pages, so these add no new routes to a
-   workbench shard's dev server). The platform desk has its own spec
+   workbench shard's dev server). Named to sort beside account-security and
+   away from gen.spec, whose 1440 upload test leaves a shard's dev server
+   near the runner's memory limit. The platform desk has its own spec
    (tests/platform-desk.spec.ts). Local ENGINE_MOCK server only. */
 
 test("after a reset that needs the second factor, sign-in says the password changed", async ({ page }) => {
