@@ -3,9 +3,10 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { UploadedFile } from "../uploadClient";
 import { DraftRequestError, draftWriter, writeMergedDraft, type DraftWriter } from "../workbench/draft-request";
 import { rebaseProject } from "../workbench/draft-merge";
-import { sameJson } from "../workbench/merge";
+import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "../workbench/merge";
 import type { Asset, Project } from "../workbench/studio";
 import { uploadWorkbench } from "../workbench/upload";
+import { useOptionalToast } from "./state";
 
 /**
  * Editing the open project's draft from a workspace page, through the same
@@ -19,9 +20,11 @@ import { uploadWorkbench } from "../workbench/upload";
  * made since `base` are merged into the newer version (lib/workbench/merge.ts)
  * and saved at its revision, and the page then shows the merged draft —
  * nothing another window saved is overwritten, and no edit made here is
- * dropped. A save whose outcome is unknown is kept and tried again once the
- * server can say whether it landed (writeMergedDraft). Any other refusal stops
- * saving and says so.
+ * dropped (what did not fit a full list is said, `notice`); what an edit takes
+ * out of the records windows make alike is noted (noteTakenOut). A save whose
+ * outcome is unknown is kept and tried again once the server can say whether
+ * it landed (writeMergedDraft). Any other refusal says so; the next edit tries
+ * again.
  */
 
 export type DraftState = {
@@ -31,9 +34,11 @@ export type DraftState = {
   dirty: boolean;
   saving: boolean;
   error: string | null;
+  /** What of this page's edits a merge could not fit (a full list another window filled first), or null. */
+  notice: string | null;
 };
 
-const EMPTY: DraftState = { status: "idle", project: null, revision: 0, dirty: false, saving: false, error: null };
+const EMPTY: DraftState = { status: "idle", project: null, revision: 0, dirty: false, saving: false, error: null, notice: null };
 type Entry = {
   state: DraftState;
   /** The draft exactly as the server holds it at `state.revision`: what the edits are merged from. */
@@ -42,6 +47,8 @@ type Entry = {
   stopped: boolean;
   /** This store's saves of the draft: a save whose reply was lost is checked on the server. */
   writer: DraftWriter;
+  /** What this store's changes made, as made: a record another window made from the same source merges from it. */
+  made: MadeRecords;
   retries: number;
   /** Moves on with every edit and every save: a read begun before either is older than the draft on screen. */
   stamp: number;
@@ -59,7 +66,7 @@ const RETRY_MAX_MS = 60_000;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, base: null, stopped: false, writer: draftWriter(), retries: 0, stamp: 0, listeners: new Set(), chain: Promise.resolve(true), timer: null };
+    found = { state: EMPTY, base: null, stopped: false, writer: draftWriter(), made: new Map(), retries: 0, stamp: 0, listeners: new Set(), chain: Promise.resolve(true), timer: null };
     entries.set(key, found);
   }
   return found;
@@ -85,8 +92,8 @@ async function load(scope: string, projectId: string) {
     e.base = body.project as Project;
     e.stopped = false;
     e.retries = 0;
-    if (!e.writer.unconfirmed) e.writer = draftWriter();
-    set(key, { status: "ready", project: e.base, revision: Number(body.revision) || 0, error: null });
+    if (!e.writer.unconfirmed) { e.writer = draftWriter(); e.made = new Map(); }
+    set(key, { status: "ready", project: e.base, revision: Number(body.revision) || 0, error: null, notice: null });
   } catch (error) {
     set(key, { status: "error", error: error instanceof Error ? error.message : "This project could not be opened." });
   }
@@ -103,13 +110,13 @@ function save(scope: string, projectId: string): Promise<boolean> {
     const from = e.base ?? project;
     set(key, { saving: true, dirty: false });
     try {
-      const saved = await writeMergedDraft("/api/workbench", scope, { base: from, mine: project, revision, writer: e.writer });
+      const saved = await writeMergedDraft("/api/workbench", scope, { base: from, mine: project, revision, writer: e.writer, made: e.made });
       e.base = saved.project;
       e.retries = 0;
       e.stamp++;
       /* The page shows what was saved — another window's edits included — with any edits made meanwhile laid over it. */
       const next = rebaseProject(project, e.state.project ?? project, saved.project);
-      set(key, { saving: false, revision: saved.revision, project: next, dirty: e.state.dirty || !sameJson(next, saved.project), error: null });
+      set(key, { saving: false, revision: saved.revision, project: next, dirty: e.state.dirty || !sameJson(next, saved.project), error: null, notice: saved.notes.length ? saved.notes.join(" ") : null });
       return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "This project could not be saved.";
@@ -142,11 +149,15 @@ function change(scope: string, projectId: string, fn: (p: Project) => Project) {
   const key = keyOf(scope, projectId);
   const e = entry(key);
   if (!e.state.project) return;
-  const next = fn(e.state.project);
-  if (next === e.state.project) return;
+  const changed = fn(e.state.project);
+  if (changed === e.state.project) return;
+  /* What it made, as made, and what it took out of what windows make alike: the merge reads both. */
+  const next = noteTakenOut(e.state.project, changed);
+  recordMade(e.made, e.state.project, next);
   e.stamp++;
   set(key, { project: next, dirty: true });
-  if (e.stopped) return;
+  /* A refused save held the edits; this edit may be what the server needed. It tries again. */
+  e.stopped = false;
   if (e.timer) clearTimeout(e.timer);
   e.timer = setTimeout(() => void save(scope, projectId), SAVE_DELAY);
 }
@@ -180,6 +191,9 @@ export function useDraftEditor(scope: string, projectId: string | null) {
     return () => { e.listeners.delete(listener); };
   }, [key]);
   const state = useSyncExternalStore(subscribe, () => (key ? entry(key).state : EMPTY), () => EMPTY);
+  /* What a merge could not fit is said where the person looks. */
+  const toast = useOptionalToast();
+  useEffect(() => { if (state.notice) toast?.(state.notice); }, [state.notice, toast]);
   useEffect(() => {
     if (!projectId) return;
     const s = entry(keyOf(scope, projectId)).state;

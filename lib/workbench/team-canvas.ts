@@ -49,6 +49,8 @@ export const teamPatchSchema = z.object({
   removeNodes: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes),
   upsertAssets: z.array(canvasAssetSchema).max(PROJECT_LIMITS.assets),
   order: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes).nullable(),
+  /* Per node, what the sending window had: the write lands only where the canvas still holds it (a catch-up after a merge). */
+  expect: z.record(z.string().max(100), canvasNodeSchema.nullable()).optional(),
 });
 
 /** The room a production's canvas is edited in, scoped to its workspace. */

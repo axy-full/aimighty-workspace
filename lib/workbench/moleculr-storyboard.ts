@@ -4,6 +4,7 @@ import { generationReferenceIds } from './node-graph';
 import { creativeTemplate } from './moleculr-creative';
 import { bindMoleculrReferences } from './moleculr-graph';
 import type { Project } from './studio';
+import { stableId } from './stable-id';
 
 /** Prepares editable, asset-bound shots. No provider request or credit spend. */
 export function buildMoleculrStoryboard(project: Project, createId: () => string, now = new Date().toISOString()): Project {
@@ -30,7 +31,13 @@ export function buildMoleculrStoryboard(project: Project, createId: () => string
   return next;
 }
 
-/** A batch is an editable shot plan, never an implied authorization to spend. */
+/**
+ * A batch is an editable shot plan, never an implied authorization to spend.
+ * Each variant, its node and its reference nodes take ids from what the
+ * variant is (its hook, cast, product, look and prompt), so two windows
+ * preparing the same batch make each variant once (a merge holds one id
+ * once); `createId` is used only where such an id is already taken.
+ */
 export function prepareMoleculrVariants(project: Project, kind: 'image' | 'video', createId: () => string, now = new Date().toISOString()): Project {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
   const hooks = [...new Set(brief.hooks.map(hook => hook.trim()).filter(Boolean))];
@@ -52,8 +59,11 @@ export function prepareMoleculrVariants(project: Project, kind: 'image' | 'video
     const prompt = (kind === 'video' ? moleculrVideoPrompt : moleculrPrompt)(project, brief, hook, castId).slice(0, kind === 'image' ? 5000 : 12000);
     if (brief.variants.some(variant => variant.kind === kind && variant.hook === hook && variant.castAssetId === castId && variant.productId === brief.activeProductId && variant.templateId === template?.id && JSON.stringify(variant.referenceVideo) === JSON.stringify(referenceVideo) && JSON.stringify(variant.generation) === JSON.stringify(generation) && project.nodes.some(node => node.id === variant.nodeId && node.text === prompt && (!referenceVideo || generationReferenceIds(node, project).includes(referenceVideo.assetId))))) continue;
     if (next.moleculr!.variants.length >= 100) throw new Error('These variations would exceed the 100-variant project limit. No batch was added.');
-    const id = uniqueId();
-    const binding = bindMoleculrReferences(next, moleculrNode(id, prompt, `${brief.productName || project.name} · ${hook}`, next.nodes.length, kind), sourceIds.map(id => project.assets.find(asset => asset.id === id)!), uniqueId, referenceVideo?.assetId);
+    const made = stableId('variant', kind, hook, castId ?? '', brief.activeProductId ?? '', template?.id ?? '', JSON.stringify(referenceVideo ?? null), JSON.stringify(generation), prompt);
+    const id = used.has(made) ? uniqueId() : (used.add(made), made);
+    let source = 0;
+    const sourceId = () => { const value = stableId('variant-source', id, source++); if (used.has(value)) return uniqueId(); used.add(value); return value; };
+    const binding = bindMoleculrReferences(next, moleculrNode(id, prompt, `${brief.productName || project.name} · ${hook}`, next.nodes.length, kind), sourceIds.map(id => project.assets.find(asset => asset.id === id)!), sourceId, referenceVideo?.assetId);
     next = { ...next, nodes: [...next.nodes, ...binding.sources, binding.node], moleculr: { ...next.moleculr!, variants: [...next.moleculr!.variants, { id, nodeId: id, hook, kind, ...(castId ? { castAssetId: castId } : {}), ...(brief.activeProductId ? { productId: brief.activeProductId } : {}), ...(template ? { templateId: template.id } : {}), ...(referenceVideo ? { referenceVideo } : {}), generation, createdAt: now }] } };
     additions++;
   }

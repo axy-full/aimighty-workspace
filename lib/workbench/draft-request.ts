@@ -297,6 +297,10 @@ export const isDraftConflict = (problem: unknown) => problem instanceof DraftReq
 /** How many times a save is merged into a newer version and sent again before the conflict is reported. */
 export const MERGE_TRIES = 3;
 
+/** Before a save whose outcome is unknown (a 5xx, a dropped connection) is checked and sent again: a server that is struggling gets a moment. */
+const UNKNOWN_PAUSE_MS = 250;
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export type MergedWrite = {
   /** The draft exactly as the server held it at `revision` (last read or saved): what `mine` was edited from. */
   base: Project;
@@ -310,7 +314,12 @@ export type MergedWrite = {
   writer?: DraftWriter;
   /** Records an undo put back, by id: what each was when it was taken out (merge3's ancestors). */
   ancestors?: MergeOptions["ancestors"];
+  /** What this editor made from a source both windows share, as made (recordMade; merge3's `made`). */
+  made?: MergeOptions["made"];
 };
+
+/** What a merged save holds, and what of this editor's did not fit it (a full list another window filled first), said plainly. */
+export type MergedSave = { project: Project; revision: number; notes: string[] };
 
 /**
  * Saves an edited draft without ever writing over another save.
@@ -324,23 +333,32 @@ export type MergedWrite = {
  * the editor's writer, and the server is asked whether it landed — it fences
  * a save it finds did not, so the answer is final. Landed: everything it
  * carried is saved, whatever was built on it since stands, and nothing is sent
- * again. Not landed: the edits are merged into the latest version and sent.
+ * again. Not landed: the edits are merged into the latest version and sent,
+ * after a pause that doubles with each try (a 5xx is such a save too, and a
+ * struggling server is not asked again at once). The last try's outcome, when
+ * unknown, stays on the writer like any other.
  * When the server cannot be asked, the save stays unconfirmed on the writer
  * and the next call settles it first: edits made since then are merged from
- * what that save carried (landed) or from `base` (not landed), so an undo or a
- * cleared field made meanwhile is saved as such.
+ * what that save carried (landed) or from what it was edited from (not
+ * landed), so an undo or a cleared field made meanwhile is saved as such.
  *
- * Resolves with what the server holds and its revision, identities included.
+ * Resolves with what the server holds and its revision, identities included,
+ * and notes on what of this editor's did not fit (mergeDraft).
  */
 export async function writeMergedDraft(
   base: string,
   scope: string,
   write: MergedWrite,
   tries = MERGE_TRIES,
-): Promise<{ project: Project; revision: number }> {
+): Promise<MergedSave> {
   const writer = write.writer ?? draftWriter();
-  const mine = write.mine, options = { ancestors: write.ancestors };
+  const mine = write.mine, notes: string[] = [];
   let from = write.base, body = mine, revision = write.revision;
+  /* The notes of the merge that is sent, not of one a later merge replaced. */
+  const merge = (latest: Project) => {
+    notes.length = 0;
+    return mergeDraft(from, mine, latest, { ancestors: write.ancestors, made: write.made, notes });
+  };
 
   const settle = async (tag: DraftWriteTag, carried: Project, edited: Project) => {
     writer.unconfirmed = { projectId: mine.id, seq: tag.seq, mine: carried, base: edited };
@@ -349,14 +367,16 @@ export async function writeMergedDraft(
     return checked;
   };
 
-  /* An earlier save whose reply was lost: settled first. What it carried is the base of what is left to send when it landed. */
+  /* An earlier save whose reply was lost: settled first. What it carried is the base of what is left to send when it
+     landed; what it was edited from when it did not — which may be newer than `base`: that save's own call may have
+     settled a save before it that landed. */
   const pending = writer.unconfirmed;
   if (pending && pending.projectId === mine.id) {
     const checked = await settle({ writer: writer.id, seq: pending.seq }, pending.mine, pending.base);
     if (checked.project) {
-      if (checked.landed !== null) from = pending.mine;
-      const merged = mergeDraft(from, mine, checked.project, options);
-      if (sameDraftContent(merged, checked.project)) return { project: checked.project, revision: checked.revision };
+      from = checked.landed !== null ? pending.mine : pending.base;
+      const merged = merge(checked.project);
+      if (sameDraftContent(merged, checked.project)) return { project: checked.project, revision: checked.revision, notes };
       body = merged;
       revision = checked.revision;
     } else if (revision !== 0) throw lostDraft();
@@ -366,17 +386,21 @@ export async function writeMergedDraft(
     const tag = { writer: writer.id, seq: ++writer.seq };
     try {
       const receipt = await putDraft(base, scope, { project: body, revision }, tag);
-      return { project: { ...body, productionProjectId: receipt.productionProjectId, shotMappings: receipt.shotMappings }, revision: receipt.revision };
+      return { project: { ...body, productionProjectId: receipt.productionProjectId, shotMappings: receipt.shotMappings }, revision: receipt.revision, notes };
     } catch (error) {
       const conflict = isDraftConflict(error);
       const unknown = !conflict && error instanceof DraftRequestError && error.uncertain;
+      /* The last try's outcome unknown: it stays on the writer, and the next save settles it first — never merged again from the old base. */
+      if (unknown && attempt >= tries) writer.unconfirmed = { projectId: mine.id, seq: tag.seq, mine, base: from };
       if (attempt >= tries || !(conflict || unknown)) throw error;
       let latest: { project?: Project | null; revision: number };
       if (unknown) {
+        writer.unconfirmed = { projectId: mine.id, seq: tag.seq, mine, base: from };
+        await pause(UNKNOWN_PAUSE_MS * 2 ** attempt);
         /* Throws, still unconfirmed on the writer, when the server cannot be asked. */
         const checked = await settle(tag, mine, from);
         /* It landed: all it carried is saved, and whatever another window built on it since stands. */
-        if (checked.landed !== null && checked.project) return { project: checked.project, revision: checked.revision };
+        if (checked.landed !== null && checked.project) return { project: checked.project, revision: checked.revision, notes };
         latest = checked;
         if (!latest.project && revision === 0) continue;
       } else {
@@ -387,9 +411,9 @@ export async function writeMergedDraft(
         }
       }
       if (!latest.project || latest.project.id !== mine.id || !Number.isSafeInteger(latest.revision)) throw error;
-      const merged = mergeDraft(from, mine, latest.project, options);
+      const merged = merge(latest.project);
       /* Everything this save carries is already there (another window made the same edits). */
-      if (sameDraftContent(merged, latest.project)) return { project: latest.project, revision: latest.revision };
+      if (sameDraftContent(merged, latest.project)) return { project: latest.project, revision: latest.revision, notes };
       body = merged;
       revision = latest.revision;
     }

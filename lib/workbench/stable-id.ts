@@ -19,3 +19,10 @@ export function stableId(prefix: string, ...parts: (string | number)[]): string 
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return `${prefix}-${(h2 >>> 0).toString(16).padStart(8, "0")}${(h1 >>> 0).toString(16).padStart(8, "0")}`;
 }
+
+/**
+ * Whether an id has stableId's shape (a random id — uid's eight characters, a
+ * UUID — never does): the same thing made in another window has it too, so
+ * taking it out is noted (Project.takenOut, lib/workbench/merge.ts).
+ */
+export const isStableId = (id: string) => /^[A-Za-z0-9_-]+-[0-9a-f]{16}$/.test(id);

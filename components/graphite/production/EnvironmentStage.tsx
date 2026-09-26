@@ -371,7 +371,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
         })}
         {!env.entries.length ? <p className="gx-empty">No places yet. Add them from the beat sheet, let the agent build the world, or add one by hand.</p> : null}
       </section>
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

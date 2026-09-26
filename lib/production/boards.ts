@@ -1,4 +1,6 @@
 import type { BeatSheet, BeatShot } from "./beats";
+import { moleculrAssetBindingProblem } from "../workbench/moleculr-bindings";
+import type { Project } from "../workbench/studio";
 
 /**
  * Production › Storyboards (owner's brief, 23 September): every beat-sheet shot
@@ -87,6 +89,9 @@ export function deleteDrawing<P extends { assets: { id: string }[]; nodes: { ass
   if (!project.assets.some((a) => a.id === assetId)) throw new Error("That drawing is no longer in the project.");
   const user = project.nodes.find((n) => n.assetId === assetId);
   if (user) throw new Error(`This drawing is an input of “${user.title}” in the Rig. Remove it there first.`);
+  /* A campaign's product profile, logo or poster that holds it keeps it too: the draft could not be saved without it. */
+  const bound = moleculrAssetBindingProblem(project as unknown as Project, assetId);
+  if (bound) throw new Error(bound);
   const boards = project.production?.boards;
   const frames = boards ? Object.fromEntries(Object.entries(boards.frames).map(([id, f]) => [id, f.sketch?.assetId === assetId ? { ...f, sketch: undefined, reading: undefined, readingJobId: undefined } : f])) : undefined;
   return {

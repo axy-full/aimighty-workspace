@@ -334,7 +334,9 @@ export default function MarketingStudioFlow({
       toast.error("This project has reached its variant or node limit. Start another project to continue.");
       return;
     }
-    const nodeId = existing?.nodeId ?? uid("variant");
+    /* A new variant's node takes its id from what it is, so the same variant bound in two windows at once is one node, one variant. */
+    const madeId = stableId("variant", kind, hook, castId ?? "", brief.activeProductId ?? "", template?.id ?? "", JSON.stringify(referenceVideo ?? null), JSON.stringify(generation), request);
+    const nodeId = existing?.nodeId ?? (current.nodes.some((node) => node.id === madeId) ? uid("variant") : madeId);
     const planned = moleculrNode(nodeId, request, `${brief.productName || current.name} · ${hook}`, current.nodes.length, kind);
     try {
       const base = existing ? { ...current.nodes.find((item) => item.id === nodeId)!, text: request, mode: planned.mode } : planned;
@@ -346,7 +348,12 @@ export default function MarketingStudioFlow({
       if (options?.referenceAssetIds && chosenRefs.length !== options.referenceAssetIds.length)
         throw new Error("A selected product or cast reference is no longer available.");
       if (referenceVideo) chosenRefs.push(current.assets.find((asset) => asset.id === referenceVideo!.assetId)!);
-      const binding = bindMoleculrReferences(current, base, chosenRefs, () => uid("reference"), referenceVideo?.assetId);
+      let source = 0;
+      const sourceId = () => {
+        const value = stableId("variant-source", nodeId, source++);
+        return current.nodes.some((node) => node.id === value) ? uid("reference") : value;
+      };
+      const binding = bindMoleculrReferences(current, base, chosenRefs, sourceId, referenceVideo?.assetId);
       const nextNodes = [
         ...(existing ? current.nodes.map((item) => (item.id === nodeId ? binding.node : item)) : [...current.nodes, binding.node]),
         ...binding.sources,

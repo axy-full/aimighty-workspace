@@ -323,6 +323,8 @@ export const projectSchema = z.object({
     })
     .optional(),
   developmentApplications: z.array(z.string().max(240)).max(1000).optional(),
+  /* Records made from a shared source that were taken out (lib/workbench/merge.ts noteTakenOut): an editor keeps 1,000, a merge of two may hold both sides'. */
+  takenOut: z.array(z.string().max(100)).max(2000).optional(),
   scriptReviews: z
     .record(
       z.string().max(100),

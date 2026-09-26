@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
-import { popUndo, pushUndo, type UndoEntry } from "./undo";
+import { popUndo, pushUndo, restoreUndo, type UndoEntry } from "./undo";
 import { libraryHasTools } from "./production-tools";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 
@@ -185,15 +185,16 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
     undo: async () => {
-      const popped = popUndo(undoRef.current);
+      /* The open project's own newest change first: one made on another project waits for that project. */
+      const popped = popUndo(undoRef.current, ws.state.projectId);
       if (!popped) { ws.toast("Nothing to undo."); return; }
       setUndoStack(popped.rest);
       try {
         await popped.entry.undo();
         ws.toast(popped.entry.label);
       } catch (error) {
-        /* It did not happen, so it stays undoable (another project open, a network drop), and says why. */
-        setUndoStack((stack) => pushUndo(stack, popped.entry));
+        /* It did not happen, so it stays undoable where it stood (another project open, a network drop), and says why. */
+        setUndoStack((stack) => restoreUndo(stack, popped.entry, popped.at));
         ws.toast(error instanceof Error && error.message ? error.message : "That could not be undone.");
       }
     },

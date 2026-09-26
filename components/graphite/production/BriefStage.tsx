@@ -277,7 +277,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
           </div></div>
         </div>
       )}
-      <p className="gx-hint pd-save" role="status" data-testid="brief-save">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status" data-testid="brief-save">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

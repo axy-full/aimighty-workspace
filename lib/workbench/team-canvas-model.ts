@@ -1,3 +1,4 @@
+import { sameJson } from "./merge";
 import type { Asset, CanvasNode, Project } from "./studio";
 
 /*
@@ -41,6 +42,14 @@ export type TeamPatch = {
   upsertAssets: Asset[];
   order: string[] | null;
   at: number;
+  /**
+   * For a node here, what the window sending it had before another save
+   * brought the change in (catchUpForTeam): each field is written only where
+   * the canvas still holds that, and the node is taken off only if unchanged
+   * since — a teammate's edit made meanwhile stands. Null: a node new to that
+   * window, which joins only a canvas that never held it.
+   */
+  expect?: Record<string, CanvasNode | null>;
 };
 
 export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, stamps: {} });
@@ -86,6 +95,26 @@ export function diffForTeam(before: Project, after: Project, at: number): TeamPa
 }
 
 /**
+ * What another save brought into a window, for the team canvas — a save the
+ * canvas may have missed (it was carried before the canvas existed, or a live
+ * room never saw it). The same changes as diffForTeam, each conditional on the
+ * canvas still holding what the window had (`expect`): a node new to it joins
+ * only a canvas that never held it, a field is written only where the canvas
+ * still has the old value, a node is taken off only if unchanged. So the
+ * canvas catches up, and a teammate's edit made since stands.
+ */
+export function catchUpForTeam(before: Project, after: Project, at: number): TeamPatch | null {
+  const patch = diffForTeam(before, after, at);
+  if (!patch) return null;
+  const prev = new Map(before.nodes.map((n) => [n.id, n]));
+  const expect: Record<string, CanvasNode | null> = {};
+  for (const n of patch.upsertNodes) expect[n.id] = prev.get(n.id) ?? null;
+  for (const id of patch.removeNodes) expect[id] = prev.get(id) ?? null;
+  const known = new Set(before.assets.map((a) => a.id));
+  return { ...patch, made: [], upsertAssets: patch.upsertAssets.filter((a) => !known.has(a.id)), order: null, expect };
+}
+
+/**
  * A node as the canvas holds it once a patch's write of `node` lands. `live`
  * is the canvas's node, `gone` the one it took off. A changed node takes only
  * its changed fields (onto the node taken off, when it was: it comes back); a
@@ -107,6 +136,27 @@ export function nodeAfterEdit(live: CanvasNode | undefined, gone: CanvasNode | u
   return node;
 }
 
+/**
+ * A patch's write of `node`, as the canvas holds it after — or undefined when
+ * the write does not land: one that expects what the canvas no longer holds
+ * (TeamPatch.expect) writes only the fields still as expected.
+ */
+export function landedWrite(live: CanvasNode | undefined, gone: CanvasNode | undefined, node: CanvasNode, patch: Pick<TeamPatch, "fields" | "made" | "expect">): CanvasNode | undefined {
+  const was = patch.expect?.[node.id];
+  if (was === undefined) return nodeAfterEdit(live, gone, node, patch);
+  if (was === null) return live || gone ? undefined : node;
+  if (!live) return undefined;
+  const current = live as unknown as Record<string, unknown>, before = was as unknown as Record<string, unknown>;
+  const fields = (patch.fields?.[node.id] ?? []).filter((key) => sameJson(current[key], before[key]));
+  return fields.length ? nodeAfterEdit(live, undefined, node, { fields: { [node.id]: fields } }) : undefined;
+}
+
+/** Whether a patch's removal of a node lands: one that expects the node as it was lands only on it unchanged. */
+export function landedRemoval(live: CanvasNode | undefined, id: string, patch: Pick<TeamPatch, "expect">): boolean {
+  const was = patch.expect?.[id];
+  return !!live && (!was || sameJson(live, was));
+}
+
 /** Fold a patch in. A write older than what the canvas already holds for that item is ignored. */
 export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas {
   const out: TeamCanvas = { nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, stamps: { ...canvas.stamps } };
@@ -114,14 +164,16 @@ export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas
   for (const node of patch.upsertNodes) {
     const key = `n:${node.id}`;
     if (!newer(key)) continue;
-    out.nodes[node.id] = nodeAfterEdit(out.nodes[node.id], out.removed[node.id], node, patch);
+    const next = landedWrite(out.nodes[node.id], out.removed[node.id], node, patch);
+    if (!next) continue;
+    out.nodes[node.id] = next;
     delete out.removed[node.id];
     out.stamps[key] = patch.at;
     if (!out.order.includes(node.id)) out.order.push(node.id);
   }
   for (const id of patch.removeNodes) {
     const key = `n:${id}`;
-    if (!newer(key) || !out.nodes[id]) continue;
+    if (!newer(key) || !landedRemoval(out.nodes[id], id, patch)) continue;
     out.removed[id] = out.nodes[id];
     delete out.nodes[id];
     out.stamps[key] = patch.at;

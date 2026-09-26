@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Json, LiveMap, Room } from "@liveblocks/client";
 import { draftBody, draftRequest } from "@/lib/workbench/draft-request";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
-import { diffForTeam, joinTeamCanvas, nodeAfterEdit, orderedIds, withTeamCanvas, type TeamPatch } from "@/lib/workbench/team-canvas-model";
+import { catchUpForTeam, diffForTeam, joinTeamCanvas, landedRemoval, landedWrite, orderedIds, withTeamCanvas, type TeamPatch } from "@/lib/workbench/team-canvas-model";
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
@@ -18,6 +18,11 @@ import { diffForTeam, joinTeamCanvas, nodeAfterEdit, orderedIds, withTeamCanvas,
  *  - When the owner's Liveblocks key is set, the same edits also travel
  *    through a live room and land in teammates' open windows at once, with
  *    their cursors, selections and drags shown on the graph.
+ *  - What another save brought into the draft (a merge) catches the canvas
+ *    up only where it still holds what this window had (catchUpForTeam): a
+ *    save the canvas missed reaches it, and a teammate's later edit stands.
+ *  - An edit waiting to be sent belongs to the production it was made on, and
+ *    goes there, whatever is open when it is sent.
  */
 
 export type Peer = { id: number; name: string; color: string; cursor: Point | null; selected: string | null; drag: Drag | null };
@@ -33,6 +38,8 @@ export type TeamCanvasApi = {
   mode: "off" | "saved" | "live";
   peers: Peer[];
   publish: (before: Project, after: Project) => void;
+  /** What another save brought in (before → after the merge): onto the canvas only where it still holds `before`'s values. */
+  catchUp: (before: Project, after: Project) => void;
   presence: (patch: Partial<Presence>) => void;
   /** Sends any waiting canvas edit now. The draft save awaits it, so the canvas is never older than the saved draft. */
   flush: () => Promise<void>;
@@ -73,8 +80,11 @@ function overlay(canvas: Canvas, patch: TeamPatch | null): Canvas {
   if (!patch) return canvas;
   const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
   const removedIds = new Set(canvas.removedIds);
-  for (const n of patch.upsertNodes) { nodes[n.id] = nodeAfterEdit(nodes[n.id], undefined, n, patch); removedIds.delete(n.id); }
-  for (const id of patch.removeNodes) { delete nodes[id]; removedIds.add(id); }
+  for (const n of patch.upsertNodes) {
+    const next = landedWrite(nodes[n.id], removedIds.has(n.id) ? n : undefined, n, patch);
+    if (next) { nodes[n.id] = next; removedIds.delete(n.id); }
+  }
+  for (const id of patch.removeNodes) if (landedRemoval(nodes[id], id, patch)) { delete nodes[id]; removedIds.add(id); }
   for (const a of patch.upsertAssets) assets[a.id] = a;
   return { nodes, assets, order: patch.order ?? canvas.order, removedIds: [...removedIds] };
 }
@@ -108,7 +118,10 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const mode: TeamCanvasApi["mode"] = productionId && joinedState?.pid === productionId ? joinedState.mode : "off";
   const peers = useMemo(() => (productionId && joinedState?.pid === productionId ? joinedState.peers : []), [productionId, joinedState]);
   const retry = useRef<() => void>(() => {});
-  const pending = useRef<TeamPatch | null>(null);
+  /* Edits waiting to be sent, by the production they were made on: one that could not go yet never goes to another. */
+  const pending = useRef(new Map<string, TeamPatch>());
+  /* Catch-ups (what merges brought in), by production, in order: sent before this window's own edits, never folded into them. */
+  const catchUps = useRef(new Map<string, TeamPatch[]>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joined = useRef<string | null>(null);
   const room = useRef<LiveRoom | null>(null);
@@ -118,32 +131,53 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
   const send = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-    const patch = pending.current, pid = joined.current;
-    if (!patch || !pid) return;
-    pending.current = null;
-    try {
-      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order });
+    const post = async (pid: string, patch: TeamPatch) => {
+      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order, ...(patch.expect ? { expect: patch.expect } : {}) });
       /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
          (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
       const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
       await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
-    } catch {
-      /* Keep it and try again; a later edit rides along. */
-      pending.current = mergePatches(patch, pending.current ?? { ...patch, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null });
-      timer.current = setTimeout(() => retry.current(), RETRY_MS);
-    }
+    };
+    const waiting = [...pending.current.entries()], caught = [...catchUps.current.entries()];
+    pending.current.clear();
+    catchUps.current.clear();
+    let again = false;
+    await Promise.all([...new Set([...caught.map(([pid]) => pid), ...waiting.map(([pid]) => pid)])].map(async (pid) => {
+      /* What merges brought in first, then this window's own edits: a later write wins on the server's clock. */
+      const queue = caught.find(([id]) => id === pid)?.[1] ?? [];
+      for (let i = 0; i < queue.length; i++) {
+        try { await post(pid, queue[i]); }
+        catch {
+          catchUps.current.set(pid, [...queue.slice(i), ...(catchUps.current.get(pid) ?? [])]);
+          const patch = waiting.find(([id]) => id === pid)?.[1];
+          if (patch) { const later = pending.current.get(pid); pending.current.set(pid, later ? mergePatches(patch, later) : patch); }
+          again = true;
+          return;
+        }
+      }
+      const patch = waiting.find(([id]) => id === pid)?.[1];
+      if (!patch) return;
+      try { await post(pid, patch); }
+      catch {
+        /* Kept for its own production and tried again; a later edit there rides along. */
+        const later = pending.current.get(pid);
+        pending.current.set(pid, later ? mergePatches(patch, later) : patch);
+        again = true;
+      }
+    }));
+    if (again && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
   }, [scope]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
 
   /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
   useEffect(() => {
-    const onHide = () => { if (pending.current) void send(); };
+    const onHide = () => { if (pending.current.size || catchUps.current.size) void send(); };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
   }, [send]);
 
-  const queue = useCallback((patch: TeamPatch) => {
-    pending.current = mergePatches(pending.current, patch);
+  const queue = useCallback((pid: string, patch: TeamPatch) => {
+    pending.current.set(pid, mergePatches(pending.current.get(pid) ?? null, patch));
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void send(), SAVE_MS);
   }, [send]);
@@ -163,15 +197,16 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       if (!isCanvasAnswer(saved)) return;
       const draft = current();
       if (!draft) return;
-      /* What this window changed while the canvas was loading is newer than the canvas: it wins. */
+      /* What this window changed while the canvas was loading is newer than the canvas: it wins. What a merge brought in
+         meanwhile lands where the canvas still holds what this window had. */
       const mine = early.current?.pid === productionId ? early.current.patch : null;
       early.current = null;
-      const canvas: Canvas = overlay(saved.canvas ?? { nodes: {}, assets: {}, order: [], removedIds: [] }, mine);
+      const canvas: Canvas = [...(catchUps.current.get(productionId) ?? []), mine].reduce<Canvas>((at, patch) => overlay(at, patch), saved.canvas ?? { nodes: {}, assets: {}, order: [], removedIds: [] });
       const joinedCanvas = joinTeamCanvas(draft, canvas, Date.now());
       const outgoing = mine && joinedCanvas.patch ? mergePatches(mine, joinedCanvas.patch) : mine ?? joinedCanvas.patch;
       joined.current = productionId;
       fold((p) => joinTeamCanvas(p, canvas, Date.now()).project);
-      if (outgoing) queue(outgoing);
+      if (outgoing) queue(productionId, outgoing);
       setJoinedState({ pid: productionId, mode: "saved", peers: [] });
       if (!saved.room) return;
 
@@ -201,9 +236,12 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
       const write = (patch: TeamPatch) => live.batch(() => {
         const nodes = root.get("nodes"), assets = root.get("assets");
-        /* The fields an edit changed, over the room's node: a teammate's edit to another field stands. */
-        for (const n of patch.upsertNodes) nodes.set(n.id, plain(nodeAfterEdit(nodes.get(n.id) as unknown as CanvasNode | undefined, undefined, n, patch)));
-        for (const id of patch.removeNodes) nodes.delete(id);
+        /* The fields an edit changed, over the room's node: a teammate's edit to another field stands (and a catch-up lands only where the room still holds what this window had). */
+        for (const n of patch.upsertNodes) {
+          const next = landedWrite(nodes.get(n.id) as unknown as CanvasNode | undefined, undefined, n, patch);
+          if (next) nodes.set(n.id, plain(next));
+        }
+        for (const id of patch.removeNodes) if (landedRemoval(nodes.get(id) as unknown as CanvasNode | undefined, id, patch)) nodes.delete(id);
         for (const a of patch.upsertAssets) assets.set(a.id, plain(a));
         if (patch.order) root.set("order", patch.order);
       });
@@ -212,7 +250,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       /* Alone in the room: the saved canvas is the truth, so the room starts from it.
          With teammates already editing: the room is ahead of the server; take it, then add what only this draft had. */
       const truth = { ...canvas, ...(outgoing ? {
-        nodes: { ...canvas.nodes, ...Object.fromEntries(outgoing.upsertNodes.map((n) => [n.id, nodeAfterEdit(canvas.nodes[n.id], undefined, n, outgoing)])) },
+        nodes: { ...canvas.nodes, ...Object.fromEntries(outgoing.upsertNodes.flatMap((n) => { const next = landedWrite(canvas.nodes[n.id], undefined, n, outgoing); return next ? [[n.id, next]] : []; })) },
         assets: { ...canvas.assets, ...Object.fromEntries(outgoing.upsertAssets.map((a) => [a.id, a])) },
         order: outgoing.order ?? canvas.order,
       } : {}) };
@@ -262,10 +300,21 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       return;
     }
     writeLive.current?.(patch);
-    queue(patch);
+    queue(pid, patch);
   }, [queue]);
+
+  const catchUp = useCallback((before: Project, after: Project) => {
+    const pid = after.productionProjectId;
+    if (!pid) return;
+    const patch = catchUpForTeam(before, after, Date.now());
+    if (!patch) return;
+    writeLive.current?.(patch);
+    catchUps.current.set(pid, [...(catchUps.current.get(pid) ?? []), patch]);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void send(), SAVE_MS);
+  }, [send]);
 
   const presence = useCallback((patch: Partial<Presence>) => { room.current?.updatePresence(patch); }, []);
 
-  return { mode, peers, publish, presence, flush: send };
+  return { mode, peers, publish, catchUp, presence, flush: send };
 }

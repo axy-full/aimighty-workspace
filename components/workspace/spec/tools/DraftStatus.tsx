@@ -6,6 +6,7 @@ export function DraftStatus({ editor, children }: { editor: DraftEditor; childre
   return (
     <div className="pxw-draft-status" data-save-state={editor.saveState}>
       <span className="pxw-draft-state" role="status">{editor.saveState}</span>
+      {editor.notice ? <span className="pxw-draft-notice" role="status">{editor.notice}</span> : null}
       {children}
       {editor.error && editor.status === "ready" ? (
         <span className="pxw-draft-error" role="alert">

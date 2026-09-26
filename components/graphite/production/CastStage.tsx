@@ -411,7 +411,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
       </section>
 
       <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }
