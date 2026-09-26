@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { usd, timeAgo } from "@/lib/format";
+import { fmtCredits } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import { parseCeiling } from "@/lib/tokenCeiling";
 
@@ -19,7 +20,7 @@ export type Token = {
  */
 export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => void }) {
   const scopedFetch = useScopedFetch();
-  const { data, refresh } = useApi<{ tokens: Token[] }>("/api/tokens");
+  const { data, refresh } = useApi<{ tokens: Token[]; unit?: "usd" | "cr" }>("/api/tokens");
   const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -72,6 +73,9 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
   }
 
   const tokens = data?.tokens ?? [];
+  /* A credit workspace's month arrives in credits; the ceiling is still set in dollars. */
+  const inCredits = data?.unit === "cr";
+  const spent = (t: Token) => (inCredits ? fmtCredits(t.spendThisMonth) : usd(t.spendThisMonth, 2));
 
   return (
     <>
@@ -104,8 +108,10 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
               <span className="truncate">{t.name}</span>
               <span className="text-[13px] text-mute">
                 {t.scope === "read" ? "Read-only" : "Can generate"}
-                {t.capUsd != null && ` · ${usd(t.spendThisMonth, 2)} of ${usd(t.capUsd, 2)} this month`}
-                {t.capUsd == null && t.spendThisMonth > 0 && ` · ${usd(t.spendThisMonth, 2)} this month`}
+                {t.capUsd != null && (inCredits
+                  ? ` · ${spent(t)} this month · ${usd(t.capUsd, 2)} ceiling`
+                  : ` · ${spent(t)} of ${usd(t.capUsd, 2)} this month`)}
+                {t.capUsd == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
                 {" · "}{t.lastUsed ? `used ${timeAgo(t.lastUsed)}` : "never used"}
               </span>
             </span>
