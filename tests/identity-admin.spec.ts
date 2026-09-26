@@ -5,7 +5,9 @@ import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { totpAt } from "../lib/totp";
 
 /* Identity and platform-desk fixes, in the browser at every size the
-   workbench config runs. Local ENGINE_MOCK server only. */
+   customer config runs (its shards already serve the account pages, so
+   these add no new routes to a workbench shard's dev server). Local
+   ENGINE_MOCK server only. */
 const password = "a local browser test passphrase 42";
 const noSideScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
