@@ -64,6 +64,8 @@ export const CONFIRM = {
   }),
   /** Cast › a build that landed is stored in the Library. */
   castBuilt: (name: string, kind: "character" | "element"): Confirmation => ({ text: `${name || "The build"} is in the Library as ${kind === "character" ? "Cast" : "Elements"}`, open: { to: "library" } }),
+  /** Environment › a plate that landed is stored in the Library. */
+  plateBuilt: (name: string): Confirmation => ({ text: `${name || "The plate"} is in the Library as Environment`, open: { to: "library" } }),
   /** Brief › a breakdown's scenes became Rig nodes. */
   breakdownToRig: (nodes?: number): Confirmation => ({ text: nodes == null ? "Scene breakdown added to Rig" : `${plural(nodes, "scene node", "scene nodes")} added to Rig`, open: page("studio", "rig") }),
   /** Retry generation loads the render's prompt and model in Gen; nothing else is carried, and it is priced again. */

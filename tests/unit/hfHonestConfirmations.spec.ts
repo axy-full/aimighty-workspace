@@ -20,6 +20,8 @@ const EVERY: [string, Confirmation][] = [
   ["cast taken, nothing new", CONFIRM.castTaken({ added: 0, known: 4, overLimit: 0 })],
   ["cast built · character", CONFIRM.castBuilt("Mira", "character")],
   ["cast built · element", CONFIRM.castBuilt("Chrome sphere", "element")],
+  ["plate built", CONFIRM.plateBuilt("Harbour at dawn")],
+  ["plate built, unnamed", CONFIRM.plateBuilt("")],
   ["breakdown to Rig", CONFIRM.breakdownToRig()],
   ["scene nodes to Rig", CONFIRM.breakdownToRig(4)],
   ["retry", CONFIRM.retry("Wide on the water")],

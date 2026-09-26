@@ -72,7 +72,6 @@ export const SAY = {
     : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
-
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 

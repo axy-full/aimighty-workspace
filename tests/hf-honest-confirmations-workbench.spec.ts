@@ -31,6 +31,10 @@ async function shot(page: Page, name: string, project: string) {
 async function settle(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => !(a.effect instanceof KeyframeEffect && a.effect.getComputedTiming().iterations === Infinity)).map((a) => a.finished.catch(() => undefined))));
 }
+/** React has attached to the element: a fill or click before that is lost on a cold server. */
+async function hydrated(target: Locator) {
+  await expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
+}
 async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
@@ -48,6 +52,7 @@ async function roomWithSolutions(page: Page) {
   await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
   await expect(page.locator(".cw-project")).toContainText("Dune Studies");
+  await hydrated(page.getByTestId("crew-goal"));
   await page.getByTestId("crew-goal").fill(GOAL);
   await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
   await page.getByTestId("crew-run").click();
@@ -208,6 +213,7 @@ test("Business › a finished image ad's Open in Takes lands on that take, not o
 
   await page.goto("/suites?suite=moleculr&page=marketing&sp=dtc");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await hydrated(page.getByTestId("dtc-prompt"));
   await page.getByTestId("dtc-prompt").fill("Bold hero shot on marble");
   await expect(page.getByTestId("dtc-generate")).toContainText("40 cr");
   await page.getByTestId("dtc-generate").click();
