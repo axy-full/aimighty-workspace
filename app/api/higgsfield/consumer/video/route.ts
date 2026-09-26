@@ -36,7 +36,7 @@ function problem(error: unknown) {
   if (error instanceof ConsumerOAuthError || error instanceof ConsumerDiscoveryError || error instanceof ConsumerVideoServiceError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerJobError)
-    return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? "Four connected-account jobs are already active or awaiting reconciliation." : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
+    return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours." : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)

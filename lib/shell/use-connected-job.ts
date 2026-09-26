@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CONNECTED_GENERATION_ENDPOINT, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
+  CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -33,7 +33,6 @@ const POLL_MS = 4000;
 export const QUOTE_RETRY_MS = 30_000;
 /** Missed resume reads before the composer is handed back (the id stays remembered); the waits between them back off from POLL_MS to a minute. */
 export const RESUME_TRIES = 8;
-const FAILED = "The connected account reported this job as failed. Failed renders are not billed.";
 const NOT_SENT = "The job did not reach the connected account, so nothing was billed.";
 const UNCHECKED = "The last take could not be checked. It is checked again when this page next opens.";
 
@@ -56,7 +55,8 @@ export function forgetJob(storage: JobStore | null, key: string | null, id: stri
 /** Where a status read leaves the composer. A job still `quoted` was never sent (a lost submit reply the account did not take). */
 export function settledState(job: ConnectedJob): ConnectedJobState {
   if (job.status === "completed") return { phase: "done", job };
-  if (job.status === "failed") return { phase: "failed", job, error: FAILED };
+  /* The account's own reason when it gave one (lib/higgsfield-consumer/generation-client). */
+  if (job.status === "failed") return { phase: "failed", job, error: connectedFailureText(job) };
   if (job.status === "quoted") return { phase: "failed", job, error: NOT_SENT };
   if (connectedRecoverable(job)) return { phase: "running", job };
   return { phase: "done", job };

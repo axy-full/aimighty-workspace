@@ -8,6 +8,8 @@ type Job = {
   id: string; draftId: string; status: string; workspaceId: string; workspaceName: string;
   quoteCredits: number; quoteExpiresAt: number; providerJobId: string | null;
   providerReceipt?: unknown; result?: unknown;
+  /** Set aside by its owner in Workspace › Engines, or past the capacity window. */
+  setAside?: boolean;
   originalAvailable?: boolean; originalAvailability?: "available" | "deleted" | "unavailable" | "not_collected";
 };
 function savedOriginal(job: Job | null) {
@@ -76,7 +78,7 @@ export default function ConsumerVideoVerification() {
     } catch (reason) { if (active.current) setError(reason instanceof Error ? reason.message : "The request could not be completed."); }
     finally { pending.current = false; if (active.current) setBusy(""); }
   }
-  const underway = job && ["dispatching", "accepted", "uncertain"].includes(job.status);
+  const underway = job && ["dispatching", "accepted", "uncertain"].includes(job.status) && job.setAside !== true;
   const original = savedOriginal(job);
   return <section className="rounded-xl border border-line p-4 space-y-3" aria-label="Marketing Video verification">
     <div><h3 className="text-sm font-medium">Verify Marketing Video</h3>

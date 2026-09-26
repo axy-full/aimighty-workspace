@@ -97,7 +97,7 @@ function problem(error: unknown) {
           error.code === "quote_expired"
             ? "This quote expired. Request a fresh quote before generating."
             : error.code === "capacity"
-              ? "Four connected-account jobs are already active or awaiting reconciliation."
+              ? "All four connected-account slots are in use. Workspace › Engines lists yours."
               : "This job changed or is unavailable. Refresh before continuing.",
       },
       { status: error.status, headers },

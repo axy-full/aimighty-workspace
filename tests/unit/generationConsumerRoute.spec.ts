@@ -17,6 +17,7 @@ import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-so
 import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as contract from "../../lib/higgsfield-consumer/generation-contract";
 import * as tools from "../../lib/higgsfield-consumer/tools";
+import { BuildInFlightError } from "../../lib/higgsfield-consumer/build-records";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -276,6 +277,11 @@ test("the Soul ID build: the plan gate is an owner read; the create needs render
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
   expect(f.calls).toHaveLength(2);
+  /* The same build already sent (it may be on the account): a plain 409 the card shows, never a second send. */
+  f.fail(new BuildInFlightError());
+  const again = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
+  expect(again.status).toBe(409);
+  expect(await again.json()).toEqual({ code: "build_in_flight", error: "This build was already sent and may have been accepted, so it is not sent again." });
 });
 
 test("reference elements: the list is an owner read; the create needs render, carries name · category · 1–8 sources, and is rate-limited hardest", async () => {

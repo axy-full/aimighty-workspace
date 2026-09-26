@@ -41,6 +41,7 @@ import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { VOICE_TOOLS, findVoiceTool, type ConnectedVoices, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
 import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities, type VoiceToolsHandle } from "./AtomikVoiceTools";
 import type { ExplainerPreset } from "@/lib/higgsfield-consumer/explainer-presets";
+import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./atomik-generate.module.css";
 
 const endpoint = CONNECTED_GENERATION_ENDPOINT;
@@ -126,15 +127,14 @@ function VoicePicker({ kinds, required, voices, error, disabled, type, id, onCha
   kinds: ("preset" | "element")[]; required: boolean; voices: ConnectedVoices | null; error: string; disabled: boolean; type: string; id: string;
   onChange: (next: { type: "preset" | "element"; id: string } | null) => void; onRefresh: () => void;
 }) {
-  const usable = voices?.voices.filter((voice) => kinds.includes(voice.type)) ?? [];
-  const presets = usable.filter((voice) => voice.type === "preset"), custom = usable.filter((voice) => voice.type === "element");
+  /* Preset voices only: voices made on the account stay there (standalone rule). */
+  const usable = voices?.voices.filter((voice) => voice.type === "preset" && kinds.includes(voice.type)) ?? [];
   const value = type && id ? `${type}:${id}` : "";
   const known = !value || usable.some((voice) => `${voice.type}:${voice.id}` === value);
   return <div className={styles.settings} role="group" aria-label="Voice">
     <label>Voice<select aria-label="Voice" disabled={disabled || !voices} value={known ? value : ""} onChange={(e) => { const [kind, ...rest] = e.target.value.split(":"); const voice = usable.find((v) => v.type === kind && v.id === rest.join(":")); onChange(voice ? { type: voice.type, id: voice.id } : null); }}>
       <option value="">{voices ? (required ? "Choose a voice" : "Model default voice") : error ? "Voices unavailable" : "Reading voices…"}</option>
-      {presets.length > 0 && <optgroup label="Preset voices">{presets.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
-      {custom.length > 0 && <optgroup label="Your voices">{custom.map((voice) => <option key={`element:${voice.id}`} value={`element:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
+      {usable.length > 0 && <optgroup label="Preset voices">{usable.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
     </select><small>{error || (voices ? `${usable.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}${required ? " · Required" : ""}` : "The connected account’s voices are read once an hour.")}</small></label>
     <button type="button" className="suite-button" disabled={disabled} onClick={onRefresh}><RefreshCw size={14} />Reload voices</button>
   </div>;
@@ -208,7 +208,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && JSON.stringify(selected.input) === JSON.stringify(normalized);
   const missing = attempts.filter((id) => !jobs.some((job) => job.id === id));
-  const unresolved = missing.length > 0 || jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
+  const unresolved = missing.length > 0 || jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
   const ready = !!capability?.owner && capability.connected && !capability.suspended && !busy;
   const canQuote = ready && !validation && !unresolved && (!input.medias.length || disclosed);
   const offerable = !!capability?.owner && capability.connected && !capability.suspended && !validation && !unresolved && (!input.medias.length || disclosed);
@@ -221,7 +221,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
   const change = (patch: Partial<Creative>) => { draft.set((before) => ({ ...creative(before), ...patch })); setApproved(false); setNotice(""); };
   const confirmAttempts = useCallback((confirmed: Job[]) => {
     const byId = new Map(confirmed.map((job) => [job.id, job]));
-    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && job.quoteExpired !== true); });
+    const next = attemptIds.current.filter((id) => { const job = byId.get(id); return !job || awaitingReconciliation(job) || (job.status === "quoted" && job.quoteExpired !== true); });
     try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); } catch { /* Keep the guard when its resolution cannot be saved. */ }
   }, [attemptKey]);
   const saveJob = (job: Job) => { setJobs((before) => retain([job, ...before.filter((item) => item.id !== job.id)], attemptIds.current)); setSelectedId(job.id); };
@@ -329,7 +329,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save to this project." : "The generation completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? "The connected account reported that this generation failed." : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save to this project." : "The generation completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this generation failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -490,7 +490,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
             <button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void refresh(true, true)}>Reload catalogue</button>
           </div>}
           {voiceTool && <div className={styles.actions}><button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh(true)}><RefreshCw size={14} />Refresh saved jobs</button></div>}
-          {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+          {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
           {!!missing.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another generation.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missing[0])}>Recover earlier submission</button></div>}
           {!voiceTool && selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
             <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
@@ -526,7 +526,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
         const original = originalAsset(job), saved = original && project.assets.some((asset) => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
         return <article key={job.id} className={styles.job}>
-          <div><strong>{job.status === "completed" ? (original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Generation failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
+          <div><strong>{job.status === "completed" ? (original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Generation failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.input.prompt || (job.tool ? job.sources.map((source) => source.name).join(" + ") || "No prompt." : "No prompt.")}</p>
           <small>{jobLabel(job)} · {job.model.name}{settingsSummary(job) ? ` · ${settingsSummary(job)}` : ""} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}

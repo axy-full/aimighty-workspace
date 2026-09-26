@@ -70,6 +70,8 @@ async function serviceFixture() {
     } },
     "./video-contract": contract,
     "./video-original": {
+      uncollectableOriginal: original.uncollectableOriginal,
+      CONSUMER_ORIGINAL_SECONDS: 600,
       collectConsumerVideoOriginal: async (job: { id: string; userId: string; draftId: string; providerJobId: string; quoteCredits: number }, url: string) => {
         state.collectCount++;
         expect(url).toBe("https://media.example.com/qualified-original.png");
@@ -168,6 +170,8 @@ test("the catalogue is read once per connection and every quote is validated aga
       [{ type: "audio", model: "sonilo_music", prompt: "Warm piano", parameters: { duration: 8 }, medias: [] }, "model_unknown"],
       [{ ...request, type: "video" }, "type_mismatch"],
       [{ ...request, medias: [{ role: "start_image", source: { uploadId: "still" } }] }, "media_role_unknown"],
+      // A voice the owner made on the account is its own library, never Particl's.
+      [{ type: "audio", model: "text2speech_v2", prompt: "Welcome.", parameters: { voice_type: "element", voice_id: "elem-1", variant: "minimax" }, medias: [] }, "parameter_invalid"],
     ] as const)
       await expect(f.service.quoteConsumerGeneration(identity.userId, identity.draftId, bad as ConsumerGenerationInput, randomUUID())).rejects.toMatchObject({ code });
     expect(f.state.quoteCount).toBe(0);
@@ -236,7 +240,7 @@ test("an ambiguous acknowledgement or an interrupted paid request stays uncertai
     expect(f.state.paidCount).toBe(2);
   }));
 
-test("polling collects the verified original once, records failure from the provider, and keeps a job accepted when collection is out of bounds", async () =>
+test("polling collects the verified original once, records failure from the provider, keeps a job accepted while collection can still pass, and settles a result that can never be kept", async () =>
   fixture(async (f) => {
     const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
     const accepted = await f.service.submitConsumerGenerationJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
@@ -250,11 +254,11 @@ test("polling collects the verified original once, records failure from the prov
     expect((await f.service.pollConsumerGeneration(scoped(quote.id))).pollAfterSeconds).toBe(30);
     expect(f.state.statusCount).toBe(1);
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
-    // Out-of-bounds bytes leave the job accepted and recoverable.
+    // A collection problem that can pass later (storage full) leaves the job accepted and recoverable.
     f.state.pollRaw = terminal(f, params);
     const original = await import("../../lib/higgsfield-consumer/video-original");
-    f.state.collectorError = new original.ConsumerOriginalError("invalid_video");
-    await expect(f.service.pollConsumerGeneration(scoped(quote.id))).rejects.toMatchObject({ code: "invalid_video" });
+    f.state.collectorError = new original.ConsumerOriginalError("quota");
+    await expect(f.service.pollConsumerGeneration(scoped(quote.id))).rejects.toMatchObject({ code: "quota" });
     expect((await f.jobs.getConsumerJob(scoped(quote.id)))!.status).toBe("accepted");
     await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [quote.id] });
     f.state.collectorError = undefined;
@@ -280,6 +284,24 @@ test("polling collects the verified original once, records failure from the prov
     expect(failed.job.failureCode).toBe("provider_failed");
     expect(failed.providerStatus).toEqual({ status: "failed" });
     expect(f.state.collectCount).toBe(2);
+    // A result that can never be kept (over the size limit, not a valid
+    // original) settles once as invalid_result, receipt kept; it no longer
+    // polls or holds a slot, and is never downloaded again.
+    for (const code of ["too_large", "invalid_video"] as const) {
+      const oversized = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt: `Uncollectable ${code}` }, randomUUID());
+      f.state.providerJobId = randomUUID();
+      await f.service.submitConsumerGenerationJob(scoped(oversized.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+      f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(oversized.id)))!.payloadJson).params);
+      f.state.collectorError = new original.ConsumerOriginalError(code);
+      const collects = f.state.collectCount;
+      const settled = await f.service.pollConsumerGeneration(scoped(oversized.id));
+      expect(settled.job).toMatchObject({ status: "failed", failureCode: "invalid_result", providerJobId: f.state.providerJobId });
+      expect(settled).toMatchObject({ collection: { code } });
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=NULL WHERE id=?", args: [oversized.id] });
+      expect((await f.service.pollConsumerGeneration(scoped(oversized.id))).job.status).toBe("failed");
+      expect(f.state.collectCount).toBe(collects + 1);
+    }
+    f.state.collectorError = undefined;
   }));
 
 test("a tool preset quotes through the same pipeline, records the tool and source names on the job, and refuses a missing or extra source before any import", async () =>
