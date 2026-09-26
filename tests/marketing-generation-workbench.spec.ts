@@ -430,7 +430,7 @@ test("invalid project mapping cannot quote or submit and explicit preparation re
   expect(f.submissions).toHaveLength(0);
 });
 
-test("a preset whose engine is not connected here opens on a connected engine, says so, and loads its price", async ({ page }, info) => {
+test("a preset whose engine is not connected here opens on a connected engine, says so, loads its price, and keeps its own engine", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "bounded engine fallback");
   const f = await fixture(page, false, true, true);
   await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&suite=moleculr&page=variants"));
@@ -442,5 +442,16 @@ test("a preset whose engine is not connected here opens on a connected engine, s
   await expect(dialog.getByRole("button", { name: "Generate · 2 cr estimated", exact: true })).toBeEnabled();
   await expect(dialog).not.toContainText("No generation engine is configured");
   expect(f.submissions).toHaveLength(0);
+  /* The take is made on the stand-in (mocked: the first acknowledgement is lost, the retry lands). */
+  const direction = "Stand-in take: the product on a plain sweep.";
+  await dialog.getByLabel("Generation direction").fill(direction);
+  await dialog.getByRole("button", { name: "Generate · 2 cr estimated", exact: true }).click();
+  await dialog.getByRole("button", { name: "Recover submitted take", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(f.submissions).toHaveLength(2);
+  expect(JSON.parse(f.submissions[1].body).model).toBe("image-plain");
+  /* The variant stays set up for the Marketing Studio engine, for when it is connected. */
+  await expect.poll(() => f.project().nodes.find((node) => node.id === "marketing-node")!.text).toBe(direction);
+  expect(f.project().moleculr!.variants[0].generation).toEqual({ modelId, marketing: { quality: "high", enhancePrompt: false }, ratio: "3:4" });
   expect(f.errors).toEqual([]);
 });

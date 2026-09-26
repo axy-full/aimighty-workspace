@@ -266,6 +266,10 @@ export function GenerationDialog({
   function acceptedSettings(attempt: PendingGeneration) {
     if(attempt.endpoint==='/api/audio')return undefined;
     const body=JSON.parse(attempt.body);
+    /* A stand-in engine made this take (the preset's own is not connected here): the preset keeps
+       its engine and settings, so it is itself again once that engine is connected. */
+    const wanted=target.options?.modelId;
+    if(wanted&&body.model!==wanted&&models.length&&!models.some(m=>m.id===wanted))return {prompt:String(body.prompt??target.prompt),options:target.options!};
     return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength}};
   }
   async function submit() {

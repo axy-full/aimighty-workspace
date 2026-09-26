@@ -1,7 +1,8 @@
 import { goWorkbenchStage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
 import { newProject, type Project, type Asset } from "../lib/workbench/studio";
 import { legacyShell } from "./helpers/legacyShell";
 
@@ -777,12 +778,8 @@ test("movie snapshot does not reveal the outgoing production after an account sw
   );
 });
 
-test("a signed-out visitor opens the movie renderer on the sample's cut", async ({ page }, testInfo) => {
-  test.skip(
-    !["workbench-360x640", "workbench-1440x900"].includes(testInfo.project.name),
-    "One visitor handoff check per form factor.",
-  );
-  /* /workbench writes the handoff under 'particl-visitor'; the renderer must read it under the same scope. */
+/** From /workbench's Delivery stage (the sample cut) to a rendered movie, with no identity error on the way. */
+async function renderSampleFromDelivery(page: Page) {
   await page.goto(await legacyShell(page, "/workbench"));
   await goWorkbenchStage(page, "export");
   await page.getByRole("button", { name: "Open movie renderer", exact: true }).click();
@@ -791,4 +788,51 @@ test("a signed-out visitor opens the movie renderer on the sample's cut", async 
   await expect(page.getByLabel("Movie format", { exact: true })).toBeEnabled();
   await expect(page.getByText(/unavailable|another account or workspace/)).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.getByRole("button", { name: "Render movie", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^Download (MP4|WebM)$/ })).toBeVisible({ timeout: 100_000 });
+  await expect(page.getByText(/account or workspace changed|could not be verified/)).toHaveCount(0);
+}
+
+test("a signed-out visitor opens the movie renderer on the sample's cut and renders it", async ({ page }, testInfo) => {
+  test.skip(
+    !["workbench-360x640", "workbench-1440x900"].includes(testInfo.project.name),
+    "One visitor handoff check per form factor.",
+  );
+  test.setTimeout(180_000);
+  /* /workbench writes the handoff under 'particl-visitor'; the renderer must read it, and render, under the same scope. */
+  await renderSampleFromDelivery(page);
+});
+
+test("an account without a workspace renders the movie /workbench handed it", async ({ page }, testInfo) => {
+  test.skip(
+    !["workbench-360x640", "workbench-1440x900"].includes(testInfo.project.name),
+    "One workspace-less render per form factor.",
+  );
+  test.setTimeout(180_000);
+  await signInLocally(page.request);
+  const account = await page.request.get("/api/me").then((response) => response.json());
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    /* Leave this synthetic local account signed in with no workspace, as while self-serve
+       provisioning is incomplete. Its membership is disabled, not removed. */
+    await db.batch(
+      [
+        { sql: "UPDATE memberships SET disabled=1 WHERE account_id=?", args: [account.id] },
+        { sql: "UPDATE p_sessions SET workspace_id=NULL WHERE account_id=?", args: [account.id] },
+      ],
+      "write",
+    );
+  } finally {
+    db.close();
+  }
+  /* What MovieExport used to read as a visitor: /api/me refuses an account without a workspace. */
+  const me = await page.request.get("/api/me");
+  expect(me.status()).toBe(401);
+  expect((await me.json()).error).toBe("Pick a workspace first.");
+  const checks: (string | undefined)[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/workspaces") checks.push(request.headers()["x-workbench-scope"]);
+  });
+  await renderSampleFromDelivery(page);
+  expect(checks).toContain(`particl-account-${account.id}`);
 });

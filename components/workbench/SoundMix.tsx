@@ -17,6 +17,7 @@ import { safeName, uid, type Project } from "@/lib/workbench/studio";
 import { downloadFile } from "@/lib/workbench/studio-export";
 import styles from "./SoundMix.module.css";
 import { NumberDraftInput } from "./NumberDraftInput";
+import { retimedClip } from "@/lib/workbench/number-draft";
 
 export function SoundMix({
   project,
@@ -29,7 +30,8 @@ export function SoundMix({
   project: Project;
   frame: number;
   playing: boolean;
-  onChange: (fn: (p: Project) => Project) => void;
+  /** A string `remember` folds consecutive edits under that key into one undo step (Studio's change). */
+  onChange: (fn: (p: Project) => Project, remember?: boolean | string) => void;
   onPause: () => void;
   onUpload: () => void;
 }) {
@@ -98,7 +100,7 @@ export function SoundMix({
         start(ready.buffer, frame / project.fps);
     }
   }, [frame, playing, ready, project.fps, start]);
-  function update(id: string, patch: Partial<AudioClip>) {
+  function update(id: string, patch: Partial<AudioClip>, remember: boolean | string = true) {
     setError("");
     onPause();
     onChange((p) => ({
@@ -107,8 +109,10 @@ export function SoundMix({
       audioClips: audioClips(p).map((c) =>
         c.id === id ? { ...c, ...patch } : c,
       ),
-    }));
+    }), remember);
   }
+  /* The fades a Duration edit started from, so the lengths typed on the way do not clamp them for good. */
+  const retiming = useRef<{ edit: string; fadeIn: number; fadeOut: number } | null>(null);
   async function prepare() {
     if (controller.current) return;
     onPause();
@@ -315,19 +319,14 @@ export function SoundMix({
                     max={max}
                     step={key === "pan" ? 0.1 : 1}
                     round={key !== "pan"}
-                    onCommit={(value) => {
+                    onCommit={(value, edit) => {
+                      if (key === "duration" && retiming.current?.edit !== edit)
+                        retiming.current = { edit, fadeIn: clip.fadeIn, fadeOut: clip.fadeOut };
+                      /* One focus of one field is one undo step, however many keystrokes it took. */
                       update(
                         clip.id,
-                        key === "duration"
-                          ? {
-                              duration: value,
-                              fadeIn: Math.min(clip.fadeIn, value),
-                              fadeOut: Math.min(
-                                clip.fadeOut,
-                                Math.max(0, value - clip.fadeIn),
-                              ),
-                            }
-                          : { [key]: value },
+                        key === "duration" ? retimedClip(retiming.current!, value) : { [key]: value },
+                        `mix:${edit}`,
                       );
                     }}
                   />

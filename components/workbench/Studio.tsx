@@ -536,7 +536,8 @@ export default function Studio({
   );
   const settle = useCallback(() => { coalescing.current = null; }, []);
   // Bible version and shared snapshots are server state: a local step back must not offer a stale version to the next publish.
-  const withServerState=(entry:Project,current:Project):Project=>entry.bibleVersion===current.bibleVersion?entry:{...entry,bibleVersion:current.bibleVersion};
+  // So is the production link and its node-to-shot mapping: a step back must not hide a queued take from the job feed.
+  const withServerState=(entry:Project,current:Project):Project=>entry.bibleVersion===current.bibleVersion&&entry.productionProjectId===current.productionProjectId&&entry.shotMappings===current.shotMappings?entry:{...entry,bibleVersion:current.bibleVersion,productionProjectId:current.productionProjectId,shotMappings:current.shotMappings};
   const undo = useCallback(() => {
     if(transitioningRef.current)return;
     coalescing.current=null;

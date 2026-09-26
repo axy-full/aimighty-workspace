@@ -5,7 +5,7 @@ import { previewAttrs } from "@/lib/preview";
 import { Download, Film, Loader2 } from "lucide-react";
 import { audioClips } from "@/lib/workbench/audio";
 import { safeName, type Project } from "@/lib/workbench/studio";
-import { movieScopeFor } from "@/lib/workbench/movie-handoff";
+import { movieScopeIsCurrent } from "@/lib/workbench/movie-handoff";
 import {
   defaultMovieOptions,
   movieDimensions,
@@ -109,17 +109,7 @@ export function MovieExport({
     setProgress({ phase: "Loading media", fraction: 0 });
     setResult(null);
     try {
-      const account = await fetch("/api/me", {
-        signal: abort.signal,
-        cache: "no-store",
-      });
-      let activeScope = movieScopeFor(null);
-      if (account.ok) {
-        const me = await account.json();
-        activeScope = movieScopeFor({ id: String(me.id), workspaceId: me.workspace?.id });
-      } else if (account.status !== 401)
-        throw new Error("Your account could not be verified. Try again.");
-      if (activeScope !== scope)
+      if (!(await movieScopeIsCurrent(scope, abort.signal)))
         throw new Error(
           "Your account or workspace changed. Return to Delivery to prepare a new export.",
         );

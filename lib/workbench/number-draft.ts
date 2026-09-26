@@ -22,3 +22,16 @@ export function settledNumber(text: string, current: number, { min, max, round }
   const clamped = Math.max(min, Math.min(max, value));
   return round ? Math.max(min, Math.min(max, Math.round(clamped))) : clamped;
 }
+
+/**
+ * A clip's new length and fades, from the fades it had when this edit of its
+ * Duration began. Typing "25" commits "2" on the way; clamping from the
+ * already-clamped fades would leave them at 2 once "25" arrives.
+ */
+export function retimedClip(start: { fadeIn: number; fadeOut: number }, duration: number) {
+  return {
+    duration,
+    fadeIn: Math.min(start.fadeIn, duration),
+    fadeOut: Math.min(start.fadeOut, Math.max(0, duration - start.fadeIn)),
+  };
+}

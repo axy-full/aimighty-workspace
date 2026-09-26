@@ -14,6 +14,36 @@ export function movieScopeFor(account: { id: string; workspaceId?: string | null
   if (!account) return visitor;
   return account.workspaceId ? workbenchScopeFor(account.workspaceId, account.id) : accountScopeFor(account.id);
 }
+/**
+ * Whether this browser is still who the renderer was opened for. /api/me
+ * answers only inside a workspace ("Pick a workspace first." is a 401 too), so
+ * anyone else is asked through GET /api/workspaces, which holds the captured
+ * account scope against the session (lib/accountRequestScope.ts) and answers
+ * 401 once signed out.
+ */
+export async function movieScopeIsCurrent(
+  scope: string,
+  signal: AbortSignal,
+  request: typeof fetch = fetch,
+): Promise<boolean> {
+  const unverified = () => new Error("Your account could not be verified. Try again.");
+  const me = await request("/api/me", { signal, cache: "no-store" });
+  if (me.ok) {
+    const account = await me.json();
+    return movieScopeFor({ id: String(account.id), workspaceId: account.workspace?.id }) === scope;
+  }
+  if (me.status !== 401) throw unverified();
+  const session = await request("/api/workspaces", {
+    signal,
+    cache: "no-store",
+    headers: scope === visitor ? {} : { "X-Workbench-Scope": scope },
+  });
+  if (session.status === 401) return scope === visitor;
+  if (session.status === 409) return false;
+  if (!session.ok) throw unverified();
+  /* Signed in without a workspace: the header matched, unless the page was a visitor's. */
+  return scope !== visitor;
+}
 export function movieHandoffKey(token: string, scope: string) {
   if (!/^[a-f0-9-]{36}$/.test(token))
     throw new Error("Open the movie renderer from Delivery.");

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { audioClips } from "@/lib/workbench/audio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import {
@@ -120,18 +120,38 @@ export function useSoundPlacements({ scope, project, jobs, onChange, onPause, on
     callbacks.current = { onChange, onPause, onPlaced, onFailed };
   }, [project, onChange, onPause, onPlaced, onFailed]);
 
+  /* A landing the page could not take yet (it was switching projects) is tried again shortly. */
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!placements.length) return;
+    const projectId = project.id;
     for (const placement of placements) {
       if (placing.current.has(placement.jobId)) continue;
       const asset = project.assets.find((a) => a.generationId === placement.jobId);
       if (asset) {
         placing.current.add(placement.jobId);
         void probeSeconds(asset.url).then((measured) => {
+          /* The probe can take seconds; by then the page may show another project. That
+             project's clips are not this one's: leave the placement queued for when it returns. */
+          if (projectRef.current.id !== projectId) {
+            placing.current.delete(placement.jobId);
+            return;
+          }
+          let applied = false;
           try {
             callbacks.current.onPause();
             const replacing = placement.replaceClipId && audioClips(projectRef.current).some((c) => c.id === placement.replaceClipId);
-            callbacks.current.onChange((p) => placeGeneratedClip(p, placement, asset, measured ?? asset.seconds ?? placement.seconds));
+            callbacks.current.onChange((p) => {
+              if (p.id !== projectId) return p;
+              applied = true;
+              return placeGeneratedClip(p, placement, asset, measured ?? asset.seconds ?? placement.seconds);
+            });
+            if (!applied) {
+              /* The page ignored the change (mid-switch): keep it queued and try again. */
+              placing.current.delete(placement.jobId);
+              setTimeout(() => setRetry((n) => n + 1), 1000);
+              return;
+            }
             const text = replacing
               ? `${placement.label} replaced its dialogue clip in place.`
               : `${placement.label} placed on the ${placement.lane === "sfx" ? "SFX" : placement.lane} lane at ${timecodeOf(placement.startFrame, projectRef.current.fps)}.`;
@@ -152,7 +172,7 @@ export function useSoundPlacements({ scope, project, jobs, onChange, onPause, on
         remember(readSoundPlacements(window.localStorage, key).filter((p) => p.jobId !== placement.jobId));
       }
     }
-  }, [placements, project.assets, jobs, remember, key]);
+  }, [placements, project.id, project.assets, jobs, remember, key, retry]);
 
   return placements;
 }

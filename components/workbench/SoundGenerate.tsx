@@ -117,7 +117,8 @@ export function SoundGenerate({
   frame: number;
   jobs: MediaJob[];
   enabled: boolean;
-  onChange: (fn: (p: Project) => Project) => void;
+  /** `remember: false` marks server state that must not become an undo step (Studio's change). */
+  onChange: (fn: (p: Project) => Project, remember?: boolean) => void;
   onSave: (refresh?: boolean) => Promise<boolean>;
   onQueued: () => void;
 }) {
@@ -331,6 +332,7 @@ export function SoundGenerate({
     const asked = tool ? Math.max(1, Math.ceil(quote?.seconds ?? source?.seconds ?? 5)) : expectedSeconds(genTask, text, seconds[genTask]);
     const replaceId = tool?.id === "voiceChange" && replaceClipId && replaceable.some((c) => c.id === replaceClipId) ? replaceClipId : undefined;
     const placementLane: SoundLane = tool ? "dialogue" : lane;
+    const projectId = project.id;
     try {
       attempt = key ? readPendingGeneration(window.localStorage, key) : null;
       if (!attempt) {
@@ -350,12 +352,16 @@ export function SoundGenerate({
         });
         if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
         /* The mapping is made after the save, so the draft does not hold it yet. Without it the
-           job feed (use-production-jobs) and asset recovery never see this lane's takes. */
+           job feed (use-production-jobs) and asset recovery never see this lane's takes. It is
+           server state, not an edit (no undo step), and only for the project that asked: the
+           page may have opened another one during the awaits above. */
         const nodeId = target.id;
-        onChange((p) =>
-          p.shotMappings?.[nodeId] === mapping.shotId && p.productionProjectId === mapping.productionProjectId
-            ? p
-            : { ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...p.shotMappings, [nodeId]: mapping.shotId } },
+        onChange(
+          (p) =>
+            p.id !== projectId || (p.shotMappings?.[nodeId] === mapping.shotId && p.productionProjectId === mapping.productionProjectId)
+              ? p
+              : { ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...p.shotMappings, [nodeId]: mapping.shotId } },
+          false,
         );
         key = pendingGenerationKey(scope, project.id, target.id);
         attempt = claimPendingGeneration(window.localStorage, key, {

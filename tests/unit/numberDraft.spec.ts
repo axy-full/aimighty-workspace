@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { settledNumber, typedNumber } from "../../lib/workbench/number-draft";
+import { retimedClip, settledNumber, typedNumber } from "../../lib/workbench/number-draft";
 
 const music = { min: 10, max: 300 };
 const gain = { min: -60, max: 12, round: true };
@@ -25,4 +25,14 @@ test("leaving a field clamps what was typed, and a cleared field keeps its value
   expect(settledNumber("-80", 0, gain)).toBe(-60);
   expect(settledNumber("12.6", 0, gain)).toBe(12);
   expect(settledNumber("45", 30, music)).toBe(45);
+});
+
+test("typing a clip Duration of 25 passes through 2 without losing its 6-frame fades", () => {
+  /* SoundMix takes each in-range keystroke; every one is clamped from the fades the edit began with. */
+  const start = { fadeIn: 6, fadeOut: 6 };
+  expect(retimedClip(start, 2)).toEqual({ duration: 2, fadeIn: 2, fadeOut: 0 });
+  expect(retimedClip(start, 25)).toEqual({ duration: 25, fadeIn: 6, fadeOut: 6 });
+  /* A length that truly is shorter still clamps. */
+  expect(retimedClip(start, 10)).toEqual({ duration: 10, fadeIn: 6, fadeOut: 4 });
+  expect(retimedClip({ fadeIn: 0, fadeOut: 0 }, 1)).toEqual({ duration: 1, fadeIn: 0, fadeOut: 0 });
 });
