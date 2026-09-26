@@ -330,9 +330,9 @@ function StillSlot({ scope, projectId, library, label, note, testId, still, onSt
   );
 }
 
-/** After a failed price, a failed job or a finished take: the same input, priced again. */
+/** After a failed price, a failed job or a finished take: the same input, priced again (a failure with its own Try again needs no second button). */
 function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnectedJob>; blocked: string | null; testId: string }) {
-  if (blocked || (job.state.phase !== "failed" && job.state.phase !== "done")) return null;
+  if (blocked || job.canRetry || (job.state.phase !== "failed" && job.state.phase !== "done")) return null;
   return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
 }
 
@@ -344,6 +344,22 @@ function priceLabel(state: ConnectedJobState, verb: string, blocked: string | nu
   if (state.phase === "submitting") return "Submitting…";
   if (state.phase === "running") return "Rendering…";
   return verb;
+}
+
+/** A failed quote or submit: the account's words, and Try again when nothing prices it again on its own. */
+function JobError({ job, testId }: { job: ReturnType<typeof useConnectedJob>; testId: string }) {
+  if (job.state.phase !== "failed") return null;
+  return (
+    <div className="gx-retry" role="alert" data-testid={testId}>
+      <span className="gx-gen-error" data-testid={`${testId}-text`}>{job.state.error}</span>
+      {job.canRetry ? <button type="button" className="gx-hbtn" onClick={job.requote}>Try again</button> : null}
+    </div>
+  );
+}
+
+/** After a few failed catalogue reads, the account is asked again only on request. */
+function CatalogueAgain({ business }: { business: Business }) {
+  return <div className="gx-retry"><button type="button" className="gx-hbtn" onClick={business.readCatalogue} data-testid="catalogue-again">Read again</button></div>;
 }
 
 /**
@@ -402,7 +418,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
   const range = model?.durationRange ?? null;
-  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? business.modelBlock(ADS_MODEL);
   const clamped = clampedDuration(s, range);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
@@ -427,7 +443,6 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
     <div className="gx-gen bz gx-enter" data-testid="ads-view">
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <Connection business={business} testId="ads-connect" />
-        {business.catalogueError ? <p className="gx-gen-error" role="alert">{business.catalogueError}</p> : null}
         {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="ads-setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.ads])}>Try again</button></p> : null}
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="ads-product"
@@ -474,9 +489,10 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         <Well scope={scope} projectId={project?.id} medias={s.medias} roles={AD_MEDIA_ROLES} max={room} hint="Reference stills · optional"
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
+        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
+        <JobError job={job} testId="ads-error" />
         <PriceAgain job={job} blocked={blocked} testId="ads-requote" />
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit()} data-testid="ads-generate">
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit(inputKey)} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
         {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · filed to this project</p> : null}
@@ -504,7 +520,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const sent = imageAdsMedias(s);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? business.modelBlock(s.engine);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "image", model: s.engine, prompt: s.prompt.trim(),
     parameters: {
@@ -572,9 +588,10 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={room} hint={`Reference media · ≤ ${AD_MEDIA_MAX}`}
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="dtc-error">{job.state.error}</p> : null}
+        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
+        <JobError job={job} testId="dtc-error" />
         <PriceAgain job={job} blocked={blocked} testId="dtc-requote" />
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit()} data-testid="dtc-generate">
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit(inputKey)} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
       </section>
