@@ -8,7 +8,13 @@ import { billCredits } from "../../lib/creditTerms";
 /* A drafted shot's take is priced in the unit the workspace pays in, off the
    rate table the session holds. The draft route used to send the vendor's
    dollars, which a credit workspace printed as credits: a take that bills
-   43 cr read "3 cr". */
+   43 cr read "3 cr".
+
+   This spec guards the rate table the page now prices from; it passes on the
+   old code too, because takeCost and the table predate the fix. The
+   regression tests for the defect itself are moneyRoutes.spec.ts (the draft
+   route sends no per-take dollars) and tests/audit-money-workbench.spec.ts
+   (the breakdown page shows 43 cr, and no $, in a credit workspace). */
 const cr = buildRateTable("cr");
 const usd = buildRateTable("usd");
 /** What the breakdown page shows for one take in credits: whole, rounded up (lib/price.ts). */

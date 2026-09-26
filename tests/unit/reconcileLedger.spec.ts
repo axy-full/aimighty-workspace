@@ -36,6 +36,8 @@ test("hidden takes and chats stay spent, and a reading counts text down as well 
       { sql: take, args: ["g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", before, before, "video", "byteplus", 0.5, null, null, 1] },
       { sql: take, args: ["g3", "dreamina-seedance-2-5-260628", "three", "{}", "succeeded", after, after, "video", "byteplus", 0.25, "seed-text-test", 0.02, 1] },
       { sql: take, args: ["g4", "dreamina-seedance-2-5-260628", "four", "{}", "failed", after, after, "video", "byteplus", null, "anthropic/claude-test", 0.03, 0] },
+      // A hidden voice line: ElevenLabs charged its credits, which total_tokens carries.
+      { sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd,total_tokens,deleted) VALUES('g5','eleven-test','five','{}','succeeded',?,?,'audio','elevenlabs',0.3,100,1)`, args: [before, before] },
       { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('c_hidden',?,?,1,0.4),('c_live',?,?,0,0)`, args: [before, before, before, before] },
       { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('m1','c_hidden','assistant',0.3,?),('m2','c_hidden','assistant',0.1,?)`, args: [before, after] },
       { sql: `INSERT INTO atomik_spend(id,kind,cost_usd,created_at) VALUES('s1','idea',0.04,?)`, args: [after] },
@@ -43,7 +45,11 @@ test("hidden takes and chats stay spent, and a reading counts text down as well 
 
     const renders = new Map((await renderSpendByPayer()).map((r) => [r.provider, r]));
     expect(renders.get("byteplus")!.usd).toBeCloseTo(1.75, 6);
-    expect(renders.get("byteplus")!.attempts).toBe(4);
+    // The counts are of the takes still shown (g1 and g4); the money is every take's.
+    expect(renders.get("byteplus")!.attempts).toBe(2);
+    expect(renders.get("byteplus")!.succeeded).toBe(1);
+    expect(renders.get("elevenlabs")).toMatchObject({ attempts: 0, succeeded: 0, tokens: 100 });
+    expect(renders.get("elevenlabs")!.usd).toBeCloseTo(0.3, 6);
 
     const atomik = await atomikTextSpend();
     expect(atomik.usd).toBeCloseTo(0.44, 6);

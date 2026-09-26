@@ -104,13 +104,18 @@ export const PAID_BY = `COALESCE(billed_to, provider)`;
 export const ATOMIK_LEDGER = "vercel";
 
 /**
- * Every render's spend, by the balance that paid for it. Hidden takes are
- * counted: deleting a take hides it, and the vendor has still charged for it.
+ * Every render's spend, by the balance that paid for it. The money (dollars,
+ * and a credits vendor's credits in total_tokens) counts hidden takes:
+ * deleting a take hides it, and the vendor has still charged for it. The
+ * renders and attempts counts are of the takes still shown, as they always were.
  */
 export async function renderSpendByPayer(): Promise<{ provider: string; attempts: number; succeeded: number; usd: number; tokens: number }[]> {
   await ready();
+  const shown = `(deleted = 0 OR deleted IS NULL)`;
   const rs = await db().execute(`
-    SELECT ${PAID_BY} AS provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
+    SELECT ${PAID_BY} AS provider,
+           SUM(CASE WHEN ${shown} THEN 1 ELSE 0 END) AS n_all,
+           SUM(CASE WHEN ${shown} AND status = 'succeeded' THEN 1 ELSE 0 END) AS n,
            COALESCE(SUM(COALESCE(cost_usd,0)),0) AS render_spend,
            COALESCE(SUM(total_tokens),0) AS tokens
     FROM generations GROUP BY ${PAID_BY}`);

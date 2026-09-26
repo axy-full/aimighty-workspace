@@ -27,9 +27,10 @@ const SYSTEM = [
 
 /**
  * The shot builder (brief 1.8): a scene in, a shot list out with every Setup
- * row as a field, cast tagged, an engine per shot and a credit estimate per
- * shot and for the scene — before anything is rendered. Proposals only:
- * nothing is written until a person adds a shot.
+ * row as a field, cast tagged and an engine per shot — before anything is
+ * rendered. No take is priced here: the page prices each one off the
+ * session's rate table, in the workspace's unit. Proposals only: nothing is
+ * written until a person adds a shot.
  */
 export const POST = withTenant(async function POST(req: Request) {
   /* requireRender, not requireUser. This spends the platform's AI-Gateway
