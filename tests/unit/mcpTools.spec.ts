@@ -47,7 +47,7 @@ test("a finished render is reported without waiting out the timeout", async () =
 
 test("a render names its project exactly; a partial name is never guessed for a paid call", async () => {
   const projects = [{ id: "p1", name: "Rainbow Launch" }, { id: "p2", name: "Rain" }, { id: "p3", name: "Monsoon Film" }, { id: "p4", name: "Monsoon film" }];
-  const generate = (path: string, body?: unknown) => (path === "/api/generate" ? { id: "gen_1", body } : undefined);
+  const generate = (path: string, body?: unknown) => (path === "/api/generate" ? { id: "gen_1", body } : path === "/api/generate/quote" ? { estimatedCredits: 18, price: 18, unit: "cr", fingerprint: "a".repeat(64) } : undefined);
 
   const guess = caller(projects.filter((p) => p.id !== "p2"), generate);
   await expect(runTool("render_shot", { prompt: "Rain on glass.", project: "Rain" }, guess.call as never, "")).rejects.toThrow('Did you mean "Rainbow Launch" (p1)');

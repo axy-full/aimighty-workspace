@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSession } from "./session";
 import { lockedClaim } from "./usePaidAction";
+import { settleStoredRequest } from "./workspace/generate-submit";
 import type { RefItem } from "./refs";
 import type { ShotSpec } from "./studio";
 
@@ -99,7 +100,7 @@ function write(key: string, batch: GenerationBatch) {
 
 /** Persist every authorized variant before the first POST and advance only after an accepted job. */
 export function useGenerationBatch(surface: string, active: boolean) {
-  const { workspace, email, signedIn } = useSession();
+  const { workspace, email, signedIn, requestScope } = useSession();
   const enabled = !!(active && signedIn && workspace?.id && email);
   const storageKey = `particl:generation-batch:${JSON.stringify([workspace?.id, email, surface])}`;
   const current = useRef({ storageKey, enabled });
@@ -140,6 +141,11 @@ export function useGenerationBatch(surface: string, active: boolean) {
           );
       };
       guard();
+      /* A batch saved before this press may have sent its pending take already, its reply lost: that take is
+         asked about by its key before anything else goes (settleStoredRequest). A take refused for good goes
+         again only under a new key, re-quoted first. Either way nothing goes above the price the batch showed. */
+      const recovering = Boolean(recoveryId && recoveryId === proposed.id);
+      let settle: "ask" | "quote" | null = recovering ? "ask" : null;
       let batch = await lockedClaim(storageKey, () => {
         guard();
         const saved = read(storageKey);
@@ -175,6 +181,7 @@ export function useGenerationBatch(surface: string, active: boolean) {
           }
           return saved;
         });
+        settle = "quote";
       }
       while (true) {
         guard();
@@ -185,7 +192,51 @@ export function useGenerationBatch(surface: string, active: boolean) {
         if (batch.refusal) throw new Error(batch.refusal.message);
         if (batch.cursor === batch.variants.length) return true;
         const index = batch.cursor;
-        const variant = batch.variants[index];
+        let variant = batch.variants[index];
+        if (settle) {
+          const how = settle;
+          settle = null;
+          const approved = { price: batch.display.price / batch.display.count, unit: batch.display.unit };
+          const outcome = await settleStoredRequest({ scope: requestScope ?? "", key: variant.key, endpoint: "/api/generate", body: variant.body, approved, ask: how === "ask" });
+          guard();
+          if (outcome.state === "unknown") throw new Error(outcome.reason);
+          if (outcome.state === "landed") {
+            /* It reached the server: that take is followed, and the batch goes on from the next one. */
+            await lockedClaim(storageKey, () => {
+              const latest = read(storageKey);
+              if (latest?.id === batch.id && latest.cursor === index && latest.variants[index].key === variant.key) {
+                latest.variants[index].resultId = outcome.jobId;
+                latest.cursor++;
+                write(storageKey, latest);
+              }
+            });
+            if (outcome.status === "failed") options.notices(["A submitted take failed. Check Activity for its result."]);
+            continue;
+          }
+          if (outcome.state === "repriced") {
+            /* Never made, and priced differently now: nothing more goes from this batch. What it made stays. */
+            await lockedClaim(storageKey, () => {
+              const latest = read(storageKey);
+              if (latest?.id === batch.id && latest.cursor === index) {
+                localStorage.removeItem(storageKey);
+                notify();
+              }
+            });
+            const each = (n: number) => (batch.display.unit === "usd" ? `$${n.toFixed(2)}` : `${n.toLocaleString("en-US")} cr`);
+            throw new Error(`The price is now ${each(outcome.price)} a take; this batch was approved at ${each(approved.price)}. Its remaining takes were not sent, and nothing was charged for them.`);
+          }
+          if (how === "ask") {
+            /* Set aside there, never made: it goes again under a new key, at the price the batch showed. */
+            variant = await lockedClaim(storageKey, () => {
+              const latest = read(storageKey);
+              if (!latest || latest.id !== batch.id || latest.cursor !== index || latest.variants[index].key !== variant.key)
+                throw new Error("The batch has already been recovered.");
+              latest.variants[index].key = crypto.randomUUID();
+              write(storageKey, latest);
+              return latest.variants[index];
+            });
+          }
+        }
         const response = await fetch("/api/generate", {
           method: "POST",
           headers: {
@@ -248,7 +299,7 @@ export function useGenerationBatch(surface: string, active: boolean) {
           options.notices(data.notices);
       }
     },
-    [enabled, storageKey, workspace, email, recoveryId],
+    [enabled, storageKey, workspace, email, recoveryId, requestScope],
   );
   const complete = useCallback(
     (id: string) =>
