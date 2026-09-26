@@ -177,6 +177,7 @@ import {DRAFT_UPLOAD_ACCEPT,draftUploadAsset} from '@/lib/workbench/draft-upload
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
 import {SoundGenerate} from './SoundGenerate';
+import {useSoundPlacements} from './use-sound-placements';
 import {AssetBins,AssetBinPicker} from './AssetBins';
 import {EditVersions} from './EditVersions';
 import {applyEdit,type EditVersion} from '@/lib/workbench/editorial';
@@ -558,6 +559,9 @@ export default function Studio({
   const activeStorageKey=useRef(storageKey);
   useLayoutEffect(()=>{activeStorageKey.current=storageKey;},[storageKey]);
   const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change,storageKey);
+  // Generated sound lands on its lane whichever stage is open, not only while the sound composer is mounted.
+  const pauseTransport=useCallback(()=>setPlaying(false),[]);
+  useSoundPlacements({scope:storageKey,project:p,jobs:jobs.mediaJobs,onChange:change,onPause:pauseTransport,onPlaced:toast.success,onFailed:toast.error});
   const identityList = identities?.projectId === p.id ? identities.list : null;
   const identitiesActive = !!identityList?.some(identity => identity.status === 'submitting' || identity.status === 'training');
   useEffect(() => {
@@ -2452,7 +2456,7 @@ export default function Studio({
                               ))}
                             </div>
                           </div>
-                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundGenerate key={'gen:'+p.id+storageKey} scope={storageKey} project={p} frame={frame} jobs={jobs.mediaJobs} enabled={ready&&signedIn&&!transitioning} onChange={change} onPause={()=>setPlaying(false)} onSave={refresh=>ensureSaved(p.id,refresh)} onQueued={()=>void jobs.refresh()}/><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
+                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundGenerate key={'gen:'+p.id+storageKey} scope={storageKey} project={p} frame={frame} jobs={jobs.mediaJobs} enabled={ready&&signedIn&&!transitioning} onChange={change} onSave={refresh=>ensureSaved(p.id,refresh)} onQueued={()=>void jobs.refresh()}/><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
                         </div>
                       </div>
                     )}

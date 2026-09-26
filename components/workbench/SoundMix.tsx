@@ -16,6 +16,7 @@ import {
 import { safeName, uid, type Project } from "@/lib/workbench/studio";
 import { downloadFile } from "@/lib/workbench/studio-export";
 import styles from "./SoundMix.module.css";
+import { NumberDraftInput } from "./NumberDraftInput";
 
 export function SoundMix({
   project,
@@ -307,17 +308,14 @@ export function SoundMix({
                   ].includes(key)
                     ? " (frames)"
                     : ""}
-                  <input
-                    type="number"
+                  <NumberDraftInput
                     aria-label={label}
                     value={clip[key]}
                     min={min}
                     max={max}
                     step={key === "pan" ? 0.1 : 1}
-                    onChange={(e) => {
-                      const n = e.target.valueAsNumber;
-                      if (!Number.isFinite(n) || n < min || n > max) return;
-                      const value = key === "pan" ? n : Math.round(n);
+                    round={key !== "pan"}
+                    onCommit={(value) => {
                       update(
                         clip.id,
                         key === "duration"

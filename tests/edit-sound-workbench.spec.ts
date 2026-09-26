@@ -167,6 +167,21 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   await expect(clip1).toContainText("Voice-over · v1");
   await expect(clip1.getByLabel("Sound lane", { exact: true })).toHaveValue("dialogue");
   await expect(clip1.getByLabel("Timeline start", { exact: true })).toHaveValue("12");
+  if (page.viewportSize()!.width < 760) {
+    /* The phone floor: 12px text and 44px targets in the mixer, Mute / Solo / Remove clip included. */
+    const floor = await mix.evaluate((root) => {
+      const shown = (el: Element) => (el as HTMLElement).offsetParent !== null;
+      const small = Array.from(root.querySelectorAll("*"))
+        .filter((el) => shown(el) && Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim()))
+        .filter((el) => Number.parseFloat(getComputedStyle(el).fontSize) < 12)
+        .map((el) => `${getComputedStyle(el).fontSize}: ${el.textContent?.trim().slice(0, 30)}`);
+      const short = Array.from(root.querySelectorAll("button, label"))
+        .filter((el) => shown(el) && el.getBoundingClientRect().height < 44)
+        .map((el) => `${Math.round(el.getBoundingClientRect().height)}px: ${el.textContent?.trim().slice(0, 30)}`);
+      return { small, short };
+    });
+    expect(floor).toEqual({ small: [], short: [] });
+  }
   await expect(panel.getByRole("status")).toContainText("Voice-over placed on the dialogue lane at 00:00");
   await expect(panel.getByRole("list", { name: "Sound in progress" })).toHaveCount(0);
 
