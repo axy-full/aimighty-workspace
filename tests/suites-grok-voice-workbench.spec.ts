@@ -25,7 +25,7 @@ async function setup(page: Page) {
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
   const production = String((await saved.json()).productionProjectId);
-  const row = async (id: string) => { const db = createClient({ url: tenantUrl }); try { return (await db.execute({ sql: "SELECT status, provider, billed_to, cost_usd, duration_s FROM generations WHERE id=?", args: [id] })).rows[0]; } finally { db.close(); } };
+  const row = async (id: string) => { const db = createClient({ url: tenantUrl, timeout: 10_000 }); try { return (await db.execute({ sql: "SELECT status, provider, billed_to, cost_usd, duration_s FROM generations WHERE id=?", args: [id] })).rows[0]; } finally { db.close(); } };
   const meterRow = async (model: string) => { const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 }); try { return (await db.execute({ sql: "SELECT engine, status, engine_cost_usd FROM meter_events WHERE workspace_id=? AND model=? ORDER BY rowid DESC LIMIT 1", args: [account.workspace.id, model] })).rows[0]; } finally { db.close(); } };
   return { headers, scope, project, production, row, meterRow };
 }

@@ -211,9 +211,12 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
 }
 
 /* ── Prompt rules ────────────────────────────────────────────────────── */
-/* GET /api/rules: lib/platformLayer.ts EffectiveRule. The team's rules edit in full; the platform's switch off or on. */
+/* GET /api/rules: lib/platformLayer.ts EffectiveRule. The team's rules edit in full; the platform's switch off or on.
+   Every member reads them; only an admin changes them (the routes answer anyone else 403). */
 type Rule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean; source: "platform" | "workspace" };
 function Rules() {
+  const session = useSession();
+  const admin = session.role === "admin" || session.role === "owner";
   const write = useWrite();
   const { data, error, read } = useRead<{ rules: Rule[] }>("/api/rules");
   const [text, setText] = useState("");
@@ -238,10 +241,10 @@ function Rules() {
     const own = r.source === "workspace";
     return (
       <div className="wsx-actions" key={r.id} data-testid="ws-rule" data-source={r.source} style={{ opacity: r.on ? 1 : 0.6 }}>
-        <button type="button" role="switch" className="gx-toggle" aria-checked={r.on} aria-label={r.on ? "Switch this rule off" : "Switch this rule on"} disabled={busy != null} onClick={() => void act(r.id, at(r), "PATCH", { on: !r.on })}>
+        <button type="button" role="switch" className="gx-toggle" aria-checked={r.on} aria-label={r.on ? "Switch this rule off" : "Switch this rule on"} disabled={!admin || busy != null} onClick={() => void act(r.id, at(r), "PATCH", { on: !r.on })}>
           <span className="gx-toggle-dot" aria-hidden="true" />{r.on ? "On" : "Off"}
         </button>
-        {own ? (
+        {own && admin ? (
           <>
             <input className="gx-field" defaultValue={r.text} maxLength={400} aria-label="Rule" disabled={busy != null} style={{ flex: "1 1 220px", width: "auto" }}
               onBlur={(e) => { const next = e.target.value.trim(); if (next && next !== r.text) void act(r.id, at(r), "PATCH", { text: next }); }} />
@@ -273,8 +276,12 @@ function Rules() {
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       {data ? mine.map(row) : !error ? <span className="cw-dim">Reading…</span> : null}
       <div className="wsx-actions">
-        <input className="gx-field" value={text} maxLength={400} placeholder="A rule, as one sentence" aria-label="New rule" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void add(); }} style={{ flex: "1 1 220px", width: "auto" }} data-testid="ws-rule-text" />
-        <button type="button" className="gx-hbtn" disabled={!text.trim() || busy != null} onClick={() => void add()} data-testid="ws-rule-add">Add rule</button>
+        {admin ? (
+          <>
+            <input className="gx-field" value={text} maxLength={400} placeholder="A rule, as one sentence" aria-label="New rule" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void add(); }} style={{ flex: "1 1 220px", width: "auto" }} data-testid="ws-rule-text" />
+            <button type="button" className="gx-hbtn" disabled={!text.trim() || busy != null} onClick={() => void add()} data-testid="ws-rule-add">Add rule</button>
+          </>
+        ) : null}
         {inherited.length ? (
           <button type="button" className="gx-hbtn" aria-expanded={showInherited} onClick={() => setShowInherited((v) => !v)} data-testid="ws-rules-inherited">
             {showInherited ? "Hide" : "Show"} {inherited.length} inherited{off ? ` · ${off} off` : ""}

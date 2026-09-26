@@ -146,6 +146,15 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     /* A bare `/name` is still being typed: nothing to price until a brief follows. */
     !paid.pending && draftText.trim() && !/^\/[a-z0-9-]*$/.test(draftText.trim()) ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
 
+  /* A claimed step is held against a second Continue only while the plan
+     still shows it past proposed. One the server settled back to proposed
+     (its render never arrived: lib/atomik.ts › reconcileRunningSteps) can be
+     approved again from this tab without a reload. */
+  useEffect(() => {
+    if (busy || !loaded) return;
+    for (const s of loaded.steps) if (s.status === "proposed") dispatched.current.delete(s.id);
+  }, [busy, loaded]);
+
   /* The latest refresh, for the flows that await it after their writes —
      bound in an effect, since a ref may not change during render. */
   const refreshRef = useRef(refreshChat);
@@ -353,10 +362,16 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       const res = await fetch(render.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `atomik-step:${step.id}` },
         body: JSON.stringify(approvedBody(render, again.quote)) });
       const j = await res.json().catch(() => ({}));
+      /* Still being accepted under this step's key: not a failure. The step
+         stays running and is settled from the request's record when the plan
+         is next read (lib/atomik.ts › reconcileRunningSteps). */
+      if (res.status === 409 && j.pending) { setError("That render is still being accepted. It will show here once it has started."); return; }
       await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(res.ok ? { status: "done", genId: j.id ?? null } : { status: "failed", error: j.error ?? `Failed (${res.status})` }) });
       if (!res.ok) setError(j.error ?? "That render didn't start.");
     } catch (e) {
+      /* A dropped connection leaves the claimed step running; reading the
+         plan settles it from what the server recorded. */
       setError((e as Error).message);
     } finally {
       if (!claimed) dispatched.current.delete(proposed.id);
@@ -378,7 +393,9 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     if (busy) return;
     setBusy(true); setError(null);
     try {
-      const r = await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ params: { ...step.params, model }, model }) });
+      /* The engine alone: the server moves the step's length, size and shape
+         to what that engine offers and re-prices it. */
+      const r = await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
       if (!r.ok) { const j = await r.json().catch(() => ({})); setError(j.error ?? "That engine didn't stick."); }
     } finally { await refreshRef.current(); setBusy(false); }
   }, [busy]);
