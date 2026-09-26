@@ -99,7 +99,9 @@ export function branchFromTake(project: Project, shotId: string, take: Asset): {
   if (!shot) throw new RigBuildError("Choose a shot first.");
   roomFor(project, 2);
   const title = `${shot.title} · from ${take.name}`.slice(0, 300);
-  const node: CanvasNode = { ...shot, id: uid("node"), title, x: shot.x, y: shot.y + 320, linked: [], versions: undefined, status: "draft", locked: false, condensed: undefined, firstFrameId: undefined, boardShotId: undefined };
+  // Below its parent while the column has room; near the canvas floor, the column placer finds a spot.
+  const spot = shot.y + 320 <= COLUMN_FLOOR ? { x: shot.x, y: shot.y + 320 } : place(project);
+  const node: CanvasNode = { ...shot, id: uid("node"), title, ...spot, linked: [], versions: undefined, status: "draft", locked: false, condensed: undefined, firstFrameId: undefined, boardShotId: undefined, wiredJobId: undefined };
   let next: Project = { ...project, nodes: [...project.nodes, node] };
   next = addInput(next, node.id, take, `Take · ${take.name}`);
   if (take.kind === "image") next = setFirstFrame(next, node.id, take.id);
@@ -119,13 +121,15 @@ export function buildFromBoards(project: Project, engine: string): { project: Pr
   for (const s of framed) {
     const frame = boards!.frames[s.id];
     const genId = frame.selected ?? frame.takes[0].genId;
+    // The look this take was rendered with: its own record, else the frame's look, else the board's.
+    const look = frame.takes.find((t) => t.genId === genId)?.style ?? frame.style ?? boards!.style;
     const asset = next.assets.find((a) => a.id === genId) ?? { id: genId, generationId: genId, kind: "image" as const, category: "Storyboard", name: `Frame ${s.number}`, url: `/api/media/${genId}`, description: s.scene, prompt: frame.prompt, status: "Draft" as const, locked: false, version: 1, refs: [] };
     const base = createNode("scene", next.nodes.length, place(next));
     const text = [frame.prompt || s.shot.description, s.shot.movement && `Camera: ${s.shot.movement}.`, s.shot.sound && `Sound: ${s.shot.sound}.`].filter(Boolean).join("\n").slice(0, 20_000);
     const shot: CanvasNode = { ...base, id: uid("node"), title: `${s.number} — ${s.shot.description || s.scene}`.slice(0, 300), text, mode: "Video", engine, ...(s.shot.duration ? { durationS: Math.round(s.shot.duration) } : {}), boardShotId: s.id };
     next = { ...next, nodes: [...next.nodes, shot] };
     next = addInput(next, shot.id, asset, `Frame ${s.number}`);
-    if (boards!.style === "live") next = setFirstFrame(next, shot.id, asset.id);
+    if (look === "live") next = setFirstFrame(next, shot.id, asset.id);
   }
   return { project: next, added: framed.length };
 }

@@ -18,6 +18,7 @@ import {
   deliverGenerationSettlement,
 } from "./generationSettlement";
 import { archiveAndDelete } from "./archive";
+import { claimBinding, type GenerationRequest } from "./generationRequests";
 
 /**
  * LEGACY — the older LoRA identity trainer (four-suites PR F, 19 Sep 2026).
@@ -826,12 +827,15 @@ export async function identityForCast(castIds: string[]): Promise<Identity | nul
 export async function startIdentityStill(opts: {
   identity: Identity; prompt: string; ratio: string; projectId: string | null; shotId: string | null; version: number;
   createdBy: string; tokenId: string | null;
+  /** The request's idempotency claim, bound in the same write as the row. */
+  requestClaim?: GenerationRequest;
 }): Promise<{ genId: string; finalPrompt: string; ts: number }> {
   await ready();
   const genId = newId("gen");
   const ts = now();
   const finalPrompt = promptWithTrigger(opts.prompt, opts.identity);
-  await db().execute({
+  const binding = await claimBinding(opts.requestClaim, genId);
+  await db().batch([{
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
            created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
@@ -839,7 +843,7 @@ export async function startIdentityStill(opts: {
     args: [genId, opts.projectId, null, "image", RENDERER, finalPrompt,
            JSON.stringify({ ratio: opts.ratio, resolution: "1K", rawPrompt: opts.prompt, identity: { id: opts.identity.id, name: opts.identity.name }, cast: [opts.identity.name] }),
            "running", opts.createdBy, ts, ts, opts.tokenId, opts.shotId, opts.version, "fal", "generate", "fal"],
-  });
+  }, ...binding], "write");
   invalidate(PROJECTS_KEY);
   try {
     await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "running",

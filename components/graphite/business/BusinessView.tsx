@@ -7,13 +7,13 @@ import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import {
   AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, isDtc,
-  INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_TYPES, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock, withAdReference, withMode, withSetup,
-  type AdMediaRole, type AdMode, type AdsState, type ImageAdsState, type SetupItem, type SetupType,
+  PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsParameters, clampedDuration, imageAdsBlock, imageAdsFromPreset, presetKey, readPreset, withAdReference, withMode, withSetup,
+  type AdMediaRole, type AdMode, type AdsState, type ImageAdsState, type PresetPage, type SetupItem, type SetupType,
 } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
-import { useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { composerBusy, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -108,7 +108,7 @@ function Chips<T extends string | number>({ label, note, options, value, onPick,
   );
 }
 
-/** A setup-item picker: the account's items when it lists them, else the reason and a field for an id from the CLI. */
+/** A setup-item picker: the account's items when it lists them, else the reason and a field for an item's id. */
 function SetupPicker({ label, note, type, business, value, onPick, disabled, why, testId }: {
   label: string; note?: string; type: SetupType; business: Business; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; testId?: string;
 }) {
@@ -128,7 +128,7 @@ function SetupPicker({ label, note, type, business, value, onPick, disabled, why
       </div>
       {read && !read.available ? (
         <div className="bz-idrow">
-          <span className="cw-dim">The connected account does not list {label.toLowerCase()}s through its tools. Paste an id from <code>higgsfield marketing-studio {SETUP_TYPES.find((t) => t[0] === type)?.[2].split(" ·")[0]} --json</code>.</span>
+          <span className="cw-dim">The connected account does not list {label.toLowerCase()}s here. Paste one’s id.</span>
           <input className="gx-field" aria-label={`${label} id`} placeholder={`${label} id`} value={typed} disabled={disabled} onChange={(e) => setTyped(e.target.value)} onBlur={() => { const id = typed.trim(); if (id) { onPick(id); setTyped(""); } }} />
         </div>
       ) : read && read.available && !items.length ? <span className="cw-dim">The account has no {label.toLowerCase()}s yet.</span> : null}
@@ -136,20 +136,24 @@ function SetupPicker({ label, note, type, business, value, onPick, disabled, why
   );
 }
 
-/** What Setup handed over with Use in Ads / Use in Image ads (this view only renders in the browser). */
-const PRESET_KEY = "particl-business-preset";
-function takePreset(): { type: SetupType; id: string } | null {
+/** What Setup handed over with Use in Ads / Use in Image ads, each composer its own (this view only renders in the browser). */
+function takePreset(page: PresetPage) {
   try {
-    const raw = sessionStorage.getItem(PRESET_KEY);
-    if (!raw) return null;
-    sessionStorage.removeItem(PRESET_KEY);
-    const parsed = JSON.parse(raw) as { type?: string; id?: string };
-    return typeof parsed.id === "string" && typeof parsed.type === "string" ? { type: parsed.type as SetupType, id: parsed.id } : null;
+    const raw = sessionStorage.getItem(presetKey(page));
+    if (raw) sessionStorage.removeItem(presetKey(page));
+    return readPreset(raw, page);
   } catch { return null; }
+}
+
+/** After a failed price, a failed job or a finished take: the same input, priced again. */
+function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnectedJob>; blocked: string | null; testId: string }) {
+  if (blocked || (job.state.phase !== "failed" && job.state.phase !== "done")) return null;
+  return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
 }
 
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
+  if (state.phase === "resuming") return "Checking the last take…";
   if (state.phase === "quoting") return `${verb} · pricing…`;
   if (state.phase === "quoted") return `${verb} · ${cr(state.job.quoteCredits)}`;
   if (state.phase === "submitting") return "Submitting…";
@@ -161,17 +165,8 @@ function priceLabel(state: ConnectedJobState, verb: string, blocked: string | nu
 function AdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const [s, set] = useState<AdsState>(() => {
-    const preset = takePreset();
-    if (!preset) return INITIAL_ADS;
-    if (preset.type === "product") return { ...INITIAL_ADS, productId: preset.id };
-    if (preset.type === "avatar") return { ...INITIAL_ADS, avatarId: preset.id };
-    if (preset.type === "hook") return { ...INITIAL_ADS, hookId: preset.id };
-    if (preset.type === "setting") return { ...INITIAL_ADS, settingId: preset.id };
-    if (preset.type === "ad_reference") return { ...INITIAL_ADS, adReferenceId: preset.id };
-    return INITIAL_ADS;
-  });
-  const job = useConnectedJob(project?.id ?? null);
+  const [s, set] = useState<AdsState>(() => adsFromPreset(takePreset("ads")));
+  const job = useConnectedJob(project?.id ?? null, "ads");
   const model: CatalogueModel | undefined = business.models[ADS_MODEL];
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
@@ -193,7 +188,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   /* The button wears the account's exact price for exactly this input. */
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
   useEffect(() => {
-    if (!input || quotedFor === inputKey || phase === "submitting" || phase === "running") return;
+    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
@@ -213,8 +208,8 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
             <button type="button" className="gx-chip" aria-pressed={!s.productId} onClick={() => set({ ...s, productId: null })}>None</button>
             {(business.setup.reads.product?.items ?? []).map((p) => <button key={p.id} type="button" className="gx-chip" aria-pressed={s.productId === p.id} title={p.meta} onClick={() => set({ ...s, productId: p.id })}>{p.name}</button>)}
           </div>
-          {/* Click-to-Ad (a product fetched by its page URL) is the gateway's flow, not this tool's: it returns with the developer-API grant, as a Setup item. */}
-          {business.setup.reads.product && !business.setup.reads.product.available ? <span className="cw-dim">The connected account does not list products through its tools. Products are made in Setup once the developer API is verified in Workspace › Engines.</span> : null}
+          {/* Particl makes no products of its own yet: Click-to-Ad and product creation are the gateway's flows, which nothing here calls. */}
+          {business.setup.reads.product && !business.setup.reads.product.available ? <span className="cw-dim">The connected account does not list products here.</span> : null}
         </div>
         <SetupPicker label="Avatar" note="optional for UGC · the backend can synthesise a Soul Character" type="avatar" business={business} value={s.avatarId} onPick={(id) => set({ ...s, avatarId: id })} testId="ads-avatar" />
         <SetupPicker label="Hook" note={chips.hook.disabled ? undefined : "prepended to your prompt"} type="hook" business={business} value={s.hookId} onPick={(id) => set(withSetup(s, { hookId: id }))} disabled={chips.hook.disabled} why={chips.hook.why} testId="ads-hook" />
@@ -250,6 +245,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
           onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
         {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="ads-error">{job.state.error}</p> : null}
+        <PriceAgain job={job} blocked={blocked} testId="ads-requote" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit()} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
@@ -268,8 +264,8 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
 function ImageAdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const [s, set] = useState<ImageAdsState>(INITIAL_IMAGE_ADS);
-  const job = useConnectedJob(project?.id ?? null);
+  const [s, set] = useState<ImageAdsState>(() => imageAdsFromPreset(takePreset("dtc")));
+  const job = useConnectedJob(project?.id ?? null, "dtc");
   const dtc = isDtc(s);
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
@@ -290,7 +286,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const inputKey = JSON.stringify(input);
   const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
   useEffect(() => {
-    if (!input || quotedFor === inputKey || phase === "submitting" || phase === "running") return;
+    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
@@ -298,7 +294,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   return (
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
-        <p className="bz-intro">A branded ad image: the prompt, an optional product, avatar and up to 14 reference stills.</p>
+        <p className="bz-intro">A branded ad image from the prompt and up to 14 reference stills.</p>
         <div className="gx-gen-row" data-testid="dtc-engine">
           <span className="gx-eyebrow" data-functional-label="">Engine</span>
           <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Image ads engine">
@@ -341,7 +337,8 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={AD_MEDIA_MAX} hint="Reference media · ≤ 14"
           onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
-        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert">{job.state.error}</p> : null}
+        {job.state.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="dtc-error">{job.state.error}</p> : null}
+        <PriceAgain job={job} blocked={blocked} testId="dtc-requote" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted"} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit()} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
@@ -378,8 +375,8 @@ function SetupView({ business }: { business: Business }) {
   useEffect(() => { if (connected && !setupLoading && setupEmpty) void readSetup(); }, [connected, setupLoading, setupEmpty, readSetup]);
   const [selected, setSelected] = useState<SetupItem | null>(null);
   const rows = SETUP_TYPES.flatMap(([type]) => business.setup.reads[type]?.items ?? []);
-  const sendTo = (item: SetupItem, page: "ads" | "dtc") => {
-    try { sessionStorage.setItem(PRESET_KEY, JSON.stringify({ type: item.type, id: item.id })); } catch { /* the id is still on screen */ }
+  const sendTo = (item: SetupItem, page: PresetPage) => {
+    try { sessionStorage.setItem(presetKey(page), JSON.stringify({ type: item.type, id: item.id })); } catch { /* the id is still on screen */ }
     dispatch({ type: "toast", text: `${item.name} selected for ${page === "ads" ? "Ads" : "Image ads"}` });
     shell.goSuite("business", page);
   };
@@ -388,14 +385,14 @@ function SetupView({ business }: { business: Business }) {
       <div className="bz-setup-list">
         {!connected && business.connection ? <p className="gx-reason">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
         {business.setup.error ? <p className="gx-gen-error" role="alert">{business.setup.error}</p> : null}
-        {SETUP_TYPES.map(([type, label, cli]) => {
+        {SETUP_TYPES.map(([type, label]) => {
           const read = business.setup.reads[type];
           return (
             <div className="bz-group" key={type} data-testid={`setup-${type}`}>
-              <div className="bz-group-head"><span className="gx-eyebrow" data-functional-label="">{label}</span><span className="cw-mono">{cli}</span></div>
+              <div className="bz-group-head"><span className="gx-eyebrow" data-functional-label="">{label}</span></div>
               {!read ? <span className="cw-dim">{business.setup.loading ? "Reading…" : connected ? "Not read yet." : "Connect the account to read these."}</span>
-                : !read.available ? <span className="cw-dim">The connected account does not list {label.toLowerCase()} through its tools. Create and list them with <code>higgsfield marketing-studio {cli}</code>.</span>
-                : !read.items.length ? <span className="cw-dim">None yet. <code>higgsfield marketing-studio {cli}</code></span>
+                : !read.available ? <span className="cw-dim">The connected account does not list {label.toLowerCase()} here.</span>
+                : !read.items.length ? <span className="cw-dim">None on the account yet.</span>
                 : read.items.map((item) => (
                   <button type="button" className="bz-row" key={item.id} aria-pressed={selected?.id === item.id} onClick={() => setSelected(item)}>
                     <span className="bz-row-name">{item.name}</span><span className="cw-dim">{item.meta}</span>
@@ -414,8 +411,8 @@ function SetupView({ business }: { business: Business }) {
           <div className="gx-insp-sub">{selected.meta}</div>
           <code className="cw-mono">{selected.id}</code>
           <div className="gx-insp-actions">
-            {["product", "avatar", "hook", "setting", "ad_reference"].includes(selected.type) ? <button type="button" className="gx-hbtn" onClick={() => sendTo(selected, "ads")}>Use in Ads</button> : null}
-            {["product", "avatar", "brand_kit"].includes(selected.type) ? <button type="button" className="gx-hbtn" onClick={() => sendTo(selected, "dtc")}>Use in Image ads</button> : null}
+            {PRESET_TYPES.ads.includes(selected.type) ? <button type="button" className="gx-hbtn" onClick={() => sendTo(selected, "ads")}>Use in Ads</button> : null}
+            {PRESET_TYPES.dtc.includes(selected.type) ? <button type="button" className="gx-hbtn" onClick={() => sendTo(selected, "dtc")}>Use in Image ads</button> : null}
           </div>
         </aside>
       ) : null}

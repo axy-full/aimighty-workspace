@@ -55,6 +55,8 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
   const [error, setError] = useState<string | null>(null);
   const [moreBusy, setMoreBusy] = useState(false);
   const live = useRef(true), pageCache = useRef<Page<T>[]>([]), lock = useRef(false), refreshQueued = useRef(false);
+  /* A "Load more" pressed while a refresh holds the lock waits for it, and runs next. */
+  const moreQueued = useRef(false), drainMore = useRef<() => void>(() => {});
   const read = useCallback(async (cursor?: string): Promise<Page<T>> => {
     const response = await fetch(path + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""), {
       cache: "no-store", headers: requestScope ? { "X-Workbench-Scope": requestScope } : {},
@@ -88,6 +90,7 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
       }
     } while (refreshQueued.current && live.current && !document.hidden);
     lock.current = false;
+    if (moreQueued.current && live.current) { moreQueued.current = false; drainMore.current(); }
   }, [read, signedIn]);
   useEffect(() => {
     live.current = true;
@@ -103,11 +106,14 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
     return () => { live.current = false; clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener(GEN_ASSETS_CHANGED, changed); };
   }, [refresh, requestScope]);
   const next = pages.at(-1)?.next ?? null;
-  const more = async () => {
-    if (!next || lock.current) return;
+  const more = useCallback(async () => {
+    if (lock.current) { moreQueued.current = true; setMoreBusy(true); return; }
+    // The cursor is read when the page is fetched, so a refresh that just finished cannot hand it a stale one.
+    const cursor = pageCache.current.at(-1)?.next;
+    if (!cursor) { setMoreBusy(false); return; }
     lock.current = true; setMoreBusy(true);
     try {
-      const page = await read(next);
+      const page = await read(cursor);
       if (live.current) { pageCache.current = [...pageCache.current, page]; setPages(pageCache.current); setError(null); }
     } catch (e) { if (live.current) setError((e as Error).message); }
     finally {
@@ -117,7 +123,8 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
         if (refreshQueued.current) { refreshQueued.current = false; void refresh(); }
       }
     }
-  };
+  }, [read, refresh]);
+  useEffect(() => { drainMore.current = () => { void more(); }; }, [more]);
   const items = useMemo(() => {
     const unique = new Map<string, T>();
     for (const page of pages) for (const item of page.items) if (!unique.has(item.id)) unique.set(item.id, item);
