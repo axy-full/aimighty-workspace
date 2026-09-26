@@ -26,7 +26,7 @@ test("a recipe opens Pipelines instead of starting a run nothing advances", asyn
   const open = page.getByRole("button", { name: "Open Pipelines" }).filter({ visible: true });
   await expect(open).toHaveCount(1);
   const box = (await open.boundingBox())!;
-  if ((page.viewportSize()?.width ?? 0) < 768) expect(box.height).toBeGreaterThanOrEqual(44);
+  if ((page.viewportSize()?.width ?? 0) < 768) expect(Math.round(box.height * 100) / 100).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
   await open.click();

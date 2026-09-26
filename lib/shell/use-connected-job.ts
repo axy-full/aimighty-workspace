@@ -7,7 +7,7 @@ import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generati
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { autoRetryMs, quoteUsableUntil } from "./business";
-import { releaseConnectedJob, watchConnectedJob } from "./connected-collector";
+import { releaseConnectedJob, unwatchConnectedJob, watchConnectedJob } from "./connected-collector";
 
 /**
  * One connected-account job from a Business composer (FINAL_SPEC §2), on the
@@ -32,7 +32,8 @@ import { releaseConnectedJob, watchConnectedJob } from "./connected-collector";
  * be submitted underneath it; and an id is only ever cleared by its own job.
  * Leaving mid-render also hands the job to the shell's collector
  * (lib/shell/connected-collector.ts), which keeps reading it until it lands
- * in Takes whichever page is open.
+ * in Takes whichever page is open. While the composer reads its job back
+ * the collector leaves that job to it, so the two never read it together.
  *
  * A completed job is filed to the project by the server; the project's
  * Library is re-read once (`scope` is the workspace scope) so Takes and the
@@ -171,27 +172,37 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
       try {
         const job = await call(connectedStatusRequest(draftId, id));
         if (!mine()) return;
-        if (job.status === "quoted") { forgetJob(store(), key, id); release(null); return; }
+        /* Never sent: nothing for the collector to follow either. */
+        if (job.status === "quoted") { forgetJob(store(), key, id); unwatchConnectedJob(id, true); release(null); return; }
         resuming.current = null;
-        if (!connectedRecoverable(job)) forgetJob(store(), key, id);
+        if (!connectedRecoverable(job)) { forgetJob(store(), key, id); releaseConnectedJob(draftId, job); }
         setState((now) => resumeLands(now, settledState(job)));
+        /* Still in flight: the poll below keeps it watched. Anything else lets the collector read it again. */
+        const now = live.current;
+        if (connectedRecoverable(job) && !(now.phase === "running" && now.job.id === id)) unwatchConnectedJob(id);
       } catch (error) {
         if (!mine()) return;
         const next = resumeRetry(failureOf(error).status ?? Number.NaN, ++tries);
-        if (next === "forget") { forgetJob(store(), key, id); release(null); }
-        else if (next === "stop") release(UNCHECKED);
+        if (next === "forget") { forgetJob(store(), key, id); unwatchConnectedJob(id, true); release(null); }
+        else if (next === "stop") { unwatchConnectedJob(id); release(UNCHECKED); }
         else timer = setTimeout(() => void read(), next);
       }
     };
     timer = setTimeout(() => {
       resuming.current = id;
+      /* One reader per job: the shell's collector leaves it to this read-back. */
+      watchConnectedJob(id);
       setState((now) => (composerBusy(now.phase) ? now : { phase: "resuming" }));
       void read();
     }, 0);
     return () => {
       stop = true;
       if (timer) clearTimeout(timer);
-      if (resuming.current === id) { resuming.current = null; setState((now) => (now.phase === "resuming" ? { phase: "idle" } : now)); }
+      if (resuming.current === id) {
+        resuming.current = null;
+        unwatchConnectedJob(id);
+        setState((now) => (now.phase === "resuming" ? { phase: "idle" } : now));
+      }
     };
   }, [key, draftId, call, setState, setQuotedFor]);
 

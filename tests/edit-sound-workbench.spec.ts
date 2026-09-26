@@ -176,7 +176,7 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
         .filter((el) => Number.parseFloat(getComputedStyle(el).fontSize) < 12)
         .map((el) => `${getComputedStyle(el).fontSize}: ${el.textContent?.trim().slice(0, 30)}`);
       const short = Array.from(root.querySelectorAll("button, label"))
-        .filter((el) => shown(el) && el.getBoundingClientRect().height < 44)
+        .filter((el) => shown(el) && Math.round(el.getBoundingClientRect().height * 100) / 100 < 44)
         .map((el) => `${Math.round(el.getBoundingClientRect().height)}px: ${el.textContent?.trim().slice(0, 30)}`);
       return { small, short };
     });

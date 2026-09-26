@@ -4,7 +4,7 @@ import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender, withTenant } from "@/lib/auth";
-import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS, RENDER_USD_PER_MP } from "@/lib/identities";
+import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS, renderUsdForRatio } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { meter } from "@/lib/meter";
@@ -51,7 +51,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
      through on one credit. It also ran outside the rate limit entirely, so
      nothing bounded how many times a second it could be asked.
      Same walls, same order, as every other paid route. */
-  const estUsd = Math.round(RENDER_USD_PER_MP * count * 10_000) / 10_000;
+  const eachUsd = renderUsdForRatio(ratio);
+  const estUsd = Math.round(eachUsd * count * 10_000) / 10_000;
   const allowance = await allowanceCheck("fal", estUsd, RENDERER);
   if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const lim = await checkLimits();
@@ -85,7 +86,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   try {
     for (const gid of ids) {
       await reserveGenerationSpend({ id: gid, kind: "image", engine: "fal", model: RENDERER, status: "running",
-                    engineCostUsd: RENDER_USD_PER_MP, projectId, createdBy: got.user.id }, { token: got.token });
+                    engineCostUsd: eachUsd, projectId, createdBy: got.user.id }, { token: got.token });
       reserved.push(gid);
     }
   } catch (e) {

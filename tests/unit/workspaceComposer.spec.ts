@@ -85,6 +85,12 @@ test("sound models appear only when sound is configured, and speech only with a 
   expect(workspaceModels(engines, audio).filter((m) => m.type === "audio").map((m) => m.audioTask)).toEqual(["sound", "music", "speech"]);
 });
 
+test("a workspace on Grok Voice alone offers its speech model with its voices, and no sound or music", () => {
+  const grokOnly = { configured: true, vendors: { elevenlabs: false, xai: true }, speechModels: [{ id: "grok-tts", label: "Grok Voice" }], defaultSpeechModel: "grok-tts", voices: [{ id: "eve", name: "Eve" }], voicesError: null };
+  expect(workspaceModels(engines, grokOnly).filter((m) => m.type === "audio").map((m) => [m.id, m.audioTask, m.label])).toEqual([["grok-tts", "speech", "Grok Voice"]]);
+  expect(workspaceModels(engines, { ...grokOnly, vendors: { elevenlabs: true, xai: true } }).filter((m) => m.type === "audio").map((m) => m.audioTask)).toEqual(["sound", "music", "speech"]);
+});
+
 test("a chosen model is kept per type and per billing source, and falls back when withdrawn", () => {
   const models = workspaceModels(engines, audio);
   let state = composerReducer(INITIAL_COMPOSER, { type: "type", value: "video" });

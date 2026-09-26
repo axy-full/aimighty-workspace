@@ -414,7 +414,7 @@ export function useComposer(options: {
           if (!input) throw new Error("This request could not be prepared. Nothing was submitted.");
           const quoted = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
             method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-            body: JSON.stringify(connectedQuoteRequest(project.id, input)),
+            body: JSON.stringify(connectedQuoteRequest(project.id, input, { composer: "gen" })),
           });
           const job = parseConnectedJob(quoted.job, project.id);
           /* The figure this click was given is the one held for this body from now on. */

@@ -6,6 +6,8 @@ import { rm } from "node:fs/promises";
 import { db, ready } from "./db";
 import { runInTenant, type TenantWorkspace } from "./tenant";
 import { platformDb, platformReady, now, rowToWorkspace } from "./platform";
+import { securityAuditStatement } from "./securityAudit";
+import { accountDbReady } from "./accountDb";
 import { usingBlob } from "./storage";
 import { revokeGatewayKey } from "./vercelKeys";
 import { deleteTenantDatabase } from "./provision";
@@ -60,6 +62,75 @@ return await withRecoveryActivity('purge', async () => {
     ],
     "write",
   );
+
+});
+}
+/** Owned, live workspaces plus requests still being made: the ceiling
+ * prepareWorkspace holds every owner to. */
+export const OWNED_WORKSPACE_CEILING = 5;
+/** The platform owner's undo of a workspace delete. Nothing was erased, so
+ * access is all that comes back: the owner's membership returns at once, and
+ * the owner turns the rest of the team back on from People. Review links the
+ * delete ended stay ended; the owner makes new ones. A restore never takes
+ * the owner past their ceiling of workspaces, and leaves a receipt. */
+export async function restoreDeletedWorkspace(
+  id: string,
+  actorId: string | null = null,
+): Promise<void> {
+return await withRecoveryActivity('purge', async () => {
+
+  await Promise.all([purgeReady(), accountDbReady()]);
+  const p = platformDb(),
+    ts = now();
+  const row = (
+    await p.execute({
+      sql: `SELECT owner_id,deleted_at,purged_at,legacy FROM workspaces WHERE id=?`,
+      args: [id],
+    })
+  ).rows[0];
+  if (!row || Number(row.legacy) === 1)
+    throw new Error("This workspace cannot be restored.");
+  if (row.deleted_at == null) return;
+  if (row.purged_at != null)
+    throw new Error("This workspace's database is gone; it cannot be restored.");
+  const owner = String(row.owner_id);
+  // The count and the restore are one write, so two restores cannot both fit.
+  const [restored] = await p.batch(
+    [
+      {
+        sql: `UPDATE workspaces SET deleted_at=NULL,updated_at=? WHERE id=? AND legacy=0 AND purged_at IS NULL AND deleted_at IS NOT NULL
+          AND (SELECT COUNT(*) FROM memberships m JOIN workspaces w ON w.id=m.workspace_id WHERE m.account_id=? AND m.role='owner' AND w.deleted_at IS NULL)
+            +(SELECT COUNT(*) FROM workspace_provisioning WHERE owner_id=? AND state<>'ready') < ?`,
+        args: [ts, id, owner, owner, OWNED_WORKSPACE_CEILING],
+      },
+      securityAuditStatement(
+        {
+          workspaceId: id,
+          actorId,
+          action: "workspace.restored",
+          targetType: "workspace",
+          targetId: id,
+        },
+        true,
+      ),
+      {
+        sql: `UPDATE memberships SET disabled=0 WHERE workspace_id=? AND account_id=? AND role='owner'
+          AND EXISTS (SELECT 1 FROM workspaces WHERE id=? AND deleted_at IS NULL)`,
+        args: [id, owner, id],
+      },
+    ],
+    "write",
+  );
+  if (!restored.rowsAffected) {
+    const again = (
+      await p.execute({ sql: `SELECT deleted_at FROM workspaces WHERE id=?`, args: [id] })
+    ).rows[0];
+    // Restored by someone else in the meantime: nothing more to do.
+    if (again && again.deleted_at == null) return;
+    throw new Error(
+      `Its owner already has ${OWNED_WORKSPACE_CEILING} workspaces of their own. One of those has to be deleted first.`,
+    );
+  }
 
 });
 }

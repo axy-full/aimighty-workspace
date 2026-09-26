@@ -1,0 +1,18 @@
+{
+ "n": 7,
+ "title": "Recreate carries the full recipe and works while Gen is open",
+ "area": "Remix",
+ "gap": "retryPreset (lib/shell/assets.ts ~:85) carries only prompt, model and type. GenView.tsx:91-103 reads the sessionStorage preset once at mount, so 'Retry generation' from the Inspector does nothing if Gen is already open. It also drops references, aspect, resolution, duration, billing source, Soul identity and shotSpec, while the toast (SAY.retry) claims 'same inputs'.",
+ "target": "Rename the action to 'Recreate'. The preset carries type, billing (provider higgsfield \u2192 connected), model, the raw prompt, references from params.references (genId/uploadId resolved through resolveGenInput), picks {ratio, resolution, duration, soulId} and shotSpec. Deliver it on a shell channel like useReferenceInbox (lib/shell/reference-inbox.ts) so an already-mounted Gen applies it. If some references no longer exist, list which ones. Add 'Copy prompt' and 'Use settings only' next to it. The composer re-quotes before anything runs.",
+ "files": [
+  "lib/shell/assets.ts",
+  "lib/shell/use-asset-actions.ts",
+  "lib/shell/reference-inbox.ts",
+  "components/graphite/GenView.tsx",
+  "components/graphite/AssetInspector.tsx",
+  "lib/workspace/composer.ts"
+ ],
+ "priority": "P0",
+ "effort": "small",
+ "respects_rules": "The price is shown again before any spend. Only this project's own takes can be recreated."
+}

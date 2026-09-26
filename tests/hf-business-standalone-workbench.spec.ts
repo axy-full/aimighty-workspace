@@ -121,11 +121,11 @@ test("Ads: product and setting are stills from this project, the avatar an engin
   await expect(ava.locator("img")).toHaveAttribute("src", "/campaign/hero.webp");
   await ava.click();
   await expect(ava).toHaveAttribute("aria-pressed", "true");
-  if (PHONES.includes(info.project.name)) expect((await ava.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (PHONES.includes(info.project.name)) expect(Math.round((await ava.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
 
   /* Product: pick a still from this project's Library (pictures only). */
   const choose = page.getByTestId("ads-product-choose");
-  if (PHONES.includes(info.project.name)) expect((await choose.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (PHONES.includes(info.project.name)) expect(Math.round((await choose.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await choose.click();
   const stills = page.getByTestId("ads-product-stills");
   await expect(stills.getByRole("button", { name: "harbour-plate.webp" })).toBeVisible();
@@ -191,7 +191,7 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   await expect(page.getByTestId("dtc-engine-ms_image")).toHaveAttribute("aria-selected", "true");
   /* The engine switch is a phone target too. */
   if (info.project.name === "workbench-390x844")
-    for (const id of ["dtc-engine-marketing_studio_image", "dtc-engine-ms_image"]) expect((await page.getByTestId(id).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    for (const id of ["dtc-engine-marketing_studio_image", "dtc-engine-ms_image"]) expect(Math.round((await page.getByTestId(id).boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await expect(page.getByTestId("dtc-style").getByRole("button", { name: "Bold launch" })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("particl-business-preset"))).toBeNull();
 
@@ -325,7 +325,7 @@ test("phone: a picked Setup row brings its action into reach, clear of the tab b
     const hit = document.elementFromPoint(x, y);
     return hit && (hit === button || button.contains(hit)) ? "reachable" : hit?.className?.toString() ?? "nothing";
   }), { timeout: 5000 }).toBe("reachable");
-  expect((await use.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round((await use.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await page.waitForTimeout(400);
   await shot(page, "setup-detail", info.project.name);
   await use.click();

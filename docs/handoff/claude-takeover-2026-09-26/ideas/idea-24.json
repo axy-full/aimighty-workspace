@@ -1,0 +1,16 @@
+{
+ "n": 24,
+ "title": "Show plans and credits as videos and images, not only credit counts",
+ "area": "Pricing",
+ "gap": "components/commercial/PricingClient.tsx:102-104 shows only '<N> credits every month'. Plans & credits (WorkspaceView.tsx) shows a balance and a plan name. Nothing tells a buyer or a producer how many shots that buys.",
+ "target": "Extend GET /api/plans so each plan carries 'about N five-second 720p videos or M images' for two reference engines, computed server-side with quoteWorkbenchMedia at the platform's defaults. Add a per-engine table (credits per 5 s at each resolution). The Workspace balance line reads '\u2248 N videos left at your usual settings'.",
+ "files": [
+  "app/api/plans/route.ts",
+  "lib/workbench/media-quote.ts",
+  "components/commercial/PricingClient.tsx",
+  "components/graphite/WorkspaceView.tsx"
+ ],
+ "priority": "P2",
+ "effort": "medium",
+ "respects_rules": "Read-only figures from the existing quoting function. No promotional banners."
+}

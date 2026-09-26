@@ -15,7 +15,10 @@ import {
 import { useShell } from "@/lib/shell/state";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
-import { composerBusy, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
+import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
+import { shortName } from "@/lib/higgsfield-consumer/resume";
+import { ResumedJobRows, type ResumedRow } from "../ResumedJobs";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { uploadFilesToProject, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
@@ -336,6 +339,34 @@ function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnec
   return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
 }
 
+/** The job this composer remembers for the project; while it reads that one back, its button says so. */
+function rememberedJob(slot: string, draftId: string | null): string | null {
+  try { return draftId ? localStorage.getItem(connectedJobKey(slot, draftId)) : null; } catch { return null; }
+}
+/**
+ * This composer's jobs still on the account from an earlier visit (another
+ * device, another tab, or older than the one it remembers), as the shell's
+ * collector reads them until they land (it announces each one once). The one
+ * its button remembers or is running belongs to the button alone: never listed
+ * here, and the collector leaves it to the button, so each job has one poller.
+ */
+function useEarlierJobs(project: Project | null, job: ReturnType<typeof useConnectedJob>, slot: string, models: readonly string[], name: (job: ConnectedJob) => string) {
+  const live = "job" in job.state && job.state.job ? job.state.job.id : null;
+  const resumed = useResumedConnectedJobs({
+    draftId: project?.id ?? null, keepCompleted: true, owned: [live, rememberedJob(slot, project?.id ?? null)],
+    accept: (saved) => saved.composer !== "gen" && models.includes(saved.input.model),
+  });
+  const rows: ResumedRow[] = resumed.jobs.map(({ job: saved, problem, following }) => ({
+    id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem, following,
+    providerReceipt: saved.providerReceipt, setAside: saved.setAside, failureCode: saved.failureCode,
+  }));
+  return { rows, dismiss: resumed.dismiss };
+}
+/* Ads run one engine, so an ad is named by its prompt; Image ads say which of their two engines made it. */
+const adName = (job: ConnectedJob) => shortName(job.input.prompt, 80) || job.model.name;
+const imageAdName = (job: ConnectedJob) => [job.model.name, shortName(job.input.prompt, 60)].filter(Boolean).join(" · ");
+const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
+
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
   if (state.phase === "resuming") return "Checking the last take…";
@@ -406,6 +437,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const s = useMemo(() => pruneAds(raw, business.setup.reads), [raw, business.setup.reads]);
   /* One remembered job per composer (lib/shell/use-connected-job.ts): a switch away and back resumes it. */
   const job = useConnectedJob(project?.id ?? null, "ads", scope);
+  const earlier = useEarlierJobs(project, job, "ads", [ADS_MODEL], adName);
   const model: CatalogueModel | undefined = business.models[ADS_MODEL];
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
@@ -444,6 +476,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <Connection business={business} testId="ads-connect" />
         {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="ads-setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.ads])}>Try again</button></p> : null}
+        <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="ads-product"
           still={s.productStill} onStill={(still) => set(withStill(s, "product", still))}>
@@ -510,6 +543,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   useSpentPreset("dtc");
   const s = useMemo(() => pruneImageAds(raw, business.setup.reads), [raw, business.setup.reads]);
   const job = useConnectedJob(project?.id ?? null, "dtc", scope);
+  const earlier = useEarlierJobs(project, job, "dtc", IMAGE_AD_MODELS, imageAdName);
   const dtc = isDtc(s);
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
@@ -542,6 +576,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   return (
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
+        <ResumedJobRows rows={earlier.rows} label="Image ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="dtc-earlier" />
         <div className="gx-gen-row" data-testid="dtc-engine">
           <span className="gx-eyebrow" data-functional-label="">Engine</span>
           <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Image ads engine">
