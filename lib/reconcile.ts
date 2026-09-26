@@ -91,11 +91,84 @@ export async function deleteCheck(id: string): Promise<void> {
 }
 
 /**
+ * Whose balance the prompt writer's text came out of. Every gateway model is
+ * named vendor/model and is paid for in gateway credit, whoever built it;
+ * ByteDance's own text models are bare ids and are paid for on the ModelArk
+ * key. The Usage ledger and the reading-anchored figures below both use this,
+ * so the two cannot attribute the same prompt to different balances.
+ */
+export const PROMPT_LEDGER = `CASE WHEN refine_model LIKE '%/%' THEN 'vercel' ELSE 'byteplus' END`;
+/** Renders are charged where the money actually left — see billed_to in lib/db.ts. */
+export const PAID_BY = `COALESCE(billed_to, provider)`;
+/** Atomik's conversations and write-ups are gateway text, on the gateway's line. */
+export const ATOMIK_LEDGER = "vercel";
+
+/**
+ * Every render's spend, by the balance that paid for it. Hidden takes are
+ * counted: deleting a take hides it, and the vendor has still charged for it.
+ */
+export async function renderSpendByPayer(): Promise<{ provider: string; attempts: number; succeeded: number; usd: number; tokens: number }[]> {
+  await ready();
+  const rs = await db().execute(`
+    SELECT ${PAID_BY} AS provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
+           COALESCE(SUM(COALESCE(cost_usd,0)),0) AS render_spend,
+           COALESCE(SUM(total_tokens),0) AS tokens
+    FROM generations GROUP BY ${PAID_BY}`);
+  return rs.rows.map((r: any) => ({
+    provider: String(r.provider ?? "byteplus"), attempts: Number(r.n_all ?? 0), succeeded: Number(r.n ?? 0),
+    usd: Number(r.render_spend ?? 0), tokens: Number(r.tokens ?? 0),
+  }));
+}
+
+/**
+ * Atomik's thinking, all time: every turn and every write-up, summed the same
+ * way the reading-anchored figure sums them (textSpend, below). A hidden
+ * conversation was still paid for; only visible ones are counted as chats.
+ */
+export async function atomikTextSpend(): Promise<{ usd: number; chats: number }> {
+  await ready();
+  const rs = await db().execute(`SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_messages)
+                                      + (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_spend) AS spend,
+                                        (SELECT COUNT(*) FROM atomik_chats WHERE deleted = 0) AS chats`);
+  const r: any = rs.rows[0];
+  return { usd: Number(r?.spend ?? 0), chats: Number(r?.chats ?? 0) };
+}
+
+/**
+ * Text a ledger paid for in a window: the prompt writer on renders, and for
+ * the gateway every Atomik turn and write-up. Atomik is summed per message
+ * and per write-up here, not per conversation, because a reading lands
+ * between two turns of the same conversation.
+ */
+async function textSpend(provider: string, op: ">" | "<=", at: number): Promise<number> {
+  const prompt = await db().execute({
+    sql: `SELECT COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS spend
+          FROM generations WHERE refine_model IS NOT NULL AND ${PROMPT_LEDGER} = ? AND created_at ${op} ?`,
+    args: [provider, at],
+  });
+  let atomik = 0;
+  if (provider === ATOMIK_LEDGER) {
+    const rs = await db().execute({
+      sql: `SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_messages WHERE created_at ${op} ?)
+                 + (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_spend WHERE created_at ${op} ?) AS spend`,
+      args: [at, at],
+    });
+    atomik = Number((rs.rows[0] as any)?.spend ?? 0);
+  }
+  return Number((prompt.rows[0] as any)?.spend ?? 0) + atomik;
+}
+
+/**
  * What a vendor has cost since a moment, by our own reckoning.
  *
  * Deliberately the same arithmetic the rest of the ledger uses: the point is
  * to extrapolate forward from a known-true number using the only method we
- * have, not to pretend the extrapolation is also authoritative.
+ * have, not to pretend the extrapolation is also authoritative. That means
+ * the same spend, too: renders AND the text the vendor's balance paid for.
+ * Renders alone used to be counted here, so once a reading was recorded every
+ * prompt the writer drafted and every Atomik turn afterwards was never taken
+ * off the balance, and the drift compared a render-only figure against a
+ * console total that includes text.
  */
 /* Both sums below count against the ledger that PAID, not the vendor that
    made the render — see billed_to in lib/db.ts. Anchoring a vendor to its
@@ -110,13 +183,13 @@ export async function spendSince(
                  COALESCE(SUM(COALESCE(total_tokens,0)),0) AS credits,
                  COUNT(*) AS n
           FROM generations
-          WHERE COALESCE(billed_to, provider) = ? AND cost_usd IS NOT NULL AND created_at > ?`,
+          WHERE ${PAID_BY} = ? AND cost_usd IS NOT NULL AND created_at > ?`,
     args: [provider, since],
   });
   const r: any = rs.rows[0];
   // For a credits vendor every audio render wrote its credits to
   // total_tokens, so the same column carries both units honestly.
-  return { usd: Number(r?.spend ?? 0), credits: Number(r?.credits ?? 0), renders: Number(r?.n ?? 0) };
+  return { usd: Number(r?.spend ?? 0) + await textSpend(provider, ">", since), credits: Number(r?.credits ?? 0), renders: Number(r?.n ?? 0) };
 }
 
 /** What we HAD computed as spent up to that moment, for measuring the drift. */
@@ -128,9 +201,9 @@ export async function computedSpendUpTo(
     sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend,
                  COALESCE(SUM(COALESCE(total_tokens,0)),0) AS credits
           FROM generations
-          WHERE COALESCE(billed_to, provider) = ? AND cost_usd IS NOT NULL AND created_at <= ?`,
+          WHERE ${PAID_BY} = ? AND cost_usd IS NOT NULL AND created_at <= ?`,
     args: [provider, at],
   });
   const r: any = rs.rows[0];
-  return { usd: Number(r?.spend ?? 0), credits: Number(r?.credits ?? 0) };
+  return { usd: Number(r?.spend ?? 0) + await textSpend(provider, "<=", at), credits: Number(r?.credits ?? 0) };
 }
