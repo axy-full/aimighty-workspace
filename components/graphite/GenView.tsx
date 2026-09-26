@@ -20,15 +20,14 @@ import { SeedanceEditHost } from "./tools/SeedanceEditHost";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
+import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
-import { resumePhase } from "@/lib/higgsfield-consumer/resume";
-import type { ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
-import { resumeLine, useClock } from "./ResumedJobs";
+import { dismissable, useClock } from "./ResumedJobs";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -42,7 +41,7 @@ const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
-const takeName = (job: ConnectedJob) => job.input.prompt.trim().slice(0, 60) || `${job.model.name} take`;
+const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -157,20 +156,25 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
   }, [items, filter]);
   const running = ws.state.gen;
-  /* Takes still rendering on the connected account from an earlier visit: followed until they land. */
+  /* Takes still on the connected account from an earlier visit: followed until they land. The one the
+     composer is running now is the composer's alone. Collection files a take into Takes on the server. */
   const toast = ws.toast;
   const projectId = project?.id ?? null;
   const resumed = useResumedConnectedJobs({
-    scope, draftId: projectId,
-    accept: (job) => job.fileToProject === true,
+    scope, draftId: projectId, owned: [running?.id],
+    accept: (job) => job.composer === "gen",
     onSettled: (job) => {
       if (job.status !== "completed" || !projectId) return;
-      toast(`${takeName(job)} rendered. Filed in Takes.`);
+      toast(connectedOriginal(job) ? `${job.model.name} take rendered. Filed in Takes for review.` : `${job.model.name} take rendered, but its original is not available.`);
       void refreshProjectLibrary(scope, projectId);
     },
   });
-  const pickedUp = resumed.jobs.filter((item) => item.job.id !== running?.id);
-  const clock = useClock(pickedUp.length ? 30_000 : 0);
+  const pickedUp = resumed.jobs;
+  const rendering = pickedUp.filter((item) => item.following).length;
+  const clock = useClock(rendering ? 30_000 : 0);
+  const resultsRef = useRef<HTMLElement | null>(null);
+  /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. */
+  const jumpToPickedUp = () => resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]')?.scrollIntoView({ block: "center", behavior: "smooth" });
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
   /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
   const attachToGen = async (attached: Attached) => {
@@ -216,6 +220,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   }
   return (
     <div className="gx-gen gx-enter" data-testid="gen-view">
+      {pickedUp.length ? (
+        <button type="button" className="gx-hbtn gx-resumed-jump" data-tone={rendering ? "blue" : "amber"} onClick={jumpToPickedUp} data-testid="gen-resumed-jump">
+          <span className="gx-resumed-dot" aria-hidden="true" />
+          {rendering ? `${rendering} ${rendering === 1 ? "take" : "takes"} still rendering` : `${pickedUp.length} earlier ${pickedUp.length === 1 ? "take" : "takes"} to check`}
+        </button>
+      ) : null}
       <section className="gx-gen-card" aria-label="Composer">
         {tabs}
 
@@ -348,7 +358,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         <p className="gx-gen-foot">{composer.wording}</p>
       </section>
 
-      <section className="gx-gen-results" aria-label="Results">
+      <section className="gx-gen-results" aria-label="Results" ref={resultsRef}>
         <div className="gx-gen-results-head">
           <span className="gx-panel-title">Results</span>
           <div className="gx-chips" role="group" aria-label="Result kind">
@@ -365,15 +375,16 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-meta">{running.label ?? "Running"}</span>
             </div>
           ) : null}
-          {pickedUp.map(({ job, problem }) => {
-            const phase = resumePhase(job.status);
+          {pickedUp.map(({ job, problem, following }) => {
+            const phase = resumePhase(job, following);
             return (
-              <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
-                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: `conic-gradient(${RING[phase.tone]} ${phase.pct}%, var(--gx-hair) 0)` }} aria-hidden="true" /></span>
-                <span className="gx-asset-name">{takeName(job)}</span>
-                <span className="gx-asset-meta">{resumeLine(job.status, job.createdAt, clock)}</span>
+              <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
+                {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
+                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
+                <span className="gx-asset-name" title={job.input.prompt}>{takeName(job)}</span>
+                <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
                 {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
-                {job.status === "failed" ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
+                {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
               </div>
             );
           })}

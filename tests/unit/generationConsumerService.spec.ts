@@ -69,7 +69,6 @@ async function serviceFixture() {
       if (presetId !== "preset-dolly") throw new (await import("../../lib/higgsfield-consumer/catalogue")).CatalogueError("parameter_invalid", "That motion preset is not offered by the connected account.");
     } },
     "./video-contract": contract,
-    "./draft-filing": await import("../../lib/higgsfield-consumer/draft-filing"),
     "./video-original": {
       uncollectableOriginal: original.uncollectableOriginal,
       CONSUMER_ORIGINAL_SECONDS: 600,
@@ -305,34 +304,34 @@ test("polling collects the verified original once, records failure from the prov
     f.state.collectorError = undefined;
   }));
 
-test("a Gen take quoted to file into its project joins the saved draft when its status read completes it, once; other jobs are left to their surface", async () =>
+test("a Gen composer take carries its composer, completes on a status read nobody is watching, and an editor that loaded the draft meanwhile still saves", async () =>
   fixture(async (f) => {
-    await f.database.db().execute({ sql: "UPDATE workbench_projects SET body=? WHERE owner='owner' AND project_id='draft'", args: [JSON.stringify({ assets: [] })] });
-    const assets = async () => (JSON.parse(String((await f.database.db().execute("SELECT body FROM workbench_projects WHERE owner='owner' AND project_id='draft'")).rows[0].body)) as { assets: { id: string; generationId?: string; name: string; category: string; description: string; prompt: string; status: string }[] }).assets;
-    const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID(), { fileToProject: true });
-    expect(quote.fileToProject).toBe(true);
+    const records = await import("../../lib/workbench/records");
+    const studio = await import("../../lib/workbench/studio");
+    const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID(), { composer: "gen" });
+    expect(quote.composer).toBe("gen");
     await f.service.submitConsumerGenerationJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+    // The person moves on to Brief while it renders: that editor holds the saved draft at this revision.
+    await f.database.db().execute("DELETE FROM workbench_projects WHERE owner='owner' AND project_id='draft'");
+    await records.saveDraft("owner", { ...studio.newProject("Campaign"), id: "draft" }, 0);
+    const editor = (await records.readDraft("owner", "draft"))!;
+    // The read that completes it (the page's, or the heartbeat sweep's) collects the original; that row is what Takes lists.
     f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(quote.id)))!.payloadJson).params);
-    // The read that completes the job — the page's, or the background sweep's — files it; nobody has to be watching.
     const done = await f.service.pollConsumerGeneration(scoped(quote.id));
     expect(done.job.status).toBe("completed");
-    const generationId = (done.job.result as { original: { generationId: string } }).original.generationId;
-    expect(await assets()).toEqual([expect.objectContaining({
-      id: generationId, generationId, category: "Generate", status: "Draft", prompt: request.prompt,
-      name: `${done.job.model.name} · ${request.prompt}`, description: `${done.job.model.name} · 9 connected credits`,
-    })]);
-    // Settled: a later read, or a second window, never files it twice.
-    await f.service.pollConsumerGeneration(scoped(quote.id));
-    expect(await assets()).toHaveLength(1);
-    // A job quoted without the flag (Business, Atomik) completes into Takes but is not added to the draft here.
+    expect(done.job.composer).toBe("gen");
+    // Nothing wrote the draft behind the editor: same revision, same assets.
+    const after = (await records.readDraft("owner", "draft"))!;
+    expect(after.revision).toBe(editor.revision);
+    expect(after.project.assets).toEqual(editor.project.assets);
+    // Brief keeps typing: its save at the revision it loaded lands, with no "changed in another window".
+    await expect(records.saveDraft("owner", { ...editor.project, brief: "Three boats, blue hour." }, editor.revision)).resolves.toMatchObject({ revision: editor.revision + 1 });
+    expect((await f.service.consumerGenerationJobs(identity.userId, identity.draftId)).map((job) => job.composer)).toEqual(["gen"]);
+    // A job quoted without a composer (Business, Atomik) is listed without one, so Gen never picks it up.
     f.state.providerJobId = randomUUID();
     const other = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt: "An ad still" }, randomUUID());
-    expect(other.fileToProject).toBe(false);
-    await f.service.submitConsumerGenerationJob(scoped(other.id), { workspaceId: f.state.wallet, credits: f.state.credits });
-    f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(other.id)))!.payloadJson).params);
-    expect((await f.service.pollConsumerGeneration(scoped(other.id))).job.status).toBe("completed");
-    expect(await assets()).toHaveLength(1);
-    expect(f.state.paidCount).toBe(2);
+    expect(other.composer).toBeNull();
+    expect(f.state.paidCount).toBe(1);
   }));
 
 test("a tool preset quotes through the same pipeline, records the tool and source names on the job, and refuses a missing or extra source before any import", async () =>

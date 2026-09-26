@@ -13,8 +13,8 @@ import {
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { resumePhase } from "@/lib/higgsfield-consumer/resume";
-import { resumeLine, useClock } from "../ResumedJobs";
+import { resumeLine, resumePhase } from "@/lib/higgsfield-consumer/resume";
+import { useClock } from "../ResumedJobs";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on the existing genjutsu-service:
@@ -165,10 +165,10 @@ function Composer({ scope, page, project, viral, items }: { scope: string; page:
 /** One job: its state in one word and how long it has been going; a problem says what to do. */
 function JobRow({ job, problem, now }: { job: GenjutsuJob; problem?: string; now: number }) {
   return (
-    <div className="vr-job gx-resumed-row" data-status={job.status} data-tone={resumePhase(job.status).tone} data-testid="viral-job">
+    <div className="vr-job gx-resumed-row" data-status={job.status} data-tone={resumePhase(job).tone} data-testid="viral-job">
       <span className="gx-resumed-dot" aria-hidden="true" />
       <span className="vr-job-name">{job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"} · {job.input.resolution}</span>
-      <span className="gx-resumed-state">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : resumeLine(job.status, job.createdAt, now)}</span>
+      <span className="gx-resumed-state">{job.status === "completed" ? `${cr(job.quoteCredits)} settled` : resumeLine(job, now)}</span>
       {problem ? <p className="gx-resumed-problem" role="status">{problem}</p> : null}
     </div>
   );

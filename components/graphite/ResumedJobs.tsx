@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
-import { isResumable, resumeAge, resumePhase } from "@/lib/higgsfield-consumer/resume";
+import { isOpen, resumeLine, resumePhase, type ResumeJob } from "@/lib/higgsfield-consumer/resume";
 
 /**
  * Connected-account jobs picked back up after the page was left: one line per
- * job, the state in one word, how long it has been going, and what a person
- * can do about a problem. Shared by Business and Viral; Gen shows the same
- * facts as cards in its Results grid.
+ * job, the state in a few words, how long it has been going while it is still
+ * followed, and what a person can do about a problem. Shared by Business and
+ * Viral; Gen shows the same facts as cards in its Results grid.
  */
-export type ResumedRow = { id: string; name: string; status: string; createdAt: number; problem?: string | null };
+export type ResumedRow = ResumeJob & { id: string; name: string; createdAt: number; problem?: string | null; following: boolean };
 
 /** The time, re-read every `ms` (0 = still); ages on the rows move without a re-fetch. */
 export function useClock(ms = 30_000) {
@@ -22,34 +22,32 @@ export function useClock(ms = 30_000) {
   return now;
 }
 
-/** "Rendering · 12 min", "Confirming · 2 h", "Complete", "Failed · not billed". */
-export function resumeLine(status: string, createdAt: number, now: number) {
-  const phase = resumePhase(status);
-  return isResumable(status) ? `${phase.label} · ${resumeAge(createdAt, now)}` : phase.label;
-}
+/** An open job nobody is asking after any more can be dismissed; so can a settled one. */
+export const dismissable = (row: { status: string; following: boolean }) => !(row.following && isOpen(row.status));
 
 export function ResumedJobRows({ rows, label, onDismiss, onOpen, testId }: {
   rows: ResumedRow[];
   /** What the list is, for a screen reader. */
   label: string;
+  /** Hides the row for this viewer; nothing is deleted. */
   onDismiss?: (id: string) => void;
   /** Where a finished job's result is (Takes). */
   onOpen?: () => void;
   testId: string;
 }) {
-  const now = useClock(rows.length ? 30_000 : 0);
+  const now = useClock(rows.some((row) => row.following) ? 30_000 : 0);
   if (!rows.length) return null;
   return (
     <ul className="gx-resumed" aria-label={label} data-testid={testId}>
       {rows.map((row) => {
-        const phase = resumePhase(row.status);
+        const phase = resumePhase(row, row.following);
         const open = row.status === "completed" && onOpen;
-        const dismiss = (row.status === "completed" || row.status === "failed") && onDismiss;
+        const dismiss = dismissable(row) && onDismiss;
         return (
-          <li className="vr-job gx-resumed-row" key={row.id} data-status={row.status} data-tone={phase.tone} data-testid={`${testId}-row`}>
+          <li className="vr-job gx-resumed-row" key={row.id} data-status={row.status} data-tone={phase.tone} data-following={row.following} data-testid={`${testId}-row`}>
             <span className="gx-resumed-dot" aria-hidden="true" />
             <span className="vr-job-name" title={row.name}>{row.name}</span>
-            <span className="gx-resumed-state" title={row.status === "uncertain" ? "The account has not confirmed it yet. It is never sent twice." : undefined}>{resumeLine(row.status, row.createdAt, now)}</span>
+            <span className="gx-resumed-state">{resumeLine(row, now, row.following)}</span>
             {row.problem ? <p className="gx-resumed-problem" role="status">{row.problem}</p> : null}
             {open || dismiss ? (
               <span className="gx-resumed-actions">

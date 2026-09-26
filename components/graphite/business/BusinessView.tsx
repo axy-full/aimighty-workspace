@@ -15,6 +15,7 @@ import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
 import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
+import { shortName } from "@/lib/higgsfield-consumer/resume";
 import type { ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import { ResumedJobRows, type ResumedRow } from "../ResumedJobs";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
@@ -161,25 +162,28 @@ function rememberedJob(slot: string, draftId: string | null): string | null {
 /**
  * This composer's jobs still on the account from an earlier visit (another
  * device, another tab, or older than the one it remembers), followed until they
- * land. The one its button is resuming or running is not listed twice.
+ * land. The one its button remembers or is running belongs to the button alone:
+ * never listed or read here, so each job has one poller and one toast.
  */
 function useEarlierJobs(scope: string, project: Project | null, job: ReturnType<typeof useConnectedJob>, slot: string, models: readonly string[], done: string, name: (job: ConnectedJob) => string) {
   const ws = useWorkspace();
+  const live = "job" in job.state && job.state.job ? job.state.job.id : null;
   const resumed = useResumedConnectedJobs({
-    scope, draftId: project?.id ?? null, keepCompleted: true,
-    accept: (saved) => !saved.fileToProject && models.includes(saved.input.model),
+    scope, draftId: project?.id ?? null, keepCompleted: true, owned: [live, rememberedJob(slot, project?.id ?? null)],
+    accept: (saved) => saved.composer !== "gen" && models.includes(saved.input.model),
     onSettled: (saved) => { if (saved.status === "completed") ws.toast(done); },
   });
-  const live = "job" in job.state && job.state.job ? job.state.job.id : null;
-  const own = job.state.phase === "resuming" ? rememberedJob(slot, project?.id ?? null) : null;
-  const rows: ResumedRow[] = resumed.jobs.filter((item) => item.job.id !== live && item.job.id !== own).map(({ job: saved, problem }) => ({
-    id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem,
+  const rows: ResumedRow[] = resumed.jobs.map(({ job: saved, problem, following }) => ({
+    id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem, following,
+    providerReceipt: saved.providerReceipt, setAside: saved.setAside, failureCode: saved.failureCode,
   }));
   return { rows, dismiss: resumed.dismiss };
 }
 /* Ads run one engine, so an ad is named by its prompt; Image ads say which of their two engines made it. */
-const adName = (job: ConnectedJob) => job.input.prompt.trim().slice(0, 80) || job.model.name;
-const imageAdName = (job: ConnectedJob) => [job.model.name, job.input.prompt.trim().slice(0, 60)].filter(Boolean).join(" · ");
+const adName = (job: ConnectedJob) => shortName(job.input.prompt, 80) || job.model.name;
+const imageAdName = (job: ConnectedJob) => [job.model.name, shortName(job.input.prompt, 60)].filter(Boolean).join(" · ");
+const AD_DONE = "Ad rendered. Filed in Takes for review.";
+const IMAGE_AD_DONE = "Image ad rendered. Filed in Takes for review.";
 const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
 
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
@@ -198,7 +202,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const ws = useWorkspace();
   const [s, set] = useState<AdsState>(() => adsFromPreset(takePreset("ads")));
   const job = useConnectedJob(project?.id ?? null, "ads");
-  const earlier = useEarlierJobs(scope, project, job, "ads", [ADS_MODEL], "An ad from earlier rendered and is in your takes.", adName);
+  const earlier = useEarlierJobs(scope, project, job, "ads", [ADS_MODEL], AD_DONE, adName);
   const model: CatalogueModel | undefined = business.models[ADS_MODEL];
   const connected = business.connection?.connected ?? false;
   const chips = adsChipState(s);
@@ -224,7 +228,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
-  useEffect(() => { if (phase === "done") ws.toast("Ad rendered and saved to your takes."); }, [phase, ws]);
+  useEffect(() => { if (phase === "done") ws.toast(AD_DONE); }, [phase, ws]);
 
   const media = (m: Media) => ({ ...m, role: "image" as AdMediaRole });
   return (
@@ -299,7 +303,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const ws = useWorkspace();
   const [s, set] = useState<ImageAdsState>(() => imageAdsFromPreset(takePreset("dtc")));
   const job = useConnectedJob(project?.id ?? null, "dtc");
-  const earlier = useEarlierJobs(scope, project, job, "dtc", IMAGE_AD_MODELS, "An image ad from earlier rendered and is in your takes.", imageAdName);
+  const earlier = useEarlierJobs(scope, project, job, "dtc", IMAGE_AD_MODELS, IMAGE_AD_DONE, imageAdName);
   const dtc = isDtc(s);
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
@@ -324,7 +328,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
     const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
     return () => clearTimeout(timer);
   }, [input, inputKey, quoteJob, quotedFor, phase]);
-  useEffect(() => { if (phase === "done") ws.toast("Image ad rendered and saved to your takes."); }, [phase, ws]);
+  useEffect(() => { if (phase === "done") ws.toast(IMAGE_AD_DONE); }, [phase, ws]);
   return (
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">

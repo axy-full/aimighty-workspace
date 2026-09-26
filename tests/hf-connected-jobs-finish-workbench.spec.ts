@@ -15,7 +15,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type 
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const SHOTS: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
+const SHOTS: Record<string, string> = Object.fromEntries(SIZES.map((name) => [name, name.replace("workbench-", "")]));
 const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const MIN = 60_000;
 const DRAFT = "ws-jobs";
@@ -24,13 +24,15 @@ const uuid = (n: number) => `9d2b3c4e-5f60-4a7b-8c9d-${String(n).padStart(12, "0
 const GEN = "gen_hfc_" + "c".repeat(40);
 
 type Job = Record<string, unknown> & { id: string; status: string };
-function connected(n: number, fields: { status: string; model: string; name: string; outputType?: string; prompt: string; ago: number; fileToProject?: boolean; credits?: number }): Job {
+type Fields = { status: string; model: string; name: string; outputType?: string; prompt: string; ago: number; composer?: "gen"; credits?: number; receipt?: boolean; setAside?: boolean };
+function connected(n: number, fields: Fields): Job {
   return {
     id: uuid(n), draftId: DRAFT, status: fields.status,
     input: { type: fields.outputType ?? "video", model: fields.model, prompt: fields.prompt, parameters: {}, medias: [] },
-    model: { id: fields.model, name: fields.name, outputType: fields.outputType ?? "video" }, tool: null, sources: [], fileToProject: fields.fileToProject ?? false,
+    model: { id: fields.model, name: fields.name, outputType: fields.outputType ?? "video" }, tool: null, sources: [], composer: fields.composer ?? null,
     workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: fields.credits ?? 43, creditUnit: "higgsfield_credits", quoteExpiresAt: 0,
-    providerJobId: fields.status === "quoted" ? null : uuid(900 + n), result: null, originalAvailable: false, createdAt: Date.now() - fields.ago,
+    providerJobId: fields.status === "accepted" || fields.status === "completed" ? uuid(900 + n) : null, result: null, originalAvailable: false, createdAt: Date.now() - fields.ago,
+    ...(fields.receipt ? { providerReceipt: { response: { status: "submitted" } } } : {}), ...(fields.setAside ? { setAside: true } : {}),
   };
 }
 const completed = (job: Job): Job => ({
@@ -84,78 +86,136 @@ async function thumbSized(page: Page, name: string, testId: string) {
   const height = await page.getByTestId(testId).getByRole("button", { name }).first().evaluate((el) => el.getBoundingClientRect().height);
   expect(Math.round(height)).toBeGreaterThanOrEqual(44);
 }
+async function shootTop(page: Page, project: string, name: string) {
+  const size = SHOTS[project];
+  const dir = process.env.HF_JOBS_SHOTS;
+  if (!size || !dir) return;
+  mkdirSync(dir, { recursive: true });
+  await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
+}
 async function shoot(page: Page, project: string, name: string, target: string, index = 0) {
   const size = SHOTS[project];
   const dir = process.env.HF_JOBS_SHOTS;
   if (!size || !dir) return;
   mkdirSync(dir, { recursive: true });
-  await page.getByTestId(target).nth(index).evaluate((el) => el.scrollIntoView({ block: "center" }));
+  /* Its end just above the phone dock, so the state and actions are in the frame; then the element alone. */
+  const element = page.getByTestId(target).nth(index);
+  await element.evaluate((el) => { (el as HTMLElement).style.scrollMarginBottom = "120px"; el.scrollIntoView({ block: "end" }); });
   await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
+  await element.screenshot({ path: path.join(dir, `${name}-${size}-element.png`) });
 }
 
-test("Gen picks up takes left rendering, names each state, and files a finished one into Takes", async ({ page }, info) => {
+test("Gen picks up takes left rendering, follows only what a read can move, shows the rest as they are, and files a finished one into Takes", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
+  const narrow = phone;
   const library: LibraryRoute = { uploads: [], generations: [] };
   const errors = await base(page, library);
-  const rendering = connected(1, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Harbour at dusk, slow push in on the moored boats", ago: 12 * MIN, fileToProject: true });
-  const confirming = connected(2, { status: "uncertain", model: "veo_3_1", name: "Veo 3.1", prompt: "Rain on the quay, a lantern swings", ago: 3 * 60 * MIN, fileToProject: true });
-  const ad = connected(3, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "An ad from Business", ago: 5 * MIN });
-  const priced = connected(4, { status: "quoted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Only priced, never sent", ago: 2 * MIN, fileToProject: true });
+  const rendering = connected(1, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A slow dolly push across the wet harbour at blue hour, lanterns swaying over the moored boats", ago: 12 * MIN, composer: "gen" });
+  const confirming = connected(2, { status: "uncertain", model: "veo_3_1", name: "Veo 3.1", prompt: "Rain on the quay, a lantern swings", ago: 3 * 60 * MIN, composer: "gen", receipt: true });
+  const unconfirmed = connected(3, { status: "uncertain", model: "veo_3_1", name: "Veo 3.1", prompt: "Gulls over the breakwater", ago: 27 * 60 * MIN, composer: "gen" });
+  const setAside = connected(4, { status: "dispatching", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Nets drying on the quay", ago: 3 * 24 * 60 * MIN, composer: "gen", setAside: true });
+  const earlier = connected(5, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Fog rolling in past the lighthouse", ago: 3 * 24 * 60 * MIN, composer: "gen" });
+  const ad = connected(6, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "An ad from Business", ago: 5 * MIN });
+  const priced = connected(7, { status: "quoted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "Only priced, never sent", ago: 2 * MIN, composer: "gen" });
   let phase: "first" | "done" = "first";
   const asked: string[] = [];
-  const { posts } = await mockGeneration(page, [rendering, confirming, ad, priced], (id) => {
+  const { posts } = await mockGeneration(page, [rendering, confirming, unconfirmed, setAside, earlier, ad, priced], (id) => {
     asked.push(id);
     if (id === rendering.id) return phase === "first" ? { json: { job: rendering, pollAfterSeconds: 8 } } : { json: { job: completed(rendering), pollAfterSeconds: 15 } };
     if (id === confirming.id) return phase === "first"
       ? { status: 401, json: { code: "reconnect_required", error: "Reconnect the connected account." } }
       : { json: { job: { ...confirming, status: "failed", failureCode: "provider_failed" } } };
+    if (id === earlier.id) return { status: 409, json: { code: "connection_changed", error: "The account connection changed." } };
     return { status: 404, json: { error: "not this composer's job" } };
   });
+  const saves: string[] = [];
+  page.on("request", (request) => { if (request.method() === "PUT" && request.url().includes("/api/workbench/projects")) saves.push(request.url()); });
   await page.clock.install();
   await page.goto("/suites?view=gen");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Harbour night shoot");
 
-  /* Only this composer's takes still in flight: not the Business ad, not a job that was only priced. */
+  /* This composer's open takes only: not the Business ad, not a job that was only priced. */
   const cards = page.getByTestId("gen-resumed");
-  await expect(cards).toHaveCount(2);
-  await expect(cards.nth(0)).toContainText("Harbour at dusk, slow push in on the moored boats");
-  await expect(cards.nth(0).locator(".gx-asset-meta")).toHaveText("Rendering · 12 min");
-  await expect(cards.nth(1).locator(".gx-asset-meta")).toHaveText("Confirming · 3 h");
+  const card = (prompt: string) => cards.filter({ hasText: prompt });
+  await expect(cards).toHaveCount(5);
+  /* Cut on a word, never mid-word; the full prompt is on hover. */
+  await expect(card("A slow dolly").locator(".gx-asset-name")).toHaveText("A slow dolly push across the wet harbour at blue hour…");
+  await expect(card("A slow dolly").locator(".gx-asset-meta")).toHaveText("Rendering · 12 min");
+  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Confirming · 3 h");
+  /* Nothing a read can move is asked after: it says so, and can be dismissed. */
+  await expect(card("Gulls").locator(".gx-asset-meta")).toHaveText("Not confirmed · never sent twice");
+  await expect(card("Gulls").getByRole("status")).toHaveText("Free its slot in Workspace › Engines.");
+  await expect(card("Nets drying").locator(".gx-asset-meta")).toHaveText("Set aside · never sent again");
+  await expect(card("Nets drying").getByRole("status")).toHaveCount(0);
   await expect(page.getByText("Nothing generated in this project yet.")).toHaveCount(0);
   /* A problem is said plainly, with what to do; the card stays and keeps asking. */
-  await expect(cards.nth(1).getByRole("status")).toHaveText("Reconnect the account in Workspace › Engines to finish this take.");
-  await expect(cards.nth(0).getByRole("status")).toHaveCount(0);
+  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Reconnect the account in Workspace › Engines to finish this take.");
+  await expect(card("A slow dolly").getByRole("status")).toHaveCount(0);
+  /* A take from an earlier account connection cannot be checked: said once, never asked again, dismissable. */
+  await expect(card("Fog rolling").locator(".gx-asset-meta")).toHaveText("Can't be checked");
+  await expect(card("Fog rolling").getByRole("status")).toHaveText("Started on an earlier account connection, so it can't be checked from here.");
+  for (const prompt of ["Gulls", "Nets drying", "Fog rolling"]) await expect(card(prompt).getByRole("button", { name: /^Dismiss/ })).toBeVisible();
+  for (const prompt of ["A slow dolly", "Rain on the quay"]) await expect(card(prompt).getByRole("button", { name: /^Dismiss/ })).toHaveCount(0);
+  /* No invented progress: the same solid ring as the composer's own run. */
+  expect(await card("A slow dolly").locator(".gx-ring").evaluate((el) => getComputedStyle(el).backgroundImage)).toBe("none");
+  /* On a narrow screen the results sit under the composer: its top says takes are still out and jumps to them. */
+  const jump = page.getByTestId("gen-resumed-jump");
+  await shootTop(page, info.project.name, "gen-top");
+  if (narrow) {
+    await expect(jump).toHaveText("2 takes still rendering");
+    const top = await jump.boundingBox();
+    expect(top!.y + top!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    await thumbSized(page, "2 takes still rendering", "gen-view");
+    expect(await cards.first().evaluate((el) => el.getBoundingClientRect().top)).toBeGreaterThan(page.viewportSize()!.height);
+    await jump.click();
+    await expect.poll(() => cards.first().evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight - 40; })).toBe(true);
+  } else await expect(jump).toBeHidden();
   await noOverflow(page);
   await shoot(page, info.project.name, "gen-picked-up", "gen-resumed", 1);
 
+  /* Six minutes on: the stopped cards were read at most once, and never again. */
+  await page.clock.fastForward("06:00");
+  expect(asked.filter((id) => id === earlier.id)).toHaveLength(1);
+  expect(asked.filter((id) => id === unconfirmed.id || id === setAside.id)).toHaveLength(0);
+
   /* The account finishes both: the rendered take lands in Takes, the failed one says it was not billed. */
   phase = "done";
-  library.generations = [generation({ id: GEN, kind: "video", title: "Harbour at dusk", prompt: "Harbour at dusk, slow push in on the moored boats", projectId: "prod-ws" })];
-  await page.clock.fastForward("01:05");
-  await expect(page.getByTestId("toast")).toHaveText("Harbour at dusk, slow push in on the moored boats rendered. Filed in Takes.");
-  await expect(cards).toHaveCount(1);
-  await expect(cards.first().locator(".gx-asset-meta")).toHaveText("Failed · not billed");
+  library.generations = [generation({ id: GEN, kind: "video", title: "Harbour at dusk", prompt: "A slow dolly push across the wet harbour", projectId: "prod-ws" })];
+  await page.clock.fastForward("02:05");
+  await expect(page.getByTestId("toast")).toHaveText("Seedance 2.5 take rendered. Filed in Takes for review.");
+  await expect(cards).toHaveCount(4);
+  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
   await expect(page.getByTestId("gen-view").locator(".gx-gen-grid .gx-asset:not([data-testid])")).toHaveCount(1);
+  if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
   await shoot(page, info.project.name, "gen-landed", "gen-resumed");
   if (phone) await thumbSized(page, "Dismiss Rain on the quay, a lantern swings", "gen-view");
-  await cards.first().getByRole("button", { name: "Dismiss Rain on the quay, a lantern swings" }).click();
-  await expect(cards).toHaveCount(0);
+  await card("Rain on the quay").getByRole("button", { name: "Dismiss Rain on the quay, a lantern swings" }).click();
+  await card("Gulls").getByRole("button", { name: /^Dismiss/ }).click();
+  await expect(cards).toHaveCount(2);
   await noOverflow(page);
 
-  /* Status reads only, and only for the two picked up: nothing was priced or sent again. */
+  /* Dismiss hides for this viewer only and holds across a reload; the rest come back. */
+  await page.reload();
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await expect(card("Nets drying")).toBeVisible();
+  await expect(card("Gulls")).toHaveCount(0);
+  await expect(card("Rain on the quay")).toHaveCount(0);
+
+  /* Status reads only, for the three a read could move: nothing priced or sent again, and no draft written. */
   expect(posts.map((p) => p.action).filter((a) => a !== "catalogue").every((a) => a === "status")).toBe(true);
-  expect(new Set(asked)).toEqual(new Set([rendering.id, confirming.id]));
+  expect(new Set(asked)).toEqual(new Set([rendering.id, confirming.id, earlier.id]));
+  expect(saves).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("Ads follows an ad from an earlier visit until it lands, then points to Takes; the ad its button resumes is not listed twice", async ({ page }, info) => {
+test("Ads follows an ad from an earlier visit until it lands, then points to Takes; the ad its button resumes is its button's alone", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   const errors = await base(page, { uploads: [], generations: [] });
-  const ad = connected(11, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "Unboxing the trail runner on a kitchen counter", ago: 25 * MIN, credits: 40 });
-  const genTake = connected(12, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A Gen take", ago: 4 * MIN, fileToProject: true });
+  const ad = connected(11, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "Unboxing the trail runner on a kitchen counter, morning light through the window, close on the laces", ago: 25 * MIN, credits: 40 });
+  const genTake = connected(12, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A Gen take", ago: 4 * MIN, composer: "gen" });
   /* The last ad submitted on this device: the composer remembers it and reads it back on its own button
      (held open here, so the composer stays "Checking the last take…" the whole time). */
   const remembered = connected(13, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "The ad this device submitted last", ago: 2 * MIN });
@@ -170,7 +230,7 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
   await expect(page.getByTestId("ads-view")).toBeVisible();
   const rows = page.getByTestId("ads-earlier-row");
   await expect(rows).toHaveCount(1);
-  await expect(rows.locator(".vr-job-name")).toHaveText("Unboxing the trail runner on a kitchen counter");
+  await expect(rows.locator(".vr-job-name")).toHaveText("Unboxing the trail runner on a kitchen counter, morning light through the…");
   await expect.poll(() => posts.some((p) => p.action === "status" && p.id === remembered.id)).toBe(true);
   await expect(page.getByText("The ad this device submitted last")).toHaveCount(0);
   await expect(rows.locator(".gx-resumed-state")).toHaveText("Rendering · 25 min");
@@ -180,10 +240,10 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
   done = true;
   await page.clock.fastForward("00:10");
   await expect(rows.locator(".gx-resumed-state")).toHaveText("Complete");
-  await expect(page.getByTestId("toast")).toHaveText("An ad from earlier rendered and is in your takes.");
+  await expect(page.getByTestId("toast")).toHaveText("Ad rendered. Filed in Takes for review.");
   if (phone) {
     await thumbSized(page, "Open Takes", "ads-earlier");
-    await thumbSized(page, "Dismiss Unboxing the trail runner on a kitchen counter", "ads-earlier");
+    await thumbSized(page, "Dismiss Unboxing the trail runner on a kitchen counter, morning light through the…", "ads-earlier");
   }
   /* The actions travel together at the end of the row, never split across lines. */
   const open = await rows.getByRole("button", { name: "Open Takes" }).boundingBox();
@@ -197,6 +257,8 @@ test("Ads follows an ad from an earlier visit until it lands, then points to Tak
   await rows.getByRole("button", { name: "Open Takes" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
   expect(posts.filter((p) => p.action === "status").every((p) => p.id === ad.id || p.id === remembered.id)).toBe(true);
+  /* One poller per job: the remembered ad was read by its button only, once (its reply is held open). */
+  expect(posts.filter((p) => p.action === "status" && p.id === remembered.id)).toHaveLength(1);
   expect(posts.some((p) => p.action === "quote" || p.action === "submit")).toBe(false);
   expect(errors).toEqual([]);
   await page.unrouteAll({ behavior: "ignoreErrors" });

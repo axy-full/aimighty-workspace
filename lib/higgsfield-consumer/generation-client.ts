@@ -31,8 +31,8 @@ export type ConnectedJob = {
   model: { id: string; name: string; outputType: ConnectedOutputType };
   tool: ConnectedJobTool | null;
   sources: ConnectedJobSource[];
-  /** Quoted by the Gen composer: the server files the original into the project when it lands. */
-  fileToProject?: boolean;
+  /** Which composer quoted it ("gen": the Gen page), so a page picking jobs back up follows only its own. */
+  composer?: "gen" | null;
   workspaceId: string;
   workspaceName: string;
   quoteCredits: number;
@@ -67,19 +67,18 @@ export function parseConnectedJob(value: unknown, draftId: string): ConnectedJob
   const sources: ConnectedJobSource[] = Array.isArray(value.sources)
     ? value.sources.flatMap((item) => record(item) && typeof item.role === "string" && typeof item.name === "string" ? [{ role: item.role, kind: String(item.kind), name: item.name.slice(0, 160) }] : []).slice(0, 30)
     : [];
-  return { ...value, tool, sources, fileToProject: value.fileToProject === true, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
+  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
 }
 
 /**
  * Request one exact price for this input. The schema parse is the contract.
- * `fileToProject` asks the server to file the collected original into the
- * project itself once the job completes, so it lands even if nobody is
- * watching (the Gen composer's takes).
+ * `composer` names the page quoting it, so that page can pick its own jobs
+ * back up after it was left (the Gen composer's takes).
  */
-export function connectedQuoteRequest(draftId: string, input: ConsumerGenerationInput, options: { fileToProject?: boolean } = {}) {
+export function connectedQuoteRequest(draftId: string, input: ConsumerGenerationInput, options: { composer?: "gen" } = {}) {
   return {
     action: "quote" as const, draftId, input: consumerGenerationInputSchema.parse(input), idempotencyKey: crypto.randomUUID(),
-    ...(options.fileToProject ? { fileToProject: true as const } : {}),
+    ...(options.composer ? { composer: options.composer } : {}),
   };
 }
 

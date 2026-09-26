@@ -19,6 +19,8 @@ export type GenjutsuJob = {
   input: ConsumerGenjutsuInput; workspaceName: string; workspaceId: string; quoteCredits: number; creditUnit: string; quoteExpiresAt: number; quoteExpired?: boolean;
   providerJobId: string | null; result?: { original?: { generationId?: string; asset?: { id?: string; url?: string; kind?: string } } } | null;
   originalAvailability?: string; originalAvailable?: boolean; createdAt: number;
+  /** The saved reply of a submit whose answer was lost, and whether an unconfirmed job was set aside. */
+  providerReceipt?: unknown; setAside?: boolean; failureCode?: string | null;
 };
 export type ViralCapabilities = { resolutions: string[]; minSeconds: number; maxSeconds: number; maxImages: number; maxMediaBytes: number };
 export type Estimate = { key: string; credits: number | null; expiresAt: number; error: string | null; job: GenjutsuJob | null };
@@ -111,7 +113,7 @@ export function useViral(draftId: string | null, ready: boolean) {
       } catch (error) {
         /* Retried on its next turn; meanwhile the row says what is wrong and who can fix it. */
         if (stop) return;
-        const problem = resumeProblem((error as { code?: string }).code, error instanceof Error ? error.message : null);
+        const problem = resumeProblem(error);
         setProblems((all) => (all[id] === problem ? all : { ...all, [id]: problem }));
       }
     }, POLL_MS);
