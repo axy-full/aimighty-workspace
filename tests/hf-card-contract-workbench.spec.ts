@@ -160,6 +160,11 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
     expect(await smallTargets(page, ".gx-gen-results .gx-tile-over"), "Refresh under 44×44").toEqual([]);
     expect(await smallTargets(page, ".gx-gen-results"), "targets under 44×44").toEqual([]);
   }
+  /* Refresh is the corner's; a press on the picture still opens the take. */
+  await gone.locator(".gx-asset-thumb").click();
+  await expect(page.getByTestId("inspector-title")).toHaveText("Harbour at dusk");
+  await expect(gone).toHaveAttribute("data-face", "unavailable");
+  if (!WIDE.includes(info.project.name)) await page.getByTestId("close-inspector").click();
   state.restored = true;
   const before = state.reads;
   await refresh.click();

@@ -410,7 +410,8 @@
 /* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
 .gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"], [data-face="stopped"]) .gx-tile-glyph { display: none; }
 .gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
-.gx-tile-over { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+/* Refresh is the tile's second action: in its top-right corner, so a press anywhere else still opens the take. */
+.gx-tile-over { position: absolute; inset: 0; display: grid; place-items: start end; padding: 6px; pointer-events: none; }
 .gx-tile-refresh { pointer-events: auto; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 600; text-align: center;
   color: var(--gx-text); background: rgba(12, 12, 16, .72); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(8px); }
 .gx-tile-refresh:hover { background: var(--gx-input-hover); }

@@ -67,7 +67,7 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   const face: EntryFace = base === "media" && broken != null && broken === entry.url ? "unavailable" : base;
   const compact = variant === "library";
   const chip = takeChip(take, compact);
-  /* A finished take whose copy is missing says so under its name; Refresh sits on the picture. */
+  /* A finished take whose copy is missing says so under its name; Refresh sits in the picture's corner. */
   const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take, compact);
   const kind = entryKind(entry);
   const refresh = async () => { setBroken(null); setAttempt((n) => n + 1); await onRefresh(); };
@@ -77,7 +77,8 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
       <Face key={attempt} face={face} entry={entry} onFail={fail} />
       {/* The kind, except where Refresh has the picture to itself. */}
       {face !== "unavailable" && (variant !== "grid" || kind === "audio" || kind === "file") ? <span className="gx-badge">{KIND_BADGE[kind]}</span> : null}
-      {fresh ? <span className="gx-badge gx-badge--new">NEW</span> : null}
+      {/* NEW gives its corner to Refresh. */}
+      {fresh && face !== "unavailable" ? <span className="gx-badge gx-badge--new">NEW</span> : null}
       {chip ? <Chip {...chip} /> : null}
     </>
   );
