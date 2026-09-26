@@ -54,6 +54,11 @@ export function stepFromStage(stage: string | null | undefined): number {
   return 0;
 }
 
+/** The list for a workspace on credits: the vendor's dollars withheld, credits kept. */
+export function withoutVendorSpend(list: ProductionRow[]): ProductionRow[] {
+  return list.map((p) => ({ ...p, spentUsd: 0, projects: p.projects.map((j) => ({ ...j, spentUsd: 0 })) }));
+}
+
 /** Board 7a in one read: productions, their projects, counts and money. */
 export async function listProductions(): Promise<ProductionRow[]> {
   await ready();
