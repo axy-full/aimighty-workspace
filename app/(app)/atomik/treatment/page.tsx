@@ -130,8 +130,8 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
     if(!pending)await save(false);
     setRegen(s.n); setProposal(null);
     try {
-      const {data:j}=await paid.run<{scene:Scene;model:string;costUsd?:number}>("/api/atomik/treatment/scene",pending ?? {projectId,n:s.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
-      setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: money.price(Number(j.costUsd ?? 0), "text") });
+      const {data:j}=await paid.run<{scene:Scene;model:string;writingCredits?:number;costUsd?:number}>("/api/atomik/treatment/scene",pending ?? {projectId,n:s.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
+      setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: money.price(Number((money.inCredits ? j.writingCredits : j.costUsd) ?? 0), "text") });
     } catch (e) { await appAlert("Not rewritten", (e as Error).message); }
     finally { setRegen(null); }
   }
