@@ -95,11 +95,18 @@ jobs:
         run: |
           npm run dev -- --webpack -p 4551 > dev-ci.log 2>&1 &
           for attempt in {1..90}; do
-            if curl --fail --silent http://localhost:4551/api/health >/dev/null; then exit 0; fi
+            if curl --fail --silent http://localhost:4551/api/health >/dev/null; then break; fi
+            if [ "$attempt" = 90 ]; then cat dev-ci.log; exit 1; fi
             sleep 2
           done
-          cat dev-ci.log
-          exit 1
+          # Webpack compiles a page on its first request, and the largest take
+          # longer than a test's 15 s expectation (the workbench, from a link).
+          # Compile the pages the specs open once, before the suite. The app
+          # parameters keep proxy.ts from serving the public site instead.
+          printf '%s\n' /suites /workbench /generate /library /make /settings /productions \
+            '/atomik?project=warm' '/workspace?project=warm' '/?project=warm' /billing /usage /rig /team \
+            /account/security /projects /login /signup /subatomik /pipelines /connect /admin /platform /studio \
+            | xargs -P 4 -I{} curl --silent --output /dev/null --max-time 300 "http://localhost:4551{}"
       - name: Browser suite
         # Memory, disk and the largest processes every 30 s, in this step's own
         # log: a runner that is shut down leaves no artifacts, so this is the
