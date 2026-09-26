@@ -1,9 +1,9 @@
 import { withTenant } from "@/lib/auth";
 import { NO_STORE, cleanContext, cleanGoal, crewCaller, crewFailure, crewProject } from "@/lib/crew/http";
 import { creditsApply } from "@/lib/credits";
-import { quoteRound } from "@/lib/crew/round";
+import { quoteRound, roomRate } from "@/lib/crew/round";
 import { CrewError, createSession, listMembers, listMessages, listSessions, readSession } from "@/lib/crew/store";
-import { xaiConnected, xaiModel, xaiRate } from "@/lib/crew/xai";
+import { xaiConnected, xaiModel } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +38,7 @@ export const POST = withTenant(async (req: Request) => {
       const existing = typeof body.sessionId === "string" ? await readSession(caller.userId, body.sessionId) : null;
       /* An existing room's next round runs on the model it was opened with. */
       const model = existing?.model || xaiModel();
-      const rate = await xaiRate(model);
-      if (!rate) throw new CrewError("This engine cannot be priced right now, so the room will not run.", 503);
+      const rate = await roomRate(model);
       const active = (await listMembers(caller.userId, project.id)).filter((m) => m.active);
       if (!active.length) throw new CrewError("Seat at least one member.", 400);
       const transcriptChars = existing ? (await listMessages(existing.id)).reduce((n, m) => n + m.text.length + m.name.length + 8, 0) : 0;

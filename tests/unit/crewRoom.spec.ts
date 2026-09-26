@@ -125,3 +125,20 @@ test("a room's rounds go to the model it was priced for, not whatever XAI_MODEL 
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
 });
+
+test("a room whose engine can no longer be priced says so, and names the engine to move it to", async () => {
+  const { roomRate } = await import("../../lib/crew/round");
+  const saved = process.env.XAI_MODEL;
+  process.env.XAI_MODEL = "grok-newer";
+  try {
+    const rate = { inputUsdPerToken: 1 / 1e6, outputUsdPerToken: 2 / 1e6 };
+    // Still priced: the room keeps its own engine and its own rate.
+    expect(await roomRate("grok-4.6", async (model) => (model === "grok-4.6" ? rate : null))).toBe(rate);
+    // The deployment moved on and the room's engine has no price: the room says where to move, never switches by itself.
+    await expect(roomRate("grok-4.6", async () => null)).rejects.toMatchObject({ status: 409, message: "This room runs on grok-4.6, which can no longer be priced. Move it to grok-newer to run." });
+    // The current engine itself unpriced is the old refusal.
+    await expect(roomRate("grok-newer", async () => null)).rejects.toMatchObject({ status: 503, message: "This engine cannot be priced right now, so the room will not run." });
+  } finally {
+    if (saved === undefined) delete process.env.XAI_MODEL; else process.env.XAI_MODEL = saved;
+  }
+});

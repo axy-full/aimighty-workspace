@@ -1,6 +1,7 @@
 import { withTenant } from "@/lib/auth";
 import { NO_STORE, cleanContext, cleanGoal, crewCaller, crewFailure } from "@/lib/crew/http";
 import { CrewError, listMembers, listMessages, listSolutions, readSession, updateSessionBrief } from "@/lib/crew/store";
+import { xaiModel } from "@/lib/crew/xai";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -18,7 +19,8 @@ export const GET = withTenant(async (req: Request, { params }: Ctx) => {
   } catch (error) { return crewFailure(error); }
 });
 
-/** The goal and what the room reads can change between rounds. */
+/** The goal and what the room reads can change between rounds; `model: "current"` moves the room to the
+ *  deployment's engine, whose price the next round's quote then shows. No other engine can be chosen. */
 export const PATCH = withTenant(async (req: Request, { params }: Ctx) => {
   const caller = await crewCaller(req);
   if (caller.response) return caller.response;
@@ -26,7 +28,8 @@ export const PATCH = withTenant(async (req: Request, { params }: Ctx) => {
     const id = (await params).id;
     if (!(await readSession(caller.userId, id))) throw new CrewError("That room is not in this workspace.", 404);
     const body = await req.json().catch(() => ({}));
-    await updateSessionBrief(caller.userId, id, { ...(body.goal !== undefined ? { goal: cleanGoal(body.goal) } : {}), ...(body.context !== undefined ? { context: cleanContext(body.context) } : {}) });
+    await updateSessionBrief(caller.userId, id, { ...(body.goal !== undefined ? { goal: cleanGoal(body.goal) } : {}), ...(body.context !== undefined ? { context: cleanContext(body.context) } : {}),
+      ...(body.model === "current" ? { model: xaiModel() } : {}) });
     return Response.json({ session: await readSession(caller.userId, id) }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });
