@@ -8,7 +8,7 @@ import { gatewayReachable } from "./gateway";
 import { catalog, findModel, videoCostUsd, imageCostUsd } from "./catalog";
 import { MODELS, type ModelDef } from "./models";
 import { getSetting } from "./settings";
-import { generationRequestsReady } from "./generationRequests";
+import { fenceGenerationRequest, generationRequestsReady } from "./generationRequests";
 import type { Transaction } from "@libsql/client";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
@@ -70,6 +70,8 @@ export type Step = {
    *  admission bills it, and what the ledger billed once it ran. */
   estCredits?: number | null;
   billedCredits?: number | null;
+  /** The Idempotency-Key this approval's render is sent under (stepRequestKey): one per approval. */
+  requestKey?: string;
 };
 
 export type Ask = { question: string; options: string[] };
@@ -111,6 +113,7 @@ const toStep = (r: Row): Step => ({
   estCostUsd: r.est_cost_usd == null ? null : Number(r.est_cost_usd),
   error: r.error ? String(r.error) : null,
   createdAt: Number(r.created_at ?? 0),
+  requestKey: stepRequestKey(String(r.id), Number(r.attempt ?? 0)),
 });
 
 const toMessage = (r: Row): Message => ({
@@ -286,13 +289,15 @@ export async function deleteChat(chatId: string): Promise<void> {
  * a render is always billed for what was priced, not for whatever the
  * browser had in memory when the button went down.
  */
-export async function claimStep(stepId: string): Promise<Step | null> {
+export async function claimStep(stepId: string, userId?: string): Promise<Step | null> {
   await ready();
   const rs = await db().execute({
-    /* A step settled back to proposed carries why; approving it again clears that. */
-    sql: `UPDATE atomik_steps SET status = 'running', error = NULL, updated_at = ?
+    /* A step settled back to proposed carries why; approving it again clears that. Each approval
+       is a new attempt, so its render goes under a key of its own (stepRequestKey), and records
+       who took it: that person's claim on the key is what a stranded render is fenced by. */
+    sql: `UPDATE atomik_steps SET status = 'running', error = NULL, updated_at = ?, attempt = attempt + 1, claimed_by = ?
           WHERE id = ? AND status = 'proposed'`,
-    args: [now(), stepId],
+    args: [now(), userId ?? null, stepId],
   });
   if (Number(rs.rowsAffected ?? 0) === 0) return null;
   return getStep(stepId);
@@ -306,8 +311,15 @@ export async function getStep(stepId: string): Promise<Step | null> {
   return rs.rows.length ? toStep(rs.rows[0]) : null;
 }
 
-/** The Idempotency-Key the approval sends with a step's render, so the render can be found from the step. */
-export const stepRequestKey = (stepId: string) => `atomik-step:${stepId}`;
+/**
+ * The Idempotency-Key the approval sends with a step's render, so the render
+ * can be found from the step. One per approval: a step settled back to
+ * proposed has its first key fenced (reconcileRunningSteps), so approving it
+ * again must not reuse it. The first approval keeps the key it always had.
+ */
+export const stepRequestKey = (stepId: string, attempt = 1) => (attempt > 1 ? `atomik-step:${stepId}:${attempt}` : `atomik-step:${stepId}`);
+/** The fingerprint a stranded render's key is fenced under: no request is ever sent with it. */
+const STRANDED_FENCE = "atomik-step:stranded";
 
 /** A claim whose render request never reached the server by now was dropped by the browser. */
 export const STRANDED_CLAIM_MS = 2 * 60_000;
@@ -370,33 +382,45 @@ async function renderOutcome(request: Row, at: number): Promise<Settled | null> 
  * own Idempotency-Key, so what became of it is on record, and this reads it
  * (renderOutcome): a render was made → the step is done and points at it;
  * the request was refused → the step failed with the reason; no request
- * ever arrived → the step goes back to proposed, because nothing was sent
- * and it may be approved again. A request still being accepted is left alone.
+ * ever arrived → its key is fenced first (fenceGenerationRequest, the claim
+ * of whoever took the step), so a render that was merely delayed can never
+ * land afterwards, and then the step goes back to proposed, because nothing
+ * was sent and it may be approved again, under a key of its own. A request
+ * still being accepted is left alone, and so is one that turns up between the
+ * look and the fence: its own record is read next time.
  *
  * Connected steps are settled by their own route, which records as it goes.
  */
 export async function reconcileRunningSteps(chatId: string, at = now()): Promise<number> {
   await ready();
   const rs = await db().execute({
-    sql: `SELECT * FROM atomik_steps WHERE chat_id = ? AND status = 'running' AND gen_id IS NULL`,
+    sql: `SELECT s.*, c.created_by AS chat_owner FROM atomik_steps s LEFT JOIN atomik_chats c ON c.id = s.chat_id
+          WHERE s.chat_id = ? AND s.status = 'running' AND s.gen_id IS NULL`,
     args: [chatId],
   });
-  const stranded = rs.rows.map((r: Row) => ({ step: toStep(r), updatedAt: Number(r.updated_at ?? 0) }))
-    .filter(({ step }) => !isConnectedModelId(step.model) && !connectedMeta(step.params));
+  const stranded = rs.rows.map((r: Row) => ({
+    step: toStep(r), updatedAt: Number(r.updated_at ?? 0),
+    /* Whoever took it sends its render; a step taken before that was recorded was its chat's owner's. */
+    owner: String(r.claimed_by ?? "") || String(r.chat_owner ?? ""),
+  })).filter(({ step }) => !isConnectedModelId(step.model) && !connectedMeta(step.params));
   if (!stranded.length) return 0;
   await requestKeyIndexReady();
   let settled = 0;
-  for (const { step, updatedAt } of stranded) {
+  for (const { step, updatedAt, owner } of stranded) {
+    const key = step.requestKey ?? stepRequestKey(step.id);
     const found = await db().execute({
       sql: `SELECT generation_id, response_json, response_status, created_at FROM generation_requests
             WHERE request_key = ? ORDER BY created_at DESC LIMIT 1`,
-      args: [stepRequestKey(step.id)],
+      args: [key],
     });
     const request = found.rows[0] as Row | undefined;
     let outcome: Settled | null = null;
     if (request) {
       outcome = await renderOutcome(request, at);
     } else if (at - updatedAt > STRANDED_CLAIM_MS) {
+      /* Fenced before it is proposed again: a delayed render arriving after this admits nothing. No one
+         to fence it for, or a request that turned up meanwhile, and the step stays as it is for now. */
+      if (!owner || !(await fenceGenerationRequest({ userId: owner, key, fingerprint: STRANDED_FENCE }))) continue;
       outcome = { status: "proposed", genId: null, error: "The approval did not reach the renderer, so nothing was sent. Approve it again." };
     }
     if (!outcome) continue;
