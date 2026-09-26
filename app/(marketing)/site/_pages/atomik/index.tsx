@@ -16,7 +16,8 @@ export const metadata: Metadata = {
 /* Copy from lib/workspace/spec-cards.ts (Atomik), lib/workbench/atomik-server.ts
    and atomik-references.ts (what the agent reads), lib/workbench/suite-agent-plan.ts
    (proposals → Rig nodes), lib/crew/room.ts (Crew), lib/higgsfield-consumer/{tools,
-   voice-tools}.ts (Generate), lib/shell/skills.ts (Skills), docs/atomik-models.md
+   voice-tools}.ts (Generate), lib/shell/tools-connections.ts and
+   lib/higgsfield-consumer/reach.ts (Tools & connections), docs/atomik-models.md
    (Models) and docs/durable-production-pipelines.md (Runs, Recipes). Every figure
    is computed by sitePrices(); anything it cannot price reads "Live quote". */
 
@@ -41,8 +42,8 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
     body: "Every saved run keeps its plan: same stages, same inputs, same engines. A new run from it is free and starts with no approval or paid attempt; only the generations inside it cost anything." },
   { tag: "05 Builds", name: "Builds", badge: "Not yet runnable",
     body: "The plan: describe a tool and the agent builds it, with interface, data, sign-in and generation models wired in, running on the viewer’s own credits. There is no build service yet." },
-  { tag: "06 Skills", name: "Skills", badge: "Registry pending",
-    body: "Eight public skill packs, each listed with its install command: generate, Soul ID, brand kit, product photoshoot, YouTube thumbnails, video explainers, websites and marketplace cards. There is no in-app registry yet." },
+  { tag: "06 Tools", name: "Tools & connections",
+    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D, then the connected account’s catalogue, characters, voice, dubbing, social cuts and ad templates, each checked live against the tools the account offers. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT, with a monthly ceiling on anything that can spend." },
   { tag: "07 Models", name: "Models",
     body: "Claude, OpenAI and Gemini planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer, under per-request and per-production ceilings. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
   { tag: "08 Approvals", name: "Approvals",
@@ -54,7 +55,7 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
 const WINDOWS: [string, string, string][] = [
   ["runs", "atomik-runs", "Atomik, Runs"],
   ["approvals", "atomik-approvals", "Atomik, Approvals"],
-  ["skills", "atomik-skills", "Atomik, Skills"],
+  ["tools", "atomik-tools", "Atomik, Tools & connections"],
 ];
 
 export default async function AtomikPage() {

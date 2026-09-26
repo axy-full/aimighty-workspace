@@ -104,8 +104,9 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
-  /* Tools & connections is the shell's own view (it replaced the step-5 pack list): what Atomik can
-     reach, with live status, and Particl's own MCP server and tokens. The page id stays `skills`. */
+  /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
+     under its Claude & ChatGPT tab): what Atomik can reach, with live status, and Particl's own MCP
+     server and tokens. The page id stays `skills`, so every old link still lands here. */
   own(build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],

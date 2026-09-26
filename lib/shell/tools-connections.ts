@@ -1,33 +1,45 @@
 /**
- * Atomik › Tools & connections: what the agent can reach, and how an
- * assistant elsewhere reaches Particl.
+ * Atomik › Tools & connections: what Atomik can reach, and how an assistant
+ * elsewhere reaches Particl.
  *
- * Replaces the pack list this page used to show (install commands for packs
- * nothing in Particl reads). Every row here is backed by code that runs:
- *  - Particl's own reach is built in (the planner, Particl's engines, voice);
+ * It replaced a list of skill packs that said "the agent's tool reach is
+ * these packs" while nothing in Particl read them. Every row here is backed
+ * by code that runs, and opens the place in Suites where it runs:
+ *  - Particl's own reach is built in (the agent, Particl's engines, sound,
+ *    Astra, and Particl's own MCP tools);
  *  - the connected account's reach is checked live against its tools/list
  *    (lib/higgsfield-consumer/reach.ts, owner only, free);
  *  - the assistant side is Particl's own MCP server (/api/mcp, lib/mcp.ts
- *    TOOLS) and the workspace's API tokens (/api/tokens).
+ *    TOOLS), the workspace's API tokens (/api/tokens) and, for anyone who
+ *    used them from the old page, the public skill packs (lib/shell/skills.ts).
  *
  * Pure (no network, no React) so the unit specs read the same rules the page
  * renders.
  */
-import { CONNECTED_REACH, type ConnectedReachId, type ReachCheck } from "@/lib/higgsfield-consumer/reach";
+import { CONNECTED_REACH, parseReach, type ConnectedReachId, type ReachCheck } from "@/lib/higgsfield-consumer/reach";
 import { TOOLS } from "@/lib/mcp";
+import { parseCeiling, parseCreditCeiling } from "@/lib/tokenCeiling";
 import type { ShellSuiteId } from "./ia";
 
-/** Where a row opens: a suite page, or the Gen view. */
-export type ReachOpen = { suite: ShellSuiteId; page: string; label: string } | { gen: true; label: string };
+export type ToolsTab = "reach" | "connect";
+
+/** Where a row opens: a suite page, the Gen view, or this page's other tab. */
+export type ReachOpen =
+  | { suite: ShellSuiteId; page: string; label: string }
+  | { gen: true; label: string }
+  | { tab: ToolsTab; label: string };
 
 export type ReachStatus =
   /** Particl's own; nothing to check. */
   | "built-in"
   | "available"
+  /** The account does not advertise a tool this needs. */
   | "missing"
-  /** Only the workspace owner holds the connected account, so only they can check it. */
+  /** The platform has the feature switched off. */
+  | "off"
+  /** Only the workspace owner holds the connected account, so only they use and check it. */
   | "owner-only"
-  /** No connected account (or it needs signing in again). */
+  /** No connected account, or it needs signing in again. */
   | "connect"
   | "checking"
   | "error";
@@ -35,22 +47,29 @@ export type ReachStatus =
 export type ReachRow = { id: string; label: string; line: string; group: "particl" | "connected"; status: ReachStatus; open?: ReachOpen };
 
 const AGENT: ReachOpen = { suite: "atomik", page: "agent", label: "Agent" };
-const GEN: ReachOpen = { gen: true, label: "Generate" };
+const GEN: ReachOpen = { gen: true, label: "Gen" };
+const SOUND: ReachOpen = { suite: "studio", page: "edit", label: "Edit & Sound" };
+const CAST: ReachOpen = { suite: "studio", page: "cast", label: "Cast" };
 
 export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Object.freeze([
-  { id: "plan", label: "Plan & price", line: "A brief becomes takes, each priced, none run before Approve", open: AGENT },
-  { id: "engines", label: "Particl engines", line: "Video and stills on Particl’s own models", open: GEN },
-  { id: "sound", label: "Voice, sound & music", line: "Narration, effects and score for the cut", open: { suite: "studio", page: "edit", label: "Edit & Sound" } },
+  { id: "plan", label: "Plan & price", line: "Plans against the project; every request is priced before it runs", open: AGENT },
+  { id: "thinking", label: "Thinking models", line: "The model Atomik plans with, and how hard it thinks", open: { suite: "atomik", page: "models", label: "Models" } },
+  { id: "engines", label: "Particl engines", line: "Video, stills and sound on Particl’s own engines", open: GEN },
+  { id: "sound", label: "Voice, sound & music", line: "Narration, effects and score for the cut", open: SOUND },
+  { id: "astra", label: "Astra 3D", line: "Block a scene in 3D before anything renders", open: { suite: "studio", page: "astra", label: "Astra" } },
+  { id: "assistant", label: "Your own assistant", line: `Particl’s ${TOOLS.length} tools in Claude or ChatGPT, with a token you control`, open: { tab: "connect", label: "Claude & ChatGPT" } },
 ]);
 
-const CONNECTED_OPEN: Partial<Record<ConnectedReachId, ReachOpen>> = {
-  models: { suite: "atomik", page: "models", label: "Models" },
-  image: GEN, video: GEN, audio: GEN, "3d": GEN,
-  batch: AGENT, presets: AGENT, files: AGENT, recipes: AGENT,
-  follow: { suite: "atomik", page: "runs", label: "Runs" },
-  voice: { suite: "studio", page: "edit", label: "Edit & Sound" },
-  marketing: { suite: "business", page: "ads", label: "Ads" },
-};
+/** Where each connected capability runs in Suites (lib/higgsfield-consumer/reach.ts lists what each needs). */
+export const CONNECTED_OPEN: Readonly<Record<ConnectedReachId, ReachOpen>> = Object.freeze({
+  models: GEN, image: GEN, video: GEN, audio: GEN, files: GEN, analysis: GEN,
+  follow: { suite: "studio", page: "takes", label: "Takes" },
+  characters: CAST, elements: CAST,
+  voice: SOUND, dub: SOUND,
+  reframe: { suite: "studio", page: "deliver", label: "Deliver" },
+  templates: { suite: "business", page: "dtc", label: "Image ads" },
+  motion: { suite: "viral", page: "motion", label: "Motion Transfer" },
+});
 
 /** What the page knows about the connected account right now. */
 export type ReachState =
@@ -62,10 +81,11 @@ export type ReachState =
 
 /** Every row with its status: Particl's own first, then the connected account's. */
 export function reachRows(state: ReachState): ReachRow[] {
-  const flags = state.kind === "checked" ? new Map(state.checks.map((c) => [c.id, c.available])) : null;
+  const checks = state.kind === "checked" ? new Map(state.checks.map((c) => [c.id, c])) : null;
   const connectedStatus = (id: ConnectedReachId): ReachStatus => {
-    if (state.kind === "checked") return flags?.get(id) ? "available" : "missing";
-    return state.kind;
+    if (state.kind !== "checked") return state.kind;
+    const check = checks?.get(id);
+    return check?.off ? "off" : check?.available ? "available" : "missing";
   };
   return [
     ...PARTICL_REACH.map((row): ReachRow => ({ ...row, group: "particl", status: "built-in" })),
@@ -73,31 +93,51 @@ export function reachRows(state: ReachState): ReachRow[] {
   ];
 }
 
+/** A row's Open button shows only where the capability can be used now. */
+export const usable = (status: ReachStatus) => status === "built-in" || status === "available";
+
 export const STATUS_LABEL: Record<ReachStatus, string> = {
   "built-in": "Built in",
   available: "Available",
   missing: "Not offered",
-  "owner-only": "Owner checks",
+  off: "Switched off",
+  "owner-only": "Owner only",
   connect: "Connect first",
   checking: "Checking…",
   error: "Not checked",
 };
 
-/** "9 of 13 available", or what stands in the way. */
+/** "9 of 14 available", or what stands in the way and what to do. */
 export function reachSummary(state: ReachState): string {
   if (state.kind === "checked") {
     const on = state.checks.filter((c) => c.available).length;
     return `${on} of ${CONNECTED_REACH.length} available`;
   }
-  if (state.kind === "owner-only") return "The workspace owner checks these";
-  if (state.kind === "connect") return state.reconnect ? "Reconnect the account in Workspace › Engines" : "Connect the account in Workspace › Engines";
+  if (state.kind === "owner-only") return "Only the workspace owner uses the connected account";
+  if (state.kind === "connect") return state.reconnect ? "Sign the account in again in Workspace › Engines" : "Connect the account in Workspace › Engines";
   if (state.kind === "checking") return "Checking the connected account…";
   return state.message;
 }
 
+/** Reads the capabilities route's reply (view "reach") into what the page shows. */
+export function reachStateFrom(status: number, json: unknown, now = Date.now()): ReachState {
+  const body = (json && typeof json === "object" ? json : {}) as { reach?: unknown; checkedAt?: unknown; code?: unknown; error?: unknown };
+  if (status >= 200 && status < 300) {
+    const checks = parseReach(body.reach);
+    if (checks && checks.length === CONNECTED_REACH.length)
+      return { kind: "checked", checks, checkedAt: typeof body.checkedAt === "number" && Number.isFinite(body.checkedAt) ? body.checkedAt : now };
+    return { kind: "error", message: "The account’s answer could not be read. Try again." };
+  }
+  if (body.code === "not_connected") return { kind: "connect" };
+  if (body.code === "reconnect_required") return { kind: "connect", reconnect: true };
+  if (status === 403) return { kind: "owner-only" };
+  if (status === 429) return { kind: "error", message: "Checked too often. Try again in a minute." };
+  return { kind: "error", message: "The connected account could not be checked. Try again, or open Workspace › Engines." };
+}
+
 /* ── Particl as an MCP server ─────────────────────────────────────────── */
 
-/** Tools that write: a read-only token is refused them (lib/auth withTenant). */
+/** Tools that write: a read-only token is refused them (lib/auth withTenant refuses its non-GET calls). */
 const WRITES = new Set(["render_shot", "create_project"]);
 /** One line per tool; tests/unit/toolsConnections.spec.ts fails when lib/mcp.ts gains a tool this page does not describe. */
 export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
@@ -107,7 +147,7 @@ export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
   get_render: "One take, with a link to watch or save it",
   list_projects: "Projects with their counts and spend",
   create_project: "Makes a project to file takes under",
-  usage_summary: "Spent, remaining, running now",
+  usage_summary: "Spent, remaining, and what is running now",
 });
 
 export type McpToolRow = { name: string; line: string; token: "any" | "generate" };
@@ -115,54 +155,78 @@ export function mcpTools(): McpToolRow[] {
   return TOOLS.map((tool) => ({ name: tool.name, line: MCP_TOOL_LINES[tool.name] ?? tool.description.split(". ")[0], token: WRITES.has(tool.name) ? "generate" : "any" }));
 }
 
-export const TOKEN_PLACEHOLDER = "aw_your_token_here";
+/** Stands in for the token until one is made; tokens read `pk_<workspace>_…` (or `aw_…` in the original workspace). */
+export const TOKEN_PLACEHOLDER = "YOUR_TOKEN";
 export const mcpEndpoint = (origin: string) => `${origin}/api/mcp`;
 export const bridgeUrl = (origin: string) => `${origin}/particl-mcp.mjs`;
 export const openapiUrl = (origin: string) => `${origin}/api/openapi`;
 
-export type ClientId = "claude-code" | "claude-desktop" | "chatgpt" | "other";
+export type ClientId = "claude-code" | "claude-desktop" | "chatgpt" | "mcp" | "cli";
 export const CLIENTS: readonly { id: ClientId; label: string }[] = Object.freeze([
   { id: "claude-code", label: "Claude Code" },
   { id: "claude-desktop", label: "Claude Desktop" },
   { id: "chatgpt", label: "ChatGPT" },
-  { id: "other", label: "Any MCP client" },
+  { id: "mcp", label: "Any MCP client" },
+  { id: "cli", label: "Command line" },
 ]);
 export type SetupStep = { label: string; code: string };
+export type SetupGuide = { note: string; steps: SetupStep[] };
 
 /**
  * The copyable steps for one client, with the workspace's own address and
  * (once one is made) the new token filled in. The desktop config starts the
- * bridge through `sh` so `$HOME` expands — a desktop app launches `node`
- * without a shell, and a literal `~` would not resolve.
+ * bridge through `sh` so `$HOME` expands: a desktop app launches `node`
+ * without a shell, and a literal `$HOME` or `~` in its arguments does not
+ * resolve.
  */
-export function setupSteps(client: ClientId, origin: string, token: string): SetupStep[] {
+export function setupGuide(client: ClientId, origin: string, token: string): SetupGuide {
   const key = token || TOKEN_PLACEHOLDER;
   const download = { label: "Download the bridge once", code: `curl -o ~/particl-mcp.mjs ${bridgeUrl(origin)}` };
   const check = { label: "Check it", code: `PARTICL_URL=${origin} PARTICL_TOKEN=${key} node ~/particl-mcp.mjs --check` };
   if (client === "claude-code")
-    return [download, { label: "Add it", code: `claude mcp add particl --env PARTICL_URL=${origin} --env PARTICL_TOKEN=${key} -- node ~/particl-mcp.mjs` }, check];
+    return {
+      note: "The bridge is one file with no dependencies; it needs Node 18 or later.",
+      steps: [download, { label: "Add it to Claude Code", code: `claude mcp add particl --env PARTICL_URL=${origin} --env PARTICL_TOKEN=${key} -- node ~/particl-mcp.mjs` }, check],
+    };
   if (client === "claude-desktop")
-    return [download, {
-      label: "Add to claude_desktop_config.json, then restart",
-      code: JSON.stringify({
-        mcpServers: {
-          particl: {
-            command: "sh",
-            args: ["-c", "exec node \"$HOME/particl-mcp.mjs\""],
-            env: { PARTICL_URL: origin, PARTICL_TOKEN: key },
+    return {
+      note: "Settings › Developer › Edit Config, add the server, then restart the app. macOS and Linux.",
+      steps: [download, {
+        label: "Add to claude_desktop_config.json",
+        code: JSON.stringify({
+          mcpServers: {
+            particl: {
+              command: "sh",
+              args: ["-c", "exec node \"$HOME/particl-mcp.mjs\""],
+              env: { PARTICL_URL: origin, PARTICL_TOKEN: key },
+            },
           },
-        },
-      }, null, 2),
-    }, check];
+        }, null, 2),
+      }, check],
+    };
   if (client === "chatgpt")
-    return [
-      { label: "GPT › Configure › Actions › Import from URL", code: openapiUrl(origin) },
-      { label: "Authentication › API key › Bearer", code: key },
-    ];
-  return [
-    { label: "Server URL (streamable HTTP)", code: mcpEndpoint(origin) },
-    { label: "Header", code: `Authorization: Bearer ${key}` },
-  ];
+    return {
+      note: "A custom GPT reaches Particl through its OpenAPI schema: Configure › Actions › Create new action. Where ChatGPT offers MCP connectors instead, use Any MCP client.",
+      steps: [
+        { label: "Import from URL", code: openapiUrl(origin) },
+        { label: "Authentication › API key › Bearer", code: key },
+      ],
+    };
+  if (client === "mcp")
+    return {
+      note: "Nothing to install: Particl is itself an MCP server over HTTP, for any client that can send a header.",
+      steps: [
+        { label: "Server URL", code: mcpEndpoint(origin) },
+        { label: "Header", code: `Authorization: Bearer ${key}` },
+      ],
+    };
+  return {
+    note: "The same bridge works by hand, for batching a shot list from a terminal.",
+    steps: [
+      { label: "Download it once and keep the two variables in your shell", code: `curl -o ~/particl-mcp.mjs ${bridgeUrl(origin)}\nexport PARTICL_URL=${origin}\nexport PARTICL_TOKEN=${key}` },
+      { label: "Then", code: "node ~/particl-mcp.mjs --check\nnode ~/particl-mcp.mjs projects\nnode ~/particl-mcp.mjs usage\nnode ~/particl-mcp.mjs render \"slow dolly through rain\" --wait\nnode ~/particl-mcp.mjs get <id> --save ./take.mp4" },
+    ],
+  };
 }
 
 /* ── Tokens ───────────────────────────────────────────────────────────── */
@@ -176,6 +240,9 @@ export type ApiToken = {
   capUsd?: number | null; spendThisMonth?: number;
 };
 export type TokenUnit = "credits" | "usd";
+
+/** What a new generating token's ceiling field starts at: a stop has to be removed on purpose. */
+export const DEFAULT_CEILING: Record<TokenUnit, string> = { credits: "500", usd: "20" };
 
 const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
 const usd = (n: number) => `$${n.toFixed(2)}`;
@@ -196,12 +263,12 @@ export function tokenFacts(token: ApiToken, unit: TokenUnit, now = Date.now()): 
     if (unit === "credits") {
       const spent = token.spendCredits ?? 0;
       if (token.capCredits != null) parts.push(`${cr(spent)} of ${cr(token.capCredits)} this month`);
-      else if (spent > 0) parts.push(`${cr(spent)} this month`);
-      if (token.legacyCeiling) parts.push("older ceiling applies");
+      else if (token.legacyCeiling) parts.push(`${cr(spent)} this month · ceiling set before credits`);
+      else parts.push(`${cr(spent)} this month · no ceiling`);
     } else {
       const spent = token.spendThisMonth ?? 0;
       if (token.capUsd != null) parts.push(`${usd(spent)} of ${usd(token.capUsd)} this month`);
-      else if (spent > 0) parts.push(`${usd(spent)} this month`);
+      else parts.push(`${usd(spent)} this month · no ceiling`);
     }
   }
   parts.push(token.lastUsed ? `used ${ago(token.lastUsed, now)}` : "never used");
@@ -221,12 +288,12 @@ export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken
   if (!value || typeof value !== "object") return null;
   const { tokens, unit } = value as { tokens?: unknown; unit?: unknown };
   if (!Array.isArray(tokens)) return null;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
   const out: ApiToken[] = [];
   for (const t of tokens) {
     if (!t || typeof t !== "object") return null;
     const r = t as Record<string, unknown>;
     if (typeof r.id !== "string" || typeof r.name !== "string") return null;
-    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     out.push({
       id: r.id, name: r.name, scope: r.scope === "read" ? "read" : "render",
       lastUsed: num(r.lastUsed), createdAt: num(r.createdAt) ?? 0,
@@ -237,15 +304,23 @@ export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken
   return { unit: unit === "credits" ? "credits" : "usd", tokens: out };
 }
 
-/** The ceiling field's value, or an error in the page's words. Blank is "no ceiling". */
-export function readCeiling(raw: string, unit: TokenUnit): { value: number | null } | { error: string } {
-  const text = raw.trim().replace(/,/g, "");
-  if (!text) return { value: null };
-  const n = Number(text);
+/**
+ * The ceiling field, read the way POST /api/tokens reads it (lib/tokenCeiling.ts).
+ * Blank is "no ceiling" and has to be said on purpose (`blank`), so the page
+ * can make the person confirm it rather than mint an unbounded token by
+ * leaving a field empty.
+ */
+export function readCeiling(raw: string, unit: TokenUnit): { value: number | null; blank: boolean } | { error: string } {
   if (unit === "credits") {
-    if (!Number.isInteger(n) || n < 1 || n > 1_000_000) return { error: "A ceiling is a whole number of credits." };
-    return { value: n };
+    const read = parseCreditCeiling(raw);
+    return "error" in read ? read : { value: read.capCredits, blank: read.capCredits == null };
   }
-  if (!Number.isFinite(n) || n <= 0) return { error: "A ceiling is an amount above zero." };
-  return { value: Math.round(n * 100) / 100 };
+  const read = parseCeiling(raw);
+  return "error" in read ? read : { value: read.capUsd, blank: read.capUsd == null };
+}
+
+/** The body a POST /api/tokens sends: the ceiling in the workspace's unit, and none on a read-only token. */
+export function tokenBody(name: string, scope: "read" | "render", unit: TokenUnit, ceiling: number | null) {
+  if (scope === "read" || ceiling == null) return { name, scope };
+  return unit === "credits" ? { name, scope, capCredits: ceiling } : { name, scope, capUsd: ceiling };
 }

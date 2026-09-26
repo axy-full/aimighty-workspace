@@ -1,5 +1,7 @@
 import { requireUser, withTenant } from "@/lib/auth";
+import { creditsApply } from "@/lib/credits";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
+import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -60,7 +62,7 @@ export const POST = withTenant(async function POST(req: Request) {
     const origin = new URL(req.url).origin;
     const call = makeCaller(origin, req.headers.get("authorization") ?? "");
     try {
-      const text = await runTool(name, args, call, origin);
+      const text = await runTool(name, args, call, origin, { credits: creditsApply(currentTenant()?.workspace) });
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,

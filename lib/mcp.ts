@@ -115,19 +115,30 @@ export const TOOLS: ToolDef[] = [
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
 
+const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
+
 type Gen = {
   id: string; status: string; prompt: string; title?: string | null; kind?: string;
   params?: Record<string, unknown>;
   costUsd?: number | null; refineCostUsd?: number | null;
+  /** A workspace that pays in credits is sent this, and never the engine's dollars (lib/jobs.ts). */
+  creditsBilled?: number | null;
   authorName?: string | null; error?: string | null;
 };
+
+/** What a take cost, in the unit the workspace pays in; null when the jobs API names no figure. */
+function costOf(g: Gen): string | null {
+  if (g.creditsBilled != null) return cr(g.creditsBilled);
+  if (g.costUsd != null) return usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0));
+  return null;
+}
 
 function describe(g: Gen): string {
   const p = (g.params ?? {}) as { resolution?: string; ratio?: string; duration?: number };
   const spec = [p.resolution, p.ratio, p.duration ? `${p.duration}s` : null].filter(Boolean).join(" · ");
-  const cost = g.costUsd == null ? "" : ` · ${usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0))}`;
+  const cost = costOf(g);
   const name = g.title ? `${g.title} · ` : "";
-  return `${name}${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost}\n  ${g.prompt}`;
+  return `${name}${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost ? ` · ${cost}` : ""}\n  ${g.prompt}`;
 }
 
 /** Calls the workspace's own API as the caller, so scopes and caps still apply. */
@@ -180,8 +191,12 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
   );
 }
 
+/**
+ * `credits`: the workspace pays in credits (lib/credits creditsApply), so
+ * spend is reported in credits and the engine's dollars are never named.
+ */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "render_shot": {
@@ -235,9 +250,10 @@ export async function runTool(
         const { generation } = (await call(`/api/jobs/${encodeURIComponent(String(args.id))}`)) as { generation: Gen };
         last = generation;
         if (generation.status === "succeeded") {
+          const cost = costOf(generation);
           return (
             `Done in ${Math.round((Date.now() - started) / 1000)}s.\n\n${describe(generation)}\n\n` +
-            `Cost ${usd((generation.costUsd ?? 0) + (generation.refineCostUsd ?? 0))}. ` +
+            (cost ? `Cost ${cost}. ` : "") +
             `Watch or download: ${origin}/api/media/${generation.id}`
           );
         }
@@ -280,11 +296,11 @@ export async function runTool(
 
     case "list_projects": {
       const { projects } = (await call("/api/projects")) as {
-        projects: { name: string; genCount: number; spend: number }[];
+        projects: { name: string; genCount: number; spend: number; credits?: number }[];
       };
       if (!projects.length) return "No projects yet.";
       return projects
-        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${usd(p.spend)}`)
+        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${options.credits ? cr(p.credits ?? 0) : usd(p.spend)}`)
         .join("\n");
     }
 

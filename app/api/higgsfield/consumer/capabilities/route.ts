@@ -7,6 +7,7 @@ import {
 } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
 import { discoverAtomikReach, discoverConsumerCapabilities } from "@/lib/higgsfield-consumer/discovery";
+import { VIDEO_ANALYSIS_ENABLED } from "@/lib/higgsfield-consumer/voice-tool-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,8 +18,9 @@ const headers = {
 };
 
 /** Owner review only: this endpoint never calls any discovered tool.
- * `{ "view": "reach" }` returns only Atomik's per-capability flags
- * (Atomik › Tools & connections) instead of the whole catalogue. */
+ * `{ "view": "reach" }` returns only a flag per capability row
+ * (Atomik › Tools & connections), never the catalogue itself: no tool names,
+ * descriptions or schemas. Both views share one allowance per owner. */
 export const POST = withTenant(
   async (req: Request) => {
     const owner = await requireOwner();
@@ -46,7 +48,7 @@ export const POST = withTenant(
         );
       return Response.json(
         reach
-          ? await discoverAtomikReach(token, req.signal)
+          ? await discoverAtomikReach(token, { signal: req.signal, off: VIDEO_ANALYSIS_ENABLED ? [] : ["analysis"] })
           : await discoverConsumerCapabilities(token, req.signal),
         { headers },
       );

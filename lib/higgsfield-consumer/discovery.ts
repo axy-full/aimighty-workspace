@@ -1,5 +1,5 @@
 import { discoverConsumerTools, type DiscoveredConsumerTool } from "./mcp";
-import { CONNECTED_REACH, reachFromTools } from "./reach";
+import { CONNECTED_REACH, reachFromTools, type ConnectedReachId } from "./reach";
 
 /** Lexical hints help inspect a catalogue; they do not verify usable features. */
 export function summarizeConsumerTools(tools: DiscoveredConsumerTool[]) {
@@ -43,19 +43,19 @@ export async function discoverConsumerCapabilities(
 
 /**
  * Atomik › Tools & connections: the same free tools/list read, reduced to one
- * available/missing flag per capability row. Tool names, descriptions and
- * schemas stay on the server; only ids, flags and counts are returned.
+ * flag per capability row. Tool names, descriptions and schemas stay on the
+ * server; only row ids, flags and counts are returned. `off` names rows the
+ * platform has switched off, which read as off whatever the account offers.
  */
 export async function discoverAtomikReach(
   accessToken: string,
-  signal?: AbortSignal,
-  now = Date.now(),
+  options: { signal?: AbortSignal; off?: readonly ConnectedReachId[]; now?: number } = {},
 ) {
-  const catalogue = await discoverConsumerTools(accessToken, { signal });
-  const reach = reachFromTools(catalogue.tools.map((tool) => tool.name));
+  const catalogue = await discoverConsumerTools(accessToken, { signal: options.signal });
+  const reach = reachFromTools(catalogue.tools.map((tool) => tool.name), { off: options.off });
   return {
     status: "checked" as const,
-    checkedAt: now,
+    checkedAt: options.now ?? Date.now(),
     reach,
     available: reach.filter((row) => row.available).length,
     total: CONNECTED_REACH.length,

@@ -71,3 +71,21 @@ test("a render names its project exactly; a partial name is never guessed for a 
   expect(read.calls.find((c) => c.path.startsWith("/api/jobs?"))?.path).toContain("projectId=p1");
   await expect(runTool("list_renders", { project: "monsoon" }, read.call as never, "")).rejects.toThrow("Did you mean");
 });
+
+test("costs reach the assistant in the unit the workspace pays in, and a missing figure is not read as $0.00", async () => {
+  const credits = { id: "g1", status: "succeeded", prompt: "p", costUsd: null, refineCostUsd: null, creditsBilled: 43 };
+  const jobs = (generation: Record<string, unknown>) => caller([], (path) => (path.startsWith("/api/jobs/") ? { generation } : undefined)).call;
+  const waited = await runTool("wait_for_render", { id: "g1" }, jobs(credits) as never, "https://example.invalid", { credits: true });
+  expect(waited).toContain("Cost 43 cr.");
+  expect(waited).not.toContain("$");
+  expect(await runTool("get_render", { id: "g1" }, jobs(credits) as never, "")).toContain("· 43 cr");
+  /* A connected take quoted in the account's own credits carries neither figure: no cost line at all. */
+  expect(await runTool("wait_for_render", { id: "g1" }, jobs({ ...credits, creditsBilled: null }) as never, "")).not.toContain("Cost");
+  expect(await runTool("wait_for_render", { id: "g1" }, jobs({ ...credits, costUsd: 1.25, creditsBilled: null }) as never, "")).toContain("Cost $1.25.");
+
+  const projects = [{ id: "p1", name: "Coastal light study", genCount: 2, spend: 3.1, credits: 90 }];
+  const listed = caller(projects as never);
+  expect(await runTool("list_projects", {}, listed.call as never, "", { credits: true })).toBe("Coastal light study — 2 renders · 90 cr");
+  expect(await runTool("list_projects", {}, listed.call as never, "")).toBe("Coastal light study — 2 renders · $3.10");
+  expect(readFileSync("app/api/mcp/route.ts", "utf8")).toContain("{ credits: creditsApply(currentTenant()?.workspace) }");
+});
