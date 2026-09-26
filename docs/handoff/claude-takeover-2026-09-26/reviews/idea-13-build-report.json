@@ -1,0 +1,95 @@
+{
+ "idea": 13,
+ "branch": "feat/hf-film-vocabulary",
+ "commits": [
+  "4add5990 Gen's film vocabulary: six Auto chips, a grid of loops, # in the words",
+  "95146923 Admission spec: Gen's shot setup through the route and its fingerprint",
+  "39c315e4 Gen's film vocabulary: the Recreate card says when the setup moved, and why"
+ ],
+ "built": "A cut-off earlier attempt had already built and committed most of this idea (4add5990, 95146923). I reviewed that work, kept it, and finished and committed the uncommitted part (39c315e4). End to end, the feature is:\n\n- **Six chips under Gen's Direction box:** Shot \u00b7 Angle \u00b7 Camera \u00b7 Lens \u00b7 Light \u00b7 Look. Each is Auto until picked. A still gets five chips with no Camera, and sound gets none. They sit in a 3-column grid; on phones each chip is at least 48px tall.\n- **Each chip opens a grid of the camera bank** (lib/studio.ts CATEGORIES), with Auto first.\n  - Every entry shows its label and its other name (aka).\n  - Moves and techniques show Particl's own neutral loop from GET /api/platform/previews. The loop is muted, loops, preload=\"none\", plays only while in view (or only on hover/focus when reduced motion is on), and appears on its first frame. Only URLs under /api/platform/previews/ are accepted.\n  - Entries the bank has no loop for get a drawing of what they do: framing figures, camera position, lens field, the light on a sphere, a colour look, or a move arrow.\n- **Grid states:**\n  - Loading: tiles pulse while the loop list is read. It is read once, when Camera first opens.\n  - Error: \"Loops unavailable \u00b7 Try again\", and every tile can still be picked through its drawing.\n  - Search on Camera (36 moves), with an empty result \"Nothing matches \u2026 \u00b7 Clear search\".\n  - Arrow, Home and End keys move through the grid; Escape and the veil close it and focus goes back to the chip.\n  - On phones it is a bottom sheet with at least 44px targets.\n- **`#` in the Direction box** opens a typeahead of the bank: camera moves first for video, shot sizes first for a still. Arrows move, Enter/Tab or a click picks, Escape closes. A pick sets its chip and removes the `#word` from the text. With no match it shows \"Nothing called #x\". On phones it is one sideways-scrolling row of pills and the sticky Generate band steps aside while it is open.\n- **Generate:** the setup is written into the words once, the way lib/studio.ts composePrompt does it, and sent as `shotSpec`. The quote key uses these composed words, so the price is re-quoted whenever a chip changes. The box keeps the person's own words.\n- **Server:** admission (lib/generationAdmission.ts, `shotSpecOf`) now keeps `shotSpec` on stills as well as clips.\n- **Recreate:** a take's setup goes back onto the chips and its written setup is taken back out of the words. Rows no chip shows (time of day, mood, pace) appear as removable pills. The old \"Add to prompt\" row is gone (lib/shell/recipe-setup.ts folded into lib/workspace/film-vocabulary.ts).\n- **New in this session:**\n  - The Recreate card's setup row stays \"kept\" only while the chips hold exactly the take's setup for the current output. Otherwise it is marked changed with a note, like the card's other rows: \"Setup \u00b7 Changed here\", or \"Setup \u00b7 A still has no camera move\" when Gen switched to Images and only the camera move was dropped. This is `recipeSetup` in lib/workspace/film-vocabulary.ts.\n  - Fixed a phone bug: the grids without a search (Shot, Angle, Lens, Light, Look) opened about 250px wide and centred instead of edge to edge, because the veil's grid column was sized by the sheet's content. The fix is `.gx-veil:has(> .gx-sheet--vocab) { grid-template-columns: minmax(0, 1fr) }`, and the browser spec now checks every grid's width on phones.\n  - Updated the docs/handoff/status.md row for this feature.\n\n**Audit-owned file:** lib/workspace/use-composer.ts is edited, minimally, in the earlier commit 4add5990. The quote key, the request's words and the /api/generate body now use the composed words, and the body carries `shotSpec`. The idea cannot work without this. No other audit-owned file is touched.",
+ "files": [
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/lib/workspace/film-vocabulary.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/components/graphite/FilmVocabulary.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/components/graphite/GenView.tsx",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/app/graphite.css",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/lib/workspace/composer.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/lib/workspace/use-composer.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/lib/workbench/generation-request.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/lib/generationAdmission.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/lib/shell/recipe-setup.ts (removed, folded into film-vocabulary.ts)",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/docs/handoff/status.md",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/tests/hf-film-vocabulary-workbench.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/tests/unit/filmVocabulary.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/tests/unit/generationAdmission.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/tests/unit/hfRecreateRecipe.spec.ts",
+  "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-gen/tests/hf-recreate-recipe-workbench.spec.ts"
+ ],
+ "deferred": [
+  {
+   "what": "Keeping the setup as data on a take made on the connected account (Higgsfield catalogue billing)",
+   "reason": "That path's input contract (lib/higgsfield-consumer/generation-contract, a strict zod schema) has no field for it, and the account stores no shotSpec. Those takes get the setup written into their words, so nothing is lost for the engine, but Recreating one puts the full composed words back in the box with every chip on Auto. Adding the field means changing the connected account's contract, which is a separate change."
+  },
+  {
+   "what": "Loops for Shot, Angle, Lens, Light and Look",
+   "reason": "The platform's preview bank (lib/previews.ts, rendered from the admin console) makes loops only for camera moves and techniques. Those five chips show drawings instead. Making more loops would need paid renders, and none were triggered."
+  },
+  {
+   "what": "Seeing real preview loops in development",
+   "reason": "The dev database has no published previews, so with ENGINE_MOCK every tile shows its drawing. The specs serve one loop (Push in) from the repo's fixture clip to exercise the loop path. No render was run to publish real ones."
+  }
+ ],
+ "tests": [
+  {
+   "command": "npx tsc --noEmit -p .",
+   "result": "pass (no errors)"
+  },
+  {
+   "command": "npx eslint components/graphite/FilmVocabulary.tsx components/graphite/GenView.tsx lib/workspace/film-vocabulary.ts lib/workspace/composer.ts lib/workspace/use-composer.ts lib/generationAdmission.ts lib/workbench/generation-request.ts tests/hf-film-vocabulary-workbench.spec.ts tests/unit/filmVocabulary.spec.ts tests/unit/generationAdmission.spec.ts tests/unit/hfRecreateRecipe.spec.ts tests/hf-recreate-recipe-workbench.spec.ts",
+   "result": "pass (exit 0)"
+  },
+  {
+   "command": "PW_BASE_URL=http://localhost:1 npx playwright test --config=playwright.config.ts --project=unit tests/unit/filmVocabulary.spec.ts tests/unit/generationAdmission.spec.ts tests/unit/hfRecreateRecipe.spec.ts --output /private/tmp/particl-suites/hf-gen/pw-unit-fv1",
+   "result": "36 passed"
+  },
+  {
+   "command": "PW_BASE_URL=http://localhost:1 npx playwright test --config=playwright.config.ts --project=unit tests/unit/ --output /private/tmp/particl-suites/hf-gen/pw-unit-all-fv",
+   "result": "2007 passed, 3 skipped (the bundle specs skipped by design)"
+  },
+  {
+   "command": "FILM_SHOTS=/private/tmp/particl-suites/hf-gen/shots PW_CHANNEL=chrome PW_BASE_URL=http://localhost:4841 PW_PLATFORM_DATABASE_URL=file:/private/tmp/particl-suites/hf-gen/platform.db npx playwright test --config=playwright.workbench.config.ts tests/hf-film-vocabulary-workbench.spec.ts --output /private/tmp/particl-suites/hf-gen/pw-fv2",
+   "result": "11 passed, 9 skipped by design. The main flow runs at all five viewports (360x640, 390x844, 844x390, 1440x900, 1920x1080); Recreate, error/Escape/still/audio and every-grid/keyboard each run on one phone and one desktop."
+  },
+  {
+   "command": "PW_CHANNEL=chrome PW_BASE_URL=http://localhost:4841 PW_PLATFORM_DATABASE_URL=file:/private/tmp/particl-suites/hf-gen/platform.db npx playwright test --config=playwright.workbench.config.ts tests/suites-gen-workbench.spec.ts tests/suites-gen-catalogue-workbench.spec.ts tests/hf-recreate-recipe-workbench.spec.ts tests/hf-model-picker-workbench.spec.ts tests/workspace-generate-composer-workbench.spec.ts tests/suites-prompt-attach-workbench.spec.ts --output /private/tmp/particl-suites/hf-gen/pw-gen-related",
+   "result": "121 passed, 94 skipped by design"
+  },
+  {
+   "command": "PW_CHANNEL=chrome PW_BASE_URL=http://localhost:4841 PW_PLATFORM_DATABASE_URL=file:/private/tmp/particl-suites/hf-gen/platform.db npx playwright test --config=playwright.workbench.config.ts tests/suites-glass-mobile-workbench.spec.ts tests/suites-assets-workbench.spec.ts tests/suites-workflows-workbench.spec.ts tests/suites-glass-workbench.spec.ts tests/suites-flair-workbench.spec.ts --output /private/tmp/particl-suites/hf-gen/pw-gen-related2",
+   "result": "41 passed, 19 skipped by design"
+  }
+ ],
+ "pr_title": "Gen: film vocabulary chips with loops, # typeahead, Recreate",
+ "pr_body": "**Before:** Gen's Direction box was a bare textarea. The camera bank (shot size, angle, camera moves, lens, light, look) and the platform's neutral preview loops were only reachable from the legacy composer. A recreated take's setup came back only as words to add by hand.\n\n**Now:**\n- Under Direction there are six chips: Shot \u00b7 Angle \u00b7 Camera \u00b7 Lens \u00b7 Light \u00b7 Look. Each is Auto until picked. A still has no Camera chip and sound has no chips.\n- A chip opens a grid of the bank. Each entry shows its name and other name, plus either Particl's own neutral loop or a drawing of what it does where no loop exists. Loops are muted, preload none, and play only while in view (only on hover with reduced motion). Camera has search.\n- The grid handles loading, error with Try again, no search results, and keyboard use. On phones it is an edge-to-edge bottom sheet with 44px targets.\n- Typing `#` in the words opens the bank as a typeahead. A pick sets its chip and removes the `#word`.\n- Generate writes the setup into the words once, the bank's way, and sends it as `shotSpec`. Admission now keeps it on stills too. The price is re-quoted when a chip changes.\n- Recreate puts a take's setup back on the chips and takes it out of the words. The card marks the setup as changed, with the reason, once the chips no longer hold it.\n\n**Testing:**\n- Unit specs for the vocabulary logic (compose, un-compose, typeahead matching, still vs video rows, Recreate state) and for admission.\n- Browser spec `tests/hf-film-vocabulary-workbench.spec.ts`: the main flow at all five viewports; Recreate and the error, keyboard and still cases on one phone and one desktop.\n- The existing Gen, Recreate, model-picker, composer, glass and flair specs, the full unit suite, tsc and eslint all pass.\n- Nothing was submitted: every paid route fails the test, and the one Generate press stops at the price check.\n\n**Not in this change:** takes made on the connected account keep the setup only in their words, because that contract has no field for it.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+ "screenshots": [
+  "/private/tmp/particl-suites/hf-gen/shots/film-chips-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-chips-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-camera-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-camera-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-hash-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-hash-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-recreate-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-recreate-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-shot-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-shot-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-angle-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-angle-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-camera-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-camera-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-lens-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-lens-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-light-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-light-390x844.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-look-1440x900.png",
+  "/private/tmp/particl-suites/hf-gen/shots/film-grid-look-390x844.png"
+ ]
+}

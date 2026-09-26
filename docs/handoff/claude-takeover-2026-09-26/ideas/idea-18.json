@@ -1,0 +1,19 @@
+{
+ "n": 18,
+ "title": "Confirmations say exactly what happened and link to it",
+ "area": "Copy / trust",
+ "gap": "Several toasts describe something that did not happen. Crew 'Add to Boards' writes a Rig scene node (app/api/crew/solutions/[id]/route/route.ts) but toasts 'A draft frame is on Boards' and opens Storyboards, where the node never appears (CrewView.tsx:73). 'Open in Gen' says 'paste it as the prompt' although Gen pre-fills it (CrewView.tsx:78). Business and Viral say 'It is in Takes and in Library' without refreshing the library. Cast's toast counts proposals, not the entries actually added (CastStage.tsx:105). Retry claims 'same inputs'. Held takes read 'Held for approval'.",
+ "target": "Each toast names what was actually done and carries an 'Open' action to where the result really is. Crew either writes a real Storyboards frame or says 'Added to Rig' and opens Rig. Counts come from actual results. Add a unit test that checks each toast's destination matches the page it opens.",
+ "files": [
+  "components/graphite/crew/CrewView.tsx",
+  "app/api/crew/solutions/[id]/route/route.ts",
+  "components/graphite/business/BusinessView.tsx",
+  "components/graphite/viral/ViralView.tsx",
+  "components/graphite/production/CastStage.tsx",
+  "lib/shell/assets.ts",
+  "lib/workspace/rig.ts"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "Copy and routing only."
+}
