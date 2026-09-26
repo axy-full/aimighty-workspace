@@ -77,6 +77,30 @@ export function fitView(boxes: readonly Box[], surface: { w: number; h: number }
   };
 }
 
+/** The board's floor where the pane has room for it (#343). */
+export const BOARD_FLOOR = 420;
+/** Never less than one row of takes at 100% with the zoom controls under them. */
+export const BOARD_MIN = 240;
+/** The gap kept under the board. */
+export const BOARD_GAP = 12;
+
+/**
+ * The board's height in its scroll pane (every figure in viewport pixels;
+ * `boardTop` is where the board starts with the pane scrolled to the top). It
+ * fills what is left of the pane below it, never under BOARD_FLOOR, and never
+ * taller than the pane shows at once above whatever floats over its bottom —
+ * a phone's tab bar, which the pane keeps clear as bottom padding — so
+ * scrolled to, the whole board and its zoom controls are on screen. Where the
+ * pane shows less than BOARD_MIN (the smallest phones, a phone on its side)
+ * the board keeps BOARD_MIN and the pane scrolls to its controls.
+ */
+export function boardHeight(pane: { top: number; bottom: number; padBottom: number }, boardTop: number, viewportHeight: number): number {
+  const clear = Math.min(pane.bottom, viewportHeight) - pane.padBottom - BOARD_GAP;
+  const band = clear - Math.max(0, pane.top);
+  const below = clear - boardTop;
+  return Math.round(Math.max(BOARD_MIN, Math.min(band, Math.max(below, BOARD_FLOOR))));
+}
+
 /** Pinch: two pointers' distance and midpoint. */
 export const distance = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);
 export const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
