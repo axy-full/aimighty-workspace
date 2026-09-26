@@ -554,9 +554,10 @@ test("verified provider failure releases active capacity, no result or refund cl
   fixture(async (f) => {
     const job = await accepted(f);
     f.state.pollRaw = await terminal(f, job.id, "canceled");
-    expect(
-      (await f.service.pollConsumerGenjutsu(scoped(job.id))).job.status,
-    ).toBe("failed");
+    const failed = (await f.service.pollConsumerGenjutsu(scoped(job.id))).job;
+    expect(failed.status).toBe("failed");
+    /* The run says why it failed, so History never claims "not billed" for a result the account finished. */
+    expect(failed.failureCode).toBe("provider_failed");
     expect(f.state.collectCount).toBe(0);
     expect(f.state.paidCount).toBe(1);
     expect(
@@ -578,4 +579,47 @@ test("reconnect before media transfer creates no permanent import claim or paid 
     expect(f.state.importClaims).toBe(0);
     expect(f.state.paidCount).toBe(0);
     expect((await f.jobs.listConsumerJobs(identity)).items).toHaveLength(0);
+  }));
+
+test("History lists runs, never estimates: quotes stay in the ledger and pages carry a cursor", async () =>
+  fixture(async (f) => {
+    const run = await accepted(f);
+    /* Every change of the composer prices again; none of these ran. */
+    for (let i = 0; i < 3; i++)
+      await f.service.quoteConsumerGenjutsu(
+        identity.userId,
+        identity.draftId,
+        { ...prompt, prompt: `Estimate ${i}` },
+        randomUUID(),
+      );
+    const listed = await f.service.consumerGenjutsuRuns(
+      identity.userId,
+      identity.draftId,
+    );
+    expect(listed.jobs.map((job) => [job.id, job.status])).toEqual([
+      [run.id, "accepted"],
+    ]);
+    expect(listed.nextCursor).toBeNull();
+    /* Recent beside one page lists that page's variant only. */
+    expect(
+      (await f.service.consumerGenjutsuRuns(identity.userId, identity.draftId, null, "motion-transfer")).jobs.map((job) => job.id),
+    ).toEqual([run.id]);
+    expect(
+      (await f.service.consumerGenjutsuRuns(identity.userId, identity.draftId, null, "object-swap")).jobs,
+    ).toEqual([]);
+    /* Each copy carries when it last changed, so the browser keeps the fresher one. */
+    expect(listed.jobs[0].updatedAt).toEqual(expect.any(Number));
+    /* Nothing was deleted: the four quotes are all still in the ledger, and
+       the saved-jobs list the quote-driven surfaces read still carries them. */
+    expect((await f.jobs.listConsumerJobs(identity)).items).toHaveLength(4);
+    expect(
+      await f.service.consumerGenjutsuJobs(identity.userId, identity.draftId),
+    ).toHaveLength(4);
+    await expect(
+      f.service.consumerGenjutsuRuns(identity.userId, identity.draftId, "not-a-cursor"),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(
+      (await f.service.consumerGenjutsuRuns("another-owner", identity.draftId)).jobs,
+    ).toEqual([]);
+    expect(f.state.paidCount).toBe(1);
   }));
