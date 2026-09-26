@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { eachLine, grouped, isTakeCell, nounFor, optionLabel, sortOptions, takeSettings, type PricedTake, type RateGroup, type ReachKind } from "@/lib/mediaReach";
+import { eachLine, grouped, isTakeCell, nounFor, optionLabel, sortOptions, spokenSettings, takeSettings, type PricedTake, type RateGroup, type ReachKind } from "@/lib/mediaReach";
 import "./media-reach.css";
 
 /**
@@ -33,8 +33,10 @@ export function ReachTile({ kind, count, take, suffix, testId }: {
   if (count == null || !take) return null;
   const noun = `${nounFor(kind, count)}${suffix ? ` ${suffix}` : ""}`;
   const settings = `${takeSettings(take)} · ${eachLine(take)}`;
+  /* Read out as one sentence; the figure, noun and settings below are its picture. */
   return (
-    <div className="mr-tile" role="group" data-kind={kind} data-testid={testId} aria-label={`${count > 0 ? "About " : ""}${grouped(count)} ${noun}: ${settings}`}>
+    <div className="mr-tile" data-kind={kind} data-testid={testId}>
+      <span className="mr-sr">{`${count > 0 ? "About " : ""}${grouped(count)} ${noun}: ${spokenSettings(take)}`}</span>
       <span className="mr-tile-head" aria-hidden="true"><KindMark kind={kind} /><span className="mr-num">{count > 0 ? <>≈&nbsp;</> : null}{grouped(count)}</span></span>
       <span className="mr-noun" aria-hidden="true">{noun}</span>
       <span className="mr-set" aria-hidden="true">{settings}</span>
@@ -95,9 +97,10 @@ export function RateCard({ groups, reference, legend, testId }: {
     const columns = sortOptions([...new Set(group.rows.flatMap((r) => r.cells.map((c) => c.option)))]);
     const take = takeOf(group);
     const per = group.kind === "video" ? `cr per ${group.seconds ?? 5} s` : "cr per image";
+    const perSaid = group.kind === "video" ? `credits per ${group.seconds ?? 5} seconds` : "credits per image";
     const title = GROUP_TITLE[group.axis] ?? (group.kind === "video" ? "Video" : "Images");
     return (
-      <section key={`${group.kind}-${group.axis}`} className="mr-group" role="table" data-kind={group.kind} data-axis={group.axis} aria-label={`${title}, ${per}`} style={{ ["--mr-cols" as string]: String(columns.length), ["--mr-narrow-cols" as string]: String(Math.min(columns.length, 4)) }}>
+      <section key={`${group.kind}-${group.axis}`} className="mr-group" role="table" data-kind={group.kind} data-axis={group.axis} aria-label={`${title}, ${perSaid}`} style={{ ["--mr-cols" as string]: String(columns.length), ["--mr-narrow-cols" as string]: String(Math.min(columns.length, 4)) }}>
         <div className="mr-group-head" role="row">
           <span className="mr-group-label" role="columnheader">
             <span className="mr-group-title"><KindMark kind={group.kind} />{title}</span>

@@ -7,7 +7,7 @@ import { MODELS } from '../../lib/models';
 import { DEFAULT_PLANS } from '../../lib/plans';
 import { DEFAULT_MODELS } from '../../lib/platformLayer';
 import { quoteWorkbenchMedia } from '../../lib/workbench/media-quote';
-import { byQuality, eachLine, isTakeCell, leftFrom, optionLabel, reachFor, sortOptions, takeSettings, takesWithin } from '../../lib/mediaReach';
+import { byQuality, eachLine, isTakeCell, leftFrom, optionLabel, reachFor, sortOptions, spokenSettings, takeSettings, takesWithin } from '../../lib/mediaReach';
 import { paidFromBalance, plansWithReach, rateCard, referenceTakes, reachEngines, usualTakes, workspaceReach, RATE_CARD_SECONDS, USUAL_WINDOW } from '../../lib/workbench/media-reach';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { db, ready } from '../../lib/db';
@@ -72,6 +72,8 @@ test('the arithmetic: whole takes, rounded down, unknowns stay unknown', () => {
   expect(takeSettings({ label: 'Kling 3.0', resolution: '1080p', durationS: 5, audio: true })).toBe('Kling 3.0 · 1080p · 5 s · sound');
   expect(takeSettings({ label: 'Nano Banana Pro', resolution: '1K', durationS: null, audio: false })).toBe('Nano Banana Pro · 1K');
   expect(eachLine({ credits: 1300 })).toBe('1,300 cr each');
+  expect(spokenSettings({ label: 'Kling 3.0', resolution: '1080p', durationS: 5, audio: true, credits: 10 })).toBe('Kling 3.0, 1080p, 5 seconds, with sound, 10 credits each');
+  expect(spokenSettings({ label: 'GPT Image 1 Mini', resolution: 'Low', durationS: null, audio: false, credits: 1 })).toBe('GPT Image 1 Mini, Low, 1 credit each');
   /* The count follows the balance the page shows; the server's count is only the fallback. */
   expect(leftFrom(1257, { credits: 18, left: 72 })).toBe(69);
   expect(leftFrom(null, { credits: 18, left: 72 })).toBe(72);

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route, type TestInfo } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route, type TestInfo } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -30,7 +30,16 @@ const GPT_IMAGE = "gpt-image-2.5-flare";
 
 const n = (v: number) => v.toLocaleString("en-US");
 const option = (o: string) => (/^\d+k$/i.test(o) ? o.toUpperCase() : /^\d+$/.test(o) ? `${o} px` : o);
+const spoken = (t: Take) => [t.label, option(t.resolution), t.durationS ? `${t.durationS} seconds` : null, t.audio ? "with sound" : null, `${n(t.credits)} ${t.credits === 1 ? "credit" : "credits"} each`].filter(Boolean).join(", ");
 const settings = (t: Take) => [t.label, option(t.resolution), t.durationS ? `${t.durationS} s` : null, t.audio ? "sound" : null].filter(Boolean).join(" · ") + ` · ${n(t.credits)} cr each`;
+
+/** A tile as it reads on screen, and the one sentence a screen reader hears for it. */
+async function expectTile(tile: Locator, count: number, noun: string, t: Take) {
+  await expect(tile.locator(".mr-num")).toHaveText(count > 0 ? `≈\u00a0${n(count)}` : n(count));
+  await expect(tile.locator(".mr-noun")).toHaveText(noun);
+  await expect(tile.locator(".mr-set")).toHaveText(settings(t));
+  await expect(tile.locator(".mr-sr")).toHaveText(`${count > 0 ? "About " : ""}${n(count)} ${noun}: ${spoken(t)}`);
+}
 
 async function shot(page: Page, info: TestInfo, name: string) {
   if (!SHOTS) return;
@@ -146,10 +155,11 @@ test("Pricing: every plan says what a month of its credits makes, at the Generat
     const videos = Math.floor(plan.includedCredits / video.credits), images = Math.floor(plan.includedCredits / image.credits);
     expect(plan.reach).toEqual({ videos, images });
     await expect(reach.locator(".mr-tile")).toHaveCount(2);
-    await expect(reach.locator(".mr-tile").first()).toHaveText(`≈ ${n(videos)}videos a month${settings(video)}`);
-    await expect(reach.locator(".mr-tile").nth(1)).toHaveText(`≈ ${n(images)}images a month${settings(image)}`);
+    await expectTile(reach.locator(".mr-tile").first(), videos, "videos a month", video);
+    await expectTile(reach.locator(".mr-tile").nth(1), images, "images a month", image);
+    /* Alternatives, never a sum — and said so aloud too. */
     await expect(reach.locator(".mr-or")).toHaveText("or");
-    await expect(reach.getByRole("group").first()).toHaveAttribute("aria-label", `About ${n(videos)} videos a month: ${settings(video)}`);
+    await expect(reach.locator(".mr-or")).not.toHaveAttribute("aria-hidden", "true");
   }
 
   /* The rate card: every engine's price per take, the cells plans are counted at outlined. */
@@ -229,8 +239,8 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   await page.goto("/suites?view=workspace&tab=credits");
   await expect(page.getByTestId("workspace-balance")).toBeVisible();
   const tiles = page.getByTestId("workspace-reach");
-  await expect(page.getByTestId("workspace-reach-video")).toHaveText(`≈ ${n(video.left)}videos left at your usual settings${settings(video)}`);
-  await expect(page.getByTestId("workspace-reach-image")).toHaveText(`≈ ${n(image.left)}images left at your usual settings${settings(image)}`);
+  await expectTile(page.getByTestId("workspace-reach-video"), video.left, "videos left at your usual settings", video);
+  await expectTile(page.getByTestId("workspace-reach-image"), image.left, "images left at your usual settings", image);
   await expect(tiles.locator(".mr-or")).toHaveText("or");
   await expect(page.getByTestId("workspace-reach-loading")).toHaveCount(0);
 
@@ -241,8 +251,8 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   const balance = billing.credits.balance + 540;
   await page.evaluate(() => window.dispatchEvent(new Event("particl-account-refresh")));
   await expect(page.getByTestId("workspace-balance")).toContainText(n(balance));
-  await expect(page.getByTestId("workspace-reach-video")).toContainText(`≈\u00a0${n(Math.floor(balance / video.credits))}videos left`);
-  await expect(page.getByTestId("workspace-reach-image")).toContainText(`≈\u00a0${n(Math.floor(balance / image.credits))}images left`);
+  await expectTile(page.getByTestId("workspace-reach-video"), Math.floor(balance / video.credits), "videos left at your usual settings", video);
+  await expectTile(page.getByTestId("workspace-reach-image"), Math.floor(balance / image.credits), "images left at your usual settings", image);
   expect(billingReads).toBe(0);
 
   /* The rate card folds under the balance; the cells the balance is counted at are outlined. */
@@ -273,8 +283,8 @@ test("A workspace that has made nothing yet is counted at its default engines, a
   expect(video).toMatchObject({ basis: "default", resolution: "720p", durationS: 5 });
   expect(image.basis).toBe("default");
   await page.goto("/suites?view=workspace&tab=credits");
-  await expect(page.getByTestId("workspace-reach-video")).toHaveText(`≈ ${n(video.left)}videos left at the default settings${settings(video)}`);
-  await expect(page.getByTestId("workspace-reach-image")).toHaveText(`≈ ${n(image.left)}images left at the default settings${settings(image)}`);
+  await expectTile(page.getByTestId("workspace-reach-video"), video.left, "videos left at the default settings", video);
+  await expectTile(page.getByTestId("workspace-reach-image"), image.left, "images left at the default settings", image);
   await shot(page, info, "workspace-default");
 });
 
@@ -286,9 +296,9 @@ test("Billing: the balance and each plan read as takes too", async ({ page }, in
   const plans = (await (await page.request.get("/api/plans")).json()) as Plans;
   await page.goto("/billing");
   const balance = page.getByTestId("billing-balance-reach");
-  await expect(balance.locator(".mr-tile").first()).toHaveText(`≈ ${n(billing.reach!.video!.left)}videos left at the default settings${settings(billing.reach!.video!)}`);
+  await expectTile(balance.locator(".mr-tile").first(), billing.reach!.video!.left, "videos left at the default settings", billing.reach!.video!);
   const agency = plans.plans.find((p) => p.id === "agency")!;
-  await expect(page.getByTestId("billing-plan-reach-agency").locator(".mr-tile").first()).toContainText(`≈ ${n(agency.reach!.videos!)}videos a month`);
+  await expectTile(page.getByTestId("billing-plan-reach-agency").locator(".mr-tile").first(), agency.reach!.videos!, "videos a month", plans.reference!.video!);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no horizontal overflow").toBe(true);
   await floors(page, '[data-testid="billing-balance-reach"], [data-testid^="billing-plan-reach-"]');
   await shot(page, info, "billing");
@@ -332,8 +342,8 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
     return route.fulfill({ json: { ...json, credits: { ...json.credits, balance: huge }, reach: { video: { ...real.reach!.video!, label: "Seedance 2.5 Cinematic Extended Preview" }, image: real.reach!.image } } });
   });
   await page.reload();
-  await expect(page.getByTestId("workspace-reach-video")).toContainText(`≈\u00a0${n(Math.floor(huge / real.reach!.video!.credits))}`);
-  await expect(page.getByTestId("workspace-reach-image")).toContainText(`≈\u00a0${n(Math.floor(huge / real.reach!.image!.credits))}`);
+  await expect(page.getByTestId("workspace-reach-video").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.video!.credits))}`);
+  await expect(page.getByTestId("workspace-reach-image").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.image!.credits))}`);
   await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
   await shot(page, info, "workspace-long");
   await page.unroute("**/api/me");

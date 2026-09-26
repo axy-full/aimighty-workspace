@@ -112,5 +112,12 @@ export function takeSettings(take: Pick<PricedTake, "label" | "resolution" | "du
 /** "18 cr each" — what one take at those settings is charged. */
 export const eachLine = (take: Pick<PricedTake, "credits">) => `${grouped(take.credits)} cr each`;
 
+/** The same settings as a screen reader should say them: "Seedance 2.5, 720p, 5 seconds, 18 credits each". */
+export function spokenSettings(take: Pick<PricedTake, "label" | "resolution" | "durationS" | "audio" | "credits">): string {
+  return [take.label, optionLabel(take.resolution), take.durationS ? `${take.durationS} seconds` : null, take.audio ? "with sound" : null, `${grouped(take.credits)} ${take.credits === 1 ? "credit" : "credits"} each`]
+    .filter(Boolean)
+    .join(", ");
+}
+
 /** "video" / "videos", "image" / "images". */
 export const nounFor = (kind: ReachKind, n: number | null) => (kind === "video" ? (n === 1 ? "video" : "videos") : n === 1 ? "image" : "images");
