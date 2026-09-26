@@ -2,6 +2,8 @@ import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
+import { XaiHttpError } from "./xaiErrors";
+import { preflight } from "./preflight";
 
 /**
  * xAI's Grok voice (owner, 23 September: Grok APIs wherever possible), on the
@@ -67,13 +69,15 @@ export async function grokSpeech(opts: { text: string; voiceId: string; language
   if (engineMock()) return { bytes: await fixtureBytes("tone.mp3"), mime: "audio/mpeg", costUsd: grokSpeechUsd(text) };
   const body: Record<string, unknown> = { text, voice_id: opts.voiceId, language: opts.language || "auto" };
   if (opts.speed != null && Number.isFinite(opts.speed)) body.speed = Math.max(0.7, Math.min(1.5, opts.speed));
+  /* No key is a line never sent (a PreflightError); a refusal xAI sends back is an XaiHttpError. */
+  const auth = await preflight(key);
   const res = await recoveryFetch(`${BASE()}/tts`, {
-    method: "POST", headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+    method: "POST", headers: { Authorization: `Bearer ${auth}`, "Content-Type": "application/json" },
     body: JSON.stringify(body), signal: AbortSignal.timeout(180_000), redirect: "error",
   });
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 300);
-    throw Object.assign(new Error(`Grok Voice refused the line (${res.status}): ${detail}`), { status: res.status });
+    throw new XaiHttpError(res.status, `Grok Voice refused the line (${res.status}): ${detail}`);
   }
   return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get("content-type") || "audio/mpeg", costUsd: grokSpeechUsd(text) };
 }
@@ -90,8 +94,9 @@ export async function grokTranscribe(opts: { bytes: Buffer; mime: string; filena
   if (opts.language) { form.append("language", opts.language); form.append("format", "true"); }
   if (opts.diarize) form.append("diarize", "true");
   form.append("file", new Blob([new Uint8Array(opts.bytes)], { type: opts.mime }), opts.filename);
-  const res = await recoveryFetch(`${BASE()}/stt`, { method: "POST", headers: { Authorization: `Bearer ${key()}` }, body: form, signal: AbortSignal.timeout(280_000), redirect: "error" });
-  if (!res.ok) throw Object.assign(new Error(`Grok transcription failed (${res.status}): ${(await res.text()).slice(0, 300)}`), { status: res.status });
+  const auth = await preflight(key);
+  const res = await recoveryFetch(`${BASE()}/stt`, { method: "POST", headers: { Authorization: `Bearer ${auth}` }, body: form, signal: AbortSignal.timeout(280_000), redirect: "error" });
+  if (!res.ok) throw new XaiHttpError(res.status, `Grok transcription failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const reply = await res.json() as { text?: string; language?: string; duration?: number; words?: Transcript["words"] };
   const seconds = Number(reply.duration) || 0;
   return { text: reply.text ?? "", language: reply.language ?? null, seconds, words: reply.words ?? [], costUsd: grokTranscriptionUsd(seconds) };

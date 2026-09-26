@@ -272,19 +272,33 @@ type VoicesResponse = {
     description?: string | null;
   }[];
   has_more?: boolean;
+  next_page_token?: string | null;
 };
+
+/** Pages of 100 read per listing: a thousand voices, own and library. */
+const VOICE_PAGES = 10;
 
 /** The account's voices — its own and the premade library it can use. Memoed per workspace: the key differs. */
 export async function listVoices(force = false): Promise<Voice[]> {
   const hit = force ? null : memoGet<Voice[]>("eleven-voices", 10 * 60_000);
   if (hit) return hit;
-  let raw: VoicesResponse;
+  let raw: VoicesResponse["voices"] = [];
   try {
-    raw = await callJson<VoicesResponse>("/v2/voices?page_size=100");
+    let token: string | null = null;
+    for (let page = 0; page < VOICE_PAGES; page++) {
+      const reply: VoicesResponse = await callJson<VoicesResponse>(
+        `/v2/voices?page_size=100${token ? `&next_page_token=${encodeURIComponent(token)}` : ""}`,
+      );
+      raw.push(...(reply.voices ?? []));
+      token = reply.has_more && reply.next_page_token ? reply.next_page_token : null;
+      if (!token) break;
+    }
   } catch {
-    raw = await callJson<VoicesResponse>("/v1/voices");
+    raw = (await callJson<VoicesResponse>("/v1/voices")).voices ?? [];
   }
-  const voices = (raw.voices ?? []).map((v) => ({
+  /* A voice listed on two pages (the list moved while it was read) is one voice. */
+  const unique = new Map(raw.filter((v) => typeof v.voice_id === "string").map((v) => [v.voice_id, v]));
+  const voices = [...unique.values()].map((v) => ({
     id: v.voice_id,
     name: v.name,
     category: v.category ?? "premade",

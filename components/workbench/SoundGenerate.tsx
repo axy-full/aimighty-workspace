@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { PromptAttach, keptNote, resolveAttached } from "@/components/PromptAttach";
 import { studioRequest, StudioRequestError } from "./GenerationDialog";
 import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
-import { validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
+import { audioTaskAvailable, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import {
   pendingGenerationKey,
   readPendingGeneration,
@@ -309,8 +309,10 @@ export function SoundGenerate({
     [tool, source, voiceId, voiceName, removeNoise, sourceLang, targetLang, mode, genTask, text, seconds, instrumental, promptInfluence, modelId, speechVoiceId],
   );
   const bodyKey = JSON.stringify(body);
+  /* Voice-over runs on either sound engine; the rest are ElevenLabs' alone. */
+  const unavailable = (id: SoundJobTask) => Boolean(setup?.configured) && !audioTaskAvailable(setup, id);
   const ready = Boolean(
-    setup?.configured && body &&
+    setup?.configured && body && !unavailable(task) &&
       (tool?.id === "voiceChange"
         ? source && voiceId
         : tool?.id === "dub"
@@ -526,12 +528,12 @@ export function SoundGenerate({
       </header>
       <div className={styles.tasks} role="group" aria-label="Sound type">
         {SOUND_TASKS.map((t) => (
-          <button key={t.id} type="button" aria-pressed={task === t.id} disabled={busy} onClick={() => pick(t.id)}>
+          <button key={t.id} type="button" aria-pressed={task === t.id} disabled={busy || unavailable(t.id)} onClick={() => pick(t.id)}>
             {t.label}
           </button>
         ))}
         {SOUND_TOOLS.map((t) => (
-          <button key={t.id} type="button" aria-pressed={task === t.id} disabled={busy} onClick={() => pick(t.id)}>
+          <button key={t.id} type="button" aria-pressed={task === t.id} disabled={busy || unavailable(t.id)} onClick={() => pick(t.id)}>
             {t.label}
           </button>
         ))}
@@ -743,9 +745,9 @@ export function SoundGenerate({
         </ul>
       )}
       {status && <p role="status">{status}</p>}
-      {(error || pendingProblem) && (
+      {(error || pendingProblem || (!pending && unavailable(task))) && (
         <p role="alert" className={styles.error}>
-          {error || pendingProblem}
+          {error || pendingProblem || `${soundJobLabel(task)} is not connected for this workspace.`}
         </p>
       )}
     </section>

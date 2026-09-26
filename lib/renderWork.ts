@@ -1,4 +1,6 @@
 import { audioVendor } from "./xaiVoice";
+import { xaiSubmissionRejected } from "./xaiErrors";
+import { PreflightError } from "./preflight";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
@@ -364,11 +366,13 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     }
     // A synchronous vendor may have charged before the connection failed.
     // Leave the claim intact: automatic retries must never buy it again.
+    // A refusal the vendor sent, or a request that never left, charged nothing.
     await failJob(
       job.genId,
       (error as Error).message,
-      error instanceof FundingSourceChangedError || falSubmissionRejected(error) || higgsfieldSubmissionRejected(error) ||
-        (error instanceof ElevenLabsError && error.rejectedBeforeGeneration),
+      error instanceof FundingSourceChangedError || error instanceof PreflightError || falSubmissionRejected(error) ||
+        higgsfieldSubmissionRejected(error) || (error instanceof ElevenLabsError && error.rejectedBeforeGeneration) ||
+        xaiSubmissionRejected(error),
     );
     throw error;
   }

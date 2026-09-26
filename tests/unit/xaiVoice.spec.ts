@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { XaiHttpError, xaiSubmissionRejected } from "../../lib/xaiErrors";
+import { PreflightError } from "../../lib/preflight";
 import { audioVendor, grokSpeech, grokSpeechUsd, grokTranscribe, GROK_VOICE_ID, listGrokVoices, transcriptSrt } from "../../lib/xaiVoice";
 
 /**
@@ -57,4 +59,25 @@ test("subtitles: timed cues, a new cue for a new speaker or a long line", () => 
     { text: "The", start: 1.2, end: 1.4, speaker: 1 }, { text: "ice", start: 1.4, end: 1.7, speaker: 1 }, { text: "holds.", start: 1.7, end: 62.25, speaker: 1 },
   ];
   expect(transcriptSrt(words)).toBe("1\n00:00:00,000 --> 00:00:00,900\nNot tonight.\n\n2\n00:00:01,200 --> 00:00:01,700\nThe ice\n\n3\n00:00:01,700 --> 00:01:02,250\nholds.\n");
+});
+
+/* A refused line costs nothing, so its reservation is released; a 5xx may have been spoken, so it is kept. */
+test("a line xAI refuses is certain, one it fails on is not, and one never sent is certain", async () => {
+  await withKey(async () => {
+    for (const [status, certain] of [[400, true], [404, true], [422, true], [429, true], [500, false], [502, false]] as const) {
+      const out = await stubbed(() => new Response("bad voice", { status }), () => grokSpeech({ text: "Not tonight.", voiceId: "21m00Tcm4TlvDq8ikWAM" }).catch((e: unknown) => e));
+      expect(out.value, String(status)).toBeInstanceOf(XaiHttpError);
+      expect(xaiSubmissionRejected(out.value), String(status)).toBe(certain);
+    }
+  });
+  const saved = { key: process.env.XAI_API_KEY, mock: process.env.ENGINE_MOCK };
+  delete process.env.XAI_API_KEY; delete process.env.ENGINE_MOCK;
+  try {
+    const out = await stubbed(() => new Response("never"), () => grokSpeech({ text: "Not tonight.", voiceId: "eve" }).catch((e: unknown) => e));
+    expect(out.value).toBeInstanceOf(PreflightError);
+    expect(out.sent).toEqual([]);
+  } finally {
+    if (saved.key !== undefined) process.env.XAI_API_KEY = saved.key;
+    if (saved.mock !== undefined) process.env.ENGINE_MOCK = saved.mock;
+  }
 });
