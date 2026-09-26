@@ -1,6 +1,7 @@
 import { currentContext } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { MoviePage } from "@/components/workbench/MoviePage";
+import { movieScopeFor } from "@/lib/workbench/movie-handoff";
 import "../workbench.css";
 import "../desk.css";
 import "../mobile-handoff-stages.css";
@@ -18,7 +19,7 @@ export default async function Movie({
 }) {
   const [ctx, params] = await Promise.all([currentContext(), searchParams]);
   if (ctx?.mfaRequired) redirect("/account/security");
-  const scope = `particl-active-${ctx?.workspace?.id || "visitor"}-${ctx?.user.id || "visitor"}`;
+  const scope = movieScopeFor(ctx ? { id: ctx.user.id, workspaceId: ctx.workspace?.id } : null);
   return (
     <MoviePage
       token={params.snapshot || ""}

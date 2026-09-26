@@ -39,13 +39,13 @@ async function account(page: Page) {
 
 /** Completed historical takes written straight into this login's new local tenant database. */
 async function takes(page: Page, workspaceId: string, userId: string, rows: { id: string; kind: "image" | "video"; prompt: string; projectId?: string | null; shotId?: string | null }[]) {
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl = "";
   try {
     tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id = ?", args: [workspaceId] })).rows[0].db_url);
   } finally { platform.close(); }
   expect(tenantUrl).toMatch(/^file:/);
-  const tenant = createClient({ url: tenantUrl });
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   const image = await png("#3a4f6b");
   try {
     await mkdir(path.join(process.cwd(), ".data", "generations"), { recursive: true });

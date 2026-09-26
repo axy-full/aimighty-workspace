@@ -2,7 +2,7 @@ import { mediaMutation, validateMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
-import { listCast, nameProblem, rowToCast } from "@/lib/cast";
+import { castNameClash, listCast, nameProblem, rowToCast } from "@/lib/cast";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
@@ -39,13 +39,8 @@ export const POST = withTenant(async function POST(req: Request) {
       : null;
 
   const result = await mediaMutation(async (tx) => {
-    // Two @Mayas in one project would make a citation ambiguous.
-    const clash = await tx.execute({
-      sql: `SELECT id FROM cast_members
-            WHERE LOWER(name) = ? AND (project_id IS ? OR project_id IS NULL) LIMIT 1`,
-      args: [name.toLowerCase(), projectId],
-    });
-    if (clash.rows.length) {
+    // Two @Mayas a production can see would make a citation ambiguous.
+    if (await castNameClash(tx, name, projectId)) {
       return NextResponse.json(
         { error: `@${name} is already cast here.` },
         { status: 409 },

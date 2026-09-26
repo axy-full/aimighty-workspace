@@ -102,11 +102,16 @@ export function useAtomik(): AtomikHostValue {
 export function usePlanRequest<K extends RequestKey>(key: K, value: PlanRequest[K] | undefined) {
   const host = useContext(AtomikContext);
   const publish = host?.publish;
+  /* A new value replaces the old one in place (publish ignores an equal one). Withdrawing on
+     every change would make two state updates per render, and a caller that builds its value
+     afresh on each render would then re-render the host, and itself, without end. */
+  useEffect(() => {
+    if (publish) publish(key, value);
+  }, [publish, key, value]);
   useEffect(() => {
     if (!publish) return;
-    publish(key, value);
     return () => publish(key, undefined);
-  }, [publish, key, value]);
+  }, [publish, key]);
 }
 
 const ACTIVITY_POLL_MS = 20_000;

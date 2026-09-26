@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import SubatomikWorkspace from "@/components/suites/SubatomikWorkspace";
 import { SuiteProjectProvider } from "@/components/suites/SuiteProjectContext";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
@@ -29,7 +29,7 @@ export default function SubatomikTool({
   const [input, setInput] = useState<ConsumerGenjutsuInput | null>(null);
   const onInput = useCallback((next: ConsumerGenjutsuInput | null) => setInput(next), []);
   /* The plan re-adds the variant; the rest is the form's own body. */
-  const request = publish && input ? requestOf(input) : undefined;
+  const request = useMemo(() => (publish && input ? requestOf(input) : undefined), [publish, input]);
   usePlanRequest(publish ?? "motion", publish ? request : undefined);
   return (
     <div className="pxw-tool pxw-tool--subatomik" data-tool-body="subatomik">

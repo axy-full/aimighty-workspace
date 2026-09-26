@@ -56,9 +56,18 @@ export function EditSoundPage({ project: shellProject, scope }: MobilePageProps)
   const cut = useMemo(() => (project ? assembly(project) : null), [project]);
 
   if (!project || !cut) {
+    if (shellProject && draft.state.status === "error") {
+      return (
+        <div className="pxm-pad-x pxm-pad-top" data-template="edit">
+          <p className="pxm-note" role="alert">{draft.state.error || "This project could not be opened."}</p>
+          <div className="pxm-pair">
+            <button type="button" className="pxm-control" onClick={() => void draft.reload()} data-testid="mobile-edit-retry">Retry</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="pxm-pad-x pxm-pad-top" data-template="edit">
-        {draft.state.error ? <p className="pxm-note" role="alert">{draft.state.error}</p> : null}
         <p className="pxm-empty" role="status">{shellProject ? "Loading the edit…" : "Open a project to see its edit."}</p>
       </div>
     );

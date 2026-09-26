@@ -17,6 +17,13 @@ const models = [
 ];
 
 
+/** Visible text under the 12px phone floor inside `root`. */
+function underFloor(root: Locator) {
+  return root.evaluate(element => Array.from(element.querySelectorAll('*'))
+    .filter(el => (el as HTMLElement).offsetParent !== null && Array.from(el.childNodes).some(n => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim()))
+    .filter(el => Number.parseFloat(getComputedStyle(el).fontSize) < 12)
+    .map(el => `${getComputedStyle(el).fontSize}: ${el.textContent?.trim().slice(0, 30)}`));
+}
 function scopePanel(page: Page, kind: DevelopmentRequest['kind']) {
   return page.getByRole('region', { name: kind === 'idea' ? 'Idea development' : kind === 'adfilm' ? 'Ad-film breakdown' : 'Screenplay breakdown', exact: true });
 }
@@ -30,7 +37,8 @@ async function choose(page: Page, panel: Locator, provider: 'Claude' | 'GPT', mo
   await page.getByRole('option', { name: new RegExp('^' + effort) }).click();
 }
 
-async function fixture(page: Page, options: { loseFirst?: boolean } = {}) {
+async function fixture(page: Page, options: { loseFirst?: boolean; grok?: boolean } = {}) {
+  const offered = options.grok ? [...models, { id: 'spacexai/grok-4', name: 'Grok 4', vision: true, efforts: [{ value: 'auto', label: 'Provider default' }] }] : models;
   await signInLocally(page.request);
   const me = await page.request.get('/api/me').then(response => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
@@ -72,10 +80,11 @@ async function fixture(page: Page, options: { loseFirst?: boolean } = {}) {
         expect(pages?.[offset]).toBeTruthy();
         return json({ job: { ...job!, result: pages![offset], resultPage: { offset, totalChunks: pages!.length, hasMore: offset < pages!.length - 1 } } });
       }
-      const captured = structuredClone(jobs), held = delayedRead;
+      /* As the route: every kind of the project's runs, or the one request asked for by `requestId`. */
+      const captured = structuredClone(jobs).filter(job => !query.has('requestId') || job.requestId === query.get('requestId')), held = delayedRead;
       delayedRead = null;
       if (held) { held.started(); await held.wait; }
-      return json({ configured: true, models, jobs: captured });
+      return json({ configured: true, models: offered, jobs: captured });
     }
     const body = request.postDataJSON() as DevelopmentRequest & { quoteOnly?: boolean; resume?: boolean };
     expect(body.projectId).toBe(project.id);
@@ -125,6 +134,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   await page.locator('.stage-scroll').filter({ visible: true }).evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: info.outputPath('script-import-options.png'), fullPage: true });
   await expect(page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Screenplay/ })).toHaveAttribute('aria-pressed', 'true');
+  if (page.viewportSize()!.width < 760) expect(await underFloor(page.getByRole('group', { name: 'Script format', exact: true }))).toEqual([]);
   const bytes = screenplayPdf([['INT. TEST STUDIO - DAY', 'A maker sets a ceramic lamp on the table.', 'Warm light fills the empty room.']]);
   await page.getByLabel('Import screenplay file', { exact: true }).setInputFiles({ name: 'Complete screenplay.pdf', mimeType: 'application/pdf', buffer: bytes });
   const imported = page.getByRole('region', { name: 'Review screenplay import', exact: true });
@@ -144,6 +154,10 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   expect(f.quotes.at(-1)).toMatchObject({ kind: 'screenplay', model: 'anthropic/claude-sonnet-4.6', effort: 'high' });
   await panel.getByRole('button', { name: 'Start script breakdown', exact: true }).click();
   await expect(panel).toContainText('Complete source reviewed with shootable coverage.');
+  if (page.viewportSize()!.width < 760) {
+    await panel.locator('details').evaluateAll(list => list.forEach(el => { (el as HTMLDetailsElement).open = true; }));
+    expect(await underFloor(panel)).toEqual([]);
+  }
   await panel.getByRole('button', { name: 'Add 1 scene node', exact: true }).click();
   await expect.poll(async () => (await f.current()).nodes.filter(node => node.developmentSource?.jobId === f.jobs[0].id).length).toBe(1);
   await page.reload();
@@ -245,6 +259,41 @@ test('idea development recovers the exact request after a lost response and relo
   await expect(panel).toContainText('new paid requests remain paused');
   await expect(panel.getByRole('button', { name: 'Review development estimate', exact: true })).toBeDisabled();
   expect(f.submissions).toHaveLength(2);
+});
+
+test('an agent run on the project neither blocks nor relabels the idea panel, and Grok is offered when connected', async ({ page }, info) => {
+  test.skip(!['workbench-360x640', 'workbench-1440x900'].includes(info.project.name), 'bounded agentic development browser coverage');
+  const f = await fixture(page, { grok: true });
+  /* The Production agent is writing storyboard frames, and its own unconfirmed request sits in the project's shared recovery slot. */
+  const frames = { projectId: f.projectId, requestId: 'agent-frames-request', kind: 'frames', model: 'anthropic/claude-sonnet-4.6', effort: 'auto', sourceHash: 'a'.repeat(64), maxCredits: 4 };
+  f.jobs.push({ id: 'development-agent', requestId: 'agent-frames-running', projectId: f.projectId, productionProjectId: null, kind: 'frames', model: 'anthropic/claude-sonnet-4.6', effort: 'auto', instructions: '', sourceHash: 'a'.repeat(64), status: 'running', completedChunks: 0, totalChunks: 1, currentStage: 'draft', completedSteps: 0, totalSteps: 3, estimateCredits: 4, credits: null, result: null, error: null, createdAt: Date.now(), updatedAt: Date.now() });
+  await page.addInitScript(({ key, record }) => localStorage.setItem(key, record), { key: developmentPendingKey(f.scope, f.projectId), record: JSON.stringify({ version: 1, scope: f.scope, projectId: f.projectId, body: JSON.stringify(frames) }) });
+  await page.goto(await legacyShell(page, '/workbench'));
+  await goStage(page, 'brief');
+  const panel = scopePanel(page, 'idea');
+  const review = panel.getByRole('button', { name: 'Review development estimate', exact: true });
+  await expect(review).toBeEnabled();
+  await expect(panel).not.toContainText('unconfirmed');
+  await expect(panel).not.toContainText('Development in progress');
+  const providers = panel.getByRole('group', { name: /provider$/ }).getByRole('button');
+  await expect(providers).toHaveText([/^Claude/, /^GPT/, /^Grok/]);
+  await providers.filter({ hasText: /^Grok/ }).click();
+  await expect(panel.getByRole('button', { name: /model$/ })).toContainText('Grok');
+  await review.click();
+  await expect(panel.getByRole('button', { name: 'Start idea development', exact: true })).toBeEnabled();
+  expect(f.quotes.at(-1)).toMatchObject({ kind: 'idea', model: 'spacexai/grok-4', effort: 'auto' });
+  await panel.getByRole('button', { name: 'Start idea development', exact: true }).click();
+  await expect(panel).toContainText('Two reviewed cinematic directions.');
+  /* The agent's own record was left for the agent to recover. */
+  expect(JSON.parse(await page.evaluate(key => localStorage.getItem(key) ?? 'null', developmentPendingKey(f.scope, f.projectId))).body).toBe(JSON.stringify(frames));
+  expect(f.submissions).toHaveLength(1);
+  expect(f.paid()).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  if (page.viewportSize()!.width < 760) {
+    /* The phone floor: no panel text under 12px (provider notes, labels, run status, section heads). */
+    await panel.locator('details').first().evaluate(el => { (el as HTMLDetailsElement).open = true; });
+    expect(await underFloor(panel)).toEqual([]);
+  }
 });
 
 test('notifications remain interactive and model options stay above a live import toast', async ({ page }, info) => {

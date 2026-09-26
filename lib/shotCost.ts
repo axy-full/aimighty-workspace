@@ -2,13 +2,15 @@ import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { ENGINE_MODEL, type ShotEngine } from "./shotBuilder";
 
 /**
- * What a render cost, in the vendors' dollars.
+ * What one take of a proposed shot costs, in the vendors' dollars.
  *
- * Split out of shotBuilder.ts because that module is imported by client
- * components for its types and its state helpers — and importing it pulled
- * lib/vendorRates.ts in behind, which put the engines' real rates into a
- * public chunk. The dollars stay on the server; the browser prices from the
- * table in lib/rateTable.ts.
+ * Test-only now: nothing in the app prices with it. The shot-draft route used
+ * to send these dollars per take, and a credit workspace's page printed them
+ * as credits; the page prices off the session's rate table instead
+ * (lib/breakdownCost.ts). It stays as the independent vendor figure the unit
+ * specs hold that table to (tests/unit/breakdownCost.spec.ts,
+ * tests/unit/shotBuilder.spec.ts). Do not import it from a client component:
+ * it pulls lib/vendorRates.ts, the engines' real rates, into a public chunk.
  */
 
 export function shotCostUsd(engine: ShotEngine, planned: number | null): number {
