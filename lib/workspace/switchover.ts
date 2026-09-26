@@ -42,22 +42,11 @@ export const WORKSPACE_IS_DEFAULT = true;
 export const SHELL_PATH = "/suites";
 export const SHELL_ON_PHONES = true;
 
-/** `?shell=legacy` asks for the old shell; `?shell=new` cancels that. */
-export const SHELL_PARAM = "shell";
-export const LEGACY_SHELL = "legacy";
-export const NEW_SHELL = "new";
+/* The shell choice's names live in ./shell-choice.ts, so proxy.ts can read the
+   cookie without bundling this module's page maps. */
+export { SHELL_PARAM, LEGACY_SHELL, NEW_SHELL, SHELL_COOKIE } from "./shell-choice";
+import { SHELL_PARAM, LEGACY_SHELL, NEW_SHELL, SHELL_COOKIE } from "./shell-choice";
 
-/**
- * The choice is remembered, because the old shell's own links (suiteHref)
- * carry no `shell` param — without a cookie, the second click would bounce
- * the person back out of the surface they just asked for.
- */
-/**
- * The name carries the release: a "previous workspace" choice remembered
- * before the Suites cut-over (`particl_shell`) must not keep anyone — a phone
- * especially — on the old site now. A fresh `?shell=legacy` writes this one.
- */
-export const SHELL_COOKIE = "particl_shell_suites";
 /** One release. Long enough to finish a job, short enough to expire itself. */
 export const SHELL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 

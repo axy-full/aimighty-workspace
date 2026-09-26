@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import type { Board, BoardNode } from "@/lib/boards";
 import type { ElementFull } from "@/lib/elements";
 import type { RateTable } from "@/lib/rateTable";
-import { estimateVideo } from "@/lib/rateTable";
-import { estimateTokens, costUsd } from "@/lib/models";
+import { charged, estimateVideo } from "@/lib/rateTable";
+import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes } from "@/lib/rigApply";
+import { estimateTokens, costUsd, getModel } from "@/lib/models";
 import { Mono } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
@@ -27,11 +28,12 @@ import { KIND_TAG, KIND_WORD } from "@/components/rig/nodes";
  * outlined `Bound to v2 · PICK ANOTHER VERSION` until a subset is picked).
  * No wire dragging, no adding, no moving: building is a desktop's.
  *
- * Applying rebinds the slot's port to the picked version on the board
- * (free; downstream goes stale, nothing re-runs on its own) and renders a
- * new take for each shot in the subset through the ordinary generate
- * route — the same take the Shots grid's Render makes — priced from the
- * board's video engine before the press.
+ * Applying renders a new take for each shot in the subset through the
+ * ordinary generate route — the same take the Shots grid's Render makes —
+ * priced from the board's video engine before the press, that price sent
+ * as each take's ceiling. Once a take is rendering, the slot's port is
+ * rebound to the picked version (free; downstream goes stale, nothing
+ * re-runs on its own); when none starts, the binding stays.
  */
 type ShotLike = { id: string; code: string; title: string; description: string; cast: string[]; planned: number | null; setup: Record<string, string | null>; state?: string; takes: number };
 type Slot = { nodeId: string; slotId: string };
@@ -198,8 +200,14 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const uses = useMemo(() => element ? shots.filter((s) => s.cast.some((c) => c.replace(/^@/, "").toLowerCase() === element.name.toLowerCase())) : [], [shots, element]);
   const approved = uses.filter((s) => s.state === "approved");
   const draft = uses.filter((s) => s.state !== "approved");
-  const quote = (s: ShotLike) => { const secs = s.planned ?? 5; return engine ? (estimateVideo(rates, engine, "1080p", secs, estimateTokens("1080p", "16:9", secs), costUsd) ?? 0) : 0; };
-  const cost = (list: ShotLike[]) => list.reduce((a, s) => a + quote(s), 0);
+  /* What the engine offers: a shot's length and frame are snapped to it the way admission snaps them, so the quote is what the take bills. */
+  const engineDef = useMemo(() => { try { return engine ? getModel(engine) : null; } catch { return null; } }, [engine]);
+  const paramsOf = (s: ShotLike) => rerenderParams(engineDef, s.planned);
+  /* Each take is billed on its own, rounded the way the ledger rounds it; a shot with no words to render is neither priced nor sent. */
+  const quote = (s: ShotLike) => { const p = paramsOf(s); return engine ? charged(rates, estimateVideo(rates, engine, p.resolution, p.duration, estimateTokens(p.resolution, p.ratio, p.duration), costUsd)) : null; };
+  /* One shot the engine cannot price leaves the lot unpriced: no price, no Apply (never "0 cr"). */
+  const cost = (list: ShotLike[]) => { let total = 0; for (const s of rerenderable(list)) { const q = quote(s); if (q == null) return null; total += q; } return total; };
+  const price = (list: ShotLike[]) => { const c = cost(list); return c == null ? "No price" : fmt(c); };
   const subsets: { id: Subset; label: string; note: string; list: ShotLike[] }[] = [
     { id: "approved", label: `Apply to approved · ${approved.length}`, note: "Re-renders the approved takes with the new version.", list: approved },
     { id: "draft", label: `Apply to draft · ${draft.length}`, note: "Only the shots nobody has approved yet.", list: draft },
@@ -208,19 +216,19 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const chosen = subsets.find((s) => s.id === subset) ?? null;
 
   const apply = async () => {
-    if (!src || !port || !picked || !chosen || busy) return;
+    if (!src || !port || !picked || !chosen || !engine || busy || cost(chosen.list) == null) return;
     setBusy(true);
     try {
-      onRebind(src.id, port.id, picked, vNum(picked));
-      let n = 0;
-      for (const s of chosen.list) {
-        const prompt = [s.description || s.title, Object.values(s.setup ?? {}).filter(Boolean).join(" · ")].filter(Boolean).join(". ");
-        if (!prompt || !engine) continue;
-        const r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model: engine, projectId, shotId: s.id, ratio: "16:9", resolution: "1080p", duration: s.planned ?? 5 }) });
-        if (r.ok) n++; else { const j = await r.json().catch(() => ({})); toast(j.error ?? `${s.code} didn't start.`); break; }
-      }
-      toast(`${element?.name ?? "Asset"} → ${vNum(picked)} · ${n} ${n === 1 ? "take" : "takes"} rendering · ${fmt(cost(chosen.list))}`);
-      onClose();
+      const targets = rerenderable(chosen.list);
+      /* The price on the button is the ceiling: a take that would now cost more is refused, not charged. */
+      const { started, failure } = await sendTakes(targets, (s) => fetch("/api/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: rates.unit === "cr" ? quote(s) : null })),
+      }));
+      /* The binding changes only once a take is actually rendering with it. */
+      if (started.length) onRebind(src.id, port.id, picked, vNum(picked));
+      toast(applySummary({ asset: element?.name ?? "Asset", from: vNum(boundId), to: vNum(picked), started: started.length, sent: targets.length, cost: price(started), failure, skipped: chosen.list.length - targets.length }));
+      if (started.length) onClose();
     } finally { setBusy(false); }
   };
 
@@ -228,7 +236,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const blurb = !src ? "Nothing is wired here. Wire it on a desktop; run and file from here."
     : src.kind === "asset" ? `Bound to ${vNum(boundId)} on this board. Pick another version to see what it touches before anything re-renders.`
     : src.kind === "prompt" ? "A prompt node feeds this slot. Edit its words on a desktop." : `${src.label} feeds this slot.`;
-  const canApply = changing && chosen != null && chosen.list.length > 0 && Boolean(engine);
+  const canApply = changing && chosen != null && rerenderable(chosen.list).length > 0 && Boolean(engine) && cost(chosen.list) != null;
 
   return (
     <Sheet open onClose={onClose} label={`${input?.label ?? "Slot"} · ${node?.label ?? ""}`} size="auto" max="78%" bodyClassName="!pt-0" footerPad="8px 16px 26px"
@@ -243,7 +251,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
         <button type="button" disabled={!canApply || busy} onClick={apply} data-apply=""
           className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${canApply ? "bg-action text-on-action hover:bg-action-hover" : "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body"}`}>
           <span className="truncate">{busy ? "Applying…" : canApply ? `Apply ${vNum(picked)} to ${chosen!.id}` : `Bound to ${vNum(boundId)}`}</span>
-          <span className={`ui-mono ui-mono-cost !text-[12px] ${canApply ? "text-on-primary-cost" : "text-ink-muted"}`}>{canApply ? fmt(cost(chosen!.list)) : changing ? "Pick a subset" : "Pick another version"}</span>
+          <span className={`ui-mono ui-mono-cost !text-[12px] ${canApply ? "text-on-primary-cost" : "text-ink-muted"}`}>{canApply ? price(chosen!.list) : chosen && changing && engine && rerenderable(chosen.list).length ? "No price" : changing ? "Pick a subset" : "Pick another version"}</span>
         </button>
       }>
       {versions.length > 0 ? (
@@ -281,7 +289,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
                 className={`flex min-h-[48px] items-center gap-[10px] rounded-tile border px-[11px] py-[9px] text-left disabled:opacity-60 ${on ? "border-[rgba(245,246,248,.5)] bg-[rgba(245,246,248,.06)]" : "border-[rgba(245,246,248,.12)]"}`}>
                 <span className={`box-border h-[18px] w-[18px] flex-none rounded-full border-[1.5px] ${on ? "border-ink bg-ink" : "border-[rgba(245,246,248,.3)]"}`} />
                 <span className="flex min-w-0 flex-col gap-[3px]"><span className="text-[13.5px] font-medium leading-[1.2] text-ink">{o.label}</span><span className="text-[12px] leading-[1.3] text-ink-body">{o.note}</span></span>
-                <Mono cost tone="ink" className="ml-auto flex-none">{fmt(cost(o.list))}</Mono>
+                <Mono cost tone="ink" className="ml-auto flex-none">{price(o.list)}</Mono>
               </button>
             );
           })}

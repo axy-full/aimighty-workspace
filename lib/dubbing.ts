@@ -13,7 +13,7 @@ import { queueSender, EVENTS } from "./inngest";
 import { withRecoveryJob } from "./recovery";
 import { withRetry } from "./providers";
 import { storeAudioBytes } from "./storage";
-import { bindGenerationRequest, reserveGenerationSpend, SpendReservationError } from "./generationRequests";
+import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { elevenConfigured, submitDubbing, dubbingStatus, downloadDubbedAudio, dubbingUsd, dubbingUsdPerMinute, ElevenLabsError } from "./elevenlabs";
 import { ELEVENLABS_RATES, OFFERED_DUBBING_MODES, type DubbingMode } from "./vendorRates";
@@ -196,6 +196,7 @@ export async function executeDubbingAdmission(
     ...(source.kind === "upload" ? { sourceUploadId: source.id } : { sourceGenId: source.id }),
     sourceName: source.name.slice(0, 200), sourceSeconds: seconds, minutes, sourceLang, targetLang, mode, usdPerMinute, estUsd: reservedUsd, estCredits: 0,
   };
+  const binding = await claimBinding(options.requestClaim, genId);
   await db().batch([
     {
       sql: `INSERT INTO generations (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by, created_at, updated_at, token_id, provider, task, title, billed_to, shot_id)
@@ -207,8 +208,9 @@ export async function executeDubbingAdmission(
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)`,
       args: [jobId, genId, got.user.id, projectId, shotId, source.kind, source.id, source.name.slice(0, 200), seconds, minutes, sourceLang, targetLang, mode, usdPerMinute, reservedUsd, estimatedCredits, ts, ts],
     },
+    // The claim is bound in the same write: a claim naming no job proves there is none.
+    ...binding,
   ], "write");
-  if (options.requestClaim) await bindGenerationRequest(options.requestClaim, genId);
   invalidate(PROJECTS_KEY);
   try {
     await reserveGenerationSpend(

@@ -12,7 +12,7 @@ import { posterSrc } from "@/lib/format";
  * take's notes, where the team reads it beside their own.
  */
 type Note = { text: string; author: string; guest: boolean; at: number };
-type Take = { id: string; kind: "video" | "image"; shot: string | null; title: string | null; version: number; prompt: string; approvedBy: string | null; media: string; notes: Note[] };
+type Take = { id: string; kind: "video" | "image" | "audio" | "model"; shot: string | null; title: string | null; version: number; prompt: string; approvedBy: string | null; media: string; notes: Note[] };
 type Review = { workspace: { name: string; logo: string | null }; production: { name: string; description: string }; takes: Take[]; expiresAt: number };
 
 export default function ReviewPage({ params }: { params: Promise<{ token: string }> }) {
@@ -59,14 +59,18 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
       <ol className="rv-list">
         {data.takes.map((t) => (
           <li key={t.id} className="rv-take">
-            <div className="rv-media">
+            <div className={t.kind === "audio" || t.kind === "model" ? "rv-media is-flat" : "rv-media"}>
               {t.kind === "image"
                 /* eslint-disable-next-line @next/next/no-img-element */
                 ? <img src={t.media} alt={t.title ?? t.shot ?? "take"} />
-                /* Same reason as the canvas rail: a paused <video> on a bare
-                   url decodes no frame and shows black. This is the page a
-                   client opens, so it is the last place that should. */
-                : <video src={posterSrc(t.media)} controls playsInline preload="metadata" />}
+                : t.kind === "audio"
+                  ? <audio src={t.media} controls preload="metadata" aria-label={t.title ?? t.shot ?? "take"} />
+                  : t.kind === "model"
+                    ? <a className="rv-file" href={t.media} download>Download 3D model</a>
+                    /* Same reason as the canvas rail: a paused <video> on a bare
+                       url decodes no frame and shows black. This is the page a
+                       client opens, so it is the last place that should. */
+                    : <video src={posterSrc(t.media)} controls playsInline preload="metadata" />}
             </div>
             <div className="rv-body">
               <h2>{t.shot ? `${t.shot} · v${t.version}` : `v${t.version}`}{t.title ? ` — ${t.title}` : ""}</h2>

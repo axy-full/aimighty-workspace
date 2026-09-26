@@ -26,7 +26,7 @@ type AuditPage = {
   nextCursor: string | null;
   actors: Record<string, string>;
 };
-const labels: Record<string, string> = {
+export const labels: Record<string, string> = {
   "session.created": "Signed in",
   "session.revoked": "Signed out",
   "session.workspace_changed": "Switched workspace",

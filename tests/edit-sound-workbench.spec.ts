@@ -199,7 +199,8 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   expect(submissions[2].body).toMatchObject({ task: "music", lengthMs: 10_000, instrumental: true, maxCredits: 21 });
   finished = 3;
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(3);
-  expect(current().audioClips![2]).toMatchObject({ lane: "music", startFrame: 30, duration: 10 * fps });
+  // Ten seconds asked for, but the 6 s cut ends first: the clip ends with the cut so the mix and render still work.
+  expect(current().audioClips![2]).toMatchObject({ lane: "music", startFrame: 30, duration: 2 * 72 - 30 });
   const clip3 = mix.getByRole("group", { name: "Sound clip 3" });
   await expect(clip3).toContainText("Music · v1");
   await expect(clip3.getByLabel("Timeline start", { exact: true })).toHaveValue("30");

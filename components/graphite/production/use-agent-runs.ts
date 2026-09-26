@@ -86,9 +86,14 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
     if (job.error) setError(job.error);
   }, []);
 
-  /** Starts the quoted request, or recovers the unconfirmed one — never both, never twice. */
-  const start = useCallback(async () => {
-    if (!loaded || (!pending && !quote)) return;
+  /**
+   * Starts the quoted request, or recovers the unconfirmed one — never both,
+   * never twice. True once the server holds the request (a refusal, a no-op
+   * or an unconfirmed start is false), so a caller clears its notes only then.
+   */
+  const start = useCallback(async (): Promise<boolean> => {
+    if (!loaded || (!pending && !quote)) return false;
+    let held = false;
     epoch.current++;
     setBusy(pending ? "Recovering…" : "Starting…"); setError("");
     try {
@@ -97,16 +102,17 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
         if (active.current) setPending(record);
         if (pending) {
           const known = (await lookup(record)).jobs.find((job) => job.requestId === developmentInput(record).requestId);
-          if (known) { accept(record, known); return; }
+          if (known) { accept(record, known); held = !known.error; return; }
         }
         try {
           const next = await studioRequest<{ job: DevelopmentJob }>(ENDPOINT, { method: "POST", headers: headers(), body: record.body });
           accept(record, next.job);
+          held = !next.job.error;
         } catch (cause) {
           let absent = false;
           try {
             const known = (await lookup(record)).jobs.find((job) => job.requestId === developmentInput(record).requestId);
-            if (known) { accept(record, known); return; }
+            if (known) { accept(record, known); held = !known.error; return; }
             absent = true;
           } catch { /* an ambiguous failure keeps the exact request for recovery */ }
           const status = Number((cause as { status?: number })?.status);
@@ -119,6 +125,7 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
       });
     } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : "The request is unconfirmed. Recover it before starting another."); }
     finally { epoch.current++; if (active.current) setBusy(""); }
+    return held;
   }, [accept, headers, loaded, lookup, pending, projectId, quote, scope]);
 
   /** One finished run in full (an older writer draft is listed without its script). */

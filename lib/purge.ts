@@ -54,6 +54,11 @@ return await withRecoveryActivity('purge', async () => {
         sql: `UPDATE p_sessions SET workspace_id=NULL WHERE workspace_id=?`,
         args: [id],
       },
+      // Review links are access too; once the owner cannot revoke them, they end here.
+      {
+        sql: `UPDATE p_shares SET revoked_at=? WHERE workspace_id=? AND revoked_at IS NULL`,
+        args: [ts, id],
+      },
     ],
     "write",
   );
