@@ -95,7 +95,7 @@ export const SHELL_SUITES: ShellSuite[] = [
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them. */
   own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
     ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting, and the mode", "marketing"],
-    ["dtc", "Image ads", "Image ads", "Branded stills of your products", "marketing"],
+    ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
     ["setup", "Setup", "Setup items", "Avatars · hooks · settings · styles", "marketing"],
   ])),
   /* Viral pages are the shell's own views (step 3) on the existing genjutsu-service. */

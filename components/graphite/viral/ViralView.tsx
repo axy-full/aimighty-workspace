@@ -7,10 +7,11 @@ import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
 import { useViral, type GenjutsuJob, type Stall } from "@/lib/shell/use-viral";
 import {
-  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, RUN_NOTE, STALLED_NOTE, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, moveReference, originalNote, runInFlight, runStatus, viralBlock, viralMedia,
+  HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, RUN_NOTE, STALLED_NOTE, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, mirrorSeek, moveReference, type MirrorMark, originalNote, runInFlight, runStatus, viralBlock, viralMedia,
   type ViralMedia, type ViralPage, type ViralResolution, type ViralState,
 } from "@/lib/shell/viral";
 import { ago } from "@/lib/workspace/activity";
+import { SET_ASIDE_LABEL, setAsideUnconfirmed } from "@/lib/higgsfield-consumer/job-state";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -248,13 +249,16 @@ function ListError({ viral }: { viral: Viral }) {
   );
 }
 
+/** The line under an in-flight run. One set aside in Workspace › Engines (or past the capacity window) is listed and never sent again. */
+const runNote = (job: GenjutsuJob, stalled: Stall | null) => (setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : stalled ? STALLED_NOTE[stalled] : RUN_NOTE[job.status]);
+
 /** The direction a run was given, else what kind of run it was. */
 const brief = (job: GenjutsuJob) => job.input.prompt.trim() || VARIANT_NAME[job.input.variant];
 
 function RunRow({ job, now, stalled, onRecheck, send }: { job: GenjutsuJob; now: number; stalled: Stall | null; onRecheck: (id: string) => void; send: Send }) {
   const status = runStatus(job.status);
   const done = job.status === "completed", url = done && job.originalAvailable ? job.result?.original?.asset?.url : null;
-  const note = stalled ? STALLED_NOTE[stalled] : RUN_NOTE[job.status];
+  const note = runNote(job, stalled);
   return (
     <div className="vr-job" data-status={job.status} data-testid="viral-run">
       <span className="vr-dot" data-tone={status.tone} aria-hidden="true" />
@@ -336,10 +340,10 @@ function HistoryView({ scope, project, viral, items }: { scope: string; project:
 /** One run: the result and its next steps once it lands; until then, where it stands. */
 function RunCard({ job, now, url, stalled, opening, onRecheck, onRecreate, onCompare, onSend }: { job: GenjutsuJob; now: number; url: string | null; stalled: Stall | null; opening: boolean; onRecheck: (id: string) => void; onRecreate: (job: GenjutsuJob) => void; onCompare: (job: GenjutsuJob) => void; onSend: (job: GenjutsuJob) => void }) {
   const status = runStatus(job.status);
-  const done = job.status === "completed", flying = runInFlight(job.status) && !stalled;
+  const done = job.status === "completed", flying = runInFlight(job.status) && !stalled && !setAsideUnconfirmed(job);
   const meta = [done ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? null : cr(job.quoteCredits), when(job.createdAt, now)].filter(Boolean).join(" · ");
   const missing = done && !url ? originalNote(job) : null;
-  const note = stalled ? STALLED_NOTE[stalled] : RUN_NOTE[job.status];
+  const note = runNote(job, stalled);
   return (
     <div className="gx-asset vr-run" data-testid={done ? "history-result" : "history-run"} data-status={job.status}>
       <div className="gx-asset-thumb">
@@ -376,6 +380,9 @@ function RunCard({ job, now, url, stalled, opening, onRecheck, onRecreate, onCom
 function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; source: string | null; result: string | null; onClose: () => void }) {
   const a = useRef<HTMLVideoElement>(null), b = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
+  /* A seek mirrored onto the other player fires its own `seeked`; that one is not mirrored back. */
+  const mirrored = useRef<MirrorMark<HTMLVideoElement>>(null);
+  const follow = (from: HTMLVideoElement, to: HTMLVideoElement | null) => { mirrorSeek(from, to, mirrored); };
   const both = (fn: (v: HTMLVideoElement) => void) => [a.current, b.current].forEach((v) => v && fn(v));
   const toggle = () => { if (playing) { both((v) => v.pause()); setPlaying(false); } else { both((v) => { void v.play().catch(() => undefined); }); setPlaying(true); } };
   return (
@@ -383,8 +390,8 @@ function CompareSheet({ job, source, result, onClose }: { job: GenjutsuJob; sour
       <div className="gx-sheet vr-compare" role="dialog" aria-modal="true" aria-label="Compare" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
         <div className="gx-sheet-head"><span className="gx-panel-title">Compare · {job.input.variant === "motion-transfer" ? "Motion Transfer" : "Object Swap"}</span><button type="button" className="gx-hbtn" onClick={toggle}>{playing ? "Pause" : "Play both"}</button><button type="button" className="gx-hbtn" onClick={onClose}>Close</button></div>
         <div className="vr-compare-grid">
-          <figure><figcaption className="gx-eyebrow">Original</figcaption>{source ? <video ref={a} src={source} playsInline preload="metadata" onSeeked={(e) => { if (b.current) b.current.currentTime = e.currentTarget.currentTime; }} controls /> : <p className="cw-dim">The source is no longer in this project.</p>}</figure>
-          <figure><figcaption className="gx-eyebrow">Result</figcaption>{result ? <video ref={b} src={result} playsInline preload="metadata" onSeeked={(e) => { if (a.current) a.current.currentTime = e.currentTarget.currentTime; }} controls /> : <p className="cw-dim">The result’s original is not available yet.</p>}</figure>
+          <figure><figcaption className="gx-eyebrow">Original</figcaption>{source ? <video ref={a} src={source} playsInline preload="metadata" onSeeked={(e) => follow(e.currentTarget, b.current)} controls /> : <p className="cw-dim">The source is no longer in this project.</p>}</figure>
+          <figure><figcaption className="gx-eyebrow">Result</figcaption>{result ? <video ref={b} src={result} playsInline preload="metadata" onSeeked={(e) => follow(e.currentTarget, a.current)} controls /> : <p className="cw-dim">The result’s original is not available yet.</p>}</figure>
         </div>
       </div>
     </div>

@@ -191,9 +191,8 @@ export function CreativeTemplateBrowser({
           )}
           <p className={styles.note}>
             These are original Moleculr creative briefs, rendered by the engine
-            you review. The live Ads presets are a separate catalog
-            below; the connected account’s complete website template library is not
-            connected.
+            you review. The Ads presets and the connected account’s Template
+            catalogue are below.
           </p>
         </>
       ) : (

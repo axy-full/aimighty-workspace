@@ -233,8 +233,11 @@ export const isOwnedSetup = (type: SetupType) => OWNED_SETUP_TYPES.includes(type
 /**
  * Use in Ads / Use in Image ads: Setup leaves the pick in sessionStorage for
  * the page it names, which reads it once and clears it. A pick for the other
- * page is left for that page, and any pick older than two minutes is spent,
- * so a stale one never pre-selects anything later.
+ * page is left for that page (a pick for one composer never lands in the
+ * other), and any pick older than two minutes is spent, so a stale one never
+ * pre-selects anything later. Image ads takes products, brand kits and
+ * styles only on the DTC engine, so a pick of one switches to it; avatars
+ * ride with Ads only.
  */
 export const PRESET_KEY = "particl-business-preset";
 export const PRESET_TTL_MS = 120_000;

@@ -43,6 +43,8 @@ export type ConsumerJob = ConsumerJobScope & {
   providerReceipt: { [key: string]: ConsumerJson } | null;
   resultManifest: { [key: string]: ConsumerJson } | null;
   failureCode: ConsumerFailureCode | null;
+  /** Set when the owner set this unsettled job aside; it no longer holds capacity. */
+  releasedAt: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -77,6 +79,35 @@ export class ConsumerJobError extends Error {
   }
 }
 export const CONSUMER_ACTIVE_LIMIT = 4;
+/**
+ * How long an admitted job may hold one of the four slots. A provider job is
+ * finished or dead well inside this window, so a job still unsettled after it
+ * (an uncertain dispatch with no receipt id, a crash mid-dispatch, a result no
+ * tab ever polled) stops blocking new spend. The row, its receipt and its
+ * recovery path are untouched; it simply no longer counts.
+ */
+export const CONSUMER_CAPACITY_WINDOW_MS = 2 * 3_600_000;
+/** An owner may set a job aside this long after it was admitted, not sooner. */
+export const CONSUMER_RELEASE_GRACE_MS = 15 * 60_000;
+/** The jobs that hold capacity right now, in SQL: admitted, unsettled, not set
+ * aside by their owner, and inside the capacity window. */
+const holdsCapacity = (alias = "") =>
+  `${alias}status IN ('dispatching','accepted','uncertain') AND ${alias}released_at IS NULL AND ${alias}created_at>?`;
+/**
+ * The same rule for one job, from its views: an unsettled job its owner set
+ * aside, or one past the capacity window, no longer holds a slot and no longer
+ * blocks its workflow. It stays listed and recoverable (a saved receipt can
+ * still be checked) and is never dispatched again.
+ */
+export function consumerJobSetAside(
+  job: Pick<ConsumerJob, "status" | "releasedAt" | "createdAt">,
+  now = Date.now(),
+): boolean {
+  return (
+    (job.status === "dispatching" || job.status === "accepted" || job.status === "uncertain") &&
+    (job.releasedAt !== null || job.createdAt <= now - CONSUMER_CAPACITY_WINDOW_MS)
+  );
+}
 // A result read can include bounded original-media collection before settling.
 export const CONSUMER_POLL_LEASE_MS = 180_000;
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -180,6 +211,11 @@ export async function consumerJobsReady() {
         .then(async () => {
           const add = await columnInstaller(client);
           await add("higgsfield_consumer_jobs", "provider_receipt TEXT");
+          // When the owner set an unsettled job aside: it keeps its status,
+          // receipt and recovery path but stops holding capacity. Additive.
+          await add("higgsfield_consumer_jobs", "released_at INTEGER");
+          // When the background heartbeat last took the job for a read. Additive.
+          await add("higgsfield_consumer_jobs", "swept_at INTEGER");
         })
         .catch((error) => {
           initialized.delete(client);
@@ -220,6 +256,7 @@ function asJob(row: Row): ConsumerJob {
         ? null
         : JSON.parse(String(row.result_manifest)),
     failureCode: row.failure_code as ConsumerFailureCode | null,
+    releasedAt: row.released_at == null ? null : Number(row.released_at),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
@@ -389,9 +426,11 @@ export async function getConsumerJobByKey(
 }
 export type ConsumerJobCursor = { createdAt: number; id: string };
 /** Pin every admitted recoverable job (workspace capacity is four), so quote
- * history cannot hide a paid operation that still needs reconciliation. */
+ * history cannot hide a paid operation that still needs reconciliation.
+ * `submittedOnly` leaves read-only quotes out, so estimates never push
+ * finished results off a history's page. */
 export async function listConsumerRecoveryJobs(
-  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number },
+  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; submittedOnly?: boolean },
 ): Promise<ConsumerJob[]> {
   scope(input);
   const limit = input.limit ?? 25;
@@ -399,7 +438,7 @@ export async function listConsumerRecoveryJobs(
       !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
   await consumerJobsReady();
   const rows = await workbenchTransaction(tx => tx.execute({
-    sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?
+    sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?${input.submittedOnly ? " AND status<>'quoted'" : ""}
       ORDER BY CASE WHEN status IN ('dispatching','accepted','uncertain') AND dispatch_claim_hash IS NOT NULL THEN 0
         WHEN status IN ('dispatching','accepted','uncertain') THEN 1 ELSE 2 END,created_at DESC,id DESC LIMIT ?`,
     args: [input.userId, input.draftId, input.workflow, limit],
@@ -503,7 +542,79 @@ export async function listConsumerRuns(
   });
 }
 
-/** A durable dispatch claim has no expiry/reclaim path: a crash may have submitted. */
+export type ConsumerCapacityJob = {
+  id: string;
+  draftId: string;
+  projectName: string | null;
+  workflow: ConsumerWorkflow;
+  status: "dispatching" | "accepted" | "uncertain";
+  createdAt: number;
+  /** The owner may set it aside now (past the grace period). */
+  releasable: boolean;
+};
+/**
+ * Who holds the workspace's four connected-account slots, from one owner's
+ * side: the total, and that owner's own holders across every project (other
+ * members' jobs are counted, never described). Reads the ledger only.
+ */
+export async function consumerCapacity(
+  userId: string,
+  now = Date.now(),
+): Promise<{ limit: number; active: number; mine: ConsumerCapacityJob[] }> {
+  identifier(userId);
+  await consumerJobsReady();
+  const since = now - CONSUMER_CAPACITY_WINDOW_MS;
+  const [total, own] = await db().batch(
+    [
+      { sql: `SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE ${holdsCapacity()}`, args: [since] },
+      {
+        sql: `SELECT j.id,j.draft_id,j.workflow,j.status,j.created_at,SUBSTR(p.name,1,200) AS project_name
+          FROM higgsfield_consumer_jobs j LEFT JOIN workbench_projects p ON p.owner=j.user_id AND p.project_id=j.draft_id
+          WHERE j.user_id=? AND ${holdsCapacity("j.")} ORDER BY j.created_at ASC,j.id ASC LIMIT ?`,
+        args: [userId, since, CONSUMER_ACTIVE_LIMIT * 4],
+      },
+    ],
+    "read",
+  );
+  return {
+    limit: CONSUMER_ACTIVE_LIMIT,
+    active: Number(total.rows[0]?.count ?? 0),
+    mine: own.rows.map((row) => ({
+      id: String(row.id),
+      draftId: String(row.draft_id),
+      projectName: row.project_name == null ? null : String(row.project_name),
+      workflow: row.workflow as ConsumerWorkflow,
+      status: row.status as ConsumerCapacityJob["status"],
+      createdAt: Number(row.created_at),
+      releasable: Number(row.created_at) <= now - CONSUMER_RELEASE_GRACE_MS,
+    })),
+  };
+}
+/**
+ * The owner sets one of their own unsettled jobs aside so it stops holding a
+ * slot. Nothing is deleted or rewritten: the status, receipt and provider id
+ * stay, the job stays listed and recoverable, and it can never be dispatched
+ * again. Only past the grace period, so capacity cannot be bypassed by
+ * setting fresh jobs aside.
+ */
+export async function setAsideConsumerJob(
+  input: { userId: string; id: string },
+  now = Date.now(),
+): Promise<boolean> {
+  identifier(input.userId);
+  identifier(input.id);
+  await consumerJobsReady();
+  const changed = await db().execute({
+    sql: `UPDATE higgsfield_consumer_jobs SET released_at=? WHERE id=? AND user_id=?
+      AND status IN ('dispatching','accepted','uncertain') AND released_at IS NULL AND created_at<=?`,
+    args: [now, input.id, input.userId, now - CONSUMER_RELEASE_GRACE_MS],
+  });
+  return changed.rowsAffected === 1;
+}
+
+/** A durable dispatch claim has no expiry/reclaim path: a crash may have submitted.
+ * It holds capacity until it settles, its owner sets it aside, or the capacity
+ * window passes; none of those ever makes it dispatchable again. */
 export async function claimConsumerDispatch(
   input: ConsumerJobScope,
 ): Promise<{ job: ConsumerJob; claimToken: string } | null> {
@@ -525,9 +636,10 @@ export async function claimConsumerDispatch(
       throw new ConsumerJobError("quote_expired");
     const active = Number(
       (
-        await tx.execute(
-          "SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE status IN ('dispatching','accepted','uncertain')",
-        )
+        await tx.execute({
+          sql: `SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE ${holdsCapacity()}`,
+          args: [now - CONSUMER_CAPACITY_WINDOW_MS],
+        })
       ).rows[0].count,
     );
     if (active >= CONSUMER_ACTIVE_LIMIT)
@@ -566,7 +678,7 @@ export async function claimConsumerDispatchBatch(
       if (Number(row.quote_expires_at) <= now) throw new ConsumerJobError("quote_expired");
     }
     const active = Number(
-      (await tx.execute("SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE status IN ('dispatching','accepted','uncertain')")).rows[0].count,
+      (await tx.execute({ sql: `SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE ${holdsCapacity()}`, args: [now - CONSUMER_CAPACITY_WINDOW_MS] })).rows[0].count,
     );
     if (active + inputs.length > CONSUMER_ACTIVE_LIMIT) throw new ConsumerJobError("capacity", 429);
     const claims: { job: ConsumerJob; claimToken: string }[] = [];
@@ -826,5 +938,48 @@ export function releaseConsumerPoll(
   return finishPoll(input, {
     status: "accepted",
     nextPollAt: input.nextPollAt,
+  });
+}
+
+/** A job is read in the background for this long after it was admitted. Past
+ * it, the page can still check it; the heartbeat stops spending reads on it. */
+export const CONSUMER_SWEEP_AGE_MS = 7 * 24 * 3_600_000;
+/** The heartbeat takes the same job for a read at most this often. */
+export const CONSUMER_SWEEP_INTERVAL_MS = 5 * 60_000;
+/**
+ * The next accepted job due for a background read (its next poll time has
+ * passed and no read is in flight), least recently taken first. It is stamped
+ * as taken before it is read, so a job that cannot be read right now (its
+ * grant changed, the account is disconnected) steps behind the others instead
+ * of starving them. The read itself is the workflow's own leased poll: this
+ * never quotes, dispatches or sends anything again.
+ */
+export async function claimConsumerSweep(
+  workflows: readonly ConsumerWorkflow[],
+  now = Date.now(),
+): Promise<(ConsumerJobScope & { workflow: ConsumerWorkflow }) | null> {
+  if (!workflows.length || workflows.some((workflow) => !CONSUMER_WORKFLOWS.includes(workflow))) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const row = (
+      await tx.execute({
+        sql: `SELECT id,user_id,draft_id,workflow FROM higgsfield_consumer_jobs
+          WHERE status='accepted' AND provider_job_id IS NOT NULL AND workflow IN (${workflows.map(() => "?").join(",")})
+            AND (poll_lease_until IS NULL OR poll_lease_until<=?) AND created_at>? AND (swept_at IS NULL OR swept_at<=?)
+          ORDER BY COALESCE(swept_at,0) ASC,created_at ASC,id ASC LIMIT 1`,
+        args: [...workflows, now, now - CONSUMER_SWEEP_AGE_MS, now - CONSUMER_SWEEP_INTERVAL_MS],
+      })
+    ).rows[0];
+    if (!row) return null;
+    await tx.execute({
+      sql: "UPDATE higgsfield_consumer_jobs SET swept_at=? WHERE id=? AND status='accepted'",
+      args: [now, row.id],
+    });
+    return {
+      id: String(row.id),
+      userId: String(row.user_id),
+      draftId: String(row.draft_id),
+      workflow: row.workflow as ConsumerWorkflow,
+    };
   });
 }

@@ -80,6 +80,18 @@ const local = (
   run: async (ctx, io) => fn(ctx, io),
 });
 
+/** The browser saves a file by following a link to it (the route names the file). */
+function downloadLink(url: string) {
+  if (typeof document === "undefined") throw new Error("Open the project in a browser to download its package.");
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 /** Executor for a step whose backend does not exist. It refuses, never pretends. */
 const missing = (what: string): CallExecutor => ({
   type: "call",
@@ -765,36 +777,33 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
 
   deliver: plan("deliver", {
     title: "Package the approved takes",
-    line: "Collects every approved take under the workspace's file naming, with the shot list beside them. Free.",
+    line: "Collects every approved take under the workspace's file naming, with the shot list beside them, and downloads the zip. Free.",
     priceLabel: "Free",
-    doneLine: (_ctx, io) => `Package ready · ${plural(Number(io.approved ?? 0), "approved take")}`,
+    doneLine: (_ctx, io) => `Package downloading · ${plural(Number(io.approved ?? 0), "approved take")}`,
     runnable: needProduction,
     steps: [
       step(
         "Read the approved takes",
         "read",
         "selects",
-        run({ method: "GET", path: "/api/export/selects?format=csv" }, async (ctx) => {
-          const path = `/api/export/selects?${new URLSearchParams({ projectId: ctx.productionId ?? "", format: "csv" })}`;
-          const response = await ctx.fetch(path, { cache: "no-store" });
-          if (!response.ok) {
-            const data = (await response.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(data?.error || `The request failed (${response.status}).`);
-          }
-          const rows = (await response.text()).split(/\r?\n/).filter((line) => line.trim()).length - 1;
-          return { detail: plural(Math.max(rows, 0), "take"), io: { approved: Math.max(rows, 0) } };
+        run({ method: "GET", path: "/api/export/selects?format=count" }, async (ctx) => {
+          const { approved } = await call<{ approved: number }>(
+            ctx,
+            `/api/export/selects?${new URLSearchParams({ projectId: ctx.productionId ?? "", format: "count" })}`,
+          );
+          const count = Number.isInteger(approved) && approved > 0 ? approved : 0;
+          return { detail: plural(count, "take"), io: { approved: count } };
         }),
       ),
       step(
         "Package",
         "file",
-        "→ Deliver",
-        local("packageUrl", (ctx) => ({
-          detail: "zip ready",
-          io: {
-            packageUrl: `/api/export/selects?${new URLSearchParams({ projectId: ctx.productionId ?? "", format: "zip" })}`,
-          },
-        })),
+        "→ Download",
+        run({ method: "GET", path: "/api/export/selects?format=zip" }, async (ctx) => {
+          const packageUrl = `/api/export/selects?${new URLSearchParams({ projectId: ctx.productionId ?? "", format: "zip" })}`;
+          (ctx.download ?? downloadLink)(packageUrl);
+          return { detail: "zip downloading", io: { packageUrl } };
+        }),
       ),
     ],
   }),
@@ -868,7 +877,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
             async () =>
               (await call<{ jobs: AtomikJob[] }>(
                 ctx,
-                `/api/workbench/atomik?requestId=${encodeURIComponent(job.requestId)}`,
+                `/api/workbench/atomik?${new URLSearchParams({ projectId: ctx.projectId ?? "", requestId: job.requestId })}`,
               )).jobs.find((item) => item.requestId === job.requestId) ?? job,
             (item) => TERMINAL.has(item.status),
           );

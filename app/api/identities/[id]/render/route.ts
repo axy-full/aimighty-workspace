@@ -9,7 +9,8 @@ import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { meter } from "@/lib/meter";
 
-import { withGenerationRequest, bindGenerationRequest, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
+import { withGenerationRequest, claimBinding, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
+import type { InStatement } from "@libsql/client";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -58,10 +59,11 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
 
   const ids: string[] = [];
   const ts = now();
+  const rows: InStatement[] = [];
   for (let i = 0; i < count; i++) {
     const genId = newId("gen");
     ids.push(genId);
-    await db().execute({
+    rows.push({
       sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
              created_at, updated_at, token_id, provider, task, billed_to)
@@ -76,7 +78,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
              "running", got.user.id, ts, ts, got.token?.id ?? null, "fal", "generate", "fal"],
     });
   }
-  await bindGenerationRequest(requestClaim, ids[0]);
+  // The claim is bound in the same write: a claim naming no job proves there is none.
+  await db().batch([...rows, ...(await claimBinding(requestClaim, ids[0]))], "write");
   invalidate(PROJECTS_KEY);
   const reserved: string[] = [];
   try {
@@ -115,5 +118,5 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   })));
 
   return NextResponse.json({ ids, status: "running" });
-  });
+  }, { atomicBinding: true });
 });

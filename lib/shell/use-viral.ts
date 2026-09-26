@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
-import { ESTIMATE_LIFETIME_MS, mergeRuns, runCannotSettle, runInFlight } from "./viral";
+import { ESTIMATE_LIFETIME_MS, VIRAL_FAILED, mergeRuns, pendingJobIds, runAfterStatus, runCannotSettle, runInFlight, type ViralRun } from "./viral";
 
 /**
  * The Genjutsu pages' one line to the connected account
@@ -16,20 +16,22 @@ import { ESTIMATE_LIFETIME_MS, mergeRuns, runCannotSettle, runInFlight } from ".
  * opened — until the account settles it, at the pace the account asks for.
  * A run that cannot move on its own is read a few times, then left for the
  * person to check again. A run that lands re-reads the project's Library
- * once, so Takes and the Library show it without a reload. Nothing here
- * invents a price or sends a job twice.
+ * once, so Takes and the Library show it without a reload. A submit whose
+ * reply was lost re-reads the list, and the run follows the account once the
+ * list shows the job was taken. Nothing here invents a price or sends a job
+ * twice.
  */
 export type GenjutsuJob = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
   input: ConsumerGenjutsuInput; workspaceName: string; workspaceId: string; quoteCredits: number; creditUnit: string; quoteExpiresAt: number; quoteExpired?: boolean;
   providerJobId: string | null; providerReceipt?: unknown; result?: { original?: { generationId?: string; asset?: { id?: string; url?: string; kind?: string } } } | null;
-  originalAvailability?: string; originalAvailable?: boolean; createdAt: number; updatedAt?: number;
+  originalAvailability?: string; originalAvailable?: boolean; setAside?: boolean; createdAt: number; updatedAt?: number;
 };
 export type ViralCapabilities = { resolutions: string[]; minSeconds: number; maxSeconds: number; maxImages: number; maxMediaBytes: number };
 export type Estimate = { key: string; credits: number | null; expiresAt: number; error: string | null; job: GenjutsuJob | null };
 /** Where this project's run list stands: the first read, then older pages on request. */
 export type ViralRuns = { status: "idle" | "loading" | "ready" | "error"; nextCursor: string | null; more: "idle" | "loading" | "error" };
-type RunPhase = { phase: "idle" } | { phase: "submitting"; job: GenjutsuJob } | { phase: "running"; job: GenjutsuJob } | { phase: "done"; job: GenjutsuJob } | { phase: "failed"; job: GenjutsuJob | null; error: string };
+type RunPhase = ViralRun<GenjutsuJob>;
 type Runs = { draftId: string; jobs: GenjutsuJob[]; status: "loading" | "ready" | "error"; error: string | null; nextCursor: string | null; pages: number; more: ViralRuns["more"] };
 type ListReply = { connection?: { connected?: boolean; requiresReconnect?: boolean }; capabilities?: ViralCapabilities; jobs?: GenjutsuJob[]; nextCursor?: string | null; error?: string } | null;
 
@@ -41,10 +43,9 @@ const POLL_MAX_MS = 60_000, STALL_READS = 3;
 type Watch = { at: number; reads: number; status: string };
 /** Why a run is no longer read on its own: nothing can move it, or the route could not find it. */
 export type Stall = "unconfirmed" | "gone";
-const FAILED = "The connected account reported this job as failed. Failed renders are not billed.";
 const UNREADABLE = "The connected account could not be read.";
 const phaseFor = (job: GenjutsuJob): RunPhase =>
-  job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: FAILED } : { phase: "running", job };
+  job.status === "completed" ? { phase: "done", job } : job.status === "failed" ? { phase: "failed", job, error: VIRAL_FAILED } : { phase: "running", job };
 
 export function useViral(scope: string, draftId: string | null, variant: ConsumerGenjutsuInput["variant"] | null = null) {
   const ready = Boolean(scope);
@@ -140,11 +141,11 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
     }
   }, [call, draftId]);
 
-  /* A run the account answered for: into the list in place, onto the primary if it is the one just sent, and — once it lands — into the Library. */
+  /* A run the account answered for: into the list in place, onto the primary if it is the one just sent (or one whose submit reply was lost, which the account took after all), and — once it lands — into the Library. */
   const landed = useRef(new Set<string>());
   const land = useCallback((job: GenjutsuJob) => {
     setRuns((prev) => (prev?.draftId === job.draftId ? { ...prev, jobs: mergeRuns([job], prev.jobs) } : prev));
-    setRun((prev) => ((prev.phase === "submitting" || prev.phase === "running") && prev.job.id === job.id ? phaseFor(job) : prev));
+    setRun((prev) => (prev.phase === "submitting" && prev.job.id === job.id ? phaseFor(job) : runAfterStatus(prev, job)));
     if (job.status === "completed" && !landed.current.has(job.id)) {
       landed.current.add(job.id);
       if (scope) void refreshProjectLibrary(scope, job.draftId);
@@ -164,8 +165,11 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
       land(job);
     } catch (error) {
       setRun({ phase: "failed", job: current.job, error: error instanceof Error ? error.message : "The job could not be submitted." });
+      /* A lost reply may still have reached the account: the list says so, and a job it took is read
+         like any other run in flight — this run too, which then shows it rendering. */
+      void refresh();
     }
-  }, [call, draftId, land]);
+  }, [call, draftId, land, refresh]);
 
   const current = draftId && runs?.draftId === draftId ? runs : null;
   const jobs = current?.jobs ?? [];
@@ -211,7 +215,10 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
    * the list found still rendering — one per tick at most, in turn, each when
    * it is due, so four at once cost no more requests than one. A hidden tab waits.
    */
-  const pollKey = [...new Set([...jobs, ...(run.phase === "running" ? [run.job] : [])].filter((j) => runInFlight(j.status) && !stalledAs(j)).map((j) => j.id))].join(",");
+  const pollKey = pendingJobIds(
+    jobs.filter((j) => !stalledAs(j)),
+    run.phase === "running" && runInFlight(run.job.status) && !stalledAs(run.job) ? run.job.id : null,
+  ).join(",");
   useEffect(() => {
     if (!draftId || !pollKey) return;
     const ids = pollKey.split(",");

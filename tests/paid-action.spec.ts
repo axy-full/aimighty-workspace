@@ -140,11 +140,15 @@ test("asset training retains its identity through close and retries one asset cr
     if (path === "/api/settings")
       return json({ settings: { trainOnCreate: "always" } });
     if (path === "/api/identities") {
-      if (r.method() === "GET")
+      if (r.method() === "GET") {
+        /* The real terms, in the unit this workspace pays in (trainCredits in
+           credits, trainCostUsd on its own keys), with a trainer connected. */
+        const real = await (await route.fetch()).json();
         return json({
           identities: [],
-          terms: { configured: true, minPhotos: 1, trainCostUsd: 14 },
+          terms: { ...real.terms, configured: true, minPhotos: 1 },
         });
+      }
       identities++;
       return json({ identity: { id: "identity-browser" } }, 201);
     }
@@ -243,6 +247,11 @@ test("asset training retains its identity through close and retries one asset cr
   expect(identities).toBe(1);
   expect(trains).toHaveLength(3);
   expect(trains.every((item) => item.key === trains[0].key)).toBeTruthy();
+  // The price the sheet showed travels as the approval, and a replay carries the same body.
+  const trainBody = trains[0].body as Record<string, unknown>;
+  expect(trainBody.consent).toBe(true);
+  expect(typeof (trainBody.maxCredits ?? trainBody.maxUsd)).toBe("number");
+  expect(trains.every((item) => JSON.stringify(item.body) === JSON.stringify(trainBody))).toBeTruthy();
   expect(assets).toHaveLength(2);
   expect(assets[1]).toEqual(assets[0]);
   expect(assets[0].key).toBe(`asset-from-training:${trains[0].key}`);

@@ -63,7 +63,7 @@ async function fixture(page: Page, options: { analysis?: boolean } = {}) {
       posts.push(body);
       if (body.action === "voices") {
         expect(body).toEqual({ action: "voices" });
-        return json({ voices: { voices: [{ id: "voice-nova", type: "preset", name: "Nova", language: "en-US" }, { id: "voice-atlas", type: "preset", name: "Atlas" }, { id: "elem-1", type: "element", name: "My studio voice" }], complete: true, fetchedAt: Date.now() } });
+        return json({ voices: { voices: [{ id: "voice-nova", type: "preset", name: "Nova", language: "en-US" }, { id: "voice-atlas", type: "preset", name: "Atlas" }], complete: true, fetchedAt: Date.now() } });
       }
       expect(body.draftId).toBe(project.id);
       if (body.action === "quote") {
@@ -172,10 +172,11 @@ test("Change voice picks a listed voice and one project video, quotes at the exa
   await expect(panel.getByLabel("Selected tool", { exact: true })).toContainText("Change voice: Replace the spoken voice in a project video");
   // Voices come from the connected account's listing, grouped by kind, with no preview links.
   const voice = panel.getByRole("combobox", { name: "Voice", exact: true });
-  await expect(voice.locator("option")).toHaveText(["Choose a voice", "Nova · en-US", "Atlas", "My studio voice"]);
-  await expect(voice.locator("optgroup").nth(0)).toHaveAttribute("label", "Preset voices");
-  await expect(voice.locator("optgroup").nth(1)).toHaveAttribute("label", "Your voices");
-  await expect(panel.getByText("3 voices", { exact: false })).toBeVisible();
+  // Preset voices only: voices made on the account are never listed (the route never returns them).
+  await expect(voice.locator("option")).toHaveText(["Choose a voice", "Nova · en-US", "Atlas"]);
+  await expect(voice.locator("optgroup")).toHaveCount(1);
+  await expect(voice.locator("optgroup")).toHaveAttribute("label", "Preset voices");
+  await expect(panel.getByText("2 voices", { exact: false })).toBeVisible();
   expect(state.posts.filter((body) => body.action === "voices")).toHaveLength(1);
   expect((await panel.innerText()).toLowerCase()).not.toContain("higgsfield");
   await expect(panel.getByText("Change voice needs one video from this project.", { exact: true })).toBeVisible();

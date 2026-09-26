@@ -67,10 +67,12 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
   const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
+  /* Sound is picked for its transcript only; the cut and the re-edits are for pictures. */
+  const pickable = (e: LibraryEntry) => editable(e) || (e.media === "audio" && Boolean(e.url));
   const chosen = picked ? items.find((e) => e.take.id === picked) ?? null : null;
   const [lost, setLost] = useState<string | null>(null);
   const finding = Boolean(picked) && !chosen && lost !== picked;
-  const entry = chosen ? (editable(chosen) ? chosen : generations.find(editable) ?? null) : picked ? null : generations.find(editable) ?? null;
+  const entry = chosen ? (pickable(chosen) ? chosen : generations.find(editable) ?? null) : picked ? null : generations.find(editable) ?? null;
   /* Not in the loaded range yet: older pages come in until it is found, or it is not in the project. */
   useEffect(() => {
     if (!finding || !picked) return;
@@ -92,7 +94,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     return () => cancelAnimationFrame(frame);
   }, [focusOn]);
   const pick = (e: LibraryEntry) => {
-    if (!editable(e)) { toast(e.media === "audio" ? "Sound goes on the lanes in Edit & Sound." : "This file has no picture to edit."); return; }
+    if (!pickable(e)) { toast("This file has no picture or sound to edit."); return; }
     setPicked(e.take.id); setQuote(null); setError("");
     requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   };
@@ -184,8 +186,10 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         <>
           <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
           <div className="gx-gen-enhance">
-            <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
-            <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+            {entry.media === "audio" ? null : <>
+              <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
+              <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+            </>}
             <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
           </div>
           {entry.media === "video" || entry.media === "audio" ? (
