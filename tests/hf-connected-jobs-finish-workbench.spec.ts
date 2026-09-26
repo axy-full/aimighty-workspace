@@ -205,7 +205,8 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await page.clock.fastForward(NEXT_READ);
   await expect(page.getByTestId("toast")).toHaveText("Seedance 2.5 rendered on the connected account. It is in Takes.");
   await expect(cards).toHaveCount(4);
-  await expect(page.getByTestId("gen-view").locator(".gx-gen-grid .gx-asset:not([data-testid])")).toHaveCount(1);
+  /* The landed take is a result card (components/graphite/TakeTile.tsx), no longer a picked-up one. */
+  await expect(page.getByTestId("gen-view").locator(".gx-gen-grid").getByTestId("take-tile")).toHaveCount(1);
   /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
   confirmed = true;
   await page.clock.fastForward("01:01");
