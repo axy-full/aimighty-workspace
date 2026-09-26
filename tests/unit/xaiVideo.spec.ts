@@ -7,6 +7,8 @@ import { modelConfigured } from "../../lib/providers";
 import { estimateCostUsd } from "../../lib/vendorPricing";
 import { pollXaiVideo, submitXaiVideo, xaiVideoBody } from "../../lib/xaiVideo";
 import type { Reference, VideoParams } from "../../lib/ark";
+import { XaiHttpError, xaiSubmissionRejected } from "../../lib/xaiErrors";
+import { PreflightError } from "../../lib/preflight";
 
 /**
  * Owner, 23 September: Grok APIs wherever possible. Grok Imagine Video runs
@@ -82,4 +84,37 @@ test("submit posts to xAI with the key; polling reads running, done with xAI's c
       expect(out.value.error).toContain(message);
     }
   });
+});
+
+/* A take whose outcome is certain releases its reservation; one that may be running keeps it. */
+test("a request stopped before it is sent, or refused by xAI, is certain; a 5xx is not", async () => {
+  const model = getModel("grok-imagine-video-1.5");
+  await withEnv({ XAI_API_KEY: "xai-unit" }, async () => {
+    for (const [refs, resolution, message] of [
+      [[image("reference_image")], "1080p", "up to 720p"],
+      [[image("first_frame"), image("last_frame")], "720p", "no last frame"],
+    ] as const) {
+      const { sent } = await stubbed(() => ({ request_id: "never" }), async () => {
+        const error = await submitXaiVideo(model, "A fox", params({ resolution }), [...refs]).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(PreflightError);
+        expect((error as Error).message).toContain(message);
+      });
+      expect(sent).toEqual([]);
+    }
+    const real = globalThis.fetch;
+    try {
+      for (const [status, certain] of [[400, true], [401, true], [422, true], [429, true], [500, false], [503, false]] as const) {
+        globalThis.fetch = (async () => Response.json({ error: { message: "no" } }, { status })) as typeof fetch;
+        const error = await submitXaiVideo(model, "A fox", params(), []).catch((e: unknown) => e);
+        expect(error, String(status)).toBeInstanceOf(XaiHttpError);
+        expect((error as XaiHttpError).status).toBe(status);
+        expect(xaiSubmissionRejected(error), String(status)).toBe(certain);
+      }
+    } finally { globalThis.fetch = real; }
+  });
+  await withEnv({}, async () => {
+    const error = await submitXaiVideo(model, "A fox", params(), []).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PreflightError);
+  });
+  expect(xaiSubmissionRejected(new Error("socket hang up"))).toBe(false);
 });
