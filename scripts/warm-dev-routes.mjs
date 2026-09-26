@@ -23,8 +23,8 @@ import { execFileSync } from "node:child_process";
 
 const base = (process.argv.find((a) => a.startsWith("http")) || "http://localhost:4551").replace(/\/$/, "");
 const checkOnly = process.argv.includes("--check");
-const budget = Number(process.env.WARM_BUDGET_MB || 1500);
-const cap = Number(process.env.WARM_CAP_MB || 4500);
+const budget = Number(process.env.WARM_BUDGET_MB || 2000);
+const cap = Number(process.env.WARM_CAP_MB || 5000);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /* Every page and route under app/ as a URL: groups dropped, dynamic segments
@@ -59,7 +59,7 @@ function serverMemory() {
 }
 
 /* Wait for a snapshot to free what the compiles held: until memory falls by a
-   third, or 10 s pass without it falling. */
+   third, or 8 s pass without it falling. */
 async function settle() {
   const start = serverMemory();
   const began = Date.now();
@@ -67,7 +67,7 @@ async function settle() {
   while (Date.now() - began < 20_000) {
     await sleep(500);
     now = serverMemory();
-    if (now < start * 0.67 || (Date.now() - began > 10_000 && now > start * 0.95)) break;
+    if (now < start * 0.67 || (Date.now() - began > 8_000 && now > start * 0.95)) break;
   }
   return now;
 }
@@ -100,9 +100,9 @@ const essentials = [
 const targets = [...essentials];
 if (!checkOnly) {
   for (const { path, api } of routes().sort((a, b) => Number(a.api) - Number(b.api) || a.path.localeCompare(b.path))) {
-    /* Only an unknown route answers OPTIONS with anything but 204. A page's
-       signed-out answer is its own business, so pages are not judged. */
-    if (api) targets.push({ url: path, method: "OPTIONS", ok: [204] });
+    /* OPTIONS answers 404 only for a route the server does not know; a route
+       that fails to load fails its own specs. Pages are not judged. */
+    if (api) targets.push({ url: path, method: "OPTIONS", notFound: true });
     else {
       targets.push({ url: path, method: "GET" });
       /* An app parameter asks the proxy for the app's page instead of the site. */
@@ -117,12 +117,12 @@ let floor = serverMemory();
 let peak = floor;
 let pauses = 0;
 const missing = [];
-for (const { url, method, ok } of targets) {
+for (const { url, method, ok, notFound } of targets) {
   const status = await request(url, method);
-  if (ok && !ok.includes(status)) missing.push(`${method} ${url} ${status}`);
+  if ((ok && !ok.includes(status)) || (notFound && status === 404)) missing.push(`${method} ${url} ${status}`);
   const memory = serverMemory();
   peak = Math.max(peak, memory);
-  if (memory > Math.min(floor + budget, cap)) {
+  if (!checkOnly && memory > Math.min(floor + budget, cap)) {
     floor = await settle();
     pauses += 1;
   }

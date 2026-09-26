@@ -80,9 +80,9 @@ jobs:
     # The jumps still came, 10-14 GB, whenever specs opened many routes the
     # server had not compiled yet: Turbopack frees what a compile holds only at
     # a cache snapshot, and it snapshots only when idle. So each job's first
-    # server now compiles every route, paced, before any spec runs; the later
-    # two restore them from .next. That costs the first server a few minutes,
-    # hence 40 minutes.
+    # server now compiles every route, paced, before any spec runs, and the
+    # later two restore them from .next; source maps are off (env below). The
+    # first server's warm-up takes minutes, hence 40.
     timeout-minutes: 40
     env:
       ENGINE_MOCK: '1'
@@ -95,6 +95,9 @@ jobs:
       # address lets the platform-desk spec sign in as the owner; unset, the
       # desk is shut to everyone.
       SUPER_ADMIN_EMAIL: platform-owner@example.test
+      # next.config.ts turns Turbopack's source maps off for these dev
+      # servers: they are half the native memory a compiled route holds.
+      CI_DEV_SOURCE_MAPS: 'off'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
