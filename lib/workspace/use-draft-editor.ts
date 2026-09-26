@@ -7,6 +7,7 @@ import {
   DraftRequestError,
   draftRequest,
   draftWriter,
+  setAsideDraftWriter,
   writeMergedDraft,
   type DraftWriter,
 } from "@/lib/workbench/draft-request";
@@ -143,6 +144,8 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   const writer = useRef(draftWriter());
   /** What this editor's changes made, as made: a record another window made from the same source merges from it. */
   const made = useRef<MadeRecords>(new Map());
+  /** Edits set aside for the saved version (`reload`): their writer, fenced on the server before the saved version is read. */
+  const setAside = useRef<{ projectId: string; writer: DraftWriter } | null>(null);
   const chain = useRef<Promise<boolean>>(Promise.resolve(true));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
@@ -222,7 +225,10 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       timer.current = setTimeout(() => retry.current(), SAVE_DELAY_MS);
       return () => { active = false; };
     }
-    read(projectId)
+    /* Edits just set aside for the saved version: a save of them still on its way is fenced first, so it never lands after the read. */
+    const aside = setAside.current?.projectId === projectId ? setAside.current : null;
+    (aside ? setAsideDraftWriter(API, scope, projectId, aside.writer).then(() => { if (setAside.current === aside) setAside.current = null; }) : Promise.resolve())
+      .then(() => read(projectId))
       .then((data) => {
         if (!active) return;
         opened.current = key;
@@ -264,6 +270,8 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       if (alive.current) setSaveState("Saving");
       try {
         const saved = await writeMergedDraft(API, scope, { base: from, mine: snapshot, revision: revision.current, writer: by, made: made.current });
+        /* Set aside for the saved version while it was out: the page shows what it read, not this. */
+        if (by.setAside) return false;
         /* The page left this draft while the save was out, and its edits went on saving on their own (park): from what
            this save saved, never from the base before it — or a save that landed would be merged in again. */
         const held = parkedBy.get(by);
@@ -289,8 +297,8 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
         }
         return true;
       } catch (problem) {
-        /* Another project opened meanwhile: this draft's edits went on saving on their own (leave). */
-        if (current.current?.id !== snapshot.id) return false;
+        /* Another project opened meanwhile: this draft's edits went on saving on their own (leave). Set aside: nothing to say. */
+        if (current.current?.id !== snapshot.id || by.setAside) return false;
         const message = problem instanceof Error ? problem.message : "Save failed. Your current work is preserved.";
         if (problem instanceof DraftRequestError && (problem.uncertain || problem.retryable)) {
           /* Unknown or temporary: the edits stay, and the save is tried again once the server can say whether it landed. */
@@ -370,7 +378,13 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
     failed.current = false;
     retries.current = 0;
     chain.current = Promise.resolve(true);
-    /* The saved version replaces these edits: none are taken up or kept saving. */
+    /* The saved version replaces these edits: none are taken up or kept saving, and a save of them still on its way is
+       fenced before the saved version is read (the load below). */
+    const id = current.current?.id ?? base.current?.id;
+    if (id) {
+      writer.current.setAside = true;
+      setAside.current = { projectId: id, writer: writer.current };
+    }
     current.current = null;
     setStatus("loading");
     setEpoch((value) => value + 1);

@@ -216,6 +216,8 @@ export type DraftWriter = {
   seq: number;
   /** The save sent whose outcome is not known yet: settled before anything else is sent. */
   unconfirmed: UnconfirmedWrite | null;
+  /** Set when its edits were set aside for the saved version (setAsideDraftWriter): nothing more is sent for them. */
+  setAside?: boolean;
 };
 /** A save sent whose reply was lost: the edited draft it carried (`mine`) and the draft that was edited from (`base`). */
 export type UnconfirmedWrite = { projectId: string; seq: number; mine: Project; base: Project };
@@ -264,6 +266,19 @@ export async function checkDraftWrite(base: string, scope: string, projectId: st
   return { landed: data.landed as number | null, project: project as Project | null, revision: Number(data.revision) };
 }
 
+/**
+ * The person set this writer's edits aside for the saved version ("Load the
+ * saved version"): nothing more is sent for them, and a save of them still on
+ * its way is fenced on the server, so it can never land afterwards. Resolves
+ * once the server has the fence — or once it says the save landed, in which
+ * case the saved version read next holds it. Throws when the server cannot be
+ * asked: the saved version is not safe to show yet.
+ */
+export async function setAsideDraftWriter(base: string, scope: string, projectId: string, writer: DraftWriter): Promise<void> {
+  writer.setAside = true;
+  if (writer.seq > 0) await checkDraftWrite(base, scope, projectId, { writer: writer.id, seq: writer.seq });
+}
+
 export async function writeDraft(
   base: string,
   scope: string,
@@ -271,6 +286,7 @@ export async function writeDraft(
   /** With a writer the save is tagged, and a lost reply is settled by asking the server whether it landed. */
   writer?: DraftWriter,
 ): Promise<DraftReceipt> {
+  if (writer?.setAside) throw setAside();
   const tag = writer ? { writer: writer.id, seq: ++writer.seq } : undefined;
   try {
     return await putDraft(base, scope, write, tag);
@@ -370,6 +386,7 @@ export async function writeMergedDraft(
   /* An earlier save whose reply was lost: settled first. What it carried is the base of what is left to send when it
      landed; what it was edited from when it did not — which may be newer than `base`: that save's own call may have
      settled a save before it that landed. */
+  if (writer.setAside) throw setAside();
   const pending = writer.unconfirmed;
   if (pending && pending.projectId === mine.id) {
     const checked = await settle({ writer: writer.id, seq: pending.seq }, pending.mine, pending.base);
@@ -383,6 +400,7 @@ export async function writeMergedDraft(
   }
 
   for (let attempt = 0; ; attempt++) {
+    if (writer.setAside) throw setAside();
     const tag = { writer: writer.id, seq: ++writer.seq };
     try {
       const receipt = await putDraft(base, scope, { project: body, revision }, tag);
@@ -418,6 +436,11 @@ export async function writeMergedDraft(
       revision = latest.revision;
     }
   }
+}
+
+/** Edits the person set aside for the saved version: refused here, never sent, never retried. */
+function setAside() {
+  return new DraftRequestError("These edits were set aside for the saved version. Nothing more was sent.", false, false);
 }
 
 function lostDraft() {

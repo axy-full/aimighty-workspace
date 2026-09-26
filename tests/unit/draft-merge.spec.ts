@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { merge3, noteTakenOut, rebaseDraft, recordMade, sameJson, TAKEN_OUT_KEEP, type MadeRecords } from "../../lib/workbench/merge";
 import { mergeDraft } from "../../lib/workbench/draft-merge";
-import { draftWriter, writeMergedDraft } from "../../lib/workbench/draft-request";
+import { draftWriter, setAsideDraftWriter, writeMergedDraft } from "../../lib/workbench/draft-request";
 import { saveSchema } from "../../lib/workbench/studio-schema";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { shotPatch } from "../../lib/workspace/shots";
@@ -591,6 +591,47 @@ function tagServer(start: Project, afterLanding?: (landed: Project) => Project) 
 }
 const nativeFetch = globalThis.fetch;
 const reply = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+
+test.describe("edits set aside for the saved version (Load the saved version)", () => {
+  test.afterEach(() => { globalThis.fetch = nativeFetch; });
+
+  test("a save of them still on its way never lands afterwards, and nothing more is sent for them", async () => {
+    const base = project((p) => { p.brief = "Original brief"; });
+    const state = { project: base, revision: 1, puts: 0, fenced: new Map<string, number>(), landed: new Map<string, number>() };
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    globalThis.fetch = async (_url, init) => {
+      const method = init?.method ?? "GET";
+      if (method === "PUT") {
+        state.puts++;
+        const body = JSON.parse(String(init?.body)) as { project: Project; revision: number; write: { writer: string; seq: number } };
+        if (state.puts === 1) await held;
+        if (body.revision !== state.revision || (state.fenced.get(body.write.writer) ?? 0) >= body.write.seq) return reply({ error: "A newer version exists.", code: "revision_conflict" }, 409);
+        state.project = { ...body.project, productionProjectId: "production", shotMappings: {} };
+        state.revision += 1;
+        state.landed.set(body.write.writer, body.write.seq);
+        return reply({ revision: state.revision, productionProjectId: "production", shotMappings: {} });
+      }
+      if (method === "POST") {
+        const { write } = JSON.parse(String(init?.body)) as { write: { writer: string; seq: number } };
+        const landed = state.landed.get(write.writer) === write.seq ? state.revision : null;
+        if (landed === null) state.fenced.set(write.writer, write.seq);
+        return reply({ landed, project: state.project, revision: state.revision });
+      }
+      return reply({ project: state.project, revision: state.revision });
+    };
+    const writer = draftWriter();
+    const saving = writeMergedDraft("/api/workbench", "scope", { base, mine: { ...base, brief: "Edits the person set aside" }, revision: 1, writer });
+    await expect.poll(() => state.puts).toBe(1);
+    /* Another window saves meanwhile; then the person loads the saved version, which sets these edits aside. */
+    state.project = { ...base, brief: "Saved in another window", productionProjectId: "production", shotMappings: {} };
+    state.revision = 2;
+    await setAsideDraftWriter("/api/workbench", "scope", base.id, writer);
+    release();
+    await expect(saving).rejects.toMatchObject({ retryable: false, uncertain: false });
+    expect({ brief: state.project.brief, puts: state.puts }).toEqual({ brief: "Saved in another window", puts: 1 });
+  });
+});
 
 test.describe("a save whose reply was lost (writeMergedDraft)", () => {
   test.afterEach(() => { globalThis.fetch = nativeFetch; });
