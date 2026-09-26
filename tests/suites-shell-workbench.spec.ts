@@ -168,7 +168,7 @@ test("assets sit beside every stage, drag as their id, and right-click opens the
   await tiles.first().click({ button: "right" });
   const menu = page.getByTestId("context-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveText([/^Copy/, /^Cut/, /^Paste/, /^Duplicate/, /^Use as reference/, /^Open in Inspector/, /^Move to/, /^Retry/, /^Delete/, /^Undo/]);
+  await expect(menu.getByRole("menuitem")).toHaveText([/^Copy/, /^Cut/, /^Paste/, /^Duplicate/, /^Use as reference/, /^Open in Inspector/, /^Move to/, /^Recreate/, /^Delete/, /^Undo/]);
   /* What an asset cannot do is present, disabled, and says why (Duplicate); the rest is live (step 1). */
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toBeDisabled();

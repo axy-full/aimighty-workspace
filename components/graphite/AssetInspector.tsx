@@ -1,7 +1,9 @@
 "use client";
 import { useRef, useState } from "react";
-import { referenceRole } from "@/lib/shell/assets";
+import { SAY, referenceRole } from "@/lib/shell/assets";
+import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
+import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
 import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -19,7 +21,8 @@ const when = (ms: number) => new Date(ms).toLocaleString("en-US", { month: "shor
 
 export function AssetInspector({ scope, project, id }: { scope: string; project: Project | null; id: string }) {
   const shell = useShell();
-  const { dispatch, state } = useWorkspace();
+  const { dispatch, state, toast } = useWorkspace();
+  const recreate = useRecreate();
   const library = useProjectLibrary(scope, project?.id ?? null);
   const entry = library.items.find((item) => item.take.id === id) ?? null;
   if (!entry) {
@@ -40,6 +43,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const download = generation ? `/api/media/${encodeURIComponent(generation.id)}?download=1` : `/api/uploads/${encodeURIComponent(upload!.id)}?download=1`;
   const downloadable = upload || (generation?.status === "succeeded" && generation.storedUrl);
   const command = (cmd: "use-as-reference" | "retry" | "move" | "delete" | "copy" | "cut") => shell.runCommand?.(cmd, { kind: "asset", id: take.id });
+  /* Recreate's companions: the words alone, or the model and its settings alone. */
+  const noRecreate = generation ? recreateBlock(generation) : null;
+  const words = generation ? recipePrompt(generation) : "";
+  const copyPrompt = async () => {
+    try { await navigator.clipboard.writeText(words); toast(SAY.promptCopied); } catch { toast(SAY.copyBlocked); }
+  };
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
       <div className="gx-insp-row"><span className="gx-eyebrow">Output</span><span className="gx-eyebrow">{take.version}</span></div>
@@ -51,9 +60,16 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
       <span className="gx-eyebrow">Actions</span>
+      {generation ? (
+        <div className="gx-insp-actions" data-testid="inspector-recipe">
+          <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>
+          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Gen stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
+          <button type="button" className="gx-hbtn" disabled={!words} onClick={() => void copyPrompt()} data-testid="inspector-copy-prompt">Copy prompt</button>
+          {noRecreate ? <p className="gx-reason gx-insp-why" data-testid="inspector-recreate-why">{noRecreate}</p> : null}
+        </div>
+      ) : null}
       <div className="gx-insp-actions">
         <button type="button" className="gx-hbtn" disabled={!role} title={role ? undefined : "References are images and videos."} onClick={() => command("use-as-reference")}>Use as reference</button>
-        {generation ? <button type="button" className="gx-hbtn" onClick={() => command("retry")}>Retry generation</button> : null}
         {entryPreview(entry) ? <button type="button" className="gx-hbtn" onClick={() => openPreview([entryPreview(entry)!])} data-testid="inspector-open-preview">Preview</button> : null}
         {downloadable ? <a className="gx-hbtn" href={download} download={upload ? upload.filename : true}>Download original</a> : null}
         <button type="button" className="gx-hbtn" onClick={() => command("copy")}>Copy</button>

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import type { GenPreset } from "./recipe";
 
 /**
  * "Send this asset into the current composer" (FINAL_SPEC §1 step 1). The
@@ -25,5 +26,30 @@ export function useReferenceInbox(read: ((letter: ReferenceLetter) => void) | nu
     waiting = [];
     backlog.forEach(read);
     return () => { readers.delete(read); };
+  }, [read]);
+}
+
+/**
+ * Recreate's letterbox: a take's whole recipe for Gen (lib/shell/recipe.ts).
+ * The same rule as references — collected when Gen mounts, delivered at once
+ * while it is up — except that only the newest unread recipe waits: a second
+ * Recreate before Gen opens replaces the first rather than queueing behind it.
+ */
+let recipeWaiting: GenPreset | null = null;
+const recipeReaders = new Set<(preset: GenPreset) => void>();
+
+export function sendRecipe(preset: GenPreset) {
+  if (recipeReaders.size) recipeReaders.forEach((read) => read(preset));
+  else recipeWaiting = preset;
+}
+
+export function useRecipeInbox(read: ((preset: GenPreset) => void) | null) {
+  useEffect(() => {
+    if (!read) return;
+    recipeReaders.add(read);
+    const waiting = recipeWaiting;
+    recipeWaiting = null;
+    if (waiting) read(waiting);
+    return () => { recipeReaders.delete(read); };
   }, [read]);
 }

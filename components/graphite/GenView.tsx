@@ -8,11 +8,12 @@ import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import { GEN_PRESET_KEY, readGenPreset } from "@/lib/shell/assets";
-import { useReferenceInbox } from "@/lib/shell/reference-inbox";
+import { recipeChips, referenceTag, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
+import { sendRecipe, useRecipeInbox, useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, type BillingSource, type ComposerModel, type ComposerType } from "@/lib/workspace/composer";
+import { COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useSession } from "@/lib/session";
 import { ModelSheet } from "./ModelSheet";
@@ -38,6 +39,10 @@ const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label
 const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
+/** A reference the recreated take cited that is not there any more. */
+type MissingReference = { tag: string; origin: RecipeReference["origin"]; reason: string };
+type RecipeCard = { preset: GenPreset; previous: ComposerState; epoch: number; refs: { total: number; reading: boolean; missing: MissingReference[] } };
+type SetupKit = typeof import("@/lib/shell/recipe-setup");
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -132,23 +137,92 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     }
   }, [scope, dispatchComposer]);
 
-  /* A prompt handed over from elsewhere in the shell (Crew › Open in Gen, an
-     asset's Retry generation) arrives once, then is forgotten. Read at mount
-     (this view only renders in the browser) and applied to the composer. */
-  const [preset] = useState(() => {
+  /* Words and recipes handed over from elsewhere in the shell. Crew › Open in
+     Gen and Soul ID leave words (and a model) in session storage; Recreate
+     posts a take's whole recipe by letter, so a Gen that is already open takes
+     it too. Nothing runs either way: the button prices what arrived. */
+  const [recipe, setRecipe] = useState<RecipeCard | null>(null);
+  const [presetNote, setPresetNote] = useState<string | null>(null);
+  const recipeEpoch = useRef(0);
+  const latest = useRef(state);
+  useEffect(() => { latest.current = state; });
+  const owner = session.owner;
+  const applyPreset = useCallback((preset: GenPreset) => {
+    const epoch = ++recipeEpoch.current;
+    setMode("compose");
+    if (!preset.from) {
+      if (preset.type) dispatchComposer({ type: "type", value: preset.type });
+      if (preset.model) dispatchComposer({ type: "model", value: preset.model });
+      dispatchComposer({ type: "prompt", value: preset.prompt });
+      setRecipe(null);
+      setPresetNote(preset.note ?? null);
+      return;
+    }
+    const previous = latest.current;
+    const settingsOnly = Boolean(preset.settingsOnly);
+    const type = preset.type ?? previous.type;
+    const refs = settingsOnly || type === "audio" ? [] : preset.references ?? [];
+    dispatchComposer({
+      type: "recipe",
+      value: {
+        type, model: preset.model, picks: preset.picks ?? {}, sound: preset.sound,
+        /* The connected account is the owner's; anyone else recreates on this workspace's engines. */
+        billing: preset.billing === "connected" && owner ? "connected" : "workspace",
+        ...(settingsOnly ? {} : { prompt: preset.prompt, references: [] }),
+      },
+    });
+    setPresetNote(null);
+    setRecipe({ preset, previous, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [] } });
+    if (!refs.length) return;
+    /* Every reference is read again in this workspace; the well keeps the take's order. */
+    void Promise.allSettled(refs.map((r) => resolveGenInput(`${r.origin}:${r.id}`, scope))).then((results) => {
+      if (recipeEpoch.current !== epoch) return;
+      const missing: MissingReference[] = [];
+      results.forEach((result, i) => {
+        const r = refs[i];
+        const asset = result.status === "fulfilled" ? result.value : null;
+        if (asset && (asset.kind === "image" || asset.kind === "video"))
+          dispatchComposer({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(r.role ? { role: r.role } : {}) } });
+        else missing.push({ tag: referenceTag(r, i), origin: r.origin, reason: result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "References are images and videos." });
+      });
+      setRecipe((now) => (now?.epoch === epoch ? { ...now, refs: { total: refs.length, reading: false, missing } } : now));
+    });
+  }, [scope, owner, dispatchComposer]);
+  useEffect(() => {
     try {
       const found = readGenPreset(sessionStorage.getItem(GEN_PRESET_KEY));
-      if (found) sessionStorage.removeItem(GEN_PRESET_KEY);
-      return found;
-    } catch { return null; }
-  });
+      if (found) { sessionStorage.removeItem(GEN_PRESET_KEY); sendRecipe(found); }
+    } catch { /* the preset is a convenience */ }
+  }, []);
+  useRecipeInbox(applyPreset);
+  const undoRecipe = () => {
+    if (!recipe) return;
+    recipeEpoch.current++;
+    dispatchComposer({ type: "restore", value: recipe.previous });
+    setRecipe(null);
+  };
+  /* The card comes into view where the composer is (on a phone, above the results). */
+  const recipeCard = useRef<HTMLDivElement>(null);
+  const shownEpoch = recipe?.epoch ?? 0;
+  useEffect(() => { if (shownEpoch) recipeCard.current?.scrollIntoView({ block: "nearest" }); }, [shownEpoch]);
+  /* A carried identity that is no longer on the account is dropped, never sent. */
+  const wantedSoul = recipe?.preset.picks?.soulId ?? null;
+  const heldSoul = state.picks.soulId ?? null;
+  const identities = characters.list;
   useEffect(() => {
-    if (!preset) return;
-    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
-    dispatchComposer({ type: "prompt", value: preset.prompt });
-  }, [preset, dispatchComposer]);
-  const presetNote = preset?.note ?? null;
+    if (!wantedSoul || heldSoul !== wantedSoul || !identities) return;
+    if (!identities.some((c) => c.soulId === wantedSoul && c.status !== "training" && c.status !== "failed")) dispatchComposer({ type: "pick", value: { soulId: undefined } });
+  }, [wantedSoul, heldSoul, identities, dispatchComposer]);
+  /* A shot setup travels as words (Gen has no shot controls); the camera bank loads only when one arrives. */
+  const spec = recipe?.preset.shotSpec ?? null;
+  const [setupKit, setSetupKit] = useState<SetupKit | null>(null);
+  const wantsSetup = Boolean(spec);
+  useEffect(() => {
+    if (!wantsSetup || setupKit) return;
+    let live = true;
+    void import("@/lib/shell/recipe-setup").then((kit) => { if (live) setSetupKit(kit); }).catch(() => {});
+    return () => { live = false; };
+  }, [wantsSetup, setupKit]);
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
@@ -196,6 +270,47 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   };
   const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
 
+  /* What Gen holds against what the recreated take was made with. */
+  const chips = recipe ? recipeChips({ preset: recipe.preset, billing: state.billing, model, settings, reading: blocked === READING_MODELS || blocked === READING_ACCOUNT, identities: characters.list }) : [];
+  const refs = recipe?.refs ?? null;
+  const carried = refs ? refs.total - refs.missing.length : 0;
+  const recipeCardView = recipe ? (
+    <div className="gx-recipe" ref={recipeCard} aria-live="polite" data-testid="gen-recipe" data-settings-only={recipe.preset.settingsOnly ? "true" : undefined}>
+      <div className="gx-recipe-head">
+        <span className="gx-eyebrow" data-functional-label="">{recipe.preset.settingsOnly ? "Settings from" : "Recreate"}</span>
+        <span className="gx-recipe-name" title={recipe.preset.from?.name} data-testid="gen-recipe-name">{recipe.preset.from?.name}</span>
+        <button type="button" className="gx-hbtn" onClick={undoRecipe} title="Put the composer back as it was" data-testid="gen-recipe-undo">Undo</button>
+        <button type="button" className="gx-ref-x" aria-label="Dismiss" onClick={() => setRecipe(null)} data-testid="gen-recipe-dismiss">×</button>
+      </div>
+      <ul className="gx-recipe-chips" aria-label="Carried from the take" data-testid="gen-recipe-chips">
+        {chips.map((c) => <li key={c.key} data-state={c.state} data-chip={c.key} title={`${c.label}: ${c.value}${c.why ? ` — ${c.why}` : ""}`}>{c.value}</li>)}
+        {refs?.total ? (
+          <li data-state={refs.reading ? "reading" : refs.missing.length ? "changed" : "kept"} data-chip="refs" data-testid="gen-recipe-refs">
+            {refs.reading ? `${refs.total} ${refs.total === 1 ? "ref" : "refs"}…` : refs.missing.length ? `${carried} of ${refs.total} refs` : `${refs.total} ${refs.total === 1 ? "ref" : "refs"}`}
+          </li>
+        ) : null}
+      </ul>
+      {chips.some((c) => c.state === "changed" && c.why) ? (
+        <ul className="gx-recipe-why" data-testid="gen-recipe-why">
+          {chips.filter((c) => c.state === "changed" && c.why).map((c) => <li key={c.key}><b>{c.label}</b> {c.why}</li>)}
+        </ul>
+      ) : null}
+      {refs?.missing.length ? (
+        <p className="gx-gen-error" role="alert" data-testid="gen-recipe-missing">
+          Not found:{" "}{refs.missing.map((m, i) => <span key={m.tag} title={m.reason}>{i ? ", " : ""}{m.tag} ({m.origin === "upload" ? "upload" : "take"})</span>)}
+        </p>
+      ) : null}
+      {spec ? (
+        <div className="gx-recipe-setup" data-testid="gen-recipe-setup">
+          <span className="gx-recipe-setup-list"><b>Setup</b> {setupKit ? setupKit.setupLabels(spec).join(" · ") : "…"}</span>
+          {setupKit && setupKit.setupInWords(state.prompt, spec) ? <span className="gx-recipe-ok" data-testid="gen-recipe-setup-in">In the prompt</span>
+            : setupKit && setupKit.setupWritable(spec) ? <button type="button" className="gx-hbtn" onClick={() => dispatchComposer({ type: "prompt", value: setupKit.withSetup(state.prompt, spec) })} data-testid="gen-recipe-setup-add">Add to prompt</button>
+            : null}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
   const tabs = (
     <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
@@ -230,6 +345,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     <div className="gx-gen gx-enter" data-testid="gen-view">
       <section className="gx-gen-card" aria-label="Composer">
         {tabs}
+        {recipeCardView}
 
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
