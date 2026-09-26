@@ -82,7 +82,7 @@ export const SAY = {
     : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
-  recreate: (name: string) => `Recreating ${name} — priced again before it runs.`,
+  recreate: (name: string) => `${name}’s recipe is in Gen.`,
   settingsOnly: (name: string) => `${name}’s model and settings are in Gen.`,
   promptCopied: "Prompt copied",
   copyBlocked: "This browser blocked the clipboard.",

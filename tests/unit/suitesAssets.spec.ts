@@ -59,5 +59,5 @@ test("Recreate hands Gen the render's recipe, and Gen reads old and new presets"
   expect(readGenPreset("plain words from Crew")).toEqual({ prompt: "plain words from Crew" });
   expect(readGenPreset(null)).toBeNull();
   expect(GEN_PRESET_KEY).toBe("particl-gen-preset");
-  expect(SAY.recreate("Fox")).toBe("Recreating Fox — priced again before it runs.");
+  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Gen.");
 });

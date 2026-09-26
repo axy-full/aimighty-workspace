@@ -231,8 +231,11 @@
 .gx-where-assets > .gx-glyph:last-child { color: var(--gx-text-3); }
 /* The context badge stays on the phone (HOME · STUDIO · GEN …); it leaves only between 768 and 1280. */
 @media (max-width: 767px) { .gx-brand-mark { display: inline-flex; font-size: 12px; } .gx-header:has(.gx-back) .gx-brand { display: none; } }
-/* Gen's sticky Generate sits above the floating tab bar (22px up + 66px tall + 4px), not under it. */
-@media (max-width: 767px) { .gx-gen-cta { bottom: 92px; } }
+/* Gen's sticky Generate sits just above the floating tab bar (22px up + 66px tall + 4px = 92px from the
+   screen's foot), not under it. A sticky offset counts from the scroller's content box, and the stage's own
+   110px bottom padding (glass.css) already clears the bar: 92px on top of it floated the band a bar's height
+   higher, over the middle of the composer, with the page scrolling on beneath it. */
+@media (max-width: 767px) { .gx-gen-cta { bottom: calc(92px - 110px); } }
 /* The phone's top bar row (GLASS_SPEC §3): mark + badge, search, credits, avatar on one row at 360–390. The
    prototype's row carries no search (its palette is desktop-only); the shell keeps the palette reachable as a
    round 44px button, so the wordmark yields to the badge on the phone. */

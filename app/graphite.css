@@ -239,7 +239,7 @@
 .gx-enhanced p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text); }
 .gx-enhanced-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Recreate: the take's recipe as it landed in the composer — what was kept, what changed and why, what is missing. */
-.gx-recipe { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px 12px; border-radius: 6px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); min-width: 0; animation: gx-in .3s var(--gx-ease) both; }
+.gx-recipe { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px 12px; border-radius: 6px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); min-width: 0; scroll-margin: 12px; animation: gx-in .3s var(--gx-ease) both; }
 .gx-recipe-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .gx-recipe-head .gx-eyebrow { color: var(--gx-accent-text); flex: none; }
 .gx-recipe-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -248,10 +248,15 @@
 .gx-recipe-chips li[data-state="changed"] { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .4); }
 .gx-recipe-chips li[data-state="reading"] { color: var(--gx-text-3); animation: gx-pulse 1.6s ease-in-out infinite; }
 .gx-recipe-why { flex-direction: column; gap: 2px; font-size: 12px; color: var(--gx-text-2); }
+.gx-recipe-why li { min-width: 0; overflow-wrap: anywhere; }
+.gx-recipe-why li[data-alert] { color: var(--gx-failed, #FF6B6B); }
 .gx-recipe-why b, .gx-recipe-setup b { font-weight: 600; color: var(--gx-text); margin-right: 4px; }
 .gx-recipe-setup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--gx-text-2); min-width: 0; }
 .gx-recipe-setup-list { flex: 1 1 160px; min-width: 0; }
 .gx-recipe-ok { font-size: 12px; color: var(--gx-done); }
+/* On a phone the card rises to the top of the composer (GenView scrolls it to the start), above the sticky
+   Generate band: tighter, and the setup's line and its button share one row where they fit. */
+@media (max-width: 767px) { .gx-recipe { gap: 6px; padding: 8px 8px 10px 12px; scroll-margin: 8px; } .gx-recipe-setup-list { flex-basis: 120px; } }
 .gx-insp-why { flex-basis: 100%; margin: 0; }
 .gx-model { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-height: 48px; }
 .gx-model:hover { background: var(--gx-input-hover); }

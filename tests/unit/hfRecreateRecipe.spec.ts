@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { recipeChips, recipePrompt, recreateBlock, recreatePreset, referenceTag, type RecipeSource } from "../../lib/shell/recipe";
+import { ACCOUNT_MODEL, cites, nearestSetting, recipeChips, recipePrompt, recreateBlock, recreatePreset, referenceTags, retagRecipe, type RecipeSource } from "../../lib/shell/recipe";
 import { setupInWords, setupLabels, setupWritable, withSetup } from "../../lib/shell/recipe-setup";
 import { assetCapabilities, assetRef } from "../../lib/shell/assets";
 import { composerReducer, composerSettings, INITIAL_COMPOSER, type ComposerModel, type ComposerState } from "../../lib/workspace/composer";
@@ -62,11 +62,12 @@ test("a take made on the connected account carries the account's own settings an
       enhancedPrompt: "the account's own rewrite",
     },
   }), { name: "Pier portrait" });
-  expect(preset).toMatchObject({ billing: "connected", model: "soul_cinematic", type: "image", prompt: "portrait on the pier", picks: { ratio: "3:4", resolution: "2k", soulId: "soul_abc" } });
+  expect(preset).toMatchObject({ billing: "connected", model: "soul_cinematic", type: "image", prompt: "portrait on the pier", picks: { ratio: "3:4", resolution: "2k", soulId: "soul_abc" }, enhance: true });
   expect(preset.references).toEqual([{ origin: "upload", id: "up_face", role: "image", kind: "image" }]);
   /* The measured length of the file is not what was asked for. */
   const clip = recreatePreset(take({ provider: "higgsfield", params: { task: "connected-generation", duration: 4.97, settings: { duration: 5 } } }), { name: "Clip" });
   expect(clip.picks).toEqual({ duration: 5 });
+  expect(clip).not.toHaveProperty("enhance");
   /* A Studio engine served by the same vendor bills this workspace: it is not the connected account's. */
   expect(recreatePreset(take({ provider: "higgsfield", params: { ratio: "16:9" } }), { name: "Studio" }).billing).toBe("workspace");
 });
@@ -81,19 +82,31 @@ test("a sound take carries its length, instrumental switch and voice; never refe
 });
 
 test("what Gen cannot recreate says so, and the menu and the Inspector block it", () => {
-  expect(recreateBlock({ kind: "video", params: {}, task: "generate" })).toBeNull();
-  expect(recreateBlock({ kind: "image", params: { task: "connected-generation" }, task: "generate" })).toBeNull();
-  expect(recreateBlock({ kind: "audio", params: { task: "music" }, task: "generate" })).toBeNull();
-  expect(recreateBlock({ kind: "model", params: {}, task: "generate" })).toBe("Gen makes images, video and sound, not 3D.");
+  const made = (kind: "video" | "image" | "audio" | "model", params: Record<string, unknown>, task = "generate", model = "m") => ({ kind, model, params, task });
+  expect(recreateBlock(made("video", {}))).toBeNull();
+  expect(recreateBlock(made("image", { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" }, "generate", "soul_cinematic"))).toBeNull();
+  expect(recreateBlock(made("audio", { task: "music" }))).toBeNull();
+  expect(recreateBlock(made("audio", { task: "speech", voiceId: "v1" }))).toBeNull();
+  expect(recreateBlock(made("model", {}))).toBe("Gen makes images, video and sound, not 3D.");
   const tool = "Made with a tool Gen does not have. Run it again from that tool.";
   for (const blocked of [
-    { kind: "video" as const, params: {}, task: "edit" },
-    { kind: "video" as const, params: { task: "genjutsu" }, task: "generate" },
-    { kind: "video" as const, params: { task: "connected-generation", workflow: "shorts" }, task: "generate" },
-    { kind: "image" as const, params: { marketing: { campaign: "c" } }, task: "generate" },
-    { kind: "image" as const, params: { soulIdentityId: "id_1" }, task: "generate" },
-    { kind: "audio" as const, params: { task: "voiceChange" }, task: "generate" },
-  ]) expect(recreateBlock(blocked)).toBe(tool);
+    made("video", {}, "edit"),
+    made("video", { task: "genjutsu" }),
+    made("video", { task: "connected-generation", workflow: "shorts" }),
+    made("image", { marketing: { campaign: "c" } }),
+    made("image", { soulIdentityId: "id_1" }),
+    made("audio", { task: "voiceChange" }),
+    made("audio", { task: "dialogue", lines: [] }),
+    /* A dub (lib/dubbing.ts): the task column says "generate", params say "dub". */
+    made("audio", { task: "dub", dubbingStatus: "dubbed", dubbingJobId: "dub_1", sourceUploadId: "up_clip", targetLang: "fr" }, "generate", "eleven_dubbing_v1"),
+    /* A trained identity's still (app/api/identities/[id]/render). */
+    made("image", { ratio: "1:1", resolution: "1K", rawPrompt: "on the pier", identity: { id: "idn_1", name: "Mara" }, cast: ["Mara"] }),
+    /* The account's marketing video (lib/higgsfield-consumer/original-identity.ts): no task, receipted in account credits. */
+    made("video", { resolution: "720p", aspectRatio: "9:16", ratio: "9:16", generateAudio: true, consumerJobId: "j", consumerCreditUnit: "higgsfield_credits", duration: 8.04 }, "generate", "marketing_studio_video"),
+    made("video", { ratio: "16:9" }, "generate", "marketing_studio_video"),
+    /* Any tool added later is blocked until Gen can make it. */
+    made("video", { task: "upscale" }),
+  ]) expect(recreateBlock(blocked), JSON.stringify(blocked)).toBe(tool);
 
   const entry = (params: Record<string, unknown>, task = "generate") => ({
     take: { id: "generation:g1", sourceId: "g1", name: "Wide" }, media: "video",
@@ -111,33 +124,55 @@ const seedance: ComposerModel = { id: "dreamina-seedance-2-5-260628", label: "Se
 const kling: ComposerModel = { id: "kling-3-std", label: "Kling 3.0 Standard", type: "video", ratios: ["16:9", "9:16"], resolutions: ["1080p"], durations: [5, 10] };
 const soul: ComposerModel = { id: "soul_cinematic", label: "Soul Cinematic", type: "image", connected: true, soulId: true, ratios: ["3:4", "1:1"] };
 
+const chipsFor = (input: Partial<Parameters<typeof recipeChips>[0]> & Pick<Parameters<typeof recipeChips>[0], "preset" | "model" | "settings">) =>
+  recipeChips({ type: input.preset.type ?? "video", billing: "workspace", models: input.model ? [input.model] : [], reading: false, blocked: null, owner: false, identities: null, ...input });
+
 test("the card's chips: kept where Gen holds the take's value, changed with a reason where it cannot", () => {
   const preset = recreatePreset(take({ params: { ratio: "21:9", resolution: "1080p", duration: 8 } }), { name: "Harbour" });
-  const kept = recipeChips({ preset, billing: "workspace", model: seedance, settings: composerSettings(seedance, "16:9", preset.picks), reading: false, identities: null });
+  const kept = chipsFor({ preset, model: seedance, models: [seedance, kling], settings: composerSettings(seedance, "16:9", preset.picks) });
   expect(kept.map((c) => [c.key, c.value, c.state])).toEqual([["model", "Seedance 2.5", "kept"], ["ratio", "21:9", "kept"], ["resolution", "1080p", "kept"], ["duration", "8 s", "kept"]]);
 
   /* The engine is gone from the list: Gen says which one runs instead, and what it does not offer. */
-  const moved = recipeChips({ preset, billing: "workspace", model: kling, settings: composerSettings(kling, "16:9", preset.picks), reading: false, identities: null });
+  const moved = chipsFor({ preset, model: kling, models: [kling], settings: composerSettings(kling, "16:9", preset.picks) });
   expect(moved.map((c) => [c.key, c.value, c.state, c.why])).toEqual([
     ["model", "Seedance 2.5 → Kling 3.0 Standard", "changed", "Not offered here now"],
     ["ratio", "21:9 → 16:9", "changed", "Kling 3.0 Standard has no 21:9"],
     ["resolution", "1080p", "kept", undefined],
     ["duration", "8 s → 5 s", "changed", "Kling 3.0 Standard has no 8 s"],
   ]);
+  /* The engine is still offered and the person chose another: that is their change, not a missing engine. */
+  const picked = chipsFor({ preset, model: kling, models: [seedance, kling], settings: composerSettings(kling, "16:9", preset.picks) });
+  expect(picked[0]).toMatchObject({ value: "Seedance 2.5 → Kling 3.0 Standard", why: "Changed here" });
   /* A setting the person changed afterwards reads as changed here, not as missing. */
-  const edited = recipeChips({ preset, billing: "workspace", model: seedance, settings: composerSettings(seedance, "16:9", { ...preset.picks, ratio: "9:16" }), reading: false, identities: null });
+  const edited = chipsFor({ preset, model: seedance, settings: composerSettings(seedance, "16:9", { ...preset.picks, ratio: "9:16" }) });
   expect(edited.find((c) => c.key === "ratio")).toMatchObject({ value: "21:9 → 9:16", why: "Changed here" });
   /* While the model list is read, only the model shows, as reading. */
-  expect(recipeChips({ preset, billing: "workspace", model: null, settings: composerSettings(null), reading: true, identities: null })).toEqual([{ key: "model", label: "Model", value: "Seedance 2.5", state: "reading" }]);
+  expect(chipsFor({ preset, model: null, settings: composerSettings(null), reading: true })).toEqual([{ key: "model", label: "Model", value: "Seedance 2.5", state: "reading" }]);
+  /* The list failed or the account is not connected: one line, the composer's own reason, and no per-setting noise. */
+  expect(chipsFor({ preset, model: null, settings: composerSettings(null), blocked: "The engines could not be read." })).toEqual([
+    { key: "model", label: "Model", value: "Seedance 2.5 → none", state: "changed", why: "The engines could not be read." },
+  ]);
 });
 
-test("a connected recipe: a member recreates on Studio engines, and a vanished identity is never sent", () => {
+test("a connected recipe: named by the account's list, the right reason for each person, and a vanished identity is never sent", () => {
   const preset = recreatePreset(take({ provider: "higgsfield", kind: "image", model: "soul_cinematic", params: { task: "connected-generation", settings: { aspect_ratio: "3:4", soul_id: "soul_abc" } } }), { name: "Pier" });
-  const member = recipeChips({ preset, billing: "workspace", model: null, settings: composerSettings(null, undefined, preset.picks), reading: false, identities: null });
-  expect(member[0]).toMatchObject({ key: "model", state: "changed", why: "The connected account is the owner’s" });
+  const studio: ComposerModel = { id: "gpt-image-2", label: "GPT Image 2", type: "image", ratios: ["1:1", "3:4"] };
+  /* A member: the account is the owner's. Its catalogue id is not a name, so it is not dressed up as one. */
+  const member = chipsFor({ preset, model: studio, settings: composerSettings(studio, undefined, preset.picks) });
+  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "The connected account is the owner’s" });
+  /* The owner who chose Studio engines is told that, not that the account is someone else's. */
+  const ownerOnStudio = chipsFor({ preset, model: studio, owner: true, settings: composerSettings(studio, undefined, preset.picks) });
+  expect(ownerOnStudio[0]).toMatchObject({ why: "Studio engines chosen" });
+  /* The owner whose account is not connected sees why, once. */
+  const unconnected = "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
+  expect(chipsFor({ preset, billing: "connected", owner: true, model: null, settings: composerSettings(null), blocked: unconnected })).toEqual([
+    { key: "model", label: "Model", value: `${ACCOUNT_MODEL} → none`, state: "changed", why: unconnected },
+  ]);
 
   const owner = (identities: { soulId: string; name: string; status: string | null }[] | null, picks = preset.picks) =>
-    recipeChips({ preset, billing: "connected", model: soul, settings: composerSettings(soul, undefined, picks), reading: false, identities }).find((c) => c.key === "identity");
+    chipsFor({ preset, billing: "connected", owner: true, model: soul, settings: composerSettings(soul, undefined, picks), identities }).find((c) => c.key === "identity");
+  /* With the account's list read, the model reads by the catalogue's own name. */
+  expect(chipsFor({ preset, billing: "connected", owner: true, model: soul, settings: composerSettings(soul, undefined, preset.picks) })[0]).toMatchObject({ value: "Soul Cinematic", state: "kept" });
   expect(owner(null)).toMatchObject({ state: "reading" });
   expect(owner([{ soulId: "soul_abc", name: "Mara", status: "ready" }])).toMatchObject({ value: "Mara", state: "kept" });
   expect(owner([{ soulId: "soul_abc", name: "Mara", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "No longer on the account" });
@@ -162,12 +197,44 @@ test("the composer takes a recipe in one step, a settings-only one keeps its wor
   expect(sound).toMatchObject({ type: "audio", references: [], seconds: 30, instrumental: false });
 
   expect(composerReducer(full, { type: "restore", value: before })).toEqual({ ...before, notice: null });
+  /* A member recreating a connected take: no model is carried, so their own workspace engine choice stands. */
+  const mine = { ...before, type: "video" as const, chosen: { "workspace:video": "kling-3-std" } };
+  expect(composerReducer(mine, { type: "recipe", value: { type: "video", billing: "workspace", picks: { ratio: "9:16" }, prompt: "a gull" } }).chosen).toEqual({ "workspace:video": "kling-3-std" });
 });
 
-test("a missing reference is named the way the well named it", () => {
-  expect(referenceTag({ kind: "image" }, 1)).toBe("@Image2");
-  expect(referenceTag({ kind: "video" }, 0)).toBe("@Video1");
-  expect(referenceTag({}, 2)).toBe("@Image3");
+test("citations count within their kind, the way the engine numbers what it is sent", () => {
+  expect(referenceTags(["video", "image", "image", "audio", undefined])).toEqual(["@Video1", "@Image1", "@Image2", null, null]);
+  expect(cites("@Image1 walks", "@Image1")).toBe(true);
+  expect(cites("@Image12 walks", "@Image1")).toBe(false);
+});
+
+test("a gone reference: the ones still here are renumbered, the gone one keeps a citation of its own", () => {
+  /* The take: an upload that is gone, then a still that is here. */
+  const moved = retagRecipe("@Image2 walks the pier past @Image1", [{ kind: "image", found: false }, { kind: "image", found: true }]);
+  expect(moved.was).toEqual(["@Image1", "@Image2"]);
+  expect(moved.now).toEqual(["@Image2", "@Image1"]);
+  /* The still is @Image1 in the well now; the gone upload's citation is @Image2, which nothing fills yet. */
+  expect(moved.prompt).toBe("@Image1 walks the pier past @Image2");
+  /* Kinds are counted apart: a gone video does not move the images. */
+  const mixed = retagRecipe("@Video1 then @Image1 and @Image2", [{ kind: "video", found: false }, { kind: "image", found: true }, { kind: "image", found: true }]);
+  expect(mixed.prompt).toBe("@Video1 then @Image1 and @Image2");
+  expect(mixed.now).toEqual(["@Video1", "@Image1", "@Image2"]);
+  /* Nothing gone, nothing moved; @Image12 is not @Image1. */
+  expect(retagRecipe("@Image1 and @Image12", [{ kind: "image", found: true }]).prompt).toBe("@Image1 and @Image12");
+  const three = retagRecipe("@Image1, @Image2, @Image3", [{ kind: "image", found: false }, { kind: "image", found: true }, { kind: "image", found: false }]);
+  expect(three.prompt).toBe("@Image2, @Image1, @Image3");
+});
+
+test("a size or length the new model does not offer lands on the nearest one at or below it", () => {
+  expect(nearestSetting("4k", ["480p", "720p", "1080p"])).toBe("1080p");
+  expect(nearestSetting("1080p", ["480p", "720p"])).toBe("720p");
+  expect(nearestSetting("480p", ["720p", "1080p"])).toBe("720p");
+  expect(nearestSetting("2K", ["1K", "4K"])).toBe("1K");
+  expect(nearestSetting("1080p", ["720p", "1080p"])).toBeUndefined();
+  expect(nearestSetting("auto", ["720p"])).toBeUndefined();
+  expect(nearestSetting(8, [5, 10])).toBe(5);
+  expect(nearestSetting(12, [5, 10])).toBe(10);
+  expect(nearestSetting(3, [5, 10])).toBe(5);
 });
 
 test("a shot setup travels as words: labelled from the bank, written in once, recognised when already there", () => {
