@@ -165,7 +165,12 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       if (window.innerWidth >= WIDE_FROM) ws.dispatch({ type: "toggleInspector" });
       else { setInspOpen((v) => !v); setLibOpen(false); }
     },
-    openLibrary: (tab) => { if (tab) setLibTab(tab); if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); } },
+    openLibrary: (tab) => {
+      if (tab) setLibTab(tab);
+      /* Crew and Workspace have no Library: it opens over the suite page the person came from. */
+      if (params.view === "crew" || params.view === "workspace") apply({ ...params, view: "suite" }, "push");
+      if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); }
+    },
     openInspector: () => {
       if (window.innerWidth >= WIDE_FROM) { if (!ws.state.inspector) ws.dispatch({ type: "toggleInspector" }); }
       else { setInspOpen(true); setLibOpen(false); }

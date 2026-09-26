@@ -30,6 +30,7 @@ crew_solutions id, session_id, round, text, source(converge|pin), status(open|se
 - `POST /api/crew/sessions/:id/rounds` → runs one round, streams SSE events: `phase`, `thinking {memberId}`, `message {…}`, `solutions [...]`, `done {spendCr}`. Debit credits on `done`; never bill a failed round.
 - `POST /api/crew/sessions/:id/notes` `{ text }` → human interjection (phase `note`).
 - `POST /api/crew/solutions/:id/route` `{ to: 'brief'|'boards'|'gen' }` → appends to the Brief document, creates a Boards frame request, or opens Gen with the text as the prompt preset.
+  - **Amended 26 September 2026:** `boards` writes a draft scene node on the **Rig** (Storyboards frames come from the beat sheet), so the action reads **→ Rig** and the reply names the node (`nodeId`, `title`); the wire value stays `boards`. → Brief and → Rig confirm with an Open to the result and leave the room where it is; Open in Gen goes to Gen with the solution as its prompt — nothing is copied to the clipboard.
 - `GET /api/crew/sessions/:id/minutes` → Markdown (goal, roster, transcript, solutions) saved into Assets.
 
 ## Grok 4.6 orchestration (xAI)

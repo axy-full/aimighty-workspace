@@ -74,8 +74,11 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await messages.first().getByRole("button", { name: "Pin" }).click();
   await expect(page.getByTestId("crew-solutions").locator(".cw-solution")).toHaveCount(4);
 
-  /* → Brief writes to the saved project and lands on Studio › Brief. */
+  /* → Brief writes to the saved project and says so, with an Open to Studio › Brief; the room stays put. */
   await page.getByTestId("crew-solutions").locator(".cw-solution").first().getByRole("button", { name: "→ Brief" }).click();
+  await expect(page.getByTestId("toast")).toContainText("Added to the Brief");
+  await expect(page.getByTestId("crew-solutions").locator(".cw-solution").first().getByTestId("crew-solution-status")).toHaveText("Added to the Brief");
+  await page.getByTestId("toast-open").click();
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   const saved = (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project;
   expect(saved.brief).toContain("Crew · Locked dawn frame — ");

@@ -300,7 +300,17 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </div>
         ) : null}
         <TabBar />
-        {state.toast ? <div className="gx-toast" role="status" data-testid="toast">{state.toast}</div> : null}
+        {state.toast ? (() => {
+          /* A confirmation with somewhere to go carries its Open; hovering or focusing it holds it on screen. */
+          const open = ws.toastAction?.text === state.toast ? ws.toastAction.action : null;
+          return (
+            <div className="gx-toast" role="status" data-testid="toast" data-open={open ? "" : undefined}
+              onMouseEnter={open ? () => ws.holdToast(true) : undefined} onMouseLeave={open ? () => ws.holdToast(false) : undefined}
+              onFocus={open ? () => ws.holdToast(true) : undefined} onBlur={open ? () => ws.holdToast(false) : undefined}>
+              {open ? <><span className="gx-toast-text">{state.toast}</span><button type="button" className="gx-toast-open" onClick={open.run} data-testid="toast-open">{open.label}</button></> : state.toast}
+            </div>
+          );
+        })() : null}
       </div>
     </AtomikHost>
   );

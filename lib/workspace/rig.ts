@@ -129,7 +129,7 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
     const failed = job.status === "failed" || job.status === "cancelled";
     const state: VersionState = job.status === "succeeded" ? "rendered" : failed ? "failed" : "rendering";
     const label = state === "failed" ? (jobUnbilled(job) ? "Failed · not billed" : "Failed")
-      : state === "rendering" ? (job.status === "held" ? "Held for approval" : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
+      : state === "rendering" ? (job.status === "held" ? heldLabel(job) : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
       : `Rendered · ${engineLabel(job.model).long}`;
     rows.push({ id: job.id, v: `v${job.version ?? 1}`, label, meta: relativeAge(job.createdAt, now), current: false, state, order: job.version ?? 1, at: job.createdAt ?? 0 });
   }
@@ -139,6 +139,16 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
 
 /* ── Generation phase ────────────────────────────────────────────────── */
 
+/**
+ * A held take, in words that match why it is held (lib/held.ts): the
+ * workspace ran out of credits — it runs once they are topped up — or every
+ * render slot is busy and it waits its turn. Nothing is ever held for an
+ * approval, so no label says so. The words are the take card's (GenCard).
+ */
+export function heldLabel(job: { params?: MediaJob["params"] } | null | undefined): string {
+  return job?.params?.held?.why === "slots" ? "Waiting for a slot" : "Held · top up to release";
+}
+
 export type GenerationTone = "blue" | "green" | "red";
 export type GenerationPhase = { label: string; pct: number; tone: GenerationTone; done: boolean };
 
@@ -147,14 +157,14 @@ export type GenerationPhase = { label: string; pct: number; tone: GenerationTone
  * → complete, or failed (not billed when nothing was charged). The bar marks
  * the stage reached; engines report no percentage, so none is invented.
  */
-export function generationPhase(job: Pick<MediaJob, "status" | "creditsBilled"> | null): GenerationPhase {
+export function generationPhase(job: (Pick<MediaJob, "status" | "creditsBilled"> & { params?: MediaJob["params"] }) | null): GenerationPhase {
   if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
   switch (job.status) {
     case "succeeded": return { label: "Complete", pct: 100, tone: "green", done: true };
     case "failed":
     case "cancelled": return { label: jobUnbilled({ id: "", status: job.status, creditsBilled: job.creditsBilled }) ? "Failed · not billed" : "Failed", pct: 100, tone: "red", done: true };
     case "running": return { label: "Rendering", pct: 50, tone: "blue", done: false };
-    case "held": return { label: "Held for approval", pct: 10, tone: "blue", done: false };
+    case "held": return { label: heldLabel(job), pct: 10, tone: "blue", done: false };
     default: return { label: "Queued", pct: 10, tone: "blue", done: false };
   }
 }

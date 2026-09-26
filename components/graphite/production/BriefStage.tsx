@@ -19,7 +19,10 @@ import { uploadWorkbench } from "@/lib/workbench/upload";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { useWorkspace } from "@/lib/workspace/state";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
+import { CONFIRM } from "@/lib/shell/confirmations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { useConfirm } from "@/lib/shell/use-confirm";
+import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
@@ -43,7 +46,8 @@ export function BriefStage({ projectId, scope, onBeats }: { projectId: string; s
 
 function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDraftEditor>; scope: string; onBeats?: () => void }) {
   const p = editor.project!;
-  const { toast, go } = useWorkspace();
+  const { toast } = useWorkspace();
+  const { confirm } = useConfirm();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   /* Pictures and text files attached to the prompt or the notes go with the writer's next run. */
@@ -121,15 +125,17 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
     if (sourceCanonical(latest.current, job.kind) !== sourceCanonical(current, job.kind)) throw new Error("The project changed while checking the result. Try again.");
     editor.change((old) => applyDevelopment(old, job, choice));
     if (!(await editor.ensureSaved())) throw new Error("The result was added locally, but is not saved yet.");
-    toast("idea" in choice ? "Idea added to the creative direction" : "Scene breakdown added to the Rig");
+    if ("idea" in choice) { toast("Idea added to the creative direction"); return; }
+    announceDraftWritten(current.id);
+    confirm(CONFIRM.breakdownToRig());
   }
   async function buildScenes(scenes: ScriptScene[]) {
     try {
       const nodes = buildScreenplayNodes(latest.current, scenes);
       editor.change((old) => ({ ...old, nodes: [...old.nodes, ...nodes] }));
       if (!(await editor.ensureSaved())) throw new Error("The scene nodes were added locally, but are not saved yet.");
-      toast(`${nodes.length} scene nodes added to Rig`);
-      go("particl", "rig");
+      announceDraftWritten(latest.current.id);
+      confirm(CONFIRM.breakdownToRig(nodes.length), { go: true });
     } catch (error) { toast(error instanceof Error ? error.message : "Could not build these scenes."); }
   }
 

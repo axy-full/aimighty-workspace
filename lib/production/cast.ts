@@ -86,3 +86,30 @@ export function castFromBeats(sheet: BeatSheet | null | undefined, existing: rea
     return newEntry(f.kind, name, where, prompt, { category: f.kind === "character" ? "character" : f.label === "Location" ? "environment" : "prop" });
   });
 }
+
+/** One entry of the agent's proposed cast list. */
+export type CastProposal = { kind: CastKind; name: string; description: string; prompt: string; model?: SoulModelId; category?: ElementCategory };
+
+/**
+ * The agent's cast list, taken once: names not yet listed are added (each
+ * once, however often the agent repeats it), names already here are kept as
+ * they are, and what does not fit under the list's limit is left out. The
+ * counts are what the confirmation says — what was added, not what was
+ * proposed.
+ */
+export function mergeAgentCast(cast: Cast, proposals: readonly CastProposal[], jobId: string): { cast: Cast; added: number; known: number; overLimit: number } {
+  const listed = new Set(cast.entries.map((e) => e.name.trim().toLowerCase()));
+  const seen = new Set<string>();
+  const room = Math.max(0, CAST_LIMITS.entries - cast.entries.length);
+  const fresh: CastEntry[] = [];
+  let known = 0, overLimit = 0;
+  for (const p of proposals) {
+    const key = p.name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    if (listed.has(key)) { known++; continue; }
+    if (fresh.length >= room) { overLimit++; continue; }
+    fresh.push(newEntry(p.kind, p.name, p.description, p.prompt, { model: p.model, category: p.category }));
+  }
+  return { cast: { ...cast, entries: [...cast.entries, ...fresh], agentJobId: jobId }, added: fresh.length, known, overLimit };
+}

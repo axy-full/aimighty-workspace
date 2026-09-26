@@ -13,6 +13,7 @@ import {
   type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type ImageAdsState, type SetupItem, type SetupPreset, type SetupType,
 } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
+import { useOpenTake } from "@/lib/shell/use-open-take";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
 import { useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
@@ -343,15 +344,17 @@ function priceLabel(state: ConnectedJobState, verb: string, blocked: string | nu
  * The finished take beside the composer. The composer prices the same input
  * again at once, so Generate is the rerun.
  */
-function LatestTake({ job, testId, onTakes, onLibrary }: { job: ConnectedJob; testId: string; onTakes: () => void; onLibrary: () => void }) {
+function LatestTake({ job, testId, scope, project, onLibrary }: { job: ConnectedJob; testId: string; scope: string; project: Project | null; onLibrary: () => void }) {
   const original = connectedOriginal(job), kind = original?.kind;
   const media = original && (kind === "image" || kind === "video") ? { url: original.url, kind } : null;
+  /* Open in Takes lands on this take, selected — not on the list. */
+  const { openTake, opening } = useOpenTake(scope, project);
   return (
     <section className="gx-gen-results bz-latest" aria-label="Latest take" data-testid={testId}>
       <div className="gx-gen-results-head">
         <span className="gx-panel-title">Latest take</span>
         <span className="bz-done-actions">
-          <button type="button" className="gx-hbtn" onClick={onTakes}>Open Takes</button>
+          <button type="button" className="gx-hbtn" disabled={!original || opening !== null} onClick={() => void openTake(job.id, original?.generationId, job.createdAt)} data-testid={`${testId}-open`}>{opening ? "Opening…" : "Open in Takes"}</button>
           <button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button>
         </span>
       </div>
@@ -469,7 +472,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         </button>
         {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · filed to this project</p> : null}
       </section>
-      {job.finished ? <LatestTake job={job.finished} testId="ads-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
+      {job.finished ? <LatestTake job={job.finished} testId="ads-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
     </div>
   );
 }
@@ -565,7 +568,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
       </section>
-      {job.finished ? <LatestTake job={job.finished} testId="dtc-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
+      {job.finished ? <LatestTake job={job.finished} testId="dtc-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
       {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
       <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
         <div className="gx-gen-row">

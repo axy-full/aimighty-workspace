@@ -13,7 +13,11 @@ type Ctx = { params: Promise<{ id: string }> };
  * existing draft save (revision-checked, so a project open elsewhere is
  * never overwritten):
  *   brief  → appended to the Brief document
- *   boards → a new draft frame on Boards, carrying the solution as its text
+ *   boards → a draft scene node on the Rig, carrying the solution as its
+ *            text; the reply names it (`nodeId`, `title`) so the page can
+ *            open that shot. (Storyboards frames come from the beat sheet, so
+ *            this is a Rig shot, and the confirmation says Rig.) The wire
+ *            value stays `boards` for the clients that already send it.
  *   gen    → nothing is written; the text is handed back as Gen's prompt
  */
 export const POST = withTenant(async (req: Request, { params }: Ctx) => {
@@ -32,6 +36,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     const draft = await readDraft(caller.userId, solution.projectId);
     if (!draft) throw new CrewError("Save your project first.", 404);
     const project = { ...draft.project };
+    let placed: { nodeId: string; title: string } | null = null;
     if (to === "brief") project.brief = `${project.brief.trimEnd()}${project.brief.trim() ? "\n\n" : ""}Crew · ${solution.text}`;
     else {
       const [title, ...rest] = solution.text.split(" — ");
@@ -40,11 +45,12 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
         x: 50, y: Math.max(0, ...project.nodes.map((n) => n.y + 290)), width: 300, linked: [], status: "draft",
       };
       project.nodes = [...project.nodes, node];
+      placed = { nodeId: node.id, title: node.title };
     }
     try { await saveDraft(caller.userId, project, draft.revision); }
     catch (error) { throw new CrewError(error instanceof Error ? error.message : "The project changed in another window. Reload and try again.", 409); }
     const status = to === "brief" ? "sent_to_brief" : "boarded";
     await setSolutionStatus(solution.id, status);
-    return Response.json({ to, status }, { headers: NO_STORE });
+    return Response.json({ to, status, ...placed }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });

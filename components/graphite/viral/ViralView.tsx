@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
-import { findProjectTake, uploadFilesToProject } from "@/lib/workspace/library";
+import { uploadFilesToProject } from "@/lib/workspace/library";
 import LazyMedia from "@/components/LazyMedia";
 import { useShell } from "@/lib/shell/state";
+import { useOpenTake } from "@/lib/shell/use-open-take";
 import { useViral, type GenjutsuJob, type Stall } from "@/lib/shell/use-viral";
 import {
   HISTORY_ACTIONS, INITIAL_VIRAL, REFERENCE_MAX, RUN_NOTE, STALLED_NOTE, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS, addMedia, estimateReason, genjutsuInput, moveReference, originalNote, runInFlight, runStatus, viralBlock, viralMedia,
@@ -45,30 +46,10 @@ function findMedia(items: LibraryEntry[], id: string): ViralMedia | null {
   return entry ? viralMedia(entry) : null;
 }
 
-/**
- * A finished result opens in Takes, where a take is re-edited — that take:
- * the Library pages back to it first (a result is filed at its run's own
- * time, so an older run's take can sit past the loaded pages). If it is not
- * there, nothing changes but a note.
- */
+/** A finished result opens in Takes, where a take is re-edited — that take (lib/shell/use-open-take). */
 function useSendToTakes(scope: string, project: Project | null) {
-  const shell = useShell();
-  const ws = useWorkspace();
-  const [opening, setOpening] = useState<string | null>(null);
-  const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const send = async (job: GenjutsuJob) => {
-    const id = job.result?.original?.generationId;
-    if (!id || !project) { ws.toast("This result's original is not available yet."); return; }
-    const take = `generation:${id}`;
-    setOpening(job.id);
-    const found = await findProjectTake(scope, project.id, take, job.createdAt).catch(() => false);
-    if (!alive.current) return;
-    setOpening(null);
-    if (!found) { ws.toast("This result is not in the project's Library."); return; }
-    ws.dispatch({ type: "patch", patch: { selKind: "take", selId: take } });
-    shell.goSuite("studio", "takes");
-  };
+  const { openTake, opening } = useOpenTake(scope, project);
+  const send = (job: GenjutsuJob) => openTake(job.id, job.result?.original?.generationId, job.createdAt);
   return { send, opening };
 }
 

@@ -6,8 +6,10 @@ import type { ProjectSummary } from "@/lib/workspace/data";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { GEN_PRESET_KEY, SAY, assetRef, referenceRole, retryPreset, type AssetRef } from "./assets";
+import { CONFIRM } from "./confirmations";
 import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
+import { useConfirm } from "./use-confirm";
 
 /**
  * What the right-click commands, the Library `+` and a drop actually do to
@@ -22,6 +24,7 @@ export function useAssetActions(input: { scope: string; project: Project | null;
   const scoped = useScopedFetch();
   const ws = useWorkspace();
   const shell = useShell();
+  const { confirm } = useConfirm();
   const projectId = project?.id ?? null;
   const projectName = project?.name ?? "this project";
 
@@ -132,9 +135,8 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     if (!entry) return;
     if (entry.asset.origin !== "generation") { ws.toast("An upload was not generated; there is nothing to retry."); return; }
     try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify(retryPreset(entry.asset.value))); } catch { /* Gen starts empty; the toast still says what to do */ }
-    shell.goGen();
-    ws.toast(SAY.retry(entry.take.name));
-  }, [find, shell, ws]);
+    confirm(CONFIRM.retry(entry.take.name), { go: true });
+  }, [find, confirm, ws]);
 
   /* A render dropped on a Rig row is filed on that shot (its next version); an upload cannot be. */
   const fileOnShot = useCallback(async (id: string, shot: { nodeId: string; name: string }) => {

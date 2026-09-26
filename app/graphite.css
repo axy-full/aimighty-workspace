@@ -206,7 +206,19 @@
 .gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); }
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
-.gx-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+.gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+
+/* A confirmation with somewhere to go: the words, then one Open (lib/shell/confirmations). Centred by margin, since the pop animation owns transform. */
+.gx-toast[data-open] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
+.gx-toast-text { min-width: 0; overflow-wrap: anywhere; }
+.gx-toast-open { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; font: inherit; font-weight: 600; white-space: nowrap; color: var(--gx-text); background: var(--gx-input-hover); border: 1px solid var(--gx-hair); cursor: pointer; }
+.gx-toast-open:hover { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+/* Phone: above the floating tab bar (66px at 22px) and the home indicator. Any touch screen: the Open is a full 44px target. */
+@media (max-width: 767px) { .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); } }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-toast[data-open] { padding: 4px 4px 4px 16px; }
+  .gx-toast-open { height: 44px; min-width: 44px; padding: 0 16px; }
+}
 
 /* ── Workspace view ────────────────────────────────────────────────────── */
 .gx-ws { flex: 1; min-height: 0; overflow: auto; background: var(--gx-panel); }

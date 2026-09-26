@@ -104,15 +104,17 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(room.messages).toHaveLength(10);
     expect(room.solutions).toHaveLength(4);
 
-    /* → Brief appends to the saved brief; Board it adds a draft frame; Open in Gen writes nothing. */
+    /* → Brief appends to the saved brief; → Rig (wire value `boards`) adds a draft scene node and names it; Open in Gen writes nothing. */
     const route = (id: string, to: string) => request.post(`/api/crew/solutions/${id}/route`, { headers, data: { to } });
     expect(await route(solutions[0].id, "brief").then((r) => r.json())).toMatchObject({ status: "sent_to_brief" });
-    expect(await route(solutions[1].id, "boards").then((r) => r.json())).toMatchObject({ status: "boarded" });
+    const placed = await route(solutions[1].id, "boards").then((r) => r.json());
+    expect(placed).toMatchObject({ status: "boarded", title: "Cut on the drop" });
+    expect(placed.nodeId).toMatch(/^node/);
     expect(await route(solutions[2].id, "gen").then((r) => r.json())).toMatchObject({ status: "generated", prompt: solutions[2].text });
     expect((await route(solutions[2].id, "rig")).status()).toBe(400);
     const after = (await request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project;
     expect(after.brief).toContain(`Crew · ${solutions[0].text}`);
-    expect(after.nodes.at(-1)).toMatchObject({ type: "scene", title: "Cut on the drop", status: "draft" });
+    expect(after.nodes.at(-1)).toMatchObject({ id: placed.nodeId, type: "scene", title: "Cut on the drop", status: "draft" });
 
     const minutes = await request.get(`/api/crew/sessions/${session.id}/minutes`, { headers });
     expect(minutes.headers()["content-type"]).toContain("text/markdown");

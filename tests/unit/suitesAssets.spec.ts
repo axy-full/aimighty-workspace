@@ -20,7 +20,7 @@ test("every command is offered; the ones this asset cannot do say exactly why", 
   expect(caps.why.duplicate).toContain("Retry generation");
   const items = ctxItems({ kind: "asset", id: gen.id }, caps);
   const disabled = items.filter((i) => !i.sep && i.disabled).map((i) => (i.sep ? "" : `${i.command}: ${i.reason}`));
-  expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Use Retry generation for a new take with the same inputs.", "undo: Nothing to undo."]);
+  expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Use Retry generation for a new take from its prompt and model.", "undo: Nothing to undo."]);
   expect(ASSET_LABEL.retry).toBe("Retry generation");
 
   const forUpload = assetCapabilities({ ...base, asset: up, otherProjects: 0 });
@@ -48,7 +48,7 @@ test("delete says what really happens to each kind of asset", () => {
 
 test("Retry hands Gen the render's own inputs, and Gen reads old and new presets", () => {
   const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox" }, title: "Fox" });
-  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", note: "Retry · Fox · same inputs · new seed" });
+  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", note: "Retry · Fox · same prompt and model" });
   expect(retryPreset({ prompt: "p", model: "m", kind: "model" }).type).toBeUndefined();
   expect(readGenPreset(JSON.stringify(preset))).toEqual(preset);
   expect(readGenPreset("plain words from Crew")).toEqual({ prompt: "plain words from Crew" });

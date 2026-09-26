@@ -113,7 +113,9 @@ test("versions merge filed takes with jobs in flight or failed, newest first", (
 test("generation phase follows the real job; a failed render is shown as not billed", () => {
   expect(generationPhase(null)).toMatchObject({ label: "Submitting", done: false });
   expect(generationPhase({ status: "queued" })).toMatchObject({ label: "Queued", tone: "blue", done: false });
-  expect(generationPhase({ status: "held" })).toMatchObject({ label: "Held for approval", done: false });
+  /* Held means out of credits or waiting for a slot (lib/held.ts) — never an approval. */
+  expect(generationPhase({ status: "held" })).toMatchObject({ label: "Held · top up to release", done: false });
+  expect(generationPhase({ status: "held", params: { held: { why: "slots" } } })).toMatchObject({ label: "Waiting for a slot", done: false });
   expect(generationPhase({ status: "running" })).toMatchObject({ label: "Rendering", done: false });
   expect(generationPhase({ status: "succeeded" })).toMatchObject({ label: "Complete", pct: 100, tone: "green", done: true });
   expect(generationPhase({ status: "failed", creditsBilled: 0 })).toMatchObject({ label: "Failed · not billed", tone: "red", done: true });

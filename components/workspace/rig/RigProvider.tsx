@@ -9,6 +9,7 @@ import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
+import { DRAFT_WRITTEN, writtenProject } from "@/lib/workspace/draft-written";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { connectNodes } from "@/lib/workspace/rig-graph";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
@@ -162,6 +163,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       setDraft(fresh);
     }
   }, [load, setDraft]);
+  /* The draft was written elsewhere (lib/workspace/draft-written): read it again, unless edits here are still waiting to save. */
+  useEffect(() => {
+    const onWritten = (event: Event) => { if (writtenProject(event) === draftRef.current?.project.id && !dirty.current) void reload(); };
+    window.addEventListener(DRAFT_WRITTEN, onWritten);
+    return () => window.removeEventListener(DRAFT_WRITTEN, onWritten);
+  }, [reload]);
 
   /* Set once the team canvas hook exists below: its waiting edit goes out before the draft save. */
   const teamFlushRef = useRef<(() => Promise<void>) | null>(null);

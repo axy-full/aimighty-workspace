@@ -77,7 +77,7 @@ test("right-click: every command works or says exactly why not; delete is soft a
   const menu = page.getByTestId("context-menu");
   await expect(menu.getByRole("menuitem", { name: "Retry generation" })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
-  await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Use Retry generation for a new take with the same inputs.");
+  await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Use Retry generation for a new take from its prompt and model.");
   await expect(menu.getByRole("menuitem", { name: /^Move to/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await menu.getByRole("menuitem", { name: /^Delete/ }).click();
@@ -87,12 +87,13 @@ test("right-click: every command works or says exactly why not; delete is soft a
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: false } });
 
-  /* Retry opens Gen with the render's own inputs. */
+  /* Retry opens Gen with the render's own prompt and model, and says only that. */
   await wideTile.click({ button: "right" });
   await menu.getByRole("menuitem", { name: "Retry generation" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Wide on the water · same inputs · new seed");
+  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Wide on the water · same prompt and model");
+  await expect(page.getByTestId("toast")).toHaveText("Retry Wide on the water — its prompt and model are in Gen. Priced before it runs.");
   expect(errors).toEqual([]);
 });
 

@@ -51,7 +51,7 @@ export function assetCapabilities(input: {
     if (input.otherProjects > 0) can.move = true;
     else why.move = "This workspace has no other project to move it to.";
     why.duplicate = asset.origin === "generation"
-      ? "A generation has one copy. Use Retry generation for a new take with the same inputs."
+      ? "A generation has one copy. Use Retry generation for a new take from its prompt and model."
       : "An original has one copy. Copy it and paste it into another project to file it there too.";
   }
   if (clip && projectId) {
@@ -72,16 +72,20 @@ export const SAY = {
     : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
-  retry: (name: string) => `Retry ${name} — same inputs, new seed. Quoted before it runs.`,
+
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,
 };
 
-/** What Retry hands to Gen: the render's own inputs, priced again before anything runs. */
+/**
+ * What Retry hands to Gen: the render's own prompt (as typed, before any
+ * enhancement), its model and its kind — no references or other settings,
+ * so the note says exactly that. Priced again before anything runs.
+ */
 export type GenPreset = { prompt: string; model?: string; type?: "image" | "video" | "audio"; note?: string };
 export function retryPreset(generation: { prompt: string; model: string; kind: string; params?: Record<string, unknown>; title?: string | null }): GenPreset {
   const raw = typeof generation.params?.rawPrompt === "string" ? generation.params.rawPrompt : "";
   const type = generation.kind === "image" || generation.kind === "video" || generation.kind === "audio" ? generation.kind : undefined;
-  return { prompt: raw || generation.prompt, model: generation.model, type, note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same inputs · new seed` };
+  return { prompt: raw || generation.prompt, model: generation.model, type, note: `Retry · ${generation.title || generation.prompt.slice(0, 40)} · same prompt and model` };
 }
 export const GEN_PRESET_KEY = "particl-gen-preset";
 export function readGenPreset(raw: string | null): GenPreset | null {
