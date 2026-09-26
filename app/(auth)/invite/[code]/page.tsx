@@ -18,6 +18,7 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
   const [info, setInfo] = useState<Info | { dead: string } | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -35,7 +36,7 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
     try {
       const res = await fetch("/api/auth/accept", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(withPassword ? { code, password } : { code }),
+        body: JSON.stringify(withPassword ? { code, password, accept: agreed } : { code }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Could not accept the invite");
@@ -65,6 +66,14 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
       <form onSubmit={(e) => { e.preventDefault(); accept(true); }}>
         <Field label="Password"><input className="ctl" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} autoFocus /></Field>
         <Field label="Confirm"><input className="ctl" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+        <label className="mt-3 flex min-h-[44px] items-start gap-2 text-[13px] leading-relaxed text-dim">
+          <input className="mt-1" type="checkbox" required checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+          <span>
+            I agree to the <Link className="text-ink underline" href="/terms" target="_blank">terms</Link> and{" "}
+            <Link className="text-ink underline" href="/policy" target="_blank">content policy</Link>. Read the{" "}
+            <Link className="text-ink underline" href="/privacy" target="_blank">privacy notice</Link>.
+          </span>
+        </label>
         <Submit busy={busy}>Join the workspace</Submit>
         {err && <ErrorLine>{err}</ErrorLine>}
       </form>

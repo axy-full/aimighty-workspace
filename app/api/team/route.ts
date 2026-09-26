@@ -6,6 +6,8 @@ import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
+import { accountFailure } from "@/lib/accountDb";
+import { createWorkspaceInvite, takeInviteMailSlot } from "@/lib/teamInvitations";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 7;
@@ -87,15 +89,15 @@ export const POST = withTenant(async function POST(req: Request) {
   if (already.rows.length) return NextResponse.json({ error: "That person is already on this workspace" }, { status: 409 });
 
   const code = randomBytes(24).toString("base64url");
-  const ts = now();
-  const expiresAt = ts + INVITE_DAYS * 86400_000;
-  await platformDb().execute({
-    sql: `INSERT INTO workspace_invites (code, workspace_id, email, name, role, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?)`,
-    args: [code, ws.id, email, name.slice(0, 80), role, got.user.id, ts, expiresAt],
-  });
+  const expiresAt = now() + INVITE_DAYS * 86400_000;
+  const mailing = mailConfigured() && body.send !== false;
+  // Refused before anything is written when the plan has no seat left for it.
+  try { await createWorkspaceInvite({ ws, code, email, name, role, createdBy: got.user.id, expiresAt }); }
+  catch (error) { return accountFailure(error); }
   let sent = false; let mailError: string | null = null;
-  if (mailConfigured() && body.send !== false) {
+  if (mailing) {
     try {
+      await takeInviteMailSlot(ws.id, email);
       const origin = inviteOrigin(req);
       await sendMail({ to: email, ...inviteEmail({ name, inviter: `${got.user.name} (${ws.name})`, link: `${origin}/invite/${code}`, role, expiresAt, origin }) });
       await platformDb().execute({ sql: `UPDATE workspace_invites SET sent_at = ?, send_count = send_count + 1 WHERE code = ?`, args: [now(), code] });

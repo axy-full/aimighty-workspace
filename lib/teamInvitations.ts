@@ -1,4 +1,10 @@
-import { accountDbReady, accountTransaction, AccountError } from "./accountDb";
+import { createHash } from "node:crypto";
+import {
+  accountDbReady,
+  accountTransaction,
+  AccountError,
+  takeAccountLimit,
+} from "./accountDb";
 import { assertInvitationSession } from "./accountInvitationSession";
 import {
   platformDb,
@@ -8,6 +14,7 @@ import {
   getWorkspace,
   getPlatformLayer,
   mirrorUser,
+  isSuperAdmin,
 } from "./platform";
 import { passwordProblem, hashPassword } from "./auth";
 import { ceilingFor, ceilingMessage } from "./planLimits";
@@ -50,15 +57,22 @@ export async function repairPendingMemberships(accountId: string) {
     });
   }
 }
+async function memberCeiling(
+  tx: Transaction,
+  ws: TenantWorkspace,
+  layer: PlatformLayer,
+) {
+  const paid = await paidPlanEntitlementTx(tx, ws.id, now());
+  const plan = planById(layer.plans, effectivePlanId(paid, ws.planId));
+  return { plan, ceiling: ceilingFor(plan, "members") };
+}
 /** Called while holding the same platform write lock as membership changes. */
 export async function ensureMemberSeat(
   tx: Transaction,
   ws: TenantWorkspace,
   layer: PlatformLayer,
 ) {
-  const paid = await paidPlanEntitlementTx(tx, ws.id, now());
-  const plan = planById(layer.plans, effectivePlanId(paid, ws.planId)),
-    ceiling = ceilingFor(plan, "members");
+  const { plan, ceiling } = await memberCeiling(tx, ws, layer);
   const members = Number(
     (
       await tx.execute({
@@ -70,10 +84,109 @@ export async function ensureMemberSeat(
   if (ceiling != null && members >= ceiling)
     throw new AccountError(ceilingMessage(plan!, "members", ceiling), 402);
 }
+/** An open invitation holds a seat until it is used or expires, so the admin
+ * hears about the plan's ceiling before anybody is emailed a dead link. A
+ * second invitation to the same address shares that address's seat. */
+export async function ensureInviteSeat(
+  tx: Transaction,
+  ws: TenantWorkspace,
+  layer: PlatformLayer,
+  email: string,
+) {
+  const { plan, ceiling } = await memberCeiling(tx, ws, layer);
+  if (ceiling == null) return;
+  const taken = Number(
+    (
+      await tx.execute({
+        sql: `SELECT
+  (SELECT COUNT(*) FROM memberships WHERE workspace_id=? AND disabled=0)+
+  (SELECT COUNT(DISTINCT i.email) FROM workspace_invites i
+     WHERE i.workspace_id=? AND i.used_at IS NULL AND i.expires_at>? AND i.email<>?
+       AND NOT EXISTS (SELECT 1 FROM memberships m JOIN accounts a ON a.id=m.account_id
+         WHERE m.workspace_id=i.workspace_id AND m.disabled=0 AND a.email=i.email)) AS n`,
+        args: [ws.id, ws.id, now(), email],
+      })
+    ).rows[0].n,
+  );
+  if (taken >= ceiling)
+    throw new AccountError(
+      `The ${plan!.label} plan allows ${ceiling} member${ceiling === 1 ? "" : "s"}, counting open invitations. Revoke one or move to a larger plan.`,
+      402,
+    );
+}
+/** Record a workspace invitation once its seat is known to exist. */
+export async function createWorkspaceInvite(input: {
+  ws: TenantWorkspace;
+  code: string;
+  email: string;
+  name: string;
+  role: "admin" | "member";
+  createdBy: string;
+  expiresAt: number;
+}) {
+  const layer = await getPlatformLayer();
+  await accountTransaction(async (tx) => {
+    await ensureInviteSeat(tx, input.ws, layer, input.email);
+    await tx.execute({
+      sql: `INSERT INTO workspace_invites (code, workspace_id, email, name, role, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?)`,
+      args: [
+        input.code,
+        input.ws.id,
+        input.email,
+        input.name.slice(0, 80),
+        input.role,
+        input.createdBy,
+        now(),
+        input.expiresAt,
+      ],
+    });
+  });
+}
+/** A re-send only helps while the plan still has a seat for the invitee. */
+export async function assertInviteSeat(ws: TenantWorkspace) {
+  const layer = await getPlatformLayer();
+  await accountTransaction((tx) => ensureMemberSeat(tx, ws, layer));
+}
+/* Invitation emails carry a workspace's own words from Particl's sending
+   domain, so each workspace and each address gets a small fixed number. */
+export const INVITE_MAIL_LIMITS = {
+  perWorkspaceHour: 20,
+  perAddressDay: 3,
+  perInvitation: 5,
+} as const;
+export async function takeInviteMailSlot(workspaceId: string, email: string) {
+  const bounded = async (
+    key: string,
+    limit: number,
+    windowMs: number,
+    message: string,
+  ) => {
+    try {
+      await takeAccountLimit(key, limit, windowMs);
+    } catch (error) {
+      if (error instanceof AccountError && error.status === 429)
+        throw new AccountError(message, 429);
+      throw error;
+    }
+  };
+  await bounded(
+    `team-invite-mail:${workspaceId}`,
+    INVITE_MAIL_LIMITS.perWorkspaceHour,
+    3600_000,
+    `This workspace has sent ${INVITE_MAIL_LIMITS.perWorkspaceHour} invitations this hour. Try again later.`,
+  );
+  await bounded(
+    `team-invite-mail-to:${createHash("sha256").update(email.trim().toLowerCase()).digest("hex")}`,
+    INVITE_MAIL_LIMITS.perAddressDay,
+    86400_000,
+    `That address has been sent ${INVITE_MAIL_LIMITS.perAddressDay} invitations today. Copy the invitation link instead.`,
+  );
+}
 export async function acceptWorkspaceInvitation(input: {
   code: string;
   password?: string;
   name?: string;
+  acceptedPolicy?: boolean;
   signedInAccountId?: string;
   signedInSession?: string;
 }) {
@@ -138,6 +251,18 @@ export async function acceptWorkspaceInvitation(input: {
     }
     let accountId = existing ? String(existing.id) : "";
     if (!existing) {
+      /* An inviter can read this link, so opening it proves nothing about the
+         mailbox. The platform owner's address therefore never gets its account
+         here: it must come from a verified sign-up or a password reset. */
+      if (isSuperAdmin(email))
+        throw new AccountError(
+          "This address must create its account from the sign-up page first.",
+          403,
+        );
+      if (!input.acceptedPolicy)
+        throw new AccountError(
+          "Read the content policy and terms, and tick the box.",
+        );
       const password = String(input.password ?? ""),
         problem = passwordProblem(password);
       if (problem) throw new AccountError(problem);
@@ -146,8 +271,8 @@ export async function acceptWorkspaceInvitation(input: {
         .slice(0, 80);
       accountId = newId("usr");
       await tx.execute({
-        sql: "INSERT INTO accounts(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)",
-        args: [accountId, email, name, hashPassword(password), now()],
+        sql: "INSERT INTO accounts(id,email,name,password_hash,created_at,accepted_policy_at) VALUES(?,?,?,?,?,?)",
+        args: [accountId, email, name, hashPassword(password), now(), now()],
       });
     }
     // A second pending invite never demotes an existing owner/admin.

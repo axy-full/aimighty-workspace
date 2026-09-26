@@ -12,6 +12,7 @@ import {
   switchSessionWorkspace,
 } from "@/lib/platform";
 import { acceptWorkspaceInvitation } from "@/lib/teamInvitations";
+import { policyAccepted } from "@/lib/policyAccept";
 import {
   accountFailure,
   accountJson,
@@ -89,6 +90,7 @@ export const POST = recoveryRoute(async function POST(req: Request) {
       code: String(body.code ?? "").trim(),
       password: String(body.password ?? ""),
       name: String(body.name ?? ""),
+      acceptedPolicy: policyAccepted(body),
       signedInAccountId: ctx?.user.id,
       signedInSession,
     });

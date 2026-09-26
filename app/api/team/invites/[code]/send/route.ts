@@ -3,6 +3,8 @@ import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady, now } from "@/lib/platform";
 import { mailConfigured, sendMail, inviteEmail, inviteOrigin } from "@/lib/mail";
+import { accountFailure } from "@/lib/accountDb";
+import { assertInviteSeat, takeInviteMailSlot, INVITE_MAIL_LIMITS } from "@/lib/teamInvitations";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ code: string }> };
@@ -19,6 +21,11 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const iv = (await platformDb().execute({ sql: `SELECT * FROM workspace_invites WHERE code = ? AND workspace_id = ? LIMIT 1`, args: [code, ws.id] })).rows[0] as any;
   if (!iv || iv.used_at) return NextResponse.json({ error: "No such invitation." }, { status: 404 });
   if (Number(iv.expires_at) <= now()) return NextResponse.json({ error: "That invitation has expired — create a new one." }, { status: 400 });
+  if (Number(iv.send_count ?? 0) >= INVITE_MAIL_LIMITS.perInvitation) return NextResponse.json({ error: `This invitation has been emailed ${INVITE_MAIL_LIMITS.perInvitation} times. Copy its link instead.` }, { status: 429 });
+  try {
+    await assertInviteSeat(ws);
+    await takeInviteMailSlot(ws.id, String(iv.email));
+  } catch (error) { return accountFailure(error); }
   try {
     const origin = inviteOrigin(req);
     await sendMail({ to: String(iv.email), ...inviteEmail({ name: String(iv.name), inviter: `${got.user.name} (${ws.name})`, link: `${origin}/invite/${code}`, role: String(iv.role), expiresAt: Number(iv.expires_at), origin }) });
