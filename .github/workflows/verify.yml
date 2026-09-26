@@ -130,9 +130,12 @@ jobs:
           }
           start_server() {
             # Its own process group, so stopping the server by its PID also
-            # stops the next dev and next-server processes behind npm.
+            # stops the next dev and next-server processes behind npm. The
+            # preload keeps idle keep-alive sockets open for 10 minutes, not
+            # Node's 5 s (`next dev` has no --keepAliveTimeout): spec reads on
+            # reused sockets hit ECONNRESET as the server closed them.
             started=$SECONDS
-            setsid npm run dev -- -p 4551 > "dev-ci-$k-of-36.log" 2>&1 &
+            NODE_OPTIONS="--import $PWD/scripts/ci-keep-alive.mjs" setsid npm run dev -- -p 4551 > "dev-ci-$k-of-36.log" 2>&1 &
             server=$!
             for attempt in {1..90}; do
               if curl --fail --silent http://localhost:4551/api/health >/dev/null; then
