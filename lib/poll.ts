@@ -3,9 +3,13 @@
  * (a take rendering, a connected-account job, a re-edit, a Genjutsu run):
  *
  *  - the first wait is 2 s, and each read after it waits 1.5× longer, up to 10 s;
- *  - never sooner than the server's own `pollAfterSeconds` when it gives one
- *    (it knows the provider's pace and holds the poll lease), bounded to a minute;
- *  - ±20% jitter, so tabs and teammates do not ask in step;
+ *  - never sooner than the server's own `pollAfterSeconds` when it gives one,
+ *    bounded to a minute: the server holds the job's poll lease for exactly
+ *    that long after its reply and answers a read inside it with the stored
+ *    job and a 30 s wait, so a read that lands early costs a whole round;
+ *  - ±20% jitter, so tabs and teammates do not ask in step — upward only when
+ *    the server's hint sets the wait, so the jitter never lands a read inside
+ *    the lease;
  *  - a failed read doubles the wait, up to a minute, instead of asking again at once;
  *  - one read at a time: a slow reply never has a second read queued behind it;
  *  - nothing is asked while the tab is hidden or offline; the read that fell
@@ -23,6 +27,8 @@ export const POLL = {
   jitter: 0.2,
   /** The most a server hint may hold the next read back. */
   hintCapMs: 60_000,
+  /** Added to a server hint, so the read lands after the lease even when the reply was quick. */
+  hintMarginMs: 500,
   /** The most consecutive failures may hold the next read back. */
   missCapMs: 60_000,
 } as const;
@@ -41,18 +47,27 @@ function jittered(ms: number, random: () => number): number {
   const r = Math.min(Math.max(random(), 0), 1);
   return Math.max(0, Math.round(ms * (1 + (r * 2 - 1) * POLL.jitter)));
 }
+/** 0 to +20% above `ms`: spread out, never sooner. */
+function jitteredUp(ms: number, random: () => number): number {
+  const r = Math.min(Math.max(random(), 0), 1);
+  return Math.round(ms * (1 + r * POLL.jitter));
+}
 
 /**
  * The wait before the next read, after `reads` reads (0 before the first).
- * Pure; `random` is injected so a spec can pin the jitter.
+ * A server hint is a floor: the read lands after it (plus a small margin),
+ * whatever the jitter. Pure; `random` is injected so a spec can pin the jitter.
  */
 export function pollDelay(reads: number, pace: PollPace = {}): number {
   const { hintSeconds, misses = 0, random = Math.random } = pace;
   const grown = Math.min(POLL.capMs, POLL.startMs * POLL.factor ** Math.max(0, reads));
   const hint = typeof hintSeconds === "number" && Number.isFinite(hintSeconds) && hintSeconds > 0 ? Math.min(POLL.hintCapMs, hintSeconds * 1000) : 0;
+  const floor = hint > 0 ? hint + POLL.hintMarginMs : 0;
   const paced = Math.max(grown, hint);
   const backed = misses > 0 ? Math.min(POLL.missCapMs, paced * 2 ** Math.min(misses, 6)) : paced;
-  return jittered(backed, random);
+  /* The server's hint sets the wait: spread upward from it. The page's own pace: ±20%, still never under the hint. */
+  if (floor > 0 && backed <= floor) return jitteredUp(floor, random);
+  return Math.max(floor, jittered(backed, random));
 }
 
 /** Automatic retries of a one-off read (a list, a catalogue) before the page waits for Try again. */
@@ -90,6 +105,27 @@ const browserClock: PollClock = {
   random: () => Math.random(),
 };
 
+/**
+ * `run` after `ms`, never while the page is away: a wait that ends while the
+ * tab is hidden or offline runs when the page is back (a one-off read's
+ * automatic retry). Returns the cancel.
+ */
+export function presentTimeout(run: () => void, ms: number, options: { presence?: PollPresence | null; clock?: Pick<PollClock, "setTimeout" | "clearTimeout"> } = {}): () => void {
+  const clock = options.clock ?? browserClock;
+  const presence = options.presence === undefined ? pagePresence() : options.presence;
+  let over = false;
+  let unsubscribe: (() => void) | undefined;
+  const cancel = () => { over = true; clock.clearTimeout(handle); unsubscribe?.(); unsubscribe = undefined; };
+  function fire() {
+    if (over) return;
+    if (presence?.away()) { unsubscribe ??= presence.subscribe(fire); return; }
+    cancel();
+    run();
+  }
+  const handle = clock.setTimeout(fire, ms);
+  return cancel;
+}
+
 export type PollOptions<T> = {
   /** One status read. Aborted when the poll stops. */
   read: (signal: AbortSignal) => Promise<T>;
@@ -98,6 +134,8 @@ export type PollOptions<T> = {
   onValue: (value: T) => void;
   /** The server's own pacing in the reply, in seconds (`pollAfterSeconds`). */
   hint?: (value: T) => number | null | undefined;
+  /** Pacing already known before the first read (a job read moments ago by an earlier poll), in seconds. */
+  firstHint?: number | null;
   /** A failed read, with the failures in a row so far. "stop" when asking again cannot help (it is gone, or not this person's). */
   onError?: (error: unknown, misses: number) => "stop" | void;
   /** Read at once instead of after the first wait. */
@@ -116,7 +154,7 @@ export type Poller = {
 export function poll<T>(options: PollOptions<T>): Poller {
   const clock = options.clock ?? browserClock;
   const presence = options.presence === undefined ? pagePresence() : options.presence;
-  let stopped = false, reads = 0, misses = 0, hint: number | null = null;
+  let stopped = false, reads = 0, misses = 0, hint: number | null = options.firstHint ?? null;
   let timer: unknown = null, due = false;
   let inFlight: AbortController | null = null;
   /* Back from hidden or offline: the read that fell due meanwhile is made at once. */

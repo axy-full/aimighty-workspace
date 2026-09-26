@@ -4,7 +4,7 @@ import {
   CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedQuoteRequest, connectedRecoverable, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob,
 } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
-import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { checkingProblem, resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { poll, pollAfter } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -28,7 +28,7 @@ export type ConnectedJobState =
   | { phase: "quoting" }
   | { phase: "quoted"; job: ConnectedJob }
   | { phase: "submitting"; job: ConnectedJob }
-  /** `problem`: the last status read failed, in the product's words; cleared by the next good read. */
+  /** `problem`: the last status read failed, in the product's words (lib/higgsfield-consumer/resume `checkingProblem`); cleared by the next good read. */
   | { phase: "running"; job: ConnectedJob; problem?: string }
   | { phase: "done"; job: ConnectedJob }
   | { phase: "failed"; job: ConnectedJob | null; error: string };
@@ -191,14 +191,14 @@ export function useConnectedJob(draftId: string | null, slot = "business") {
         setState((now) => (mine(now) ? settledState(job) : now));
       },
       onError: (error) => {
-        const problem = resumeProblem(error);
         /* Gone, or never this person's to read: asking again cannot help, so the composer is handed back
            (an id the server does not know is forgotten; one it will not show this person is kept for its owner). */
         if (resumeGivesUp(error)) {
           if (resumeRetry(Number((error as { status?: number }).status), 1) === "forget") forgetJob(store(), key, id);
-          setState((now) => (mine(now) ? { phase: "failed", job: now.job, error: problem } : now));
+          setState((now) => (mine(now) ? { phase: "failed", job: now.job, error: resumeProblem(error) } : now));
           return "stop";
         }
+        const problem = checkingProblem(error);
         setState((now) => (mine(now) && now.problem !== problem ? { ...now, problem } : now));
       },
     });

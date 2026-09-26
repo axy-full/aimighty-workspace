@@ -98,19 +98,26 @@ export function useViral(draftId: string | null, ready: boolean) {
 
   /* Every job the account still holds is polled until it settles — the one submitted here and any
      listed (another page, a reload, another tab) — one status read at a time, in turn, at lib/poll's
-     pace, so a paid job is never stranded. The set changing (a job settles) starts the pace again. */
+     pace, so a paid job is never stranded. The set changing (a job settles) starts the pace again.
+     The account's pace for one job is shared out across the turn, and the job asked next is never
+     asked before its own last reply's pollAfterSeconds is up (the account holds that job's lease until
+     then), even when the jobs' hints differ or the poll has just started over. */
   const pending = pendingJobIds(jobs, run.phase === "running" ? run.job.id : null).join(",");
   const turn = useRef(0);
+  const leaseEnds = useRef(new Map<string, number>());
   useEffect(() => {
     if (!pending || !draftId) return;
     const ids = pending.split(",");
     let asked = ids[0];
+    const owed = () => { const at = leaseEnds.current.get(ids[turn.current % ids.length]); return at ? Math.max(0, (at - Date.now()) / 1000) : 0; };
     const poller = poll({
+      firstHint: owed() || null,
       read: (signal) => { asked = ids[turn.current++ % ids.length]; return post({ action: "status", draftId, id: asked }, signal); },
-      hint: (reply) => turnHint(reply.pollAfterSeconds, ids.length),
+      hint: (reply) => Math.max(turnHint(reply.pollAfterSeconds, ids.length) ?? 0, owed()) || null,
       /* The list decides: a settled job leaves `pending`, which starts a poll over the rest. */
       done: () => false,
-      onValue: ({ job }) => {
+      onValue: ({ job, pollAfterSeconds }) => {
+        if (pollAfterSeconds) leaseEnds.current.set(job.id, Date.now() + pollAfterSeconds * 1000);
         setJobs((list) => list.map((j) => (j.id === job.id ? job : j)));
         setProblems((all) => { if (!(job.id in all)) return all; const next = { ...all }; delete next[job.id]; return next; });
         setRun((current) => runAfterStatus(current, job));

@@ -57,6 +57,9 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  * re-edited from an instruction with the take as its reference, priced before
  * it renders; any take goes to the Timeline in one press.
  */
+/** A re-edit the page can no longer read: where it goes if it renders, and that a failed one costs nothing. */
+const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.";
+
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
   const { toast, state } = useWorkspace();
@@ -92,6 +95,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<{ jobId: string; from: string } | null>(null);
+  /** The last status read of the re-edit in flight failed; cleared by the next good one. */
+  const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -103,15 +108,23 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
       read: (signal) => studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
       done: ({ generation }) => !activeMediaJob(generation),
       onValue: ({ generation }) => {
-        if (!alive.current || activeMediaJob(generation)) return;
+        if (!alive.current) return;
+        setChecking("");
+        if (activeMediaJob(generation)) return;
         setPending(null);
         if (generation.status === "succeeded") { setMade({ genId: generation.id, from: pending.from }); void refreshProjectLibrary(scope, projectId); toast("The re-edit is in the library"); }
         else setError(generation.error || "The re-edit did not render. A failed render is not billed.");
       },
-      /* No longer on record for this person: asking again cannot help. Anything else is asked again, later. */
+      /* No longer on record for this person: asking again cannot help, and whether it was billed follows
+         from whether it rendered. Anything else is said while it is asked again, later. */
       onError: (cause) => {
-        if (!(cause instanceof StudioRequestError) || (cause.status !== 404 && cause.status !== 403)) return;
-        if (alive.current) { setPending(null); setError("This re-edit can no longer be checked from here."); }
+        if (!alive.current) return;
+        if (!(cause instanceof StudioRequestError) || (cause.status !== 404 && cause.status !== 403)) {
+          setChecking(cause instanceof StudioRequestError ? "Could not check this re-edit. Checking again shortly." : "The connection dropped. Checking again shortly.");
+          return;
+        }
+        setPending(null); setChecking("");
+        setError(REEDIT_LOST);
         return "stop";
       },
     });
@@ -210,6 +223,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
                 )}
                 {blocked && !shown ? <span className="gx-reason" data-testid="edit-blocked">{blocked}</span> : null}
               </div>
+              {pending && checking ? <p className="gx-reason" role="status" data-testid="edit-checking">{checking}</p> : null}
               {made && made.from === entry.take.id ? (
                 <div className="pd-sketch" data-testid="edit-result">
                   <LazyMedia url={`/api/media/${made.genId}`} kind="image" alt="The re-edit" className="gx-lazy" />

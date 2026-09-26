@@ -1,15 +1,18 @@
 import { test, expect } from "@playwright/test";
-import { POLL, poll, pollAfter, pollDelay, retryDelay, turnHint, type PollClock, type PollPresence } from "../../lib/poll";
+import { POLL, poll, pollAfter, pollDelay, presentTimeout, retryDelay, turnHint, type PollClock, type PollPresence } from "../../lib/poll";
 import { settledState } from "../../lib/shell/use-connected-job";
+import { READ_FAILED, readFailure } from "../../lib/shell/use-business";
+import { checkingProblem } from "../../lib/higgsfield-consumer/resume";
 import { activeMediaJob } from "../../lib/workbench/job-recovery";
 import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 /**
  * lib/poll: every status read in the app (Gen's takes, connected jobs, Ads,
  * Image ads, Motion Transfer, a re-edit) waits 2 s, then 1.5× longer each
- * time up to 10 s, or the server's own pollAfterSeconds when that is longer;
- * ±20% jitter; a failed read backs off; nothing is asked while the tab is
- * hidden; one read at a time; it stops on the terminal set.
+ * time up to 10 s, never sooner than the server's own pollAfterSeconds;
+ * ±20% jitter (upward only when the hint sets the wait); a failed read backs
+ * off; nothing is asked while the tab is hidden; one read at a time; it stops
+ * on the terminal set.
  */
 const MID = () => 0.5; // no jitter
 
@@ -50,17 +53,33 @@ test("the pace: 2 s, then 1.5x each read, capped at 10 s", () => {
   expect(POLL.capMs).toBe(10_000);
 });
 
-test("the server's own pollAfterSeconds holds the next read back when it is longer, bounded to a minute", () => {
-  expect(pollDelay(0, { hintSeconds: 15, random: MID })).toBe(15_000);
-  expect(pollDelay(0, { hintSeconds: 30, random: MID })).toBe(30_000);
-  /* A shorter hint never makes the page ask faster than its own pace. */
+test("the server's own pollAfterSeconds is a floor: the next read lands after it, bounded to a minute", () => {
+  /* Hint + half a second, spread 0–20% upward: 15 s → 15.5–18.6 s. */
+  expect(pollDelay(0, { hintSeconds: 15, random: () => 0 })).toBe(15_500);
+  expect(pollDelay(0, { hintSeconds: 15, random: MID })).toBe(17_050);
+  expect(pollDelay(0, { hintSeconds: 15, random: () => 0.999999 })).toBe(18_600);
+  expect(pollDelay(0, { hintSeconds: 30, random: () => 0 })).toBe(30_500);
+  /* A shorter hint never makes the page ask faster than its own pace, and its own jitter never dips under the hint. */
   expect(pollDelay(4, { hintSeconds: 3, random: MID })).toBe(10_000);
-  expect(pollDelay(0, { hintSeconds: 900, random: MID })).toBe(60_000);
+  expect(pollDelay(4, { hintSeconds: 9, random: () => 0 })).toBe(9500);
+  expect(pollDelay(0, { hintSeconds: 900, random: () => 0 })).toBe(60_500);
   for (const junk of [null, undefined, 0, -5, Number.NaN, Number.POSITIVE_INFINITY]) expect(pollDelay(0, { hintSeconds: junk, random: MID })).toBe(2000);
   expect(pollAfter({ job: {}, pollAfterSeconds: 15 })).toBe(15);
   expect(pollAfter({ job: {} })).toBeNull();
   expect(pollAfter({ pollAfterSeconds: "15" })).toBeNull();
   expect(pollAfter(null)).toBeNull();
+});
+
+test("no jitter, read count or miss ever lands a read inside the server's window", () => {
+  for (const hintSeconds of [2.5, 5, 7.5, 9, 15, 30, 45, 60]) {
+    for (let reads = 0; reads < 10; reads++) {
+      for (let misses = 0; misses < 4; misses++) {
+        for (const r of [0, 0.01, 0.25, 0.5, 0.75, 0.999999]) {
+          expect(pollDelay(reads, { hintSeconds, misses, random: () => r })).toBeGreaterThanOrEqual(hintSeconds * 1000 + POLL.hintMarginMs);
+        }
+      }
+    }
+  }
 });
 
 test("jitter stays within ±20% at every step, and moves the wait", () => {
@@ -127,7 +146,7 @@ test("the full terminal set ends a take's poll: succeeded, failed, cancelled; he
   for (const status of ["queued", "running", "held"]) expect(activeMediaJob({ status })).toBe(true);
 });
 
-test("the server's hint sets the next wait", async () => {
+test("the server's hint sets the next wait, and a read never comes before it", async () => {
   const time = fakeClock();
   const reads: number[] = [];
   const poller = poll({
@@ -136,9 +155,30 @@ test("the server's hint sets the next wait", async () => {
     hint: (reply) => reply.pollAfterSeconds, done: () => false, onValue: () => undefined,
   });
   await time.advance(40_000);
-  expect(reads).toEqual([2000, 17_000, 32_000]);
+  expect(reads).toEqual([2000, 19_050, 36_100]);
   poller.stop();
   expect(time.pending()).toBe(0);
+
+  /* The lowest the jitter goes: still after the 15 s. */
+  const low = fakeClock(() => 0);
+  const lowReads: number[] = [];
+  const stopLow = poll({
+    clock: low.clock, presence: null,
+    read: async () => { lowReads.push(low.now()); return { pollAfterSeconds: 15 }; },
+    hint: (reply) => reply.pollAfterSeconds, done: () => false, onValue: () => undefined,
+  });
+  await low.advance(40_000);
+  expect(lowReads).toEqual([1600, 17_100, 32_600]);
+  for (let i = 1; i < lowReads.length; i++) expect(lowReads[i] - lowReads[i - 1]).toBeGreaterThan(15_000);
+  stopLow.stop();
+
+  /* Pacing known before the first read (a job read moments ago) holds that read back too. */
+  const first = fakeClock(() => 0);
+  const firstReads: number[] = [];
+  const stopFirst = poll({ clock: first.clock, presence: null, firstHint: 6, read: async () => { firstReads.push(first.now()); return 1; }, done: () => false, onValue: () => undefined });
+  await first.advance(7000);
+  expect(firstReads).toEqual([6500]);
+  stopFirst.stop();
 });
 
 test("errors back off instead of looping, a good read resets the pace, and a hopeless error stops", async () => {
@@ -261,4 +301,98 @@ test("a good status read clears the problem a failed one put on a running connec
   const job = { id: "9d2b3c4e-5f60-4a7b-8c9d-000000000001", status: "accepted" } as ConnectedJob;
   expect(settledState(job)).toEqual({ phase: "running", job });
   expect("problem" in settledState(job)).toBe(false);
+});
+
+test("a one-off read's automatic retry waits while the tab is hidden and runs when it is back", async () => {
+  const time = fakeClock();
+  const page = fakePresence();
+  let ran = 0;
+  presentTimeout(() => { ran++; }, 2000, { clock: time.clock, presence: page.presence });
+  await time.advance(2000);
+  expect(ran).toBe(1);
+  expect(page.listeners()).toBe(0);
+
+  page.set(true);
+  presentTimeout(() => { ran++; }, 2000, { clock: time.clock, presence: page.presence });
+  await time.advance(10 * 60_000);
+  expect(ran).toBe(1);
+  page.set(true);
+  expect(ran).toBe(1);
+  page.set(false);
+  expect(ran).toBe(2);
+  expect(page.listeners()).toBe(0);
+  page.set(true); page.set(false);
+  expect(ran).toBe(2);
+
+  /* Cancelled (Try again, or the page left): never runs, and lets go of the page. */
+  const cancel = presentTimeout(() => { ran++; }, 2000, { clock: time.clock, presence: page.presence });
+  cancel();
+  await time.advance(5000);
+  page.set(true);
+  const cancelAway = presentTimeout(() => { ran++; }, 1000, { clock: time.clock, presence: page.presence });
+  await time.advance(1000);
+  expect(page.listeners()).toBe(1);
+  cancelAway();
+  expect(page.listeners()).toBe(0);
+  page.set(false);
+  expect(ran).toBe(2);
+});
+
+test("a failed status read on a running job is said in fixed words, never the raw error, and says it is asked again", () => {
+  const err = (status?: number, message = "x", code?: string) => Object.assign(new Error(message), { ...(status === undefined ? {} : { status }), ...(code ? { code } : {}) });
+  expect(checkingProblem(new TypeError("Failed to fetch"))).toBe("The connection dropped. Checking again shortly.");
+  expect(checkingProblem(new TypeError("NetworkError when attempting to fetch resource."))).toBe("The connection dropped. Checking again shortly.");
+  expect(checkingProblem(err(429, "Too many requests. Try again shortly."))).toBe("Could not check this take. Checking again shortly.");
+  expect(checkingProblem(err(503, "The connected account could not complete this request. Check the saved job before trying again."))).toBe("Could not check this take. Checking again shortly.");
+  expect(checkingProblem(err(401, "x", "reconnect_required"))).toBe("Reconnect the account in Workspace › Engines to finish this take. Checking again shortly.");
+  expect(checkingProblem(err(507, "x", "original_quota"))).toBe("Workspace storage is full. Make room to collect this take. Checking again shortly.");
+  expect(checkingProblem(err(502), "this ad")).toBe("Could not check this ad. Checking again shortly.");
+});
+
+test("a failed Setup or catalogue read says the account did not answer unless the route names a reason", () => {
+  const generic = { error: "The connected account could not complete this request. Check the saved job before trying again." };
+  expect(readFailure(503, generic)).toBe(READ_FAILED);
+  expect(readFailure(500, null)).toBe(READ_FAILED);
+  expect(readFailure(null, null)).toBe(READ_FAILED);
+  expect(readFailure(502, { error: "   " })).toBe(READ_FAILED);
+  expect(readFailure(429, { error: "Too many requests. Try again shortly." })).toBe("Too many requests. Try again shortly.");
+  expect(readFailure(401, { code: "reconnect_required", error: "Reconnect the connected account." })).toBe("Reconnect the connected account.");
+  expect(readFailure(503, { code: "discovery_unavailable", error: "The account's tools are not answering." })).toBe("The account's tools are not answering.");
+});
+
+test("against the service's poll lease, no read is refused and a finished render is seen within one hint", async () => {
+  /* The service's rule: a status read reserves the job until reply + pollAfterSeconds; a read inside that is
+     answered with the stored job and 30 s. A seeded spread of finish times, with the page's real jitter. */
+  let seed = 7;
+  const random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  for (const hint of [15, 30]) {
+    let refused = 0, worst = 0, total = 0;
+    const runs = 60;
+    for (let i = 0; i < runs; i++) {
+      const time = fakeClock(random);
+      const finishAt = 1000 + random() * 90_000;
+      let leaseUntil = 0, seenAt = -1;
+      const poller = poll({
+        clock: time.clock, presence: null,
+        read: async () => {
+          const now = time.now();
+          if (now < leaseUntil) { refused++; return { done: false, pollAfterSeconds: 30 }; }
+          leaseUntil = now + hint * 1000;
+          return { done: now >= finishAt, pollAfterSeconds: hint };
+        },
+        hint: (reply) => reply.pollAfterSeconds,
+        done: (reply) => reply.done,
+        onValue: (reply) => { if (reply.done) seenAt = time.now(); },
+      });
+      await time.advance(300_000);
+      poller.stop();
+      expect(seenAt).toBeGreaterThanOrEqual(finishAt);
+      const lag = seenAt - finishAt;
+      worst = Math.max(worst, lag); total += lag;
+    }
+    expect(refused).toBe(0);
+    /* Never more than one full wait after it finished: the hint, the margin and the top of the jitter. */
+    expect(worst).toBeLessThanOrEqual((hint * 1000 + POLL.hintMarginMs) * (1 + POLL.jitter));
+    expect(total / runs).toBeLessThan((hint * 1000 + POLL.hintMarginMs) * 0.75);
+  }
 });

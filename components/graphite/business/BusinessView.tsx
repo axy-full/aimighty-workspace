@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import LazyMedia from "@/components/LazyMedia";
@@ -149,21 +149,50 @@ function takePreset(page: PresetPage) {
   } catch { return null; }
 }
 
-/** A read that failed: what went wrong, and Try again. It is also tried again on its own a few times (lib/shell/use-business). */
+/**
+ * A read that failed: what went wrong, and Try again. It is also tried again on its own a few times
+ * (lib/shell/use-business). Try again stays focusable while its read is out, and when a good read takes
+ * the row away, focus stays in the section it reloaded instead of falling back to the top of the page.
+ */
 function ReadProblem({ error, busy, onRetry, testId }: { error: string; busy: boolean; onRetry: () => void; testId: string }) {
+  const row = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = row.current;
+    return () => {
+      if (!node?.contains(document.activeElement)) return;
+      const home = node.closest<HTMLElement>("section, [data-read-home]") ?? node.parentElement;
+      if (!home) return;
+      if (!home.hasAttribute("tabindex")) { home.tabIndex = -1; home.dataset.focusHome = ""; }
+      home.focus({ preventScroll: true });
+    };
+  }, []);
   return (
-    <div className="gx-retry" role="alert" data-testid={testId}>
+    <div ref={row} className="gx-retry" role="alert" aria-busy={busy} data-testid={testId}>
       <span>{error}</span>
-      <button type="button" className="gx-hbtn" disabled={busy} onClick={onRetry}>{busy ? "Reading…" : "Try again"}</button>
+      <button type="button" className="gx-hbtn" aria-disabled={busy} onClick={() => { if (!busy) onRetry(); }}>{busy ? "Reading…" : "Try again"}</button>
     </div>
   );
 }
 
-/** A running job whose last status read failed: said plainly while it is asked again, later. */
+/** A running job whose last status read failed: said plainly (use-connected-job words it) while it is asked again, later. */
 function RunProblem({ state, testId }: { state: ConnectedJobState; testId: string }) {
   if (state.phase !== "running" || !state.problem) return null;
-  const again = /trying again/i.test(state.problem) ? "" : " Checking again shortly.";
-  return <p className="gx-reason" role="status" data-testid={testId}>{state.problem}{again}</p>;
+  return <p className="gx-reason" role="status" data-testid={testId}>{state.problem}</p>;
+}
+
+/**
+ * The catalogue and Setup reads a composer waits on, as one row: the first error, and one Try again that
+ * reads again whichever failed. Both fail together when the account is down; two identical rows said nothing more.
+ */
+function ComposerReads({ business, types, testId }: { business: Business; types: SetupType[] | null; testId: string }) {
+  const setupError = types ? business.setup.error : null;
+  const error = business.catalogueError ?? setupError;
+  if (!error) return null;
+  const retry = () => {
+    if (business.catalogueError) business.retryCatalogue();
+    if (setupError && types) void business.readSetup(types);
+  };
+  return <ReadProblem error={error} busy={business.catalogueReading || (Boolean(setupError) && business.setup.loading)} onRetry={retry} testId={testId} />;
 }
 
 /** After a failed price, a failed job or a finished take: the same input, priced again. */
@@ -203,8 +232,9 @@ const AD_DONE = "Ad rendered. Filed in Takes for review.";
 const IMAGE_AD_DONE = "Image ad rendered. Filed in Takes for review.";
 const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
 
-/** Why the composer waits on the catalogue: still reading it, or it did not load (Try again is above). */
-const catalogueWait = (business: Business) => (business.catalogueError && !business.catalogueReading ? "The connected catalogue did not load." : "Reading the connected catalogue…");
+/** Why the composer waits on the catalogue: still reading it, it did not load (Try again is above), or it has no `what`. */
+const catalogueWait = (business: Business, what: string) => (business.catalogueError && !business.catalogueReading ? "The connected catalogue did not load."
+  : business.catalogueLoaded && !business.catalogueReading ? `The connected account does not offer ${what}.` : "Reading the connected catalogue…");
 
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
@@ -234,7 +264,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
   const range = model?.durationRange ?? null;
-  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? catalogueWait(business) : null);
+  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? catalogueWait(business, "Marketing Studio") : null);
   const clamped = clampedDuration(s, range);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
@@ -257,8 +287,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <p className="bz-intro">Branded video: a product, who presents it, an optional hook or setting — or one ad reference — and the mode. Quoted before it runs; saved to your takes.</p>
         {!connected && business.connection ? <p className="gx-reason" data-testid="ads-connect">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
-        {business.catalogueError ? <ReadProblem error={business.catalogueError} busy={business.catalogueReading} onRetry={business.retryCatalogue} testId="ads-catalogue-error" /> : null}
-        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.ads])} testId="ads-setup-error" /> : null}
+        <ComposerReads business={business} types={[...PRESET_TYPES.ads]} testId="ads-read-error" />
         <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <div className="gx-gen-row" data-testid="ads-product">
@@ -335,7 +364,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.dtc]); }, [dtc, connected, hasStyles, setupLoading, setupFailed, readSetup]);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? catalogueWait(business) : null);
+  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? catalogueWait(business, "this engine") : null);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "image", model: s.engine, prompt: s.prompt.trim(),
     parameters: {
@@ -356,8 +385,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
         <p className="bz-intro">A branded ad image from the prompt and up to 14 reference stills.</p>
-        {business.catalogueError ? <ReadProblem error={business.catalogueError} busy={business.catalogueReading} onRetry={business.retryCatalogue} testId="dtc-catalogue-error" /> : null}
-        {business.setup.error && dtc ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.dtc])} testId="dtc-setup-error" /> : null}
+        <ComposerReads business={business} types={dtc ? [...PRESET_TYPES.dtc] : null} testId="dtc-read-error" />
         <ResumedJobRows rows={earlier.rows} label="Image ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="dtc-earlier" />
         <div className="gx-gen-row" data-testid="dtc-engine">
           <span className="gx-eyebrow" data-functional-label="">Engine</span>
@@ -447,7 +475,7 @@ function SetupView({ business }: { business: Business }) {
   };
   return (
     <div className="bz-setup gx-enter" data-testid="setup-view">
-      <div className="bz-setup-list">
+      <div className="bz-setup-list" data-read-home="">
         {!connected && business.connection ? <p className="gx-reason">{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p> : null}
         {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup()} testId="setup-error" /> : null}
         {SETUP_TYPES.map(([type, label]) => {
