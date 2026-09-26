@@ -1,0 +1,16 @@
+{
+ "n": 0,
+ "title": "Gen saves over the latest project instead of an old page-load copy",
+ "area": "Gen / data integrity",
+ "gap": "SuitesShell.tsx:63,226 passes the useProjects().project snapshot to Gen, and lib/workspace/data.ts:33 never re-reads it for the same id. In lib/workspace/use-composer.ts, ensureProject (:365) returns that snapshot, :427 runs addShotNode(project), and :433 saves the whole draft with a revision read just before the save (currentRevision). The revision check therefore passes while the draft body is stale. Anything written after page load (approved script, beats, boards, environment, cast) reverts to its page-load state when someone presses Generate on Studio engines. With Takes>1, every loop iteration re-applies the same snapshot, so earlier takes' shot nodes are lost. The legacy components/workspace/GenerateComposer.tsx:49 goes through the same hook.",
+ "target": "In generate(), read the draft with draftRequest(`${API}/projects?id=`) the way the connected-filing effect already does (use-composer.ts ~:528). Apply addShotNode/shotPatch to that body and save it with the revision that came back. On a revision conflict, re-read once and re-apply. Carry the saved project into the next take iteration. Give useProjects a refresh(), called on window focus and after a stage publishes a save (usePublishedProject), so phone Home and Studio Home counts, Library cast categories and Gen all read current data.",
+ "files": [
+  "lib/workspace/use-composer.ts",
+  "lib/workspace/data.ts",
+  "components/graphite/SuitesShell.tsx",
+  "components/workspace/GenerateComposer.tsx"
+ ],
+ "priority": "P0",
+ "effort": "small",
+ "respects_rules": "Extends the existing draft save path (the excluded use-draft-editor/draft-editor files are not touched) and stops silent data loss, which the never-lose-team-data rule requires."
+}

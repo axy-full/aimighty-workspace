@@ -1,0 +1,18 @@
+{
+ "n": 11,
+ "title": "Business: standalone pickers, no CLI instructions, working 'Use in Image ads'",
+ "area": "Business",
+ "gap": "lib/higgsfield-consumer/marketing-setup.ts:56-60 lists the connected account's own avatars, products, ad references and brand kits unfiltered, which breaks the standalone rule. BusinessView.tsx:131 and :397-398 tell users to run `higgsfield marketing-studio \u2026 --json` and paste ids. 'Use in Image ads' does nothing: ImageAdsView starts from INITIAL_IMAGE_ADS (BusinessView.tsx:271), and the leftover sessionStorage preset later pre-selects items in Ads. Completion never calls refreshProjectLibrary, although the copy says the result 'is in Takes and in Library'.",
+ "target": "Record the setup ids Particl creates or uses in a table modelled on higgsfield_consumer_characters (lib/higgsfield-consumer/character-records.ts), and intersect every Setup read with it. Replace the CLI paste boxes with in-Particl sources: Avatar from Cast identities built in Particl, and Product / Setting / Ad reference from this project's Library media. An empty picker is hidden, not explained with a CLI command. ImageAdsView reads and clears the preset. Call refreshProjectLibrary when a job finishes.",
+ "files": [
+  "lib/higgsfield-consumer/marketing-setup.ts",
+  "lib/higgsfield-consumer/marketing-records.ts",
+  "components/graphite/business/BusinessView.tsx",
+  "lib/shell/use-business.ts",
+  "lib/shell/use-connected-job.ts",
+  "lib/workspace/library.ts"
+ ],
+ "priority": "P0",
+ "effort": "large",
+ "respects_rules": "Enforces the rule that only items Particl made are listed. Extends the existing video/setup route and does not rebuild it."
+}

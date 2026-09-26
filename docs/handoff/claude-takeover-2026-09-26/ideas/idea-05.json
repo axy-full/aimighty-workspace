@@ -1,0 +1,19 @@
+{
+ "n": 5,
+ "title": "One card contract: skeletons, status, failure reason, visible load errors",
+ "area": "Results / Library / Takes",
+ "gap": "GenView.tsx:347 says 'Nothing generated in this project yet' while the library is still loading, because items is [] until it is ready. If the library read fails, Library.tsx:116 shows 'Reading this project\u2026' forever and library.state.error is never rendered. SuitesShell.tsx never renders useProjects().error, so a failed /api/workbench/projects looks like 'No project'. Tiles show only name and model (takes.ts:76). Take.status is computed but never drawn, failed takes look like blank tiles, and Generation.error is never shown.",
+ "target": "A shared TakeTile used by Gen Results, Library and Takes. While loading it shows skeletons at the project's aspect ratio. Each tile carries a status chip (Queued / Rendering / Held / Failed \u00b7 not billed / Picked / Approved), a one-line failure reason (via the error map in the typed-errors item), and 'Preview unavailable \u00b7 Refresh' when a take succeeded but has no URL. Project-load and library-load errors show as banners with a 'Try again' button that calls library.refresh() or useProjects refresh.",
+ "files": [
+  "components/graphite/GenView.tsx",
+  "components/graphite/Library.tsx",
+  "components/graphite/production/EditStage.tsx",
+  "components/graphite/SuitesShell.tsx",
+  "lib/workspace/library.ts",
+  "lib/workspace/takes.ts",
+  "components/LazyMedia.tsx"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "UI only, built on the existing library store and take model."
+}

@@ -1,0 +1,18 @@
+{
+ "n": 12,
+ "title": "'Next' actions on every take: Animate, Extend, Upscale, Reframe, Cut out, Outpaint",
+ "area": "Remix / post tools",
+ "gap": "The server already supports these post tasks: lib/tasks.ts extend, upscale (Topaz), reframe and motion; lib/stillTools.ts upscale, outpaint and cutout via /api/generate (admitted at generationAdmission.ts:228); and the connected finishing tools in lib/higgsfield-consumer/tools.ts:48-54 (upscale_image/video, remove_background, extend_canvas, deflicker, lip_sync). In /suites only Cast uses two of them (CastStage.tsx:37). AssetInspector.tsx:52-60 offers only reference, retry, preview, download, copy, move and delete.",
+ "target": "Add a 'Next' action row to AssetInspector and to the selected take in Takes. Images get Animate (opens Gen \u203a Video with the image as the start reference), Upscale, Outpaint to an aspect, Cut out and Re-edit. Videos get Extend forward/back, Upscale 4K, Reframe 9:16/1:1 and Edit (Seedance). Each action quotes /api/generate/quote and its button reads e.g. 'Upscale \u00b7 N cr' before dispatchGeneration runs. The result is a new take under the same shot. Owners also see the connected tools, priced by the account.",
+ "files": [
+  "components/graphite/AssetInspector.tsx",
+  "components/graphite/production/EditStage.tsx",
+  "lib/tasks.ts",
+  "lib/stillTools.ts",
+  "lib/workspace/generate-submit.ts",
+  "lib/shell/context-menu.ts"
+ ],
+ "priority": "P1",
+ "effort": "medium",
+ "respects_rules": "Uses the existing /api/generate tasks. Each action is priced before it spends. The original take is kept."
+}

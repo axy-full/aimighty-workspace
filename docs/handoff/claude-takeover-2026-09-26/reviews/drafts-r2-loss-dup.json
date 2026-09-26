@@ -1,0 +1,128 @@
+{
+ "breaks": [
+  {
+   "severity": "major",
+   "title": "A save whose fourth try landed with its reply lost is merged again over a later save: the other window's rewrite is reverted and its delete undone (the round-1 lost-reply break, through the last try)",
+   "file": "lib/workbench/draft-request.ts",
+   "line": 373,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-9-workbench.spec.ts (2 tests)",
+   "scenario": "writeMergedDraft checks tries 1\u20133 on the server when their outcome is unknown (settle), but on the last try `if (attempt >= tries ...) throw error` runs before settle, so writer.unconfirmed is never set. Cast stage on a flaky connection: the first three PUTs get 503 before reaching the draft, the fourth lands and its reply is lost (route.fetch, then abort). Another window then rewrites Mara's description, or deletes the character this save added. The stage retries on its own after 4 s. Nothing tells it the fourth save landed, so it PUTs at base 1 (409), reads rev 3 and merges from its old base. PUT log: [503, 503, 503, landed base=1 (reply lost), base=1 \u2192 409, base=3 \u2192 200]. Results: the description goes back to 'A fox-eyed deckhand.' over the other window's later text, and the deleted character cast-61cad612 comes back, both saved and on screen, with the page showing 'Saved'."
+  },
+  {
+   "severity": "major",
+   "title": "A stale tab's 'as made' copy of a record both tabs make (agent-run places, breakdown scenes, a filed take, a shot built from boards) overrides what the first tab did to it since: edits reverted, removals undone",
+   "file": "lib/workbench/merge.ts",
+   "line": 200,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-1-workbench.spec.ts; unit tests/unit/zz-break-loss-dup-r2-merge.spec.ts (Environment, Beats, 'a take both windows file\u2026', 'Build from boards\u2026')",
+   "scenario": "The round-1 duplicate fix gives records made from one agent run or storyboard shot the same stable id. When both sides hold such a record and base lacks it, mergeById merges with from=undefined, so mine wins every field. Environment, two tabs: tab A takes the agent's world (3 places), then the person rewrites Harbour's notes, extends the world text and removes Fish market. Tab B, which never re-read, takes the same run later, and its save is merged. Saved: world is back to the agent's text, Harbour notes are 'The frozen harbour.', and Fish market is back. The unit specs show the same for Beats (a beat edit and a removed scene), for a take both windows' pollers file (tab A's rename and lock of the take are reverted to unlocked), and for Rig \u203a Build from Storyboards (a rename and prompt of the built shot are reverted)."
+  },
+  {
+   "severity": "major",
+   "title": "Marketing \u203a Prepare hook \u00d7 cast variants in two windows prepares every combination twice (4 variants, 4 nodes)",
+   "file": "lib/workbench/moleculr-storyboard.ts",
+   "line": 55,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-2-workbench.spec.ts; unit tests/unit/zz-break-loss-dup-r2-merge.spec.ts 'Marketing \u203a Prepare\u2026'",
+   "scenario": "The project has 2 hooks and 1 product. Window A prepares variants (2) and saves. Pressing it again in A is refused ('already prepared'). Window B was opened before A prepared them and presses the same button. prepareMoleculrVariants mints random ids (uid('campaign')), so the merge keeps both sets: moleculr.variants has 4 entries (2 distinct combinations), with 4 variant nodes and their reference source nodes in the draft. The binding path in MarketingStudioFlow (nodeId = uid('variant') when no existing variant) follows the same pattern. It was not run in the browser because it renders."
+  },
+  {
+   "severity": "major",
+   "title": "After a merge, the Rig republishes another window's older field to the team canvas, overwriting a teammate's newer canvas edit",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 203,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-3-workbench.spec.ts",
+   "scenario": "Another window of this person retitles shot Opening to 'Opening (retitled)'. The server carries this to the canvas when the save lands (saveDraft applyTeamCanvasPatch). A teammate then retitles it on the canvas to \"Harbour, teammate's cut\". This Rig, stale, edits only Second's direction note. Its save gets a 409 and is merged, and the Rig then publishes (what it showed \u2192 merged), which includes n1.title='Opening (retitled)' with a fresh stamp. The canvas title goes back to 'Opening (retitled)', and the teammate's later title is lost. The canvas-undo lens reproduced the same echo."
+  },
+  {
+   "severity": "major",
+   "title": "A Studio stage's unconfirmed or unsent edit is dropped when the person moves to another stage: the retry dies with the stage",
+   "file": "lib/workspace/use-draft-editor.ts",
+   "line": 153,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-4-workbench.spec.ts (2 tests)",
+   "scenario": "Cast, while offline: the person types Mara's description. In one variant the page shows 'Save unconfirmed'. In the other it moves on before the 650 ms save. The person then clicks Environment in the page strip. The unmount flush fails (offline), and retries are scheduled only `if (alive.current)`, so nothing sends the edit again. The network returns and 15 s pass. Saved description: ''. Back on Cast, the textbox shows ''. The page's own message promised 'Your edits are still here; Studio will reconnect and check the saved version.' The Rig parks such edits and keeps saving them; the stages do not. Main also dropped them, so this is not a regression, but the new retry promise does not hold."
+  },
+  {
+   "severity": "major",
+   "title": "Storyboards deletes a line drawing that another window just made a Rig input: the merge keeps the input but drops its original",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 37,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-5-workbench.spec.ts",
+   "scenario": "deleteDrawing refuses a drawing that a Rig node uses, but it checks the stage's stale copy. Another window adds a media node 'rig-drawing' (assetId = the drawing) linked into Opening and saves. The stale Storyboards stage deletes the drawing, gets a 409 and merges. The asset is dropped, because the other side left the asset record unchanged. keepLinkedInputs only re-adds media nodes, never the assets that nodes point at. Saved: the input node and the link are there, but the asset is gone (original: false). The shot's reference points at nothing, and the page shows 'Saved'."
+  },
+  {
+   "severity": "major",
+   "title": "Two valid saves still merge into a draft the server refuses (400) through a cross-reference rule, and the stage stops saving everything after it (round-1 break 3 is only fixed for size limits)",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 89,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-6-workbench.spec.ts",
+   "scenario": "fitDraft handles only 'too_big' issues. Another window puts a line drawing in a Marketing product profile (products[0].assetIds=[drawing]) and saves. The stale Storyboards stage deletes that drawing and merges. The merged draft has a product profile that points at a missing asset, and validateMoleculrBindings rejects it: PUT 400 'Check the project fields before saving.' The page shows 'Not saved \u2014 Check the project fields before saving.' The person then changes the board's look to Coloured sketch, and that is never saved (boards.style null on the server). Only a reload clears the state, and a reload discards the edits. Bins (validateBins), audio and colour bindings have the same shape. The merge-algebra lens reproduced this with fades."
+  },
+  {
+   "severity": "major",
+   "title": "Text and phrase lists merged line by line bring back a line this window deleted when the other window deleted only part of the same stretch",
+   "file": "lib/workbench/merge.ts",
+   "line": 278,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-7-workbench.spec.ts (2 tests); unit tests/unit/zz-break-loss-dup-r2-seq-merge.spec.ts (4 tests)",
+   "scenario": "resolveChunk takes the other side's stretch whole when one side emptied it ('mine only deleted what theirs rewrote'), even when the other side did not rewrite it but only deleted part of it. Brief with 4 lines: this window (Brief & Script) deletes lines 2\u20133, and another window deleted line 2 only and saved first. After the 409 merge, the saved brief and the textbox are [line1, 'Tone: quiet, no narration.', line4]. Line 3 is back although one side deleted it and the other left it as it was. The mirror case also fails: this window deletes line 2, the other deleted lines 2\u20133, and line 3 comes back over the other window's delete. The same happens for Marketing hooks (a hook removed in one window returns) and any list of phrases."
+  },
+  {
+   "severity": "major",
+   "title": "A reference this window uploaded is silently dropped from the place when the merge passes the six-reference cap",
+   "file": "lib/workbench/draft-merge.ts",
+   "line": 71,
+   "reproduced": true,
+   "spec": "tests/zz-break-loss-dup-r2-8-workbench.spec.ts",
+   "scenario": "The Harbour place holds 5 references. Another window adds a sixth. This window, still showing 5/6, uploads ice.png as a reference, which shows on the place. After the 409 merge, fitDraft keeps the saved side first and trims this window's addition: the place's references are the other window's six, and ice.png is only in the library. The page says 'Saved', and there is no message on the place or in a toast. The binding rule says a merge never drops what either side added. productAssetIds (5), castAssetIds (6), hooks (12) and beats/shots per scene (40) are fitted the same way."
+  },
+  {
+   "severity": "major",
+   "title": "A take another window filed is appended at the end of a newest-first takes list, so the next render trims it first",
+   "file": "lib/workbench/merge.ts",
+   "line": 206,
+   "reproduced": true,
+   "spec": "unit tests/unit/zz-break-loss-dup-r2-merge.spec.ts 'Storyboards: a take another window filed on a frame is not the first to be trimmed\u2026'",
+   "scenario": "A frame holds 18 takes, stored newest first; the stage files takes as [take, ...takes].slice(0, 20). Window A files take a, and window B (stale) files take b and merges. The result is [b, old18\u2026old1, a]: A's brand-new take sits last and shows as the oldest. The next render in either window files c and slices to 20, which drops a and keeps gen-old-1. The same order rule applies to Environment plates (newest first, capped at 30) and Cast takes (capped at 20)."
+  },
+  {
+   "severity": "minor",
+   "title": "Wires each window was allowed to make break the graph's rules once merged: a grade with two inputs, a two-node loop",
+   "file": "lib/workbench/merge.ts",
+   "line": 138,
+   "reproduced": true,
+   "spec": "unit tests/unit/zz-break-loss-dup-r2-merge.spec.ts 'Rig graph: wires each window was allowed to make\u2026'",
+   "scenario": "Window A wires Second into Warm grade (which takes one input), and window B wires Opening into it. The set-merge of linked gives g1.linked of length 2, and resolveAsset renders only linked[0], so one person's wire has no effect. Window A wires n2\u2192n1 and B wires n1\u2192n2, which merges into a loop that canConnect would have refused. Traversals guard against cycles, so there is no crash."
+  },
+  {
+   "severity": "minor",
+   "title": "(Not reproduced) The Rig's parked save and its own flush share one writer and base; the canvas fold stopped the resurrection in the case I tried",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 225,
+   "reproduced": false,
+   "scenario": "The parked loop's PUT lands and its reply hangs, another window deletes the shot it added, and the person comes back while the reply is still out. The Rig's flush merges from the pre-park base. I tried this with a first version of r2-9: the rejoined team canvas folded the delete into the Rig's draft before the flush, so the shot stayed deleted. The spec was replaced by the last-try case above. checkDraftWrite also answers 'not landed' for a save that did land when the same writer's later save has a higher seq (records.ts checkDraftWrite: row.seq > write.seq returns null)."
+  },
+  {
+   "severity": "minor",
+   "title": "(Not reproduced) The Rig keeps a stale copy when the person returns from a Studio stage in the same tab; Build from Storyboards builds from it",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 247,
+   "reproduced": false,
+   "scenario": "The project-open effect returns early when draftRef already holds the project, so storyboard selections made on the Storyboards page in the same tab are not in the Rig's copy until its next merge. buildFromBoards then uses the stale frame's selected take and prompt. This follows from reading the code; there is no browser spec."
+  }
+ ],
+ "checked": [
+  "Resumed the crashed run. Re-ran all 9 prior round-2 specs (r2-1\u2026r2-6 browser and the 7-test unit file) against HEAD a811fa67 with no uncommitted product changes. All reproduced. r2-2 timed out on a folded section once, so I made it re-open the section before each click; it then reproduced (4 variants).",
+  "Round-1 breaks re-checked with the corrector's consolidated regression tests, all 8 passing: lost reply then rewrite, lost reply then reconnect, + Character and + Add shot with lost reply then delete, the double direction note, Environment agent places once, reference 5/6 \u2192 400, and a wire to a deleted source. The lost-reply fix does not cover the last try (new r2-9). The 400 fix covers only too_big, not cross-reference rules (r2-6).",
+  "New this round: text and list line-merge brings back deleted lines (r2-7 browser plus 4 unit tests), the silent drop at the cap (r2-8), and the last-try lost reply with landed-then-aborted PUTs (r2-9, 2 tests). All reproduced.",
+  "Read merge.ts, draft-merge.ts, draft-request.ts, records.ts (writer tags and check-write fence), use-draft-editor.ts, draft-editor.ts (Edit & Sound store), RigProvider.tsx (flush, park, rebase, publish), use-team-canvas send, use-composer saveOnLatest, EnvironmentStage, CastStage, StoryboardStage deleteDrawing, MarketingStudioFlow and the moleculr builders.",
+  "I found no path where an item deleted by both sides comes back through merge3 itself. mergeById and diff3 cannot re-add an item neither side holds.",
+  "The Edit & Sound store keeps retrying after unmount (module-level) and settles unconfirmed saves correctly. I did not break it.",
+  "Spec files, uncommitted and untracked, with no product code edited: tests/zz-break-loss-dup-r2-{1..9}-workbench.spec.ts, tests/unit/zz-break-loss-dup-r2-merge.spec.ts, tests/unit/zz-break-loss-dup-r2-seq-merge.spec.ts. Outputs are in /private/tmp/particl-suites/glass/pw-ld2-*."
+ ]
+}
