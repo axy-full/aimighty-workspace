@@ -89,6 +89,62 @@ test("a new teammate agrees to the terms on the invitation page before the accou
   }
 });
 
+test("a copied invitation link asks for the invitation email before a new account is made", async ({ page }) => {
+  const code = `copied-${randomBytes(6).toString("hex")}`;
+  const info = { ok: true, workspace: "Harbour", email: "new@example.test", name: "New", role: "member", hasAccount: false, signedInAsInvitee: false };
+  const looked: string[] = [];
+  const posted: Record<string, unknown>[] = [];
+  // The mocks answer in the accept route's own shapes.
+  await page.route("**/api/auth/accept**", async (route) => {
+    const req = route.request();
+    if (req.method() === "GET") {
+      const url = new URL(req.url());
+      looked.push(url.search);
+      return route.fulfill({ json: { ...info, mailboxNeeded: url.searchParams.get("m") !== "proof-from-email" } });
+    }
+    posted.push(req.postDataJSON());
+    return route.fulfill({ json: { ok: true, sent: true } });
+  });
+  await page.goto(`/invite/${code}`);
+  const ask = page.getByRole("button", { name: "Email me the link" });
+  await expect(ask).toBeVisible();
+  await expect(page.getByLabel("PASSWORD", { exact: true })).toHaveCount(0);
+  expect((await ask.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await noSideScroll(page)).toBe(true);
+  await ask.click();
+  await expect(page.getByRole("status").filter({ hasText: "Open the link in that email" })).toBeVisible();
+  expect(posted).toEqual([{ code, emailLink: true }]);
+  // Opened from the email, the proof travels with the look-up and the join.
+  await page.goto(`/invite/${code}?m=proof-from-email`);
+  await expect(page.getByLabel("PASSWORD", { exact: true })).toBeVisible();
+  expect(looked.at(-1)).toContain("m=proof-from-email");
+  await page.getByLabel("PASSWORD", { exact: true }).fill(password);
+  await page.getByLabel("CONFIRM", { exact: true }).fill(password);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Join the workspace" }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]).toMatchObject({ code, m: "proof-from-email", accept: true });
+});
+
+test("the Team page says an invitation hit the mail limit, not that delivery failed", async ({ page }) => {
+  await signInLocally(page.request);
+  const limit = "That address has been sent 3 invitations from this workspace today. Copy the invitation link instead.";
+  // Only the invitation POST is answered here, in the route's own shape; the roster loads for real.
+  await page.route("**/api/team", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ json: { code: "limited-code", email: "someone@example.test", name: "Someone", role: "member", expiresInDays: 7, sent: false, mailError: limit, mailLimited: true } })
+      : route.fallback(),
+  );
+  await page.goto("/team");
+  await page.getByRole("button", { name: "Invite someone" }).first().click();
+  await page.getByLabel("Name", { exact: true }).fill("Someone");
+  await page.getByLabel("Email address", { exact: true }).fill("someone@example.test");
+  await page.getByRole("button", { name: /Send invite|Create invite/ }).click();
+  await expect(page.getByText(`Invitation created, not emailed. ${limit}`)).toBeVisible();
+  await expect(page.getByText(/Email delivery failed/)).toHaveCount(0);
+  expect(await noSideScroll(page)).toBe(true);
+});
+
 test("a member whose workspace requires two-step sign-in replaces a lost authenticator", async ({ page }) => {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
@@ -153,9 +209,15 @@ test("the platform desk marks a deleted workspace and restores it; money stays o
   expect(removed.ok(), await removed.text()).toBe(true);
   const refused = await page.request.patch(`/api/admin/workspaces/${ws.id}`, { data: { grantCredits: 100 } });
   expect(refused.status()).toBe(409);
+  // Marking is not money: a deleted workspace can be flagged for the desk.
+  const marked = await page.request.patch(`/api/admin/workspaces/${ws.id}`, { data: { flagged: true, note: "Review before restoring" } });
+  expect(marked.ok(), await marked.text()).toBe(true);
   await page.goto("/admin");
   const row = page.locator(".steam").filter({ hasText: name });
   await expect(row.getByText("DELETED", { exact: true })).toBeVisible();
+  await expect(row.getByText(/· FLAGGED/)).toBeVisible();
+  await row.getByRole("button", { name: "Clear flag" }).click();
+  await expect(row.getByText(/· FLAGGED/)).toHaveCount(0);
   await expect(page.getByText(/credits from an approved invitation, 0 from self-serve sign-up/)).toBeVisible();
   await expect(page.getByText(/VERCEL_TOKEN/)).toHaveCount(0);
   expect(await noSideScroll(page)).toBe(true);
