@@ -44,7 +44,10 @@ async function open(page: Page, options: { store?: { current: Project }; wiring?
   const wired = { id: WIRED_ID, requestId: "req-wired-1", projectId: "ws-rig", kind: "rig", nodeId: "n-old", model: "anthropic/claude-sonnet-4.6", effort: "auto", instructions: "", status: "succeeded", completedChunks: 1, totalChunks: 1, currentStage: "complete", completedSteps: 3, totalSteps: 3, estimateCredits: 2, credits: 1, error: null, createdAt: 1, updatedAt: 1,
     result: { summary: "", recommendation: "", ideas: [], scenes: [], critique: [], assumptions: [], rig: { nodeId: "n-old", prompt: "Wired: Mara watches the fox from the hut window.", notes: "Hold on her eyes.", inputs: ["gen_mara"], firstFrame: null } } };
   const running = { ...wired, status: "running", completedChunks: 0, currentStage: "planning", completedSteps: 1, credits: null, result: null };
-  await page.route(/\/api\/workbench\/development/, (route) => route.fulfill({ json: { configured: true, models: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "auto", label: "Auto" }] }], jobs: [wiring.status === "running" ? running : wired] } }));
+  /* The run list leaves wirings off (as the server does); the shot reads the one it takes by its id. */
+  await page.route(/\/api\/workbench\/development/, (route) => new URL(route.request().url()).searchParams.get("jobId") === WIRED_ID
+    ? route.fulfill({ json: { job: wired } })
+    : route.fulfill({ json: { configured: true, models: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "auto", label: "Auto" }] }], jobs: [wiring.status === "running" ? running : { ...wired, result: null }] } }));
   const posts: { url: string; body: Record<string, unknown> }[] = [];
   await page.route(/\/api\/generate(\/quote)?$/, (route) => {
     const request = route.request();
