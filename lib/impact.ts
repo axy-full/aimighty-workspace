@@ -8,7 +8,7 @@ import { renderKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth 
 import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
-import { projectCap, spentBy } from "./caps";
+import { projectCapSpent, spentBy } from "./caps";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import { shotCreditsSoFar } from "./shotCap";
 import { quoteOf, verdictOf, liveTerms, stampOf, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
@@ -263,7 +263,7 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
     getSetting("capWarnPct"),
     getSetting("atCap"),
     allowanceUsd() == null ? Promise.resolve(0) : platformSpendThisMonth(),
-    Promise.all(wanted.map(async (id) => [id, await projectCap(id)] as const)),
+    Promise.all(wanted.map(async (id) => [id, await projectCapSpent(id)] as const)),
   ]);
 
   const atCapRule = atCap === "stop" || atCap === "warn" ? atCap : "producer";

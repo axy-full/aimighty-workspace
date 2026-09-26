@@ -42,7 +42,10 @@ export function capVerdict(o: { cap: number | null; spent: number; needs: number
   return { allow: true, pct, warned: false };
 }
 
-export type ProjectCap = { unit: CapUnit; cap: number | null; unlocked: boolean; spent: number; warnedAt: number | null; name: string };
+/** A production's cap as set, with nothing spent read. */
+export type CapRow = { unit: CapUnit; cap: number | null; unlocked: boolean; warnedAt: number | null; name: string };
+/** The cap and what the production has spent against it, in the same unit. */
+export type ProjectCap = CapRow & { spent: number };
 export type Spent = { usd: number; credits: number };
 
 const CHUNK = 400;
@@ -111,8 +114,13 @@ export async function spentBy(column: "project_id" | "shot_id", keys: string[]):
   return out;
 }
 
-/** The production's cap and what it has spent, in the workspace's unit. */
-export async function projectCap(projectId: string): Promise<ProjectCap | null> {
+/**
+ * The production's cap, in the workspace's unit: one read of its row, and
+ * nothing spent. The reservation gate reads this and reckons the spend itself
+ * inside its lock, so reading it here as well would be thrown away on every
+ * reservation. Screens, warnings and pre-checks want projectCapSpent.
+ */
+export async function projectCap(projectId: string): Promise<CapRow | null> {
   await ready();
   const inCredits = creditsApply(currentTenant()?.workspace);
   const rs = await db().execute({
@@ -121,15 +129,24 @@ export async function projectCap(projectId: string): Promise<ProjectCap | null> 
   });
   const r = rs.rows[0] as unknown as Record<string, unknown> | undefined;
   if (!r) return null;
-  const spent = (await spentBy("project_id", [projectId])).get(projectId)!;
   return {
     unit: inCredits ? "cr" : "$",
     cap: inCredits ? (r.cap_credits == null ? null : Number(r.cap_credits)) : (r.cap_usd == null ? null : Number(r.cap_usd)),
     unlocked: Number(r.cap_unlocked ?? 0) === 1,
-    spent: inCredits ? spent.credits : spent.usd,
     warnedAt: r.cap_warned_at == null ? null : Number(r.cap_warned_at),
     name: String(r.name ?? ""),
   };
+}
+
+async function withSpent(projectId: string, row: CapRow): Promise<ProjectCap> {
+  const spent = (await spentBy("project_id", [projectId])).get(projectId)!;
+  return { ...row, spent: row.unit === "cr" ? spent.credits : spent.usd };
+}
+
+/** The production's cap and what it has spent, in the workspace's unit: the figure the gate enforces. */
+export async function projectCapSpent(projectId: string): Promise<ProjectCap | null> {
+  const row = await projectCap(projectId);
+  return row ? withSpent(projectId, row) : null;
 }
 
 /**
@@ -139,8 +156,9 @@ export async function projectCap(projectId: string): Promise<ProjectCap | null> 
  */
 export async function checkCap(projectId: string | null, needsUsd: number, engine: string | null): Promise<CapVerdict> {
   if (!projectId) return { allow: true, pct: null, warned: false };
-  const pc = await projectCap(projectId);
-  if (!pc || pc.cap == null) return { allow: true, pct: null, warned: false };
+  const row = await projectCap(projectId);
+  if (!row || row.cap == null) return { allow: true, pct: null, warned: false };
+  const pc = await withSpent(projectId, row);
   const needs = pc.unit === "cr" ? billCredits(needsUsd, engine) : needsUsd;
   const ruleRaw = await getSetting("atCap");
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";

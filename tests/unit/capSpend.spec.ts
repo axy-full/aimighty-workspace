@@ -29,7 +29,7 @@ test("deleted takes, moved takes and metered text count toward a production's an
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { meter } = await import("../../lib/meter");
-  const { projectCap, checkCap, spentBy } = await import("../../lib/caps");
+  const { projectCap, projectCapSpent, checkCap, spentBy } = await import("../../lib/caps");
   const { shotCreditsSoFar } = await import("../../lib/shotCap");
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
   await platformReady();
@@ -59,7 +59,12 @@ test("deleted takes, moved takes and metered text count toward a production's an
     expect(spent.get("p1")!.credits).toBe(15 + 9 + 3 + 3);
     expect(spent.get("p1")!.usd).toBeCloseTo(2, 6);
     expect(spent.get("p2")!.credits).toBe(0);
-    expect((await projectCap("p1"))!.spent).toBe(30);
+    expect((await projectCapSpent("p1"))!.spent).toBe(30);
+    // The gate's read is the cap row alone: it reckons the spend itself, under its lock.
+    const row = await projectCap("p1");
+    expect(row).toEqual({ unit: "cr", cap: 30, unlocked: false, warnedAt: null, name: "Rooftop" });
+    expect(await projectCapSpent("p2")).toMatchObject({ cap: null, spent: 0 });
+    expect(await checkCap("p2", 5, SEEDANCE)).toEqual({ allow: true, pct: null, warned: false });
     expect(await shotCreditsSoFar("s1")).toBe(24);
 
     // The pre-check and the gate refuse the same take with the same sentence.
