@@ -1,0 +1,75 @@
+{
+ "verdict": "fix-first",
+ "issues": [
+  {
+   "severity": "major",
+   "problem": "At 844x390 the header overflows and cuts off the Workspace avatar. The phone short form (bare number) only applies below 768px, so at 844 the pill shows its full summary. With \"4 rendering \u00b7 1 held\" the header content is 863px wide inside 844 and the avatar ends at x=851. With \"12 rendering \u00b7 3 held\" it is 871px and the avatar ends at 859, about a third of it off-screen. The builder's spec only checks document.scrollWidth, which never catches this. Evidence: /private/tmp/particl-suites/hf-jobs/review-1/b-pill-844x390.png, d-header-12-3-844x390.png, d-log-header-844x390.txt.",
+   "fix": "Use the short figure (or a max-width plus ellipsis on .gx-jobs-long) at landscape-phone widths too, e.g. (max-width: 900px) or (max-height: 500px). Add a check that every .gx-header child stays inside the viewport at 844x390 with a two-part summary.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/app/graphite.css",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "problem": "The pill's counts disagree with the rows. traySummary counts every inFlight row as \"rendering\", and inFlight includes a queued take and a take held for a slot (engineTrayJob gives it stage \"queued\"). Seeded real rows produced the pill \"4 rendering \u00b7 1 held\" over rows reading Held \u00b7 needs 43 cr, Rendering, Rendering, Queued, Held \u00b7 waiting for a slot: only two render and two say Held. The held-for-slot row also gets the moving \"working\" bar. The phone Home Gen tile repeats \"4 rendering\". A cancelled take is staged \"failed\": the Rig Inspector's own Discard call (PATCH /api/jobs/:id {discard:true}) turned the pill red with \"Jobs: 1 failed\" within 10 s, for a take the person discarded on purpose. lib/jobState queueCounts already keeps rendering, queued and held apart. Evidence: b-tray-top-360x640.png, b-tray-top-1440x900.png, b-log-*.txt, d-home-360x640.png, c-discard-after-1440x900.png, c-log-discard-1440x900.txt.",
+   "fix": "Count what the rows say: rendering means rendering, confirming or submitting; queued and slot-held go in a waiting count (or are counted as held). Draw no moving bar on held rows. Label a discarded take \"Discarded\", and count neither discarded nor cancelled takes in the red failed count.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/jobsTray.ts",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "problem": "Every take made from Gen or Rig is named by an internal code. engineTrayJob uses title || shot || prompt, and Gen maps each take to a workbench shot whose code is 'WB' plus the last 8 characters of the shot id (lib/workbench/records.ts:113). A real mock Generate appears as \"WB1EE9F8A3 \u00b7 A slow push-i\u2026\" at 1440 and \"WB76E14CFF \u00b7 A slow\u2026\" on a 390px phone, where the row is essentially just the code. No other Suites surface shows these codes: the results card, Library, toast and Takes all call the take by its prompt. Evidence: a-tray-after-done-1440x900.png, a-tray-after-done-390x844.png, a-log-1440x900.txt.",
+   "fix": "Name rows the way Library and Takes do: title, then shot title or prompt. Show a shot code only when it is a human one (S01\u2026), never a WB id-derived code.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/jobsTray.ts",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "problem": "\"Open in Takes\" does not open the take that was clicked. act() calls shell.goSuite(\"studio\",\"takes\") without the take's id, and Takes selects its newest take. Opening the older of two finished takes (\"Older still: nets drying on the quay\") lands on Takes with \"SELECTED \u00b7 NEWER STILL: A GULL ON A BOLLARD\" highlighted. Its Add to the cut, Build a rig from this take and \"Change something in this still\" then act on the other take. Evidence: e-open-older-1440x900.png, e-log-1440x900.txt.",
+   "fix": "Pass the take id to the Takes page and select and scroll to it there. If that cannot be done, rename the action \"Open Takes\" and do not leave another take selected.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/JobsTray.tsx",
+   "reproduced": true
+  },
+  {
+   "severity": "major",
+   "problem": "Dead end: once the tray has been opened with nothing running, its rows cannot be reached again until another job starts. Opening marks everything seen (setOpen sets seenAt), and traySummary then returns null, so the pill disappears although the tray keeps rows for 6 h. Reproduced: pill \"2 done \u00b7 5 failed\" \u2192 open \u2192 Open in Takes on one row \u2192 no pill, and still no pill after a reload. The other five failed rows' Recreate / Open Business / Open Viral are gone from the header, and in Takes the failed takes are blank FILE tiles with no reason. Evidence: c-log-seen-1440x900.txt, c-seen-pill-1440x900.png, c-seen-after-open-1440x900.png.",
+   "fix": "Keep a quiet pill while the window holds failed or held rows nobody has acted on, or clear 'seen' per row once acted on (or on close) rather than for everything on open.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/shell/use-jobs-tray.tsx",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "problem": "The header contradicts the page after the composer's own job finishes. withComposerSlot lets the server row win over the composer's fresher slot, and a slot turning green does not trigger a read. The pill keeps saying \"1 rendering\" (blue, pulsing) while the strip, result card and toast say it rendered. The gap was 7.3 s on a responsive server (a-log-390x844.txt: the poll saw succeeded at 14.7 s, the pill turned \"1 done\" at 22.0 s) and 17 s under load (a-pill-28s-after-1440x900.png).",
+   "fix": "Call readNow when the slot's tone or label changes, or let a terminal slot override an in-flight server row with the same id until the next read.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/jobsTray.ts",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "problem": "The failed-read note is rendered after every row at the end of the scroll list. With 12 rows, \"Jobs could not be read. Trying again shortly.\" is not visible without scrolling at 1440x900 or 360x640, so the tray shows stale stages with no visible warning. The partial note sits in the same place. Evidence: d-log-states-1440x900.txt, d-log-states-360x640.txt, d-state-failed-top-*.png.",
+   "fix": "Put the error and partial notes at the top of the list (or in the head beside the summary).",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/JobsTray.tsx",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "problem": "Copy that over-explains or is untrue. (a) Failed rows say \"not billed\" twice: \"Failed \u00b7 not billed\" plus \"The engine hit an error; nothing was charged for a failure.\" or \"\u2026Failed runs are not billed.\", and the reason is clamped to two lines at phone width. (b) The empty state \"What you generate shows here until it lands in Takes\" is untrue, because finished takes stay 6 h after landing; the head also says \"Nothing running\" over body text \"Nothing rendering\". (c) A 401 (signed out or session expired) shows \"Jobs stopped: this tab's account or workspace changed.\" and the pill never returns for that tab, even once reads succeed again (d-log-states-*.txt).",
+   "fix": "Drop the repeated not-billed clause from the reasons. Cut or correct the empty sentence. Reserve the 'account or workspace changed' message for 409 and say 'signed out' for 401.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/lib/shell/use-jobs-tray.tsx",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "problem": "The tray declares aria-modal=\"true\" but does not keep focus inside it. After its last action, Tab moves into the page behind the veil: IN:Close, IN:Open in Takes\u2026, IN:Open in Takes\u2026, OUT:particl home, OUT:Studio, OUT:Gen (e-log-1440x900.txt).",
+   "fix": "Trap focus while it is open, or drop aria-modal on the desktop popover.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/JobsTray.tsx",
+   "reproduced": true
+  },
+  {
+   "severity": "minor",
+   "problem": "Smaller rough edges. Open Business and Open Viral for a failed connected job land on generic Ads and History pages with no trace of that job (c-open-business-1440x900.png, c-open-viral-1440x900.png). At 360px, names are cut to about 15 characters beside wide actions (\"UGC ad: runner \u2026\"). Every job start fires two identical tray reads about 60 ms apart (announce plus the slot id change; a-log-390x844.txt).",
+   "fix": "Carry the job id to its suite's history, give the name more room than the action on phones, and coalesce the announce and slot reads.",
+   "file": "/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/hf-jobs/components/graphite/JobsTray.tsx",
+   "reproduced": true
+  }
+ ]
+}

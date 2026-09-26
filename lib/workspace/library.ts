@@ -38,6 +38,8 @@ type Entry = {
   state: LibraryState;
   listeners: Set<() => void>;
   busy: Promise<void> | null;
+  /** The next page on its way (Load more, or a search paging back to one take); a second ask awaits it. */
+  paging: Promise<void> | null;
   /** A read asked for while one was in flight: it runs once that one lands, so it sees every change made before it was asked for. */
   rerun: Promise<void> | null;
   /** A first read that failed is tried again on its own, a few times, further apart each time. */
@@ -51,7 +53,7 @@ export const LIBRARY_RETRY_MS = [2_000, 8_000, 30_000] as const;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, listeners: new Set(), busy: null, rerun: null, retry: { attempts: 0, timer: null } };
+    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null } };
     entries.set(key, found);
   }
   return found;
@@ -141,28 +143,63 @@ export function refreshProjectLibrary(scope: string, projectId: string) {
   return load(scope, projectId);
 }
 
-/** The next page of every source that has one (the existing library cursors). */
+/** The next page of every source that has one (the existing library cursors); a page already on its way is the one awaited. */
 async function more(scope: string, projectId: string) {
   const key = keyOf(scope, projectId);
   const e = entry(key);
-  if (e.state.moreBusy || e.busy) return;
+  if (e.paging) return e.paging;
+  if (e.busy) return;
   const sources = (["uploads", "generations"] as Source[]).filter((s) => e.state.next[s]);
   if (!sources.length) return;
   set(key, { moreBusy: true });
-  try {
-    const pages = await Promise.all(sources.map((s) => readPage(scope, projectId, s, e.state.next[s])));
-    const next = { ...e.state.next }, count = { ...e.state.pages };
-    let uploads = e.state.uploads, generations = e.state.generations;
-    sources.forEach((source, i) => {
-      next[source] = pages[i].next;
-      count[source]++;
-      if (source === "uploads") uploads = dedupe([...uploads, ...(pages[i].items as LibraryUpload[])]);
-      else generations = dedupe([...generations, ...(pages[i].items as Generation[])]);
-    });
-    set(key, { uploads, generations, next, pages: count, moreBusy: false, error: null });
-  } catch (error) {
-    set(key, { moreBusy: false, error: error instanceof Error ? error.message : "More assets could not be loaded." });
+  e.paging = (async () => {
+    try {
+      const pages = await Promise.all(sources.map((s) => readPage(scope, projectId, s, e.state.next[s])));
+      const next = { ...e.state.next }, count = { ...e.state.pages };
+      let uploads = e.state.uploads, generations = e.state.generations;
+      sources.forEach((source, i) => {
+        next[source] = pages[i].next;
+        count[source]++;
+        if (source === "uploads") uploads = dedupe([...uploads, ...(pages[i].items as LibraryUpload[])]);
+        else generations = dedupe([...generations, ...(pages[i].items as Generation[])]);
+      });
+      set(key, { uploads, generations, next, pages: count, moreBusy: false, error: null });
+    } catch (error) {
+      set(key, { moreBusy: false, error: error instanceof Error ? error.message : "More assets could not be loaded." });
+    } finally {
+      e.paging = null;
+    }
+  })();
+  return e.paging;
+}
+
+/** How far a search for one take pages back before it gives up (60 of each source a page). */
+const FIND_PAGES = 20;
+/**
+ * Make sure one take (`generation:<id>` or `upload:<id>`) is in the loaded
+ * Library before anything opens it: the loaded range is read again (a take
+ * filed a moment ago is on the first page), then older pages come in by the
+ * existing cursors until it is there or nothing older is left. `since` is the
+ * newest the take can be dated: a connected-account original is filed at its
+ * job's own time, so pages older than that cannot hold it. Answers whether
+ * the take is loaded now.
+ */
+export async function findProjectTake(scope: string, projectId: string, takeId: string, since?: number): Promise<boolean> {
+  const e = entry(keyOf(scope, projectId));
+  const split = takeId.indexOf(":");
+  const source: Source | null = takeId.slice(0, split) === "generation" ? "generations" : takeId.slice(0, split) === "upload" ? "uploads" : null;
+  const id = takeId.slice(split + 1);
+  if (!source) return false;
+  const has = () => (e.state[source] as { id: string }[]).some((item) => item.id === id);
+  if (has()) return true;
+  await load(scope, projectId);
+  for (let page = 0; page < FIND_PAGES && !has(); page++) {
+    if (e.state.status !== "ready" || e.state.error || !e.state.next[source]) break;
+    const oldest = e.state[source].at(-1);
+    if (since != null && oldest && oldest.createdAt < since) break;
+    await (e.busy ?? more(scope, projectId));
   }
+  return has();
 }
 
 function dedupe<T extends { id: string }>(items: T[]): T[] {
