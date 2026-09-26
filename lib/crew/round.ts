@@ -40,7 +40,8 @@ export function quoteRound(input: { session: CrewSession; project: Project; acti
     seated: input.active.length, goalChars: input.session.goal.length, contextChars: context.length, transcriptChars: input.transcriptChars,
     stanceChars: Math.max(0, ...input.active.map((m) => m.stance.length + m.name.length + m.department.length)),
   }, input.rate);
-  return { model: xaiModel(), calls: input.active.length * 2 + 1, ceilingUsd, estimateCredits: paidByPlatform("xai") ? billCredits(ceilingUsd, "text") : 0 };
+  /* The room's model: the one its rate was read for and its rounds are sent to. */
+  return { model: input.session.model || xaiModel(), calls: input.active.length * 2 + 1, ceilingUsd, estimateCredits: paidByPlatform("xai") ? billCredits(ceilingUsd, "text") : 0 };
 }
 
 async function pooled<T>(items: readonly T[], run: (item: T) => Promise<void>) {
@@ -72,7 +73,7 @@ export async function runRound(input: {
       emit({ event: "thinking", data: { memberId: member.id, phase } });
       const answer = await askGrok({
         system: roleCard(member, context, phase), user: userMessage(session.goal, snapshot, phase === "challenge" ? others : undefined),
-        phase, effort: member.effort, mock: () => mockAnswer(member.presetId, phase, others),
+        phase, effort: member.effort, mock: () => mockAnswer(member.presetId, phase, others), model: session.model,
       });
       if (!answer.ok) { emit({ event: "failed", data: { memberId: member.id, phase, reason: answer.reason } }); return null; }
       spentUsd += callCostUsd(answer, rate);
