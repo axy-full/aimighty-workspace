@@ -859,3 +859,21 @@ test("Marketing preserves product-first mixed generated/uploaded source order th
   expect(JSON.parse(String(stored.params)).references).toEqual([{ genId: "product_generation", role: "reference_image", kind: "image" }, { uploadId: "cast_upload", role: "reference_image", kind: "image" }]);
   expect(dispatched).toHaveLength(1);
 }));
+
+test("a still and a clip keep Gen's shot setup as data, trimmed to short strings, so Recreate brings it back", async () => scope("shot-setup", async (service) => {
+  const { db } = await import("../../lib/db");
+  const setup = { shot: "cu", lens: "35", light: "soft", count: 5, empty: "", ["k".repeat(30)]: "v" };
+  const bodies = [
+    { model: "gemini-3.1-flash-image", prompt: "A tree. Close-up.", projectId: "project", ratio: "16:9", resolution: "1K", shotSpec: setup },
+    { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain. Close-up.", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5, shotSpec: { ...setup, move: "push" } },
+    { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K", shotSpec: ["cu"] },
+  ];
+  const kept = [{ shot: "cu", lens: "35", light: "soft", ["k".repeat(24)]: "v" }, { shot: "cu", lens: "35", light: "soft", ["k".repeat(24)]: "v", move: "push" }, undefined];
+  for (const [index, body] of bodies.entries()) {
+    const prepared = value(await service.gen.prepareGeneration(body, actor));
+    const admitted = await service.gen.admitGeneration(prepared, actor, { requestKey: `shot-setup-${index}`, defer: noInline });
+    expect(admitted.status, JSON.stringify(admitted.body)).toBeLessThan(300);
+    const stored = (await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [admitted.body.id as string] })).rows[0];
+    expect(JSON.parse(String(stored.params)).shotSpec).toEqual(kept[index]);
+  }
+}));

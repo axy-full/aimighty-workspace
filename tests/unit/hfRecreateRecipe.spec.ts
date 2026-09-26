@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { ACCOUNT_MODEL, cites, nearestSetting, recipeChips, recipePrompt, recreateBlock, recreatePreset, referenceTags, retagRecipe, type RecipeSource } from "../../lib/shell/recipe";
-import { setupInWords, setupLabels, setupWritable, withSetup } from "../../lib/shell/recipe-setup";
+import { composeForSend, setupInWords, setupLabels, withoutSetup } from "../../lib/workspace/film-vocabulary";
 import { assetCapabilities, assetRef } from "../../lib/shell/assets";
 import { composerReducer, composerSettings, INITIAL_COMPOSER, type ComposerModel, type ComposerState } from "../../lib/workspace/composer";
 import type { LibraryEntry } from "../../lib/workspace/library";
@@ -237,13 +237,17 @@ test("a size or length the new model does not offer lands on the nearest one at 
   expect(nearestSetting(3, [5, 10])).toBe(5);
 });
 
-test("a shot setup travels as words: labelled from the bank, written in once, recognised when already there", () => {
+test("a shot setup travels as data and as words: labelled from the bank, written in once, taken back out for the chips", () => {
   const spec = { shot: "cu", move: "push", unknown: "custom move" };
   expect(setupLabels(spec)).toEqual(["Close-up", "Push in", "custom move"]);
-  expect(setupWritable(spec)).toBe(true);
-  expect(setupWritable({ unknown: "x" })).toBe(false);
-  const written = withSetup("a fisherman mends a net", spec);
-  expect(written.startsWith("a fisherman mends a net.")).toBe(true);
+  const sent = composeForSend("a fisherman mends a net", spec, "video");
+  expect(sent.shotSpec).toEqual(spec);
+  expect(sent.prompt.startsWith("a fisherman mends a net.")).toBe(true);
   expect(setupInWords("a fisherman mends a net", spec)).toBe(false);
-  expect(setupInWords(written, spec)).toBe(true);
+  expect(setupInWords(sent.prompt, spec)).toBe(true);
+  /* Never written twice, and a recreated take's words come back as typed. */
+  expect(composeForSend(sent.prompt, spec, "video").prompt).toBe(sent.prompt);
+  expect(withoutSetup(sent.prompt, spec)).toBe("a fisherman mends a net.");
+  /* A row the bank has no words for is kept as data alone. */
+  expect(composeForSend("a net", { unknown: "x" }, "video")).toEqual({ prompt: "a net", shotSpec: { unknown: "x" } });
 });

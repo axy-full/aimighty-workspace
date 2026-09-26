@@ -42,6 +42,7 @@ import {
   type EngineRow,
 } from "./composer";
 import { formatCredits } from "./cost";
+import { composeForSend } from "./film-vocabulary";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration } from "./generate-submit";
 import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig";
@@ -255,10 +256,12 @@ export function useComposer(options: {
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
+  /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts). */
+  const sent = useMemo(() => composeForSend(state.prompt, state.shot, state.type), [state.prompt, state.shot, state.type]);
 
   const quoteKey = quoteKeyFor({
     billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
-    references: state.references, prompt: state.prompt.trim(), seconds: state.seconds,
+    references: state.references, prompt: sent.prompt.trim(), seconds: state.seconds,
     instrumental: state.instrumental, voiceId: state.voiceId,
   });
 
@@ -282,7 +285,7 @@ export function useComposer(options: {
     /* FINAL_SPEC §3–4: the settings the live catalogue entry declares, never
        invented; `enhance_prompt` only when the schema declares it — true on
        Auto, false for a raw: prompt, which is never rewritten. */
-    const raw = /^\s*raw:/i.test(state.prompt);
+    const raw = /^\s*raw:/i.test(sent.prompt);
     const parameters: Record<string, string | number | boolean> = {
       ...(model.ratios?.length ? { aspect_ratio: settings.ratio } : {}),
       ...(model.durations?.length ? { duration: settings.duration } : {}),
@@ -291,12 +294,12 @@ export function useComposer(options: {
       ...(model.soulId && settings.soulId ? { soul_id: settings.soulId } : {}),
     };
     return {
-      type: state.type, model: model.id, prompt: raw ? state.prompt.replace(/^\s*raw:\s*/i, "").trim() : state.prompt.trim(), parameters,
+      type: state.type, model: model.id, prompt: raw ? sent.prompt.replace(/^\s*raw:\s*/i, "").trim() : sent.prompt.trim(), parameters,
       medias: roles.length
         ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
         : [],
     } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
+  }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
@@ -361,8 +364,8 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey, sent });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, quoteKey, sent }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -461,7 +464,7 @@ export function useComposer(options: {
             : {
                 endpoint: "/api/generate",
                 input: {
-                  prompt: composer.prompt.trim(),
+                  prompt: now.sent.prompt.trim(),
                   kind: model.type === "video" ? "video" : "image",
                   model: { id: model.id },
                   mapping,
@@ -470,6 +473,7 @@ export function useComposer(options: {
                   duration: settings.duration,
                   references,
                   firstFrameAssetId: "",
+                  shotSpec: now.sent.shotSpec,
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null }),

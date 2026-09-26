@@ -112,6 +112,22 @@ import {
   assertAdmissionActor,
 } from "./admissionSupport";
 
+/**
+ * The shot-control chips, kept as data and not just baked into the prose, so
+ * re-opening a take brings them back set — changing one control and running
+ * it again is the entire reason to have them. Short strings, twenty rows.
+ */
+function shotSpecOf(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const spec = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => typeof v === "string" && v)
+      .slice(0, 20)
+      .map(([k, v]) => [k.slice(0, 24), String(v).slice(0, 40)]),
+  );
+  return Object.keys(spec).length ? spec : null;
+}
+
 const ROLES: ImageRole[] = [
   "first_frame",
   "last_frame",
@@ -1231,6 +1247,8 @@ export async function executeGenerationAdmission(
         rawPrompt: stillPrompt !== prompt ? prompt : undefined,
         cast: castUsed.length ? castUsed : undefined,
         reason: stillReason ?? undefined,
+        /* A still's framing, lens, light and look from Gen's chips, so Recreate brings them back set. */
+        shotSpec: shotSpecOf(body.shotSpec) ?? undefined,
         batchId: isBatchId(body.batchId) ? body.batchId : undefined,
         variation:
           isBatchId(body.batchId) &&
@@ -1706,18 +1724,7 @@ export async function executeGenerationAdmission(
     const genId = id("gen");
     const ts = now();
     const hasVideoInput = references.some((r) => r.kind === "video");
-    // The shot-control chips are kept as data, not just baked into the prose,
-    // so re-opening a take brings them back set — changing one control and
-    // running it again is the entire reason to have them.
-    const shotSpec =
-      body.shotSpec && typeof body.shotSpec === "object"
-        ? Object.fromEntries(
-            Object.entries(body.shotSpec as Record<string, unknown>)
-              .filter(([, v]) => typeof v === "string" && v)
-              .slice(0, 20)
-              .map(([k, v]) => [k.slice(0, 24), String(v).slice(0, 40)]),
-          )
-        : null;
+    const shotSpec = shotSpecOf(body.shotSpec);
 
     const storedParams = {
       ...params,
@@ -1742,7 +1749,7 @@ export async function executeGenerationAdmission(
         body.variation <= 8
           ? body.variation
           : undefined,
-      shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
+      shotSpec: shotSpec ?? undefined,
       // The bank's neutral preview this clip is for, when the console rendered it for one (brief 1.4).
       previewFor:
         typeof body.previewFor === "string" &&

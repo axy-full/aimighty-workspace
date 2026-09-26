@@ -91,6 +91,8 @@ export type ComposerState = {
   enhance: boolean;
   /** Takes per Generate (the prototype's stepper, 1–4): each take is its own quoted job at the price shown. */
   count: number;
+  /** Gen's film vocabulary (lib/workspace/film-vocabulary.ts): one camera-bank value per row; a row that is absent is Auto. */
+  shot: Record<string, string>;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
@@ -110,6 +112,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   picks: {},
   enhance: false,
   count: 1,
+  shot: {},
   notice: null,
 };
 
@@ -129,6 +132,8 @@ export type ComposerRecipe = {
   prompt?: string;
   references?: ComposerReference[];
   sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
+  /** The take's shot setup (params.shotSpec); none puts every chip back to Auto. */
+  shot?: Record<string, string>;
 };
 
 export type ComposerAction =
@@ -143,6 +148,7 @@ export type ComposerAction =
   | { type: "referenceRole"; key: string; role: string }
   | { type: "enhance"; value: boolean }
   | { type: "count"; value: number }
+  | { type: "shot"; value: Record<string, string> }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -187,6 +193,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, enhance: action.value };
     case "count":
       return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
+    case "shot":
+      return { ...state, shot: { ...action.value }, notice: null };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -211,6 +219,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         instrumental: sound.instrumental ?? state.instrumental,
         voiceId: sound.voiceId ?? state.voiceId,
         count: 1,
+        shot: { ...(recipe.shot ?? {}) },
         notice: null,
       };
     }

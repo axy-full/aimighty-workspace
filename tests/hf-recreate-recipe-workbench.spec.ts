@@ -4,10 +4,12 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { composePrompt } from "../lib/studio";
 
 /**
  * Recreate (idea 7): a take's whole recipe — the words as typed, the model,
- * its aspect, size and length, the references in order, the shot setup —
+ * its aspect, size and length, the references in order, the shot setup (on
+ * the film vocabulary's chips, idea 13) —
  * lands in Gen even when Gen is already open, says what it could not keep,
  * and is priced again on the button before anything runs. Generate waits
  * while the take's references are still being read, and never sends an
@@ -20,9 +22,6 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 /* Portrait phones: the sticky Generate band and the tab bar sit over the page's lower third. */
 const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
-/* 360×640 leaves about 158px of composer between the page head and the sticky Generate; a card with 44px
-   targets needs more than that once it carries a shot setup, so there the setup's row is one flick below. */
-const SHORT = "workbench-360x640";
 /* RECREATE_SHOTS=<dir> saves the finished card at the sizes the review looks at. */
 const SHOTS = ["workbench-360x640", "workbench-390x844", "workbench-1440x900"];
 
@@ -134,10 +133,9 @@ async function hiddenRows(page: Page) {
   });
 }
 
-/** The card lands clear of the band: every row, or on the shortest phone every row but the setup's. */
-async function landsClear(page: Page, info: TestInfo) {
-  const hidden = await hiddenRows(page);
-  expect(info.project.name === SHORT ? hidden.filter((row) => !row.startsWith("gx-recipe-setup")) : hidden, "card rows hidden").toEqual([]);
+/** The card lands clear of the band: every row. */
+async function landsClear(page: Page) {
+  expect(await hiddenRows(page), "card rows hidden").toEqual([]);
 }
 
 async function shot(page: Page, info: TestInfo, name: string) {
@@ -188,7 +186,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await expect(refs).toHaveAttribute("data-state", "changed");
   await expect(page.getByTestId("gen-well")).toContainText("@Image1 · Plate still");
   await expect(page.getByTestId("gen-recipe-missing")).toHaveText("Not found @Image2 (upload)");
-  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-state='kept']")).toHaveText(["Seedance 2.0", "21:9", "1080p", "8 s"]);
+  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-state='kept']")).toHaveText(["Seedance 2.0", "21:9", "1080p", "8 s", "Close-up · Push in"]);
   await expect(page.getByTestId("gen-recipe-why").locator("li")).toHaveCount(1);
   /* The words cite @Image1 only, which is the still: nothing to renumber, nothing to wait for. */
   await expect(prompt).toHaveValue(RAW);
@@ -203,20 +201,14 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   expect(asked.has("uploadId")).toBe(false);
 
   /* The card is in view where the composer is: on a portrait phone, above the sticky Generate band. */
-  await landsClear(page, info);
+  await landsClear(page);
 
-  /* The shot setup travels as words: named from the bank, written in once. */
-  const setup = page.getByTestId("gen-recipe-setup");
-  await expect(setup).toContainText("Close-up · Push in");
-  if (info.project.name === SHORT) {
-    /* One flick and the setup's row is clear of the band too. */
-    await page.locator(".gx-stage").evaluate((el) => el.scrollBy(0, 60));
-    expect((await hiddenRows(page)).filter((row) => row.startsWith("gx-recipe-setup")), "setup row hidden").toEqual([]);
-  }
-  await setup.getByTestId("gen-recipe-setup-add").click();
-  await expect(prompt).toHaveValue(/^harbour at dusk, @Image1 walks the pier\. Close-up\.\n\nThe camera travels forward/);
-  await expect(setup.getByTestId("gen-recipe-setup-in")).toHaveText("In the prompt");
-  await expect(setup.getByTestId("gen-recipe-setup-add")).toHaveCount(0);
+  /* The shot setup lands on the film vocabulary's chips; the words stay the words as typed. */
+  await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Close-up · Push in");
+  await expect(page.getByTestId("gen-film-shot")).toHaveAttribute("aria-label", "Shot: Close-up");
+  await expect(page.getByTestId("gen-film-camera")).toHaveAttribute("aria-label", "Camera: Push in");
+  await expect(page.getByTestId("gen-film-lens")).toHaveAttribute("aria-label", "Lens: Auto");
+  await expect(prompt).toHaveValue(RAW);
 
   await shot(page, info, "recreate");
   expect(await noOverflow(page)).toBe(true);
@@ -231,6 +223,8 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await expect(prompt).toHaveValue("my own words");
   await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
   await expect(page.getByTestId("gen-well")).not.toContainText("Plate still");
+  await expect(page.getByTestId("gen-film-shot")).toHaveAttribute("aria-label", "Shot: Auto");
+  await expect(page.getByTestId("gen-film-camera")).toHaveAttribute("aria-label", "Camera: Auto");
   expect(priced).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -269,7 +263,7 @@ test("a gone first reference: the words are renumbered to the well, the gap keep
   /* The words still cite the gone reference: nothing is priced as if it were there. */
   await expect(page.getByTestId("gen-blocked")).toHaveText("The prompt cites @Image2, which is gone. Add a reference or edit the words.");
   await expect(page.getByTestId("gen-generate")).toBeDisabled();
-  await landsClear(page, info);
+  await landsClear(page);
   await shot(page, info, "gone-first");
   /* Dropping the citation is the person's call; then the take is priced. */
   await prompt.fill("@Image1 walks the pier");
@@ -303,9 +297,10 @@ test("an enhancement of the words a Recreate replaced is cleared, and Generate s
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveText("Generate · 31 cr");
   await go.click();
-  /* The price check is where a press first spends: it carries the take's words, not the old enhancement. */
+  /* The price check is where a press first spends: it carries the take's words, not the old enhancement,
+     with its shot setup written in once and sent as data. */
   await expect.poll(() => priced.length).toBe(1);
-  expect(priced[0]).toMatchObject({ prompt: RAW });
+  expect(priced[0]).toMatchObject({ prompt: composePrompt(RAW, { shot: "cu", move: "push" }), shotSpec: { shot: "cu", move: "push" } });
   expect(errors).toEqual([]);
 });
 
@@ -492,9 +487,11 @@ test("when the engines cannot be read, the card gives the composer's one reason 
   const inspector = await inspect(page, "gen_harbour");
   await inspector.getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("gen-recipe-refs")).toHaveText("1 of 2 refs");
+  /* The model, the references and the shot setup (which lands on the chips whatever the engines say); no per-setting chips. */
   const chips = page.getByTestId("gen-recipe-chips").locator("li");
-  await expect(chips).toHaveCount(2);
+  await expect(chips).toHaveCount(3);
   await expect(chips.first()).toHaveText("Seedance 2.0 → none");
+  await expect(chips.last()).toHaveText("Close-up · Push in");
   await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText(`Model ${failed}`);
   await expect(page.getByTestId("gen-recipe-why").locator("li")).toHaveCount(2);
   await expect(page.getByTestId("gen-generate")).toBeDisabled();
@@ -513,7 +510,7 @@ test("from a page's Library, the card lands where it can be read, clear of the s
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-recipe-refs")).toHaveText("1 of 2 refs");
   await expect(page.getByTestId("gen-recipe-setup")).toContainText("Close-up · Push in");
-  if (PORTRAIT.includes(info.project.name)) await landsClear(page, info);
+  if (PORTRAIT.includes(info.project.name)) await landsClear(page);
   else await expect(page.getByTestId("gen-recipe")).toBeInViewport();
   await shot(page, info, "from-library");
   expect(await noOverflow(page)).toBe(true);

@@ -27,12 +27,14 @@ import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generat
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { cleanSetup, setupLabels, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
+import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
-  video: "Describe the shot: subject, setting, camera move, light. @name cites a reference; raw: sends your words as written.",
-  image: "Describe the frame: subject, setting, lens, light, medium. @name cites a reference; raw: sends your words as written.",
+  video: "Describe the shot: subject, setting, action. # picks a camera move; @name cites a reference; raw: sends your words as written.",
+  image: "Describe the frame: subject, setting, medium. # picks a shot, lens or light; @name cites a reference; raw: sends your words as written.",
   audio: "Describe the sound, the voice or the music: source, setting, pace, texture.",
 };
 const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }, { id: "connected", label: "Higgsfield catalogue" }];
@@ -57,7 +59,6 @@ type RecipeCard = {
     frames: boolean;
   };
 };
-type SetupKit = typeof import("@/lib/shell/recipe-setup");
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -185,12 +186,14 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     /* The connected account is the owner's; anyone else recreates on this workspace's engines, and their own engine choice stands. */
     const billing: BillingSource = preset.billing === "connected" && owner ? "connected" : "workspace";
     const lost = preset.billing === "connected" && billing !== "connected";
+    /* The shot setup lands on the chips, and comes back out of the words it was written into. */
+    const shot = cleanSetup(preset.shotSpec);
     dispatchComposer({
       type: "recipe",
       value: {
-        type, billing, picks: preset.picks ?? {}, sound: preset.sound,
+        type, billing, picks: preset.picks ?? {}, sound: preset.sound, shot,
         ...(lost ? {} : { model: preset.model }),
-        ...(settingsOnly ? {} : { prompt: preset.prompt, references: [] }),
+        ...(settingsOnly ? {} : { prompt: withoutSetup(preset.prompt, shot), references: [] }),
       },
     });
     /* A take made raw on the account is recreated raw, one enhanced there is enhanced there again. */
@@ -273,16 +276,11 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     const seconds = wantedSeconds && heldSeconds === wantedSeconds && lengths ? nearestSetting(wantedSeconds, lengths) : undefined;
     if (size !== undefined || seconds !== undefined) dispatchComposer({ type: "pick", value: { ...(size !== undefined ? { resolution: size } : {}), ...(seconds !== undefined ? { duration: seconds } : {}) } });
   }, [wantedSize, wantedSeconds, heldSize, heldSeconds, sizes, lengths, dispatchComposer]);
-  /* A shot setup travels as words (Gen has no shot controls); the camera bank loads only when one arrives. */
-  const spec = recipe?.preset.shotSpec ?? null;
-  const [setupKit, setSetupKit] = useState<SetupKit | null>(null);
-  const wantsSetup = Boolean(spec);
-  useEffect(() => {
-    if (!wantsSetup || setupKit) return;
-    let live = true;
-    void import("@/lib/shell/recipe-setup").then((kit) => { if (live) setSetupKit(kit); }).catch(() => {});
-    return () => { live = false; };
-  }, [wantsSetup, setupKit]);
+  /* Gen's film vocabulary: the chips under Direction, and `#` in the words. */
+  const promptBox = useRef<HTMLTextAreaElement>(null);
+  const setShot = useCallback((value: FilmSetup) => dispatchComposer({ type: "shot", value }), [dispatchComposer]);
+  const setPrompt = useCallback((value: string) => dispatchComposer({ type: "prompt", value }), [dispatchComposer]);
+  const typeahead = useFilmTypeahead({ type: state.type, prompt: state.prompt, setup: state.shot, textarea: promptBox, onPrompt: setPrompt, onSetup: setShot });
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
@@ -355,6 +353,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     reading: blocked === READING_MODELS || blocked === READING_ACCOUNT, blocked: model ? null : blocked, identities: characters.list,
   }) : [];
   const refs = recipe?.refs ?? null;
+  const setup = recipe?.preset.shotSpec ? setupLabels(recipe.preset.shotSpec) : [];
   const carried = refs ? refs.total - refs.missing.length : 0;
   const gone = refs?.missing.filter((m) => m.gone) ?? [];
   const unused = refs?.missing.filter((m) => !m.gone) ?? [];
@@ -381,6 +380,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {refs.reading ? `${refs.total} ${refs.total === 1 ? "ref" : "refs"}…` : refs.missing.length ? `${carried} of ${refs.total} refs` : `${refs.total} ${refs.total === 1 ? "ref" : "refs"}`}
           </li>
         ) : null}
+        {setup.length ? <li data-state="kept" data-chip="setup" data-testid="gen-recipe-setup" title={`Setup: ${setup.join(" · ")}`}>{setup.join(" · ")}</li> : null}
       </ul>
       {notes.length ? (
         <ul className="gx-recipe-why" data-testid="gen-recipe-why">
@@ -389,14 +389,6 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               title={n.key === "gone" ? gone.map((m) => m.reason).join(" ") : undefined}><b>{n.label}</b> {n.text}</li>
           ))}
         </ul>
-      ) : null}
-      {spec ? (
-        <div className="gx-recipe-setup" data-testid="gen-recipe-setup">
-          <span className="gx-recipe-setup-list"><b>Setup</b> {setupKit ? setupKit.setupLabels(spec).join(" · ") : "…"}</span>
-          {setupKit && setupKit.setupInWords(state.prompt, spec) ? <span className="gx-recipe-ok" data-testid="gen-recipe-setup-in">In the prompt</span>
-            : setupKit && setupKit.setupWritable(spec) ? <button type="button" className="gx-hbtn" onClick={() => dispatchComposer({ type: "prompt", value: setupKit.withSetup(state.prompt, spec) })} data-testid="gen-recipe-setup-add">Add to prompt</button>
-            : null}
-        </div>
       ) : null}
     </div>
   ) : null;
@@ -440,8 +432,9 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
           {presetNote ? <p className="gx-gen-note" role="status" data-testid="gen-preset-note">{presetNote}</p> : null}
-          <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToGen} testId="gen-attach"><textarea className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
-            onChange={(e) => composer.dispatch({ type: "prompt", value: e.target.value })} data-testid="gen-prompt" /></PromptAttach>
+          <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToGen} testId="gen-attach"><textarea ref={promptBox} className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
+            onChange={(e) => { composer.dispatch({ type: "prompt", value: e.target.value }); typeahead.track(e.target); }} {...typeahead.inputProps} data-testid="gen-prompt" />{typeahead.list}</PromptAttach>
+          <FilmChips scope={scope} type={state.type} setup={state.shot} onChange={setShot} />
           <div className="gx-gen-enhance">
             <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="When an enhancement is on the card, it is what gets generated.">
               <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
