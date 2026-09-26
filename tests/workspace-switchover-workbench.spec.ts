@@ -86,9 +86,14 @@ test("a bare old URL opens the workspace home, and a Moleculr section arrives as
   await signedIn(page);
 
   for (const from of ["/", `/workbench?project=${PROJECT}`]) {
+    /* The switch names no page: the Suites URL it goes to is bare, and the
+       shell writes its own first page into the address as it opens (which,
+       with the switch now made by the server, can already have happened by
+       the time the page has loaded). */
+    const switched = page.waitForRequest((r) => r.isNavigationRequest() && r.frame() === page.mainFrame() && new URL(r.url()).pathname === "/suites");
     await page.goto(from);
     await expect(page, from).toHaveURL(/\/suites\?/);
-    await expect(page, from).not.toHaveURL(/[?&]page=/);
+    expect(new URL((await switched).url()).searchParams.has("page"), from).toBe(false);
     /* The Suites shell has no project-picker home: Studio opens on its first page. */
     await expect(page.locator(".gx"), from).toBeVisible();
     await expect(page.getByTestId("page-title"), from).toHaveText("Brief & Script");

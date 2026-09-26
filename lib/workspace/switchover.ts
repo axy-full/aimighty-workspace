@@ -118,6 +118,21 @@ export function shellCookieScript(search: string): string | null {
   return null;
 }
 
+/**
+ * The shell URL the SERVER may send this request to at once, or null when the
+ * client gate still has to render. Since phones switch too (SHELL_ON_PHONES)
+ * the device answer changes nothing, so a person with a workspace is
+ * redirected before any page is drawn — no "Opening Particl…" note, no second
+ * document. The gate stays for everyone else: a visitor (the /workspace ↔
+ * /workbench loop guard), and a URL carrying `shell=` (its cookie is written
+ * by the page, which a redirect would skip).
+ */
+export function serverSwitchTarget(target: string | null, search: string, hasWorkspace: boolean): string | null {
+  if (!target || !hasWorkspace || !SHELL_ON_PHONES) return null;
+  if (new URLSearchParams(search).has(SHELL_PARAM)) return null;
+  return target;
+}
+
 /* ── Legacy URL → workspace URL ───────────────────────────────────────── */
 
 /**
