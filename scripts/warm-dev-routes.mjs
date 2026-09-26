@@ -13,19 +13,18 @@
 // redirect compiles the whole route); API routes get OPTIONS, which Next
 // answers itself without running a handler, so a 404 there means the server
 // does not know the route. A server restored from .next has answered every
-// sign-up, and other routes, with the not-found page. So this exits 1 when
-// the sign-up or sign-in routes or the proxy do not answer, when an API route
-// is unknown, or when a route answers 404 that answered otherwise on the
-// job's first server (its answers are kept in `WARM_STATUS_FILE`).
+// sign-up, and other API routes, with the not-found page. So this exits 1
+// when the sign-up or sign-in routes or the proxy do not answer, or when the
+// server does not know an API route. Pages are fetched but not judged: a
+// page's own 404 can depend on the data the specs have written.
 //
 //   node scripts/warm-dev-routes.mjs [base URL]
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 const base = (process.argv[2] || "http://localhost:4551").replace(/\/$/, "");
 const budget = Number(process.env.WARM_BUDGET_MB || 2000);
 const cap = Number(process.env.WARM_CAP_MB || 5000);
-const statusFile = process.env.WARM_STATUS_FILE;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /* Every page and route under app/ as a URL: groups dropped, dynamic segments
@@ -111,8 +110,6 @@ for (const { path, api } of routes().sort((a, b) => Number(a.api) - Number(b.api
 }
 targets.push({ url: "/favicon.ico", method: "GET" }, { url: "/warm-not-found", method: "GET" });
 
-const before = statusFile && existsSync(statusFile) ? JSON.parse(readFileSync(statusFile, "utf8")) : null;
-const statuses = {};
 const started = Date.now();
 let floor = serverMemory();
 let peak = floor;
@@ -120,11 +117,8 @@ let pauses = 0;
 const missing = [];
 for (const { url, method, ok, known } of targets) {
   const status = await request(url, method);
-  const key = `${method} ${url}`;
-  statuses[key] = status;
   /* A route that fails to load fails its own specs; only an unknown one stops the run. */
-  const lost = status === 404 && (known || (before && before[key] !== undefined && before[key] !== 404));
-  if ((ok && !ok.includes(status)) || lost) missing.push(`${key} ${status}`);
+  if ((ok && !ok.includes(status)) || (known && status === 404)) missing.push(`${method} ${url} ${status}`);
   const memory = serverMemory();
   peak = Math.max(peak, memory);
   if (memory > Math.min(floor + budget, cap)) {
@@ -141,4 +135,3 @@ if (missing.length) {
   console.log(`[warm] ${missing.length} routes did not answer as expected: ${missing.slice(0, 12).join("; ")}`);
   process.exit(1);
 }
-if (statusFile && !before) writeFileSync(statusFile, JSON.stringify(statuses));
