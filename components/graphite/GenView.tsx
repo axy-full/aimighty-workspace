@@ -86,7 +86,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const shell = useShell();
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
-  const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
   /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
      "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
      read it, so the strip lets go of a connected job this view started and the collector follows it. */
@@ -642,8 +642,16 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             </div>
         </div>
         <div className="gx-gen-cta">
-          <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
-            {submitting ? "Submitting…" : recipeWait ? "Generate" : buttonLabel}
+          {/* What it does, then what it costs: the price is its own run of text, so a narrow button (or a wide font)
+              moves it whole onto a second line and never cuts it. The button is named by the whole label. */}
+          <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate"
+            aria-label={submitting ? "Submitting…" : recipeWait ? "Generate" : buttonLabel} data-priced={!submitting && !recipeWait && buttonParts.price ? "" : undefined}>
+            {submitting ? "Submitting…" : recipeWait ? "Generate" : (
+              <>
+                <span className="gx-go-act">{buttonParts.action}</span>
+                {buttonParts.price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
+              </>
+            )}
           </button>
           <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}{model?.enhanceable && enhancer.auto && !isRawPrompt(state.prompt) ? " · enhanced on Higgsfield" : ""}</p>
         </div>

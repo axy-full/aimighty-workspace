@@ -520,23 +520,34 @@ export function composerBlock(input: {
   return null;
 }
 
-/** "Generate · 18 cr" / "Generate · 18 connected cr" — the exact live figure, or no figure at all. */
-export function composerButtonLabel(input: {
+type ButtonInput = {
   billing: BillingSource;
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
-  /** Takes per Generate; the price shown is the take's price times the count. */
+  /** Takes per Generate; the price shown is the batch's total. */
   count?: number;
-}): string {
-  if (input.submitting) return "Submitting…";
+};
+
+/**
+ * The button's label in its two parts: what it does ("Generate 4 takes") and
+ * what it costs ("72 connected cr" — the exact live figure, whole, or none).
+ * Gen draws them apart so the price can take its own line on a narrow button
+ * rather than ever being cut.
+ */
+export function composerButtonParts(input: ButtonInput): { action: string; price: string | null } {
+  if (input.submitting) return { action: "Submitting…", price: null };
   const count = Math.max(1, input.count ?? 1);
   const total = shownTotal(input.quote, input.quoteKey, count);
-  if (total === null) return count > 1 ? `Generate ${count} takes` : "Generate";
-  const unit = input.billing === "connected" ? "connected cr" : "cr";
-  return count > 1
-    ? `Generate ${count} takes · ${total.toLocaleString("en-US")} ${unit}`
-    : `Generate · ${total.toLocaleString("en-US")} ${unit}`;
+  const action = count > 1 ? `Generate ${count} takes` : "Generate";
+  if (total === null) return { action, price: null };
+  return { action, price: `${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
+}
+
+/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" — the exact live figure, or no figure at all. */
+export function composerButtonLabel(input: ButtonInput): string {
+  const { action, price } = composerButtonParts(input);
+  return price ? `${action} · ${price}` : action;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */

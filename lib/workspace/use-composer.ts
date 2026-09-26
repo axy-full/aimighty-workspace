@@ -24,6 +24,7 @@ import {
   billingWording,
   composerBlock,
   composerButtonLabel,
+  composerButtonParts,
   composerReducer,
   composerSettings,
   type ConnectedRow,
@@ -300,6 +301,8 @@ export type ComposerHost = {
   /** What the account says it rendered for the last connected take (`enhance_prompt`), once it completed; null otherwise. */
   connectedEnhanced: string | null;
   buttonLabel: string;
+  /** The same label in its two parts, what it does and what it costs, for a button that lays them out apart. */
+  buttonParts: { action: string; price: string | null };
   blocked: string | null;
   submitting: boolean;
   /** Which credits will be charged, said plainly. */
@@ -1101,6 +1104,7 @@ export function useComposer(options: {
     /** What the account says it rendered for the last connected take, once it completed. */
     connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
     buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
+    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
     audio, capability, project: target, projectNotice, generate, retryEngines, scope,

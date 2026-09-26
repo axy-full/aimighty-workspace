@@ -71,13 +71,47 @@ async function takes(page: Page, count: number) {
   await expect(page.getByTestId("gen-takes-count")).toHaveText(String(count));
 }
 
+/**
+ * Generate's label, measured against the button's own box: every run of text it draws sits inside its padding,
+ * none is clipped or cut with an ellipsis, so the whole price is there. Then again with a wide fallback sans on
+ * the button — Linux Chrome's fonts, and many Android phones', run wider than macOS's — so a label that only just
+ * fits here fails here the way it would there.
+ */
+async function labelFits(page: Page) {
+  const check = () => page.getByTestId("gen-generate").evaluate((button) => {
+    const box = button.getBoundingClientRect(), style = getComputedStyle(button);
+    const left = box.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth) - 0.5;
+    const right = box.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth) + 0.5;
+    const out: string[] = [];
+    const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent?.trim() ?? "";
+      const parent = node.parentElement;
+      if (!text || !parent || !parent.getClientRects().length) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const r of Array.from(range.getClientRects())) {
+        if (!r.width) continue;
+        if (r.left < left || r.right > right || r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5)
+          out.push(`“${text}” runs past the button (${Math.round(r.left)}–${Math.round(r.right)} inside ${Math.round(left)}–${Math.round(right)})`);
+      }
+      if (getComputedStyle(parent).textOverflow === "ellipsis" && parent.scrollWidth > parent.clientWidth + 1) out.push(`“${text}” is cut with an ellipsis`);
+    }
+    if (button.scrollWidth > button.clientWidth + 1) out.push(`the label is ${button.scrollWidth - button.clientWidth}px wider than the button`);
+    return out;
+  });
+  expect(await check(), "Generate's label fits its button").toEqual([]);
+  const wide = await page.addStyleTag({ content: '[data-testid="gen-generate"], [data-testid="gen-generate"] * { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' });
+  expect(await check(), "Generate's label fits its button in a wide fallback sans").toEqual([]);
+  await wide.evaluate((el) => (el as HTMLStyleElement).remove());
+}
+
 /** The view fits the phone: no sideways scroll, the button and the strip inside the width, targets 44px, no dim label. */
 async function floors(page: Page, info: TestInfo) {
   const phone = PHONES.includes(info.project.name);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   const width = page.viewportSize()!.width;
-  const clipped = await page.getByTestId("gen-generate").evaluate((el) => el.scrollWidth - el.clientWidth);
-  expect(clipped, "Generate's label fits its button").toBeLessThanOrEqual(1);
+  await labelFits(page);
   for (const locator of [page.getByTestId("gen-generate"), ...(await page.getByTestId("gen-batch").all())]) {
     const box = await locator.boundingBox();
     if (!box) continue;

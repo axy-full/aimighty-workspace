@@ -4,7 +4,7 @@ import {
   batchGate, batchNotice, batchPhase, batchSettledText, readPendingBatch, sendConnectedBatch, sendWorkspaceBatch,
   settleConnectedBatch, settleWorkspaceBatch, takesPhrase, takeView, rememberWorkspaceBatch, type BatchTake,
 } from "../../lib/workspace/take-batch";
-import { batchTotal, composerButtonLabel, shownTotal, type ComposerQuote } from "../../lib/workspace/composer";
+import { batchTotal, composerButtonLabel, composerButtonParts, shownTotal, type ComposerQuote } from "../../lib/workspace/composer";
 import { pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import { groupSiblings, stripLabel, takeLabel } from "../../lib/variations";
 import { consumerVideoIdentity } from "../../lib/higgsfield-consumer/original-identity";
@@ -363,6 +363,10 @@ test("the button's total is the take's price summed per take, and a batch of one
   expect(composerButtonLabel({ billing: "connected", quote: { ...quote, credits: 6.5 }, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · 19.5 connected cr");
   expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 18 cr");
   expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "stale", submitting: false, count: 2 })).toBe("Generate 2 takes");
+  /* The same label in two parts, so a narrow button can put the whole price on its own line: never a cut figure. */
+  expect(composerButtonParts({ billing: "connected", quote: { ...quote, credits: 1234.5 }, quoteKey: "k", submitting: false, count: 4 })).toEqual({ action: "Generate 4 takes", price: "4,938 connected cr" });
+  expect(composerButtonParts({ billing: "workspace", quote, quoteKey: "stale", submitting: false, count: 1 })).toEqual({ action: "Generate", price: null });
+  expect(composerButtonParts({ billing: "workspace", quote, quoteKey: "k", submitting: true, count: 3 })).toEqual({ action: "Submitting…", price: null });
   /* A batch's own figures only count for exactly that many takes. */
   expect(batchTotal(18, 3, [18, 19])).toBe(54);
   expect(batchTotal(18, 2, [18, 19])).toBe(37);
