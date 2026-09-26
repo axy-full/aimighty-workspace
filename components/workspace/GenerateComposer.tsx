@@ -273,8 +273,6 @@ export function GenerateComposer({
                     onUseAsset={(asset) => void addReference(asset)}
                     onUseReference={(asset) => void addReference(libraryInput(asset))}
                     onUsePrompt={(take) => composer.dispatch({ type: "prompt", value: take.prompt.slice(0, 5000) })}
-                    onEdit={() => {}}
-                    onUpscale={() => {}}
                   />
                 </>
               ) : (

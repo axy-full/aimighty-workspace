@@ -52,6 +52,8 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [storageError, setStorageError] = useState('');
+  /* A failed history poll is its own message: the next good poll clears it, without touching an action's error. */
+  const [pollError, setPollError] = useState('');
   const sequence = useRef(0);
   const mounted = useRef(false);
   const submitting = useRef(false);
@@ -76,7 +78,8 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
       }
       setState(result);
       setPending(saved);
-    } catch (problem) { if (mounted.current && own === sequence.current) setError(message(problem)); }
+      setPollError('');
+    } catch (problem) { if (mounted.current && own === sequence.current) setPollError(message(problem)); }
   }, [active, scope, project.id, headers]);
 
   useEffect(() => {
@@ -181,7 +184,7 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
     <p>{source === 'native' ? `${sourceName || 'Native program'} runs in the 3D runtime. Its geometry is shown in the finished render, not in the browser scene editor.` : `${sourceName} uses the saved scene camera and output settings.`}</p>
     <button className={`${styles.button} ${styles.primary}`} disabled={!active || !state?.runtime.configured || busy || !!pending || !!storageError || !!activeJobs || !!uncertainJobs || source === 'native' && !project.astraNative} onClick={() => void review()}>{busy ? 'Preparing render…' : activeJobs ? 'Render in progress' : uncertainJobs ? 'Awaiting render reconciliation' : 'Review render quote'}</button>
     {pending && <div className={styles.notice}><strong>One render request needs confirmation</strong><p>Recovery checks the original request before resubmitting its same identity and price.</p><button className={styles.button} disabled={!active || busy} onClick={() => void submit(pending)}>Recover saved render request</button></div>}
-    {(error || storageError) && <div className={styles.error} role="alert">{storageError || error}</div>}
+    {(error || storageError || pollError) && <div className={styles.error} role="alert">{storageError || error || pollError}</div>}
     <div className={styles.historyHeading}><h4>Render history</h4><button className={styles.refresh} aria-label="Refresh native render history" disabled={!active || refreshing} onClick={async () => { setRefreshing(true); try { await refresh(); } finally { if (mounted.current) setRefreshing(false); } }}><RefreshCw size={13} /></button></div>
     {!state?.jobs.length && <p>No saved renders for this project yet.</p>}
     {registeredMissing && onRefreshProject && <button className={styles.button} disabled={refreshing} onClick={async () => { setRefreshing(true); try { await latest.current.onRefreshProject?.(); setError(''); } catch (problem) { setError(message(problem)); } finally { if (mounted.current) setRefreshing(false); } }}>Load saved outputs into project</button>}

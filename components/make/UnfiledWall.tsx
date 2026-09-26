@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AudioLines,
   Download,
@@ -14,8 +14,8 @@ import {
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useMoney } from "@/lib/price";
-import { saveDraft } from "@/lib/draft";
 import { shortLabel } from "@/lib/models";
 import { timeAgo } from "@/lib/format";
 import type { Generation } from "@/lib/jobs";
@@ -60,10 +60,12 @@ function ScopedWall({
   onAstraUpscale,
   onUpscale,
 }: Props) {
-  const { signedIn, workspace, email } = useSession(),
+  const { signedIn } = useSession(),
     money = useMoney(),
     toast = useToast(),
-    router = useRouter();
+    router = useRouter(),
+    params = useSearchParams(),
+    scopedFetch = useScopedFetch();
   const q = search.trim() ? `&q=${encodeURIComponent(search.trim())}` : "";
   const { data, refresh, error } = useApi<{ generations: Generation[] }>(
     signedIn
@@ -88,12 +90,16 @@ function ScopedWall({
     setBusy(take.id);
     setFiling(null);
     try {
-      const r = await fetch(`/api/jobs/${encodeURIComponent(take.id)}`, {
+      // Filing is a project write: it carries the tab's account and workspace scope.
+      const r = await scopedFetch(`/api/jobs/${encodeURIComponent(take.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shotId: shot.id }),
       });
-      if (!r.ok) throw Error("That take could not be filed. Try again.");
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw Error(j.error || "That take could not be filed. Try again.");
+      }
       toast(`Filed to ${shot.code}`);
       await refresh();
     } catch (error) {
@@ -107,11 +113,16 @@ function ScopedWall({
       onUsePrompt(take);
       return;
     }
-    // Loading an existing prompt is an edit; generation still requires its priced action.
-    const scope = JSON.stringify([workspace?.id, email, take.kind]);
-    saveDraft(`make:${scope}`, String(take.params.rawPrompt || take.prompt));
+    // Loading an existing prompt is an edit; generation still requires its
+    // priced action. Generate loads the take's prompt itself (`promptFrom`),
+    // into the project this Library is showing when it names one.
+    const project = params.get("project");
     router.push(
-      `/generate?mode=${take.kind === "image" ? "images" : take.kind}`,
+      `/generate?${new URLSearchParams({
+        ...(project ? { project } : {}),
+        mode: take.kind === "image" ? "images" : take.kind,
+        promptFrom: take.id,
+      })}`,
     );
   };
   const running = (g: Generation) =>
