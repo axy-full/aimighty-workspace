@@ -71,3 +71,54 @@ test("drafted shots are priced in credits per take, as they bill", async ({ page
   const width = await overflow(page);
   expect(width.scrollWidth).toBe(width.clientWidth);
 });
+
+test("moving between Workspace tabs re-renders the shell, not the providers above it", async ({ page }) => {
+  /* The Suites root reads its opening URL once. Reading useSearchParams on
+     every render handed the providers fresh props on every URL the shell
+     wrote, so each tab re-rendered the whole tree from the root. A stand-in
+     DevTools hook sees each commit; a provider re-rendered from above gets a
+     new props object, one that bailed out keeps the one it had. */
+  await page.addInitScript(() => {
+    const names = ["WorkspaceProvider", "ShellProvider", "RigProvider"];
+    const last = new Map<string, unknown>();
+    const changes: Record<string, number> = {};
+    type Fiber = { type?: { name?: string } | string | null; memoizedProps?: unknown; child?: Fiber | null; sibling?: Fiber | null };
+    const w = window as unknown as Record<string, unknown>;
+    w.__providerPropChanges = changes;
+    w.__providersSeen = () => [...last.keys()].sort();
+    w.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+      supportsFiber: true, isDisabled: false, renderers: new Map(),
+      inject: () => 1, checkDCE: () => {}, onCommitFiberUnmount: () => {}, onPostCommitFiberRoot: () => {},
+      onCommitFiberRoot: (_id: number, root: { current: Fiber }) => {
+        const stack: Fiber[] = [root.current];
+        let found = 0;
+        while (stack.length && found < names.length) {
+          const f = stack.pop()!;
+          const name = f.type && typeof f.type !== "string" ? f.type.name : undefined;
+          if (name && names.includes(name)) {
+            found++;
+            if (last.has(name) && last.get(name) !== f.memoizedProps) changes[name] = (changes[name] ?? 0) + 1;
+            last.set(name, f.memoizedProps);
+          }
+          if (f.sibling) stack.push(f.sibling);
+          if (f.child) stack.push(f.child);
+        }
+      },
+    };
+  });
+  await signInLocally(page.request);
+  await page.goto("/suites?view=workspace&tab=credits");
+  await expect(page.getByTestId("ws-plans")).toBeVisible({ timeout: 90_000 });
+  const tabs = page.getByRole("tablist", { name: "Workspace sections" });
+  const seen = () => page.evaluate(() => ({ ...((window as unknown as { __providerPropChanges: Record<string, number> }).__providerPropChanges) }));
+  expect(await page.evaluate(() => (window as unknown as { __providersSeen: () => string[] }).__providersSeen())).toEqual(["RigProvider", "ShellProvider", "WorkspaceProvider"]);
+  const before = await seen();
+  await tabs.getByRole("tab", { name: "Usage" }).click();
+  await expect(page.getByTestId("ws-usage")).toBeVisible();
+  await tabs.getByRole("tab", { name: "People" }).click();
+  await expect(page.getByTestId("ws-people")).toBeVisible();
+  await tabs.getByRole("tab", { name: "Plans & credits" }).click();
+  await expect(page.getByTestId("ws-plans")).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("tab")).toBe("credits");
+  expect(await seen()).toEqual(before);
+});

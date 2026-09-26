@@ -1,5 +1,5 @@
 "use client";
-import { useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { createPlanBridge } from "@/lib/workspace/atomik-host";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
@@ -18,16 +18,22 @@ export default function SuitesApp({ scope, initialAccount }: { scope: string; in
   const [bridge] = useState(createPlanBridge);
   /* The opening URL as the router has it. Arriving by a link from another
      page (a statement's "← Statements"), window.location still holds the page
-     being left while this first renders, and the link's view and tab were lost. */
+     being left while this first renders, and the link's view and tab were lost.
+     Only the first value is used: the shell writes view, tab and sp itself,
+     and each of those writes updates useSearchParams too. */
   const search = useSearchParams().toString();
-  if (phase === "pending") return null;
-  return (
-    <WorkspaceProvider initialSearch={search} plans={bridge.source} path={SUITES_PATH} keep={SHELL_PARAMS}>
-      <ShellProvider initialSearch={search}>
+  const [initialSearch] = useState(search);
+  /* The same element every time, so a URL change re-renders this component
+     alone and not every provider below it. */
+  const tree = useMemo(() => (
+    <WorkspaceProvider initialSearch={initialSearch} plans={bridge.source} path={SUITES_PATH} keep={SHELL_PARAMS}>
+      <ShellProvider initialSearch={initialSearch}>
         <RigProvider scope={scope}>
           <RigSeams>{(seams) => <SuitesShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
         </RigProvider>
       </ShellProvider>
     </WorkspaceProvider>
-  );
+  ), [initialSearch, bridge, scope, initialAccount]);
+  if (phase === "pending") return null;
+  return tree;
 }
