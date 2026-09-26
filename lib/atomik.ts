@@ -14,7 +14,7 @@ import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
 import { meter } from "./meter";
 import { getPlatformLayer, platformDb, platformReady } from "./platform";
-import { currentTenant } from "./tenant";
+import { currentTenant, requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { musicCredits, sfxCredits, usdForCredits } from "./elevenlabs";
@@ -311,8 +311,54 @@ export const stepRequestKey = (stepId: string) => `atomik-step:${stepId}`;
 
 /** A claim whose render request never reached the server by now was dropped by the browser. */
 export const STRANDED_CLAIM_MS = 2 * 60_000;
-/** An accepted render request that has made no job by now was interrupted. Longer than any route may run. */
+/** A render request with no reply by now was cut off: longer than /api/generate or /api/audio may run (300 s). */
 export const INTERRUPTED_REQUEST_MS = 15 * 60_000;
+
+/* The render lookup is by the step's key alone (the claims table is keyed by
+   person first), so the key gets its own index rather than a scan per poll. */
+const keyIndexed = new Map<string, Promise<void>>();
+async function requestKeyIndexReady(): Promise<void> {
+  await generationRequestsReady();
+  const workspace = requireTenant().id;
+  if (!keyIndexed.has(workspace))
+    keyIndexed.set(workspace, db().execute(`CREATE INDEX IF NOT EXISTS generation_requests_request_key ON generation_requests(request_key)`)
+      .then(() => {}).catch((error) => { keyIndexed.delete(workspace); throw error; }));
+  await keyIndexed.get(workspace);
+}
+
+type Settled = { status: StepStatus; genId: string | null; error: string | null };
+const INTERRUPTED = "The render request was interrupted before a take was recorded.";
+
+/**
+ * What became of a step's render, from the route's own record of it, or null
+ * while it cannot be told yet.
+ *
+ * The stored reply decides first. A job id alone is not a render: admission
+ * files the job, and binds it to the request, before it reserves the spend,
+ * so a refused reservation (not enough credits, a production or token cap)
+ * answers 4xx with a job that is failed and was never charged. Only a 2xx
+ * reply that is not a failure is a render — a held take included, since it
+ * starts once credits or a slot free up.
+ *
+ * With no reply the request is still being accepted, or was cut off; it is
+ * left alone until no route could still be running it. Then a job it filed
+ * speaks for itself: failed is a failed step, anything else ran.
+ */
+async function renderOutcome(request: Row, at: number): Promise<Settled | null> {
+  const jobId = request.generation_id ? String(request.generation_id) : null;
+  if (request.response_json) {
+    const reply = jsonOr<{ id?: unknown; status?: unknown; error?: unknown }>(request.response_json, {});
+    const code = Number(request.response_status ?? 0);
+    const id = typeof reply.id === "string" && reply.id ? reply.id : jobId;
+    if (code >= 200 && code < 300 && reply.status !== "failed" && id) return { status: "done", genId: id, error: null };
+    return { status: "failed", genId: null, error: typeof reply.error === "string" && reply.error ? reply.error.slice(0, 400) : `Failed (${code || "no answer"})` };
+  }
+  if (at - Number(request.created_at ?? at) <= INTERRUPTED_REQUEST_MS) return null;
+  if (!jobId) return { status: "failed", genId: null, error: INTERRUPTED };
+  const job = (await db().execute({ sql: `SELECT status, error FROM generations WHERE id = ?`, args: [jobId] })).rows[0] as Row | undefined;
+  if (job && String(job.status) !== "failed") return { status: "done", genId: jobId, error: null };
+  return { status: "failed", genId: null, error: job?.error ? String(job.error).slice(0, 400) : INTERRUPTED };
+}
 
 /**
  * Settle the steps the browser claimed but never reported back on.
@@ -321,11 +367,11 @@ export const INTERRUPTED_REQUEST_MS = 15 * 60_000;
  * closed tab or a dropped network between them left a step `running` with no
  * take for ever: the rail's ring spun, the plan never finished, and the
  * claim answered "already running". The render request carries the step's
- * own Idempotency-Key, so what became of it is on record, and this reads it:
- * a job was made → the step is done and points at it; the request was
- * refused → the step failed with the reason; no request ever arrived → the
- * step goes back to proposed, because nothing was sent and it may be
- * approved again. A request still being accepted is left alone.
+ * own Idempotency-Key, so what became of it is on record, and this reads it
+ * (renderOutcome): a render was made → the step is done and points at it;
+ * the request was refused → the step failed with the reason; no request
+ * ever arrived → the step goes back to proposed, because nothing was sent
+ * and it may be approved again. A request still being accepted is left alone.
  *
  * Connected steps are settled by their own route, which records as it goes.
  */
@@ -338,7 +384,7 @@ export async function reconcileRunningSteps(chatId: string, at = now()): Promise
   const stranded = rs.rows.map((r: Row) => ({ step: toStep(r), updatedAt: Number(r.updated_at ?? 0) }))
     .filter(({ step }) => !isConnectedModelId(step.model) && !connectedMeta(step.params));
   if (!stranded.length) return 0;
-  await generationRequestsReady();
+  await requestKeyIndexReady();
   let settled = 0;
   for (const { step, updatedAt } of stranded) {
     const found = await db().execute({
@@ -347,18 +393,9 @@ export async function reconcileRunningSteps(chatId: string, at = now()): Promise
       args: [stepRequestKey(step.id)],
     });
     const request = found.rows[0] as Row | undefined;
-    let outcome: { status: StepStatus; genId: string | null; error: string | null } | null = null;
-    if (request?.generation_id) {
-      outcome = { status: "done", genId: String(request.generation_id), error: null };
-    } else if (request?.response_json) {
-      const reply = jsonOr<{ id?: unknown; error?: unknown }>(request.response_json, {});
-      const code = Number(request.response_status ?? 0);
-      outcome = code > 0 && code < 400 && reply.id
-        ? { status: "done", genId: String(reply.id), error: null }
-        : { status: "failed", genId: null, error: typeof reply.error === "string" && reply.error ? reply.error.slice(0, 400) : `Failed (${code || "no answer"})` };
-    } else if (request) {
-      if (at - Number(request.created_at ?? at) > INTERRUPTED_REQUEST_MS)
-        outcome = { status: "failed", genId: null, error: "The render request was interrupted before a take was recorded." };
+    let outcome: Settled | null = null;
+    if (request) {
+      outcome = await renderOutcome(request, at);
     } else if (at - updatedAt > STRANDED_CLAIM_MS) {
       outcome = { status: "proposed", genId: null, error: "The approval did not reach the renderer, so nothing was sent. Approve it again." };
     }

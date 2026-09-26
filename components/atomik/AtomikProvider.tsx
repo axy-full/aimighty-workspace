@@ -146,6 +146,15 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     /* A bare `/name` is still being typed: nothing to price until a brief follows. */
     !paid.pending && draftText.trim() && !/^\/[a-z0-9-]*$/.test(draftText.trim()) ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
 
+  /* A claimed step is held against a second Continue only while the plan
+     still shows it past proposed. One the server settled back to proposed
+     (its render never arrived: lib/atomik.ts › reconcileRunningSteps) can be
+     approved again from this tab without a reload. */
+  useEffect(() => {
+    if (busy || !loaded) return;
+    for (const s of loaded.steps) if (s.status === "proposed") dispatched.current.delete(s.id);
+  }, [busy, loaded]);
+
   /* The latest refresh, for the flows that await it after their writes —
      bound in an effect, since a ref may not change during render. */
   const refreshRef = useRef(refreshChat);

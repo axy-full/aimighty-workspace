@@ -114,38 +114,67 @@ test("a claimed step the browser never reported back on is settled from the rend
     const at = Date.now();
     const old = at - STRANDED_CLAIM_MS - 1000;
     await step({ id: "made", chat: "c", status: "running", updatedAt: old });
+    await step({ id: "held", chat: "c", status: "running", updatedAt: old });
     await step({ id: "refused", chat: "c", status: "running", updatedAt: old });
+    await step({ id: "short", chat: "c", status: "running", updatedAt: old });
+    await step({ id: "admitting", chat: "c", status: "running", updatedAt: old });
+    await step({ id: "cut-job", chat: "c", status: "running", updatedAt: old });
+    await step({ id: "cut-failed", chat: "c", status: "running", updatedAt: old });
     await step({ id: "lost", chat: "c", status: "running", updatedAt: old });
     await step({ id: "fresh", chat: "c", status: "running", updatedAt: at - 1000 });
     await step({ id: "accepting", chat: "c", status: "running", updatedAt: old });
     await step({ id: "cut", chat: "c", status: "running", updatedAt: old });
     await step({ id: "other-chat", chat: "d", status: "running", updatedAt: old });
     await generationRequestsReady();
-    await db().execute({ sql: `INSERT INTO generations (id, model, prompt, params, status, created_at, updated_at) VALUES ('gen_made', ?, 'p', '{}', 'running', ?, ?)`, args: [SEEDANCE, at, at] });
+    const job = (id: string, status: string, error: string | null = null) => db().execute({
+      sql: `INSERT INTO generations (id, model, prompt, params, status, error, created_at, updated_at) VALUES (?, ?, 'p', '{}', ?, ?, ?, ?)`, args: [id, SEEDANCE, status, error, at, at],
+    });
+    await job("gen_made", "running");
+    await job("gen_held", "held");
+    await job("gen_short", "failed", "Not enough credits: this take needs 14, 3 left.");
+    await job("gen_admitting", "running");
+    await job("gen_cut", "running");
+    await job("gen_cut_failed", "failed", "Over this production's cap.");
     const request = (key: string, genId: string | null, json: string | null, status: number | null, createdAt = at) => db().execute({
       sql: `INSERT INTO generation_requests (user_id, request_key, fingerprint, generation_id, response_json, response_status, created_at, updated_at) VALUES ('u', ?, 'f', ?, ?, ?, ?, ?)`,
       args: [key, genId, json, status, createdAt, createdAt],
     });
-    await request(stepRequestKey("made"), "gen_made", null, null);
+    const cut = at - INTERRUPTED_REQUEST_MS - 1000;
+    await request(stepRequestKey("made"), "gen_made", JSON.stringify({ id: "gen_made", status: "running" }), 202);
+    await request(stepRequestKey("held"), "gen_held", JSON.stringify({ id: "gen_held", status: "held", held: true }), 202);
     await request(stepRequestKey("refused"), null, JSON.stringify({ error: "Not enough credits." }), 402);
+    // Admission binds the job before it reserves the spend: a refused reservation answers 4xx WITH a job id.
+    await request(stepRequestKey("short"), "gen_short", JSON.stringify({ id: "gen_short", status: "failed", error: "Not enough credits: this take needs 14, 3 left." }), 402);
+    await request(stepRequestKey("admitting"), "gen_admitting", null, null);
     await request(stepRequestKey("accepting"), null, null, null);
-    await request(stepRequestKey("cut"), null, null, null, at - INTERRUPTED_REQUEST_MS - 1000);
+    await request(stepRequestKey("cut"), null, null, null, cut);
+    await request(stepRequestKey("cut-job"), "gen_cut", null, null, cut);
+    await request(stepRequestKey("cut-failed"), "gen_cut_failed", null, null, cut);
 
-    expect(await reconcileRunningSteps("c", at)).toBe(4);
+    expect(await reconcileRunningSteps("c", at)).toBe(8);
     expect(await getStep("made")).toMatchObject({ status: "done", genId: "gen_made", error: null });
+    expect(await getStep("held")).toMatchObject({ status: "done", genId: "gen_held", error: null });
     expect(await getStep("refused")).toMatchObject({ status: "failed", genId: null, error: "Not enough credits." });
+    expect(await getStep("short")).toMatchObject({ status: "failed", genId: null, error: "Not enough credits: this take needs 14, 3 left." });
+    // Cut off with no reply: the job it filed says what it became.
+    expect(await getStep("cut-job")).toMatchObject({ status: "done", genId: "gen_cut" });
+    expect(await getStep("cut-failed")).toMatchObject({ status: "failed", genId: null, error: "Over this production's cap." });
     expect(await getStep("lost")).toMatchObject({ status: "proposed", genId: null });
     expect((await getStep("lost"))!.error).toContain("nothing was sent");
     expect(await getStep("cut")).toMatchObject({ status: "failed" });
-    // A claim a moment old, or a request still being accepted, is left alone; so is another chat.
+    // A claim a moment old, or a request still being accepted (with or without its job yet), is left alone; so is another chat.
     expect(await getStep("fresh")).toMatchObject({ status: "running" });
     expect(await getStep("accepting")).toMatchObject({ status: "running" });
+    expect(await getStep("admitting")).toMatchObject({ status: "running", genId: null });
     expect(await getStep("other-chat")).toMatchObject({ status: "running" });
     // Settled once: a second read changes nothing.
     expect(await reconcileRunningSteps("c", at)).toBe(0);
     // The step that went back to proposed may be approved again, and the claim clears why it was reset.
     const { claimStep } = await import("../../lib/atomik");
     expect(await claimStep("lost")).toMatchObject({ status: "running", error: null });
+    // The lookup by the step's key alone is indexed, not a scan of every request.
+    const plan = await db().execute({ sql: `EXPLAIN QUERY PLAN SELECT generation_id FROM generation_requests WHERE request_key = ? ORDER BY created_at DESC LIMIT 1`, args: [stepRequestKey("made")] });
+    expect(plan.rows.map((r) => String(r.detail)).join(" ")).toContain("generation_requests_request_key");
   });
 });
 
