@@ -110,7 +110,7 @@ jobs:
           monitor() {
             local tick=0
             while true; do
-              echo "$(free -m | awk '/Mem:/{print $3}') $(ps -eo rss=,comm= | awk 'BEGIN {m = 0} $2 == "next-server" && $1 > m {m = $1} END {print int(m / 1024)}')" >> "$2"
+              echo "$(date -u +%T) $(free -m | awk '/Mem:/{print $3}') $(ps -eo rss=,comm= | awk 'BEGIN {m = 0} $2 == "next-server" && $1 > m {m = $1} END {print int(m / 1024)}')" >> "$2"
               if [ $((tick % 6)) -eq 0 ]; then
                 echo "[resources] $1 $(date -u +%T) $(free -m | awk '/Mem:/{print "mem "$3"/"$2" MB"}') $(df -m . | awk 'NR==2{print "disk free "$4" MB"}') | $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s %d MB; ", $2, $1/1024}')"
               fi
@@ -140,7 +140,7 @@ jobs:
               npx playwright test --config="playwright.$SUITE.config.ts" --shard="$k/36" --output="ci-results/$SUITE/$k-of-36" || failed+=("$k/36")
               kill "$monitor_pid" 2>/dev/null || true
               wait "$monitor_pid" 2>/dev/null || true
-              awk -v k="$k/36" -v total="$(free -m | awk '/Mem:/{print $2}')" 'BEGIN {mem = 0; srv = 0} $1 > mem {mem = $1} $2 > srv {srv = $2} END {printf "[resources] %s peak: next-server %d MB, mem %d/%d MB (5 s samples)\n", k, srv, mem, total}' "$samples"
+              awk -v k="$k/36" -v total="$(free -m | awk '/Mem:/{print $2}')" 'BEGIN {mem = 0; srv = 0; at = "-"} $2 > mem {mem = $2} $3 > srv {srv = $3; at = $1} END {printf "[resources] %s peak: next-server %d MB at %s, mem %d/%d MB (5 s samples)\n", k, srv, at, mem, total}' "$samples"
             else
               cat "dev-ci-$k-of-36.log"
               failed+=("$k/36 (dev server not ready)")
