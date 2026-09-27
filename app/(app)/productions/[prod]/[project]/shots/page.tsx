@@ -7,8 +7,11 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { estimateVideo } from "@/lib/rateTable";
-import { estimateTokens, costUsd } from "@/lib/models";
+import { charged, estimateVideo } from "@/lib/rateTable";
+import { estimateTokens, costUsd, getModel } from "@/lib/models";
+import { rerenderable, rerenderBody, rerenderParams, sendTakes, takeOf } from "@/lib/rigApply";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import type { Shot } from "@/lib/shots";
 import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import type { ProductionRow } from "@/lib/productions";
@@ -68,7 +71,7 @@ export default function ShotsPage() {
 function Shots() {
   const { prod, project: projectId } = useParams<{ prod: string; project: string }>();
   const router = useRouter();
-  const { signedIn, rates, models } = useSession();
+  const { signedIn, rates, models, requestScope } = useSession();
   const money = useMoney();
   const phone = usePhone();
   const toast = useToast();
@@ -103,15 +106,18 @@ function Shots() {
   }, [data, order, hidden]);
 
   const model = models?.video ?? "";
+  /* A take is priced at the settings admission will bill (the shot's length snapped to what the engine
+     offers), and rounded on its own the way the ledger bills it: the button's figure is what it charges. */
+  const engine = useMemo(() => { try { return model ? getModel(model) : null; } catch { return null; } }, [model]);
   const quote = useCallback((s: ShotRow) => {
-    const secs = s.planned ?? PLANNED;
-    const est = estimateVideo(rates, model, "1080p", secs, estimateTokens("1080p", "16:9", secs), costUsd);
-    return est ?? 0;
-  }, [rates, model]);
+    const p = rerenderParams(engine, s.planned ?? PLANNED);
+    return charged(rates, estimateVideo(rates, model, p.resolution, p.duration, estimateTokens(p.resolution, p.ratio, p.duration), costUsd)) ?? 0;
+  }, [rates, model, engine]);
   const fmt = (n: number) => money.price(n);
 
   const toRender = shots.filter((s) => s.kind !== "type" && (selected.size ? selected.has(s.id) : s.state === "none"));
-  const renderCost = toRender.reduce((a, s) => a + quote(s), 0);
+  /* Only the shots with words to render are sent, so only they are priced. */
+  const renderCost = rerenderable(toRender).reduce((a, s) => a + quote(s), 0);
   const renderLabel = toRender.length === 0 ? "Render" : toRender.length === 1 ? `Render ${toRender[0].code}` : `Render ${toRender[0].code}–${toRender[toRender.length - 1].code.replace(/^SH/i, "")}`;
 
   const stats = { shots: shots.length, approved: shots.filter((s) => s.state === "approved").length, secs: shots.reduce((a, s) => a + (s.planned ?? PLANNED), 0), spent: shots.reduce((a, s) => a + (money.inCredits ? (s.credits ?? 0) : s.spend), 0) };
@@ -195,21 +201,30 @@ function Shots() {
     toast(`${code} added · nothing spent until it renders`);
   };
   /* The one filled button: a take for each chosen shot, through the
-     ordinary generate route — the same take a hand-made one would be. */
+     ordinary generate route — the same take a hand-made one would be. Each
+     goes at the price on the button (its ceiling), under a key stored before it
+     is sent: after a lost reply the next press asks what became of it first,
+     so a take that landed is followed and never sent twice. */
   const render = async () => {
     if (!toRender.length || rendering) return;
+    if (!requestScope) { toast("Reload this page in the intended account and workspace before rendering."); return; }
     setRendering(true);
-    let n = 0;
+    let started: ShotRow[] = [];
+    let failure: string | null = null;
     try {
-      for (const s of toRender) {
-        const prompt = [s.description || s.title, Object.values(s.setup ?? {}).filter(Boolean).join(" · ")].filter(Boolean).join(". ");
-        const r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          prompt, model, projectId, shotId: s.id, ratio: "16:9", resolution: "1080p", duration: s.planned ?? PLANNED }) });
-        if (r.ok) n++; else { const j = await r.json().catch(() => ({})); toast(j.error ?? `${s.code} didn't start.`); break; }
-      }
+      ({ started, failure } = await sendTakes(rerenderable(toRender), async (s) => {
+        const credits = rates.unit === "cr" ? quote(s) : null;
+        return takeOf(await sendClaimedGeneration({
+          scope: requestScope,
+          storageId: pendingGenerationKey(requestScope, projectId, `shots-render:${s.id}`),
+          body: rerenderBody(s, { engine: model, projectId, params: rerenderParams(engine, s.planned ?? PLANNED), maxCredits: credits }),
+          credits: credits ?? 0,
+        }));
+      }));
     } finally {
       setRendering(false); setSelected(new Set()); refresh();
-      if (n) toast(`${n} ${n === 1 ? "take" : "takes"} rendering · ${fmt(renderCost)} quoted`);
+      const n = started.length;
+      if (n || failure) toast([n ? `${n} ${n === 1 ? "take" : "takes"} rendering · ${fmt(started.reduce((a, s) => a + quote(s), 0))}` : "", failure ?? ""].filter(Boolean).join(" · "));
     }
   };
 

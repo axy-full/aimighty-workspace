@@ -3,8 +3,9 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import type { GenerationBatch } from "../lib/useGenerationBatch";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
+import { claimsServer } from "./helpers/claimsServer";
 
-test("an interrupted batch replays only the pending variant after reload and finishes the original ordered requests", async ({
+test("an interrupted batch checks only the pending variant by its key after reload, follows it, and finishes the original ordered requests", async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -29,6 +30,9 @@ test("an interrupted batch replays only the pending variant after reload and fin
     workspace?: string;
     actor?: string;
   }[] = [];
+  /* A take whose acknowledgement was lost reached the server: Recover asks by its key and follows it. */
+  const landed = new Map<string, string>();
+  const checks: string[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/api/**", async (route) => {
@@ -40,6 +44,11 @@ test("an interrupted batch replays only the pending variant after reload and fin
         contentType: "application/json",
         body: JSON.stringify(value),
       });
+    if (path === "/api/generate/check" && request.method() === "POST") {
+      const key = String(request.postDataJSON().key);
+      checks.push(key);
+      return json(landed.has(key) ? { state: "landed", id: landed.get(key), status: "running" } : { state: "absent" });
+    }
     if (path === "/api/generate" && request.method() === "POST") {
       const headers = request.headers();
       submissions.push({
@@ -49,6 +58,7 @@ test("an interrupted batch replays only the pending variant after reload and fin
         actor: headers["x-actor-email"],
       });
       const body = request.postDataJSON();
+      if (body.variation === 2 || body.variation === 4) landed.set(headers["idempotency-key"]!, `mock-image-${body.variation}`);
       if (submissions.length === 2)
         return json(
           {
@@ -66,7 +76,7 @@ test("an interrupted batch replays only the pending variant after reload and fin
           },
           502,
         );
-      if (submissions.length === 5)
+      if (submissions.length === 4)
         return route.fulfill({
           status: 503,
           contentType: "application/json",
@@ -140,6 +150,7 @@ test("an interrupted batch replays only the pending variant after reload and fin
     storageKey,
   )) as GenerationBatch;
   expect(progressed.cursor).toBe(3);
+  expect(progressed.variants[1].resultId).toBe("mock-image-2");
   expect(progressed.variants[2].resultId).toBe("mock-image-3");
   expect(progressed.refusal).toBeUndefined();
   expect(progressed.variants[3].key).toBe(batch.variants[3].key);
@@ -148,13 +159,11 @@ test("an interrupted batch replays only the pending variant after reload and fin
   await render.click();
   await expect(prompt).toBeEnabled();
   await expect(prompt).toHaveValue("");
-  expect(submissions).toHaveLength(6);
-  expect(submissions.map((item) => JSON.parse(item.body).variation)).toEqual([
-    1, 2, 2, 3, 4, 4,
-  ]);
-  expect(submissions[2]).toEqual(submissions[1]);
-  expect(submissions[5]).toEqual(submissions[4]);
-  for (const index of [0, 1, 3, 4]) {
+  /* Each lost take was asked about by its own key and followed; none was sent twice. */
+  expect(submissions).toHaveLength(4);
+  expect(submissions.map((item) => JSON.parse(item.body).variation)).toEqual([1, 2, 3, 4]);
+  expect(checks).toEqual([batch.variants[1].key, batch.variants[3].key]);
+  for (const index of [0, 1, 2, 3]) {
     const request = submissions[index];
     const variant = batch.variants[JSON.parse(request.body).variation - 1];
     expect(request.key).toBe(variant.key);
@@ -167,5 +176,61 @@ test("an interrupted batch replays only the pending variant after reload and fin
     await page.evaluate((key) => localStorage.getItem(key), storageKey),
   ).toBeNull();
   await page.screenshot({ path: testInfo.outputPath("batch-recovered.png") });
+  expect(errors).toEqual([]);
+});
+
+/* A batch's pending take is asked about by its key before the batch goes on (POST /api/generate/check), never
+   re-sent blind: one that never arrived is set aside and re-quoted, and goes only at the price the batch showed. */
+test("a batch take that never arrived is not re-sent at a price nobody was shown: it is set aside, and the batch stops at the new price", async ({ page }) => {
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const draft = newProject("Lost batch project");
+  const saved = await page.request.put("/api/workbench/projects", {
+    headers: { "X-Workbench-Scope": workbenchScopeFor(me.workspace.id, me.id) },
+    data: { project: draft, revision: 0 },
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const server = claimsServer(0);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    const json = (value: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (await server.handle(route)) return;
+    if (request.method() !== "GET") throw new Error(`Unexpected mutation: ${path}`);
+    if (path === "/api/jobs") return json({ generations: [] });
+    if (path === "/api/productions") return json({ productions: [] });
+    if (path === "/api/projects") return json({ projects: [] });
+    if (path === "/api/me") return json(me);
+    return route.fallback();
+  });
+  await page.goto(`/make/images?project=${draft.id}`);
+  const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+  await expect(prompt).toBeVisible();
+  await prompt.fill("A brass key in a pool of warm light. Two isolated test variations.");
+  await page.getByRole("button", { name: /×1/ }).click();
+  await page.getByRole("menuitem", { name: "×2", exact: true }).click();
+  const render = page.locator("[data-render]").filter({ visible: true }).last();
+  await expect(render).toBeEnabled();
+  const total = Number(/(\d+) cr/.exec((await render.textContent()) ?? "")?.[1]);
+  const perTake = total / 2;
+  expect(perTake).toBeGreaterThan(1);
+  /* The server holds the price the button shows; the first take is answered, the second never arrives. */
+  server.price = perTake;
+  server.plan = ["answer", "before"];
+  await render.click();
+  await expect(render).toContainText("Recover batch");
+  expect(server.charges).toEqual([perTake]);
+  const lost = server.sent[1];
+
+  server.price = perTake - 1;
+  await page.reload();
+  await expect(render).toContainText("Recover batch");
+  const mark = server.sent.length;
+  await render.click();
+  await expect(prompt).toBeEnabled();
+  expect({ sent: server.sent.slice(mark).map((s) => s.path), billed: server.charges }).toEqual({ sent: [], billed: [perTake] });
+  expect(server.checks).toEqual([{ key: lost.key, endpoint: "/api/generate" }]);
+  await expect(page.getByText(`The price is now ${perTake - 1} cr a take`).first()).toBeVisible();
   expect(errors).toEqual([]);
 });
