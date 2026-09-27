@@ -118,7 +118,7 @@ export function websiteToolTransport(target: { workflow: ConsumerWorkflow; voice
 
 /**
  * Website tools whose client quote, reservation and settlement are built
- * (step W3 onwards adds them one at a time). Until a tool is listed here it
+ * (added one tool at a time as each is built). Until a tool is listed here it
  * refuses for every managed workspace, whatever the platform desk says.
  */
 export const WEBSITE_BILLING_READY: ReadonlySet<WebsiteToolId> = new Set<WebsiteToolId>([]);

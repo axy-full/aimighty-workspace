@@ -1,5 +1,5 @@
 /**
- * The one place a website-tool service gets a grant (design W2).
+ * The one place a website-tool service gets a grant.
  *
  * - New work (a quote, a read it relies on) uses the caller's own connection
  *   in this workspace, or — for platform funding — the platform's designated

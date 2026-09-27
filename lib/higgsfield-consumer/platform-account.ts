@@ -1,7 +1,7 @@
 /**
  * The platform's website account: the super admin's OWN connected account,
  * in a workspace they own, designated on the platform desk to run
- * website-only tools for every managed workspace (design structure A).
+ * website-only tools for every managed workspace.
  *
  * One row in the platform database pins that connection AND the account it
  * holds (a hash of the issuer and subject, recorded at designation). Anything

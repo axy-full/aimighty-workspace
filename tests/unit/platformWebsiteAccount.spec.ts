@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import type { TenantStore } from "../../lib/tenant";
 import { loadRoute } from "../helpers/routeModule";
 
-/* The platform's designated website account (design A, step W1): designation,
+/* The platform's designated website account: designation,
    its locks and the desk's view. Local databases only; no account is read
    and nothing is sent anywhere. */
 const directory = mkdtempSync(path.join(tmpdir(), "particl-website-account-"));

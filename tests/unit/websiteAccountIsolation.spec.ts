@@ -6,7 +6,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { WebsiteJobEntry } from "../../lib/higgsfield-consumer/platform-jobs";
 
-/* Step W7: isolation on one shared website account. Two tenants on one
+/* Isolation on one shared website account. Two tenants on one
    fixture account: their objects and jobs never cross, no id can be guessed
    into another workspace's, the planner and catalogue carry no account facts,
    and a client's view and approval never name the account's wallet, credits,

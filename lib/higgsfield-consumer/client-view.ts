@@ -1,5 +1,5 @@
 /**
- * What a workspace may see of a platform-funded website job (design W7).
+ * What a workspace may see of a platform-funded website job.
  *
  * A client sees its own job: status, its input, the exact Particl credits it
  * approves or was charged, and its own collected results. It never sees the

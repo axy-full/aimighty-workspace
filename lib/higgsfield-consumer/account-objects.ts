@@ -1,6 +1,6 @@
 /**
  * Account objects a request can name by id, checked against THIS workspace
- * before anything is quoted or sent (design W7).
+ * before anything is quoted or sent.
  *
  * A Soul ID (`soul_id`) and a reference element (a `<<<element_id>>>` token
  * the account expands inside a prompt) live on the connected account, not in

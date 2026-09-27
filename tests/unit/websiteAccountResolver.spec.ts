@@ -6,7 +6,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { WebsiteJobEntry } from "../../lib/higgsfield-consumer/platform-jobs";
 
-/* Step W2: who funds a website job, how a job's grant is resolved, and the
+/* Who funds a website job, how a job's grant is resolved, and the
    platform registry that pins a platform job to the account it was admitted
    on. Local databases only; nothing is read from or sent to any account. */
 const directory = mkdtempSync(path.join(tmpdir(), "particl-website-resolver-"));
@@ -87,7 +87,7 @@ async function withEnv<T>(values: Record<string, string | undefined>, fn: () => 
   try { return await fn(); }
   finally { for (const [key, value] of Object.entries(before)) if (value === undefined) delete process.env[key]; else process.env[key] = value; }
 }
-/** A quoted platform job in `workspace` (the shape step W3 will create), and its registry entry once admitted. */
+/** A quoted platform job in `workspace` (the shape its quote will create), and its registry entry once admitted. */
 async function platformJob(workspace: TenantWorkspace, host: Awaited<ReturnType<typeof designatedHost>>) {
   const { jobs } = await modules();
   const idempotencyKey = randomUUID();
