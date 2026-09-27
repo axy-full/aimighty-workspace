@@ -6,8 +6,8 @@ import { DraftRequestError, draftRequest, draftWriter, writeMergedDraft, type Dr
 import { mergeDraft, rebaseProject } from "@/lib/workbench/draft-merge";
 import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "@/lib/workbench/merge";
 import { resolveGenerationReferences } from "@/lib/workbench/generation-request";
-import { pendingGenerationKey, readPendingGeneration } from "@/lib/workbench/pending-generation";
-import { dispatchGeneration } from "@/lib/workspace/generate-submit";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { dispatchGeneration, settlePendingGeneration } from "@/lib/workspace/generate-submit";
 import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
@@ -507,58 +507,73 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setSubmitting(true);
     setNotice(null);
     const storageId = pendingGenerationKey(scope, draftId, shot.id);
+    /* What became of an earlier take of this shot whose reply was lost, said beside whatever this press does. */
+    let earlier: string | null = null;
+    const say = (message: string) => setNotice(earlier ? `${earlier} ${message}` : message);
     void (async () => {
       try {
-        /* Mapping, references and the request body are the shot's; the re-quote,
-           the gate and the paid POST are the shared dispatch (generate-submit). */
-        let request: ReturnType<typeof shotRequestInput> = null;
-        if (!readPendingGeneration(window.localStorage, storageId)) {
-          if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new Error("Save your latest work before generating.");
-          const mapping = await studioRequest<unknown>(`${API}/projects`, {
-            method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-            body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id }),
-          });
-          if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
-          update((p) => ({ ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...(p.shotMappings ?? {}), [shot.id]: mapping.shotId } }));
-          const current = draftRef.current!.project;
-          /* The shot as saved now: the save may have merged in another window's prompt or settings. The take is that
-             shot — what the Rig shows — and the re-quote below prices it; a price that moved is asked again. */
-          const node = current.nodes.find((n) => n.id === shot.id);
-          const saved = rigShots(current, live.current.mediaJobs).find((s) => s.id === shot.id);
-          if (!node || !saved) throw new Error("This shot is no longer in the project. Nothing was submitted.");
-          const model = shotEngine(saved.engine);
-          if (!model) throw new Error("Choose an available engine for this shot.");
-          shot = saved;
-          engine = model;
-          const references = await resolveGenerationReferences(shotReferenceAssets(current, node), shotReferenceRole(node), {
-            scope,
-            onAsset: (id: string, fields: Partial<Asset>) => update((p) => ({ ...p, assets: p.assets.map((a) => (a.id === id ? { ...a, ...fields } : a)) })),
-          });
-          request = shotRequestInput(current, node, saved, mapping, references);
-          if (!request) throw new Error("Choose an available engine for this shot.");
+        /* An earlier take of this shot whose reply was lost is asked about first, by its own key, and never
+           sent again: the shot may have been edited since, and that request may never have arrived. */
+        const settled = await settlePendingGeneration({ scope, storageId });
+        if (settled.state === "unknown") { setNotice(settled.reason); return; }
+        if (settled.state === "landed") {
+          /* It reached the server: that take is followed, at the price approved for it, and nothing is sent. */
+          setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(settled.model ?? engine.id).long, formatCredits(settled.credits)].join(" · "), jobId: settled.jobId, projectId: draftId });
+          setRepriced(null);
+          setNotice(settled.status === "failed" || settled.status === "cancelled"
+            ? "Your last Generate of this shot reached the server but did not render. Nothing new was sent."
+            : "Your last Generate of this shot reached the server. Following that take; nothing new was sent.");
+          refreshJobs.current();
+          return;
         }
+        if (settled.state === "lost") earlier = settled.reason;
+        /* Mapping, references and the request body are the shot's as it is now; the re-quote,
+           the gate and the paid POST are the shared dispatch (generate-submit). */
+        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new Error("Save your latest work before generating.");
+        const mapping = await studioRequest<unknown>(`${API}/projects`, {
+          method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+          body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id }),
+        });
+        if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
+        update((p) => ({ ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...(p.shotMappings ?? {}), [shot.id]: mapping.shotId } }));
+        const current = draftRef.current!.project;
+        /* The shot as saved now: the save may have merged in another window's prompt or settings. The take is that
+           shot — what the Rig shows — and the re-quote below prices it; a price that moved is asked again. */
+        const node = current.nodes.find((n) => n.id === shot.id);
+        const saved = rigShots(current, live.current.mediaJobs).find((s) => s.id === shot.id);
+        if (!node || !saved) throw new Error("This shot is no longer in the project. Nothing was submitted.");
+        const model = shotEngine(saved.engine);
+        if (!model) throw new Error("Choose an available engine for this shot.");
+        shot = saved;
+        engine = model;
+        const references = await resolveGenerationReferences(shotReferenceAssets(current, node), shotReferenceRole(node), {
+          scope,
+          onAsset: (id: string, fields: Partial<Asset>) => update((p) => ({ ...p, assets: p.assets.map((a) => (a.id === id ? { ...a, ...fields } : a)) })),
+        });
+        const request = shotRequestInput(current, node, saved, mapping, references);
+        if (!request) throw new Error("Choose an available engine for this shot.");
         const outcome = await dispatchGeneration({
           scope,
           storageId,
           shown,
-          /* A claimed attempt is replayed from storage; `input` is only read when there is none. */
           request: { endpoint: "/api/generate", input: request },
           onClaim: (credits) => setRun({ shotId: shot.id, name: shot.name, meta: [shot.name, engineLabel(engine.id).long, formatCredits(credits)].join(" · "), jobId: null, projectId: draftId }),
         });
         if (outcome.state === "repriced") {
           setRepriced({ key: live.current.quote?.key ?? "", credits: outcome.credits });
-          setNotice(outcome.reason);
+          say(outcome.reason);
           return;
         }
         if (outcome.state === "refused") {
           setRun((r) => (r && r.shotId === shot.id && !r.jobId ? null : r));
-          setNotice(outcome.reason);
+          say(outcome.reason);
           return;
         }
         accepted(outcome.jobId, outcome.credits);
+        if (earlier) setNotice(earlier);
       } catch (err) {
         setRun((r) => (r && r.shotId === shot.id && !r.jobId ? null : r));
-        setNotice(neutralCopy(err instanceof Error ? err.message : "Generation could not be submitted."));
+        say(neutralCopy(err instanceof Error ? err.message : "Generation could not be submitted."));
       } finally {
         busy.current = false;
         setSubmitting(false);

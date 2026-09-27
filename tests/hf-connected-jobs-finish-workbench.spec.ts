@@ -21,8 +21,11 @@ const SHOTS: Record<string, string> = Object.fromEntries(SIZES.map((name) => [na
 const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const MIN = 60_000;
 const DRAFT = "ws-jobs";
-/* The collector's pace (lib/shell/connected-collector.ts): 20 s between reads, a few reads for a job the account has not accepted. */
-const NEXT_READ = "00:21";
+/* The collector's pace (lib/shell/connected-collector.ts): 20 s, then 1.5x longer while a job is unchanged, up to a minute,
+   ±20% — so a read is never more than 72 s after the one before; a few reads for a job the account has not accepted. */
+const NEXT_READ = "01:13";
+/* After failed reads it waits a minute, doubling up to five (±20%): six minutes reach the next read. */
+const NEXT_READ_AFTER_FAILURES = "06:01";
 const UNSETTLED_READS = 6;
 const fixture = (): Project => ({ ...newProject("Harbour night shoot"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
 const uuid = (n: number) => `9d2b3c4e-5f60-4a7b-8c9d-${String(n).padStart(12, "0")}`;
@@ -184,7 +187,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await expect(page.getByText("Nothing generated in this project yet.")).toHaveCount(0);
   /* A passing problem is said plainly; the card stays and is asked again. */
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Confirming · 3 h");
-  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Too many requests. Try again shortly.");
+  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Could not check this take. Checking again shortly.");
   /* A take from an earlier account connection cannot be checked: said once, never asked again, dismissable. */
   await expect(card("Fog rolling").locator(".gx-asset-meta")).toHaveText("Can't be checked");
   await expect(card("Fog rolling").getByRole("status")).toHaveText("Started on an earlier account connection, so it can't be checked from here.");
@@ -240,7 +243,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await readsTakenIn();
   /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
   confirmed = true;
-  await page.clock.fastForward("01:01");
+  await page.clock.fastForward(NEXT_READ_AFTER_FAILURES);
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
   await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
   if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
