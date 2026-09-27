@@ -34,13 +34,16 @@ export function Header({ account, bar = null }: { account: WorkspaceAccount | nu
   const who = account?.workspace?.name ?? name ?? "Workspace";
   /* The phone's back button: a stage returns to the stage grid (‹ Studio); the grid returns to Home (‹ Home). */
   const back = studioPage === "stages" ? { label: "Home", page: "home" } : studioPage && studioPage !== "home" ? { label: "Studio", page: "stages" } : null;
-  /* The phone's Suites menu: a tap outside it, Escape or a pick closes it. */
-  const [menu, setMenu] = useState(false);
+  /* The phone's Suites menu: a tap outside it, Escape, a pick or going anywhere else closes it (it is open only where it was opened). */
+  const here = `${shell.view}:${shell.suite.id}:${shell.page.id}:${shell.wsTab}`;
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const menu = openAt === here;
+  const setMenu = (open: boolean) => setOpenAt(open ? here : null);
   const box = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!menu) return;
-    const away = (event: PointerEvent) => { if (box.current && event.target instanceof Node && !box.current.contains(event.target)) setMenu(false); };
-    const esc = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(false); };
+    const away = (event: PointerEvent) => { if (box.current && event.target instanceof Node && !box.current.contains(event.target)) setOpenAt(null); };
+    const esc = (event: KeyboardEvent) => { if (event.key === "Escape") setOpenAt(null); };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
@@ -62,7 +65,7 @@ export function Header({ account, bar = null }: { account: WorkspaceAccount | nu
         {shell.wide ? badge : null}
       </button>
       {shell.wide ? null : (
-        <button type="button" className="gx-menu-btn" aria-haspopup="true" aria-expanded={menu} aria-controls="gx-suites" aria-label={`Suites and search · ${mark.toLowerCase()}`} onClick={() => setMenu((open) => !open)} data-testid="suites-menu">
+        <button type="button" className="gx-menu-btn" aria-haspopup="true" aria-expanded={menu} aria-controls="gx-suites" aria-label={`Suites and search · ${mark.toLowerCase()}`} onClick={() => setMenu(!menu)} data-testid="suites-menu">
           {badge}<Glyph name="chev" size={12} className="gx-glyph" />
         </button>
       )}

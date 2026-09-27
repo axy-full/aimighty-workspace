@@ -39,10 +39,17 @@ const fixture = (): Project => ({
 } as Project);
 const TAKES = Array.from({ length: 10 }, (_, i) => generation({ id: `gen_take_${i}`, title: `Take ${i + 1} on the water`, prompt: `Take ${i + 1} on the water` }));
 
-async function open(page: Page, path: string, named = true) {
+async function open(page: Page, path: string, named = true, atomik = false) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
+  /* Atomik's run engine, answered here: a quote of 12 cr and nothing dispatched (these specs never approve). */
+  if (atomik) await page.route("**/api/workbench/atomik**", (route) => {
+    const request = route.request();
+    if (request.method() === "GET") return route.fulfill({ json: { configured: false, models: [], jobs: [] } });
+    if ((request.postDataJSON() as { quoteOnly?: unknown } | null)?.quoteOnly === true) return route.fulfill({ json: { estimateCredits: 12, estimateUsd: 1.2, quoteOnly: true } });
+    throw new Error("The phone chrome spec never approves an Atomik run.");
+  });
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, { uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" })], generations: TAKES });
   await page.route("**/api/workbench/engines**", (route) => route.fulfill({ json: { credits: 18, models: [] } }));
@@ -55,6 +62,20 @@ async function open(page: Page, path: string, named = true) {
 
 /** Every entrance animation on the page has settled (the shell's `gx-in` rise moves what is measured). */
 const settle = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => null))));
+
+/**
+ * Atomik's approval row up: a paid plan stopped at its gate and the sheet closed, so the run waits under the island
+ * on every page. Then Atomik's Tools page (its page id stays `skills`), where #394 found the stage left ~30px.
+ */
+async function gateRowUp(page: Page) {
+  await page.getByTestId("primary-action").click();
+  await expect(page.getByTestId("atomik-gate")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("suites-atomik-gate")).toBeVisible();
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Skills|Tools/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText(/^(Skills|Tools & connections)$/);
+  await expect(page.getByTestId("suites-atomik-gate")).toBeVisible();
+}
 
 /** The Library's Assets: the tab bar's Assets on a portrait phone; elsewhere the page head's Library, then its Assets tab. */
 async function openAssets(page: Page) {
@@ -93,6 +114,7 @@ function measure(page: Page, target: string): Promise<Measure> {
       header: box(".gx-header"),
       suiteStrip: box(".gx-header .gx-seg"),
       pageStrip: box(".gx-strip"),
+      gateRow: box(".gx-gate"),
       projectHead: box(".gx-project"),
       pageHead: box(".gx-main .gx-pagehead"),
       generateBand: box(".gx-gen-cta"),
@@ -124,7 +146,7 @@ function measure(page: Page, target: string): Promise<Measure> {
   }, target);
 }
 
-type Screen = { id: string; path?: string; named?: false; target: string; pane: string; ready: (page: Page) => Promise<void> };
+type Screen = { id: string; path?: string; named?: false; atomik?: true; target: string; pane: string; ready: (page: Page) => Promise<void> };
 const SCREENS: Screen[] = [
   { id: "home", path: "/suites?suite=studio&page=brief&sp=home", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("suite-home")).toBeVisible(); } },
   { id: "takes", path: "/suites?suite=particl&page=takes&sp=takes", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("edit-takes")).toBeVisible(); } },
@@ -140,16 +162,18 @@ const SCREENS: Screen[] = [
     await expect(page.getByTestId("library-assets").locator(".gx-asset").first()).toBeVisible();
   } },
   { id: "plans", path: "/suites?view=workspace&tab=credits", named: false, target: "[data-testid='workspace-view']", pane: "[data-testid='workspace-view']", ready: async (page) => { await expect(page.getByTestId("workspace-view")).toBeVisible(); } },
+  { id: "atomik-gate", path: "/suites?suite=atomik&page=agent&sp=agent", atomik: true, target: "[data-testid='content']", pane: "[data-testid='content']", ready: gateRowUp },
 ];
 
 /** What main left for the page (px), measured with this spec on 27 September 2026: the floor nothing may fall under. */
 const BEFORE: Record<string, Record<string, number>> = {
-  "360x640": { home: 365, takes: 127, gen: 150, "rig-list": 180, "rig-canvas": 0, brief: 187, library: 8, plans: 370 },
-  "390x844": { home: 569, takes: 331, gen: 351, "rig-list": 384, "rig-canvas": 0, brief: 388, library: 212, plans: 626 },
-  "844x390": { home: 255, takes: 124, gen: 182, "rig-list": 124, "rig-canvas": 0, brief: 130, library: 0, plans: 330 },
+  "360x640": { home: 365, takes: 127, gen: 150, "rig-list": 180, "rig-canvas": 0, brief: 187, library: 8, plans: 370, "atomik-gate": 0 },
+  "390x844": { home: 569, takes: 331, gen: 351, "rig-list": 384, "rig-canvas": 0, brief: 388, library: 212, plans: 626, "atomik-gate": 193 },
+  "844x390": { home: 255, takes: 124, gen: 182, "rig-list": 124, "rig-canvas": 0, brief: 130, library: 0, plans: 330, "atomik-gate": 69 },
 };
-/** On a portrait phone these pages get at least 60% of the screen. */
+/** On a portrait phone these pages get at least 60% of the screen; with Atomik's approval row up (itself something to press), at least half. */
 const TARGETS = ["takes", "gen", "rig-list", "rig-canvas", "brief"];
+const WITH_GATE = ["atomik-gate"];
 
 test("phone chrome: every layer measured, and the page gets most of the screen", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone sizes");
@@ -159,7 +183,7 @@ test("phone chrome: every layer measured, and the page gets most of the screen",
   page.on("pageerror", (error) => errors.push(error.message));
   const report: Record<string, Measure> = {};
   for (const screen of SCREENS) {
-    if (screen.path) await open(page, screen.path, screen.named ?? true);
+    if (screen.path) await open(page, screen.path, screen.named ?? true, screen.atomik ?? false);
     await screen.ready(page);
     await settle(page);
     report[screen.id] = await measure(page, screen.target);
@@ -182,6 +206,8 @@ test("phone chrome: every layer measured, and the page gets most of the screen",
     expect.soft(content.height, `${screen.id}: never less than main left it (${BEFORE[size][screen.id]}px)`).toBeGreaterThanOrEqual(BEFORE[size][screen.id]);
     if (PORTRAIT.includes(info.project.name) && TARGETS.includes(screen.id))
       expect.soft(content.height, `${screen.id}: at least 60% of ${vh}px for the page`).toBeGreaterThanOrEqual(Math.ceil(vh * 0.6));
+    if (PORTRAIT.includes(info.project.name) && WITH_GATE.includes(screen.id))
+      expect.soft(content.height, `${screen.id}: at least half of ${vh}px for the page`).toBeGreaterThanOrEqual(Math.ceil(vh * 0.5));
   }
   /* The owner's measure: Takes at 360×640 showed 127px of its page. */
   if (size === "360x640") expect(report.takes.content.height).toBeGreaterThanOrEqual(380);
@@ -230,7 +256,7 @@ test("phone: the last row of every page ends above the tab bar, scrolled to or r
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   for (const screen of SCREENS) {
-    if (screen.path) await open(page, screen.path, screen.named ?? true);
+    if (screen.path) await open(page, screen.path, screen.named ?? true, screen.atomik ?? false);
     await screen.ready(page);
     await settle(page);
     for (const how of ["scroll", "reveal"] as const) {
@@ -242,10 +268,40 @@ test("phone: the last row of every page ends above the tab bar, scrolled to or r
   expect(errors).toEqual([]);
 });
 
+test("phone: with Atomik's approval row up, a page that failed offers Try again above the tab bar, uncovered", async ({ page }, info) => {
+  test.skip(!PORTRAIT.includes(info.project.name), "the portrait phones, where the tab bar floats over the page");
+  /* #392's development-only probe: the Tools page's stage throws as it renders, so its fault card stands in for it. */
+  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["stage:skills"]; });
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent", true, true);
+  await gateRowUp(page);
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]');
+  await expect(fault).toBeVisible();
+  await settle(page);
+  const retry = fault.getByTestId("fault-retry");
+  const vh = page.viewportSize()!.height;
+  expect((await measure(page, "[data-testid='content']")).content.height, "the page keeps at least half the screen").toBeGreaterThanOrEqual(Math.ceil(vh * 0.5));
+  /* Revealed the way the shell reveals it, and the way Playwright's own tap would: above the bar, and the tap is the button's. */
+  for (const reveal of [() => retry.evaluate((el) => el.scrollIntoView({ block: "end" })), () => retry.scrollIntoViewIfNeeded()]) {
+    await reveal();
+    const hit = await retry.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return { bottom: box.bottom, bar: document.querySelector(".gx-tabbar")!.getBoundingClientRect().top, onTop: Boolean(top && (top === el || el.contains(top))) };
+    });
+    expect(hit.bottom, "Try again ends above the tab bar").toBeLessThanOrEqual(hit.bar + 0.5);
+    expect(hit.onTop, "nothing covers Try again").toBe(true);
+  }
+  /* Fixed underneath, the tap brings the page back, with the approval still waiting above it. */
+  await page.evaluate(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = []; });
+  await retry.click();
+  await expect(fault).toHaveCount(0);
+  await expect(page.getByTestId("suites-atomik-gate")).toBeVisible();
+});
+
 test("phone: the chrome keeps the floors on every page — 44px targets, no label under #7C7C84, nothing sideways", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone sizes");
   for (const screen of SCREENS) {
-    if (screen.path) await open(page, screen.path, screen.named ?? true);
+    if (screen.path) await open(page, screen.path, screen.named ?? true, screen.atomik ?? false);
     await screen.ready(page);
     await settle(page);
     expect.soft(await smallTargets(page, ".gx-header, .gx-strip, .gx-project, .gx-main > .gx-pagehead, .gx-tabbar"), `${screen.id}: chrome targets under 44×44`).toEqual([]);
@@ -304,6 +360,12 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await page.keyboard.press("Escape");
   await expect(suites).toBeHidden();
   await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  /* Going anywhere from the header itself (the credits) leaves it closed where you land. */
+  await badge.click();
+  await page.getByTestId("workspace-credits").click();
+  await expect(page.getByTestId("workspace-view")).toBeVisible();
+  await expect(badge).toHaveAttribute("aria-expanded", "false");
+  await expect(suites).toBeHidden();
 
   /* The page head's Library and Inspector are their glyphs, named in words, and open their panels. */
   await open(page, "/suites?suite=studio&page=rig");
