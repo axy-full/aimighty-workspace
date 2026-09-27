@@ -33,7 +33,7 @@ import { Library } from "./Library";
 import { LoadBanner } from "./TakeTile";
 import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
-import { ProjectHead } from "./ProjectHead";
+import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
@@ -54,6 +54,7 @@ import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
 import { FaultAside, PanelFault } from "./PanelFault";
+import { FirstRun, type ProjectActions } from "./FirstRun";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
@@ -223,6 +224,34 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     const held = takeHeldAgentRequest(requestScope);
     if (held) prefillAgentRequest(requestScope, "atomik", openProjectId, held);
   }, [openProjectId, requestScope]);
+  /* One way to open, start and explore a project, whichever surface asks: the switcher, a stage's first-run card, the Studio home. */
+  const pickProject = (id: string) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
+  const createProject = async (name: string) => {
+    const created = newProject(name.slice(0, PROJECT_NAME_MAX));
+    const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
+    if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
+    pickProject(created.id);
+    toast(`${created.name} is open`);
+    return null;
+  };
+  /* The workspace's starter production, seeded on first use and opened as this person's draft; a second press opens the same one. */
+  const openStarter = async () => {
+    const response = await fetch("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ action: "starter" }) }).catch(() => null);
+    const body = (await response?.json().catch(() => null)) as { project?: { id?: unknown; name?: unknown }; error?: unknown } | null;
+    if (!response?.ok || typeof body?.project?.id !== "string") return typeof body?.error === "string" ? body.error : "The starter production could not be opened. Try again.";
+    pickProject(body.project.id);
+    toast(`${typeof body.project.name === "string" ? body.project.name : "The starter production"} is open. Its takes are samples: nothing was generated or charged.`);
+    return null;
+  };
+  const projectActions: ProjectActions = { projects: data.projects, onPick: pickProject, onCreate: createProject, onStarter: openStarter };
+  /* A Studio stage with no project open: while the list is still being read, say so; then the first-run card. */
+  const noProject = (stage: string, lead: string) => data.status === "loading"
+    ? <p className="gx-empty" role="status" data-testid={`${stage}-opening`}>Opening your projects…</p>
+    : <FirstRun key={`first-run:${stage}`} stage={stage} lead={lead} actions={projectActions} now={now} />;
+  /* The Studio stages whose bodies are tools (Rig, Astra, Edit & Sound, Deliver) keep them, with the same card above. */
+  const firstRunAbove = !project && data.status === "ready" && shell.view === "suite" && shell.suite.id === "studio"
+    ? <FirstRun key={`first-run:${shell.page.id}`} stage={shell.page.id} lead={`Open or create a project to use ${shell.page.title}.`} actions={projectActions} now={now} />
+    : null;
   /* The project list failed to read: said, with Try again, instead of an empty shell (a failed library read is each grid's own banner). */
   const projectsError = data.status === "error" ? data.error ?? "Projects could not be loaded." : null;
   /* Every card and skeleton holds the project's frame (the card contract, components/graphite/TakeTile.tsx). */
@@ -230,7 +259,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   const overlay = !shell.wide;
   const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
-  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector : shell.inspOpen);
+  /* The desktop Studio home inspects nothing of its own: its Inspector column opens for a take picked there, never for a stage spec it does not show. */
+  const onStudioHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "stages";
+  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
   /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
@@ -270,16 +301,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
-                onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
-                onCreate={async (name) => {
-                  const created = newProject(name.slice(0, 120));
-                  const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
-                  if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
-                  try { localStorage.setItem(scope, created.id); } catch { /* the URL still carries it */ }
-                  selectProject(created.id);
-                  toast(`${created.name} is open`);
-                  return null;
-                }} />
+                onPick={pickProject} onCreate={createProject} />
               {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
                   "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
               {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
@@ -311,21 +333,22 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
-                      <StudioHome key="stages" project={project} items={items} />
+                      <StudioHome key="stages" project={project} items={items} actions={projectActions} loading={data.status === "loading"} now={now} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "brief" ? (
-                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
+                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("brief", "Open or create a project to write its script.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
-                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
+                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : noProject("beats", "Open or create a project to break its script into beats.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
-                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
+                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : noProject("takes", "Open or create a project to see its takes.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "environment" ? (
-                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to build its world.</p>
+                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("environment", "Open or create a project to build its world.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
-                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to cast it.</p>
+                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("cast", "Open or create a project to cast it.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (
-                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : <p className="gx-empty">Open or create a project to storyboard it.</p>
+                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : noProject("boards", "Open or create a project to storyboard it.")
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
+                        {firstRunAbove}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
@@ -338,7 +361,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
+                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (<>
+                      {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
@@ -348,7 +372,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
-                    )}
+                    </>)}
                     </Boundary>
                   </div>
                 </>

@@ -56,9 +56,11 @@ function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void
   );
 }
 
-export function TakeTile({ entry, variant, selected = false, checked = false, cut = false, fresh = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
+  /** Its place in a batch strip ("take 2", components/graphite/TakeStrip.tsx), said in place of its name: the strip names the batch. */
+  label?: string;
   selected?: boolean;
   /** The Takes grid is a radio group: the take open in the editor below. */
   checked?: boolean;
@@ -103,16 +105,18 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   /* A take held for credits carries its way out: Release at the exact price (the 2-up Library tile leaves it to the Inspector). */
   const release = take.status === "held" && variant !== "library" ? <ReleaseTake entry={entry} onReleased={onRefresh} place="tile" /> : null;
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
-  const label = [take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
-  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": "take-tile" };
+  const spoken = [label, take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
+  const shownName = label ?? take.name;
+  /* In a strip the card is one of the strip's list of takes (TakeStrip). */
+  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": label && variant === "grid" ? "gen-batch-take" : "take-tile", ...(label && variant === "grid" ? { role: "listitem" } : {}) };
 
   if (variant === "take") {
     return (
       <div className="pd-take-cell gx-tile" {...attrs}>
-        <button type="button" role="radio" aria-checked={checked} aria-label={label} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
+        <button type="button" role="radio" aria-checked={checked} aria-label={spoken} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
           {...previewAttrs(entryPreview(entry))} {...dragAttrs(take.id, { name: take.name, kind: entry.media ?? "file" })}>
           <span className="gx-tile-media pd-take-media">{inner}</span>
-          <span className="pd-take-name">{take.name}</span>
+          <span className="pd-take-name">{shownName}</span>
           {why}
           {need}
         </button>
@@ -122,9 +126,9 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
     );
   }
   return (
-    <div className="gx-asset gx-tile" {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
+    <div className={label ? "gx-asset gx-tile gx-batch-take" : "gx-asset gx-tile"} {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
       <div className="gx-tile-media">
-        <button type="button" className="gx-asset-thumb" title={take.name} aria-label={label} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
+        <button type="button" className="gx-asset-thumb" title={take.name} aria-label={spoken} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
           onDragStart={(e) => { e.dataTransfer.setData("text/plain", take.id); e.dataTransfer.effectAllowed = dragEffect; }}
           onClick={onOpen}>
           {inner}
@@ -138,7 +142,7 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
         </div>
       ) : (
         <>
-          <span className="gx-asset-name">{take.name}</span>
+          <span className="gx-asset-name">{shownName}</span>
           <span className="gx-asset-meta">{take.meta}</span>
         </>
       )}

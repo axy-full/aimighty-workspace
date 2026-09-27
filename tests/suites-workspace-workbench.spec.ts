@@ -282,3 +282,6 @@ test("a rename holds across tabs and reaches the header; Disconnect turns the de
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+/* A route handler still reading a real response when a test ends would throw "Response has been disposed". */
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
