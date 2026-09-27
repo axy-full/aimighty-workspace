@@ -20,8 +20,9 @@ import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
-import { entryBatch, type LibraryEntry } from "@/lib/workspace/library";
+import { entryBatch, entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { groupSiblings, stripLabel, takeLabel, isVariation, type Strip } from "@/lib/variations";
+import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { TakeStrip } from "./TakeStrip";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -50,7 +51,7 @@ const PLACEHOLDER: Record<ComposerType, string> = {
 const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }, { id: "connected", label: "Higgsfield catalogue" }];
 const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
-const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
+const FILTER_KIND: Record<Filter, ReturnType<typeof entryKind> | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
 const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
 /** What a batch's takes that went were approved at: this workspace's credits, or the connected account's own. */
@@ -88,8 +89,11 @@ type RecipeCard = {
  * account, so a member is offered neither: Studio engines on this
  * workspace's credits are the whole of Gen for them (idea 19).
  */
-export function GenView({ scope, project, items, workspaceName, onProject }: {
-  scope: string; project: Project | null; items: LibraryEntry[]; workspaceName: string | null; onProject: (id: string) => void;
+export function GenView({ scope, project, items, library, projects = "ready", workspaceName, onProject }: {
+  scope: string; project: Project | null; items: LibraryEntry[];
+  /** The open project's library store (its read: skeletons, a failed read's banner); `projects` is the project list's own read. */
+  library: ProjectLibrary; projects?: "loading" | "ready" | "error";
+  workspaceName: string | null; onProject: (id: string) => void;
 }) {
   const shell = useShell();
   const ws = useWorkspace();
@@ -390,20 +394,24 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   /* A batch still being followed is drawn from the composer (below) until it is over; its takes are not drawn twice. */
   const liveBatches = composer.batches;
   const liveIds = useMemo(() => new Set(liveBatches.map((batch) => batch.id)), [liveBatches]);
+  /* By what the take is, not what rendered: a failed still is still under Images. */
   const results = useMemo(() => {
-    const media = FILTER_MEDIA[filter];
-    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media) && !liveIds.has(String(entryBatch(entry)?.batchId ?? "")));
+    const kind = FILTER_KIND[filter];
+    return items.filter((entry) => entry.take.kind === "GEN" && (kind === "all" || entryKind(entry) === kind) && !liveIds.has(String(entryBatch(entry)?.batchId ?? "")));
   }, [items, filter, liveIds]);
   /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
   const cells = useMemo(() => groupSiblings(results, entryBatch), [results]);
   const byGeneration = useMemo(() => new Map(items.map((entry) => [entry.take.sourceId, entry])), [items]);
-  /* The strip's own run; a batch draws its own strip instead of one running card. */
-  const running = ws.state.gen && !ws.state.gen.id.startsWith("batch:") ? ws.state.gen : null;
+  const made = useMemo(() => items.some((entry) => entry.take.kind === "GEN"), [items]);
+  const view = libraryView(project ? library.state : null, made ? 1 : 0, projects);
+  /* The strip's own run, until the library carries the same take: its own card then says where it is. A batch
+     draws its own strip instead of one running card. */
+  const running = ws.state.gen && !ws.state.gen.id.startsWith("batch:") && !items.some((entry) => entry.take.sourceId === ws.state.gen?.id) ? ws.state.gen : null;
   /* Takes still on the connected account from an earlier visit, as the shell's collector reads them until
      they land (it announces each one and re-reads the Library). The one the composer is running now is the
      composer's alone. Collection files a take into Takes on the server; nothing here writes the draft. */
   const resumed = useResumedConnectedJobs({
-    draftId: project?.id ?? null, owned: [running?.id, ...composer.batchJobIds],
+    draftId: project?.id ?? null, owned: [ws.state.gen?.id, ...composer.batchJobIds],
     accept: (job) => job.composer === "gen",
   });
   const pickedUp = resumed.jobs;
@@ -430,14 +438,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const footer = (state.type === "audio"
     ? [model?.audioTask === "speech" ? composer.voice?.name : null, soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null, soundTask === "music" ? (state.instrumental ? "Instrumental" : "With vocals") : null, "Saved to your takes"]
     : [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"]).filter(Boolean).join(" · ");
-  /* One take's tile, walled off so a take that throws costs only its own tile — in a strip, `label` names it "take N". */
+  /* One take's tile — the card contract's (TakeTile) — walled off so a take that throws costs only its own tile; in a strip,
+     `label` names it "take N". */
   const tile = (entry: LibraryEntry, label?: string) => (
     <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
-      <div className={label ? "gx-asset gx-batch-take" : "gx-asset"} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} {...(label ? { role: "listitem", "data-testid": "gen-batch-take" } : {})}>
-        {thumb(entry)}
-        <span className="gx-asset-name">{label ?? entry.take.name}</span>
-        <span className="gx-asset-meta">{entry.take.meta}</span>
-      </div>
+      <TakeTile entry={entry} variant="grid" label={label} selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh}
+        onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
     </Boundary>
   );
   /* A take's picture: opens it in the Inspector, and drags anywhere a take is taken. */
@@ -719,22 +725,27 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
+        {view.banner ? <LoadBanner banner={view.banner} onRetry={library.refresh} testId="gen-results-error" /> : null}
         {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
         <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
           className="gx-gen-grid" items={cells} getKey={(cell: Strip<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
-            <div className="gx-asset" data-testid="gen-running">
-              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: "var(--gx-accent)" }} aria-hidden="true" /></span>
+            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live">
+              <div className="gx-tile-media">
+                {/* A solid ring: no invented progress. The chip carries the job's own phase. */}
+                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[running.tone ?? "blue"] }} aria-hidden="true" /></span>
+                <span className="gx-tile-chip" data-tone={running.tone === "red" ? "failed" : running.tone === "green" ? "done" : "live"}><span className="gx-tile-chip-dot" aria-hidden="true" />{running.label ?? "Rendering"}</span>
+              </div>
               <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
-              <span className="gx-asset-meta">{running.label ?? "Running"}</span>
+              <span className="gx-asset-meta">{running.meta || running.label || "Running"}</span>
             </div>
           ) : null}
           {pickedUp.map(({ job, problem, following }) => {
             const phase = resumePhase(job, following);
             return (
-              <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
+              <div className="gx-asset gx-tile" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
                 {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
                 <span className="gx-asset-name" title={job.input.prompt}>{job.batch ? `${takeLabel(job.batch.variation)} · ${takeName(job)}` : takeName(job)}</span>
@@ -751,7 +762,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               {batch.views.map((view) => {
                 const entry = view.generationId ? byGeneration.get(view.generationId) : undefined;
                 return (
-                  <div className="gx-asset gx-batch-take" role="listitem" key={view.variation} data-tone={view.tone} data-status={view.status} data-done={view.done} data-variation={view.variation} data-testid="gen-batch-take">
+                  /* The same frame as a settled take's card, so a strip does not change height as its takes land. */
+                  <div className="gx-asset gx-tile gx-batch-take" role="listitem" key={view.variation} data-tone={view.tone} data-status={view.status} data-done={view.done} data-variation={view.variation} data-testid="gen-batch-take">
                     {entry ? thumb(entry) : <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[view.tone] }} aria-hidden="true" /></span>}
                     <span className="gx-asset-name">{view.label}</span>
                     <span className="gx-asset-meta" data-testid="gen-batch-take-status">{view.status}</span>
@@ -763,6 +775,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
+          {view.skeletons ? <TakeSkeletons count={6} variant="grid" /> : null}
           </>}
           renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : (
             <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
@@ -771,7 +784,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             </TakeStrip>
           )}
         />
-        {!running && !pickedUp.length && !results.length && !liveBatches.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !pickedUp.length && !results.length && !liveBatches.length && view.empty ? <p className="gx-empty" data-testid="gen-results-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !pickedUp.length && !results.length && !liveBatches.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">No {filter === "Images" ? "images" : filter === "Video" ? "video" : "audio"} generated in this project yet.</p> : null}
         </Boundary>
       </section>
 

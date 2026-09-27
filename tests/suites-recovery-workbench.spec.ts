@@ -5,7 +5,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 
 /**
  * The Suites shell recovers instead of sticking: Back leaves /suites after
- * the landing, a failed Library read says so with Retry, Load more reaches
+ * the landing, a failed Library read says so with Try again, Load more reaches
  * takes past the first page, Recreate refills Gen while Gen is open, a plan that
  * cannot run says why (in its sheet, and under the stage strip once the sheet
  * is closed), and a failed Ads quote re-arms Generate on its own only when
@@ -62,7 +62,7 @@ test("the landing replaces the entry URL: one Back leaves /suites", async ({ pag
   expect(errors).toEqual([]);
 });
 
-test("a failed Library read says so with Retry; Load more reaches takes past the first page", async ({ page }, info) => {
+test("a failed Library read says so with Try again; Load more reaches takes past the first page", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   let failing = true;
   const { errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards", { pageSize: 2, failFirst: () => failing });
@@ -73,7 +73,7 @@ test("a failed Library read says so with Retry; Load more reaches takes past the
   /* Said once: the end-of-list Load more stays out of the way while the first read has failed. */
   await expect(library.getByTestId("library-more-error")).toHaveCount(0);
   failing = false;
-  await library.getByTestId("library-error").getByRole("button", { name: "Retry" }).click();
+  await library.getByTestId("library-error").getByRole("button", { name: "Try again" }).click();
   const tiles = library.locator(".gx-asset-thumb[data-ctx^='asset:generation:']");
   await expect(tiles).toHaveCount(2);
   await expect(library.getByTestId("library-more-button")).toHaveText("Load more · 3 shown");

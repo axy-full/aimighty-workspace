@@ -8,6 +8,7 @@ import { db, ready, now } from "./db";
 import { creditsApply } from "./credits";
 import { billedCreditsSum } from "./creditSql";
 import { creditUsd } from "./creditTerms";
+import { tokenMonthStart } from "./cycle";
 import {
   platformDb, platformReady, sessionLookup, createPlatformSession, destroyPlatformSession,
   findAccountByEmail, accountCount, createAccount, getWorkspace, legacyWorkspace,
@@ -170,7 +171,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
   return runInTenant(ws, async () => {
     await ready();
     const rs = await db().execute({
-      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.last_used, u.*
+      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, u.*
             FROM api_tokens t JOIN users u ON u.id = t.user_id
             WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0 AND u.deleted_at IS NULL
             LIMIT 1`,
@@ -203,6 +204,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
         id: String(row.tid), name: String(row.tname),
         scope: row.scope === "read" ? "read" : "render",
         capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
+        capCredits: row.cap_credits == null ? null : Number(row.cap_credits),
       },
     };
   });
@@ -328,6 +330,15 @@ export async function requireRender(): Promise<
   return got;
 }
 
+/** The token's billed month in whole credits, as used by a credit ceiling. */
+export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
+  const rs = await db().execute({
+    sql: `SELECT ${billedCreditsSum()} AS spend FROM generations WHERE token_id = ? AND created_at >= ?`,
+    args: [tokenId, tokenMonthStart()],
+  });
+  return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
+}
+
 /**
  * Month-to-date spend charged to one token, for its optional ceiling, in the
  * dollars that left the workspace. A workspace on the platform's keys pays in
@@ -338,13 +349,11 @@ export async function requireRender(): Promise<
  * keys is measured in its vendors' dollars (`credits` is null).
  */
 export async function tokenSpendThisMonth(tokenId: string): Promise<{ usd: number; credits: number | null }> {
-  const start = new Date();
-  start.setDate(1); start.setHours(0, 0, 0, 0);
   const inCredits = creditsApply(currentTenant()?.workspace);
   const rs = await db().execute({
     sql: `SELECT ${inCredits ? billedCreditsSum() : "COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0)"} AS spend
           FROM generations WHERE token_id = ? AND created_at >= ?`,
-    args: [tokenId, start.getTime()],
+    args: [tokenId, tokenMonthStart()],
   });
   const spend = Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
   return inCredits ? { usd: spend * creditUsd(), credits: spend } : { usd: spend, credits: null };

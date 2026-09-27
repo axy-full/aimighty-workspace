@@ -1,12 +1,10 @@
 "use client";
 import { useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
-import LazyMedia from "@/components/LazyMedia";
-import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
-import { useSession } from "@/lib/session";
+import { entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
+import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "@/lib/workspace/spec-store";
@@ -39,9 +37,10 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
   const q = query.trim().toLowerCase();
   return items.filter((item) => {
     if ((filter === "Cast" || filter === "Elements") && filed.get(item.take.sourceId) !== filter) return false;
-    if (filter === "Images" && item.media !== "image") return false;
-    if (filter === "Video" && item.media !== "video") return false;
-    if (filter === "Audio" && item.media !== "audio") return false;
+    /* By what the asset is, not whether it rendered: a failed still is still an image. */
+    if (filter === "Images" && entryKind(item) !== "image") return false;
+    if (filter === "Video" && entryKind(item) !== "video") return false;
+    if (filter === "Audio" && entryKind(item) !== "audio") return false;
     if (filter === "Uploads" && item.take.kind !== "UPLOAD") return false;
     return !q || item.take.name.toLowerCase().includes(q);
   });
@@ -52,24 +51,36 @@ export function filterAssets(items: LibraryEntry[], filter: AssetFilter, query: 
  * button; Assets = everything the project has made or uploaded, on every
  * page, every tile draggable (`text/plain` = asset id).
  */
-export function Library({ project = null, items, ready, error = null, onRetry, overlay, now, onUseAsReference, cutId }: { project?: Project | null; items: LibraryEntry[]; ready: boolean; error?: string | null; onRetry?: () => void; overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null }) {
+export function Library({ project = null, items, library, projects = "ready", overlay, now, onUseAsReference, cutId }: {
+  project?: Project | null; items: LibraryEntry[];
+  /** The shell's library store for the open project (one per scope and project): its read, its next page. `projects` is the project list's own read. */
+  library: ProjectLibrary; projects?: "loading" | "ready" | "error";
+  overlay: boolean; now: number; onUseAsReference: (id: string) => void; cutId: string | null;
+}) {
   const shell = useShell();
   const { state, dispatch } = useWorkspace();
   const [filter, setFilter] = useState<AssetFilter>("All");
   const [query, setQuery] = useState("");
   const production = shell.view === "suite" && shell.suite.id === "studio" ? PRODUCTION_TOOLS[shell.page.id] : undefined;
-  const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : libraryFor(shell.page.legacy.page);
+  /* Atomik › Tools & connections has no tool cards: its legacy page id's cards are the old Skills registry's. */
+  const toolsPage = shell.view === "suite" && shell.suite.id === "atomik" && shell.page.id === "skills";
+  const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : toolsPage ? [] : libraryFor(shell.page.legacy.page);
   const tools = libraryCount(groups);
   /* A Production stage's live draft files new Cast and Elements before the shell's copy is re-read. */
   const live = usePublishedProject();
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
-  /* A read that failed is said first, with Retry, where it is seen: on a short phone, behind a search and three rows
-     of filters, it sat under the tab bar. With nothing read at all, there is nothing to search or filter either. */
-  const failed = Boolean(error && !ready);
-  /* The shell's own library store (one per scope and project): its next page, and a later read that failed. */
-  const library = useProjectLibrary(useSession().requestScope ?? "", project?.id ?? null);
+  const view = libraryView(project ? library.state : null, items.length, projects);
+  /* A count only once the read has answered: never "0 assets" while reading or after a failed read. */
+  const counted = project ? !view.skeletons && view.banner?.tone !== "error" : projects === "ready";
+  /* "60+" while the cursors say the project holds more than is loaded (Load more at the list's end). */
+  const more = Boolean(project) && library.hasMore;
+  const assetCount = counted ? `${items.length.toLocaleString("en-US")}${more ? "+" : ""}` : view.skeletons ? "…" : "—";
+  /* A first read that failed is said first, with Try again, where it is seen (#398): on a short phone, behind a search and
+     three rows of filters, it sat under the tab bar. With nothing read, there is nothing to search or filter either, so the
+     Assets tab is the banner alone. A later read that failed is said at the list's end, beside Load more. */
+  const failed = view.banner?.tone === "error" ? view.banner : null;
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();
@@ -78,7 +89,7 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
     <aside className={`gx-panel gx-library${overlay ? " gx-panel--overlay" : ""}`} aria-label="Library" data-testid="library">
       <div className="gx-panel-head">
         <span className="gx-panel-title">Library</span>
-        <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${items.length.toLocaleString("en-US")} ${items.length === 1 ? "asset" : "assets"}`}</span>
+        <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${assetCount} ${counted && items.length === 1 && !more ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
 {!libraryHasTools(shell.view, shell.suite.id, shell.page.id) ? null : (
@@ -87,7 +98,7 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>
             <Glyph name={tab === "tools" ? "wrench" : "stack"} size={13} className="gx-glyph" />
             <span>{tab === "tools" ? "Tools" : "Assets"}</span>
-            <span className="gx-seg-count">{(tab === "tools" ? tools : items.length).toLocaleString("en-US")}</span>
+            <span className="gx-seg-count">{tab === "tools" ? tools.toLocaleString("en-US") : assetCount}</span>
           </button>
         ))}
       </div>
@@ -113,11 +124,10 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
             </div>
           )) : <p className="gx-empty">This page has no tools of its own. Assets are on the next tab.</p>}
         </div>
-      ) : failed && !items.length ? (
-        <div className="gx-empty" role="alert" data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
+      ) : failed ? (
+        <LoadBanner banner={failed} onRetry={library.refresh} testId="library-error" compact />
       ) : (
         <>
-          {failed ? <div className="gx-empty" role="alert" data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div> : null}
           <input className="gx-field" aria-label="Search assets" placeholder="Search this project" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
@@ -125,31 +135,20 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
+            before={view.skeletons ? <TakeSkeletons count={4} variant="library" /> : null}
             after={<>
-              {!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready && !error ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
-              {/* Past the first page: a later read that failed, and Load more (the first read's failure is said above). */}
-              {project && !(error && !ready) ? <LibraryMore library={library} /> : null}
+              {!shown.length && (project ? !view.skeletons : view.empty)
+                ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!project ? "Open a project to see what it has made." : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
+              {project ? <LibraryMore library={library} /> : null}
             </>}
-            renderItem={(entry) => {
-              const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
-              return (
-                <div className="gx-asset" key={entry.take.id} data-selected={state.selKind === "take" && state.selId === entry.take.id} data-cut={cutId === entry.take.id || undefined} data-asset={entry.take.id}>
-                  <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
-                    onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copyMove"; }}
-                    onClick={() => open(entry)}>
-                    {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} /> : null}
-                    <span className="gx-badge">{entry.media === "video" ? "VIDEO" : entry.media === "audio" ? "AUDIO" : entry.media === "image" ? "IMAGE" : "FILE"}</span>
-                    {fresh ? <span className="gx-badge gx-badge--new">NEW</span> : null}
-                  </button>
-                  <div className="gx-asset-row">
-                    <span className="gx-asset-name">{entry.take.name}</span>
-                    {/* `+` sends the asset into the composer as a reference; the toast names the role. */}
-                    <button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
-                      disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>
-                  </div>
-                </div>
-              );
-            }}
+            renderItem={(entry) => (
+              <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={library.refresh}
+                selected={state.selKind === "take" && state.selId === entry.take.id} cut={cutId === entry.take.id}
+                fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && now - entry.take.createdAt < FRESH_MS}
+                /* `+` sends the asset into the composer as a reference; the toast names the role. */
+                action={<button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
+                  disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>} />
+            )}
           />
           <p className="gx-lib-foot">Everything this project has made or uploaded, on every page.</p>
         </>

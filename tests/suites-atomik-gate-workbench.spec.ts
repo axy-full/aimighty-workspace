@@ -144,8 +144,8 @@ test("⌘K before any project is open: the words wait, and land in Agent once th
   await expect(page.locator("[data-tool-body=\"agent\"] textarea")).toHaveCount(0);
   list.failing = false;
   /* Leaving Gen for Agent already asked for the list again (a page change re-reads a list that failed), and
-     that read may land first: Retry only while the error is still on screen. */
-  const retry = page.getByTestId("projects-error").getByRole("button", { name: "Retry" });
+     that read may land first: Try again only while the error is still on screen. */
+  const retry = page.getByTestId("projects-error").getByRole("button", { name: "Try again" });
   await expect(async () => {
     if (await retry.isVisible()) await retry.click({ timeout: 2_000 });
     await expect(page.getByTestId("project-name")).toHaveText("Coastal light study", { timeout: 2_000 });
@@ -155,7 +155,7 @@ test("⌘K before any project is open: the words wait, and land in Agent once th
   expect(errors).toEqual([]);
 });
 
-test("⌘K before any project is open: the words land when the list loads on its own, with no Retry", async ({ page }, info) => {
+test("⌘K before any project is open: the words land when the list loads on its own, before any Try again", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
   const { mock, errors } = await setup(page);
   const list = await askBeforeAnyProject(page);
