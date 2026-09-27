@@ -123,7 +123,7 @@ test("versions merge filed takes with jobs in flight or failed, newest first", (
   expect([relativeAge(now - 1000, now), relativeAge(now - 3 * 86_400_000, now), relativeAge(null, now)]).toEqual(["just now", "3 d", ""]);
 });
 
-test("generation phase follows the real job; a failed render is shown as not billed", () => {
+test("generation phase follows the real job; only a confirmed zero charge is shown as not billed", () => {
   expect(generationPhase(null)).toMatchObject({ label: "Submitting", done: false });
   expect(generationPhase({ status: "queued" })).toMatchObject({ label: "Queued", tone: "blue", done: false });
   expect(generationPhase({ status: "held" })).toMatchObject({ label: "Held · needs credits", done: false });
@@ -132,6 +132,7 @@ test("generation phase follows the real job; a failed render is shown as not bil
   expect(generationPhase({ status: "running" })).toMatchObject({ label: "Rendering", done: false });
   expect(generationPhase({ status: "succeeded" })).toMatchObject({ label: "Complete", pct: 100, tone: "green", done: true });
   expect(generationPhase({ status: "failed", creditsBilled: 0 })).toMatchObject({ label: "Failed · not billed", tone: "red", done: true });
+  expect(generationPhase({ status: "failed" })).toMatchObject({ label: "Failed", done: true });
   expect(generationPhase({ status: "failed", creditsBilled: 12 })).toMatchObject({ label: "Failed", done: true });
 });
 

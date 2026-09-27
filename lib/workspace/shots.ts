@@ -81,7 +81,8 @@ export const liveJob = (job: RigJob) => !LIVE_DONE.has(job.status);
  * to its own settled figure.
  */
 export const jobUnbilled = (job: RigJob) =>
-  job.failure !== undefined ? failureUncharged(job.failure) : !((job.creditsBilled ?? 0) > 0) && !((job.costUsd ?? 0) > 0);
+  job.failure !== undefined ? failureUncharged(job.failure)
+    : (job.creditsBilled === 0 || job.costUsd === 0) && !((job.creditsBilled ?? 0) > 0) && !((job.costUsd ?? 0) > 0);
 
 export function isShotNode(node: CanvasNode): boolean {
   return (SHOT_NODE_TYPES as readonly string[]).includes(node.type);
