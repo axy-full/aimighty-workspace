@@ -113,7 +113,7 @@ export function useCrew(projectId: string | null) {
   }, [call, projectId, openRoom]);
 
   const active = useMemo(() => members.filter((m) => m.active), [members]);
-  const blockedBy = roundBlock({ goal, seated: active.length, running, roundsRun: session?.roundsRun ?? 0, keyConnected: status?.connected ?? true, hasProject: Boolean(projectId) });
+  const blockedBy = session?.needsReview ? "This round needs an engine outcome review before another can run." : roundBlock({ goal, seated: active.length, running, roundsRun: session?.roundsRun ?? 0, keyConnected: status?.connected ?? true, hasProject: Boolean(projectId) });
 
   /* The live price: what the next round can cost at most, for exactly this goal, context and roster. */
   const quoteKey = JSON.stringify([projectId, session?.id ?? null, session?.model ?? null, session?.roundsRun ?? 0, messages.length, goal.trim(), context, active.map((m) => [m.id, m.stance.length, m.name, m.department])]);
