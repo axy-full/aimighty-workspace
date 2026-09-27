@@ -21,6 +21,8 @@ import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { uploadFilesToProject, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { CAPABILITY_UNREADABLE } from "@/lib/shell/connected-capability";
+import { OwnerRunCard } from "../OwnerRunCard";
 
 /**
  * Business = Marketing Studio (FINAL_SPEC §2): Ads on
@@ -38,7 +40,9 @@ import { useWorkspace } from "@/lib/workspace/state";
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 
 export function BusinessView({ scope, project, page }: { scope: string; project: Project | null; page: "ads" | "dtc" | "setup" }) {
-  const business = useBusiness(Boolean(scope));
+  const business = useBusiness(scope);
+  /* Business runs only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19) — on the first paint, from the session. */
+  if (business.connection?.owner === false) return <OwnerRunCard surface="business" page />;
   if (page === "setup") return <SetupView business={business} />;
   if (page === "dtc") return <ImageAdsView scope={scope} project={project} business={business} />;
   return <AdsView scope={scope} project={project} business={business} />;
@@ -368,9 +372,24 @@ function LatestTake({ job, testId, scope, project, onLibrary }: { job: Connected
   );
 }
 
+/** Until the owner's connection is read, that is the reason — not a connect prompt it may not need; a failed read says so, and so does a lapsed grant. */
+function accountReason(business: Business): string | null {
+  if (business.connectionError) return CAPABILITY_UNREADABLE;
+  if (!business.connection) return "Reading the connected account…";
+  return business.connection.reconnect ? "Reconnect the account in Workspace › Engines." : null;
+}
+
+/** The owner's account, when it cannot run yet: unreadable (Try again), or not connected (Engines is where it is connected). */
 function Connection({ business, testId }: { business: Business; testId?: string }) {
+  const shell = useShell();
+  if (business.connectionError) return <p className="gx-gen-error" role="alert" data-testid={testId}>{business.connectionError} <button type="button" className="cw-link" onClick={business.refreshConnection}>Try again</button></p>;
   if (!business.connection || business.connection.connected) return null;
-  return <p className="gx-reason" data-testid={testId}>{business.connection.owner ? "Connect the account in Workspace › Engines." : "Only the workspace owner can run the connected account."}</p>;
+  return (
+    <p className="gx-reason" data-testid={testId}>
+      {business.connection.reconnect ? "Reconnect the account in Workspace › Engines." : "Connect the account in Workspace › Engines."}{" "}
+      <button type="button" className="cw-link" onClick={() => shell.goWorkspace("engines")}>Open Engines</button>
+    </p>
+  );
 }
 
 /* ── Ads ─────────────────────────────────────────────────────────────── */
@@ -394,7 +413,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
   const range = model?.durationRange ?? null;
-  const blocked = adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = (project ? accountReason(business) : null) ?? adsBlock(s, { connected, hasProject: Boolean(project) }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
   const clamped = clampedDuration(s, range);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
@@ -495,7 +514,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const sent = imageAdsMedias(s);
   const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
   const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
+  const blocked = (project ? accountReason(business) : null) ?? imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? (model ? null : connected ? "Reading the connected catalogue…" : null);
   const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
     type: "image", model: s.engine, prompt: s.prompt.trim(),
     parameters: {
@@ -551,7 +570,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
             </div>
           </div>
         </>) : null}
-        <Connection business={business} />
+        <Connection business={business} testId="dtc-connect" />
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="dtc-product"
           still={s.productStill} onStill={(still) => set(withImageStill(s, still))} />
         <Chips label="Aspect" options={aspects} value={s.aspect} onPick={(v) => set({ ...s, aspect: v })} testId="dtc-aspect" />
@@ -623,7 +642,7 @@ function SetupView({ business }: { business: Business }) {
       <div className="bz-setup-list">
         <Connection business={business} testId="setup-connect" />
         {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup()}>Try again</button></p> : null}
-        {connected && !read && !setupFailed && (setupLoading || business.setup.connected === null) ? (
+        {(!business.connection && !business.connectionError) || (connected && !read && !setupFailed && (setupLoading || business.setup.connected === null)) ? (
           <div className="bz-group" aria-busy="true" data-testid="setup-loading">
             <span className="gx-eyebrow">Reading…</span>
             {[0, 1, 2].map((i) => <span key={i} className="bz-skel bz-skel--row" aria-hidden="true" />)}

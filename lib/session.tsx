@@ -22,7 +22,11 @@ import { EMPTY_TABLE, type RateTable } from "./rateTable";
  * than an error.
  */
 
-export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean };
+export type SessionWorkspace = {
+  id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean;
+  /** Who runs the connected account, by display name, for a member's owner-run surfaces — never the address; null for the owner. */
+  ownerName?: string | null;
+};
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
 /* No `margins`. It used to be here, and with `creditUsd` beside it a customer
    could divide the markup back out of any price on the screen — §2 says margin

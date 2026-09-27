@@ -283,7 +283,7 @@
 .gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(6px); }
 .gx-sheet { width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: gx-pop .2s var(--gx-ease) both; }
 .gx-sheet-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; }
-.gx-sheet-head .gx-seg { margin-right: auto; }
+.gx-sheet-head .gx-seg, .gx-sheet-head .gx-sheet-catalogue { margin-right: auto; }
 .gx-sheet-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .gx-sheet-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 6px; min-height: 48px; }
 .gx-sheet-row:hover, .gx-sheet-row[aria-selected="true"] { background: var(--gx-input); }
@@ -443,6 +443,8 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 @media (max-width: 400px) {
   .gx-gen .gx-seg--fill { grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); height: auto; }
   .gx-gen .gx-seg--fill .gx-seg-btn { min-width: 44px; }
+  /* A member's four (no Analysis) still fit one row at 44px each. */
+  .gx-gen .gx-seg--fill[data-tabs="4"] { grid-template-columns: repeat(4, 1fr); }
 }
 
 /* ── Cast › Build identity (Soul ID on the connected account): the stills picker and the account's list. ── */
@@ -454,3 +456,27 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-soul-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--gx-hair); flex-wrap: wrap; }
 .gx-soul-row:first-child { border-top: 0; }
 .gx-soul-name { font-weight: 600; }
+
+/* ── Owner-run (idea 19): where the owner's Higgsfield account runs, a member meets one card — the key, who runs it, and the
+   way to make the same kind of thing on this workspace's credits — and the suites the owner runs carry the key as a badge. ── */
+.gx { --gx-owner: #F2C661; }
+.gx-owner-run-page { padding: 20px; }
+.gx-owner-run-page > .gx-owner-run { max-width: 560px; }
+.gx-owner-run { gap: 8px; }
+.gx-owner-run-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--gx-owner); }
+.gx-reason.gx-owner-run-eyebrow { display: flex; gap: 6px; font-size: 12.5px; }
+.gx-owner-run-eyebrow .gx-glyph { flex: none; }
+.gx-owner-run .gx-workflow-title { overflow-wrap: anywhere; }
+.gx-owner-run .gx-hint { max-width: 60ch; line-height: 1.5; }
+.gx-owner-run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+@media (max-width: 767px) { .gx-owner-run-page { padding: 12px; } .gx-owner-run-actions > button { flex: 1 1 160px; justify-content: center; } }
+/* The badge: key + "Owner" beside the label; a key alone on the glyph's shoulder wherever the header drops to icons. */
+.gx-header .gx-seg-btn > .gx-owner-badge { position: relative; height: 16px; padding: 0 5px 0 4px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px; font-family: var(--gx-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-owner); background: rgba(242, 198, 97, .12); border: 1px solid rgba(242, 198, 97, .32); }
+.gx-owner-badge-key { flex: none; }
+@media (max-width: 1179px) {
+  .gx-header .gx-seg-btn > .gx-owner-badge { position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; padding: 0; justify-content: center; border-radius: 50%; background: #1C1A14; }
+  .gx-header .gx-seg-btn > .gx-owner-badge > .gx-owner-badge-label { display: none; }
+}
+/* The phone's Home: an owner-run suite's live fact is who runs it. */
+.gx-where-tile[data-owner-run] .gx-where-fact { display: flex; align-items: flex-start; gap: 5px; color: var(--gx-owner); }
+.gx-where-tile[data-owner-run] .gx-where-fact .gx-owner-badge-key { flex: none; margin-top: 2px; }

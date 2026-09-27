@@ -15,6 +15,7 @@ import { ago } from "@/lib/workspace/activity";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { OwnerRunCard } from "../OwnerRunCard";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on the existing genjutsu-service:
@@ -36,6 +37,8 @@ const refs = (n: number) => `${n} ${n === 1 ? "ref" : "refs"}`;
 
 export function ViralView({ scope, project, page, items }: { scope: string; project: Project | null; page: ViralPage | "history"; items: LibraryEntry[] }) {
   const viral = useViral(scope, project?.id ?? null, page === "history" ? null : VIRAL_PAGES[page]);
+  /* Genjutsu runs only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19). */
+  if (viral.member) return <OwnerRunCard surface="viral" page />;
   if (page === "history") return <HistoryView scope={scope} project={project} viral={viral} items={items} />;
   return <Composer key={page} scope={scope} page={page} project={project} viral={viral} items={items} />;
 }
@@ -272,7 +275,6 @@ function HistoryView({ scope, project, viral, items }: { scope: string; project:
     ws.toast("Same inputs loaded — the account prices it again before it runs.");
   };
   const { status, nextCursor, more } = viral.list;
-  const owner = viral.connection?.owner ?? true;
 
   let body: React.ReactNode;
   if (!project) body = <p className="gx-empty" data-testid="history-no-project">Open or create a project to see its runs.</p>;
@@ -282,7 +284,6 @@ function HistoryView({ scope, project, viral, items }: { scope: string; project:
     </div>
   );
   else if (status === "error") body = <ListError viral={viral} />;
-  else if (!owner) body = <p className="gx-empty">Only the workspace owner runs the connected account.</p>;
   else if (!viral.jobs.length) body = (
     <div className="cw-empty vr-empty" data-testid="history-empty">
       <span>No runs in this project yet.</span>

@@ -22,6 +22,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer } from "@/lib/workspace/use-composer";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
@@ -36,7 +37,12 @@ const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 
-/** Gen (README › Gen): one composer on the left, this project's results on the right. */
+/**
+ * Gen (README › Gen): one composer on the left, this project's results on the
+ * right. The Higgsfield catalogue and Analysis run on the owner's connected
+ * account, so a member is offered neither: Studio engines on this
+ * workspace's credits are the whole of Gen for them (idea 19).
+ */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
   scope: string; project: Project | null; items: LibraryEntry[]; workspaceName: string | null; onProject: (id: string) => void;
 }) {
@@ -45,6 +51,11 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
   const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
+  /* Whether this person owns the workspace, from the session: nothing is read to decide what a member is offered. */
+  const { owner } = useConnectedCapability(scope, { read: false });
+  const groups = owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
+  const dispatchBilling = composer.dispatch;
+  useEffect(() => { if (!owner && state.billing === "connected") dispatchBilling({ type: "billing", value: "workspace" }); }, [owner, state.billing, dispatchBilling]);
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);
   const [characters, setCharacters] = useState<{ list: ConnectedCharacter[] | null; note: string }>({ list: null, note: "Reading the account’s characters…" });
@@ -149,12 +160,12 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
 
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
   const tabs = (
-    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
+    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output" data-tabs={owner ? 5 : 4}>
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
         <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
       ))}
       <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "edit"} onClick={() => setMode("edit")} data-testid="gen-tab-edit"><span>Edit</span></button>
-      <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button>
+      {owner ? <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button> : null}
     </div>
   );
   if (mode === "edit") {
@@ -167,7 +178,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       </div>
     );
   }
-  if (mode === "analysis") {
+  if (mode === "analysis" && owner) {
     return (
       <div className="gx-gen gx-enter" data-testid="gen-view">
         <div className="gx-gen-col">
@@ -355,9 +366,11 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           <div className="gx-sheet" role="dialog" aria-modal="true" aria-label="Choose a model" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSheet(false); } }}>
             <div className="gx-sheet-head">
               <span className="gx-panel-title">Model</span>
-              <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
-                {GROUPS.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={state.billing === g.id} onClick={() => composer.dispatch({ type: "billing", value: g.id })}><span>{g.label}</span></button>)}
-              </div>
+              {groups.length > 1 ? (
+                <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
+                  {groups.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={state.billing === g.id} onClick={() => composer.dispatch({ type: "billing", value: g.id })}><span>{g.label}</span></button>)}
+                </div>
+              ) : <span className="gx-hint gx-sheet-catalogue" data-testid="gen-sheet-catalogue">{groups[0].label}</span>}
               <button type="button" className="gx-hbtn" onClick={() => setSheet(false)}>Close</button>
             </div>
             <div className="gx-sheet-list gx-scroll" role="listbox" aria-label={`${TYPE_TAB[state.type]} models`}>

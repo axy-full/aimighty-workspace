@@ -222,7 +222,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <button type="button" className="gx-hbtn" aria-pressed={shell.inspOpen} onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
                     </>) : null}
                   </div>
-                  <div className="gx-stage gx-scroll" data-testid="content">
+                  {/* Its own scroller: arriving in Gen (Open in Gen from a page scrolled down) starts at the composer's top. */}
+                  <div className="gx-stage gx-scroll" data-testid="content" key="gen-stage">
                     <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
                   </div>
                 </>
