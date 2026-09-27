@@ -71,19 +71,16 @@ test("a failed take says why in one line; the row's own words ride along only wh
   expect(discarded).toMatchObject({ status: "failed", cancelled: true, failedUnbilled: true, reason: "Discarded before it started." });
 });
 
-test("the chip names the status; the not-billed note moves to the reason line on a 2-up tile", () => {
+test("the chip names the status without inferring a billing outcome", () => {
   const failed = { status: "failed" as const, failedUnbilled: true as const, reason: "The engine timed out" };
-  expect(takeChip(failed)).toEqual({ label: "Failed · not billed", tone: "failed" });
-  expect(takeChip(failed, true)).toEqual({ label: "Failed", tone: "failed" });
+  expect(takeChip(failed)).toEqual({ label: "Failed", tone: "failed" });
   expect(takeReasonLine(failed)).toBe("The engine timed out");
-  expect(takeReasonLine(failed, true)).toBe("Not billed · The engine timed out");
   /* Billed failure: never claims it was free. */
   expect(takeChip({ status: "failed" })).toEqual({ label: "Failed", tone: "failed" });
   /* A take stopped on purpose is not a failure. */
-  expect(takeChip({ status: "failed", cancelled: true, failedUnbilled: true })).toEqual({ label: "Cancelled · not billed", tone: "idle" });
-  expect(takeChip({ status: "failed", cancelled: true, failedUnbilled: true }, true)).toEqual({ label: "Cancelled", tone: "idle" });
+  expect(takeChip({ status: "failed", cancelled: true })).toEqual({ label: "Cancelled", tone: "idle" });
   expect(takeStatusWord({ status: "failed", cancelled: true })).toBe("Cancelled");
-  expect(takeReasonLine({ status: "failed", reason: "Did not render" }, true)).toBe("Did not render");
+  expect(takeReasonLine({ reason: "Did not render" })).toBe("Did not render");
 
   expect(takeChip({ status: "rendering", stage: "queued" })).toEqual({ label: "Queued", tone: "idle" });
   expect(takeChip({ status: "rendering", stage: "rendering" })).toEqual({ label: "Rendering", tone: "live" });
@@ -94,11 +91,14 @@ test("the chip names the status; the not-billed note moves to the reason line on
   /* Waiting for review and uploads carry no chip: the grid stays quiet for the ordinary case. */
   expect(takeChip({ status: "review" })).toBeNull();
   expect(takeChip({ status: "uploaded" })).toBeNull();
-  expect(takeReasonLine({ status: "review" })).toBeNull();
+  expect(takeReasonLine({})).toBeNull();
 
   expect(takeStatusWord({ status: "review" })).toBe("In review");
   expect(takeStatusWord({ status: "uploaded" })).toBe("Uploaded");
-  expect(takeStatusWord({ status: "failed", failedUnbilled: true })).toBe("Failed · not billed");
+  /* Missing amounts and the legacy flag are not evidence of a provider outcome. */
+  const unknown = take(gen("unknown", { status: "failed", creditsBilled: null, costUsd: null, error: "Engine timed out." }));
+  expect(takeStatusWord(unknown)).toBe("Failed");
+  expect(takeReasonLine(unknown)).toBe("The engine timed out");
   expect(takeStatusWord({ status: "rendering", stage: "held" })).toBe("Held");
 });
 

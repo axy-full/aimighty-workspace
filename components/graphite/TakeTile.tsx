@@ -68,10 +68,9 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   const [attempt, setAttempt] = useState(0);
   const base = entryFace(entry);
   const face: EntryFace = base === "media" && broken != null && broken === entry.url ? "unavailable" : base;
-  const compact = variant === "library";
-  const chip = takeChip(take, compact);
+  const chip = takeChip(take);
   /* A finished take whose copy is missing says so under its name; Refresh sits in the picture's corner. */
-  const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take, compact);
+  const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take);
   const kind = entryKind(entry);
   const refresh = async () => { setBroken(null); setAttempt((n) => n + 1); await onRefresh(); };
   const fail = () => setBroken(entry.url);

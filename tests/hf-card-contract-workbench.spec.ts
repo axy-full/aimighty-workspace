@@ -10,7 +10,7 @@ import { forbidPaidWork, generation, mockMedia, mockProjects } from "./helpers/w
  * Assets and Studio › Takes. While the library is read the grid holds
  * aspect-true skeletons and never says "nothing here"; a failed read is a
  * banner with Try again; every take carries its status (Queued / Rendering /
- * Held / Failed · not billed / Cancelled / Picked / Approved) and one line on
+ * Held / Failed / Cancelled / Picked / Approved) and one line on
  * why it failed or waits; a finished take whose stored copy is missing says
  * "Preview unavailable" with Refresh; a take in flight settles on its own.
  * A failed project list says so once, with one Try again. A re-read that
@@ -130,17 +130,17 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   await expect(tile(results, "Tide timelapse").getByTestId("take-chip")).toHaveText("Queued");
   await expect(tile(results, "Storm front").getByTestId("take-chip")).toHaveText("Held");
   await expect(tile(results, "Storm front").getByTestId("take-reason")).toHaveText("Needs 12 cr");
-  await expect(tile(results, "Night swim").getByTestId("take-chip")).toHaveText("Failed · not billed");
+  await expect(tile(results, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   await expect(tile(results, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
   await expect(tile(results, "Night swim").getByTestId("take-reason")).toHaveAttribute("title", "Refused: the prompt was flagged by moderation.");
   /* Discarded on purpose is not a failure: its own words, and no red. */
-  await expect(tile(results, "Pier in fog").getByTestId("take-chip")).toHaveText("Cancelled · not billed");
+  await expect(tile(results, "Pier in fog").getByTestId("take-chip")).toHaveText("Cancelled");
   await expect(tile(results, "Pier in fog").getByTestId("take-chip")).toHaveAttribute("data-tone", "idle");
   await expect(tile(results, "Pier in fog").getByTestId("take-reason")).toHaveText("Discarded before it started.");
   await expect(tile(results, "Gull over the breakwater").getByTestId("take-chip")).toHaveText("Picked");
   await expect(tile(results, "Pier at first light").getByTestId("take-chip")).toHaveText("Approved");
   /* A screen reader hears the take and its state, not the badge inside the picture. */
-  await expect(results.getByRole("button", { name: "Night swim · Failed · not billed", exact: true })).toBeVisible();
+  await expect(results.getByRole("button", { name: "Night swim · Failed", exact: true })).toBeVisible();
   /* The same card at the same frame whether it rendered or not. */
   const failedThumb = (await tile(results, "Night swim").locator(".gx-asset-thumb").boundingBox())!;
   const okThumb = (await tile(results, "Pier at first light").locator(".gx-asset-thumb").boundingBox())!;
@@ -181,7 +181,7 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   /* The Inspector names the status and the reason. */
   await tile(results, "Night swim").locator(".gx-asset-thumb").click();
   const facts = page.getByTestId("asset-facts");
-  await expect(facts).toContainText("Failed · not billed");
+  await expect(facts).toContainText("Failed");
   await expect(facts).toContainText("Refused by the content filter · Refused: the prompt was flagged by moderation.");
   await noSideScroll(page);
   expect(errors).toEqual([]);
@@ -222,7 +222,7 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
 
   const takes = page.getByTestId("edit-takes");
   await expect(takes.getByTestId("take-tile")).toHaveCount(8);
-  await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed · not billed");
+  await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   await expect(tile(takes, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
   await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held");
   await expect(tile(takes, "Harbour at dusk").getByTestId("take-reason")).toHaveText("Preview unavailable");
@@ -244,7 +244,7 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
   await expect(library.getByTestId("library-error")).toHaveCount(0);
   const assets = page.getByTestId("library-assets");
   await expect(tile(assets, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
-  await expect(tile(assets, "Night swim").getByTestId("take-reason")).toHaveText("Not billed · Refused by the content filter");
+  await expect(tile(assets, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
   await expect(tile(assets, "Pier in fog").getByTestId("take-chip")).toHaveText("Cancelled");
   await expect(tile(assets, "Storm front").getByTestId("take-reason")).toHaveText("Needs 12 cr");
   await expect(tile(assets, "Pier at first light").getByTestId("take-chip")).toHaveText("Approved");
