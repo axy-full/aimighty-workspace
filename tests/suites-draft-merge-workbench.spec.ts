@@ -1242,6 +1242,17 @@ test("a rename merged in from another window shows in the Inspector's Name field
 
 /* ── The Gen composer pays for a take once ──────────────────────────────── */
 
+/** The Idempotency-Keys this page asks the server about (POST /api/generate/check): a lost paid request is checked, never re-sent. */
+function checkedKeys(page: Page) {
+  const keys: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/generate/check") keys.push(String((request.postDataJSON() as { key?: unknown }).key ?? ""));
+  });
+  return keys;
+}
+/** Paid requests this browser still holds as unconfirmed. */
+const claims = (page: Page) => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("particl:pending-generation:")).length);
+
 for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "reloads"] as const)
   test(`Gen: a take whose paid reply was lost is paid for once when the person ${leave} and presses Generate again`, async ({ page }) => {
     const { project, errors, read, scope } = await setup(page, () => {});
@@ -1256,6 +1267,7 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
       if (!lost) { lost = true; return route.abort("connectionreset"); }
       return route.fulfill({ response });
     });
+    const checks = checkedKeys(page);
     const prompt = "A red fox crosses the frozen harbour at dusk.";
     const press = async (open: boolean) => {
       if (open) {
@@ -1280,8 +1292,12 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
       await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 30_000 });
       await press(false);
     } else await press(leave === "reloads");
-    await expect.poll(() => reached.length, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
+    /* The press asks the server about the lost request by its own key (POST /api/generate/check): it landed, so its
+       job is followed and nothing is sent again. */
+    await expect.poll(() => checks, { timeout: 60_000 }).toEqual([reached[0].key]);
+    await expect.poll(() => claims(page), { timeout: 30_000 }).toBe(0);
     await page.waitForTimeout(2000);
+    expect(reached.length, "requests sent").toBe(1);
     expect(new Set(reached.map((r) => r.key)).size, "paid requests").toBe(1);
     expect(new Set(reached.map((r) => r.job)).size, "jobs").toBe(1);
     expect((await read()).project.nodes.filter((n) => n.type === "scene"), "shots").toHaveLength(1);
@@ -1359,7 +1375,7 @@ test("Gen sound: when Edit & Sound makes the sound lane while Gen's save is out,
   expect(errors).toEqual([]);
 });
 
-test("Gen, two takes: take 2's request cut off stops the batch, and the next Generate recovers it by its own key — two takes charged in all, not three", async ({ page }) => {
+test("Gen, two takes: take 2's request cut off stops the batch; the next Generate checks it, finds it never arrived, fences it and says so — nothing sent again", async ({ page }) => {
   const { project, errors, read, scope } = await setup(page, () => {});
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const reached: string[] = [];
@@ -1371,6 +1387,7 @@ test("Gen, two takes: take 2's request cut off stops the batch, and the next Gen
     reached.push(route.request().headers()["idempotency-key"] ?? "");
     return route.continue();
   });
+  const checks = checkedKeys(page);
   await page.goto(`/suites?view=gen&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
@@ -1384,13 +1401,21 @@ test("Gen, two takes: take 2's request cut off stops the batch, and the next Gen
   await expect.poll(() => seen, { timeout: 60_000 }).toBe(2);
   /* The batch stops at the take whose reply never came back, and says so. */
   await expect(page.locator(".gx-gen-note[role=status]").first()).toContainText("Take 2: the reply never came back. It is checked before anything else is sent, and never sent twice.", { timeout: 30_000 });
+  const lostKey = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith("particl:pending-generation:"));
+    return key ? (JSON.parse(localStorage.getItem(key)!) as { key: string }).key : null;
+  });
+  expect(lostKey).toBeTruthy();
   await expect(go).toBeEnabled({ timeout: 60_000 });
   await go.click();
-  await expect.poll(() => new Set(reached).size, { timeout: 60_000 }).toBe(2);
-  /* One take recovered, by its own key: said as one take, never "Takes 2–2", and nothing new sent. */
-  await expect(page.locator(".gx-gen-note[role=status]").first()).toHaveText("Take 2 of your last batch is on the server, followed until it lands. Nothing new was sent.", { timeout: 30_000 });
-  await page.waitForTimeout(4000);
-  expect(new Set(reached).size, "paid requests for a two-take ask").toBe(2);
+  /* Asked about by its own key (POST /api/generate/check): it never arrived, so it is fenced — it can never land — and
+     the press says so rather than sending anything, old or new. */
+  await expect(page.locator(".gx-gen-note[role=status]").first()).toHaveText("Take 2 of your last batch never arrived; nothing was charged for it. Nothing new was sent: press Generate again to send this.", { timeout: 30_000 });
+  expect(checks).toEqual([lostKey]);
+  await expect.poll(() => claims(page), { timeout: 30_000 }).toBe(0);
+  await page.waitForTimeout(3000);
+  expect(seen, "paid requests the browser sent").toBe(2);
+  expect(new Set(reached).size, "paid requests that reached the server").toBe(1);
   expect((await read()).project.nodes.filter((n) => n.type === "scene").map((n) => n.title)).toEqual(["A red fox crosses the frozen harbour at dusk. · 2 takes"]);
   expect(errors).toEqual([]);
 });
@@ -2239,6 +2264,7 @@ for (const where of ["another tab on the same project", "this tab, as an image"]
       if (!lost) { lost = true; return route.abort("connectionreset"); }
       return route.fulfill({ response });
     });
+    const checks = checkedKeys(page);
     const a = await openGen(page, project);
     await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Video" }).click();
     await a.box.fill(FOX);
@@ -2262,8 +2288,10 @@ for (const where of ["another tab on the same project", "this tab, as an image"]
     await expect(a.go).toHaveText(/\d cr/, { timeout: 60_000 });
     const before = reached.length;
     await a.go.click();
-    await expect.poll(() => reached.length, { timeout: 60_000 }).toBeGreaterThan(before);
+    /* Asked about by its own key: it landed, so that job is followed and nothing is sent again. */
+    await expect.poll(() => checks.includes(reached[0].key), { timeout: 60_000 }).toBe(true);
     await page.waitForTimeout(2500);
+    expect(reached.length, "requests sent after the press").toBe(before);
     const fox = reached.filter((r) => r.prompt === FOX);
     expect({ requests: new Set(fox.map((r) => r.key)).size, jobs: new Set(fox.map((r) => r.job)).size }).toEqual({ requests: 1, jobs: 1 });
     expect(errors).toEqual([]);

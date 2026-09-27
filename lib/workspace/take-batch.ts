@@ -11,7 +11,7 @@ import {
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
 import { readPendingGeneration } from "../workbench/pending-generation";
 import { formatCredits } from "./cost";
-import { dispatchGeneration, quoteDispatch, type DispatchRequest, type QuotedDispatch } from "./generate-submit";
+import { dispatchGeneration, quoteDispatch, settlePendingGeneration, type DispatchRequest, type QuotedDispatch } from "./generate-submit";
 import { generationPhase, neutralCopy } from "./rig";
 import type { MediaJob } from "../workbench/job-recovery";
 
@@ -172,22 +172,15 @@ export type SettledTake =
   | { state: "unknown"; reason: string };
 
 /**
- * The claimed request of an unconfirmed take is recovered by its own key
- * through the shared dispatch, which never makes a second request of it: the
- * server answers the key with the job it made, or with its refusal (and, with
- * the server's check, a key that never arrived is fenced and let go). Nothing
- * new is built here: without a claim there is nothing to recover.
+ * An unconfirmed take's claimed request, asked about by its own key, route and
+ * body (settlePendingGeneration, POST /api/generate/check): landed, its job is
+ * followed; never arrived, the server fences the key so it can never land, and
+ * nothing was charged; not known yet, the claim stays. It is never sent again.
  */
-export async function settleWorkspaceTake(options: { scope: string; storageId: string; request: DispatchRequest; storage?: Storage }): Promise<SettledTake> {
-  const storage = options.storage ?? window.localStorage;
-  let pending;
-  try { pending = readPendingGeneration(storage, options.storageId); } catch {
-    return { state: "unknown", reason: "The saved request cannot be read. Check Activity before starting another take." };
-  }
-  if (!pending) return { state: "lost" };
-  const outcome = await dispatchGeneration({ scope: options.scope, storageId: options.storageId, shown: pending.credits, request: options.request, storage });
-  if (outcome.state === "queued") return { state: "landed", jobId: outcome.jobId, credits: outcome.credits };
-  if (readKept(storage, options.storageId)) return { state: "unknown", reason: outcome.state === "refused" ? outcome.reason : "Your last take could not be checked." };
+export async function settleWorkspaceTake(options: { scope: string; storageId: string; storage?: Storage }): Promise<SettledTake> {
+  const settled = await settlePendingGeneration({ scope: options.scope, storageId: options.storageId, storage: options.storage });
+  if (settled.state === "landed") return { state: "landed", jobId: settled.jobId, credits: settled.credits };
+  if (settled.state === "unknown") return { state: "unknown", reason: settled.reason };
   return { state: "lost" };
 }
 
@@ -393,7 +386,7 @@ export async function settleWorkspaceBatch(options: { scope: string; projectId: 
   const landed: { variation: number; jobId: string; credits: number }[] = [], lost: number[] = [], waiting: WorkspaceBatchRecord["takes"] = [];
   let reason = "";
   for (const take of record.takes) {
-    const settled = await settleWorkspaceTake({ scope: options.scope, storageId: take.storageId, request: { endpoint: "/api/generate", input: null }, storage });
+    const settled = await settleWorkspaceTake({ scope: options.scope, storageId: take.storageId, storage });
     if (settled.state === "landed") landed.push({ variation: take.variation, jobId: settled.jobId, credits: settled.credits });
     else if (settled.state === "lost") lost.push(take.variation);
     else { waiting.push(take); reason ||= settled.reason; }

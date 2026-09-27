@@ -164,6 +164,61 @@ export async function withGenerationRequestData(
   }
 }
 
+/** What a paid request sent under an Idempotency-Key became, from its claim (checkGenerationRequest). */
+export type GenerationRequestCheck =
+  /** It reached the server and made this job. The job's own status says how it went: a refused charge fails it, unbilled. */
+  | { state: "landed"; id: string; status: string }
+  /** It reached the server and was answered without a job: nothing was made or charged. */
+  | { state: "refused"; status: number; error: string }
+  /** It is being accepted right now: ask again in a moment. */
+  | { state: "pending" }
+  /** It never reached the server. Checking set its key aside, so it never will: the answer is final. */
+  | { state: "absent" }
+  /** The key names a different request than the one asked about. */
+  | { state: "mismatch" };
+
+const SET_ASIDE = "This request was set aside: it had not reached the server when it was checked. Nothing was charged.";
+
+/**
+ * Did the request sent under this key land? Asked for the person who sent it
+ * (the claim is theirs), in this workspace's database only, with the
+ * fingerprint the request itself carries, so a key is only ever checked
+ * against the request it named. For routes that bind their job atomically.
+ *
+ * A key the server has never seen is fenced in the same step: its claim is
+ * written complete, with a reply that refuses it. If the request arrives after
+ * all, withGenerationRequestData answers it with that reply and admits
+ * nothing. So the answer never changes, and a recovery can send what is on
+ * screen now under a new key without paying for anything twice.
+ */
+export async function checkGenerationRequest(input: { userId: string; key: string; fingerprint: string }): Promise<GenerationRequestCheck> {
+  const { userId, key, fingerprint } = input;
+  await generationRequestsReady();
+  const fenced = await db().execute({
+    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+    args: [userId, key, fingerprint, JSON.stringify({ error: SET_ASIDE, code: "set_aside" }), now(), now()],
+  });
+  if (fenced.rowsAffected) return { state: "absent" };
+  const read = async () => (await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] })).rows[0];
+  let row = await read();
+  if (!row || row.fingerprint !== fingerprint) return { state: "mismatch" };
+  /* No reply and no job, and no request could still be running it: it died unadmitted, and a claim naming no job proves there is none. */
+  if (!row.response_json && !row.generation_id && Number(row.created_at) < now() - STALE_CLAIM_MS) {
+    if (await completeUnadmitted(userId, key)) return { state: "refused", status: 409, error: UNADMITTED };
+    row = await read();
+  }
+  let reply: { id?: unknown; status?: unknown; error?: unknown; code?: unknown } = {};
+  try { reply = row.response_json ? JSON.parse(String(row.response_json)) : {}; } catch { /* an unreadable reply still names its job below */ }
+  const jobId = row.generation_id ? String(row.generation_id) : typeof reply.id === "string" && reply.id ? reply.id : null;
+  if (jobId) {
+    const job = (await db().execute({ sql: `SELECT status FROM generations WHERE id=?`, args: [jobId] })).rows[0];
+    return { state: "landed", id: jobId, status: job ? String(job.status) : typeof reply.status === "string" ? reply.status : "queued" };
+  }
+  if (!row.response_json) return { state: "pending" };
+  if (reply.code === "set_aside") return { state: "absent" };
+  return { state: "refused", status: Number(row.response_status), error: typeof reply.error === "string" && reply.error ? reply.error : `Refused (${row.response_status})` };
+}
+
 let reservationReady: Promise<void> | undefined;
 async function reservationsReady(): Promise<void> {
   reservationReady ??= (async () => {

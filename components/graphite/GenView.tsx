@@ -33,6 +33,8 @@ import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
+import Boundary from "@/components/Boundary";
+import { PanelFault, TileFault } from "./PanelFault";
 
 /** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
 const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -665,6 +667,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
+        {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
+        <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
           className="gx-gen-grid" items={cells} getKey={(cell: Strip<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
@@ -709,28 +713,34 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           ) : null}
           </>}
           renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? (
+            <Boundary what="This take" probe={`take:${cell.take.take.id}`} resetKey={cell.take.take.id} fallback={(fault) => <TileFault fault={fault} name={cell.take.take.name} />}>
             <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === cell.take.take.id}>
               {thumb(cell.take)}
               <span className="gx-asset-name">{cell.take.take.name}</span>
               <span className="gx-asset-meta">{cell.take.take.meta}</span>
             </div>
+            </Boundary>
           ) : (
             <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
               label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
               {cell.takes.map((entry, i) => {
                 const v = entryBatch(entry)?.variation;
+                /* Inside a strip too, one bad take costs only its own tile. */
                 return (
-                  <div className="gx-asset gx-batch-take" role="listitem" key={entry.take.id} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} data-testid="gen-batch-take">
+                  <Boundary key={entry.take.id} what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />}>
+                  <div className="gx-asset gx-batch-take" role="listitem" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} data-testid="gen-batch-take">
                     {thumb(entry)}
                     <span className="gx-asset-name">{takeLabel(isVariation(v) ? v : i + 1)}</span>
                     <span className="gx-asset-meta">{entry.take.meta}</span>
                   </div>
+                  </Boundary>
                 );
               })}
             </TakeStrip>
           )}
         />
         {!running && !pickedUp.length && !results.length && !liveBatches.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        </Boundary>
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`

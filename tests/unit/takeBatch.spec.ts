@@ -331,27 +331,52 @@ test("workspace: when the credits run out admission holds takes 3–4: said so, 
   });
 });
 
-test("workspace: a lost reply on take 2 stops the batch; the next Generate asks about it by its own key and never pays twice", async () => {
+for (const found of ["landed", "absent"] as const)
+  test(`workspace: a lost reply on take 2 stops the batch; the next Generate checks it by its own key (${found}) and never sends it again`, async () => {
+    const storage = memory();
+    let checks: Record<string, unknown>[] = [];
+    const server = workspace(() => 18, (variation, attempt) => variation === 2 && attempt === 1 ? "network" : { json: { id: `gen_take${variation}` }, complete: true });
+    const route = (path: string, sent: Record<string, unknown>, calls: Call[]): Answer => {
+      /* The server's record of the lost request decides (POST /api/generate/check): it landed, or it never arrived and is fenced now. */
+      if (path === "/api/generate/check") { checks.push(sent); return { json: found === "landed" ? { state: "landed", id: "gen_take2", status: "running" } : { state: "absent" } }; }
+      return server.route(path, sent, calls);
+    };
+    await withServer(route, async (calls) => {
+      const outcome = await sendWorkspaceBatch({ scope: SCOPE, shown: 54, count: 3, storageId, storage, request: (v) => ({ endpoint: "/api/generate", input: body(v) }) });
+      if (outcome.state !== "sent") throw new Error(outcome.state);
+      expect(outcome.takes.map((t) => t.state)).toEqual(["queued", "unconfirmed", "not-sent"]);
+      expect(batchNotice(outcome.takes, "cr")).toBe("Take 1 was sent at 18 cr. Take 2: the reply never came back. It is checked before anything else is sent, and never sent twice. Take 3 was not made. Nothing was charged for it.");
+      /* Its claim is kept for the check. */
+      const claimed = readPendingGeneration(storage, storageId(2));
+      expect(claimed).not.toBeNull();
+      rememberWorkspaceBatch(storage, SCOPE, { projectId: DRAFT, batchId: "b_unit0002", name: "Close on her hands.", model: "Seedance 2.5", takes: [{ variation: 2, storageId: storageId(2), credits: 18 }] });
+      checks = [];
+      const settled = await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage });
+      expect(settled).toMatchObject(found === "landed"
+        ? { state: "settled", landed: [{ variation: 2, jobId: "gen_take2", credits: 18 }], lost: [] }
+        : { state: "settled", landed: [], lost: [2] });
+      /* Asked about by its own key, route and body — the request exactly as it was sent — and never sent again. */
+      expect(checks).toEqual([{ key: claimed!.key, endpoint: "/api/generate", body: claimed!.body }]);
+      expect(calls.filter((call) => call.path === "/api/generate").map((call) => call.body.variation)).toEqual([1, 2]);
+      expect(calls.filter((call) => call.path === "/api/generate/quote")).toHaveLength(3);
+      expect(readPendingGeneration(storage, storageId(2))).toBeNull();
+      expect(await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage })).toEqual({ state: "none" });
+    });
+  });
+
+test("workspace: a lost take whose check gets no answer stays unconfirmed, and nothing new is sent until it is answered", async () => {
   const storage = memory();
-  const server = workspace(() => 18, (variation, attempt) => variation === 2 && attempt === 1 ? "network" : { json: { id: `gen_take${variation}` }, complete: true });
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendWorkspaceBatch({ scope: SCOPE, shown: 54, count: 3, storageId, storage, request: (v) => ({ endpoint: "/api/generate", input: body(v) }) });
+  const server = workspace(() => 18, (variation) => variation === 2 ? "network" : { json: { id: `gen_take${variation}` }, complete: true });
+  const route = (path: string, sent: Record<string, unknown>, calls: Call[]): Answer => (path === "/api/generate/check" ? "network" : server.route(path, sent, calls));
+  await withServer(route, async (calls) => {
+    const outcome = await sendWorkspaceBatch({ scope: SCOPE, shown: 36, count: 2, storageId, storage, request: (v) => ({ endpoint: "/api/generate", input: body(v) }) });
     if (outcome.state !== "sent") throw new Error(outcome.state);
-    expect(outcome.takes.map((t) => t.state)).toEqual(["queued", "unconfirmed", "not-sent"]);
-    expect(batchNotice(outcome.takes, "cr")).toBe("Take 1 was sent at 18 cr. Take 2: the reply never came back. It is checked before anything else is sent, and never sent twice. Take 3 was not made. Nothing was charged for it.");
-    /* Its claim is kept for the check. */
-    const claimed = readPendingGeneration(storage, storageId(2));
-    expect(claimed).not.toBeNull();
     rememberWorkspaceBatch(storage, SCOPE, { projectId: DRAFT, batchId: "b_unit0002", name: "Close on her hands.", model: "Seedance 2.5", takes: [{ variation: 2, storageId: storageId(2), credits: 18 }] });
-    /* The next Generate: take 2 is recovered by its own key (the server answers the key with the job it made), never as a second request. */
     const settled = await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage });
-    expect(settled).toMatchObject({ state: "settled", landed: [{ variation: 2, jobId: "gen_take2", credits: 18 }], lost: [] });
-    const sent = calls.filter((call) => call.path === "/api/generate");
-    expect(sent.map((call) => call.body.variation)).toEqual([1, 2, 2]);
-    expect(sent[1].key).toBe(sent[2].key);
-    expect(sent[2].key).toBe(claimed!.key);
-    expect(calls.filter((call) => call.path === "/api/generate/quote")).toHaveLength(3);
-    expect(await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage })).toEqual({ state: "none" });
+    expect(settled.state).toBe("unknown");
+    if (settled.state === "unknown") expect(settled.reason).toMatch(/could not be checked yet .* so nothing new was sent\. Try again in a moment\.$/);
+    expect(readPendingGeneration(storage, storageId(2))).not.toBeNull();
+    expect(calls.filter((call) => call.path === "/api/generate")).toHaveLength(2);
   });
 });
 

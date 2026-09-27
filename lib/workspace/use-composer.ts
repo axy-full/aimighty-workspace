@@ -92,8 +92,9 @@ import type { Generation } from "./types";
  * closed) is remembered in this browser, with the take it was in its batch —
  * one record per take, named by its settings and prompt, so other takes made
  * meanwhile (here or in another tab) leave it be. The next Generate of that
- * same take takes it up again — the same shot and claimed request, or the
- * connected job it submitted, read back first: one the account still has as
+ * same take takes it up again — the same shot, its claimed request checked on
+ * the server (followed if it landed, never re-sent), or the connected job it
+ * submitted, read back first: one the account still has as
  * quoted is sent again as itself (its first submission may still be on its
  * way in; the account takes one per job), one that did not render is made
  * again — and goes on from there, never paying for it
@@ -245,7 +246,7 @@ type ResumeRecord =
 /* One record per project and take — the take named by its settings and prompt — so a take made meanwhile, here or in another tab, never replaces it. */
 const RESUME_PREFIX = "particl:composer-resume:v2:";
 const RESUME_KEY = (scope: string, projectId: string, take: string) => `${RESUME_PREFIX}${JSON.stringify([scope, projectId, stableId("take", take)])}`;
-/** A record nobody took up in a week is let go (its claimed request is still replayed by the dispatch). */
+/** A record nobody took up in a week is let go (its claimed request is still settled by the dispatch: checked, never re-sent). */
 const RESUME_MS = 7 * 24 * 60 * 60 * 1000;
 function readResume(scope: string, projectId: string, take: string): ResumeRecord | null {
   try {
@@ -612,15 +613,18 @@ export function useComposer(options: {
 
   /**
    * Before anything is sent on a project: a batch there whose reply was lost is
-   * asked about (lib/workspace/take-batch.ts). What had landed is followed and
-   * nothing new is sent; what never arrived is let go, with nothing charged;
-   * while the answer is not known, nothing new is sent.
+   * asked about (lib/workspace/take-batch.ts; the server's check fences what
+   * never arrived). Whatever the answer, this press sends nothing new: what had
+   * landed is followed, what never arrived is said to have cost nothing, and an
+   * answer not yet known leaves it to be asked again. The next press sends what
+   * is on screen at the price on the button.
    */
   const settleEarlier = useCallback(async (projectId: string, billing: "workspace" | "connected"): Promise<{ proceed: boolean; notice: string | null }> => {
     if (billing === "connected") {
       const settled = await settleConnectedBatch({ scope, draftId: projectId });
       if (settled.state === "none") return { proceed: true, notice: null };
-      if (settled.state === "lost") return { proceed: true, notice: "Your last batch never reached the connected account; nothing was charged for it." };
+      /* Never arrived, and fenced now: said before anything new is spent, and the next press sends what is on screen. */
+      if (settled.state === "lost") return { proceed: false, notice: "Your last batch never reached the connected account; nothing was charged for it. Nothing new was sent: press Generate again to send this." };
       if (settled.state === "unknown") return { proceed: false, notice: settled.reason };
       const first = settled.jobs[0];
       followBatch({
@@ -634,7 +638,8 @@ export function useComposer(options: {
     if (settled.state === "none") return { proceed: true, notice: null };
     if (settled.state === "unknown") return { proceed: false, notice: settled.reason };
     const lost = settled.lost.length ? `${takesPhrase(settled.lost).replace(/^t/, "T")} of your last batch never arrived; nothing was charged for ${settled.lost.length === 1 ? "it" : "them"}.` : "";
-    if (!settled.landed.length) return { proceed: true, notice: lost || null };
+    /* Never arrived, and fenced now: said before anything new is spent — the next press sends a whole new batch, not the missing take. */
+    if (!settled.landed.length) return { proceed: false, notice: `${lost} Nothing new was sent: press Generate again to send this.` };
     const found = settled.landed.map((take): BatchTake => ({ variation: take.variation, state: "queued", jobId: take.jobId, credits: take.credits }));
     setBatches((list) => {
       const known = list.find((item) => item.id === settled.batchId);
@@ -911,7 +916,7 @@ export function useComposer(options: {
           if (!identity) throw new Error(`${reference.name} cannot be used as a reference.`);
           return { ...identity, role: referenceRole({ kind: reference.kind }) };
         });
-        /* The take's own recovery key: a claimed request left unconfirmed is replayed, never sent twice. Sound
+        /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
            takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
         const storageId = pendingGenerationKey(scope, filed.project.id, model.audioTask ? `${shot.id}:${stableId("take", now.quoteKey)}` : shot.id);
         const outcome = await dispatchGeneration({
