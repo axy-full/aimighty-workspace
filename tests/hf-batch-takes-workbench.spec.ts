@@ -160,6 +160,15 @@ async function clearOfTabBar(page: Page) {
 }
 
 /** Opt-in (BATCH_SHOTS=<dir>): the page with the strip's end above the dock, the strip alone, and the takes stepper with Generate. */
+/**
+ * Moves the page's clock on two seconds at a time until `seen` holds: status reads run at lib/poll's pace (and, for
+ * the connected account, never sooner than its pollAfterSeconds), so a fixed jump either overshoots what a person
+ * would see or undershoots the next read.
+ */
+async function until(page: Page, seen: () => Promise<boolean>, what: string) {
+  await expect.poll(async () => { if (await seen()) return true; await page.clock.fastForward("00:02"); return seen(); }, { message: what, timeout: 60_000, intervals: [50] }).toBe(true);
+}
+
 async function shot(page: Page, info: TestInfo, name: string) {
   const dir = process.env.BATCH_SHOTS;
   if (!dir) return;
@@ -259,13 +268,12 @@ test("this workspace's credits: 4 takes are one batch at the total on the button
   /* Takes land one by one; the strip says so; when the last lands the Library has all four as one strip. */
   const batchId = routes.charges[0].batchId;
   routes.status.set("gen_batch_1_2", "succeeded");
-  await page.clock.fastForward("00:07");
-  await expect(strip.getByTestId("gen-batch-take-status")).toHaveText(["Rendering", "Complete", "Rendering", "Rendering"]);
+  await until(page, async () => (await strip.getByTestId("gen-batch-take-status").allTextContents()).join() === "Rendering,Complete,Rendering,Rendering", "take 2 lands first");
   await expect(strip.locator(".gx-batch-meta")).toContainText("1 of 4 rendered");
   library.generations = [4, 3, 2, 1].map((v) => generation({ id: `gen_batch_1_${v}`, kind: "video", title: PROMPT, prompt: PROMPT, params: { batchId, variation: v }, creditsBilled: PRICE }));
   for (const v of [1, 3, 4]) routes.status.set(`gen_batch_1_${v}`, "succeeded");
-  await page.clock.fastForward("00:07");
-  await expect(page.getByTestId("toast")).toContainText("4 takes rendered. They are one strip in Takes.");
+  const landedToast = page.getByTestId("toast").filter({ hasText: "4 takes rendered. They are one strip in Takes." });
+  await until(page, async () => (await landedToast.count()) > 0, "the batch is announced once it has landed");
   await page.clock.fastForward("00:03");
   const landed = page.getByTestId("gen-batch");
   await expect(landed).toHaveCount(1);
@@ -445,9 +453,9 @@ test("the connected account: one quote per take, ONE paid call for their exact s
   const ids = routes.paid[0].ids as string[];
   for (const id of ids) routes.jobs.set(id, completed(routes.jobs.get(id)!));
   library.generations = ids.map((id, i) => generation({ id: original(Number(id.slice(-2))), kind: "video", title: PROMPT, prompt: PROMPT, provider: "higgsfield", params: { task: "connected-generation", batchId: String(batch.batchId), variation: i + 1 } }));
-  await page.clock.fastForward("00:13");
-  await expect.poll(() => new Set(routes.posts.filter((p) => p.action === "status").map((p) => p.id)).size).toBe(4);
-  await expect(page.getByTestId("toast")).toContainText("4 takes rendered. They are one strip in Takes.");
+  const landedToast = page.getByTestId("toast").filter({ hasText: "4 takes rendered. They are one strip in Takes." });
+  await until(page, async () => (await landedToast.count()) > 0, "the batch is announced once every take has landed");
+  expect(new Set(routes.posts.filter((p) => p.action === "status").map((p) => p.id)).size).toBe(4);
   await page.clock.fastForward("00:03");
   await expect(page.getByTestId("gen-batch")).toHaveAttribute("data-state", "done");
   await expect(page.getByTestId("gen-batch").getByTestId("gen-batch-take").locator(".gx-asset-thumb")).toHaveCount(4);
