@@ -39,6 +39,8 @@ async function fixture() {
   const generatedBytes = await (await import('sharp')).default(bytes).png().toBuffer();
   const studio = workspace('studio-' + crypto.randomUUID()), other = workspace('other-' + crypto.randomUUID());
   let viewer: string | null = 'owner';
+  let backend = 'local', signed: string | null = 'https://r2.invalid/signed';
+  const signatures: { id: string; options: Record<string, string> }[] = [];
   const reads: { id: string; tenant: string; range?: ByteRange | null; signal?: AbortSignal }[] = [];
   await tenant.runInTenant(studio, async () => {
     await records.workbenchReady();
@@ -65,6 +67,8 @@ async function fixture() {
     '@/lib/mediaBindings': {}, '@/lib/uploadReservations': {}, '@/lib/workbench/request-scope': {},
     '@/lib/contentDisposition': { attachmentDisposition }, '@/lib/serveType': { servingFor }, '@/lib/mediaRange': { byteRange },
     '@/lib/storage': {
+      backendKind: () => backend,
+      presignedUploadUrl: async (id: string, _ext: string, _stored: string, options: Record<string, string>) => { signatures.push({ id, options }); return signed; },
       openUploadStream: async (id: string, _ext: string, range?: ByteRange | null, _url?: string, signal?: AbortSignal) => {
         reads.push({ id, tenant: tenant.requireTenant().id, range, signal });
         const result = range ? bytes.subarray(range.start, range.end + 1) : bytes;
@@ -81,7 +85,7 @@ async function fixture() {
   const uploads = load<typeof import('../../app/api/uploads/[id]/route')>('app/api/uploads/[id]/route.ts', deps).GET;
   const privateMedia = load<typeof import('../../app/api/workbench/media/[id]/route')>('app/api/workbench/media/[id]/route.ts', deps).GET;
   const generated = load<typeof import('../../app/api/media/[id]/route')>('app/api/media/[id]/route.ts', deps).GET;
-  return { tenant, database, studio, other, reads, uploads, privateMedia, generated, generatedBytes, setViewer: (id: string | null) => { viewer = id; } };
+  return { tenant, database, studio, other, reads, uploads, privateMedia, generated, generatedBytes, signatures, setStorage: (kind: string, result: string | null = signed) => { backend = kind; signed = result; }, setViewer: (id: string | null) => { viewer = id; } };
 }
 
 const request = (url: string, range?: string) => new Request('https://particl.test' + url, { headers: range ? { Range: range } : {} });
@@ -162,4 +166,29 @@ test('download query never bypasses workspace isolation or authentication for an
     });
   }
   expect(f.reads).toEqual([]);
+});
+
+
+test('R2 upload reads authorize before signing; Blob fallback and canvas streaming retain the safe response', async () => {
+  const f = await fixture();
+  f.setStorage('r2');
+  await f.tenant.runInTenant(f.other, async () => {
+    expect((await f.uploads(request('/api/uploads/original'), ctx('original'))).status).toBe(404);
+    expect(f.signatures).toHaveLength(0);
+  });
+  await f.tenant.runInTenant(f.studio, async () => {
+    const response = await f.uploads(request('/api/uploads/original?download=1'), ctx('original'));
+    expect(response.status).toBe(302);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(f.signatures[0].options).toMatchObject({ contentType: 'image/webp', contentDisposition: expect.stringMatching(/^attachment;/) });
+    expect((await f.uploads(request('/api/uploads/original?stream=1'), ctx('original'))).status).toBe(200);
+    expect(f.signatures).toHaveLength(1);
+    f.setStorage('r2', null);
+    const fallback = await f.uploads(request('/api/uploads/original?download=1'), ctx('original'));
+    expect(fallback.status).toBe(200);
+    expect(Buffer.from(await fallback.arrayBuffer()).equals(bytes)).toBe(true);
+    f.setViewer(null);
+    expect((await f.uploads(request('/api/uploads/original'), ctx('original'))).status).toBe(401);
+    expect(f.signatures).toHaveLength(2);
+  });
 });
