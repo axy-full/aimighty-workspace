@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { COLLECT_POLL_MS, COLLECT_UNSETTLED_POLLS, ConnectedCollector } from "../../lib/shell/connected-collector";
+import { COLLECT_PACE, COLLECT_POLL_MS, COLLECT_UNSETTLED_POLLS, ConnectedCollector } from "../../lib/shell/connected-collector";
 import { settledToast } from "../../lib/shell/use-connected-collector";
 import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
@@ -13,29 +13,36 @@ const job = (n: number, status: ConnectedJob["status"], over: Record<string, unk
   input: { type: "video", model: "kling_3_0", prompt: "a fox", parameters: {}, medias: [] }, ...over,
 });
 
-function harness(listing: unknown[], answers: Record<string, (unknown)[]>) {
+/** An answer that names its own pollAfterSeconds (every other good answer asks for 15). */
+const hinted = (answer: unknown, hint: number) => ({ hinted: answer, hint });
+
+/** `random`: the jitter's draws (0.5 is none: every wait is its pace exactly). */
+function harness(listing: unknown[], answers: Record<string, (unknown)[]>, random: () => number = () => 0.5) {
   let clock = 1_000;
+  const start = clock;
   const timers: { at: number; fn: () => void }[] = [];
-  const calls: { method: string; body?: { action: string; id: string } }[] = [];
+  const calls: { method: string; body?: { action: string; id: string }; at: number }[] = [];
   const settled: ConnectedJob[] = [];
   const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const collector = new ConnectedCollector({
     now: () => clock,
+    random,
     setTimer: (fn, ms) => { const t = { at: clock + ms, fn }; timers.push(t); return t; },
     clearTimer: (t) => { const i = timers.indexOf(t as (typeof timers)[number]); if (i >= 0) timers.splice(i, 1); },
     onSettled: (j) => settled.push(j),
     fetch: async (url, init = {}) => {
       if (!init.method) {
-        calls.push({ method: "GET" });
+        calls.push({ method: "GET", at: clock });
         expect(url).toBe(`/api/higgsfield/consumer/generation?draftId=${DRAFT}`);
         return reply(200, { jobs: listing });
       }
       const body = JSON.parse(String(init.body)) as { action: string; draftId: string; id: string };
-      calls.push({ method: "POST", body });
+      calls.push({ method: "POST", body, at: clock });
       expect(body).toEqual({ action: "status", draftId: DRAFT, id: body.id });
       const queue = answers[body.id];
       const next = queue?.length ? queue.shift() : null;
       if (next === 403) return reply(403, { error: "Owner only." });
+      if (next && typeof next === "object" && "hinted" in next) { const { hinted: answer, hint } = next as ReturnType<typeof hinted>; return reply(200, { job: answer, pollAfterSeconds: hint }); }
       return next ? reply(200, { job: next, pollAfterSeconds: 15 }) : reply(503, { error: "busy" });
     },
   });
@@ -52,7 +59,15 @@ function harness(listing: unknown[], answers: Record<string, (unknown)[]>) {
       await new Promise((r) => setTimeout(r, 0));
     }
   };
-  return { collector, calls, settled, advance };
+  /* Run the clock exactly to the next timer, and say when that is (seconds from the start). */
+  const next = async () => {
+    timers.sort((a, b) => a.at - b.at);
+    if (timers.length) await advance(timers[0].at - clock);
+    return (clock - start) / 1000;
+  };
+  /** When each status read went out, in seconds from the start. */
+  const readAt = (id?: string) => calls.filter((c) => c.method === "POST" && (!id || c.body?.id === id)).map((c) => (c.at - start) / 1000);
+  return { collector, calls, settled, advance, next, readAt };
 }
 
 test("a job submitted from a view that has gone is read until it lands, then announced once", async () => {
@@ -96,7 +111,8 @@ test("a job the account never accepts is left after a few reads; a 403 stops the
   const { collector, calls, advance } = harness([job(5, "uncertain")], { [uuid(5)]: stuck });
   await collector.list(DRAFT);
   await advance(0);
-  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 3; i++) await advance(COLLECT_POLL_MS);
+  /* Its reads grow further apart (20, 30, 45 s, then a minute): a minute a step reaches every one. */
+  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 3; i++) await advance(COLLECT_PACE.capMs);
   expect(calls.filter((c) => c.method === "POST")).toHaveLength(COLLECT_UNSETTLED_POLLS);
   expect(collector.tracking()).toEqual([]);
 
@@ -125,7 +141,7 @@ test("a job handed over mid-submit that still reads quoted is kept, and followed
   const never = harness([], { [uuid(9)]: Array.from({ length: 20 }, () => job(9, "quoted")) });
   never.collector.release(DRAFT, { id: uuid(9), status: "dispatching" });
   await never.advance(0);
-  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 3; i++) await never.advance(COLLECT_POLL_MS);
+  for (let i = 0; i < COLLECT_UNSETTLED_POLLS + 3; i++) await never.advance(COLLECT_PACE.capMs);
   expect(never.calls.filter((c) => c.method === "POST")).toHaveLength(COLLECT_UNSETTLED_POLLS);
   expect(never.collector.tracking()).toEqual([]);
   /* A quote the listing finds was never submitted: it is not followed. */
@@ -156,6 +172,86 @@ test("the strip's job is its composer's: not read while in flight, forgotten wit
   left.collector.show(null, false);
   await left.advance(0);
   expect(left.settled.map((j) => j.id)).toEqual([uuid(12)]);
+});
+
+test("the pace: 1.5x further apart while nothing moves, up to a minute; a changed status starts it over; failures wait a minute, then twice as long", async () => {
+  const uncertain = job(20, "uncertain", { providerReceipt: { response: "submitted" } }), accepted = job(20, "accepted");
+  const { collector, next, readAt } = harness([uncertain], {
+    [uuid(20)]: [uncertain, uncertain, accepted, accepted, accepted, accepted, accepted, null, null, accepted, accepted],
+  });
+  await collector.list(DRAFT);
+  for (let i = 0; i < 11; i++) await next();
+  /* Confirming: at once, then 20 s, 30 s. Accepted (moved on): 20 s again, then 30, 45, 60, 60. Two failed reads: a minute,
+     then two. A good read ends the doubling and the pace goes on where it was (a minute). */
+  expect(readAt()).toEqual([0, 20, 50, 70, 100, 145, 205, 265, 325, 445, 505]);
+});
+
+test("jitter spreads the waits ±20%: two jobs asked in the same round are next asked apart", async () => {
+  const draws = [0, 0.999999];
+  const { collector, next, readAt } = harness(
+    [job(21, "accepted"), job(22, "accepted")],
+    { [uuid(21)]: [job(21, "accepted"), job(21, "accepted")], [uuid(22)]: [job(22, "accepted"), job(22, "accepted")] },
+    () => draws.shift() ?? 0.5,
+  );
+  await collector.list(DRAFT);
+  await next();
+  expect(readAt()).toEqual([0, 0]);
+  /* The same 20 s, drawn low for one (16 s) and high for the other (24 s). */
+  await next();
+  await next();
+  expect(readAt(uuid(21))).toEqual([0, 16]);
+  expect(readAt(uuid(22))).toEqual([0, 24]);
+});
+
+test("a listing — the person opening a page of the project, or coming back — starts a followed job's pace over from its last read, never inside the account's window", async () => {
+  const accepted = job(23, "accepted");
+  const { collector, advance, next, readAt } = harness([accepted], {
+    [uuid(23)]: [accepted, accepted, accepted, hinted(accepted, 40), accepted, accepted, accepted],
+  });
+  await collector.list(DRAFT);
+  for (let i = 0; i < 3; i++) await next();
+  expect(readAt()).toEqual([0, 20, 50]);
+  /* Due at 95 s. The page is opened again at 60 s: 20 s after the last read, so 70 s. */
+  await advance(10_000);
+  await collector.list(DRAFT);
+  await next();
+  expect(readAt()).toEqual([0, 20, 50, 70]);
+  /* That read's reply asked for 40 s. Opened again 5 s later: never before the 40 s (and a half) is up. */
+  await advance(5000);
+  await collector.list(DRAFT);
+  await next();
+  expect(readAt().at(-1)).toBeGreaterThanOrEqual(70 + 40.5);
+  expect(readAt().at(-1)).toBeLessThanOrEqual(70 + 40.5 * 1.2);
+});
+
+test("a listing never holds a read back past the one already planned", async () => {
+  let draw = 0;
+  const accepted = job(25, "accepted");
+  const { collector, advance, next, readAt } = harness([accepted], { [uuid(25)]: [accepted, accepted] }, () => draw);
+  await collector.list(DRAFT);
+  await next();
+  /* Planned 16 s out (drawn low). A listing 5 s later draws high (24 s): the read stays at 16 s. */
+  draw = 0.999999;
+  await advance(5000);
+  await collector.list(DRAFT);
+  await next();
+  expect(readAt()).toEqual([0, 16]);
+});
+
+test("a job a view lets go of is first read one pace after the view's own last read, never inside the account's window", async () => {
+  const accepted = job(24, "accepted");
+  const { collector, advance, readAt } = harness([], { [uuid(24)]: [accepted, job(24, "completed")] });
+  collector.watch(uuid(24));
+  /* The view read it at 0 s and the account asked for 30 s; the view goes 4 s later. */
+  await advance(4000);
+  collector.release(DRAFT, { id: uuid(24), status: "accepted" }, { at: 1000, hintSeconds: 30 });
+  await advance(0);
+  expect(readAt()).toEqual([]);
+  /* 30 s and a half, spread upward only (no jitter drawn here: +10%). */
+  await advance(33_550 - 4000 - 1);
+  expect(readAt()).toEqual([]);
+  await advance(1);
+  expect(readAt()).toEqual([33.55]);
 });
 
 test("the toast says where a finished render went, and that a failed one was not billed", () => {
