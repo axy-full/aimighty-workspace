@@ -859,3 +859,54 @@ test("Marketing preserves product-first mixed generated/uploaded source order th
   expect(JSON.parse(String(stored.params)).references).toEqual([{ genId: "product_generation", role: "reference_image", kind: "image" }, { uploadId: "cast_upload", role: "reference_image", kind: "image" }]);
   expect(dispatched).toHaveLength(1);
 }));
+
+test("a still and a clip keep Gen's shot setup as data, trimmed to short strings, so Recreate brings it back", async () => scope("shot-setup", async (service) => {
+  const { db } = await import("../../lib/db");
+  const setup = { shot: "cu", lens: "35", light: "soft", count: 5, empty: "", ["k".repeat(30)]: "v" };
+  const bodies = [
+    { model: "gemini-3.1-flash-image", prompt: "A tree. Close-up.", projectId: "project", ratio: "16:9", resolution: "1K", shotSpec: setup },
+    { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain. Close-up.", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5, shotSpec: { ...setup, move: "push" } },
+    { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K", shotSpec: ["cu"] },
+  ];
+  const kept = [{ shot: "cu", lens: "35", light: "soft", ["k".repeat(24)]: "v" }, { shot: "cu", lens: "35", light: "soft", ["k".repeat(24)]: "v", move: "push" }, undefined];
+  for (const [index, body] of bodies.entries()) {
+    /* Gen's path: the quote's fingerprint approves the same body, setup and all. */
+    const prepared = value(await service.gen.prepareGeneration(body, actor));
+    const response = await route("generation", service).POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits }, `shot-setup-${index}`));
+    const accepted = await response.json();
+    expect(response.ok, JSON.stringify(accepted)).toBe(true);
+    const stored = (await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [accepted.id as string] })).rows[0];
+    expect(JSON.parse(String(stored.params)).shotSpec).toEqual(kept[index]);
+  }
+}));
+
+test("a clip made with the camera on Auto and a prompt rule in scope keeps the words Gen sent: Recreate puts the typed words back, and one chip change makes one setup", async () => scope("recreate-words", async (service) => {
+  const { db } = await import("../../lib/db");
+  const { addRule } = await import("../../lib/rules");
+  const { composeForSend, withoutSetup } = await import("../../lib/workspace/film-vocabulary");
+  const { recreatePreset } = await import("../../lib/shell/recipe");
+  await addRule({ text: "Keep the horizon level.", scope: "video", apply: "prompt" }, "owner");
+  const words = "A fisherman mends a net on the pier";
+  const sent = composeForSend(words, { shot: "cu" }, "video");
+  const body = { model: "dreamina-seedance-2-0-260128", prompt: sent.prompt, projectId: "project", ratio: "16:9", resolution: "720p", duration: 5, shotSpec: sent.shotSpec };
+  const prepared = value(await service.gen.prepareGeneration(body, actor));
+  const response = await route("generation", service).POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits }, "recreate-words"));
+  const accepted = await response.json();
+  expect(response.ok, JSON.stringify(accepted)).toBe(true);
+  const row = (await db().execute({ sql: "SELECT id, kind, model, prompt, params, provider, task FROM generations WHERE id=?", args: [accepted.id as string] })).rows[0];
+  const params = JSON.parse(String(row.params));
+  /* What renders carries the server's own additions: a move chosen for the Auto camera, then the rule. */
+  expect(String(row.prompt)).toMatch(/^A fisherman mends a net on the pier\. Close-up\.\n\nThe camera is locked on a tripod[\s\S]*\n\nKeep the horizon level\.$/);
+  /* The words as sent are kept beside it, so Recreate puts back what was typed and the chips hold the rest. */
+  expect(params.rawPrompt).toBe(sent.prompt);
+  const preset = recreatePreset({ id: String(row.id), kind: String(row.kind) as "video", model: String(row.model), prompt: String(row.prompt), params, provider: row.provider as string | null, task: row.task as string | null } as Parameters<typeof recreatePreset>[0], { name: "Net" });
+  expect(preset.shotSpec).toEqual({ shot: "cu" });
+  const box = withoutSetup(preset.prompt, preset.shotSpec!);
+  expect(box).toBe(`${words}.`);
+  /* One chip changed: one framing, one camera block, and none of the server's text from last time. */
+  const again = composeForSend(box, { ...preset.shotSpec, move: "pull" }, "video").prompt;
+  expect(again.match(/Close-up/g)).toHaveLength(1);
+  expect(again).not.toMatch(/locked on a tripod|horizon level/);
+  /* A take stored before the words were kept (no rawPrompt) loses the server's paragraphs all the same. */
+  expect(withoutSetup(String(row.prompt), { shot: "cu" })).toBe(`${words}.`);
+}));

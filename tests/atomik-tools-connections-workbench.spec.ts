@@ -29,7 +29,8 @@ const checked = (names = OURS) => {
 };
 
 type Reply = { status: number; json: unknown } | "hang";
-async function open(page: Page, replies: Reply[] = [{ status: 200, json: checked() }]) {
+/* `armed` names #392's development-only crash probes (lib/shell/fault.ts): each named boundary throws as it renders. */
+async function open(page: Page, replies: Reply[] = [{ status: 200, json: checked() }], armed: string[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -42,11 +43,32 @@ async function open(page: Page, replies: Reply[] = [{ status: 200, json: checked
     if (reply === "hang") return;
     return route.fulfill({ status: reply.status, json: reply.json });
   });
+  if (armed.length) await page.addInitScript((list) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = list; }, armed);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(PATH);
-  await expect(page.getByTestId("tools-view")).toBeVisible();
+  if (!armed.includes("stage:skills")) await expect(page.getByTestId("tools-view")).toBeVisible();
   return { asked, errors };
+}
+
+/*
+ * A step that must happen within one page load (as tests/hf-error-boundaries-workbench.spec.ts does): on a cold
+ * webpack dev server a first compile can reload the page under the step, which re-arms the probes. The step runs
+ * again on the reloaded page; a failure within one load still fails.
+ */
+async function withinOneLoad(page: Page, step: () => Promise<void>) {
+  const loadedAt = () => page.evaluate(() => performance.timeOrigin).catch(() => -1);
+  for (let attempt = 1; ; attempt++) {
+    const loaded = await loadedAt();
+    try {
+      await step();
+    } catch (error) {
+      if (attempt < 3 && (await loadedAt()) !== loaded) continue;
+      throw error;
+    }
+    if ((await loadedAt()) === loaded) return;
+    if (attempt >= 3) throw new Error("the dev server kept reloading the page under the step");
+  }
 }
 
 /* The shell scrolls inside its content column, so a review shot walks that column a screen at a time. */
@@ -163,6 +185,52 @@ test("What Atomik can do: Particl's own rows, then every connected row with its 
   await expect(page.getByTestId("tools-tab-reach")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("tools-tab-reach")).toBeFocused();
   expect(errors).toEqual([]);
+});
+
+test("inside the shell's panel boundaries: the page fails on its own card, and Try again brings it back", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors } = await open(page, [{ status: 200, json: checked() }], ["stage:skills"]);
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]');
+  await expect(fault).toContainText("Tools & connections stopped");
+  /* The chrome is untouched: header, page title, strip; and the page head still offers no Run stage. */
+  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await expect(page.getByTestId("page-title")).toHaveText("Tools & connections");
+  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
+  await expect(page.getByTestId("primary-action")).toHaveCount(0);
+  /* The Inspector is walled off on its own: its body for this page still renders, with no plan to run. */
+  const inspector = page.getByTestId("inspector");
+  const opened = !(await inspector.isVisible());
+  if (opened) await page.getByTestId("toggle-inspector").click();
+  await expect(inspector).toContainText("Nothing on this page spends.");
+  await expect(inspector.getByRole("button", { name: "Run with Atomik" })).toHaveCount(0);
+  if (opened) await page.getByTestId("close-inspector").click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
+
+  /* Fixed underneath: Try again renders the page, and it checks the account as it would have. */
+  await withinOneLoad(page, async () => {
+    await page.evaluate(() => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = []; });
+    await fault.getByTestId("fault-retry").click();
+    await expect(page.getByTestId("tools-view")).toBeVisible();
+  });
+  await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]')).toHaveCount(0);
+  await expect(page.getByTestId("reach-connected").getByTestId("reach-row")).toHaveCount(14);
+  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available");
+  await checkLayout(page, PHONES.includes(info.project.name));
+  expect(errors, "a caught throw never reaches the window").toEqual([]);
+});
+
+test("inside the shell's panel boundaries: a failing Atomik gate keeps its own row, and the page keeps working with no plan sheet to open", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { asked, errors } = await open(page, [{ status: 200, json: checked() }], ["atomik-gate"]);
+  await expect(page.locator('[data-testid="panel-fault"][data-fault="atomik-gate"]')).toContainText("The Atomik gate stopped");
+  await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]')).toHaveCount(0);
+  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available");
+  expect(asked).toEqual([{ view: "reach" }]);
+  await expect(page.getByTestId("primary-action")).toHaveCount(0);
+  await page.getByTestId("tools-tab-connect").click();
+  await expect(page.getByTestId("tokens-empty")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
+  expect(errors, "a caught throw never reaches the window").toEqual([]);
 });
 
 test("without an account, or when the check fails, each row says so and the page says what to do next", async ({ page }, info) => {
