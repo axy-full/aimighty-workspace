@@ -14,6 +14,7 @@ async function fixture(page:Page) {
   nodes:[{id:'reference-node',type:'media',title:'Original portrait',assetId:'portrait',x:80,y:440,width:280,linked:[]},{id:'generate-node',type:'generate',title:'Evening scene',text:'Rain on a quiet street',mode:'Audio',x:80,y:80,width:320,linked:['reference-node']}]};
  let revision=1,loseAudio=true,finishedAudio=false;
  const submissions:{endpoint:string;body:string;key:string|undefined;scope:string|undefined}[]=[];
+ const checks:{key:string;endpoint:string;body:string;scope:string|undefined}[]=[];
  const upload={id:'portrait-upload',filename:'Original portrait',kind:'image',mime:'image/webp',bytes:1000,width:512,height:512,durationS:null,sha256:'fixture',url:'/campaign/character.webp',createdAt:1};
  const audioJob={id:'audio-fixture',status:'succeeded',kind:'audio',projectId:project.productionProjectId,shotId:'shot-fixture',prompt:'Rain on a quiet street',model:'elevenlabs:sound',version:1,params:{task:'sound'},createdAt:Date.now(),storedUrl:'/api/media/audio-fixture'};
  await page.addInitScript(({scope,id})=>localStorage.setItem(scope,id),{scope,id:project.id});
@@ -29,6 +30,8 @@ async function fixture(page:Page) {
   if(path==='/api/workbench/engines')return url.searchParams.has('model')?json({credits:3}):json({models:[{id:'dreamina-seedance-2-5-260628',label:'Seedance 2.5',kind:'video',family:'seedance-2',resolutions:['720p'],ratios:['16:9'],durations:[5],maxReferenceImages:9,maxReferenceVideos:3}]});
   if(path==='/api/audio'&&req.method()==='GET')return json({configured:true,voices:[{id:'voice123456',name:'Fixture voice',labels:{},description:'Fixture voice'}],speechModels:[{id:'eleven_multilingual_v2',label:'Speech'}],defaultSpeechModel:'eleven_multilingual_v2',voicesError:null,terms:{sfxCredits:3,musicCreditsPerMinute:20},account:null});
   if(path==='/api/audio'&&req.method()==='POST'&&req.postDataJSON().quoteOnly)return json({estimatedCredits:3,price:3,unit:'cr'});
+  /* A lost reply is asked about by its key, never re-sent: the lost audio request landed as audio-fixture. */
+  if(path==='/api/generate/check'&&req.method()==='POST'){const asked=req.postDataJSON();checks.push({...asked,scope:req.headers()['x-workbench-scope']});if(asked.endpoint!=='/api/audio'||loseAudio)return json({state:'absent'});finishedAudio=true;return json({state:'landed',id:'audio-fixture',status:'running'});}
   if((path==='/api/generate'||path==='/api/audio')&&req.method()==='POST'){
    submissions.push({endpoint:path,body:req.postData()!,key:req.headers()['idempotency-key'],scope:req.headers()['x-workbench-scope']});
    if(path==='/api/audio'&&loseAudio){loseAudio=false;return json({error:'Lost response; recover the saved request.'},503);}
@@ -46,7 +49,7 @@ async function fixture(page:Page) {
   if(path==='/api/media/audio-fixture')return route.fulfill({status:200,contentType:'audio/wav',body:Buffer.alloc(44)});
   return json({});
  });
- return {scope,me,submissions,current:()=>project};
+ return {scope,me,submissions,checks,current:()=>project};
 }
 async function openNode(page:Page) {
  await goWorkbenchStage(page,'canvas');
@@ -55,7 +58,7 @@ async function openNode(page:Page) {
  await page.getByRole('button',{name:'Generate take',exact:true}).click();
  return page.getByRole('dialog',{name:'Generate a new take',exact:true});
 }
-test('node audio keeps quote, project mapping and exact paid recovery across reload',async({page},info)=>{
+test('node audio keeps quote and project mapping, and a lost reply is followed by its key across reload, never re-sent',async({page},info)=>{
  test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded phone and desktop');
  const f=await fixture(page);await page.goto(await legacyShell(page, '/workbench?project=generation-fixture&stage=canvas'));
  let dialog=await openNode(page);
@@ -70,7 +73,8 @@ test('node audio keeps quote, project mapping and exact paid recovery across rel
  await expect(dialog.getByRole('combobox',{name:'Generation type'})).toBeDisabled();
  await dialog.getByRole('button',{name:'Recover submitted take',exact:true}).click();
  await expect(dialog).not.toBeVisible();
- expect(f.submissions).toHaveLength(2);expect(f.submissions[1]).toEqual(f.submissions[0]);
+ expect(f.submissions).toHaveLength(1);
+ expect(f.checks).toEqual([{key:f.submissions[0].key,endpoint:'/api/audio',body:f.submissions[0].body,scope:f.scope}]);
  await expect.poll(()=>f.current().assets.find(a=>a.generationId==='audio-fixture')?.kind).toBe('audio');
  await expect.poll(()=>f.current().nodes.find(node=>node.id==='generate-node')?.assetId).toBe('audio-fixture');
  expect(f.current().nodes.find(node=>node.id==='reference-node')?.assetId).toBe('portrait');
