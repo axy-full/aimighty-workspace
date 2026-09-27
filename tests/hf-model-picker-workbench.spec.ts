@@ -302,6 +302,7 @@ test("Recent leads with the last three models used for this output, never repeat
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page);
   let sheet = await openSheet(page);
+  await expect(sheet.getByRole("option").nth(4)).toBeVisible();
   const order = await sheet.locator(".gx-model-name").allTextContents();
   expect(order.length).toBeGreaterThanOrEqual(5);
   /* Nothing used yet: one list, no Recent. */
