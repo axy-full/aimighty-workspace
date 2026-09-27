@@ -424,7 +424,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   /* Sound says what it will be: the voice a line is read in, or the length and, for music, whether it has vocals. */
   const soundTask = model?.audioTask === "sound" || model?.audioTask === "music" ? model.audioTask : null;
   const footer = (state.type === "audio"
-    ? [model?.audioTask === "speech" ? composer.voice?.name : null, soundTask ? `${composer.seconds} s` : null, soundTask === "music" ? (state.instrumental ? "Instrumental" : "With vocals") : null, "Saved to your takes"]
+    ? [model?.audioTask === "speech" ? composer.voice?.name : null, soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null, soundTask === "music" ? (state.instrumental ? "Instrumental" : "With vocals") : null, "Saved to your takes"]
     : [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"]).filter(Boolean).join(" · ");
   /* One take's tile, walled off so a take that throws costs only its own tile — in a strip, `label` names it "take N". */
   const tile = (entry: LibraryEntry, label?: string) => (
@@ -662,7 +662,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             <div className="gx-gen-sound">
               <div className="gx-stepper" role="group" aria-labelledby="gx-seconds-label" data-testid="gen-seconds">
                 <button type="button" aria-label="Shorter" disabled={composer.seconds <= AUDIO_SECONDS[soundTask].min} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, -1), task: soundTask })}>–</button>
-                <span data-testid="gen-seconds-value">{composer.seconds} s</span>
+                <span aria-live="polite" data-testid="gen-seconds-value">{composer.seconds} s</span>
                 <button type="button" aria-label="Longer" disabled={composer.seconds >= AUDIO_SECONDS[soundTask].max} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, 1), task: soundTask })}>+</button>
               </div>
               {soundTask === "music" ? (
