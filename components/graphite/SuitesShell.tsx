@@ -302,9 +302,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
                 onPick={pickProject} onCreate={createProject} />
-              {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
+              {/* Keep Gen's draft editable while generation waits for the project list to recover.
                   "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
-              {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
+              {shell.view === "gen" && projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">

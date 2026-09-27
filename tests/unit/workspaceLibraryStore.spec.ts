@@ -55,11 +55,11 @@ test("a failed first read is an error that a refresh clears, not 'Reading…' fo
     await lib.settle((p) => p.fail());
     await first;
     expect(projectLibraryState("scope-b", "p2")).toMatchObject({ status: "error", error: "The library is resting." });
-    /* Try again (or a render landing) reads it again. */
+    /* A background refresh preserves the failed read while trying again. */
     const again = refreshProjectLibrary("scope-b", "p2");
-    expect(projectLibraryState("scope-b", "p2").status).toBe("loading");
+    expect(projectLibraryState("scope-b", "p2")).toMatchObject({ status: "error", error: "The library is resting.", retrying: true });
     await lib.settle(lib.page(["g9"]));
     await again;
-    expect(projectLibraryState("scope-b", "p2")).toMatchObject({ status: "ready", error: null });
+    expect(projectLibraryState("scope-b", "p2")).toMatchObject({ status: "ready", error: null, retrying: false });
   } finally { lib.restore(); }
 });

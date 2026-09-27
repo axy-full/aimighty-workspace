@@ -537,6 +537,8 @@ export function composerBlock(input: {
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
+  /** A failed project list is not evidence that this workspace has no project. */
+  projects?: "loading" | "ready" | "error";
   capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
@@ -545,6 +547,8 @@ export function composerBlock(input: {
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
+  if (input.projects === "loading") return "Reading the projects…";
+  if (input.projects === "error") return "Projects didn’t load. Use Try again above before generating.";
   if (state.billing === "connected") {
     if (!input.capability) return READING_ACCOUNT;
     if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
