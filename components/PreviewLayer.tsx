@@ -200,6 +200,7 @@ function Viewer({ items, start, binding, onClose }: { items: PreviewItem[]; star
   const [acting, setActing] = useState(false);
   const id = binding?.items[index]?.id ?? null;
   const actions = id ? binding!.actions(id) : null;
+  const offered = actions ? ACTIONS.filter((a) => actions[a.id]) : [];
   const act = async (action: BoundAction) => {
     if (!id || !binding || acting) return;
     setActing(true);
@@ -241,14 +242,14 @@ function Viewer({ items, start, binding, onClose }: { items: PreviewItem[]; star
             </>
           ) : null}
         </div>
-        {actions ? (
+        {actions && offered.length ? (
           /* The shell's own commands for this take: Recreate hands its recipe to Gen, Use as reference sends it there — neither sends anything paid; Gen prices on its button. */
           <div className="pv-bar" role="group" aria-label={`Actions for ${name}`} data-testid="preview-actions">
-            {ACTIONS.filter((a) => actions[a.id]).map((a) => (
+            {offered.map((a) => (
               <button key={a.id} type="button" className="pv-btn" disabled={acting || !actions[a.id]!.enabled} title={actions[a.id]!.why} onClick={() => void act(a.id)} data-testid={`preview-${a.id}`}>{a.label}</button>
             ))}
             {said && said.index === index ? <span className="pv-said" role="status" data-testid="preview-said">{said.text}</span> : null}
-            {!said || said.index !== index ? ACTIONS.filter((a) => actions[a.id] && !actions[a.id]!.enabled && actions[a.id]!.why).slice(0, 1).map((a) => <span key={a.id} className="pv-said" data-testid="preview-why">{actions[a.id]!.why}</span>) : null}
+            {!said || said.index !== index ? offered.filter((a) => !actions[a.id]!.enabled && actions[a.id]!.why).slice(0, 1).map((a) => <span key={a.id} className="pv-said" data-testid="preview-why">{actions[a.id]!.why}</span>) : null}
           </div>
         ) : null}
       </div>

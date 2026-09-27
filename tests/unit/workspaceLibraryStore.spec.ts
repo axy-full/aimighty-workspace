@@ -142,3 +142,19 @@ test("two surfaces looking for the same take at once ask once", async () => {
     expect(lib.asked.filter((q) => q.includes("id=g0400"))).toHaveLength(1);
   } finally { lib.restore(); }
 });
+
+test("a lookup that answers late lands only in the scope and project that asked", async () => {
+  const lib = routeLibrary(many(200));
+  try {
+    const late = findProjectTake("scope-h", "p8", "generation:g0150");
+    /* Meanwhile another scope (a switched workspace) and another project read their own. */
+    await loadProjectLibrary("scope-i", "p8");
+    await loadProjectLibrary("scope-h", "p9");
+    expect(await late).toBe(true);
+    expect(projectLibraryState("scope-h", "p8").generations.map((g) => g.id)).toContain("g0150");
+    expect(projectLibraryState("scope-i", "p8").generations.map((g) => g.id)).not.toContain("g0150");
+    expect(projectLibraryState("scope-h", "p9").generations.map((g) => g.id)).not.toContain("g0150");
+    await refreshProjectLibrary("scope-i", "p8");
+    expect(projectLibraryState("scope-i", "p8").generations.map((g) => g.id)).not.toContain("g0150");
+  } finally { lib.restore(); }
+});

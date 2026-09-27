@@ -166,7 +166,10 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   useEffect(() => {
     const mode = nextEntry.current ?? "replace";
     nextEntry.current = null;
-    if (window.location.pathname !== SUITES_PATH || assetParam(window.location.search) === take) return;
+    if (window.location.pathname !== SUITES_PATH) return;
+    /* Exactly this take, or none: a malformed or repeated `asset` is rewritten too, never left in the address bar. */
+    const named = new URLSearchParams(window.location.search).getAll(ASSET_PARAM);
+    if (take ? named.length === 1 && named[0] === take : named.length === 0) return;
     writeSearch(withAsset(window.location.search, take), mode);
     /* The state layer's own `sel` follows in the same entry, so the two never disagree. */
     latestWs.current.syncUrl();
