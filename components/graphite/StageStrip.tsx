@@ -1,15 +1,25 @@
 "use client";
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { useShell } from "@/lib/shell/state";
 
 /** 46px. The active suite's pages as `01 Label`, a hairline before each group. Hidden in Gen and Workspace. */
 export function StageStrip() {
   const shell = useShell();
+  /* A strip wider than its row (a phone) scrolls the current page to its middle, so the page it names is in sight. */
+  const nav = useRef<HTMLElement>(null);
+  const current = `${shell.suite.id}:${shell.page.id}`;
+  useEffect(() => {
+    const strip = nav.current;
+    const tab = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
+    const box = strip.getBoundingClientRect(), at = tab.getBoundingClientRect();
+    strip.scrollLeft += at.left - box.left - (box.width - at.width) / 2;
+  }, [current]);
   /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
      On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away. */
   if (shell.view !== "suite" || (shell.page.phoneOnly && !(shell.wide && shell.page.id === "stages"))) return null;
   return (
-    <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip">
+    <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip" ref={nav}>
       {shell.suite.pages.filter((p) => !p.phoneOnly).map((p) => (
         <Fragment key={p.id}>
           {p.gapBefore ? <span className="gx-strip-gap" aria-hidden="true" data-testid="strip-gap" /> : null}

@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TRAIL } from "@/components/ui/Mark";
 import { Glyph, SUITE_LOOK } from "./icons";
 import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
@@ -16,8 +17,12 @@ function initialsOf(name: string) {
  * 56px. particl trail mark + wordmark → the Studio home; Studio | Gen | Business | Viral |
  * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
  * job runs); the credits pill; the avatar, which opens Workspace.
+ *
+ * On a phone (app/phone-chrome.css) the context badge is a button: the Suites
+ * and Search open under it, one tap away. `bar` is the top bar's second row
+ * there — the project switcher beside the page strip or Gen's own buttons.
  */
-export function Header({ account }: { account: WorkspaceAccount | null }) {
+export function Header({ account, bar = null }: { account: WorkspaceAccount | null; bar?: ReactNode }) {
   const shell = useShell();
   const { state } = useWorkspace();
   const { rates, name } = useSession();
@@ -29,11 +34,23 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
   const who = account?.workspace?.name ?? name ?? "Workspace";
   /* The phone's back button: a stage returns to the stage grid (‹ Studio); the grid returns to Home (‹ Home). */
   const back = studioPage === "stages" ? { label: "Home", page: "home" } : studioPage && studioPage !== "home" ? { label: "Studio", page: "stages" } : null;
+  /* The phone's Suites menu: a tap outside it, Escape or a pick closes it. */
+  const [menu, setMenu] = useState(false);
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (event: PointerEvent) => { if (box.current && event.target instanceof Node && !box.current.contains(event.target)) setMenu(false); };
+    const esc = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(false); };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
+  }, [menu]);
+  const badge = <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>;
   return (
-    <header className="gx-header" data-row="header">
+    <header className="gx-header" data-row="header" data-menu={menu ? "open" : undefined} ref={box}>
       <div className="gx-aurora" aria-hidden="true" data-testid="header-aurora" /><div className="gx-dots" aria-hidden="true" /><div className="gx-baseline" aria-hidden="true" />
       {back ? (
-        <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", back.page)} data-testid="phone-back"><span aria-hidden="true">‹</span> {back.label}</button>
+        <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", back.page)} data-testid="phone-back"><span aria-hidden="true">‹</span> <span className="gx-back-label">{back.label}</span></button>
       ) : null}
       {/* The mark goes home: on a desktop the Studio home (recent projects, what is running, the next step); on a phone Home's "Where to?". */}
       <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio", shell.wide ? "stages" : "home")} aria-label="particl home" data-testid="brand-home">
@@ -42,19 +59,24 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
           {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
         </svg>
         <span className="gx-brand-name">particl</span>
-        <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>
+        {shell.wide ? badge : null}
       </button>
-      <div className="gx-seg" role="tablist" aria-label="Suites">
+      {shell.wide ? null : (
+        <button type="button" className="gx-menu-btn" aria-haspopup="true" aria-expanded={menu} aria-controls="gx-suites" aria-label={`Suites and search · ${mark.toLowerCase()}`} onClick={() => setMenu((open) => !open)} data-testid="suites-menu">
+          {badge}<Glyph name="chev" size={12} className="gx-glyph" />
+        </button>
+      )}
+      <div className="gx-seg" role="tablist" aria-label="Suites" id="gx-suites">
         {HEADER_SEGMENT.map((s) => (
           <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}
-            onClick={() => (s.id === "gen" ? shell.goGen() : s.id === "crew" ? shell.goCrew() : shell.goSuite(s.id as ShellSuiteId))}>
+            onClick={() => { setMenu(false); if (s.id === "gen") shell.goGen(); else if (s.id === "crew") shell.goCrew(); else shell.goSuite(s.id as ShellSuiteId); }}>
             <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
             <span className="gx-seg-label">{s.label}</span>
             <span className="gx-sig" aria-hidden="true" />
           </button>
         ))}
       </div>
-      <button type="button" className="gx-search" onClick={() => shell.setPalette(true)} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
+      <button type="button" className="gx-search" onClick={() => { setMenu(false); shell.setPalette(true); }} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
         <Glyph name="search" size={14} className="gx-glyph" />
         <span className="gx-search-label">Search</span>
         <span className="gx-key">⌘K</span>
@@ -74,6 +96,7 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
       <button type="button" className="gx-avatar" onClick={() => shell.goWorkspace()} aria-label={`Workspace and account: ${who}`} title="Workspace" data-testid="workspace-avatar">
         {initialsOf(who)}
       </button>
+      {bar ? <div className="gx-bar" data-row="bar">{bar}</div> : null}
     </header>
   );
 }

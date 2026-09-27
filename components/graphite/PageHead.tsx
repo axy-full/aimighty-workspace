@@ -9,6 +9,7 @@ import type { LibFilter, RigView } from "@/lib/workspace/types";
 import { primaryAvailability, type GenerateStatus } from "@/components/workspace/PageHeader";
 import { useShell } from "@/lib/shell/state";
 import { PRODUCTION_AGENT_PAGES } from "@/lib/shell/production-tools";
+import { Glyph } from "./icons";
 
 /**
  * Title (26/600) + hint; the page's view segment; on narrow widths the Library
@@ -22,7 +23,8 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
   const views = pageViews(state.page);
   const action = primaryAction(state.page);
   const availability = primaryAvailability(state, onGenerate, generate);
-  const label = action.kind === "generate" && availability.enabled && generate?.quote ? `${action.label} · ${generate.quote}` : action.label;
+  /* What it does, then what it costs: the price is its own run of text, so a phone can set it under the action, whole. */
+  const price = action.kind === "generate" && availability.enabled && generate?.quote ? generate.quote : null;
   const run = () => {
     if (action.kind === "generate") { if (availability.enabled) onGenerate?.(); return; }
     if (action.kind === "run-stage") { void atomik.start(state.page); return; }
@@ -44,14 +46,15 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
           ))}
         </div>
       ) : null}
-      {!shell.wide ? <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button> : null}
+      {/* A phone shows the glyphs and keeps the words for the name (app/phone-chrome.css). */}
+      {!shell.wide ? <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="stack" size={18} /></span><span className="gx-hbtn-label">Library</span></button> : null}
       {/* Every width (FINAL_SPEC §6 › Inspector): lit while the panel is open. */}
-      <button type="button" className="gx-hbtn" aria-pressed={shell.wide ? shell.inspector : shell.inspOpen} aria-keyshortcuts="Meta+J" onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
+      <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.wide ? shell.inspector : shell.inspOpen} aria-keyshortcuts="Meta+J" onClick={shell.toggleInspector} data-testid="toggle-inspector"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="info" size={18} /></span><span className="gx-hbtn-label">Inspector</span></button>
       {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path. */}
       {shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id) ? null : (<>
       {!availability.enabled && availability.reason ? <span className="gx-reason" id="gx-action-reason" data-testid="primary-reason">{availability.reason}</span> : null}
-      <button type="button" className="gx-primary" data-testid="primary-action" disabled={!availability.enabled} aria-describedby={availability.reason ? "gx-action-reason" : undefined} onClick={run}>
-        {label}
+      <button type="button" className="gx-primary" data-testid="primary-action" disabled={!availability.enabled} aria-describedby={availability.reason ? "gx-action-reason" : undefined} onClick={run} data-priced={price ? "" : undefined}>
+        <span className="gx-go-act">{action.label}</span>{price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{price}</span> : null}
       </button>
       </>)}
     </div>

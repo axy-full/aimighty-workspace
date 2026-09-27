@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
+import { openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Crew in the browser (design/particl-suites/CREW_ADDENDUM.md), against the
@@ -30,6 +31,7 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, project, headers } = await open(page);
   const suites = page.getByRole("tablist", { name: "Suites" });
+  await openSuitesMenu(page);
   await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
   await suites.getByRole("tab", { name: "Crew" }).click();
   await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
@@ -81,6 +83,7 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   expect(saved.brief).toContain("Crew · Locked dawn frame — ");
 
   /* Coming back reopens the same room; Sessions lists it. */
+  await openSuitesMenu(page);
   await suites.getByRole("tab", { name: "Crew" }).click();
   await expect(messages).toHaveCount(10);
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Sessions/ }).click();
