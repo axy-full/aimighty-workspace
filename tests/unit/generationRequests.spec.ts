@@ -462,7 +462,9 @@ test("shared engines isolate studio balances and credit token ceilings across co
   const { billCredits } = await import("../../lib/creditTerms");
   const a = workspace("managed-org-a", false), b = workspace("managed-org-b", false);
   a.keys.openai = "retained-tenant-a"; b.keys.openai = "retained-tenant-b";
+  a.keys.higgsfield = "retained-hf-a"; b.keys.higgsfield = "retained-hf-b";
   const prior = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "shared-unit-key";
+  const priorHiggsfield = process.env.HF_CREDENTIALS; process.env.HF_CREDENTIALS = "shared-hf-unit:fixture-secret";
   try {
     const price = billCredits(1, "text");
     await grantCredits(a.id, price * 3, "Fixture", null, "manual");
@@ -470,6 +472,7 @@ test("shared engines isolate studio balances and credit token ceilings across co
     const token = { id: "same-token-id", capUsd: null, capCredits: price };
     await runInTenant(a, async () => {
       expect(vendorKey("openai")).toBe("shared-unit-key");
+      expect(vendorKey("higgsfield")).toBe("shared-hf-unit:fixture-secret");
       const jobs = await Promise.allSettled(["managed-a-first", "managed-a-second"].map(id => reserveGenerationSpend({ id, kind: "text", engine: "openai", model: "fixture", status: "running", engineCostUsd: 1 }, { token })));
       expect(jobs.filter(job => job.status === "fulfilled")).toHaveLength(1);
       expect(jobs.filter(job => job.status === "rejected")).toHaveLength(1);
@@ -478,13 +481,17 @@ test("shared engines isolate studio balances and credit token ceilings across co
     });
     await runInTenant(b, async () => {
       expect(vendorKey("openai")).toBe("shared-unit-key");
+      expect(vendorKey("higgsfield")).toBe("shared-hf-unit:fixture-secret");
       expect((await creditState())?.balance).toBe(price * 3);
       expect((await tokenCreditUsage(0)).get(token.id)).toBeUndefined();
       await reserveGenerationSpend({ id: "managed-b-first", kind: "text", engine: "openai", model: "fixture", status: "running", engineCostUsd: 1 }, { token });
       expect((await tokenCreditUsage(0)).get(token.id)).toBe(price);
     });
     expect(a.keys.openai).toBe("retained-tenant-a"); expect(b.keys.openai).toBe("retained-tenant-b");
-  } finally { if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior; }
+  } finally {
+    if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior;
+    if (priorHiggsfield === undefined) delete process.env.HF_CREDENTIALS; else process.env.HF_CREDENTIALS = priorHiggsfield;
+  }
 });
 
 

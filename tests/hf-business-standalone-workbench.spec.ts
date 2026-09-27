@@ -260,8 +260,7 @@ test("a product still uploads from the device straight into the slot", async ({ 
   expect(filed).toHaveLength(1);
 });
 
-test("the server refuses a quote naming a connected-account item Particl did not make, before anything is priced", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "one viewport");
+test("managed workspaces refuse provider-wallet ad quotes before inspecting foreign account items", async ({ page }) => {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string };
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
@@ -269,18 +268,19 @@ test("the server refuses a quote naming a connected-account item Particl did not
     action: "quote", draftId: "ws-biz", idempotencyKey: crypto.randomUUID(),
     input: { type: "video", model: "marketing_studio_video", prompt: "A bottle on the sill.", parameters: { mode: "ugc", ...parameters }, medias: [] },
   } });
-  /* Owned types and backend assets refuse from Particl's record alone (a preset type would first read the account, which this server does not hold). */
+  /* The funding boundary runs before account discovery. Ownership refusals for
+     the historical transport remain covered in the generation/video service units. */
   for (const parameters of [{ product_ids: ["acct_product_1"] }, { brand_kit_id: "acct_kit_1" }, { ad_reference_id: "acct_ref_1" }, { assets: ["acct_asset_1"] }]) {
     const response = await quote(parameters);
     expect(response.status(), JSON.stringify(parameters)).toBe(409);
-    expect(await response.json()).toMatchObject({ code: "setup_not_particl" });
+    expect(await response.json()).toMatchObject({ code: "particl_quote_unavailable" });
   }
   const video = await page.request.post("/api/higgsfield/consumer/video", { headers, data: {
     action: "quote", draftId: "ws-biz", idempotencyKey: crypto.randomUUID(),
     input: { prompt: "A bottle.", duration: 15, resolution: "720p", aspectRatio: "9:16", generateAudio: true, mode: "ugc", productIds: ["acct_product_1"] },
   } });
   expect(video.status()).toBe(409);
-  expect(await video.json()).toMatchObject({ code: "setup_not_particl" });
+  expect(await video.json()).toMatchObject({ code: "particl_quote_unavailable" });
 });
 
 test("a setup read that fails is asked once, the error stays with Try again, and nothing loops", async ({ page }, info) => {
