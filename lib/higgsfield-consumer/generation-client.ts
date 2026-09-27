@@ -33,6 +33,8 @@ export type ConnectedJob = {
   sources: ConnectedJobSource[];
   /** Which composer quoted it ("gen": the Gen page), so a page picking jobs back up follows only its own. */
   composer?: "gen" | null;
+  /** One take of a batch (Gen's takes 2–4): its siblings share the id; `variation` is its take number. */
+  batch?: { id: string; variation: number } | null;
   workspaceId: string;
   workspaceName: string;
   quoteCredits: number;
@@ -67,7 +69,11 @@ export function parseConnectedJob(value: unknown, draftId: string): ConnectedJob
   const sources: ConnectedJobSource[] = Array.isArray(value.sources)
     ? value.sources.flatMap((item) => record(item) && typeof item.role === "string" && typeof item.name === "string" ? [{ role: item.role, kind: String(item.kind), name: item.name.slice(0, 160) }] : []).slice(0, 30)
     : [];
-  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
+  const batch = record(value.batch) && typeof value.batch.id === "string" && /^b_[a-z0-9]{4,20}$/.test(value.batch.id) &&
+    Number.isInteger(value.batch.variation) && Number(value.batch.variation) >= 1 && Number(value.batch.variation) <= 8
+    ? { id: value.batch.id, variation: Number(value.batch.variation) }
+    : null;
+  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, batch, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
 }
 
 /**
@@ -94,6 +100,35 @@ export function connectedStatusRequest(draftId: string, id: string) {
   return { action: "status" as const, draftId, id };
 }
 
+/**
+ * Takes 2–4 of one Generate, quoted together: one fresh quote per take, each
+ * under its own key (the same keys again return the same jobs), all carrying
+ * `batchId` and their take number. Nothing is sent.
+ */
+export function connectedBatchQuoteRequest(draftId: string, input: ConsumerGenerationInput, takes: number, batchId: string, options: { composer?: "gen" } = {}) {
+  return {
+    action: "quote-batch" as const, draftId, input: consumerGenerationInputSchema.parse(input),
+    idempotencyKeys: Array.from({ length: takes }, () => crypto.randomUUID()), batchId,
+    ...(options.composer ? { composer: options.composer } : {}),
+  };
+}
+
+/** The exact sum of a batch's quotes, in the account's own credits: the one approval for one paid batch call. */
+export function connectedBatchTotal(jobs: readonly Pick<ConnectedJob, "quoteCredits">[]) {
+  /* Summed in take order exactly as submitConsumerGenerationBatchJobs sums it, so the approval matches to the last digit. */
+  return jobs.reduce((sum, job) => sum + job.quoteCredits, 0);
+}
+
+/** Submit a quoted batch: every take's id, the one wallet, and the exact summed credits that were approved. */
+export function connectedBatchSubmitRequest(draftId: string, jobs: readonly Pick<ConnectedJob, "id" | "workspaceId" | "quoteCredits">[]) {
+  return { action: "submit-batch" as const, draftId, ids: jobs.map((job) => job.id), workspaceId: jobs[0].workspaceId, credits: connectedBatchTotal(jobs) };
+}
+
+/** A batch whose submit reply was lost: did it land? One that never arrived is fenced, so it never can. */
+export function connectedBatchCheckRequest(draftId: string, ids: readonly string[]) {
+  return { action: "check-batch" as const, draftId, ids: [...ids] };
+}
+
 /** What a failed job means for the owner: a refused render is not billed; a
  * result the account finished but Particl could not keep may have been. */
 export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
@@ -103,6 +138,14 @@ export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
 }
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);
+/**
+ * The least a page waits between two status reads of one job, in seconds:
+ * the route allows a person 30 status reads a minute across every job and
+ * tab (app/api/higgsfield/consumer/generation/route.ts), so a job is never
+ * asked about more than every 6 s. Pollers pass it as a floor under the
+ * account's own pollAfterSeconds (lib/poll), which jitter never cuts short.
+ */
+export const CONNECTED_READ_FLOOR_S = 6;
 
 /** The preflight refusals that release a held submission so a fresh quote may be taken. */
 export const CONNECTED_PREFLIGHT_CODES = new Set([

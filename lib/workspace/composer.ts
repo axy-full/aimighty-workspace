@@ -89,7 +89,7 @@ export type ComposerState = {
   picks: ComposerPicks;
   /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
   enhance: boolean;
-  /** Takes per Generate (the prototype's stepper, 1–4): each take is its own quoted job at the price shown. */
+  /** Takes per Generate (the stepper, 1–4). Two or more go as one batch at the total on the button (lib/workspace/take-batch.ts). */
   count: number;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
@@ -115,6 +115,22 @@ export const INITIAL_COMPOSER: ComposerState = {
 
 export const chosenKey = (billing: BillingSource, type: ComposerType) => `${billing}:${type}`;
 
+/**
+ * A take's recipe applied in one step (Recreate, lib/shell/recipe.ts): the
+ * output, the credits, the model and its settings replace the composer's; the
+ * words and references do too unless they are left out (Use settings only).
+ * One take — a recreate is one new take, priced again on the button.
+ */
+export type ComposerRecipe = {
+  type: ComposerType;
+  billing: BillingSource;
+  model?: string;
+  picks: ComposerPicks;
+  prompt?: string;
+  references?: ComposerReference[];
+  sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
+};
+
 export type ComposerAction =
   | { type: "type"; value: ComposerType }
   | { type: "billing"; value: BillingSource }
@@ -131,6 +147,9 @@ export type ComposerAction =
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
+  | { type: "recipe"; value: ComposerRecipe }
+  /** Undo of a recipe: the composer exactly as it was. */
+  | { type: "restore"; value: ComposerState }
   | { type: "reset" };
 
 const SOUND_SECONDS = 10;
@@ -203,6 +222,27 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, references: state.references.filter((r) => r.key !== action.key), notice: null };
     case "notice":
       return { ...state, notice: action.value };
+    case "recipe": {
+      const recipe = action.value;
+      const sound = recipe.type === "audio" ? recipe.sound ?? {} : {};
+      const references = recipe.type === "audio" ? [] : recipe.references ?? state.references;
+      return {
+        ...state,
+        type: recipe.type,
+        billing: recipe.billing,
+        chosen: recipe.model ? { ...state.chosen, [chosenKey(recipe.billing, recipe.type)]: recipe.model } : state.chosen,
+        picks: { ...recipe.picks },
+        prompt: recipe.prompt === undefined ? state.prompt : recipe.prompt.slice(0, 5000),
+        references: references.slice(0, 10),
+        seconds: sound.seconds ?? (recipe.type === "audio" && state.type !== "audio" ? SOUND_SECONDS : state.seconds),
+        instrumental: sound.instrumental ?? state.instrumental,
+        voiceId: sound.voiceId ?? state.voiceId,
+        count: 1,
+        notice: null,
+      };
+    }
+    case "restore":
+      return { ...action.value, notice: null };
     case "reset":
       return { ...INITIAL_COMPOSER, billing: state.billing, chosen: state.chosen };
   }
@@ -384,6 +424,8 @@ export type ComposerQuote = {
   credits: number | null;
   state: QuoteState;
   reason: string | null;
+  /** A batch's own fresh per-take figures (a Generate of takes 2–4 re-quoted them and they moved): their sum is the button's total. */
+  takes?: number[];
 };
 
 /** The connected account's readiness, as /api/me and the connection route report it. */
@@ -418,6 +460,27 @@ export function quoteKeyFor(input: {
 export function liveCredits(quote: ComposerQuote | null, quoteKey: string): number | null {
   if (!quote || quote.key !== quoteKey || quote.state !== "ready" || quote.credits === null) return null;
   return quote.credits;
+}
+
+/**
+ * The total for `count` takes: the batch's own fresh per-take figures when the
+ * last Generate re-quoted exactly `count` of them, else `count` times one
+ * take's price. Summed take by take — the arithmetic the fresh total it is
+ * compared with uses — so an unchanged price always compares equal.
+ */
+export function batchTotal(credits: number | null, count: number, takes?: readonly number[] | null): number | null {
+  if (takes && takes.length === count && takes.every((c) => Number.isFinite(c))) return takes.reduce((sum, c) => sum + c, 0);
+  if (credits === null || !Number.isFinite(credits)) return null;
+  let total = 0;
+  for (let i = 0; i < Math.max(1, count); i++) total += credits;
+  return total;
+}
+
+/** The figure on the button, which is what a Generate approves: one take's price, or the batch's total. */
+export function shownTotal(quote: ComposerQuote | null, quoteKey: string, count: number): number | null {
+  const credits = liveCredits(quote, quoteKey);
+  if (credits === null) return null;
+  return count > 1 ? batchTotal(credits, count, quote?.takes) : credits;
 }
 
 /** The two reasons that mean "still loading", not "refused" — the model sheet draws them as a loading list. */
@@ -457,23 +520,34 @@ export function composerBlock(input: {
   return null;
 }
 
-/** "Generate · 18 cr" / "Generate · 18 connected cr" — the exact live figure, or no figure at all. */
-export function composerButtonLabel(input: {
+type ButtonInput = {
   billing: BillingSource;
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
-  /** Takes per Generate; the price shown is the take's price times the count. */
+  /** Takes per Generate; the price shown is the batch's total. */
   count?: number;
-}): string {
-  if (input.submitting) return "Submitting…";
-  const credits = liveCredits(input.quote, input.quoteKey);
+};
+
+/**
+ * The button's label in its two parts: what it does ("Generate 4 takes") and
+ * what it costs ("72 connected cr" — the exact live figure, whole, or none).
+ * Gen draws them apart so the price can take its own line on a narrow button
+ * rather than ever being cut.
+ */
+export function composerButtonParts(input: ButtonInput): { action: string; price: string | null } {
+  if (input.submitting) return { action: "Submitting…", price: null };
   const count = Math.max(1, input.count ?? 1);
-  if (credits === null) return count > 1 ? `Generate ${count} takes` : "Generate";
-  const unit = input.billing === "connected" ? "connected cr" : "cr";
-  return count > 1
-    ? `Generate ${count} takes · ${(credits * count).toLocaleString("en-US")} ${unit}`
-    : `Generate · ${credits.toLocaleString("en-US")} ${unit}`;
+  const total = shownTotal(input.quote, input.quoteKey, count);
+  const action = count > 1 ? `Generate ${count} takes` : "Generate";
+  if (total === null) return { action, price: null };
+  return { action, price: `${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
+}
+
+/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" — the exact live figure, or no figure at all. */
+export function composerButtonLabel(input: ButtonInput): string {
+  const { action, price } = composerButtonParts(input);
+  return price ? `${action} · ${price}` : action;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */

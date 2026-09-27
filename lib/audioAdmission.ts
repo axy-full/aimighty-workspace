@@ -40,6 +40,7 @@ import {
 } from "@/lib/held";
 import { creditState, creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
+import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 
@@ -319,6 +320,11 @@ export async function executeAudioAdmission(
     estCredits = musicCredits(ms);
   }
 
+  /* Siblings of one press (Gen's takes 2–4), kept as image and video admission keep them: Takes shows them as one strip. */
+  if (isBatchId(body.batchId)) {
+    params.batchId = body.batchId;
+    if (Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8) params.variation = body.variation;
+  }
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
   const estimatedCredits = billCredits(vendorUsd, vendor);

@@ -109,11 +109,15 @@ test("a teammate's stale edit that points a node back at a retired asset brings 
   // B moves x to another picture: a1 is retired.
   canvas = applyTeamPatch(canvas, { upsertNodes: [node("x", { assetId: "a2" })], removeNodes: [], upsertAssets: [asset("a2")], order: null, at: 20 });
   expect(canvas.assets.a1).toBeUndefined();
-  // A, still showing x on a1, edits its prompt; a1 is not resent, since A's view already had it.
+  // A, still showing x on a1, edits its prompt; a1 is not resent, since A's view already had it. Only the prompt
+  // travels (the fields an edit changed), so B's newer picture stands.
   const stale = project([node("x", { assetId: "a1" })], [asset("a1")]);
   const patch = diffForTeam(stale, { ...stale, nodes: [node("x", { assetId: "a1", text: "Push in." })] }, 30)!;
-  expect(patch.upsertAssets).toEqual([]);
-  canvas = applyTeamPatch(canvas, patch);
+  expect({ assets: patch.upsertAssets, fields: patch.fields }).toEqual({ assets: [], fields: { x: ["text"] } });
+  const fielded = applyTeamPatch(canvas, patch);
+  expect({ picture: fielded.nodes.x.assetId, text: fielded.nodes.x.text, retired: Object.keys(fielded.retired) }).toEqual({ picture: "a2", text: "Push in.", retired: ["a1"] });
+  // A write of the whole node (a window that sends x as it shows it) points x back at a1: a1 comes back.
+  canvas = applyTeamPatch(canvas, { ...patch, fields: {} });
   expect(canvas.nodes.x.assetId).toBe("a1");
   expect(canvas.assets.a1).toEqual(asset("a1"));
   expect(Object.keys(canvas.retired)).toEqual(["a2"]);
