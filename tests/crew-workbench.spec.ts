@@ -105,6 +105,26 @@ test("the minutes can be filed in the Library once a round exists; nothing to fi
   expect(errors).toEqual([]);
 });
 
+test("a legacy Crew room displays its recorded credit outcome without a dollar fallback", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, project, headers } = await open(page);
+  const response = await page.request.post("/api/crew/sessions", { headers, data: { projectId: project.id, goal: GOAL } });
+  expect(response.ok()).toBe(true);
+  const { session } = await response.json();
+  expect(session).not.toHaveProperty("spendUsd");
+  await page.route(`**/api/crew/sessions/${session.id}`, async route => {
+    const original = await route.fetch();
+    const body = await original.json();
+    await route.fulfill({ response: original, json: { ...body, session: { ...body.session, roundsRun: 1, spendCr: null, spendUsd: 7.25 } } });
+  });
+  await page.goto(`/suites?project=${project.id}&view=crew&cp=sessions`);
+  await page.locator(".cw-session").filter({ hasText: GOAL }).click();
+  await expect(page.getByTestId("crew-panel")).toContainText("No Particl charge");
+  await expect(page.getByTestId("crew-panel")).not.toContainText("$");
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  expect(errors).toEqual([]);
+});
+
 test("a role card edits the agent; Members seats a preset; the chair moves", async ({ page }, info) => {
   test.skip(!WIDE.includes(info.project.name) && info.project.name !== "workbench-390x844", "one desktop pair and one phone");
   const { errors } = await open(page);
