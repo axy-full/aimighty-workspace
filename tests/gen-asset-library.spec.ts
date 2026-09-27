@@ -94,7 +94,7 @@ async function fixture(page: Page) {
     tenantUrl = String(row.rows[0].db_url);
   } finally { platform.close(); }
   expect(tenantUrl).toMatch(/^file:/);
-  const tenant = createClient({ url: tenantUrl });
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   const generationImage = `gen_library_image_${randomUUID().replaceAll("-", "")}`;
   const generationVideo = `gen_library_video_${randomUUID().replaceAll("-", "")}`;
   try {

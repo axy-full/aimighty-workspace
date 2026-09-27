@@ -13,9 +13,12 @@ import {
 } from "@/lib/shell/workspace-view";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { UsageLedger } from "./UsageLedger";
 import { creditsLabel } from "@/lib/workspace/format";
 import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
+import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
+import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
@@ -99,7 +102,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
         </div>
         {shell.wsTab === "general" ? <><General name={name} onRenamed={onRenamed} /><Rules /></> : null}
         {shell.wsTab === "people" ? <People /> : null}
-        {shell.wsTab === "credits" ? <Plans credits={credits} /> : null}
+        {shell.wsTab === "credits" ? <Plans credits={credits} balance={account?.credits?.balance ?? null} /> : null}
         {shell.wsTab === "usage" ? <Usage /> : null}
         {shell.wsTab === "dashboard" ? <ManagementDashboard /> : null}
         {shell.wsTab === "engines" ? <Engines /> : null}
@@ -211,9 +214,12 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
 }
 
 /* ── Prompt rules ────────────────────────────────────────────────────── */
-/* GET /api/rules: lib/platformLayer.ts EffectiveRule. The team's rules edit in full; the platform's switch off or on. */
+/* GET /api/rules: lib/platformLayer.ts EffectiveRule. The team's rules edit in full; the platform's switch off or on.
+   Every member reads them; only an admin changes them (the routes answer anyone else 403). */
 type Rule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean; source: "platform" | "workspace" };
 function Rules() {
+  const session = useSession();
+  const admin = session.role === "admin" || session.role === "owner";
   const write = useWrite();
   const { data, error, read } = useRead<{ rules: Rule[] }>("/api/rules");
   const [text, setText] = useState("");
@@ -238,10 +244,10 @@ function Rules() {
     const own = r.source === "workspace";
     return (
       <div className="wsx-actions" key={r.id} data-testid="ws-rule" data-source={r.source} style={{ opacity: r.on ? 1 : 0.6 }}>
-        <button type="button" role="switch" className="gx-toggle" aria-checked={r.on} aria-label={r.on ? "Switch this rule off" : "Switch this rule on"} disabled={busy != null} onClick={() => void act(r.id, at(r), "PATCH", { on: !r.on })}>
+        <button type="button" role="switch" className="gx-toggle" aria-checked={r.on} aria-label={r.on ? "Switch this rule off" : "Switch this rule on"} disabled={!admin || busy != null} onClick={() => void act(r.id, at(r), "PATCH", { on: !r.on })}>
           <span className="gx-toggle-dot" aria-hidden="true" />{r.on ? "On" : "Off"}
         </button>
-        {own ? (
+        {own && admin ? (
           <>
             <input className="gx-field" defaultValue={r.text} maxLength={400} aria-label="Rule" disabled={busy != null} style={{ flex: "1 1 220px", width: "auto" }}
               onBlur={(e) => { const next = e.target.value.trim(); if (next && next !== r.text) void act(r.id, at(r), "PATCH", { text: next }); }} />
@@ -273,8 +279,12 @@ function Rules() {
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       {data ? mine.map(row) : !error ? <span className="cw-dim">Reading…</span> : null}
       <div className="wsx-actions">
-        <input className="gx-field" value={text} maxLength={400} placeholder="A rule, as one sentence" aria-label="New rule" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void add(); }} style={{ flex: "1 1 220px", width: "auto" }} data-testid="ws-rule-text" />
-        <button type="button" className="gx-hbtn" disabled={!text.trim() || busy != null} onClick={() => void add()} data-testid="ws-rule-add">Add rule</button>
+        {admin ? (
+          <>
+            <input className="gx-field" value={text} maxLength={400} placeholder="A rule, as one sentence" aria-label="New rule" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void add(); }} style={{ flex: "1 1 220px", width: "auto" }} data-testid="ws-rule-text" />
+            <button type="button" className="gx-hbtn" disabled={!text.trim() || busy != null} onClick={() => void add()} data-testid="ws-rule-add">Add rule</button>
+          </>
+        ) : null}
         {inherited.length ? (
           <button type="button" className="gx-hbtn" aria-expanded={showInherited} onClick={() => setShowInherited((v) => !v)} data-testid="ws-rules-inherited">
             {showInherited ? "Hide" : "Show"} {inherited.length} inherited{off ? ` · ${off} off` : ""}
@@ -363,8 +373,8 @@ function People() {
 }
 
 /* ── Plans & credits ─────────────────────────────────────────────────── */
-type Billing = { canManage: boolean; plans?: BillingPlan[]; subscription?: BillingSubscription | null };
-function Plans({ credits }: { credits: { text: string; title: string } }) {
+type Billing = { canManage: boolean; plans?: BillingPlan[]; subscription?: BillingSubscription | null; reach?: WorkspaceReach | null; rates?: RateGroup[] | null };
+function Plans({ credits, balance }: { credits: { text: string; title: string }; balance: number | null }) {
   const session = useSession();
   const write = useWrite();
   const admin = session.role === "admin" || session.role === "owner";
@@ -377,6 +387,10 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
   const months = statementMonthsOf(statements.data);
   const packs = topups.data?.applies ? topups.data.packs : [];
   const open = (topups.data?.requests ?? []).filter((r) => r.status === "requested");
+  /* The balance as takes, counted from the balance shown above (it refreshes
+     on its own). The route sends none to a workspace billed in dollars. */
+  const inCredits = session.credits != null;
+  const reach = data?.reach ?? null;
   const request = async (packId: string) => {
     setBusy(packId); setNote(null);
     const { json, error: refused } = await write<{ checkout?: { kind: string; url?: string } }>("/api/workspaces/topups", "POST", { packId });
@@ -401,8 +415,24 @@ function Plans({ credits }: { credits: { text: string; title: string } }) {
     <div className="wsx-card" data-testid="ws-plans">
       <span className="gx-eyebrow">Balance</span>
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
+      {inCredits && !data && !error ? <span className="cw-dim" role="status" data-testid="workspace-reach-loading">Counting what that buys…</span> : null}
+      {reach ? (
+        <div className="wsx-reach">
+          <ReachPair
+            testId="workspace-reach"
+            video={reach.video ? <ReachTile kind="video" count={leftFrom(balance, reach.video)} take={reach.video} suffix={leftAt(reach.video.basis)} testId="workspace-reach-video" /> : null}
+            image={reach.image ? <ReachTile kind="image" count={leftFrom(balance, reach.image)} take={reach.image} suffix={leftAt(reach.image.basis)} testId="workspace-reach-image" /> : null}
+          />
+        </div>
+      ) : null}
       <span className="cw-dim" data-testid="ws-plan-line">{planLine(data?.plans, data?.subscription)}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
+      {data?.rates ? (
+        <details className="wsx-rates" data-testid="workspace-rates">
+          <summary><span>Credits per take</span><svg className="wsx-rates-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></summary>
+          <RateCard groups={data.rates} reference={reach} legend="Your balance is counted at the outlined prices." testId="workspace-rate-card" />
+        </details>
+      ) : null}
       {packs.length ? (
         <>
           <span className="gx-eyebrow">Add credits</span>
@@ -466,6 +496,7 @@ function Usage() {
         </div>
       ))}
       {data && !shown.length ? <span className="cw-dim">Nothing settled yet.</span> : null}
+      <UsageLedger />
     </div>
   );
 }

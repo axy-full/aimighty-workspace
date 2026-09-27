@@ -9,14 +9,17 @@ import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boar
 import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
-import { poll } from "@/lib/poll";
+import { movedOn, poll } from "@/lib/poll";
 import { useShell } from "@/lib/shell/state";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryBatch, findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { groupSiblings, isVariation, stripLabel, takeLabel } from "@/lib/variations";
+import { TakeStrip } from "../TakeStrip";
 import { activeMediaJob } from "@/lib/workbench/job-recovery";
+import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { TranscribePanel } from "./TranscribePanel";
@@ -62,19 +65,46 @@ const REEDIT_LOST = "This re-edit can no longer be checked from here. If it rend
 
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
+  /* The same store the shell reads `items` from: Load more and Try again here fill Takes and the Library together. */
+  const library = useProjectLibrary(scope, projectId);
   const { toast, state } = useWorkspace();
   const shell = useShell();
   const project = draft.project;
   useStageFacts("takes", project);
   /* Every generation first; then every asset, each in one group — its production category, else its kind. */
   const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
+  const generationCells = useMemo(() => groupSiblings(generations, entryBatch), [generations]);
   const groups = useMemo(() => assetGroups(items, project), [items, project]);
-  /* A take sent here (Viral's Send to Edit, the Library) opens first. */
+  /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
   const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
   /* Sound is picked for its transcript only; the cut and the re-edits are for pictures. */
   const pickable = (e: LibraryEntry) => editable(e) || (e.media === "audio" && Boolean(e.url));
-  const entry = items.find((e) => e.take.id === picked && pickable(e)) ?? generations.find(editable) ?? null;
+  const chosen = picked ? items.find((e) => e.take.id === picked) ?? null : null;
+  const [lost, setLost] = useState<string | null>(null);
+  const finding = Boolean(picked) && !chosen && lost !== picked;
+  const entry = chosen ? (pickable(chosen) ? chosen : generations.find(editable) ?? null) : picked ? null : generations.find(editable) ?? null;
+  /* Not in the loaded range yet: older pages come in until it is found, or it is not in the project. */
+  useEffect(() => {
+    if (!finding || !picked) return;
+    let live = true;
+    void findProjectTake(scope, projectId, picked).then((found) => { if (live && !found) setLost(picked); });
+    return () => { live = false; };
+  }, [finding, picked, scope, projectId]);
+  /* A take handed over from another page is brought into view once, the way a pick is. */
+  const [focus, setFocus] = useState(picked);
+  const focusOn = project && focus && focus === picked ? (entry?.take.id === focus ? "take" : !chosen ? (finding ? "finding" : "lost") : null) : null;
+  useEffect(() => {
+    if (!focusOn) return;
+    const frame = requestAnimationFrame(() => {
+      const panel = document.querySelector("[data-section='edit-panel']");
+      if (!panel) return;
+      panel.scrollIntoView({ block: "start" });
+      if (focusOn !== "finding") setFocus(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusOn]);
   const pick = (e: LibraryEntry) => {
     if (!pickable(e)) { toast("This file has no picture or sound to edit."); return; }
     setPicked(e.take.id); setQuote(null); setError("");
@@ -104,8 +134,10 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {
     if (!pending) return;
+    const moved = movedOn();
     const poller = poll({
       read: (signal) => studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      moved: ({ generation }) => moved(pending.jobId, generation.status),
       done: ({ generation }) => !activeMediaJob(generation),
       onValue: ({ generation }) => {
         if (!alive.current) return;
@@ -159,6 +191,17 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     catch (cause) { toast(cause instanceof Error ? cause.message : "It could not go on the timeline."); }
   };
   const sourceKey = entry ? `${entry.asset.origin === "generation" ? "generation" : "upload"}:${entry.take.sourceId}` : null;
+  /* A take of a batch is named by its number too: the strip's siblings share one prompt. */
+  const selectedBatch = entry ? entryBatch(entry) : undefined;
+  const selectedTake = selectedBatch && typeof selectedBatch.batchId === "string" && isVariation(selectedBatch.variation) ? selectedBatch.variation : null;
+  /* One generation to pick; inside a strip it is named by its take number, the strip carries the prompt. */
+  const takeButton = (e: LibraryEntry, label?: string) => (
+    <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} aria-label={label ? `${label} · ${e.take.name}` : undefined} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
+      {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
+      <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
+      <span className="pd-take-name">{label ?? e.take.name}</span>
+    </button>
+  );
   const blocked = !entry ? "Choose a take." : !project.productionProjectId ? "Save the project first." : !instruction.trim() ? "Write what should change." : null;
 
   return (
@@ -171,12 +214,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         </div>
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
-            {generations.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
-                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
-                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
-                <span className="pd-take-name">{e.take.name}</span>
-              </button>
+            {generationCells.map((cell) => cell.kind === "one" ? takeButton(cell.take) : (
+              <TakeStrip key={`batch:${cell.batchId}`} batchId={cell.batchId} testId="takes-batch" state="done" plain name={cell.takes[0].take.name}
+                label={stripLabel(cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return isVariation(v) ? v : i + 1; }))}>
+                {cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return takeButton(e, takeLabel(isVariation(v) ? v : i + 1)); })}
+              </TakeStrip>
             ))}
           </div>
         ) : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
@@ -184,7 +226,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
 
       {entry ? (
         <>
-          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
+          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {selectedTake ? `${takeLabel(selectedTake)} · ` : ""}{entry.take.name}</span></div>
           <div className="gx-gen-enhance">
             {entry.media === "audio" ? null : <>
               <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
@@ -234,12 +276,17 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             </section>
           )}
         </>
+      ) : picked && !chosen ? (
+        <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-finding">
+          <span className="gx-eyebrow" data-functional-label="">{finding ? "Finding the take…" : "That take is not in this project"}</span>
+          {finding ? null : <button type="button" className="gx-hbtn" onClick={() => setPicked(null)}>Show the newest take</button>}
+        </div>
       ) : null}
       <section className="gx-gen-card" aria-label="All assets" data-testid="takes-assets" data-section="assets">
         <div className="pd-row-head">
           <span className="gx-eyebrow" data-functional-label="">All assets</span>
           <span className="gx-spacer" />
-          <span className="gx-hint">{items.length} in this project</span>
+          <span className="gx-hint">{items.length}{library.hasMore ? "+" : ""} in this project</span>
         </div>
         {groups.length ? groups.map((group) => (
           <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
@@ -254,7 +301,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             ))}
             </div>
           </div>
-        )) : <p className="gx-empty">No assets yet.</p>}
+        )) : library.state.status === "error" ? null : <p className="gx-empty">No assets yet.</p>}
+        <LibraryMore library={library} testId="takes-more" />
       </section>
     </div>
   );

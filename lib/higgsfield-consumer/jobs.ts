@@ -486,6 +486,62 @@ export async function listConsumerJobs(
   };
 }
 
+/** A run page's cursor as one opaque query value: `<createdAt>.<id>`. */
+export function formatConsumerJobCursor(cursor: ConsumerJobCursor): string {
+  return `${cursor.createdAt}.${cursor.id}`;
+}
+export function parseConsumerJobCursor(value: string): ConsumerJobCursor {
+  const match = /^(\d{1,16})\.([A-Za-z0-9-]{1,200})$/.exec(value);
+  const createdAt = match ? Number(match[1]) : NaN;
+  if (!match || !Number.isSafeInteger(createdAt)) return invalid();
+  return { createdAt, id: match[2] };
+}
+const IN_FLIGHT = "('dispatching','accepted','uncertain')";
+/**
+ * One project's runs of a workflow, newest first, paged by cursor. A quote is
+ * an estimate, not a run: it stays in the ledger and is only left out here,
+ * so estimates never push a result out of the window. The first page also
+ * carries every admitted job still awaiting reconciliation, however old, so
+ * paging can never hide a paid operation (a later page may repeat one).
+ * `variant` narrows to one kind of run by the saved input's own variant
+ * (Genjutsu's Motion Transfer and Object Swap pages each list their own).
+ */
+export async function listConsumerRuns(
+  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; before?: ConsumerJobCursor; variant?: string },
+): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {
+  scope(input);
+  const limit = input.limit ?? 25;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
+      !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
+  const before = input.before, variant = input.variant;
+  if (before) {
+    identifier(before.id);
+    if (!Number.isSafeInteger(before.createdAt) || before.createdAt < 0) invalid();
+  }
+  if (variant !== undefined && !/^[a-z][a-z-]{0,39}$/.test(variant)) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const owned = [input.userId, input.draftId, input.workflow, ...(variant ? [variant] : [])];
+    const kind = variant ? "AND json_extract(payload_json,'$.input.variant')=?" : "";
+    const page = (await tx.execute({
+      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? ${kind} AND status<>'quoted'
+      ${before ? "AND (created_at < ? OR (created_at = ? AND id < ?))" : ""}
+      ORDER BY created_at DESC,id DESC LIMIT ?`,
+      args: [...owned, ...(before ? [before.createdAt, before.createdAt, before.id] : []), limit + 1],
+    })).rows;
+    const items = page.slice(0, limit).map(asJob), last = items.at(-1);
+    const nextCursor = page.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null;
+    if (before) return { items, nextCursor };
+    const pinned = (await tx.execute({
+      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? ${kind} AND status IN ${IN_FLIGHT}
+      ORDER BY created_at DESC,id DESC LIMIT 50`,
+      args: owned,
+    })).rows.map(asJob);
+    const shown = new Set(items.map((job) => job.id));
+    return { items: [...items, ...pinned.filter((job) => !shown.has(job.id))], nextCursor };
+  });
+}
+
 export type ConsumerCapacityJob = {
   id: string;
   draftId: string;
@@ -636,6 +692,35 @@ export async function claimConsumerDispatchBatch(
       claims.push({ job: asJob(await requiredRow(tx, input)), claimToken });
     }
     return claims;
+  });
+}
+
+/**
+ * Check, then fence (a batch whose submit reply was lost). In one write, under
+ * the same lock as claimConsumerDispatchBatch: each job still quoted has its
+ * quote closed now, so a request still on its way can never claim it (the
+ * claim refuses an expired quote before anything is sent); a job already
+ * claimed is left exactly as it is. Returns every job as it stands after. The
+ * answer never changes afterwards: a fenced quote is never dispatchable again.
+ */
+export async function fenceConsumerQuotes(
+  inputs: ConsumerJobScope[],
+): Promise<ConsumerJob[]> {
+  if (!Array.isArray(inputs) || inputs.length < 1 || inputs.length > CONSUMER_ACTIVE_LIMIT) invalid();
+  inputs.forEach(jobScope);
+  if (new Set(inputs.map((input) => input.id)).size !== inputs.length) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const now = Date.now();
+    const jobs: ConsumerJob[] = [];
+    for (const input of inputs) {
+      await tx.execute({
+        sql: "UPDATE higgsfield_consumer_jobs SET quote_expires_at=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='quoted' AND quote_expires_at>?",
+        args: [now, now, input.id, input.userId, input.draftId, now],
+      });
+      jobs.push(asJob(await requiredRow(tx, input)));
+    }
+    return jobs;
   });
 }
 

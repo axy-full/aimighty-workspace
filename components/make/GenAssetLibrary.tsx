@@ -26,9 +26,8 @@ export type GenAssetLibraryProps = {
   controller?: Ref<GenAssetLibraryHandle>;
   search: string;
   onUseAsset: (asset: DraggedAsset) => void;
-  /* Offered only when the host can act on them: a host without an edit,
-     upscale or prompt tool leaves these out, and the cards show no button
-     for them rather than one that does nothing. */
+  /** Edit, Upscale and Use prompt are offered only where a handler is given:
+   *  a surface with no such tool shows no button that does nothing. */
   onEdit?: (asset: LibraryAsset) => void;
   onUpscale?: (asset: LibraryAsset) => void;
   onUsePrompt?: (take: Generation) => void;

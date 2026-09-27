@@ -7,6 +7,7 @@ import { newProject } from "../../lib/workbench/studio";
 import { saveSchema } from "../../lib/workbench/studio-schema";
 import * as requestBody from "../../lib/workbench/request-body";
 import * as requestScope from "../../lib/workbench/request-scope";
+import * as saveProblem from "../../lib/workbench/save-problem";
 
 /** Execute the real route with storage spies: a rejected tab must not reach data. */
 function route() {
@@ -28,6 +29,7 @@ function route() {
     "@/lib/workbench/request-scope": requestScope,
     "@/lib/db": { db: () => ({ execute: record("query", { rows: [] }) }) },
     "@/lib/workbench/studio-schema": { saveSchema },
+    "@/lib/workbench/save-problem": saveProblem,
     "@/lib/workbench/studio": { newProject },
     /* Real: a large project answer leaves gzipped. */
     "node:zlib": zlib,
@@ -37,6 +39,11 @@ function route() {
       saveDraft: record("save", { revision: 1 }),
       mapNodeShot: record("map", "shot"),
       publishBible: record("publish", { version: 1 }),
+    },
+    /* Studio's first run: seeding the starter production writes to the workspace, so it is gated like a save. */
+    "@/lib/workbench/starter-draft": {
+      openStarterDraft: record("starter", { project: draft, revision: 1, created: true, seeded: true }),
+      StarterUnavailableError: class StarterUnavailableError extends Error {},
     },
   };
   const compiled = ts.transpileModule(
@@ -72,7 +79,7 @@ for (const [label, captured] of [
   ],
   ["an unstamped old browser", null],
 ] as const) {
-  test(`${label} cannot save, publish, map or open before touching storage`, async () => {
+  test(`${label} cannot save, publish, map, open or seed the starter before touching storage`, async () => {
     const { exports, calls, draft } = route();
     for (const [method, body] of [
       ["PUT", { project: draft, revision: 0 }],
@@ -82,6 +89,7 @@ for (const [label, captured] of [
       ],
       ["POST", { action: "map-shot", projectId: draft.id, nodeId: "a" }],
       ["POST", { action: "open", projectId: "existing-production" }],
+      ["POST", { action: "starter" }],
     ] as const) {
       const response = await exports[method](
         new Request("http://localhost/api/workbench/projects", {
@@ -111,7 +119,7 @@ for (const [label, captured] of [
   });
 }
 
-test("the current captured account can save and publish; ordinary GET clients stay compatible", async () => {
+test("the current captured account can save, publish and open the starter; ordinary GET clients stay compatible", async () => {
   const { exports, calls, draft } = route();
   const headers = {
     "X-Workbench-Scope": requestScope.workbenchScopeFor(
@@ -147,8 +155,25 @@ test("the current captured account can save and publish; ordinary GET clients st
     ).status,
   ).toBe(200);
   expect(calls).toContain("publish");
+  const starter = await exports.POST(new Request("http://localhost/api/workbench/projects", { method: "POST", headers, body: JSON.stringify({ action: "starter" }) }));
+  expect(starter.status).toBe(200);
+  expect(await starter.json()).toMatchObject({ created: true, project: { id: draft.id } });
+  expect(calls).toContain("starter");
   expect(
     (await exports.GET(new Request("http://localhost/api/workbench/projects")))
       .status,
   ).toBe(200);
+});
+
+test("a save the schema refuses says which rule it broke, not a generic line", async () => {
+  const { exports, calls, draft } = route();
+  const headers = { "X-Workbench-Scope": requestScope.workbenchScopeFor("current-workspace", "new-account") };
+  const put = async (project: unknown) => {
+    const response = await exports.PUT(new Request("http://localhost/api/workbench/projects", { method: "PUT", headers, body: JSON.stringify({ project, revision: 0 }) }));
+    return { status: response.status, error: ((await response.json()) as { error: string }).error };
+  };
+  expect(await put({ ...draft, name: "x".repeat(101) })).toEqual({ status: 400, error: "Check the project's name: keep it to 100 characters." });
+  expect(await put({ ...draft, scriptSource: { assetId: "missing", filename: "script.pdf", sha256: "a".repeat(64), pages: [], importedAt: "2026-09-25", edited: false, acknowledgedEmptyPages: [] } })).toEqual({ status: 400, error: "Keep the uploaded screenplay source in the asset library." });
+  expect(await put({ ...draft, fps: 23 })).toEqual({ status: 400, error: "Check the project's fps: it is not valid." });
+  expect(calls).not.toContain("save");
 });

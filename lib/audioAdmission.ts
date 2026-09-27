@@ -22,7 +22,7 @@ import {
   VOICE_CHANGE_MODEL,
   type DialogueLine,
 } from "@/lib/elevenlabs";
-import { GROK_TTS_MODEL, GROK_VOICE_ID, audioVendor, grokSpeechUsd, grokVoiceConfigured } from "@/lib/xaiVoice";
+import { GROK_TTS_MODEL, GROK_VOICE_ID, audioVendor, grokSpeechUsd, grokVoiceConfigured, listGrokVoices } from "@/lib/xaiVoice";
 import { findStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "@/lib/mediaSource.server";
 import { getShot } from "@/lib/shots";
 import {
@@ -40,6 +40,7 @@ import {
 } from "@/lib/held";
 import { creditState, creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
+import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 
@@ -246,8 +247,21 @@ export async function executeAudioAdmission(
     const voiceId = String(body.voiceId ?? "").trim();
     if (!GROK_VOICE_ID.test(voiceId))
       return admissionReply({ error: "Pick a Grok voice." }, { status: 400 });
+    /* Only a voice xAI lists: another vendor's voice id passes the shape
+       check, and xAI would refuse it after the spend was reserved. A voice
+       the cached list does not have (added since, or cached on another
+       instance) is looked up once more, fresh, before it is refused. */
+    let grokVoice: { id: string; name: string } | undefined;
+    const listed = (list: { id: string; name: string }[]) => list.find((v) => v.id === voiceId);
+    try {
+      grokVoice = listed(await listGrokVoices()) ?? listed(await listGrokVoices(true));
+    } catch (e) {
+      return admissionReply({ error: (e as Error).message }, { status: 503 });
+    }
+    if (!grokVoice)
+      return admissionReply({ error: "Pick a Grok voice." }, { status: 400 });
     params.voiceId = voiceId;
-    params.voiceName = body.voiceName ? String(body.voiceName).slice(0, 80) : undefined;
+    params.voiceName = body.voiceName ? String(body.voiceName).slice(0, 80) : grokVoice.name;
     const language = String(body.language ?? "").trim();
     if (/^[A-Za-z]{2,3}(-[A-Za-z]{2})?$|^auto$/.test(language)) params.language = language;
     if (body.speed != null && Number.isFinite(Number(body.speed))) params.speed = Math.max(0.7, Math.min(1.5, Number(body.speed)));
@@ -306,6 +320,11 @@ export async function executeAudioAdmission(
     estCredits = musicCredits(ms);
   }
 
+  /* Siblings of one press (Gen's takes 2–4), kept as image and video admission keep them: Takes shows them as one strip. */
+  if (isBatchId(body.batchId)) {
+    params.batchId = body.batchId;
+    if (Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8) params.variation = body.variation;
+  }
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
   const estimatedCredits = billCredits(vendorUsd, vendor);

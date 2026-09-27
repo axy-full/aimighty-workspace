@@ -6,6 +6,9 @@ import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
 import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId, mockStartedAt } from "./mock";
 import { preflight } from "./preflight";
+import { XaiHttpError } from "./xaiErrors";
+/* The typed xAI failure is shared with Grok Voice (lib/xaiErrors.ts); importers of this module keep it here too. */
+export { XaiHttpError, xaiSubmissionRejected } from "./xaiErrors";
 
 /**
  * xAI's Grok Imagine Video (owner, 23 September: Grok APIs wherever
@@ -26,12 +29,18 @@ async function dataUrl(ref: Reference): Promise<string> {
   return `data:${mime};base64,${b64}`;
 }
 
-/** What xAI is sent: the prompt, length, shape and size; a first frame animates, reference images guide (at most 720p). */
+/**
+ * What xAI is sent: the prompt, length, shape and size; a first frame
+ * animates (no last frame), reference images guide (at most 720p). Admission
+ * refuses the same shapes first (videoReferenceProblem); these throws are the
+ * backstop, raised inside the submit's preflight, before anything is sent.
+ */
 export async function xaiVideoBody(model: ModelDef, prompt: string, params: VideoParams, references: Reference[]) {
   const body: Record<string, unknown> = { model: model.id, prompt, duration: params.duration, aspect_ratio: params.ratio, resolution: params.resolution };
   const first = references.find((ref) => ref.kind === "image" && ref.role === "first_frame");
   const guides = references.filter((ref) => ref.kind === "image" && ref.role === "reference_image");
   if (references.some((ref) => ref.kind === "video")) throw new Error(`${model.label} takes images, not videos, as references.`);
+  if (references.some((ref) => ref.role === "last_frame")) throw new Error(`${model.label} animates a first frame; it takes no last frame.`);
   if (first && guides.length) throw new Error(`${model.label} takes a first frame or reference images, not both.`);
   if (first) body.image = { url: await dataUrl(first) };
   else if (guides.length) {
@@ -39,16 +48,6 @@ export async function xaiVideoBody(model: ModelDef, prompt: string, params: Vide
     body.reference_images = await Promise.all(guides.map(async (ref) => ({ url: await dataUrl(ref) })));
   }
   return body;
-}
-
-/** A reply xAI actually sent: its status says whether the request was refused or its fate is unknown. */
-export class XaiHttpError extends Error {
-  constructor(public readonly status: number, message: string) { super(message); this.name = "XaiHttpError"; }
-}
-
-/** A definite refusal of the submit itself: nothing was accepted, so nothing is charged. */
-export function xaiSubmissionRejected(error: unknown): boolean {
-  return error instanceof XaiHttpError && [400, 401, 402, 403, 404, 405, 413, 415, 422, 429].includes(error.status);
 }
 
 export async function submitXaiVideo(model: ModelDef, prompt: string, params: VideoParams, references: Reference[]): Promise<string> {

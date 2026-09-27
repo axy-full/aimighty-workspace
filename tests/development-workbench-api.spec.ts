@@ -14,7 +14,7 @@ test('real development HTTP persists every script section, resumes idempotently,
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const tenantRow = (await platform.execute({ sql: 'SELECT db_url FROM workspaces WHERE id=?', args: [account.workspace.id] })).rows[0];
   expect(String(tenantRow.db_url)).toMatch(/^file:/);
-  const tenant = createClient({ url: String(tenantRow.db_url) });
+  const tenant = createClient({ url: String(tenantRow.db_url), timeout: 10_000 });
   const outsider = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL || 'http://localhost:4551' });
   const anonymous = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL || 'http://localhost:4551' });
   try {

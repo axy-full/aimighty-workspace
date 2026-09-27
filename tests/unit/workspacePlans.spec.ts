@@ -10,6 +10,7 @@ import {
 } from "../../lib/workspace/run-engine";
 import { activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
+import { idempotencyKey } from "../../lib/workspace/plan-helpers";
 
 /* ------------------------------------------------------------ mock backend */
 
@@ -19,7 +20,7 @@ type Call = { method: string; path: string; body: Record<string, unknown> | null
  * A fetch that answers the existing routes' documented shapes. `price` is
  * read at call time so a test can move it between quote and approve.
  */
-function backend(options: { price?: () => number; hold?: (path: string, body: Record<string, unknown> | null) => Promise<void> | null } = {}) {
+function backend(options: { price?: () => number; hold?: (path: string, body: Record<string, unknown> | null) => Promise<void> | null; approved?: number } = {}) {
   const calls: Call[] = [];
   const price = options.price ?? (() => 18);
   let job = 0;
@@ -64,6 +65,8 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
       return json({ job: { id: "d1", requestId: body?.requestId, status: "queued" } }, 202);
     }
     if (bare === "/api/workbench/atomik") {
+      /* The real route refuses a read without the project it belongs to. */
+      if (method === "GET" && !new URLSearchParams(path.split("?")[1]).get("projectId")) return json({ error: "Choose a saved project." }, 400);
       if (method === "GET") return json({ jobs: [{ id: "a1", requestId: new URLSearchParams(path.split("?")[1]).get("requestId"), status: "succeeded", plan: { steps: ["x", "y"] } }] });
       if (body?.quoteOnly) return json({ estimateCredits: price() });
       return json({ job: { id: "a1", requestId: body?.requestId, status: "queued" } }, 202);
@@ -87,7 +90,12 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
     if (bare.startsWith("/api/pipelines/")) return json({ run: { id: bare.split("/").pop() } });
     if (bare === "/api/rig/elements") return json({ elements: [{ id: "e1", locked: false }, { id: "e2", locked: true }] });
     if (bare.startsWith("/api/rig/elements/")) return json({ ok: true, locked: true });
-    if (bare === "/api/export/selects") return new Response("shot,take\na,1\nb,2\n", { status: 200 });
+    if (bare === "/api/export/selects") {
+      const format = new URLSearchParams(path.split("?")[1]).get("format");
+      /* A prompt with a line break is one take, not two: the route counts rows, not CSV lines. */
+      if (format === "count") return json({ approved: options.approved ?? 2 });
+      return new Response('shot,take,prompt\na,1,"wide\nthen close"\nb,2,x\n', { status: 200 });
+    }
     if (bare === "/api/workbench/engines")
       return json({ models: [{ id: "video-a", resolutions: ["720p"], ratios: ["16:9"], durations: [5] }] });
     return json({ error: `unmocked ${method} ${path}` }, 500);
@@ -119,7 +127,7 @@ function fullRequest(): PlanRequest {
   };
 }
 
-function context(fetcher: typeof fetch, request: PlanRequest | null = fullRequest()): PlanContext {
+function context(fetcher: typeof fetch, request: PlanRequest | null = fullRequest(), downloads: string[] = []): PlanContext {
   let id = 0;
   return {
     projectId: "draft-1",
@@ -129,6 +137,7 @@ function context(fetcher: typeof fetch, request: PlanRequest | null = fullReques
     fetch: fetcher,
     wait: async () => {},
     newId: () => `00000000-0000-4000-8000-${String((id += 1)).padStart(12, "0")}`,
+    download: (url) => void downloads.push(url),
   };
 }
 
@@ -467,6 +476,59 @@ test("a failed dispatch fails the run honestly and a resume goes back through th
   expect(engine.getState().run!.approved).toBe(false);
 });
 
+test("running a plan again with unchanged inputs is a new request; a resume inside one run recovers the same one", async () => {
+  let fail = true;
+  const inner = backend();
+  const keys: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/generate" && init?.method === "POST") {
+      keys.push(new Headers(init.headers).get("Idempotency-Key") ?? "");
+      if (fail) return new Response(JSON.stringify({ error: "The connection dropped." }), { status: 503 });
+    }
+    return inner.fetcher(input, init);
+  }) as typeof fetch;
+  const engine = engineFor(context(fetcher));
+  engine.start("rig");
+  await until(() => engine.getState().run?.status === "waiting");
+  await engine.approve();
+  await until(() => engine.getState().run?.status === "failed", "failed");
+  const firstRun = engine.getState().run!.id;
+  /* The resume re-gates, and the re-sent parts carry the keys this run already used: the server recovers, never pays twice. */
+  fail = false;
+  engine.start("rig");
+  await until(() => engine.getState().run?.status === "waiting" && !engine.getState().run?.quoting, "re-gated");
+  expect(await engine.approve()).toEqual({ ok: true });
+  await until(() => engine.getState().run?.status === "done", "done");
+  expect(engine.getState().run!.id).toBe(firstRun);
+  expect(keys).toHaveLength(3);
+  expect(keys[1]).toBe(keys[0]);
+  expect(keys[2]).not.toBe(keys[1]);
+  /* Run again from the top with the same shots: new keys, so the account really renders again. */
+  engine.start("rig");
+  await until(() => engine.getState().run?.status === "waiting" && !engine.getState().run?.quoting, "second run gated");
+  await engine.approve();
+  await until(() => engine.getState().run?.status === "done", "second run done");
+  expect(keys).toHaveLength(5);
+  expect(keys.slice(3).some((key) => keys.slice(0, 3).includes(key))).toBe(false);
+  for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9._:-]{8,160}$/);
+});
+
+test("a request keeps its key for the whole run, whatever else the resume's quote holds", () => {
+  const part = (shot: string, credits = 18) => ({ credits, fingerprint: `fp-${shot}-${credits}`, body: { shotId: shot, prompt: `shot ${shot}` } });
+  const a = part("a"), b = part("b");
+  const first = { runId: "run-1", parts: [a, b] };
+  /* A was admitted; the resume re-quotes only B: B keeps its own key and never takes A's. */
+  const resumed = { runId: "run-1", parts: [part("b", 21)] };
+  expect(idempotencyKey("ws-rig", resumed.parts[0], resumed)).toBe(idempotencyKey("ws-rig", b, first));
+  expect(idempotencyKey("ws-rig", resumed.parts[0], resumed)).not.toBe(idempotencyKey("ws-rig", a, first));
+  /* The same body twice in one run is two requests. */
+  const twice = { runId: "run-1", parts: [part("a"), part("a")] };
+  expect(idempotencyKey("ws-rig", twice.parts[0], twice)).not.toBe(idempotencyKey("ws-rig", twice.parts[1], twice));
+  /* Another run with the same inputs is another request. */
+  expect(idempotencyKey("ws-rig", a, { runId: "run-2", parts: [a, b] })).not.toBe(idempotencyKey("ws-rig", a, first));
+  for (const key of [idempotencyKey("ws-rig", a, first), idempotencyKey("ws-rig", twice.parts[1], twice)]) expect(key).toMatch(/^[A-Za-z0-9._:-]{8,160}$/);
+});
+
 test("visual pacing is bounded and only for read/compute steps", () => {
   expect(VISUAL_PACING_MS).toBeLessThanOrEqual(300);
 });
@@ -529,4 +591,57 @@ test("shorts: without Shorts data it refuses with a reason; with it, it quotes o
   expect(await engine.approve()).toEqual({ ok: true });
   await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "done");
   expect(dispatches().map((call) => [call.path, call.body])).toEqual([["/api/higgsfield/consumer/shorts", { action: "submit", draftId: "draft-1", id: quote.body ? "q-1" : "", workspaceId: "wallet-1", credits: 18 }]]);
+});
+
+/* ------------------------------------------------------------ Deliver, Agent */
+
+test("deliver: counts approved takes as the route counts them, then hands the zip to the browser", async () => {
+  const { fetcher, calls, dispatches } = backend({ approved: 3 });
+  const downloads: string[] = [];
+  const engine = engineFor(context(fetcher, fullRequest(), downloads));
+  expect(engine.start("deliver")).toEqual({ ok: true, action: "started" });
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "deliver");
+  expect(engine.getState().run!.error).toBeNull();
+  expect(calls.map((call) => call.path)).toContain("/api/export/selects?projectId=prod-1&format=count");
+  expect(downloads).toEqual(["/api/export/selects?projectId=prod-1&format=zip"]);
+  expect(engine.getState().session[0].label).toBe("Package downloading · 3 approved takes");
+  expect(dispatches()).toHaveLength(0);
+});
+
+test("agent: the plan is filed by reading the job back with its project", async () => {
+  const { fetcher, calls } = backend();
+  const engine = engineFor(context(fetcher));
+  expect(engine.start("agent")).toEqual({ ok: true, action: "started" });
+  await until(() => engine.getState().run?.status === "waiting", "waiting");
+  expect(await engine.approve()).toEqual({ ok: true });
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "agent");
+  expect(engine.getState().run!.error).toBeNull();
+  const reads = calls.filter((call) => call.method === "GET" && call.path.startsWith("/api/workbench/atomik?"));
+  expect(reads.length).toBeGreaterThan(0);
+  for (const read of reads) expect(new URLSearchParams(read.path.split("?")[1]).get("projectId")).toBe("draft-1");
+  expect(engine.getState().session[0].label).toBe("Plan ready · 2 steps");
+});
+
+test("deliver: in the page, the zip is saved through a download link the route names", async () => {
+  const { fetcher } = backend();
+  const clicked: { href: string; download: string }[] = [];
+  const doc = {
+    body: { appendChild: () => {} },
+    createElement: () => {
+      const link = { href: "", download: "", rel: "", click: () => clicked.push({ href: link.href, download: link.download }), remove: () => {} };
+      return link;
+    },
+  };
+  const scope = globalThis as { document?: unknown };
+  scope.document = doc;
+  try {
+    const ctx = { ...context(fetcher), download: undefined };
+    const engine = engineFor(ctx);
+    expect(engine.start("deliver")).toEqual({ ok: true, action: "started" });
+    await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "deliver");
+    expect(engine.getState().run!.error).toBeNull();
+    expect(clicked).toEqual([{ href: "/api/export/selects?projectId=prod-1&format=zip", download: "" }]);
+  } finally {
+    delete scope.document;
+  }
 });

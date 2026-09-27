@@ -7,28 +7,37 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { resolveGenInput } from "@/lib/genAssetInput";
 import { ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
-import type { GenPreset } from "@/lib/shell/assets";
+import { displayModelName } from "@/lib/models";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
+import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { COMPOSER_TYPES, TAKES_MAX, type BillingSource, type ComposerType } from "@/lib/workspace/composer";
+import { COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
+import { useSession } from "@/lib/session";
+import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
-import type { LibraryEntry } from "@/lib/workspace/library";
+import { entryBatch, type LibraryEntry } from "@/lib/workspace/library";
+import { groupSiblings, stripLabel, takeLabel, isVariation, type Strip } from "@/lib/variations";
+import { TakeStrip } from "./TakeStrip";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
-import { useComposer } from "@/lib/workspace/use-composer";
+import { useComposer, type BatchView } from "@/lib/workspace/use-composer";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
-import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
+import Boundary from "@/components/Boundary";
+import { PanelFault, TileFault } from "./PanelFault";
 
+/** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
+const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
 const PLACEHOLDER: Record<ComposerType, string> = {
@@ -42,6 +51,35 @@ type Filter = (typeof FILTERS)[number];
 const FILTER_MEDIA: Record<Filter, LibraryEntry["media"] | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
 const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
+/** What a batch's takes that went were approved at: this workspace's credits, or the connected account's own. */
+const approvedTotal = (batch: BatchView) => {
+  const went = batch.takes.filter((take) => take.state !== "refused" && take.state !== "not-sent");
+  if (!went.length) return null;
+  const total = went.reduce((sum, take) => sum + take.credits, 0).toLocaleString("en-US");
+  return batch.source === "connected" ? `${total} connected cr` : `${total} cr`;
+};
+/** A landed batch's settled cost, when every take of it is billed in this workspace's credits. */
+const settledTotal = (entries: readonly LibraryEntry[]) =>
+  entries.every((entry) => typeof entry.take.credits === "number") ? `${entries.reduce((sum, entry) => sum + (entry.take.credits ?? 0), 0).toLocaleString("en-US")} cr settled` : null;
+/** A reference the recreated take cited that Gen does not carry: gone from this workspace, or not a picture or a video. */
+type MissingReference = { tag: string | null; kind: string; origin: RecipeReference["origin"]; gone: boolean; reason: string };
+type RecipeCard = {
+  preset: GenPreset;
+  /** The composer, and the Auto switch when the recipe moved it, exactly as they were (Undo). */
+  previous: ComposerState;
+  autoBefore: boolean | null;
+  epoch: number;
+  /** × hides the card; a recipe still being read keeps Generate waiting all the same. */
+  hidden?: boolean;
+  refs: {
+    total: number; reading: boolean; missing: MissingReference[];
+    /** References still here whose citation moved because one before them is gone. */
+    renumbered: { name: string; was: string; now: string }[];
+    /** A first or last frame that will be sent as a plain reference. */
+    frames: boolean;
+  };
+};
+type SetupKit = typeof import("@/lib/shell/recipe-setup");
 
 /** Gen (README › Gen): one composer on the left, this project's results on the right. */
 export function GenView({ scope, project, items, workspaceName, onProject }: {
@@ -50,7 +88,28 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const shell = useShell();
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video" });
-  const { state, model, offered, settings, blocked, buttonLabel, submitting } = composer;
+  const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
+  /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
+     "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
+     read it, so the strip lets go of a connected job this view started and the collector follows it. */
+  const strip = ws.state.gen, wsDispatch = ws.dispatch;
+  const [stripAtMount] = useState(() => ws.state.gen?.id ?? null);
+  const stripNow = useRef(strip);
+  const sendNow = useRef(wsDispatch);
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    stripNow.current = strip;
+    sendNow.current = wsDispatch;
+    if (strip && strip.tone === "blue" && strip.id !== stripAtMount && CONNECTED_JOB_ID.test(strip.id)) started.current.add(strip.id);
+  }, [strip, stripAtMount, wsDispatch]);
+  useEffect(() => {
+    const last = stripNow, send = sendNow, mine = started.current;
+    return () => {
+      const left = last.current;
+      if (left && left.tone === "blue" && mine.has(left.id)) send.current({ type: "patch", patch: { gen: null } });
+    };
+  }, []);
+  const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);
@@ -71,6 +130,50 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return () => { live = false; };
   }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
+  /* The connected catalogue is the owner's (composerBlock refuses anyone else): members are not shown the switch at all. */
+  const session = useSession();
+  const groups = session.owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
+  useEffect(() => { if (!session.owner && state.billing === "connected") dispatchComposer({ type: "billing", value: "workspace" }); }, [session.owner, state.billing, dispatchComposer]);
+  /* What this browser remembers for the sheet (recent picks, last connected quotes), read fresh each time it opens. */
+  const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
+  const modelButton = useRef<HTMLButtonElement>(null);
+  const openSheet = () => { setMemory(readPickerMemory(scope)); setSheet(true); };
+  const closeSheet = () => { setSheet(false); setSheetRates((r) => (r?.failed ? null : r)); modelButton.current?.focus({ preventScroll: true }); };
+  const used = (id: string) => writePickerMemory(scope, rememberRecent(readPickerMemory(scope), recentKey(state.billing, state.type, id)));
+  const pickModel = (m: ComposerModel) => { used(m.id); composer.dispatch({ type: "model", value: m.id }); closeSheet(); };
+  const recent = useMemo(() => recentModels(memory.recent, state.billing, state.type, offered), [memory.recent, state.billing, state.type, offered]);
+  /* Every Studio row is priced where the composer stands (its picks, the project's aspect, its references,
+     one take): the list's own rates cover the untouched composer; anything else is one read of the engines
+     route's list, priced there, while the sheet is open. It quotes nothing and reserves nothing. */
+  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: state.seconds, takes: state.count }),
+    [composer.project?.aspect, state.picks, state.references, state.seconds, state.count]);
+  const priceKey = rateQuery(priceAt);
+  const [sheetRates, setSheetRates] = useState<SheetRates | null>(null);
+  const wantsRates = sheet && state.billing === "workspace" && needsPricedRead(offered, priceAt);
+  const ratesKey = sheetRates?.key ?? null;
+  useEffect(() => {
+    if (!wantsRates || ratesKey === priceKey) return;
+    let live = true;
+    void scopedFetch(`/api/workbench/engines?${priceKey}`, { cache: "no-store" })
+      .then(async (r) => { if (!r.ok) throw new Error("unpriced"); return r.json(); })
+      .then((reply) => { if (live) setSheetRates(sheetRatesFrom(priceKey, reply)); })
+      /* An unread price leaves those rows "priced on Generate"; the next opening asks again. */
+      .catch(() => { if (live) setSheetRates({ key: priceKey, models: {}, audio: null, failed: true }); });
+    return () => { live = false; };
+  }, [wantsRates, ratesKey, priceKey, scopedFetch]);
+  const rates = sheetRates?.key === priceKey ? sheetRates : null;
+  const readingRates = wantsRates && !rates;
+  const priceOf = (m: ComposerModel) => rowPrice(m, memory.quoted, priceAt, rates, readingRates);
+  /* A connected quote the composer was actually given becomes that model's "last quote"; nothing here asks for one. */
+  const connectedCredits = state.billing === "connected" && model?.connected ? composer.credits : null;
+  const quotedAt = [model?.durations?.length ? `${settings.duration} s` : null, model?.resolutions?.length ? settings.resolution : null].filter(Boolean).join(" · ");
+  const quotedId = model?.id ?? null;
+  useEffect(() => {
+    if (connectedCredits == null || !quotedId) return;
+    const stored = readPickerMemory(scope);
+    const next = rememberQuote(stored, quotedId, { credits: connectedCredits, at: Date.now(), ...(quotedAt ? { detail: quotedAt } : {}) });
+    if (next !== stored) writePickerMemory(scope, next);
+  }, [connectedCredits, quotedId, quotedAt, scope]);
   const [wellError, setWellError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [filter, setFilter] = useState<Filter>("All");
@@ -80,7 +183,6 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     anchored, editing: state.type === "image" && state.references.length > 0,
   });
 
-  const dispatchComposer = composer.dispatch;
   const drop = useCallback(async (id: string) => {
     setWellError(null);
     try {
@@ -92,38 +194,147 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     }
   }, [scope, dispatchComposer]);
 
-  /* A preset handed over from elsewhere in the shell (Crew › Open in Gen, Soul ID › Use in Gen, an
-     asset's Retry generation) is applied the moment it arrives — on Gen too — then forgotten.
-     The catalogue comes first (it decides which models exist), then the kind, the model, the words,
-     the settings, the identity; a Retry's own references replace the well. */
-  const [presetNote, setPresetNote] = useState<string | null>(null);
-  const presetTurn = useRef(0);
-  const applyPreset = useCallback((preset: GenPreset) => {
-    const turn = ++presetTurn.current;
+  /* What is handed over from elsewhere in the shell arrives by letter (lib/shell/gen-preset.ts): a Gen
+     that is already open takes it at once — ⌘R included — and nothing lingers to be applied again. Crew ›
+     Open in Gen, Soul ID › Use in Gen, a model picked in ⌘K and the public site's hero hand over words, a
+     model and settings: the catalogue first (it decides which models exist), then the kind, the model,
+     the words (an empty prompt leaves the composer's own), the settings and the sound. Recreate hands
+     over a take's whole recipe, applied in one step that Undo reverses. Nothing runs either way: the
+     button prices what arrived. */
+  const [recipe, setRecipe] = useState<RecipeCard | null>(null);
+  const [preset, setPreset] = useState<GenPreset | null>(null);
+  const recipeEpoch = useRef(0);
+  const latest = useRef(state);
+  useEffect(() => { latest.current = state; });
+  const owner = session.owner;
+  const { dismiss: dismissEnhanced, auto: autoNow, setAuto } = enhancer;
+  const autoWas = useRef(autoNow);
+  useEffect(() => { autoWas.current = autoNow; });
+  const applyPreset = useCallback((next: GenPreset) => {
     setMode("compose");
-    if (preset.references) dispatchComposer({ type: "reset" });
-    if (preset.billing) dispatchComposer({ type: "billing", value: preset.billing });
-    if (preset.type) dispatchComposer({ type: "type", value: preset.type });
-    if (preset.model) dispatchComposer({ type: "model", value: preset.model });
-    /* An empty prompt (a model picked in ⌘K, Soul ID) leaves the composer's own words as they are. */
-    if (preset.prompt) dispatchComposer({ type: "prompt", value: preset.prompt });
-    if (preset.picks) dispatchComposer({ type: "pick", value: preset.picks });
-    if (preset.soulId) dispatchComposer({ type: "pick", value: { soulId: preset.soulId } });
-    setPresetNote(preset.note ?? null);
     setWellError(null);
-    const references = preset.type === "audio" ? [] : preset.references ?? [];
-    void Promise.all(references.map(async (ref) => {
-      const asset = await resolveGenInput("genId" in ref ? `generation:${ref.genId}` : `upload:${ref.uploadId}`, scope);
-      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
-      return { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(preset.billing === "connected" && ref.role ? { role: ref.role } : {}) };
-    }).map((p) => p.catch(() => null))).then((found) => {
-      if (turn !== presetTurn.current) return;
-      for (const value of found) if (value) dispatchComposer({ type: "addReference", value });
-      const lost = found.filter((value) => !value).length;
-      if (lost) setWellError(`${lost} of this take’s references ${lost === 1 ? "is" : "are"} no longer available; the rest are back in the well.`);
+    if (!next.from) {
+      /* New words replace the old, an enhancement of them and any recipe that brought them. A model or
+         settings alone are a change made here: a recipe's card stays, says so, and still waits for its references. */
+      if (next.prompt) { recipeEpoch.current++; dismissEnhanced(); setRecipe(null); }
+      if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+      if (next.type) dispatchComposer({ type: "type", value: next.type });
+      if (next.model) dispatchComposer({ type: "model", value: next.model });
+      if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
+      if (next.picks) dispatchComposer({ type: "pick", value: next.picks });
+      if (next.sound?.seconds) dispatchComposer({ type: "seconds", value: next.sound.seconds });
+      if (next.sound?.instrumental !== undefined) dispatchComposer({ type: "instrumental", value: next.sound.instrumental });
+      if (next.sound?.voiceId) dispatchComposer({ type: "voice", value: next.sound.voiceId });
+      setPreset(next);
+      return;
+    }
+    const epoch = ++recipeEpoch.current;
+    /* New words replace the old: an enhancement of the old words must not be what Generate sends. */
+    if (!next.settingsOnly) dismissEnhanced();
+    const previous = latest.current;
+    const settingsOnly = Boolean(next.settingsOnly);
+    const type = next.type ?? previous.type;
+    const refs = settingsOnly || type === "audio" ? [] : next.references ?? [];
+    /* The connected account is the owner's; anyone else recreates on this workspace's engines, and their own engine choice stands. */
+    const billing: BillingSource = next.billing === "connected" && owner ? "connected" : "workspace";
+    const lost = next.billing === "connected" && billing !== "connected";
+    dispatchComposer({
+      type: "recipe",
+      value: {
+        type, billing, picks: next.picks ?? {}, sound: next.sound,
+        ...(lost ? {} : { model: next.model }),
+        ...(settingsOnly ? {} : { prompt: next.prompt, references: [] }),
+      },
     });
-  }, [scope, dispatchComposer]);
+    /* A take made raw on the account is recreated raw, one enhanced there is enhanced there again. */
+    const autoBefore = autoWas.current;
+    const autoMoved = billing === "connected" && next.enhance !== undefined && next.enhance !== autoBefore;
+    if (autoMoved) setAuto(next.enhance!);
+    setPreset(null);
+    setRecipe({ preset: next, previous, autoBefore: autoMoved ? autoBefore : null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
+    if (!refs.length) return;
+    /* Every reference is read again in this workspace. The ones still here keep the take's order; the words
+       are renumbered to match them, and the ones that are gone keep citations of their own (recipe › retagRecipe). */
+    void Promise.allSettled(refs.map((r) => resolveGenInput(`${r.origin}:${r.id}`, scope))).then((results) => {
+      if (recipeEpoch.current !== epoch) return;
+      const assets = results.map((result) => (result.status === "fulfilled" ? result.value : null));
+      const usable = assets.map((asset) => (asset && (asset.kind === "image" || asset.kind === "video") ? { ...asset, kind: asset.kind } : null));
+      const kinds = refs.map((r, i) => (r.kind ?? assets[i]?.kind ?? "image"));
+      const tags = retagRecipe(latest.current.prompt, kinds.map((kind, i) => ({ kind, found: Boolean(usable[i]) })));
+      const missing: MissingReference[] = [];
+      const renumbered: RecipeCard["refs"]["renumbered"] = [];
+      usable.forEach((asset, i) => {
+        const r = refs[i];
+        if (asset) {
+          dispatchComposer({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url, ...(r.role ? { role: r.role } : {}) } });
+          if (tags.was[i] && tags.now[i] && tags.was[i] !== tags.now[i] && cites(tags.prompt, tags.now[i]!)) renumbered.push({ name: asset.name, was: tags.was[i]!, now: tags.now[i]! });
+          return;
+        }
+        const result = results[i];
+        missing.push(assets[i]
+          ? { tag: null, kind: assets[i]!.kind, origin: r.origin, gone: false, reason: "References are images and videos." }
+          : { tag: tags.now[i], kind: kinds[i], origin: r.origin, gone: true, reason: result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "Not found in this workspace." });
+      });
+      if (tags.prompt !== latest.current.prompt) dispatchComposer({ type: "prompt", value: tags.prompt });
+      /* On this workspace's credits a first or last frame is sent as a plain reference (the composer's roles come from the kind). */
+      const frames = billing === "workspace" && usable.some((asset, i) => asset && /first_frame|last_frame/.test(refs[i].role ?? ""));
+      setRecipe((now) => (now?.epoch === epoch ? { ...now, refs: { total: refs.length, reading: false, missing, renumbered, frames } } : now));
+    });
+  }, [scope, owner, dispatchComposer, dismissEnhanced, setAuto]);
   useGenPresetInbox(applyPreset);
+  /* The engine a preset named may not be on offer here any more: say which one stands in (a recipe's card says it for Recreate). */
+  const presetNote = !preset?.note ? null
+    : preset.model && model && composer.models.length && model.id !== preset.model ? `${preset.note} · ${displayModelName(preset.model)} is not offered here; ${model.label} is selected` : preset.note;
+  const undoRecipe = () => {
+    if (!recipe) return;
+    recipeEpoch.current++;
+    dispatchComposer({ type: "restore", value: recipe.previous });
+    dismissEnhanced();
+    if (recipe.autoBefore !== null) setAuto(recipe.autoBefore);
+    setRecipe(null);
+    /* A model or settings handed over since are undone with it, and so is their note. */
+    setPreset(null);
+  };
+  /* The card comes into view where the composer is. On a phone it rises to the top of the page, clear of
+     the sticky Generate band and the tab bar below it; wider, the least scroll that shows it. */
+  const recipeCard = useRef<HTMLDivElement>(null);
+  const shownEpoch = recipe?.epoch ?? 0;
+  useEffect(() => {
+    if (!shownEpoch) return;
+    const phone = typeof matchMedia === "function" && matchMedia("(max-width: 767px)").matches;
+    recipeCard.current?.scrollIntoView({ block: phone ? "start" : "nearest" });
+  }, [shownEpoch]);
+  /* A carried identity that is no longer on the account is dropped, never sent. */
+  const wantedSoul = recipe?.preset.picks?.soulId ?? null;
+  const heldSoul = state.picks.soulId ?? null;
+  const identities = characters.list;
+  useEffect(() => {
+    if (!wantedSoul || heldSoul !== wantedSoul || !identities) return;
+    if (!identities.some((c) => c.soulId === wantedSoul && c.status !== "training" && c.status !== "failed")) dispatchComposer({ type: "pick", value: { soulId: undefined } });
+  }, [wantedSoul, heldSoul, identities, dispatchComposer]);
+  /* A size or length the model Gen holds does not offer lands on the nearest it does (never above the take's),
+     not on the list's first. Only the recipe's own value moves: once the person picks, theirs stands. */
+  const wantedSize = recipe?.preset.picks?.resolution;
+  const wantedSeconds = recipe?.preset.picks?.duration;
+  const heldSize = state.picks.resolution;
+  const heldSeconds = state.picks.duration;
+  const sizes = model?.resolutions;
+  const lengths = model?.durations;
+  useEffect(() => {
+    const size = wantedSize && heldSize === wantedSize && sizes ? nearestSetting(wantedSize, sizes) : undefined;
+    const seconds = wantedSeconds && heldSeconds === wantedSeconds && lengths ? nearestSetting(wantedSeconds, lengths) : undefined;
+    if (size !== undefined || seconds !== undefined) dispatchComposer({ type: "pick", value: { ...(size !== undefined ? { resolution: size } : {}), ...(seconds !== undefined ? { duration: seconds } : {}) } });
+  }, [wantedSize, wantedSeconds, heldSize, heldSeconds, sizes, lengths, dispatchComposer]);
+  /* A shot setup travels as words (Gen has no shot controls); the camera bank loads only when one arrives. */
+  const spec = recipe?.preset.shotSpec ?? null;
+  const [setupKit, setSetupKit] = useState<SetupKit | null>(null);
+  const wantsSetup = Boolean(spec);
+  useEffect(() => {
+    if (!wantsSetup || setupKit) return;
+    let live = true;
+    void import("@/lib/shell/recipe-setup").then((kit) => { if (live) setSetupKit(kit); }).catch(() => {});
+    return () => { live = false; };
+  }, [wantsSetup, setupKit]);
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
@@ -133,14 +344,33 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const enhanceAuto = enhancer.auto;
   useEffect(() => { dispatchComposer({ type: "enhance", value: enhanceAuto }); }, [enhanceAuto, dispatchComposer]);
 
+  /* A recreated take is not sent half-read: while its references or the account's identities are still being
+     read, the composer holds a recipe without them, and a price for that is not the take's price. A citation of
+     a reference that is gone holds it too, until a reference fills the slot or the words drop it. */
+  const soulReading = Boolean(wantedSoul) && heldSoul === wantedSoul && wantsCharacters && !identities;
+  const orphans = recipe && !recipe.refs.reading
+    ? recipe.refs.missing.filter((m) => m.gone && m.tag && cites(state.prompt, m.tag)
+      && state.references.filter((r) => r.kind === m.kind).length < Number(m.tag.replace(/\D/g, "")))
+    : [];
+  const orphan = orphans[0];
+  const recipeWait = !recipe ? null
+    : recipe.refs.reading ? "Reading the take’s references…"
+    : soulReading ? "Reading the account’s identities…"
+    : orphan ? `The prompt cites ${orphan.tag}, which is gone. Add a reference or edit the words.`
+    : null;
+  const block = submitting ? blocked : recipeWait ?? blocked;
+
   /* Auto: when an enhancement is on the card, it is what gets submitted. */
   const pending = useRef(false);
   useEffect(() => {
     if (!pending.current) return;
     pending.current = false;
-    composer.generate();
-  }, [state.prompt, composer]);
+    if (!recipeWait) composer.generate();
+  }, [state.prompt, composer, recipeWait]);
   const generate = () => {
+    if (recipeWait) return;
+    /* A take that goes out makes its model a recent one. */
+    if (model && !blocked) used(model.id);
     if (enhancer.auto && enhancer.enhanced && enhancer.enhanced !== state.prompt && !isRawPrompt(state.prompt)) {
       pending.current = true;
       composer.dispatch({ type: "prompt", value: enhancer.enhanced });
@@ -151,23 +381,24 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   };
 
 
+  /* A batch still being followed is drawn from the composer (below) until it is over; its takes are not drawn twice. */
+  const liveBatches = composer.batches;
+  const liveIds = useMemo(() => new Set(liveBatches.map((batch) => batch.id)), [liveBatches]);
   const results = useMemo(() => {
     const media = FILTER_MEDIA[filter];
-    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media));
-  }, [items, filter]);
-  const running = ws.state.gen;
-  /* Takes still on the connected account from an earlier visit: followed until they land. The one the
-     composer is running now is the composer's alone. Collection files a take into Takes on the server. */
-  const toast = ws.toast;
-  const projectId = project?.id ?? null;
+    return items.filter((entry) => entry.take.kind === "GEN" && (media === "all" || entry.media === media) && !liveIds.has(String(entryBatch(entry)?.batchId ?? "")));
+  }, [items, filter, liveIds]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
+  const cells = useMemo(() => groupSiblings(results, entryBatch), [results]);
+  const byGeneration = useMemo(() => new Map(items.map((entry) => [entry.take.sourceId, entry])), [items]);
+  /* The strip's own run; a batch draws its own strip instead of one running card. */
+  const running = ws.state.gen && !ws.state.gen.id.startsWith("batch:") ? ws.state.gen : null;
+  /* Takes still on the connected account from an earlier visit, as the shell's collector reads them until
+     they land (it announces each one and re-reads the Library). The one the composer is running now is the
+     composer's alone. Collection files a take into Takes on the server; nothing here writes the draft. */
   const resumed = useResumedConnectedJobs({
-    scope, draftId: projectId, owned: [running?.id],
+    draftId: project?.id ?? null, owned: [running?.id, ...composer.batchJobIds],
     accept: (job) => job.composer === "gen",
-    onSettled: (job) => {
-      if (job.status !== "completed" || !projectId) return;
-      toast(connectedOriginal(job) ? `${job.model.name} take rendered. Filed in Takes for review.` : `${job.model.name} take rendered, but its original is not available.`);
-      void refreshProjectLibrary(scope, projectId);
-    },
   });
   const pickedUp = resumed.jobs;
   const rendering = pickedUp.filter((item) => item.following).length;
@@ -176,6 +407,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. */
   const jumpToPickedUp = () => resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]')?.scrollIntoView({ block: "center", behavior: "smooth" });
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
+  /* The well names each reference the way the engine counts it: @Image1, @Video1, within its own kind. */
+  const wellTags = referenceTags(state.references.map((r) => r.kind));
   /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
   const attachToGen = async (attached: Attached) => {
     const { media, unreadable } = await resolveAttached(scope, attached);
@@ -187,6 +420,76 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, takesReferences ? "references are pictures and video." : `${model?.label ?? "this model"} takes a prompt only.`) ?? ""].filter(Boolean).join(" ") || null;
   };
   const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
+  /* One take's tile, walled off so a take that throws costs only its own tile — in a strip, `label` names it "take N". */
+  const tile = (entry: LibraryEntry, label?: string) => (
+    <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
+      <div className={label ? "gx-asset gx-batch-take" : "gx-asset"} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} {...(label ? { role: "listitem", "data-testid": "gen-batch-take" } : {})}>
+        {thumb(entry)}
+        <span className="gx-asset-name">{label ?? entry.take.name}</span>
+        <span className="gx-asset-meta">{entry.take.meta}</span>
+      </div>
+    </Boundary>
+  );
+  /* A take's picture: opens it in the Inspector, and drags anywhere a take is taken. */
+  const thumb = (entry: LibraryEntry) => (
+    <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
+      onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
+      onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
+      {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}
+    </button>
+  );
+
+  /* What Gen holds against what the recreated take was made with. */
+  const chips = recipe ? recipeChips({
+    preset: recipe.preset, type: state.type, billing: state.billing, model, models: composer.models, settings, owner: Boolean(owner),
+    reading: blocked === READING_MODELS || blocked === READING_ACCOUNT, blocked: model ? null : blocked, identities: characters.list,
+  }) : [];
+  const refs = recipe?.refs ?? null;
+  const carried = refs ? refs.total - refs.missing.length : 0;
+  const gone = refs?.missing.filter((m) => m.gone) ?? [];
+  const unused = refs?.missing.filter((m) => !m.gone) ?? [];
+  const from = (m: MissingReference) => (m.origin === "upload" ? "upload" : "take");
+  const notes = recipe && !recipe.hidden ? [
+    ...chips.filter((c) => c.state === "changed" && c.why).map((c) => ({ key: c.key, label: c.label, text: c.why!, alert: false })),
+    ...(gone.length ? [{ key: "gone", label: "Not found", text: gone.map((m) => `${m.tag ?? "a sound"} (${from(m)})${orphans.includes(m) ? " · still in the prompt" : ""}`).join(", "), alert: true }] : []),
+    ...(unused.length ? [{ key: "unused", label: "Not used here", text: unused.map((m) => `${m.kind === "audio" ? "a sound" : "a file"} (${from(m)})`).join(", "), alert: false }] : []),
+    ...(refs?.renumbered.length ? [{ key: "renumbered", label: "Renumbered", text: refs.renumbered.map((r) => `${r.name} ${r.was} → ${r.now}`).join(", "), alert: false }] : []),
+    ...(refs?.frames ? [{ key: "frames", label: "Frames", text: "Sent as plain references", alert: false }] : []),
+  ] : [];
+  const recipeCardView = recipe && !recipe.hidden ? (
+    <div className="gx-recipe" ref={recipeCard} aria-live="polite" data-testid="gen-recipe" data-settings-only={recipe.preset.settingsOnly ? "true" : undefined}>
+      <div className="gx-recipe-head">
+        <span className="gx-eyebrow" data-functional-label="">{recipe.preset.settingsOnly ? "Settings from" : "Recreate"}</span>
+        <span className="gx-recipe-name" title={recipe.preset.from?.name} data-testid="gen-recipe-name">{recipe.preset.from?.name}</span>
+        <button type="button" className="gx-hbtn" onClick={undoRecipe} title="Put the composer back as it was" data-testid="gen-recipe-undo">Undo</button>
+        <button type="button" className="gx-ref-x" aria-label="Dismiss" onClick={() => setRecipe((now) => (now ? { ...now, hidden: true } : now))} data-testid="gen-recipe-dismiss">×</button>
+      </div>
+      <ul className="gx-recipe-chips" aria-label="Carried from the take" data-testid="gen-recipe-chips">
+        {chips.map((c) => <li key={c.key} data-state={c.state} data-chip={c.key} title={`${c.label}: ${c.value}${c.why ? ` — ${c.why}` : ""}`}>{c.value}</li>)}
+        {refs?.total ? (
+          <li data-state={refs.reading ? "reading" : refs.missing.length || refs.frames ? "changed" : "kept"} data-chip="refs" data-testid="gen-recipe-refs">
+            {refs.reading ? `${refs.total} ${refs.total === 1 ? "ref" : "refs"}…` : refs.missing.length ? `${carried} of ${refs.total} refs` : `${refs.total} ${refs.total === 1 ? "ref" : "refs"}`}
+          </li>
+        ) : null}
+      </ul>
+      {notes.length ? (
+        <ul className="gx-recipe-why" data-testid="gen-recipe-why">
+          {notes.map((n) => (
+            <li key={n.key} data-note={n.key} data-alert={n.alert ? "true" : undefined} data-testid={n.key === "gone" ? "gen-recipe-missing" : undefined}
+              title={n.key === "gone" ? gone.map((m) => m.reason).join(" ") : undefined}><b>{n.label}</b> {n.text}</li>
+          ))}
+        </ul>
+      ) : null}
+      {spec ? (
+        <div className="gx-recipe-setup" data-testid="gen-recipe-setup">
+          <span className="gx-recipe-setup-list"><b>Setup</b> {setupKit ? setupKit.setupLabels(spec).join(" · ") : "…"}</span>
+          {setupKit && setupKit.setupInWords(state.prompt, spec) ? <span className="gx-recipe-ok" data-testid="gen-recipe-setup-in">In the prompt</span>
+            : setupKit && setupKit.setupWritable(spec) ? <button type="button" className="gx-hbtn" onClick={() => dispatchComposer({ type: "prompt", value: setupKit.withSetup(state.prompt, spec) })} data-testid="gen-recipe-setup-add">Add to prompt</button>
+            : null}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
   const tabs = (
@@ -228,6 +531,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
       ) : null}
       <section className="gx-gen-card" aria-label="Composer">
         {tabs}
+        {recipeCardView}
 
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
@@ -259,7 +563,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
 
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">02 / Model</span>
-          <button type="button" className="gx-model" aria-haspopup="dialog" aria-expanded={sheet} onClick={() => setSheet(true)} data-testid="gen-model">
+          <button ref={modelButton} type="button" className="gx-model" aria-haspopup="dialog" aria-expanded={sheet} onClick={openSheet} data-testid="gen-model">
             <span className="gx-tool-tag" aria-hidden="true">{(model?.label ?? "—").slice(0, 2).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span className="gx-model-name">{model?.label ?? "Choose a model"}</span>
@@ -288,7 +592,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
                   {model?.connected && (model.referenceRoles?.length ?? 0) > 1 ? (
                     <button type="button" className="bz-role" title="Click to cycle the role" data-testid="gen-ref-role" onClick={() => { const roles = model.referenceRoles!; const at = roles.indexOf(r.role ?? roles[0]); composer.dispatch({ type: "referenceRole", key: r.key, role: roles[(at + 1) % roles.length] }); }}>{r.role ?? model.referenceRoles![0]}</button>
                   ) : null}
-                  <span className="gx-ref-name">@{r.kind === "video" ? "Video" : "Image"}{i + 1} · {r.name}</span>
+                  <span className="gx-ref-name">{wellTags[i]} · {r.name}</span>
                   <button type="button" className="gx-ref-x" aria-label={`Remove ${r.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: r.key })}>×</button>
                 </span>
               )) : <span className="gx-well-hint">Drag an asset here from the Library.</span>}
@@ -338,7 +642,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
 
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
-        {blocked ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{blocked}</p> : null}
+        {block ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : null}
         {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
             sticky Generate (GLASS_SPEC §3) is the button and its one-line foot, nothing taller. */}
         <div className="gx-gen-takes" data-testid="gen-takes">
@@ -350,8 +654,16 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             </div>
         </div>
         <div className="gx-gen-cta">
-          <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || submitting} aria-describedby={blocked ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate">
-            {submitting ? "Submitting…" : buttonLabel}
+          {/* What it does, then what it costs: the price is its own run of text, so a narrow button (or a wide font)
+              moves it whole onto a second line and never cuts it. The button is named by the whole label. */}
+          <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate"
+            aria-label={submitting ? "Submitting…" : recipeWait ? "Generate" : buttonLabel} data-priced={!submitting && !recipeWait && buttonParts.price ? "" : undefined}>
+            {submitting ? "Submitting…" : recipeWait ? "Generate" : (
+              <>
+                <span className="gx-go-act">{buttonParts.action}</span>
+                {buttonParts.price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
+              </>
+            )}
           </button>
           <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}{model?.enhanceable && enhancer.auto && !isRawPrompt(state.prompt) ? " · enhanced on Higgsfield" : ""}</p>
         </div>
@@ -365,8 +677,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
+        {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
+        <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
-          className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
+          className="gx-gen-grid" items={cells} getKey={(cell: Strip<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
             <div className="gx-asset" data-testid="gen-running">
@@ -381,60 +695,59 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <div className="gx-asset" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
                 {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
-                <span className="gx-asset-name" title={job.input.prompt}>{takeName(job)}</span>
+                <span className="gx-asset-name" title={job.input.prompt}>{job.batch ? `${takeLabel(job.batch.variation)} · ${takeName(job)}` : takeName(job)}</span>
                 <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
                 {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
                 {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
               </div>
             );
           })}
+          {liveBatches.map((batch) => (
+            <TakeStrip key={batch.id} batchId={batch.id} testId="gen-batch" state={batch.phase.done ? "done" : "live"}
+              label={stripLabel(batch.takes.map((take) => take.variation))} name={batch.name}
+              meta={[batch.model, approvedTotal(batch), batch.phase.label].filter(Boolean).join(" · ")}>
+              {batch.views.map((view) => {
+                const entry = view.generationId ? byGeneration.get(view.generationId) : undefined;
+                return (
+                  <div className="gx-asset gx-batch-take" role="listitem" key={view.variation} data-tone={view.tone} data-status={view.status} data-done={view.done} data-variation={view.variation} data-testid="gen-batch-take">
+                    {entry ? thumb(entry) : <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[view.tone] }} aria-hidden="true" /></span>}
+                    <span className="gx-asset-name">{view.label}</span>
+                    <span className="gx-asset-meta" data-testid="gen-batch-take-status">{view.status}</span>
+                  </div>
+                );
+              })}
+            </TakeStrip>
+          ))}
           {composer.connectedEnhanced ? (
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
           </>}
-          renderItem={(entry) => (
-            <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
-              <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
-                onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
-                onClick={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }}>
-                {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} className="gx-lazy" /> : entry.media === "audio" ? <span className="gx-badge">AUDIO</span> : null}
-              </button>
-              <span className="gx-asset-name">{entry.take.name}</span>
-              <span className="gx-asset-meta">{entry.take.meta}</span>
-            </div>
+          renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : (
+            <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
+              label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
+              {cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return tile(entry, takeLabel(isVariation(v) ? v : i + 1)); })}
+            </TakeStrip>
           )}
         />
-        {!running && !pickedUp.length && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        {!running && !pickedUp.length && !results.length && !liveBatches.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        </Boundary>
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`
           (the sheet then rises inside the scroll region, under the phone's tab bar). It lands on the shell
           root so the tokens still reach it. */}
       {sheet ? createPortal(
-        <div className="gx-veil" onClick={() => setSheet(false)} data-testid="model-sheet-veil">
-          <div className="gx-sheet" role="dialog" aria-modal="true" aria-label="Choose a model" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSheet(false); } }}>
-            <div className="gx-sheet-head">
-              <span className="gx-panel-title">Model</span>
-              <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
-                {GROUPS.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={state.billing === g.id} onClick={() => composer.dispatch({ type: "billing", value: g.id })}><span>{g.label}</span></button>)}
-              </div>
-              <button type="button" className="gx-hbtn" onClick={() => setSheet(false)}>Close</button>
-            </div>
-            <div className="gx-sheet-list gx-scroll" role="listbox" aria-label={`${TYPE_TAB[state.type]} models`}>
-              {offered.map((m) => (
-                <button key={m.id} type="button" role="option" aria-selected={m.id === model?.id} className="gx-sheet-row" onClick={() => { composer.dispatch({ type: "model", value: m.id }); setSheet(false); }}>
-                  <span className="gx-tool-tag" aria-hidden="true">{m.label.slice(0, 2).toUpperCase()}</span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span className="gx-model-name">{m.label}</span>
-                    <span className="gx-model-sub">{m.description ? m.description.slice(0, 90) : TYPE_TAB[m.type]}</span>
-                    <span className="gx-model-sub" data-testid="gen-sheet-facts">{[m.ratios?.length ? `${m.ratios.length} aspects` : null, m.durations?.length ? (m.durations.length > 4 && m.durations[m.durations.length - 1] - m.durations[0] === m.durations.length - 1 ? `${m.durations[0]}–${m.durations[m.durations.length - 1]} s, every second` : m.durations.map((d) => `${d}`).join("/") + " s") : null, m.promptOnly ? "prompt only" : m.referenceRoles?.length ? m.referenceRoles.join(" · ") : null, m.enhanceable ? "enhances on the account" : null].filter(Boolean).join(" · ")}</span>
-                  </span>
-                  {m.id === model?.id ? <span aria-hidden="true" style={{ color: "var(--gx-accent-text)" }}>✓</span> : null}
-                </button>
-              ))}
-              {!offered.length ? <p className="gx-empty">{state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}</p> : null}
-            </div>
-          </div>
+        <div className="gx-veil" onClick={closeSheet} data-testid="model-sheet-veil">
+          <ModelSheet label={`${TYPE_TAB[state.type]} models`} groups={groups} billing={state.billing} onBilling={(value) => composer.dispatch({ type: "billing", value })}
+            offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf}
+            loading={blocked === READING_MODELS || blocked === READING_ACCOUNT}
+            empty={!offered.length && blocked ? blocked : state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}
+            emptyActions={state.billing === "connected"
+              ? [{ label: "Use Studio engines", onClick: () => composer.dispatch({ type: "billing", value: "workspace" }), testId: "gen-model-use-studio" },
+                 ...(session.owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
+              /* The engine list itself is missing (a failed read): read it again. */
+              : composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
+            onPick={pickModel} onClose={closeSheet} />
         </div>,
         document.querySelector(".gx") ?? document.body,
       ) : null}

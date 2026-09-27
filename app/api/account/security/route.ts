@@ -66,6 +66,8 @@ export const POST = recoveryRoute(async function POST(req: Request) {
       ![
         "begin",
         "enable",
+        "replace_begin",
+        "replace",
         "disable",
         "rotate_codes",
         "activate_codes",

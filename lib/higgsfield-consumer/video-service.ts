@@ -13,6 +13,8 @@ import {
 import { getConsumerVideoQuote, submitConsumerVideo, readConsumerVideoJob } from "./mcp";
 import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFailureResult, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
 import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
+import { setupIdsOfVideoInput } from "./marketing-records";
+import { refuseForeignMarketingSetup } from "./marketing-setup";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 
 /** The owner-approved verification run. Its creative mode is explicit:
@@ -77,6 +79,8 @@ async function connected(userId: string, expectedGeneration?: string) {
 }
 export async function quoteConsumerMarketingVideo(userId: string, draftId: string, input: ConsumerVideoInput, idempotencyKey: string) {
   const normalized = parseConsumerVideoInput(input);
+  // Standalone: a setup item Particl may not send refuses before anything else.
+  await refuseForeignMarketingSetup(userId, setupIdsOfVideoInput(normalized));
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);

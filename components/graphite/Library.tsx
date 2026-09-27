@@ -5,7 +5,9 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import type { LibraryEntry } from "@/lib/workspace/library";
+import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { useSession } from "@/lib/session";
+import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
 import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
@@ -63,6 +65,8 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  /* The shell's own library store (one per scope and project): its next page, and a later read that failed. */
+  const library = useProjectLibrary(useSession().requestScope ?? "", project?.id ?? null);
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
     shell.openInspector();
@@ -115,9 +119,13 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
           <VirtualItems
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
-            after={!shown.length ? (error && !ready
-              ? <div className="gx-empty" role="alert" style={{ gridColumn: "1 / -1" }} data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
-              : <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p>) : null}
+            after={<>
+              {!shown.length ? (error && !ready
+                ? <div className="gx-empty" role="alert" style={{ gridColumn: "1 / -1" }} data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
+                : <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p>) : null}
+              {/* Past the first page: a later read that failed, and Load more (the first read's failure is said above). */}
+              {project && !(error && !ready) ? <LibraryMore library={library} /> : null}
+            </>}
             renderItem={(entry) => {
               const fresh = entry.take.kind === "GEN" && now - entry.take.createdAt < FRESH_MS;
               return (

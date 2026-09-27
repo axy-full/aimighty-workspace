@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PromptAttach, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { readsLabel } from "@/lib/crew/context";
 import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS_MAX } from "@/lib/crew/room";
@@ -196,7 +196,7 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
             <span className="gx-eyebrow" data-functional-label="">Session</span>
             <p className="cw-panel-goal">{room.goal.trim() || "No goal yet."}</p>
             <dl className="cw-rows">
-              {[["Members", `${room.active.length} seated`], ["Engine", room.session?.model ?? room.status?.model ?? "—"], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session && room.session.spendUsd > 0 ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]].map(([k, v]) => (
+              {([["Members", `${room.active.length} seated`], ["Engine", <EngineRow key="engine" room={room} />], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session && room.session.spendUsd > 0 ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]] as [string, ReactNode][]).map(([k, v]) => (
                 <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
               ))}
             </dl>
@@ -329,3 +329,17 @@ function Sessions({ room, title, hint }: { room: CrewRoom; title: string; hint: 
 }
 
 export { useCrew };
+
+/* The room's engine. A room keeps the one it was opened on, so a deployment
+   that has moved on offers the move here — priced again before any round. */
+function EngineRow({ room }: { room: CrewRoom }) {
+  const own = room.session?.model ?? room.status?.model ?? "—";
+  const current = room.status?.connected ? room.status.model : "";
+  if (!room.session || !current || current === room.session.model) return <>{own}</>;
+  return (
+    <span className="cw-engine-move">
+      {own}
+      <button type="button" className="gx-hbtn" disabled={room.running} onClick={() => void room.moveToCurrentEngine()} data-testid="crew-engine-move">Move to {current}</button>
+    </span>
+  );
+}

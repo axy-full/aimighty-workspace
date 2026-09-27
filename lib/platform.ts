@@ -40,9 +40,16 @@ export function platformDb(): Client {
   return _client;
 }
 
-export const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL ?? "axy@akshaypanchal.com").trim().toLowerCase();
-export const isSuperAdmin = (email: string | null | undefined) =>
-  Boolean(email) && String(email).trim().toLowerCase() === SUPER_ADMIN_EMAIL;
+/* The platform owner is named by the deployment (SUPER_ADMIN_EMAIL), never in
+   source. Unset, nobody is the platform owner: the desk stays shut rather
+   than opening to a default address. */
+const superAdminEmail = () =>
+  (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
+export const SUPER_ADMIN_EMAIL = superAdminEmail();
+export const isSuperAdmin = (email: string | null | undefined) => {
+  const owner = superAdminEmail();
+  return Boolean(owner) && Boolean(email) && String(email).trim().toLowerCase() === owner;
+};
 
 const SCHEMA = [
   ...SECURITY_AUDIT_SCHEMA,

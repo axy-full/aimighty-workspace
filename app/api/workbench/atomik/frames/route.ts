@@ -1,10 +1,10 @@
 import sharp from "sharp";
 import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { abandonUpload, beginDirectUpload, completeUpload, planUploadObjects, prepareUpload, type FinishClaim } from "@/lib/uploadReservations";
+import { abandonUpload, beginDirectUpload, completeUpload, planUploadObjects, prepareUpload, UploadError, type FinishClaim } from "@/lib/uploadReservations";
 import { storeUpload } from "@/lib/storage";
 import { getAtomikProject } from "@/lib/workbench/atomik-server";
-import { assertAtomikVideoSource } from "@/lib/workbench/atomik-references";
+import { assertAtomikVideoSource, AtomikReferenceError } from "@/lib/workbench/atomik-references";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 const json = (body: unknown, status = 200) =>
@@ -84,6 +84,9 @@ export const POST = withTenant(async (req: Request) => {
   } catch (error) {
     if (claim) await abandonUpload(claim).catch(() => {});
     const status = Number((error as { status?: number })?.status) || 422;
+    /* Storage full, a still too large, a reference that is not this project's: say which. */
+    if ((error instanceof UploadError || error instanceof AtomikReferenceError) && error.message && status !== 404)
+      return json({ error: error.message }, status);
     return json(
       {
         error:

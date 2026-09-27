@@ -62,3 +62,13 @@ test('Seedance preserves the selected reference role in the provider payload',as
   expect(reference.content).toEqual(expect.arrayContaining([expect.objectContaining({role:'reference_image'})]));
   expect(first.content).toEqual(expect.arrayContaining([expect.objectContaining({role:'first_frame'})]));
 });
+/* Grok Imagine Video animates a first frame and takes no last frame: admission refuses one before
+   anything is reserved, not the submit after it (which would drop it silently). */
+test('Grok Imagine Video refuses a last frame before reserving',()=>{
+  const grok=getModel('grok-imagine-video-1.5');
+  const frame=(role:string)=>({kind:'image',role});
+  expect(videoReferenceProblem(grok,[frame('first_frame'),frame('last_frame')],'720p')).toContain('no last frame');
+  expect(videoReferenceProblem(grok,[frame('last_frame')])).not.toBeNull();
+  expect(videoReferenceProblem(grok,[frame('first_frame')],'720p')).toBeNull();
+  expect(videoReferenceProblem(kling,[ref('one','first_frame'),ref('two','last_frame')],'1080p')).toBeNull();
+});

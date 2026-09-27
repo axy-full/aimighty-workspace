@@ -9,6 +9,7 @@ import { useRig } from "@/components/workspace/rig/RigProvider";
 import { addInput, branchFromTake, buildFromBoards, removeInput, setFirstFrame } from "@/lib/production/rig-build";
 import { ENGINE_PROMPT_LIMIT, RIG_PROMPT_LIMIT, renderPromptFor, shotRenderPrompt, textKey } from "@/lib/production/rig-prompt";
 import { entryAsset } from "@/lib/production/sequence";
+import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { shotEngines } from "@/lib/workspace/engines";
@@ -16,6 +17,7 @@ import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library
 import { shotInputs, shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
+import { LibraryMore } from "../LibraryMore";
 import { AgentAction } from "./AgentAction";
 import { useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
@@ -271,7 +273,7 @@ export function RigLibrary() {
   return (
     <section className="pxw-rig-library" aria-label="Rig library" data-testid="rig-library" data-section="rig-library">
       <div className="pxw-rig-library-head">
-        <button type="button" className="pxw-link-button" aria-expanded={open} onClick={() => setOpen(!open)}>Library · {items.length}</button>
+        <button type="button" className="pxw-link-button" aria-expanded={open} onClick={() => setOpen(!open)}>Library · {items.length}{library.hasMore ? "+" : ""}</button>
         <span className="pxw-rig-library-hint">Drag onto a shot: pictures become its inputs, briefs join its prompt.{selected ? ` Or press + to add to ${selected.name}.` : ""}</span>
       </div>
       {open ? (
@@ -291,8 +293,10 @@ export function RigLibrary() {
                 <button type="button" className="pxw-link-button" disabled={!selected} aria-label={`Add ${item.label} to the shot`} onClick={() => selected && place(item, selected.id, selected.name)}>+</button>
               </div>
             ))}
-            {!shown.length ? <p className="pxw-inspector-note">Nothing here yet.</p> : null}
+            {!shown.length && library.state.status !== "error" ? <p className="pxw-inspector-note">Nothing here yet.</p> : null}
           </div>
+          {/* The same store as the Library panel and Takes: Load more here reaches older takes too. */}
+          <LibraryMore library={library} testId="rig-library-more" />
         </>
       ) : null}
     </section>
@@ -309,8 +313,19 @@ export function WireShot({ shot }: { shot: RigShot }) {
   const active = jobs.find((j) => j.status === "queued" || j.status === "running");
   /* The newest finished wiring, applied once: the shot records the run it took (a new tab or a teammate never re-applies it). */
   const latest = jobs.find((j) => j.status === "succeeded");
-  const done = latest?.result?.rig ? latest : undefined;
   const node = rig.project?.nodes.find((n) => n.id === shot.id);
+  /* The run list leaves wirings off (a production can wire hundreds of shots): the one this shot has not taken is read by its id. */
+  const { load } = runs;
+  const [read, setRead] = useState<DevelopmentJob | null>(null);
+  const latestId = latest?.id ?? null, listed = Boolean(latest?.result?.rig);
+  const untaken = latest ? wiringDecision(node, latest.id, watchedWiring(latest.id)) !== "applied" : false;
+  useEffect(() => {
+    if (!latestId || listed || !untaken || read?.id === latestId) return;
+    let alive = true;
+    void load(latestId).then((job) => { if (alive) setRead(job); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [latestId, listed, untaken, read?.id, load]);
+  const done = latest?.result?.rig ? latest : read?.id === latestId && read?.result?.rig ? read : undefined;
   const activeId = active?.id ?? null;
   useEffect(() => { if (activeId) watchWiring(activeId); }, [activeId]);
   const decision = done ? wiringDecision(node, done.id, watchedWiring(done.id)) : "applied";

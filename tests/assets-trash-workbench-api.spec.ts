@@ -15,7 +15,7 @@ test("a trashed render hides, keeps its bytes indefinitely, and comes back on re
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const tenantRow = (await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0];
-  const tenant = createClient({ url: String(tenantRow.db_url) });
+  const tenant = createClient({ url: String(tenantRow.db_url), timeout: 10_000 });
   try {
     /* A settled render with stored bytes, planted as the mock engine would leave it. */
     const id = `gen_trash_${randomUUID().slice(0, 8)}`;

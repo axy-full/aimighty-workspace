@@ -3,7 +3,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { createPortal } from "react-dom";
 import LazyMedia from "@/components/LazyMedia";
 import { ACTION_LABEL, inFlight, priceLabel, trayAge, type TrayJob } from "@/lib/jobsTray";
-import { SAY, retryPreset } from "@/lib/shell/assets";
+import { SAY } from "@/lib/shell/assets";
+import { recreatePreset, type RecipeSource } from "@/lib/shell/recipe";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { useJobsTray, type JobsTrayState, type RowProblem } from "@/lib/shell/use-jobs-tray";
 import { useShell } from "@/lib/shell/state";
@@ -128,13 +129,12 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
         if (!recipe) return;
         /* Gen is handed the take's own words (and settings, where Particl made it); it is priced again before anything runs. */
         if (recipe.connected) {
-          sendGenPreset({ prompt: recipe.prompt, model: recipe.model, type: recipe.kind === "image" || recipe.kind === "audio" ? recipe.kind : "video", billing: "connected", references: [], note: `Retry · ${job.name} · prompt only` });
-          ws.toast(SAY.retry(job.name, "prompt only"));
+          sendGenPreset({ prompt: recipe.prompt, model: recipe.model, type: recipe.kind === "image" || recipe.kind === "audio" ? recipe.kind : "video", billing: "connected", references: [], note: `Recreate · ${job.name}` });
         } else {
-          const preset = retryPreset(recipe);
-          sendGenPreset(preset);
-          ws.toast(SAY.retry(job.name, preset.kept));
+          const source = { id: job.id, kind: recipe.kind, model: recipe.model, prompt: recipe.prompt, params: recipe.params, provider: "", task: recipe.task ?? "generate" } as RecipeSource;
+          sendGenPreset(recreatePreset(source, { name: job.name }));
         }
+        ws.toast(SAY.recreate(job.name));
         toProject();
         shell.goGen();
         onDone();

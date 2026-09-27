@@ -146,6 +146,10 @@ test("deleting a production archives everything filed under it in one write, and
     await insert("bindings", { id: "bd1", element_id: "el1", project_id: "prod", shot_id: "sh1" });
     await insert("canvas_items", { id: "ci1", project_id: "prod" });
     await insert("generations", { id: "g1", project_id: "prod", deleted: 0 });
+    /* Originals filed in each project's Library (the table a project library creates when first used). */
+    await db().execute("CREATE TABLE IF NOT EXISTS project_library_uploads (project_id TEXT NOT NULL, upload_id TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(project_id,upload_id))");
+    await insert("project_library_uploads", { project_id: "prod", upload_id: "up1", created_by: "u1", created_at: 1 });
+    await insert("project_library_uploads", { project_id: "other", upload_id: "up2", created_by: "u1", created_at: 1 });
 
     expect((await remove("prod")).status).toBe(200);
     const count = async (table: string, where = "1") => Number((await db().execute(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`)).rows[0].n);
@@ -154,6 +158,9 @@ test("deleting a production archives everything filed under it in one write, and
     expect(await count("shots")).toBe(1);
     expect(await count("projects")).toBe(1);
     expect(await count("generations", "id='g1' AND project_id IS NULL")).toBe(1);
+    /* Its filings are archived, so the originals can be deleted later; another project's stay. */
+    expect((await db().execute("SELECT project_id, upload_id FROM project_library_uploads")).rows.map((r) => `${r.project_id}:${r.upload_id}`)).toEqual(["other:up2"]);
+    expect(await count("archived_rows", "table_name='project_library_uploads' AND json_extract(body,'$.upload_id')='up1'")).toBe(1);
     const archived = (await db().execute("SELECT table_name, row_id FROM archived_rows ORDER BY table_name, row_id")).rows.map((r) => `${r.table_name}:${r.row_id}`);
     expect(archived).toEqual(expect.arrayContaining([
       "attribute_versions:av1", "bindings:bd1", "canvas_items:ci1", "cast_members:cm1", "element_attributes:ea1",
@@ -163,6 +170,20 @@ test("deleting a production archives everything filed under it in one write, and
     const shot = (await db().execute("SELECT body FROM archived_rows WHERE table_name='shots' AND row_id='sh1'")).rows[0];
     expect(JSON.parse(String(shot.body))).toMatchObject({ id: "sh1", project_id: "prod", cast: "[]" });
     expect((await remove("prod")).status).toBe(404);
+  });
+});
+
+test("a row whose column is named by a keyword is archived too (a workspace rule's \"on\")", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { addRule, deleteRule, listWorkspaceRules } = await import("../../lib/rules");
+  await runInTenant(workspace("rules"), async () => {
+    await ready();
+    const rule = await addRule({ text: "No logos in the first frame.", scope: "video", apply: "prompt" }, "owner");
+    expect(await deleteRule(rule.id)).toBe(true);
+    expect(await listWorkspaceRules()).toEqual([]);
+    const archived = (await db().execute({ sql: "SELECT body FROM archived_rows WHERE table_name = 'workspace_rules' AND row_id = ?", args: [rule.id] })).rows;
+    expect(JSON.parse(String(archived[0].body))).toMatchObject({ id: rule.id, text: "No logos in the first frame.", scope: "video", on: 1 });
   });
 });
 

@@ -8,7 +8,8 @@ import { requestEffort, resolveModel } from "@/lib/atomik";
 import { gatewayReachable } from "@/lib/gateway";
 import { specToPhrase } from "@/lib/studio";
 import { shotsFromReply, setupVocabulary, suggestEngine } from "@/lib/shotBuilder";
-import { shotCostUsd } from "@/lib/shotCost";
+import { creditsApply } from "@/lib/credits";
+import { currentTenant } from "@/lib/tenant";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest } from "@/lib/generationRequests";
@@ -26,9 +27,10 @@ const SYSTEM = [
 
 /**
  * The shot builder (brief 1.8): a scene in, a shot list out with every Setup
- * row as a field, cast tagged, an engine per shot and a credit estimate per
- * shot and for the scene — before anything is rendered. Proposals only:
- * nothing is written until a person adds a shot.
+ * row as a field, cast tagged and an engine per shot — before anything is
+ * rendered. No take is priced here: the page prices each one off the
+ * session's rate table, in the workspace's unit. Proposals only: nothing is
+ * written until a person adds a shot.
  */
 export const POST = withTenant(async function POST(req: Request) {
   /* requireRender, not requireUser. This spends the platform's AI-Gateway
@@ -66,13 +68,17 @@ export const POST = withTenant(async function POST(req: Request) {
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 2400, kind: "shots", mock: "shots" as const, createdBy: got.user.id, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
   const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
-  const text = result.text;
-  const costUsd = result.costUsd;
-  const shots = shotsFromReply(text, castNames);
+  const shots = shotsFromReply(result.text, castNames);
   if (!shots) return NextResponse.json({ error: `${model} answered, but not with shots. Try once more, or another model.` }, { status: 502 });
 
-  const priced = shots.map((s) => ({ ...s, takeUsd: shotCostUsd(s.engine, s.planned) }));
-  return NextResponse.json({ scene: n, shots: priced, sceneUsd: Math.round(priced.reduce((a, s) => a + s.takeUsd, 0) * 1000) / 1000, model, effort: effort ?? "auto", costUsd });
+  /* No take is priced here. The page prices each one off the rate table the
+     session already holds, which is in the unit this workspace pays in. This
+     used to send the vendor's dollars per take, which a credit workspace's
+     page printed as credits (a 43 cr take read "3 cr") and which, beside the
+     credit price, gave the margin away. The writing is the ledger's figure:
+     credits on credits, dollars only to a workspace that pays its vendors. */
+  const writing = creditsApply(currentTenant()?.workspace) ? { writingCredits: result.credits } : { costUsd: result.costUsd };
+  return NextResponse.json({ scene: n, shots, model, effort: effort ?? "auto", ...writing });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);

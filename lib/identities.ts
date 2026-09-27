@@ -1,4 +1,5 @@
 import { withRecoveryJob } from './recovery';
+import { TRAIN_STEPS, RENDER_USD_PER_MP, trainCostUsd } from "./identityPricing";
 import type { Transaction } from "@libsql/client";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
@@ -81,13 +82,9 @@ export const RENDERER = "fal-ai/flux-lora";
 export const MIN_PHOTOS = 5;
 export const MAX_PHOTOS = 40;
 export const RECOMMENDED_PHOTOS = "10 to 20";
-/** Steps decide both quality and price. fal's default is 2500; 1500 is the
- *  point past which a face stops improving noticeably. */
-export const TRAIN_STEPS = Math.max(500, Math.min(5000, Number(process.env.FAL_TRAIN_STEPS ?? 1500)));
-/** fal's listed price for the portrait trainer (read 2026-09-03):
- *  "$0.0024 per step. A minimum of 1000 steps will be billed." */
-export const TRAIN_USD_PER_STEP = Number(process.env.FAL_TRAIN_USD_PER_STEP ?? 0.0024);
-export const TRAIN_MIN_BILLED_STEPS = 1000;
+/* Training and render prices live in lib/identityPricing.ts, so a page that
+   only quotes them (the public site's rate card) does not load this module. */
+export { TRAIN_STEPS, TRAIN_USD_PER_STEP, TRAIN_MIN_BILLED_STEPS, RENDER_USD_PER_MP, trainCostUsd } from "./identityPricing";
 /** How long a training job may sit unfinished before we call it lost. A
  *  1500-step portrait LoRA runs in tens of minutes; three hours means the
  *  job is gone, and an identity must not read "training" for ever. */
@@ -101,11 +98,6 @@ export const RENDER_CEILING_MS = 30 * 60_000;
  *  render fal may have finished and billed. */
 export const RENDER_UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
 
-/** Rendering with a LoRA: "$0.035 per megapixel", rounded UP to the megapixel. */
-export const RENDER_USD_PER_MP = Number(process.env.FAL_RENDER_USD_PER_MP ?? 0.035);
-
-export const trainCostUsd = (steps = TRAIN_STEPS) =>
-  Math.round(Math.max(steps, TRAIN_MIN_BILLED_STEPS) * TRAIN_USD_PER_STEP * 100) / 100;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function rowToIdentity(r: any): Identity {
@@ -538,11 +530,36 @@ export async function syncTrainingIdentities(
 
 export const RENDER_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 
-function imageSizeFor(ratio: string): string {
-  return ({
-    "1:1": "square_hd", "16:9": "landscape_16_9", "9:16": "portrait_16_9",
-    "4:3": "landscape_4_3", "3:4": "portrait_4_3",
-  } as Record<string, string>)[ratio] ?? "landscape_16_9";
+/**
+ * The pixels fal is asked for at each ratio. The renderer bills per
+ * megapixel, rounded up, so every size stays under one and a still costs
+ * RENDER_USD_PER_MP at every ratio. fal's square_hd preset (1024 × 1024) is
+ * 1.05 MP and billed as two, so the square is asked for at 992 × 992.
+ */
+const RENDER_SIZES: Record<(typeof RENDER_RATIOS)[number], { width: number; height: number; preset?: string }> = {
+  "1:1": { width: 992, height: 992 },
+  "16:9": { width: 1024, height: 576, preset: "landscape_16_9" },
+  "9:16": { width: 576, height: 1024, preset: "portrait_16_9" },
+  "4:3": { width: 1024, height: 768, preset: "landscape_4_3" },
+  "3:4": { width: 768, height: 1024, preset: "portrait_4_3" },
+};
+/** A ratio the renderer does not draw falls back to 16:9, as the composer's still does. */
+export function renderSizeFor(ratio: string): { width: number; height: number; preset?: string } {
+  return RENDER_SIZES[ratio as keyof typeof RENDER_SIZES] ?? RENDER_SIZES["16:9"];
+}
+function imageSizeFor(ratio: string): string | { width: number; height: number } {
+  const size = renderSizeFor(ratio);
+  return size.preset ?? { width: size.width, height: size.height };
+}
+/** fal's charge for one render of these pixels: per megapixel, rounded up. */
+export function renderUsd(width: number, height: number): number {
+  const mp = (width * height) / 1_000_000;
+  return Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) / 10_000;
+}
+/** One render at a ratio, priced before it is made by the formula the finished render is billed by. */
+export function renderUsdForRatio(ratio: string): number {
+  const size = renderSizeFor(ratio);
+  return renderUsd(size.width, size.height);
 }
 
 /** The prompt the renderer sees: @Name becomes the trigger; a prompt that
@@ -561,8 +578,8 @@ type RenderResult = {
 };
 
 /** The exact body fal is asked to render. Kept in one place so a resumed
- *  render and a fresh one can never drift apart. */
-function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
+ *  render and a fresh one can never drift apart (exported for its spec). */
+export function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
   return {
     prompt: opts.prompt,
     loras: [{ path: identity.loraUrl, scale: 1 }],
@@ -641,12 +658,7 @@ async function finishRender(
     () => storeImageBytes(genId, bytes),
     { max: 3 },
   );
-  const mp =
-    ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) /
-    1_000_000;
-  const cost =
-    Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) /
-    10_000;
+  const cost = renderUsd(img.width ?? meta.width ?? 1024, img.height ?? meta.height ?? 1024);
   await writeGenerationOutcome(
     {
       sql: `UPDATE generations
@@ -847,7 +859,7 @@ export async function startIdentityStill(opts: {
   invalidate(PROJECTS_KEY);
   try {
     await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "running",
-                  engineCostUsd: RENDER_USD_PER_MP, projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
+                  engineCostUsd: renderUsdForRatio(opts.ratio), projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
   } catch (e) {
     await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] }).catch(() => {});
     invalidate(PROJECTS_KEY);

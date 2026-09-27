@@ -16,9 +16,61 @@
 .bz-row-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bz-detail { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); position: sticky; top: 0; }
 @media (max-width: 1023px) { .bz-setup { grid-template-columns: minmax(0, 1fr); padding: 12px; } .bz-detail { position: static; } }
+.bz-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+/* On a phone the picked item rises as a sheet just above the floating tab bar (glass.css: bottom 22 + 66), so its action is always in reach,
+   however little of the stage shows under the header. The list keeps room to scroll clear of it. */
+@media (max-width: 767px) {
+  .bz-detail { position: fixed; top: auto; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 40; max-height: min(50vh, 320px); overflow-y: auto; overscroll-behavior: contain;
+    padding: 12px 14px 14px; border-radius: 24px; background: rgba(28, 28, 34, .97); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 18px 50px rgba(0, 0, 0, .6); animation: gx-in .2s var(--gx-ease) both; }
+  .bz-setup[data-detail] { padding-bottom: 220px; }
+  /* The list fades in without a transform: a transformed ancestor would pin the sheet to the list instead of the screen. */
+  .bz-setup.gx-enter { animation-name: bz-fade; }
+}
+@keyframes bz-fade { from { opacity: 0; } to { opacity: 1; } }
 /* The thumb's floors on a phone: a role you can cycle is a 44px target; every label and hint is 12px. */
 @media (max-width: 767px), (pointer: coarse) {
   .bz-role { height: 28px; min-width: 44px; font-size: 12px; }
   button.bz-role { height: 44px; }
   .bz-note, .bz code, .bz-idrow code { font-size: 12px; }
+  .bz .gx-seg--sm .gx-seg-btn { height: auto; min-height: 44px; }
+  .bz-detail-x { width: 44px; height: 44px; margin: -8px -8px -8px 0; }
+}
+
+/* Named slots (Product, Setting): one still from this project — picked, dropped or uploaded. */
+.bz-slot { flex-wrap: nowrap; min-height: 56px; padding: 6px; gap: 10px; }
+.bz-slot[data-filled] { border-style: solid; }
+.bz-slot-thumb { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; flex: none; background: var(--gx-input); position: relative; }
+.bz-slot-thumb .gx-lazy, .bz-slot-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bz-slot-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bz-slot-empty { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 6px; text-align: left; font-size: 12.5px; color: var(--gx-text-2); border-radius: 6px; }
+.bz-slot-empty:hover:not([aria-disabled="true"]) { color: var(--gx-text); }
+.bz-slot-empty[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
+.bz-slot-plus { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 6px; border: 1px solid var(--gx-hair); font-size: 16px; color: var(--gx-text-2); }
+.bz-pick { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.bz-upload { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; color: var(--gx-text-2); border-style: dashed; }
+.bz-upload > span:first-child { font-size: 18px; line-height: 1; }
+.bz-upload:disabled { opacity: .4; cursor: default; }
+/* Reading: the shape of what is coming, never a blank. */
+.bz-skel { display: inline-block; width: 64px; height: 28px; border-radius: 6px; background: var(--gx-input); animation: gx-pulse 1.4s ease-in-out infinite; }
+.bz-skel--wide { width: 104px; }
+.bz-skel--row { display: block; width: 100%; height: 36px; }
+.bz-skel-tile { animation: gx-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .bz-skel, .bz-skel-tile { animation: none; } }
+.bz-make { align-self: flex-start; }
+.bz-done-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* The finished take beside the composer (below it on a phone). */
+.bz-latest-media { width: 100%; max-width: 420px; border-radius: 8px; overflow: hidden; background: var(--gx-input); border: 1px solid var(--gx-card-border); }
+.bz-latest-media .gx-lazy, .bz-latest-media img, .bz-latest-media video { width: 100%; height: auto; max-height: 60vh; object-fit: contain; display: block; }
+/* A catalogue chip with its preview (avatars). */
+.bz-chip-face { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.bz-chip-face > img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; flex: none; background: var(--gx-input); }
+.bz-setup-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.bz-empty { align-items: flex-start; gap: 12px; padding: 18px 16px; }
+.bz-empty-title { font-size: 15px; font-weight: 600; }
+@media (max-width: 767px), (pointer: coarse) {
+  .bz-slot-plus { width: 36px; height: 36px; }
+  .bz-pick { max-height: 240px; }
+  .bz-skel { height: 44px; }
+  .bz-chip-face { padding-left: 6px; }
+  .bz-chip-face > img { width: 30px; height: 30px; }
 }

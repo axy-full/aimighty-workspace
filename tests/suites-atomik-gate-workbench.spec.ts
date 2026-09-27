@@ -119,23 +119,51 @@ test("⌘K: Ask Atomik keeps the words; a model row opens Gen on that model; no 
   expect(errors).toEqual([]);
 });
 
-test("⌘K before any project is open: the words wait, and land in Agent once the list loads", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
-  const { mock, errors } = await setup(page);
-  let failing = true;
-  await page.route("**/api/workbench/projects**", (route) => (failing && route.request().method() === "GET" ? route.fulfill({ status: 500, json: { error: "Projects are unavailable right now." } }) : route.fallback()));
+/* Opens Gen with the project list failing, asks Atomik from ⌘K, and lands on Agent with the words held. */
+async function askBeforeAnyProject(page: Page) {
+  const state = { failing: true };
+  await page.route("**/api/workbench/projects**", (route) => (state.failing && route.request().method() === "GET" ? route.fulfill({ status: 500, json: { error: "Projects are unavailable right now." } }) : route.fallback()));
   await page.goto("/suites?view=gen");
   await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
   const palette = page.getByRole("dialog", { name: "Search" });
   await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
   await expect(palette).toBeVisible();
   await palette.getByRole("textbox").fill("zz a teaser for the launch");
+  return state;
+}
+
+test("⌘K before any project is open: the words wait, and land in Agent once the list loads", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
+  const { mock, errors } = await setup(page);
+  const list = await askBeforeAnyProject(page);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(page.getByTestId("toast")).toHaveText("Your request goes into Agent once a project is open.");
   await expect(page.getByTestId("projects-error")).toBeVisible();
-  failing = false;
-  await page.getByTestId("projects-error").getByRole("button", { name: "Retry" }).click();
+  /* The words wait: with no project there is no Agent box to put them in. */
+  await expect(page.locator("[data-tool-body=\"agent\"] textarea")).toHaveCount(0);
+  list.failing = false;
+  /* Leaving Gen for Agent already asked for the list again (a page change re-reads a list that failed), and
+     that read may land first: Retry only while the error is still on screen. */
+  const retry = page.getByTestId("projects-error").getByRole("button", { name: "Retry" });
+  await expect(async () => {
+    if (await retry.isVisible()) await retry.click({ timeout: 2_000 });
+    await expect(page.getByTestId("project-name")).toHaveText("Coastal light study", { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
+  expect(mock.dispatches).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("⌘K before any project is open: the words land when the list loads on its own, with no Retry", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
+  const { mock, errors } = await setup(page);
+  const list = await askBeforeAnyProject(page);
+  /* The list is back before the ask: the Agent page's own re-read opens the project, and the held words follow. */
+  list.failing = false;
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
+  await expect(page.getByTestId("toast")).toHaveText("Your request goes into Agent once a project is open.");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
   expect(mock.dispatches).toEqual([]);

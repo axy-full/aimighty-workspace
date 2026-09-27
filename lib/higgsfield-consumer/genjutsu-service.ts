@@ -6,6 +6,9 @@ import {
   getConsumerJob,
   getConsumerJobByKey,
   listConsumerRecoveryJobs,
+  listConsumerRuns,
+  formatConsumerJobCursor,
+  parseConsumerJobCursor,
   readConsumerJobAfterAdmissions,
   claimConsumerDispatch,
   markConsumerAccepted,
@@ -45,6 +48,7 @@ import {
   type ConsumerOriginalAvailability,
 } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
+import type { GenjutsuVariant } from "../genjutsuTypes";
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 function presentGenjutsu(
   job: ConsumerJob,
@@ -85,7 +89,10 @@ function presentGenjutsu(
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     setAside: consumerJobSetAside(job, observedAt),
+    /* Why a failed run failed: a refused render is not billed; a result that could not be kept may have been. */
+    failureCode: job.failureCode,
     createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
   };
 }
 export async function consumerGenjutsuView(job: ConsumerJob) {
@@ -446,4 +453,37 @@ export async function consumerGenjutsuJobs(
   return jobs.map((job) =>
     presentGenjutsu(job, availability.get(job.id)!, observedAt),
   );
+}
+/** How many runs one History page carries. */
+export const GENJUTSU_RUN_PAGE = 24;
+/**
+ * This project's Genjutsu runs, newest first, a page at a time — what Viral's
+ * Recent and History show. Estimates (status `quoted`) are left out; they
+ * stay in the ledger, and `consumerGenjutsuJobs` still lists them for the
+ * surfaces that price from saved quotes. Every job still awaiting
+ * reconciliation rides on the first page. A variant narrows the list to one
+ * page's runs (Recent beside Motion Transfer or Object Swap).
+ */
+export async function consumerGenjutsuRuns(
+  userId: string,
+  draftId: string,
+  cursor: string | null = null,
+  variant: GenjutsuVariant | null = null,
+) {
+  const observedAt = Date.now();
+  const { items, nextCursor } = await listConsumerRuns({
+    userId,
+    draftId,
+    workflow: "genjutsu",
+    limit: GENJUTSU_RUN_PAGE,
+    before: cursor ? parseConsumerJobCursor(cursor) : undefined,
+    ...(variant ? { variant } : {}),
+  });
+  const availability = await consumerOriginalAvailability(items);
+  return {
+    jobs: items.map((job) =>
+      presentGenjutsu(job, availability.get(job.id)!, observedAt),
+    ),
+    nextCursor: nextCursor ? formatConsumerJobCursor(nextCursor) : null,
+  };
 }

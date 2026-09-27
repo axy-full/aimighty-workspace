@@ -82,7 +82,7 @@ import {
   identityForCast,
   startIdentityStill,
   runIdentityRender,
-  RENDER_USD_PER_MP,
+  renderUsdForRatio,
   RENDER_RATIOS,
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
@@ -1053,7 +1053,7 @@ export async function executeGenerationAdmission(
         marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
       }
       const estStillUsd = marketingUsd ?? (trained
-        ? RENDER_USD_PER_MP
+        ? renderUsdForRatio(ratio)
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
       if (

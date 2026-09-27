@@ -1,0 +1,15 @@
+{
+ "n": 25,
+ "title": "Usage ledger per job, in credits only for credit workspaces",
+ "area": "Workspace \u203a Usage",
+ "gap": "Usage (WorkspaceView.tsx:233-256) shows only per-model bar totals. When the models list is empty it falls back to provider USD, and the AssetInspector 'Settled' fact (AssetInspector.tsx:34) can also show '$'. There is no per-job list of what was charged, held or not billed.",
+ "target": "Extend /api/usage with ?rows=1 to return paged generation rows (when, who, engine, credits, status, including 'Failed \u00b7 not billed' and 'Held'). Render them under the bars with a month filter and a CSV export. Credit workspaces never see USD.",
+ "files": [
+  "app/api/usage/route.ts",
+  "components/graphite/WorkspaceView.tsx",
+  "components/graphite/AssetInspector.tsx"
+ ],
+ "priority": "P2",
+ "effort": "medium",
+ "respects_rules": "Read-only ledger. Deleted takes keep their cost rows, as the ledger already requires."
+}
