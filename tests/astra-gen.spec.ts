@@ -79,7 +79,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     .inputValue();
   await panel.getByRole("button", { name: /Review upscale cost/ }).click();
   await expect(
-    panel.getByRole("button", { name: /Upscale video.*12 cr/ }),
+    panel.getByRole("button", { name: /Upscale video.*15 cr/ }),
   ).toBeEnabled();
   expect(submitted).toHaveLength(0);
   await panel
@@ -89,7 +89,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     panel.getByRole("button", { name: /Review upscale cost/ }),
   ).toBeEnabled();
   await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  const primary = panel.getByRole("button", { name: /Upscale video.*23 cr/ });
+  const primary = panel.getByRole("button", { name: /Upscale video.*29 cr/ });
   await expect(primary).toBeEnabled();
   await page.screenshot({ path: info.outputPath("astra-video.png") });
   const box = await primary.boundingBox(),
@@ -139,7 +139,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     seconds: 1.5,
     fps: 24,
   });
-  expect(job.creditsBilled).toBe(7);
+  expect(job.creditsBilled).toBe(9);
   const original = await page.request.get(
     `/api/uploads/${sourceKey.split(":")[1]}`,
   );

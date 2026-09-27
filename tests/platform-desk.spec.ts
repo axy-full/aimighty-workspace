@@ -46,7 +46,7 @@ test("the platform desk marks a deleted workspace and restores it; money stays o
   await expect(row.getByText(/· FLAGGED/)).toBeVisible();
   await row.getByRole("button", { name: "Clear flag" }).click();
   await expect(row.getByText(/· FLAGGED/)).toHaveCount(0);
-  await expect(page.getByText(/credits from an approved invitation, 0 from self-serve sign-up/)).toBeVisible();
+  await expect(page.getByText(/Approved invitations start with \d+ credits; self-serve sign-ups start with 0/)).toBeVisible();
   await expect(page.getByText(/VERCEL_TOKEN/)).toHaveCount(0);
   expect(await noSideScroll(page)).toBe(true);
   await row.getByRole("button", { name: "Restore" }).click();
