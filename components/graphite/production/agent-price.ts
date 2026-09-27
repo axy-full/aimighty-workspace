@@ -1,3 +1,4 @@
+import { creditEquivalent } from "@/lib/costDisplay";
 import type { DevelopmentJob, DevelopmentQuote } from "@/lib/workbench/development-types";
 
 type Price = Pick<DevelopmentQuote, "estimateCredits" | "estimateUsd">;
@@ -5,7 +6,7 @@ type Run = Pick<DevelopmentJob, "status" | "credits" | "costUsd" | "estimateCred
 
 const usdOf = (n: number | null | undefined): number | null => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
 const credits = (n: number) => { const whole = Math.max(0, Math.round(n)); return `${whole.toLocaleString("en-US")} ${whole === 1 ? "credit" : "credits"}`; };
-const dollars = (n: number) => `$${n.toFixed(4)}`;
+
 /* A run's own flag, from the server; an older reply without it reads a zero-credit estimate as the workspace's own key. */
 const onKey = (run: Run) => run.ownKey ?? run.estimateCredits === 0;
 
@@ -20,18 +21,18 @@ const onKey = (run: Run) => run.ownKey ?? run.estimateCredits === 0;
  *   so those are named, "on your key" — never "0 credits".
  * - A workspace that pays its vendors in dollars (`inCredits` false): dollars.
  */
-export function agentPrice(quote: Price, inCredits: boolean): string {
+export function agentPrice(quote: Price, inCredits: boolean, perCredit?: number): string {
   const usd = usdOf(quote.estimateUsd);
-  if (!inCredits) return usd != null ? dollars(usd) : credits(quote.estimateCredits);
+  if (!inCredits) return usd != null ? creditEquivalent(usd, perCredit) : credits(quote.estimateCredits);
   if (quote.estimateCredits > 0 || usd == null) return credits(quote.estimateCredits);
-  return `${dollars(usd)} on your key`;
+  return `${creditEquivalent(usd, perCredit)} on your key`;
 }
 
 /** A run in progress: what it may cost. A credit workspace's run list carries no dollars. */
-export function agentReserved(run: Run, inCredits: boolean): string {
+export function agentReserved(run: Run, inCredits: boolean, perCredit?: number): string {
   const usd = usdOf(run.estimateUsd);
-  if (!inCredits) return usd != null ? `up to ${dollars(usd)}` : `up to ${credits(run.estimateCredits)}`;
-  if (onKey(run)) return usd != null ? `up to ${dollars(usd)} on your key` : "billed on your key";
+  if (!inCredits) return usd != null ? `up to ${creditEquivalent(usd, perCredit)}` : `up to ${credits(run.estimateCredits)}`;
+  if (onKey(run)) return usd != null ? `up to ${creditEquivalent(usd, perCredit)} on your key` : "billed on your key";
   return `reserved up to ${credits(run.estimateCredits)}`;
 }
 
@@ -40,8 +41,8 @@ export function agentReserved(run: Run, inCredits: boolean): string {
  * failed run on credits is never billed, and says so; a run on the
  * workspace's own key was paid there.
  */
-export function agentCharged(run: Run, inCredits: boolean): string | null {
-  if (!inCredits) { const usd = usdOf(run.costUsd); return usd == null ? null : dollars(usd); }
+export function agentCharged(run: Run, inCredits: boolean, perCredit?: number): string | null {
+  if (!inCredits) { const usd = usdOf(run.costUsd); return usd == null ? null : creditEquivalent(usd, perCredit); }
   if (onKey(run)) return "billed on your key";
   if (run.status === "failed" && !run.credits) return "not billed";
   return run.credits == null ? null : credits(run.credits);

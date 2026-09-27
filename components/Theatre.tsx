@@ -17,7 +17,7 @@ import { renameClip } from "./ContextMenu";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
-import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
+import { timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/models";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
@@ -481,15 +481,15 @@ export default function Theatre({
           )}
           {gen.costUsd != null && !money.inCredits && (
             <div className="theatre-ledger">
-              <span><span className="text-mute">Engine</span> {usd(gen.costUsd)}</span>
+              <span><span className="text-mute">Engine</span> {money.equivalent(gen.costUsd)}</span>
               <span>
                 <span className="text-mute">Prompt</span>{" "}
                 {gen.refineCostUsd != null && gen.refineModel
-                  ? <>{gen.refineCostUsd > 0 ? usd(gen.refineCostUsd) : "free"}<span className="text-mute"> · {prettyModel(gen.refineModel)}
+                  ? <>{gen.refineCostUsd > 0 ? money.equivalent(gen.refineCostUsd) : "free"}<span className="text-mute"> · {prettyModel(gen.refineModel)}
                       {gen.refineInTokens != null ? ` · ${compactTokens(gen.refineInTokens)} in / ${compactTokens(gen.refineOutTokens ?? 0)} out` : ""}</span></>
                   : <span className="text-mute">as written</span>}
               </span>
-              <span className="ml-auto font-semibold text-bone">{usd(gen.costUsd + (gen.refineCostUsd ?? 0))}</span>
+              <span className="ml-auto font-semibold text-bone">{money.equivalent(gen.costUsd + (gen.refineCostUsd ?? 0))}</span>
             </div>
           )}
 

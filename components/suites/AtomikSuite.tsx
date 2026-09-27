@@ -8,6 +8,7 @@ import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useDraft } from "@/lib/useDraft";
+import { creditEquivalent } from "@/lib/costDisplay";
 import { useMoney } from "@/lib/price";
 import { MODELS, modelLabel } from "@/lib/models";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
@@ -101,12 +102,12 @@ function provider(model: string) {
       ? providerDisplayName("elevenlabs")
       : "Provider unavailable";
 }
-const amount = (value: number | null, unit: string = "cr") =>
+const amount = (value: number | null, unit: string = "cr", perCredit?: number) =>
   value === null
     ? "Not available"
     : unit === "cr"
       ? `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} cr`
-      : `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+      : creditEquivalent(value, perCredit);
 
 /** Content only: the common shell owns suite navigation, project context and the rail. */
 export default function AtomikSuite({
@@ -658,6 +659,7 @@ function MappedAtomik({
                                     : amount(
                                         cost.estimate,
                                         cost.estimateUnit ?? "cr",
+                                        session.rates.creditUsd,
                                       )
                                   : "No generation charge"}
                               </td>
@@ -668,6 +670,7 @@ function MappedAtomik({
                                     : amount(
                                         cost.actual,
                                         money.inCredits ? "cr" : "usd",
+                                        session.rates.creditUsd,
                                       )
                                   : "No generation charge"}
                               </td>
@@ -884,18 +887,18 @@ function Budget({ productionId }: { productionId: string }) {
       <div className={styles.metrics}>
         <div>
           <span>Project generation spend</span>
-          <strong>{amount(spent, unit)}</strong>
+          <strong>{amount(spent, unit, session.rates.creditUsd)}</strong>
         </div>
         <div>
           <span>Project cap</span>
-          <strong>{cap === null ? "Not set" : amount(cap, unit)}</strong>
+          <strong>{cap === null ? "Not set" : amount(cap, unit, session.rates.creditUsd)}</strong>
         </div>
         <div>
           <span>Remaining under cap</span>
           <strong>
             {cap === null
               ? "Not capped"
-              : amount(Math.max(0, cap - spent), unit)}
+              : amount(Math.max(0, cap - spent), unit, session.rates.creditUsd)}
           </strong>
         </div>
       </div>
@@ -941,9 +944,10 @@ function BudgetForm({
   credits: boolean;
   refresh: () => void;
 }) {
+  const money = useMoney();
   const fetchScoped = useScopedFetch(),
     [value, setValue] = useState(
-      String((credits ? project.capCredits : project.capUsd) ?? ""),
+      String((credits ? project.capCredits : project.capUsd == null ? null : money.toDisplay(project.capUsd)) ?? ""),
     ),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -958,6 +962,8 @@ function BudgetForm({
         setBusy(true);
         setMessage("");
         try {
+          const stored = value === "" ? null : money.fromDisplay(Number(value));
+          if (value !== "" && stored === null) throw new Error("The credit conversion rate is unavailable. Try again.");
           const response = await fetchScoped(
             `/api/projects/${encodeURIComponent(project.id)}`,
             {
@@ -965,7 +971,7 @@ function BudgetForm({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 [credits ? "capCredits" : "capUsd"]:
-                  value === "" ? null : Number(value),
+                  stored,
               }),
             },
           );
@@ -985,7 +991,7 @@ function BudgetForm({
       }}
     >
       <label>
-        Project cap ({credits ? "credits" : "USD"})
+        Project cap ({credits ? "credits" : "credit equivalent"})
         <input
           type="number"
           min="0"

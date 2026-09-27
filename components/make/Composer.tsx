@@ -668,12 +668,7 @@ function ScopedComposer({
     credits?: number;
   }) =>
     value.unit === "usd" && typeof value.price === "number"
-      ? new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency: "USD",
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 4,
-        }).format(value.price)
+      ? money.equivalent(value.price)
       : `${Math.ceil(value.price ?? value.credits ?? 0).toLocaleString()} cr`;
   const costLabel =
     kind === "audio"

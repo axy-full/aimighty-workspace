@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, useImperativeHandle, type Ref } from "react"
 import { Film, Upload } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
+import { useMoney } from "@/lib/price";
 import { useSession, useSignInHref } from "@/lib/session";
 import { usePaidAction, paidActionStorageKey } from "@/lib/usePaidAction";
 import { useLegacyRecovery } from "@/lib/useRecoverySurface";
@@ -43,6 +44,7 @@ export default function AstraUpscale({
   initialSource?: string | null;
   controller?: Ref<GenAssetInputHandle>;
 }) {
+  const money = useMoney();
   const { signedIn, requestScope, workspace, email } = useSession(),
     signIn = useSignInHref(),
     toast = useToast(),
@@ -115,7 +117,7 @@ export default function AstraUpscale({
     quote = reviewed?.body === bodyKey ? reviewed.quote : null;
   const inputLocked = busy || !!paid.pending || !!paid.error;
   const price = (value: AdmissionQuote) =>
-    value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
+    value.unit === "cr" ? `${value.price} cr` : money.equivalent(value.price);
   const receiver = useGenAssetInput({
     scope: requestScope,
     locked: inputLocked,

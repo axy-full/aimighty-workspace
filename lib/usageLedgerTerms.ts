@@ -13,6 +13,8 @@
  * Inspector read one definition and a unit test can pin it.
  */
 
+import { creditEquivalent } from "./costDisplay";
+
 export type LedgerState =
   | "charged" | "held" | "running" | "not-billed" | "own-key"
   | "failed-not-billed" | "failed-charged" | "waiting" | "unpriced";
@@ -92,13 +94,13 @@ const WORKFLOWS: Record<string, string> = {
 export const workflowLabel = (workflow: string): string => WORKFLOWS[workflow] ?? "Connected job";
 
 export const fmtLedgerCredits = (n: number): string => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} cr`;
-export const fmtLedgerUsd = (n: number): string => `$${n.toFixed(n < 1 ? 3 : 2)}`;
+export const fmtLedgerUsd = (n: number, perCredit?: number): string => creditEquivalent(n, perCredit);
 export const fmtConnectedCredits = (n: number): string => `${n.toLocaleString("en-US", { maximumFractionDigits: 8 })} connected cr`;
 
 /** What a row's amount column says: blank for work that has not been priced. */
-export function ledgerAmount(row: CreditLedgerRow | DollarLedgerRow): string {
+export function ledgerAmount(row: CreditLedgerRow | DollarLedgerRow, perCredit?: number): string {
   if ("credits" in row) return row.state === "running" ? "—" : fmtLedgerCredits(row.credits);
-  return row.usd == null || row.state === "running" || row.state === "waiting" ? "—" : fmtLedgerUsd(row.usd);
+  return row.usd == null || row.state === "running" || row.state === "waiting" ? "—" : fmtLedgerUsd(row.usd, perCredit);
 }
 
 /** "2026-09" → "Sep 2026" (the month is UTC, as statements count it). */
@@ -114,7 +116,7 @@ export function monthLabel(month: string): string {
  * unit is whatever the server said this workspace pays in, so a dollar sign
  * can only appear where the route itself answered in dollars.
  */
-export function settledFact(page: { unit?: unknown; rows?: unknown } | null, quote: string | null, failed = false): string {
+export function settledFact(page: { unit?: unknown; rows?: unknown } | null, quote: string | null, failed = false, perCredit?: number): string {
   if (quote) return quote;
   if (failed) return "Could not be read";
   if (!page) return "Reading…";
@@ -123,12 +125,12 @@ export function settledFact(page: { unit?: unknown; rows?: unknown } | null, quo
   if (page.unit === "credits" && !("credits" in row)) return "—";
   if (page.unit === "usd" && !("usd" in row)) return "—";
   switch (row.state) {
-    case "held": return `Held · ${ledgerAmount(row)}`;
+    case "held": return `Held · ${ledgerAmount(row, perCredit)}`;
     case "running": case "waiting": return "Not settled";
     case "not-billed": case "failed-not-billed": return "Not billed";
     case "own-key": return "Own key · not billed";
-    case "failed-charged": return `${ledgerAmount(row)} · failed`;
+    case "failed-charged": return `${ledgerAmount(row, perCredit)} · failed`;
     case "unpriced": return "—";
-    default: return ledgerAmount(row);
+    default: return ledgerAmount(row, perCredit);
   }
 }

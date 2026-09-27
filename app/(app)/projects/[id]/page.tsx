@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useProject } from "@/lib/projectContext";
 import { confirmDeleteProject } from "@/lib/deleteProject";
 import { useApi } from "@/lib/useApi";
-import { usd, hours, pct, timeAgo } from "@/lib/format";
+import { hours, pct, timeAgo } from "@/lib/format";
 import { type Analytics, Headline, BarList, Patterns } from "@/components/Analytics";
 import { appPrompt, appAlert, appConfirm } from "@/components/dialog";
 import { Waiting, Trouble } from "@/components/ParticlMark";
@@ -206,7 +206,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
               <div className="row"><span>Render time</span>
                 <span className="row-value tabular-nums">{hours(t.renderMs)}</span></div>
               <div className="row"><span>Renders</span>
-                <span className="row-value tabular-nums">{money.inCredits ? money.of(t) : usd((t.spend ?? 0) - (t.promptSpend ?? 0), 2)}</span></div>
+                <span className="row-value tabular-nums">{money.inCredits ? money.of(t) : money.equivalent((t.spend ?? 0) - (t.promptSpend ?? 0))}</span></div>
               <div className="row">
                 <span className="flex flex-col">
                   Prompt writing
@@ -214,7 +214,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
                     {t.prompts} prompt{t.prompts === 1 ? "" : "s"} finished by the writer
                   </span>
                 </span>
-                <span className="row-value tabular-nums">{money.inCredits ? "included" : usd(t.promptSpend, 3)}</span></div>
+                <span className="row-value tabular-nums">{money.inCredits ? "included" : money.equivalent(t.promptSpend)}</span></div>
               <div className="row"><span className="font-medium">Total cost</span>
                 <span className="row-value font-semibold tabular-nums !text-bone">{money.of(t)}</span></div>
             </div>
@@ -242,8 +242,8 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
   const cap = money.inCredits ? project.capCredits ?? null : project.capUsd ?? null;
   // The page's own totals, which are fresh; the production list behind `project` is a cache.
   const spent = money.inCredits ? spentCredits : spentUsd;
-  const unit = money.inCredits ? "cr" : "$";
-  const show = (n: number) => (money.inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
+  const unit = money.inCredits ? "cr" : "equivalent";
+  const show = (n: number) => (money.inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : money.equivalent(n));
   const pct = cap ? Math.round((spent / cap) * 100) : null;
   async function patch(body: Record<string, unknown>) {
     const res = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -252,11 +252,13 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
     onChanged();
   }
   async function setCap() {
-    const raw = await appPrompt(money.inCredits ? "Cap for this project, in credits" : "Cap for this project, in dollars", cap ? String(Math.round(cap)) : "", money.inCredits ? "2000" : "250");
+    const raw = await appPrompt(money.inCredits ? "Cap for this project, in credits" : "Cap for this project, in credit equivalents", cap ? String(money.toDisplay(cap) ?? "") : "", "2000");
     if (raw === null) return;
     const v = raw.trim() === "" ? null : Number(raw.replace(/[^0-9.]/g, ""));
     if (v != null && !(v >= 0)) { await appAlert("Not a cap", "A cap is a number, or blank for none."); return; }
-    await patch(money.inCredits ? { capCredits: v } : { capUsd: v });
+    const stored = v === null ? null : money.fromDisplay(v);
+    if (v !== null && stored === null) { await appAlert("Cap unavailable", "The credit conversion rate is unavailable. Try again."); return; }
+    await patch(money.inCredits ? { capCredits: stored } : { capUsd: stored });
   }
   return (
     <p className="mt-2 text-[14px] text-mute">
@@ -264,7 +266,7 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
       {isAdmin
         ? <button onClick={setCap} className="text-blue">{cap ? show(cap) : "set one"}</button>
         : <span className="text-ink">{cap ? show(cap) : "none"}</span>}
-      {cap ? <> — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "dollars"} this project may spend before the rule at the cap applies.</>}
+      {cap ? <> — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "credit equivalents"} this project may spend before the rule at the cap applies.</>}
       {isAdmin && cap ? (
         <>{" "}<button onClick={() => patch({ capUnlocked: !project.capUnlocked })} className="text-blue">{project.capUnlocked ? "Lock again" : "Unlock"}</button></>
       ) : null}
@@ -346,7 +348,7 @@ function BurnDown({ project, totals, byShot, shotCount }: {
 }) {
   const money = useMoney();
   const inCredits = money.inCredits;
-  const show = (n: number) => (inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
+  const show = (n: number) => (inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : money.equivalent(n));
   const spend = (s: { credits?: number; spend?: number }) => (inCredits ? s.credits ?? 0 : s.spend ?? 0);
   const rows = byShot.map((s) => ({ id: s.id, code: s.code, title: s.title, takes: s.takes, credits: spend(s) }));
   const b = burnDown({

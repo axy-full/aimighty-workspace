@@ -1,4 +1,6 @@
 "use client";
+import { useSession } from "@/lib/session";
+import { creditEquivalent } from "@/lib/costDisplay";
 import { useEffect, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { mediaBands } from "@/lib/workspace/format";
@@ -26,10 +28,10 @@ export function takeStatus(take: Pick<Take, "status" | "failedUnbilled">): { lab
 }
 
 /** The mono cost cell: settled credits, dollars for a workspace billed in them, else a dash. */
-export function takeCost(take: Pick<Take, "kind" | "credits" | "usd" | "failedUnbilled">): string {
+export function takeCost(take: Pick<Take, "kind" | "credits" | "usd" | "failedUnbilled">, perCredit?: number): string {
   if (take.kind === "UPLOAD") return "—";
   if (take.credits != null) return `${take.credits.toLocaleString("en-US")} cr`;
-  if (take.usd != null) return `$${take.usd.toFixed(2)}`;
+  if (take.usd != null) return creditEquivalent(take.usd, perCredit);
   return "—";
 }
 
@@ -54,6 +56,7 @@ export function TakeMedia({ entry, hoverPlay = false }: { entry: LibraryEntry; h
 
 /** Takes — the whole project library: uploads and generations together. */
 export function TakesPage({ project, scope }: PageBodyProps) {
+  const { rates } = useSession();
   const { state, dispatch, syncUrl, toast } = useWorkspace();
   const library = useProjectLibrary(scope, project?.id ?? null);
   const { items } = library;
@@ -164,7 +167,7 @@ export function TakesPage({ project, scope }: PageBodyProps) {
                   <span className="pxw-take-name">{take.name}</span>
                   <span className="pxw-take-meta">
                     <span>{take.meta}</span>
-                    <span data-testid="take-cost">{takeCost(take)}</span>
+                    <span data-testid="take-cost">{takeCost(take, rates.creditUsd)}</span>
                   </span>
                   <span className="pxw-take-status">
                     <span className="pxw-dot" style={{ background: s.dot }} aria-hidden="true" />

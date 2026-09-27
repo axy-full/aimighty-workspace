@@ -1,4 +1,4 @@
-import { creditRateLine } from "@/lib/creditTerms";
+
 import type { Unit } from "@/lib/rateTable";
 
 /** Numbers group Western-style regardless of the browser's locale. */
@@ -38,15 +38,15 @@ export type CreditsLabel = { text: string; known: boolean; title: string };
 
 /** "Workspace credits", plus the rate when the table carried one. */
 export function creditsTitle(base: string, perCredit?: number | null): string {
-  const rate = creditRateLine(perCredit);
-  return rate ? `${base} · ${rate}` : base;
+  void perCredit;
+  return base;
 }
 
 export function creditsLabel(
   balance: number | null | undefined, unit: Unit = "cr", perCredit?: number | null,
 ): CreditsLabel {
   if (unit === "usd")
-    return { text: "—", known: false, title: "This workspace is billed in dollars, so it has no credit balance." };
+    return { text: "—", known: false, title: "This workspace uses its own API keys and has no Particl credit balance." };
   if (typeof balance === "number" && Number.isFinite(balance))
     return { text: formatCredits(balance), known: true, title: creditsTitle("Workspace credits", perCredit) };
   return { text: "— cr", known: false, title: "Credit balance unavailable just now." };

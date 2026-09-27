@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, Upload, UserRound } from 'lucide-react';
 import type { Asset, Project } from '@/lib/workbench/studio';
 import { mediaReferenceIdentity } from '@/lib/workbench/media-reference-input';
 import { soulReferenceAssets, type SoulIdentity, type SoulIdentityState } from '@/lib/workbench/soul-identity';
+import { useMoney } from '@/lib/price';
 import { usePaidAction } from '@/lib/usePaidAction';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
@@ -23,6 +24,7 @@ export function SoulIdentityPanel({ project, subjectType, assetId, scope, enable
   onAttach: (identity: SoulIdentity, assetId?: string) => Promise<void>;
   onClose: () => void; onSettings: () => void;
 }) {
+  const money = useMoney();
   const paid = usePaidAction(`soul-identity:${project.id}`, enabled, { signedIn: enabled, requestScope: scope });
   const target = project.assets.find(asset => asset.id === assetId);
   const [state, setState] = useState<SoulIdentityState | null>(null);
@@ -43,7 +45,7 @@ export function SoulIdentityPanel({ project, subjectType, assetId, scope, enable
   const terms = state?.terms;
   const credits = terms?.trainingCredits;
   const dollars = terms?.trainingCostUsd;
-  const price = typeof credits === 'number' ? `${credits.toLocaleString()} credits` : typeof dollars === 'number' ? `$${dollars.toFixed(2)}` : null;
+  const price = typeof credits === 'number' ? `${credits.toLocaleString()} credits` : typeof dollars === 'number' ? money.equivalent(dollars) : null;
   const polling = !!state?.identities.some(activeStatus);
   const disabled = !!busy || !!paid.pending || !!paid.error || !enabled;
   const recovered = paid.pending ? JSON.parse(paid.pending.body) as Record<string, unknown> : null;
@@ -138,7 +140,7 @@ export function SoulIdentityPanel({ project, subjectType, assetId, scope, enable
         {state && !state.configured && <div className={styles.notice}><strong>Connect an identity trainer</strong><p>Identity training is not configured for this workspace. An owner or admin can connect it in workspace settings.</p><button type="button" onClick={onSettings}>Workspace settings</button></div>}
         {target && <p className={styles.help}>Attach to <strong>{target.name}</strong>. Its cover will use the identity’s original portrait.{target.locked ? ' Unlock this asset before changing its identity.' : ''}</p>}
         {(error || paid.error) && <div role="alert" className={`${styles.notice} ${styles.error}`}>{paid.error || error}</div>}
-        {paid.pending && <div className={styles.notice}><strong>Recover saved training request</strong><p>{typeof recovered?.name === 'string' ? recovered.name : 'Saved identity'} · {Array.isArray(recovered?.references) ? recovered.references.length : 0} portraits{typeof recovered?.maxCredits === 'number' ? ` · ${recovered.maxCredits.toLocaleString()} credits` : typeof recovered?.maxUsd === 'number' ? ` · $${recovered.maxUsd.toFixed(2)}` : ''}</p><p>The original portraits, price and consent are saved. Recovery checks the same request; it does not start another training attempt.</p><button type="button" disabled={!!busy || !!paid.error || !enabled} onClick={() => void submit()}>{busy === 'training' ? <Loader2 size={14} className="spin"/> : <RefreshCw size={14}/>}Recover training request</button></div>}
+        {paid.pending && <div className={styles.notice}><strong>Recover saved training request</strong><p>{typeof recovered?.name === 'string' ? recovered.name : 'Saved identity'} · {Array.isArray(recovered?.references) ? recovered.references.length : 0} portraits{typeof recovered?.maxCredits === 'number' ? ` · ${recovered.maxCredits.toLocaleString()} credits` : typeof recovered?.maxUsd === 'number' ? ` · ${money.equivalent(recovered.maxUsd)}` : ''}</p><p>The original portraits, price and consent are saved. Recovery checks the same request; it does not start another training attempt.</p><button type="button" disabled={!!busy || !!paid.error || !enabled} onClick={() => void submit()}>{busy === 'training' ? <Loader2 size={14} className="spin"/> : <RefreshCw size={14}/>}Recover training request</button></div>}
         <div className={styles.heading}><div><h3>Available identities</h3><span>For this project and workspace.</span></div><button type="button" aria-label="Refresh identities" disabled={refreshing || !!busy || !enabled} onClick={() => void refresh()}><RefreshCw size={14} className={refreshing ? 'spin' : ''}/></button></div>
         <p className={styles.help}>{state?.generationAvailable === false ? 'Identity rendering is not enabled yet. Train identities now; takes use the identity’s portrait as their reference through the current image engines.' : 'Identity rendering uses a prompt and one identity, without additional image or video references.'}</p>
         <div className={styles.identities} aria-label="Workspace identities">

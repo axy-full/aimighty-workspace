@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useMoney } from "@/lib/price";
 import { useSession } from "@/lib/session";
 import { ManagementCard, ManagementNotice } from "./ManagementPage";
 
@@ -46,6 +47,7 @@ function validVerification(value: unknown): value is Verification {
 
 /** Secrets only travel once to the owner's encrypted connection endpoint. */
 export default function HiggsfieldConnection() {
+  const money = useMoney();
   const { requestScope } = useSession();
   const { data, error, refresh } = useApi<KeyState>("/api/workspaces/keys", 0, requestScope);
   const scopedFetch = useScopedFetch();
@@ -119,7 +121,7 @@ export default function HiggsfieldConnection() {
           {verification.error && <p>{problemLabels[verification.error]}</p>}
           {(['720p','1080p'] as const).map(resolution => {
             const estimate = verification.estimates[resolution];
-            return <p key={resolution}><strong>{resolution}:</strong> {estimate.status === 'quoted' ? `$${estimate.usd!.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')} estimate` : `${estimate.status === 'skipped' ? 'Not checked' : 'Estimate unavailable'} — ${estimate.error ? problemLabels[estimate.error] : 'No estimate was returned.'}`}</p>;
+            return <p key={resolution}><strong>{resolution}:</strong> {estimate.status === 'quoted' ? `${money.equivalent(estimate.usd)} estimate` : `${estimate.status === 'skipped' ? 'Not checked' : 'Estimate unavailable'} — ${estimate.error ? problemLabels[estimate.error] : 'No estimate was returned.'}`}</p>;
           })}
           <p>No training or generation was started. This check does not enable the rendering model.</p>
         </div>

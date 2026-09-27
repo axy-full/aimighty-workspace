@@ -20,6 +20,7 @@ import { useApi } from "@/lib/useApi";
 import { useDraft } from "@/lib/useDraft";
 import { usePaidAction } from "@/lib/usePaidAction";
 import { useUploadFile } from "@/lib/useUploadFile";
+import { creditEquivalent } from "@/lib/costDisplay";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import {
@@ -144,10 +145,10 @@ function sourceUrl(value: Record<string, unknown>) {
       ? `/api/uploads/${encodeURIComponent(value.sourceUploadId)}`
       : null;
 }
-const price = (quote: AdmissionQuote) =>
+const price = (quote: AdmissionQuote, perCredit?: number) =>
   quote.unit === "cr"
     ? `${quote.price.toLocaleString()} cr`
-    : `$${quote.price.toFixed(2)}`;
+    : creditEquivalent(quote.price, perCredit);
 
 type BillingAccount = "particl" | "higgsfield";
 type ConnectionStatus = { connected?: boolean; requiresReconnect?: boolean };
@@ -380,6 +381,7 @@ function Studio({
   variant: GenjutsuVariant;
   refreshProject: () => Promise<void>;
 }) {
+  const { rates } = useSession();
   const router = useRouter(),
     query = useSearchParams(),
     upload = useUploadFile(),
@@ -750,7 +752,7 @@ function Studio({
         {
           context: {
             sourceName: input.source?.name,
-            price: quote ? price(quote) : undefined,
+            price: quote ? price(quote, rates.creditUsd) : undefined,
             variant,
           },
         },
@@ -1329,7 +1331,7 @@ function Studio({
               aria-label="Transform generation quote"
             >
               <strong>
-                {price(quote)} · {GENJUTSU_LABELS[variant]}
+                {price(quote, rates.creditUsd)} · {GENJUTSU_LABELS[variant]}
               </strong>
               <p>
                 {input.source?.name} · {input.resolution} ·{" "}
@@ -1342,7 +1344,7 @@ function Studio({
                   disabled={blocked}
                   onChange={(event) => setConfirmed(event.target.checked)}
                 />
-                Approve {price(quote)} for this generation.
+                Approve {price(quote, rates.creditUsd)} for this generation.
               </label>
               <button
                 type="button"
@@ -1350,7 +1352,7 @@ function Studio({
                 disabled={blocked || !confirmed}
                 onClick={() => void submit()}
               >
-                {busy ? "Submitting once…" : `Generate · ${price(quote)}`}
+                {busy ? "Submitting once…" : `Generate · ${price(quote, rates.creditUsd)}`}
               </button>
             </div>
           ) : (

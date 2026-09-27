@@ -1,3 +1,4 @@
+import { creditUsd } from "./creditTerms";
 import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { creditsApply } from "./credits";
@@ -275,7 +276,7 @@ export async function connectedLedgerPage(userId: string, q: LedgerQuery): Promi
 const stamp = (at: number) => { const iso = new Date(at).toISOString(); return [iso.slice(0, 10), iso.slice(11, 16)]; };
 
 /** The ledger as a spreadsheet: one row per job, in the page's unit. */
-export function ledgerCsv(page: Pick<CreditLedgerPage, "unit" | "rows"> | Pick<DollarLedgerPage, "unit" | "rows"> | Pick<ConnectedLedgerPage, "unit" | "rows">): string {
+export function ledgerCsv(page: Pick<CreditLedgerPage, "unit" | "rows"> | Pick<DollarLedgerPage, "unit" | "rows"> | Pick<ConnectedLedgerPage, "unit" | "rows">, perCredit = creditUsd()): string {
   const lines: (string | number)[][] = [];
   if (page.unit === "higgsfield_credits") {
     lines.push(["date", "time_utc", "workflow", "project", "status", "connected_credits_quoted"]);
@@ -284,8 +285,8 @@ export function ledgerCsv(page: Pick<CreditLedgerPage, "unit" | "rows"> | Pick<D
     lines.push(["date", "time_utc", "who", "engine", "kind", "status", "credits"]);
     for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.credits]);
   } else {
-    lines.push(["date", "time_utc", "who", "engine", "kind", "status", "usd"]);
-    for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.usd == null ? "" : Math.round(r.usd * 10000) / 10000]);
+    lines.push(["date", "time_utc", "who", "engine", "kind", "status", "credit_equivalent"]);
+    for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.usd == null ? "" : Math.round((r.usd / perCredit) * 10000) / 10000]);
   }
   return lines.map((line) => line.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }

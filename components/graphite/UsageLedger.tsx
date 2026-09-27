@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "@/lib/session";
+import { creditEquivalent } from "@/lib/costDisplay";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import {
   CONNECTED_LABEL, LEDGER_LABEL, fmtConnectedCredits, fmtLedgerCredits, ledgerAmount, monthLabel,
@@ -98,7 +100,7 @@ function useExport(source: "1" | "connected", month: string | null) {
 }
 
 /** The filter's totals in one line: charged, held while running, not billed — in the page's own unit. */
-function summary(page: LedgerPage | null, month: string | null): string | null {
+function summary(page: LedgerPage | null, month: string | null, perCredit: number): string | null {
   if (!page?.totals) return null;
   const scope = month ? monthLabel(month) : "All months";
   const notBilled = (n: number) => (n > 0 ? `${n.toLocaleString("en-US")} not billed` : null);
@@ -107,10 +109,11 @@ function summary(page: LedgerPage | null, month: string | null): string | null {
     return [scope, `${fmtLedgerCredits(t.charged)} charged`, t.held > 0 ? `${fmtLedgerCredits(t.held)} held while running` : null, notBilled(t.notBilled)].filter(Boolean).join(" · ");
   }
   const t = page.totals!;
-  return [scope, `$${t.charged.toFixed(2)} charged`, notBilled(t.notBilled)].filter(Boolean).join(" · ");
+  return [scope, `${creditEquivalent(t.charged, perCredit)} charged on your key`, notBilled(t.notBilled)].filter(Boolean).join(" · ");
 }
 
 export function UsageLedger() {
+  const { rates } = useSession();
   const [month, setMonth] = useState<string | null>(null);
   const jobs = useLedgerList<LedgerPage>("1", month);
   const connected = useLedgerList<ConnectedLedgerPage>("connected", month);
@@ -118,7 +121,7 @@ export function UsageLedger() {
   const exportConnected = useExport("connected", month);
   const months = [...new Set([...jobs.months, ...connected.months])].sort().reverse();
   const scopeName = month ? monthLabel(month) : null;
-  const line = summary(jobs.first, month);
+  const line = summary(jobs.first, month, rates.creditUsd);
   const connectedTotals = connected.first?.totals;
   return (
     <section className="wsx-ledger" aria-labelledby="ws-ledger-title" data-testid="ws-ledger">
@@ -143,7 +146,7 @@ export function UsageLedger() {
               <span className="wsx-ledger-what">{r.engine}</span>
               <span className="wsx-ledger-meta"><span className="wsx-ledger-when">{at(r.at)}</span>{r.who ? <span className="wsx-ledger-who">{r.who}</span> : null}</span>
               <span className="wsx-ledger-state" data-state={r.state}>{LEDGER_LABEL[r.state]}</span>
-              <span className="wsx-ledger-amt">{ledgerAmount(r)}</span>
+              <span className="wsx-ledger-amt">{ledgerAmount(r, rates.creditUsd)}</span>
             </li>
           ))}
         </ul>

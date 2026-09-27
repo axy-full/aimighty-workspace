@@ -16,7 +16,7 @@
  * of either.
  */
 
-import { creditRateLine } from "@/lib/creditTerms";
+
 
 /* ── What the routes give ─────────────────────────────────────────────── */
 
@@ -99,13 +99,13 @@ export function monthToDate(usage: UsageRead | null, now: number): number | null
 export function creditsCard(me: MeRead | null, usage: UsageRead | null, now: number): CreditsCard | null {
   const credits = me?.credits;
   if (!credits || !Number.isFinite(credits.balance)) return null;
-  const unit = Number.isFinite(credits.creditUsd) ? credits.creditUsd : null;
+
   const month = monthToDate(usage, now);
   return {
     balance: `${n(credits.balance)} CR`,
-    usd: unit === null ? null : `$${(credits.balance * unit).toFixed(2)}`,
+    usd: null,
     month: month === null ? null : `${n(month)} CR this month`,
-    rate: creditRateLine(unit),
+    rate: null,
   };
 }
 
@@ -119,7 +119,7 @@ export function topupAction(topups: TopupsRead | null): { label: string; href: s
   const pack = (topups.packs ?? []).slice().sort((a, b) => a.usd - b.usd)[0];
   if (!pack) return null;
   return {
-    label: `Top up · ${n(pack.credits)} CR · $${pack.usd % 1 === 0 ? pack.usd : pack.usd.toFixed(2)}`,
+    label: `Top up · ${n(pack.total)} CR`,
     href: "/billing#credit-packs",
   };
 }

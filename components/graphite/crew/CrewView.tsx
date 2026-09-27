@@ -6,6 +6,7 @@ import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS
 import { useCrew, type CrewRoom, type RoomMessage } from "@/lib/crew/use-crew";
 import { CREW_PAGES } from "@/lib/shell/ia";
 import { CONFIRM, solutionStatusLabel } from "@/lib/shell/confirmations";
+import { useMoney } from "@/lib/price";
 import { useShell } from "@/lib/shell/state";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { useConfirm } from "@/lib/shell/use-confirm";
@@ -55,6 +56,7 @@ export function CrewView({ project, room, scope, projectsError = null, onRetry }
 /* ── Room ─────────────────────────────────────────────────────────────── */
 
 function Room({ project, room, scope, projectsError, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError: string | null; onRetry?: () => void }) {
+  const money = useMoney();
   const ws = useWorkspace();
   const { confirm } = useConfirm();
   const [selected, setSelected] = useState<string | null>(null);
@@ -137,7 +139,7 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
           <div className="cw-run">
             {room.blocked ? <span className="gx-reason" id="cw-run-reason" data-testid="crew-run-reason">{room.blocked}</span> : null}
             <button type="button" className="gx-primary" disabled={room.blocked !== null || room.running} aria-describedby={room.blocked ? "cw-run-reason" : undefined} onClick={() => void run()} data-testid="crew-run">
-              {room.running ? "Running…" : room.credits == null ? "Run round" : room.usd != null ? `Run round · up to $${room.usd.toFixed(2)}` : `Run round · ${cr(room.credits)}`}
+              {room.running ? "Running…" : room.credits == null ? "Run round" : room.usd != null ? `Run round · up to ${money.equivalent(room.usd)}` : `Run round · ${cr(room.credits)}`}
             </button>
           </div>
         </div>
@@ -204,7 +206,7 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
             <span className="gx-eyebrow" data-functional-label="">Session</span>
             <p className="cw-panel-goal">{room.goal.trim() || "No goal yet."}</p>
             <dl className="cw-rows">
-              {([["Members", `${room.active.length} seated`], ["Engine", <EngineRow key="engine" room={room} />], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session?.spendUsd ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]] as [string, ReactNode][]).map(([k, v]) => (
+              {([["Members", `${room.active.length} seated`], ["Engine", <EngineRow key="engine" room={room} />], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session?.spendUsd ? `${money.equivalent(room.session.spendUsd)} settled` : "Nothing yet"]] as [string, ReactNode][]).map(([k, v]) => (
                 <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
               ))}
             </dl>

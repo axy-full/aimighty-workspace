@@ -280,7 +280,7 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
         <EffortPicker value={d.effort ?? "auto"} model={[...models.featured, ...models.rest].find((m) => m.id === d.model)} onPick={(effort) => patch({ effort })} disabled={busy !== "" || !!paid.pending} compact />
         <button type="button" className="ak-act" onClick={write} disabled={busy !== "" || !!paid.error || !d.logline.trim() || (!paid.pending && !quote)}
           title="The model turns what you typed into a logline and a tone list. Your own words stay one click away.">
-          {busy === "write" ? "WRITING…" : paid.pending ? "Recover writing request" : quote ? `WRITE IT · ${quote.estimateUsd === undefined ? `${quote.estimateCredits} CR RESERVED` : `$${quote.estimateUsd.toFixed(3)} ESTIMATE`} →` : quoting ? "QUOTING…" : "WRITE IT WITH THE MODEL"}
+          {busy === "write" ? "WRITING…" : paid.pending ? "Recover writing request" : quote ? `WRITE IT · ${quote.estimateUsd === undefined ? `${quote.estimateCredits} CR RESERVED` : `${money.equivalent(quote.estimateUsd)} ESTIMATE`} →` : quoting ? "QUOTING…" : "WRITE IT WITH THE MODEL"}
         </button>
         {written && (
           <span className="ak-sub !text-[11px] inline-flex items-center gap-2">

@@ -1,4 +1,5 @@
 "use client";
+import { useSession } from "@/lib/session";
 import { isShotNode } from "@/lib/workspace/shots";
 import { runPageAction } from "@/lib/workspace/page-actions";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -14,6 +15,7 @@ const LOCK_LABEL = { ready: "Locked", submitting: "Training", training: "Trainin
 
 /** One cast member or element: its identity, what we know about its consistency, its references. */
 export function CastInspector({ state, scope, project: shellProject }: InspectorBodyProps) {
+  const { rates } = useSession();
   const { dispatch, go } = useWorkspace();
   const { project, cards, terms } = useCast(scope, shellProject);
   const card = cards.find((c) => c.id === state.selId) ?? null;
@@ -45,7 +47,7 @@ export function CastInspector({ state, scope, project: shellProject }: Inspector
     if (target) dispatch({ type: "patch", patch: { selKind: "shot", selId: target } });
     go("particl", "rig");
   };
-  const quote = trainingQuote(terms);
+  const quote = trainingQuote(terms, rates.creditUsd);
   const canLock = card.group === "cast" && !identity && !!asset && !asset.locked;
   return (
     <div data-inspector-body="cast">

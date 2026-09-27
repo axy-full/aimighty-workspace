@@ -6,6 +6,7 @@ import { previewAttrs } from "@/lib/preview";
 import { Film, Upload, X } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
+import { useMoney } from "@/lib/price";
 import { useSession, useSignInHref } from "@/lib/session";
 import { usePaidAction, paidActionStorageKey } from "@/lib/usePaidAction";
 import { useLegacyRecovery } from "@/lib/useRecoverySurface";
@@ -57,6 +58,7 @@ export default function SeedanceEdit({
   model?: string;
 }) {
   const editLabel = EDIT_LABEL[model] ?? "Seedance Edit";
+  const money = useMoney();
   const { signedIn, requestScope, workspace, email } = useSession();
   const signIn = useSignInHref();
   const toast = useToast();
@@ -145,7 +147,7 @@ export default function SeedanceEdit({
   const quote = reviewed?.body === bodyKey ? reviewed.quote : null;
   const inputLocked = busy || !!paid.pending || !!paid.error;
   const priceLabel = (value: AdmissionQuote) =>
-    value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
+    value.unit === "cr" ? `${value.price} cr` : money.equivalent(value.price);
 
   const receiver = useGenAssetInput({
     scope: requestScope,

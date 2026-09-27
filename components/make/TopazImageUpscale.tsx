@@ -4,6 +4,7 @@ import { useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Image as ImageIcon, Upload } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
+import { useMoney } from "@/lib/price";
 import { useSession, useSignInHref } from "@/lib/session";
 import { usePaidAction, paidActionStorageKey } from "@/lib/usePaidAction";
 import { useLegacyRecovery } from "@/lib/useRecoverySurface";
@@ -55,6 +56,7 @@ export default function TopazImageUpscale({
   initialSource?: string | null;
   controller?: Ref<GenAssetInputHandle>;
 }) {
+  const money = useMoney();
   const { signedIn, requestScope, workspace, email } = useSession();
   const signIn = useSignInHref();
   const toast = useToast();
@@ -128,7 +130,7 @@ export default function TopazImageUpscale({
   const quote = reviewed?.body === bodyKey ? reviewed.quote : null;
   const inputLocked = busy || !!paid.pending || !!paid.error;
   const priceLabel = (value: AdmissionQuote) =>
-    value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
+    value.unit === "cr" ? `${value.price} cr` : money.equivalent(value.price);
 
   const receiver = useGenAssetInput({
     scope: requestScope,

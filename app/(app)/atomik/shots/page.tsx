@@ -117,7 +117,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
       <div className="ak-tiles">
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SHOTS · RUNTIME</span><span className="ak-tile-v">{shots.length} · {mmss(runtime)}</span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">ESTIMATE · ONE TAKE EACH</span><span className="ak-tile-v">≈ {money.price(estimate)}</span></div>
-        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SPENT · FROM PARTICL</span><span className="ak-tile-v">{money.of(project ?? spent)} <span className="text-[13px] font-normal text-dim">{money.inCredits ? (project?.capCredits ? `of ${project.capCredits.toLocaleString("en-US")} cr` : "no cap") : project?.capUsd ? `of $${Math.round(project.capUsd)}` : "no cap"}</span></span></div>
+        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SPENT · FROM PARTICL</span><span className="ak-tile-v">{money.of(project ?? spent)} <span className="text-[13px] font-normal text-dim">{money.inCredits ? (project?.capCredits ? `of ${project.capCredits.toLocaleString("en-US")} cr` : "no cap") : project?.capUsd ? `of ${money.equivalent(project.capUsd)}` : "no cap"}</span></span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">APPROVED · PICKED · OPEN</span><span className="ak-tile-v">{n("approved")} · {n("picked")} · {open}</span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">TAKES PER APPROVAL</span><span className="ak-tile-v">{takesPerApproval != null ? takesPerApproval.toFixed(1) : "—"}</span></div>
       </div>

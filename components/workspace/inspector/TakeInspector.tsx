@@ -1,4 +1,5 @@
 "use client";
+import { useSession } from "@/lib/session";
 import { useProjectLibrary } from "@/lib/workspace/library";
 import { Kicker } from "../ui";
 import { TakeMedia, takeCost, takeStatus, versionLabel } from "../pages/TakesPage";
@@ -9,6 +10,7 @@ type Fact = { label: string; value: string; tone?: "primary" | "green" | "blue";
 
 /** A take or upload: preview and play, then its facts. */
 export function TakeInspector({ state, scope, project }: InspectorBodyProps) {
+  const { rates } = useSession();
   const library = useProjectLibrary(scope, project?.id ?? null);
   const entry = library.items.find((item) => item.take.id === state.selId) ?? null;
   if (!entry) {
@@ -30,7 +32,7 @@ export function TakeInspector({ state, scope, project }: InspectorBodyProps) {
     ...(take.meta ? [{ label: "Detail", value: take.meta }] : []),
     ...(upload
       ? take.sha256 ? [{ label: "Integrity", value: "sha256 ✓", tone: "green" as const, title: take.sha256 }] : []
-      : [{ label: "Settled cost", value: take.status === "rendering" ? "Not settled" : take.failedUnbilled ? "Not billed" : takeCost(take), tone: "blue" as const }]),
+      : [{ label: "Settled cost", value: take.status === "rendering" ? "Not settled" : take.failedUnbilled ? "Not billed" : takeCost(take, rates.creditUsd), tone: "blue" as const }]),
     { label: "Status", value: takeStatus(take).label },
   ];
   const download = asset.origin === "generation" ? `/api/media/${encodeURIComponent(asset.value.id)}?download=1` : `/api/uploads/${encodeURIComponent(asset.value.id)}?download=1`;

@@ -12,7 +12,7 @@
  */
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
-import { usd } from "@/lib/format";
+import { creditEquivalent, creditEquivalentValue, creditEquivalentToAmount } from "@/lib/costDisplay";
 import { providerCreditQuote, formatProviderCreditQuote, sumWithProviderCreditQuotes, type ProviderCreditQuote } from "./providerCreditQuote";
 
 
@@ -32,6 +32,10 @@ export type Amount = { spend?: number | null; credits?: number | null };
 
 export type Money = {
   inCredits: boolean;
+  /** Own-key reporting is a labelled equivalent, not a charge to the credit balance. */
+  equivalent: (usdAmount: number | null | undefined) => string;
+  toDisplay: (amount: number) => number | null;
+  fromDisplay: (amount: number) => number | null;
   /** A job priced before it runs, by engine. */
   price: (usdAmount: number, engine?: string | null) => string;
   /** A rate — per second, per still — left unrounded. */
@@ -63,6 +67,7 @@ export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
 export function useMoney(): Money {
   const { rates } = useSession();
   return useMemo<Money>(() => {
+    const equivalent = (amount: number | null | undefined) => creditEquivalent(amount, rates.creditUsd);
     /* Dollars, for a workspace that pays its vendors in them. The figures
        arrive already in dollars — the server built the table that way — so
        nothing here converts and nothing here knows a margin.
@@ -78,14 +83,17 @@ export function useMoney(): Money {
       const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
       return {
         inCredits: false,
-        price: (n) => (n > 0 && n < 0.005 ? "<1¢" : usd(n, 2)),
-        rate: (n) => usd(n, 3),
-        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : usd(all(g), 2); },
+        equivalent,
+        toDisplay: (n) => creditEquivalentValue(n, rates.creditUsd),
+        fromDisplay: (n) => creditEquivalentToAmount(n, rates.creditUsd),
+        price: equivalent,
+        rate: equivalent,
+        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : equivalent(all(g)); },
         takeCredits: () => 0,
-        sum: (list) => sumWithProviderCreditQuotes(list, standard => usd(standard.reduce((a, g) => a + all(g), 0), 2)),
-        of: (v) => usd(v.spend ?? 0, 2),
-        each: (v, n) => (n > 0 ? usd((v.spend ?? 0) / n, 2) : "—"),
-        approx: (n) => usd(n, 0),
+        sum: (list) => sumWithProviderCreditQuotes(list, standard => equivalent(standard.reduce((a, g) => a + all(g), 0))),
+        of: (v) => equivalent(v.spend ?? 0),
+        each: (v, n) => (n > 0 ? equivalent((v.spend ?? 0) / n) : "—"),
+        approx: (n) => `≈ ${equivalent(n)}`,
       };
     }
     /* Credits. Every figure that reaches this hook is ALREADY in credits:
@@ -101,6 +109,9 @@ export function useMoney(): Money {
     const ofCredits = (v: Amount) => v.credits ?? 0;
     return {
       inCredits: true,
+      equivalent,
+      toDisplay: (n) => n,
+      fromDisplay: (n) => n,
       price: (n) => cr(whole(n)),
       rate: (n) => `${n.toFixed(1)} cr`,
       take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : cr(takeCredits(g)); },

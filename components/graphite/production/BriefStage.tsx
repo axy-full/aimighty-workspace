@@ -1,4 +1,5 @@
 "use client";
+import { useSession } from "@/lib/session";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import { useAgentAttachments } from "./use-agent-attachments";
 import { PromptAttach } from "@/components/PromptAttach";
@@ -51,6 +52,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
   const { toast } = useWorkspace();
   const { confirm } = useConfirm();
   const { inCredits } = useMoney();
+  const { rates } = useSession();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   /* Pictures and text files attached to the prompt or the notes go with the writer's next run. */
@@ -152,7 +154,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
   }
 
   /* Every figure in the one unit this workspace pays in (./agent-price). */
-  const price = (q: NonNullable<typeof quote>) => agentPrice(q.value, inCredits);
+  const price = (q: NonNullable<typeof quote>) => agentPrice(q.value, inCredits, rates.creditUsd);
   const quoteLine = (q: NonNullable<typeof quote>) => `${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${price(q)}`;
   /* The newest draft is a redraft that could not finish: said beside the notes, which it offers back. */
   const failedRedraft = failed && shown ? failed : null;
@@ -223,7 +225,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             <section className="gx-gen-card pd-progress" role="status" aria-label="The agent is writing" data-testid="brief-progress">
               <span className="gx-eyebrow" data-functional-label="">{agentLabel(agentFamilyOf(active.model) ?? "claude")} is {STAGE[active.currentStage] ?? "writing"}</span>
               <div className="pd-meter" aria-hidden="true"><span style={{ width: `${Math.round(((active.completedSteps + 0.5) / Math.max(1, active.totalSteps)) * 100)}%` }} /></div>
-              <span className="gx-hint">Step {Math.min(active.completedSteps + 1, active.totalSteps)} of {active.totalSteps} · {thinkingModelName(active.model)} · {agentReserved(active, inCredits)}</span>
+              <span className="gx-hint">Step {Math.min(active.completedSteps + 1, active.totalSteps)} of {active.totalSteps} · {thinkingModelName(active.model)} · {agentReserved(active, inCredits, rates.creditUsd)}</span>
             </section>
           ) : failed && !shown ? <p className="gx-gen-error" role="alert" data-testid="brief-failed">{failed.error ?? "The agent could not finish this script."}</p> : null}
 
@@ -247,7 +249,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                   <ul>{shown.result.script.notes.map((n, i) => <li key={`n${i}`}>{n}</li>)}{shown.result.assumptions.map((n, i) => <li key={`a${i}`} className="pd-assume">Assumed: {n}</li>)}</ul>
                 </div>
               ) : null}
-              <p className="gx-hint">{thinkingModelName(shown.model)} · {agentCharged(shown, inCredits) ?? "settling"}{shown.instructions ? ` · redrafted from: “${shown.instructions.slice(0, 120)}${shown.instructions.length > 120 ? "…" : ""}”` : ""}</p>
+              <p className="gx-hint">{thinkingModelName(shown.model)} · {agentCharged(shown, inCredits, rates.creditUsd) ?? "settling"}{shown.instructions ? ` · redrafted from: “${shown.instructions.slice(0, 120)}${shown.instructions.length > 120 ? "…" : ""}”` : ""}</p>
 
               <div className="gx-gen-enhance">
                 {approved && approval?.jobId === shown.id ? (

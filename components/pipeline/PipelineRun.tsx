@@ -1,12 +1,11 @@
 "use client";
+import { useMoney } from "@/lib/price";
 import { Check, Film, RefreshCw } from "lucide-react";
 import { AssetPreview } from "@/components/workbench/AssetPreview";
 import type { PublicPipelineRun } from "@/lib/pipeline/service";
 import type { PipelineCatalog } from "@/lib/pipeline/editor";
 import { candidateAttempt, isSelectedCandidate } from "@/lib/pipeline/review";
 import styles from "./pipeline.module.css";
-const money = (amount: number, currency: string) =>
-  currency === "cr" ? `${amount.toLocaleString()} cr` : `$${amount.toFixed(2)}`;
 export default function PipelineRun({
   run,
   catalog,
@@ -22,6 +21,8 @@ export default function PipelineRun({
   action: (body: Record<string, unknown>) => Promise<void>;
   openMovie: (manifest: unknown) => void;
 }) {
+  const display = useMoney();
+  const money = (amount: number, currency: string) => currency === "cr" ? `${amount.toLocaleString()} cr` : display.equivalent(amount);
   return (
     <>
       <div className={styles.sectionHeading}>

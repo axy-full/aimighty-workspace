@@ -1,4 +1,5 @@
 "use client";
+import { useSession } from "@/lib/session";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { useMoney } from "@/lib/price";
 import { agentPrice } from "./agent-price";
@@ -15,7 +16,8 @@ export function AgentAction({ id, estimateLabel, startLabel, quote, busy, blocke
   onEstimate: () => void; onStart: () => void; onChange: () => void; describe?: (quote: AgentQuote, price: string) => string; secondary?: boolean;
 }) {
   const { inCredits } = useMoney();
-  const price = quote ? agentPrice(quote.value, inCredits) : "";
+  const { rates } = useSession();
+  const price = quote ? agentPrice(quote.value, inCredits, rates.creditUsd) : "";
   const line = quote ? (describe ? describe(quote, price) : `${quote.value.calls} agent steps · ${thinkingModelName(quote.input.model)} · up to ${price}`) : "";
   return (
     <div className="gx-gen-enhance">

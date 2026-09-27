@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
+import { creditEquivalentToAmount } from "@/lib/costDisplay";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usd, timeAgo } from "@/lib/format";
@@ -219,14 +220,14 @@ function UsageContent() {
         "Date",
         "Action",
         "Engine",
-        money.inCredits ? "Credits" : "USD",
+        money.inCredits ? "Credits" : "Credit equivalent",
         "Prompt",
       ],
       ...recent.map((row) => [
         new Date(row.createdAt).toISOString(),
         row.title || row.kind,
         row.label,
-        money.inCredits ? (row.credits ?? 0) : row.costUsd,
+        money.inCredits ? (row.credits ?? 0) : money.toDisplay(row.costUsd ?? 0) ?? "",
         row.prompt,
       ]),
     ]);
@@ -540,6 +541,14 @@ function Breakdown({
   );
 }
 function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
+  const money = useMoney();
+  const { rates } = useSession();
+  const accountingAmount = (text: string) => {
+    if (!text.trim()) return null;
+    const value = creditEquivalentToAmount(Number(text), rates.creditUsd);
+    if (value === null) throw new Error("The credit conversion rate is unavailable. Try again.");
+    return value;
+  };
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -570,9 +579,9 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
                   portalSpend.trim() === "" ? null : Number(portalSpend),
               }
             : {
-                balanceUsd: balance.trim() === "" ? null : Number(balance),
+                balanceUsd: accountingAmount(balance),
                 spendUsd:
-                  portalSpend.trim() === "" ? null : Number(portalSpend),
+                  accountingAmount(portalSpend),
               }),
           note: note.trim(),
         }),
@@ -603,7 +612,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
         body: JSON.stringify(
           v.unit === "credits"
             ? { credits: n, amountUsd: 0, note, provider: v.id }
-            : { amountUsd: n, note, provider: v.id },
+            : { amountUsd: accountingAmount(amount), note, provider: v.id },
         ),
       });
       const json = await res.json().catch(() => ({}));
@@ -627,8 +636,8 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
   async function remove(t: Vendor["topups"][number]) {
     const amount =
       t.credits != null
-        ? `${cr(t.credits)} credits${t.amountUsd ? ` · ${usd(t.amountUsd, 2)}` : ""}`
-        : usd(t.amountUsd, 2);
+        ? `${cr(t.credits)} credits`
+        : money.equivalent(t.amountUsd);
     const ok = await appConfirm(
       `Remove this top-up of ${amount}?`,
       "The balance on this ledger drops by that much. Spending already recorded stays as it is.",
@@ -646,7 +655,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
   const credits = v.unit === "credits",
     cr = (n: number) => n.toLocaleString();
   const format = (n: number) =>
-    credits ? `${n.toLocaleString()} cr` : usd(n, 2);
+    credits ? `${n.toLocaleString()} cr` : money.equivalent(n);
   return (
     <ManagementCard
       title={v.label}
@@ -672,7 +681,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
       </dl>
       {v.live?.kind === "gateway" && (
         <p className="management-muted">
-          Provider balance: {usd(v.live.balanceUsd, 2)}
+          Provider balance: {money.equivalent(v.live.balanceUsd)}
         </p>
       )}
       {v.live?.kind === "credits" && (
@@ -720,7 +729,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
         >
           <div className="management-grid">
             <label className="management-field">
-              <span>Balance shown {credits ? "(credits)" : "(USD)"}</span>
+              <span>Balance shown {credits ? "(credits)" : "(credit equivalent)"}</span>
               <input
                 inputMode="decimal"
                 value={balance}
@@ -770,7 +779,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
           }}
         >
           <label className="management-field">
-            <span>Amount {credits ? "(credits)" : "(USD)"}</span>
+            <span>Amount {credits ? "(credits)" : "(credit equivalent)"}</span>
             <input
               required
               inputMode="decimal"
@@ -816,7 +825,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
                 <strong>{model.label}</strong>
                 <p>{model.n} takes</p>
               </div>
-              <span className="management-amount">{usd(model.spend, 2)}</span>
+              <span className="management-amount">{money.equivalent(model.spend)}</span>
             </div>
           ))}
         </details>
@@ -830,7 +839,7 @@ function VendorPanel({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
                 <strong>
                   {topup.credits != null
                     ? `${cr(topup.credits)} credits`
-                    : usd(topup.amountUsd, 2)}
+                    : money.equivalent(topup.amountUsd)}
                 </strong>
                 <p>
                   {topup.note || "Payment"} · {timeAgo(topup.createdAt)}
@@ -965,7 +974,7 @@ function ProductionPerformance() {
           value={project ? money.of(project) : "—"}
           note={
             cap
-              ? `${Math.round((spent / cap) * 100)}% of ${money.inCredits ? cap + " cr" : usd(cap, 0)} cap`
+              ? `${Math.round((spent / cap) * 100)}% of ${money.inCredits ? cap + " cr" : money.equivalent(cap)} cap`
               : "No cap selected"
           }
         />
@@ -984,7 +993,7 @@ function ProductionPerformance() {
             projected != null
               ? money.inCredits
                 ? Math.ceil(projected).toLocaleString() + " cr"
-                : usd(projected, 2)
+                : money.equivalent(projected)
               : "—"
           }
           note="At the current cost per approval"

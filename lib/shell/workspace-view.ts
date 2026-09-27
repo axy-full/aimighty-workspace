@@ -43,7 +43,7 @@ export type TopupRequestRow = { id: string; label: string; credits: number; bonu
 export type Topups = { applies: boolean; provider: string; canRequest: boolean; openLimit?: number; packs: TopupPack[]; requests: TopupRequestRow[] };
 /** A pack as the SOW writes it on the top-up screen: `2,200 cr · $200 · 200 free`. */
 export function packLine(pack: TopupPack): string {
-  return [`${pack.total.toLocaleString("en-US")} cr`, `$${pack.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}`, pack.bonus > 0 ? `${pack.bonus.toLocaleString("en-US")} free` : null].filter(Boolean).join(" · ");
+  return [`${pack.total.toLocaleString("en-US")} cr`, pack.bonus > 0 ? `${pack.bonus.toLocaleString("en-US")} free` : null].filter(Boolean).join(" · ");
 }
 /** Where a card checkout may send the browser: https only, never a scheme that runs code. */
 export function checkoutUrl(raw: unknown, origin: string): string | null {

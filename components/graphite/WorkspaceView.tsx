@@ -11,6 +11,7 @@ import {
   auditEntries, checkoutUrl, keyStatus, packLine, planLine, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
   type BillingPlan, type BillingSubscription, type KeyMode, type SecurityBody, type Topups, type UsageBody,
 } from "@/lib/shell/workspace-view";
+import { useMoney } from "@/lib/price";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { UsageLedger } from "./UsageLedger";
@@ -481,9 +482,10 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
 
 /* ── Usage ───────────────────────────────────────────────────────────── */
 function Usage() {
+  const display = useMoney();
   const { data, error } = useRead<UsageBody>("/api/usage");
   const { unit, rows, total } = usageRows(data);
-  const money = (n: number) => (unit === "cr" ? cr(Math.round(n)) : `$${n.toFixed(2)}`);
+  const money = (n: number) => (unit === "cr" ? cr(Math.round(n)) : display.equivalent(n));
   const shown = rows.filter((r) => r.amount > 0 || r.n > 0).sort((a, b) => b.amount - a.amount);
   const max = Math.max(1, ...shown.map((r) => r.amount));
   return (

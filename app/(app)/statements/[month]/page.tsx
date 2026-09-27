@@ -4,6 +4,7 @@ import { use, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
+import { creditEquivalent } from "@/lib/costDisplay";
 import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -26,7 +27,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
   const search = useSearchParams();
   const router = useRouter();
   const project = search.get("project") || "";
-  const { signedIn, role } = useSession();
+  const { signedIn, role, rates } = useSession();
   const { projects } = useProject();
   const admin = role === "owner" || role === "admin";
   usePageTitle(`Statement · ${monthLabel(month)}`);
@@ -34,7 +35,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
   const { data, error, refresh } = useApi<Statement>(url, 60_000);
   const amount = useMemo(() => (data?.unit === "cr"
     ? (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`
-    : (n: number) => `$${n.toFixed(2)}`), [data?.unit]);
+    : (n: number) => creditEquivalent(n, rates.creditUsd)), [data?.unit, rates.creditUsd]);
 
   if (!signedIn) return <div className="page"><div className="page-inner"><Empty title="Statements are private" line="Sign in as an owner or admin to read them." /></div></div>;
   if (!admin) return <div className="page"><div className="page-inner"><Empty title="The owner's and admins' to read" line="Ask an admin for this month's statement." /></div></div>;
@@ -97,7 +98,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
                 on its own would not reconcile with the price; the bought half
                 on its own would not reconcile with the balance. */}
             <span className="ml-auto st-mono">{data.packs.count
-              ? `${(data.packs.credits + data.packs.bonus).toLocaleString("en-US")} credits${data.packs.bonus > 0 ? ` (${data.packs.credits.toLocaleString("en-US")} bought + ${data.packs.bonus.toLocaleString("en-US")} free)` : ""} · $${data.packs.usd.toFixed(2)}`
+              ? `${(data.packs.credits + data.packs.bonus).toLocaleString("en-US")} credits${data.packs.bonus > 0 ? ` (${data.packs.credits.toLocaleString("en-US")} bought + ${data.packs.bonus.toLocaleString("en-US")} free)` : ""}`
               : "none"}</span>
           </div>
         )}

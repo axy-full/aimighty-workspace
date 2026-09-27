@@ -1,4 +1,6 @@
 "use client";
+import { useSession } from "@/lib/session";
+import { creditEquivalent } from "@/lib/costDisplay";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import LazyMedia from "@/components/LazyMedia";
@@ -30,9 +32,9 @@ export function useCast(scope: string, shellProject: Project | null) {
 }
 
 /** The live training price, as the identity panel's Train button will show it. */
-export function trainingQuote(terms: { trainingCredits: number | null; trainingCostUsd?: number | null } | null | undefined): string | null {
+export function trainingQuote(terms: { trainingCredits: number | null; trainingCostUsd?: number | null } | null | undefined, perCredit?: number): string | null {
   if (typeof terms?.trainingCredits === "number") return `${terms.trainingCredits.toLocaleString("en-US")} cr`;
-  if (typeof terms?.trainingCostUsd === "number") return `$${terms.trainingCostUsd.toFixed(2)}`;
+  if (typeof terms?.trainingCostUsd === "number") return creditEquivalent(terms.trainingCostUsd, perCredit);
   return null;
 }
 
@@ -56,6 +58,7 @@ type Panel = { subjectType: "character" | "element"; assetId?: string };
 
 /** Cast & Elements: identities and references, and the shots that cite them. */
 export function CastPage({ project: shellProject, scope }: PageBodyProps) {
+  const { rates } = useSession();
   const { state, dispatch, syncUrl, toast } = useWorkspace();
   const router = useRouter();
   const { draft, identities, project, cards, terms } = useCast(scope, shellProject);
@@ -64,7 +67,7 @@ export function CastPage({ project: shellProject, scope }: PageBodyProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const ready = draft.state.status === "ready" && !!draft.project;
-  const quote = trainingQuote(terms);
+  const quote = trainingQuote(terms, rates.creditUsd);
 
   useEffect(() => {
     if (!project || identities.state.status === "loading" || identities.state.status === "idle") return;

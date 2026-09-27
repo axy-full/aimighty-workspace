@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useMoney } from "@/lib/price";
 import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import type { PaidTextQuote } from "@/lib/paidText";
 
@@ -9,6 +10,7 @@ export default function QuotedAtomikAction({ url, body, label, onRun, disabled, 
   url: string; body: Record<string, unknown> | null; label: string;
   onRun: (quote?: PaidTextQuote) => void; disabled?: boolean; pending?: boolean; busy?: boolean; className?: string;
 }) {
+  const money = useMoney();
   const ref = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function QuotedAtomikAction({ url, body, label, onRun, disabled, 
   return <span ref={ref} className="inline-flex min-w-0 flex-col items-start gap-1">
     <button type="button" className={className} disabled={disabled || busy || (!pending && !quote)}
       onClick={() => onRun(pending ? undefined : quote ?? undefined)}>
-      {busy ? "Writing…" : pending ? "Recover writing request" : quote ? `${label} · ${quote.estimateUsd === undefined ? `${quote.estimateCredits} cr reserved` : `$${quote.estimateUsd.toFixed(3)} estimate`}` : loading ? "Quoting…" : label}
+      {busy ? "Writing…" : pending ? "Recover writing request" : quote ? `${label} · ${quote.estimateUsd === undefined ? `${quote.estimateCredits} cr reserved` : `${money.equivalent(quote.estimateUsd)} estimate`}` : loading ? "Quoting…" : label}
     </button>
     {error && <span role="status" className="max-w-sm text-[11px] text-dim">{error}</span>}
   </span>;

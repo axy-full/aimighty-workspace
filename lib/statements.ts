@@ -2,7 +2,7 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCredits, marginKeyOf, creditUsd } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
@@ -103,20 +103,21 @@ export function groupLines(rows: RawLine[]): StatementProject[] {
 
 
 /** The statement as a spreadsheet: one row per take, subtotals, the packs line. */
-export function statementCsv(s: Statement): string {
-  const money = s.unit === "cr" ? "credits" : "usd";
+export function statementCsv(s: Statement, perCredit = creditUsd()): string {
+  const money = s.unit === "cr" ? "credits" : "credit_equivalent";
+  const equivalent = (n: number) => Math.round((n / perCredit) * 10000) / 10000;
   const rows: (string | number)[][] = [["date", "production", "shot", "take", "what", "status", money]];
-  const amount = (l: StatementLine) => (s.unit === "cr" ? l.credits : Math.round(l.usd * 100) / 100);
+  const amount = (l: StatementLine) => (s.unit === "cr" ? l.credits : equivalent(l.usd));
   for (const p of s.projects) {
     for (const sh of p.shots) for (const l of sh.lines) rows.push([new Date(l.at).toISOString().slice(0, 10), p.name, `${sh.code}${sh.title ? ` ${sh.title}` : ""}`, l.take, l.what, l.status, amount(l)]);
     for (const l of p.loose) rows.push([new Date(l.at).toISOString().slice(0, 10), p.name, "", l.take, l.what, l.status, amount(l)]);
-    rows.push(["", p.name, "", "", "subtotal", "", s.unit === "cr" ? p.credits : Math.round(p.usd * 100) / 100]);
+    rows.push(["", p.name, "", "", "subtotal", "", s.unit === "cr" ? p.credits : equivalent(p.usd)]);
   }
   rows.push([]);
-  rows.push(["", "", "", "", "total", "", s.unit === "cr" ? s.totals.credits : Math.round(s.totals.usd * 100) / 100]);
+  rows.push(["", "", "", "", "total", "", s.unit === "cr" ? s.totals.credits : equivalent(s.totals.usd)]);
   if (s.unit === "cr") {
     const free = s.packs.bonus > 0 ? ` (${s.packs.credits} bought + ${s.packs.bonus} free)` : "";
-    rows.push(["", "", "", "", `packs this month (${s.packs.count})`, "", `${s.packs.credits + s.packs.bonus} credits${free} · USD ${s.packs.usd.toFixed(2)}`]);
+    rows.push(["", "", "", "", `packs this month (${s.packs.count})`, "", `${s.packs.credits + s.packs.bonus} credits${free}`]);
     if (s.funding) {
       for (const [label, credits] of Object.entries(s.funding)) rows.push(["", "", "", "", `${label} credits used`, "", credits]);
     }

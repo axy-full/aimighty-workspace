@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { creditEquivalent, creditEquivalentValue } from "@/lib/costDisplay";
 import { useSession } from "@/lib/session";
 
 /**
@@ -27,7 +28,7 @@ type Analytics = {
 };
 type Ledger = { byProject?: { name: string; n?: number; credits?: number }[]; byPerson?: { name: string; n?: number; credits?: number }[] };
 
-const usd = (n: number | undefined) => `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const int = (n: number) => Math.round(n).toLocaleString("en-US");
 const hours = (ms: number) => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1)} h` : `${Math.round(ms / 60_000)} min`);
 const secs = (ms: number | null) => (ms == null ? "—" : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${Math.round(ms / 1000)} s`);
@@ -60,6 +61,7 @@ function Table<T extends Row>({ caption, rows, columns, testid, onPick }: { capt
 export function ManagementDashboard() {
   const scoped = useScopedFetch();
   const session = useSession();
+  const usd = (n: number | undefined) => creditEquivalent(n, session.rates.creditUsd);
   const [days, setDays] = useState(0);
   const [projectId, setProjectId] = useState("all");
   const [data, setData] = useState<Analytics | null>(null);
@@ -93,19 +95,20 @@ export function ManagementDashboard() {
   const scopeName = projectId === "all" ? "All projects" : projects.find((p) => p.id === projectId)?.name ?? "This project";
   const exportCsv = useMemo(() => () => {
     if (!data) return;
-    const amountCsv: [string, string] = credits ? ["credits", "Credits"] : ["spend", "Cost (USD)"];
+    const amountCsv: [string, string] = credits ? ["credits", "Credits"] : ["creditEquivalent", "Credit equivalent"];
+    const reported = (rows: Row[]) => rows.map((row) => ({ ...row, creditEquivalent: creditEquivalentValue(typeof row.spend === "number" ? row.spend : null, session.rates.creditUsd) }));
     const parts = [
       `# ${scopeName} · ${PERIODS.find((p) => p.days === days)?.label}`,
-      "# By project", csv(data.byProject as unknown as Row[], [["name", "Project"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["people", "People"], ["renderMs", "Render ms"]]),
-      "", "# By person", csv(data.byPerson as unknown as Row[], [["name", "Person"], ["email", "Email (masked)"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["projects", "Projects"]]),
-      "", "# By model", csv(data.byModel as unknown as Row[], [["label", "Model"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["avgMs", "Average ms"]]),
-      "", "# Revisions per shot", csv(data.byShot as unknown as Row[], [["code", "Shot"], ["title", "Title"], ["takes", "Takes"], ["ok", "Succeeded"], ["failed", "Failed"], amountCsv]),
+      "# By project", csv(reported(data.byProject as unknown as Row[]), [["name", "Project"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["people", "People"], ["renderMs", "Render ms"]]),
+      "", "# By person", csv(reported(data.byPerson as unknown as Row[]), [["name", "Person"], ["email", "Email (masked)"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["projects", "Projects"]]),
+      "", "# By model", csv(reported(data.byModel as unknown as Row[]), [["label", "Model"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["avgMs", "Average ms"]]),
+      "", "# Revisions per shot", csv(reported(data.byShot as unknown as Row[]), [["code", "Shot"], ["title", "Title"], ["takes", "Takes"], ["ok", "Succeeded"], ["failed", "Failed"], amountCsv]),
     ].join("\n");
     const url = URL.createObjectURL(new Blob([parts], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = `particl-dashboard-${scopeName.replace(/[^\w-]+/g, "_")}-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [data, days, scopeName, credits]);
+  }, [data, days, scopeName, credits, session.rates.creditUsd]);
 
   return (
     <div className="wsx-card mdx" data-testid="ws-dashboard">
@@ -128,7 +131,7 @@ export function ManagementDashboard() {
           <div className="mdx-tiles" data-testid="dash-totals">
             {credits
               ? <div className="mdx-tile"><span className="gx-eyebrow">Credits</span><strong data-testid="dash-credits">{int(t.credits)} cr</strong><span className="cw-dim">billed to the workspace</span></div>
-              : <div className="mdx-tile"><span className="gx-eyebrow">Cost</span><strong data-testid="dash-cost">{usd(t.spend)}</strong><span className="cw-dim">vendor cost{t.promptSpend ? ` · ${usd(t.promptSpend)} prompt writing` : ""}</span></div>}
+              : <div className="mdx-tile"><span className="gx-eyebrow">Cost</span><strong data-testid="dash-cost">{usd(t.spend)}</strong><span className="cw-dim">own API key · credit equivalent{t.promptSpend ? ` · ${usd(t.promptSpend)} prompt writing` : ""}</span></div>}
             <div className="mdx-tile"><span className="gx-eyebrow">Generations</span><strong data-testid="dash-generations">{int(t.generations)}</strong><span className="cw-dim">{int(t.succeeded)} made · {int(t.failed)} failed{t.pending ? ` · ${int(t.pending)} running` : ""}</span></div>
             <div className="mdx-tile"><span className="gx-eyebrow">Success</span><strong>{pct(t.succeeded, t.generations)}</strong><span className="cw-dim">of generations</span></div>
             <div className="mdx-tile"><span className="gx-eyebrow">Render time</span><strong>{hours(t.renderMs)}</strong><span className="cw-dim">machine time, not people time</span></div>
