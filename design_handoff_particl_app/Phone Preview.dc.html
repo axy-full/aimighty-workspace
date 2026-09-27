@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+body{margin:0;background:#050506;color:#F5F5F7;font-family:Geist,-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
+</style>
+</helmet>
+<section id="t1" style="padding:36px 40px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:baseline;gap:10px"><a href="#t1" style="font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#F5F5F7;color:#000;border-radius:4px;text-decoration:none">1</a><span style="font:600 13px/1.2 system-ui,sans-serif">Phone · 390×844 · one frame per tab, live (scroll inside each phone)</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start">
+    <sc-for list="{{ frames }}" as="f" hint-placeholder-count="7">
+      <div id="{{ f.id }}" style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 system-ui,sans-serif;color:rgba(235,235,245,.6)"><a href="{{ f.anchor }}" style="font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(255,255,255,.12);color:#F5F5F7;border-radius:5px;text-decoration:none">{{ f.id }}</a>{{ f.label }}</div>
+        <div style="width:414px;height:868px;border-radius:44px;padding:12px;background:#0D0D10;border:1px solid rgba(255,255,255,.14);box-shadow:0 40px 100px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);box-sizing:border-box"><div style="width:390px;height:844px;border-radius:34px;overflow:hidden;background:#000"><iframe src="{{ f.src }}" title="{{ f.label }}" style="display:block;width:390px;height:844px;border:0;background:#000"></iframe></div></div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const TABS = [["gen", "Gen · home"], ["studio", "Studio"], ["business", "Business"], ["viral", "Viral"], ["atomik", "Atomik"], ["workspace", "Workspace"]];
+class Component extends DCLogic {
+  renderVals() {
+    const frames = TABS.map(([id, label], i) => ({ id: "1" + "abcdef"[i], anchor: "#1" + "abcdef"[i], label, src: "Home.dc.html#" + id }));
+    frames.push({ id: "1g", anchor: "#1g", label: "Pricing", src: "Pricing.dc.html" });
+    frames.push({ id: "1h", anchor: "#1h", label: "App · Home (signed in)", src: "App.dc.html#phone-home" });
+    frames.push({ id: "1i", anchor: "#1i", label: "App · Gen (signed in)", src: "App.dc.html#phone-gen" });
+    return { frames };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><style>body{margin:0;background:#050506;color:#F5F5F7;font-family:Geist,-apple-system,BlinkMacSystemFont,sans-serif}</style></helmet>
+<div style="padding:32px 40px 48px;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;align-items:baseline;gap:10px"><span style="font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#F5F5F7;color:#000;border-radius:4px">1</span><span style="font:600 13px/1.2 system-ui,sans-serif">Signed-in app · every screen at 1440×900, phones at 390×844 · Graphite + blue</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start">
+    <sc-for list="{{ shots }}" as="s" hint-placeholder-count="9">
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 system-ui,sans-serif;color:rgba(235,235,245,.6)"><span style="font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(255,255,255,.12);color:#F5F5F7;border-radius:5px">{{ s.id }}</span>{{ s.label }}</div>
+        <div id="{{ s.shot }}" style="width:{{ s.w }}px;height:{{ s.h }}px;overflow:hidden;border-radius:10px;border:1px solid rgba(255,255,255,.12);box-shadow:0 30px 80px rgba(0,0,0,.6);background:#000"><dc-import name="App" screen="{{ s.screen }}" height="{{ s.h }}" hint-size="100%,100%" style="width:100%;height:100%"></dc-import></div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const S = [["auth-invite", "Sign-in · invite link"], ["auth-totp", "Sign-in · authenticator"], ["auth-first", "Sign-in · first run"], ["auth-signin", "Sign-in · returning"], ["switcher", "Production switcher"], ["gen", "Gen · Video"], ["gen-images", "Gen · Images"], ["gen-audio", "Gen · Audio"], ["gen-3d", "Gen · 3D"], ["palette", "⌘K palette · Ask Atomik"], ["biz-product", "Business · 01 Product"], ["biz-brand", "Business · 02 Brand"], ["biz-cast", "Business · 03 Cast"], ["biz-format", "Business · 04 Format"], ["business", "Business · 05 Variants"], ["biz-design", "Business · 06 Design"], ["biz-publish", "Business · 07 Publish"], ["brief", "Studio · 01 Brief & Script"], ["boards", "Studio · 02 Boards"], ["cast", "Studio · 03 Cast & Elements"], ["astra", "Studio · 04 Astra 3D"], ["rig", "Studio · 05 Rig"], ["takes", "Studio · 06 Takes"], ["edit", "Studio · 07 Edit & Sound"], ["deliver", "Studio · 08 Deliver"], ["viral", "Viral · Motion Transfer"], ["vir-swap", "Viral · Object Swap"], ["vir-shorts", "Viral · Shorts"], ["vir-sources", "Viral · Sources"], ["vir-compare", "Viral · Compare"], ["vir-history", "Viral · History"], ["atomik", "Atomik · Agent + Runs"], ["atk-generate", "Atomik · Generate"], ["atk-recipes", "Atomik · Recipes"], ["atk-builds", "Atomik · Builds"], ["atk-skills", "Atomik · Skills"], ["atk-models", "Atomik · Models"], ["atk-approvals", "Atomik · Approvals"], ["atk-budget", "Atomik · Budget"], ["ws-general", "Workspace · General"], ["ws-people", "Workspace · People"], ["workspace", "Workspace · Plans & credits"], ["ws-usage", "Workspace · Usage"], ["ws-engines", "Workspace · Engines"], ["ws-security", "Workspace · Security"], ["phone-home", "Phone · Home"], ["phone-workflow", "Phone · Workflow"], ["phone-gen", "Phone · Gen"], ["phone-takes", "Phone · Takes"], ["phone-edit", "Phone · Edit"], ["phone-atomik", "Phone · Atomik"], ["phone-business", "Phone · Business"], ["phone-viral", "Phone · Viral"], ["phone-workspace", "Phone · Workspace"]];
+class Component extends DCLogic {
+  renderVals() { return { shots: S.map(([screen, label], i) => ({ id: "1" + String.fromCharCode(97 + i), label, screen, shot: "shot-" + screen, w: screen.startsWith("phone") ? 390 : 1440, h: screen.startsWith("phone") ? 844 : 900 })) }; }
+}
+</script>
+</body>
+</html>
