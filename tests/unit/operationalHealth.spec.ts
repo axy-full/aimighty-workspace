@@ -19,7 +19,11 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
     "@/lib/db": { ready: async () => undefined, db: () => database },
     "@/lib/vendorKeys": { vendorKey: () => null },
     "@/lib/settings": { allSettings: async () => ({}) },
-    "@/lib/storage": { presignedReadUrl: async () => "https://private.example/probe?signature=SECRET" },
+    "@/lib/storage/backend": { backendKind: () => "r2", cloudBackend: () => ({
+      put: async (key: string) => { writes.push(key); },
+      presignGet: async () => "https://private.example/probe?signature=SECRET",
+      del: async (keys: string[]) => { deletes.push(...keys); if (options.cleanupFails) throw new Error("SECRET"); },
+    }) },
     "@/lib/mail": { mailConfigured: () => false, mailFrom: () => null },
     "@/lib/mock": { engineMock: () => false },
     "@/lib/dispatch": { dispatchMode: () => "native" },

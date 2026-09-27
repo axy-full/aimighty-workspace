@@ -142,7 +142,7 @@ async function toRefContent(ref: Reference) {
     // Editing and extension point at a render we already hold, which lives
     // under generations/ rather than uploads/.
     const path = ref.fromGeneration ? videoPath(ref.id) : uploadPath(ref.id, ref.ext);
-    const url = await presignedReadUrl(path);
+    const url = await presignedReadUrl(path, 0.25, ref.storedUrl);
     return { type: "video_url", video_url: { url }, role: "reference_video" };
   }
 
@@ -155,7 +155,7 @@ async function toRefContent(ref: Reference) {
      could only ever be extended, never referenced. */
   if (ref.fromGeneration) {
     if (usingBlob()) {
-      const url = await presignedReadUrl(imagePath(ref.id));
+      const url = await presignedReadUrl(imagePath(ref.id), 0.25, ref.storedUrl);
       return { type: "image_url", image_url: { url }, role: ref.role };
     }
     const own = await readImageBytes(ref.id);
@@ -172,7 +172,7 @@ async function toRefContent(ref: Reference) {
   const sendMime = useDelivery ? "image/jpeg" : ref.mime.toLowerCase();
 
   if (usingBlob()) {
-    const url = await presignedReadUrl(uploadPath(sendId, sendExt));
+    const url = await presignedReadUrl(uploadPath(sendId, sendExt), 0.25, ref.deliveryUrl ?? ref.storedUrl);
     return { type: "image_url", image_url: { url }, role: ref.role };
   }
   const bytes = await readUploadBytes(sendId, sendExt, ref.deliveryUrl ?? ref.storedUrl);
