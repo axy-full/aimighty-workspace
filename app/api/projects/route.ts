@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { createProduction } from "@/lib/productions";
 import { db, ready, now, id } from "@/lib/db";
@@ -22,6 +23,7 @@ export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
+  await syncCreditReceipts();
   const hit = cached<unknown>(PROJECTS_KEY, TTL_MS);
   if (hit) return NextResponse.json(hit);
 

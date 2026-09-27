@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import {creditUsageSummary} from "@/lib/creditUsage";
 import {requireTenant} from "@/lib/tenant";
@@ -42,6 +43,7 @@ export const GET = withTenant(async function GET() {
   if (got.response) return got.response;
   if(creditsApply(requireTenant()))return NextResponse.json(await creditUsageSummary(),{headers:{"Cache-Control":"no-store"}});
   await ready();
+  await syncCreditReceipts();
 
   const hit = memoGet<Summary>("usage-summary", TTL_MS);
   if (hit) return NextResponse.json({ ...hit, cached: true });
