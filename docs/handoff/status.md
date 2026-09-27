@@ -127,7 +127,7 @@ The owner supplied a high-fidelity design handoff (`design_handoff_particl_works
 1. **Phones keep today's surfaces.** The new shell is desktop (≥1100px); below 760px `/workspace` redirects to `/workbench`. Ground rule 7 still applies: every change ships with the five-viewport Playwright run.
 2. **Nothing is simulated.** The prototype's 150 ms generation bar and 680 ms agent tick are not reproduced. Progress comes from real jobs; a plan step advances when its backend call returns; a plan with no backend reports "Not runnable yet — …" and never animates.
 3. **Atomik Generate stays** as a ninth Atomik page alongside the design's eight.
-4. **Prices are credits from live quotes**, never the provider's USD (the design's "$1.16" is our cost, not the customer's price).
+4. **Prices are credits from live quotes**, never the provider's USD (a dollar figure in the design is our cost, not the customer's price).
 5. **Model names are real on our own surfaces, neutral on the connected one** (amended by the owner, 20 September, reversing part of PR231 for MODEL names only): a model we integrate directly is named — Seedance 2.5, Kling 3.0 Pro, Nano Banana 2, Topaz Astra 2, Eleven v3, GPT-6 Astra, Claude Fable 5.1, Gemini 3.1 Pro — while the catalogue served through the connected account keeps neutral names, and Higgsfield, Supercomputer, Genjutsu and Soul ID are still never printed anywhere.
 
 ### What shipped (main `177bd05`, deployed and checked on production)
@@ -212,7 +212,7 @@ Owner request, in chat: "build Crew from ~/Desktop/CREW_ADDENDUM.md, Grok test c
 | Tables (workspace DB, created on first use) | `lib/crew/store.ts`: `crew_members`, `crew_sessions`, `crew_messages`, `crew_solutions` |
 | Grok | `lib/crew/xai.ts`: `POST https://api.x.ai/v1/chat/completions`, model from `XAI_MODEL`, 45 s, one retry, `max_tokens` 220. Key = workspace's own or `XAI_API_KEY` via `lib/vendorKeys` (`xai` added); never sent to the browser |
 | Orchestration and money | `lib/crew/round.ts`: Propose ∥ (cap 6) → Challenge ∥ → one Converge to the chair. **One metered event per round** (`engine: xai`), reserved at its ceiling, settled at the tokens reported; failed requests add nothing; a round that does not converge settles at zero and keeps its messages |
-| Price | Rate = the live catalogue's entry for the model (it lists `grok-4.6` at $2 / $6 per M tokens) or `XAI_RATE_USD_PER_MTOK`; no price → no round. `quoteOnly` → `maxCredits`, like every paid text job |
+| Price | Rate = the live catalogue's entry for the model, or `XAI_RATE_USD_PER_MTOK`; no price → no round. `quoteOnly` → `maxCredits`, like every paid text job |
 | Routes | `sessions` (POST, GET, `quoteOnly`), `sessions/:id` (GET, PATCH), `sessions/:id/rounds` (SSE), `…/notes`, `…/minutes`, `solutions` (pin, remove), `solutions/:id/route` (brief, boards → revision-checked draft save; gen → text handed back), `members`, `status` (GET, Verify) |
 | UI | `components/graphite/crew/*`, `app/crew.css`, `lib/crew/use-crew.ts`; Workspace › Engines gets an **xAI · Grok** row (Connect → the existing sealed keys route, Verify → model list only) |
 | Tests | `tests/unit/crewRoom.spec.ts`, `tests/crew-workbench-api.spec.ts`, `tests/crew-workbench.spec.ts` (five viewports, phone floors) — all on the ENGINE_MOCK room, which speaks the prototype's canned lines |

@@ -29,11 +29,12 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
   production: ProductionRow; project: ProjectRow; runtime?: string; phoneLine?: string; phoneStepper?: boolean;
 }) {
   const format = [project.format || null, runtime ?? (project.runtimeSecs ? clock(project.runtimeSecs) : null), `${project.shots} shots`].filter(Boolean).join(" · ");
-  /* The cap and its spend in the workspace's unit (lib/caps.ts enforces the same
-     one): credits against the credit cap, dollars only on a workspace's own keys. */
-  const money = useMoney();
-  const cap = money.inCredits ? project.capCredits : project.capUsd;
-  const spent = money.inCredits ? project.spentCredits : project.spentUsd;
+  /* The cap and what it has spent, in the unit this workspace pays in, as the Productions list reads
+     them: a credit cap was never a dollar one, and each workspace is sent its own unit alone
+     (lib/productions.ts). */
+  const inCredits = useMoney().inCredits;
+  const cap = inCredits ? project.capCredits : (project.capUsd ?? null);
+  const spent = (inCredits ? project.spentCredits : project.spentUsd) ?? 0;
   const phone = usePhone();
   const path = usePathname();
   const router = useRouter();

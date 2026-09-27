@@ -8,7 +8,7 @@ The server reads the original file's metadata before pricing; neither client dim
 
 The paid submit has one permanent claim. The provider queue handle is stored before polling, and polling or output-storage failures retain that handle and the credit reservation. Reconciliation uses only that existing handle, with a per-job lease and the normal atomic settlement record. A lost browser response replays the same idempotency key. A lost provider submission acknowledgment remains uncertain and cannot be submitted again automatically.
 
-Provider prices verified on 14 September 2026: $0.08 per image up to 24 MP output and $0.16 up to 48 MP. The standard 1.5× credit formula therefore quotes 2 cr and 3 cr. Subscription plans and credit pack terms are unchanged.
+The standard credit terms quote 2 cr for output up to 24 MP and 3 cr up to 48 MP. Subscription plans and credit pack terms are unchanged.
 
 Sources: [official endpoint and prices](https://fal.ai/models/fal-ai/topaz/upscale/image), [official input schema](https://fal.ai/models/fal-ai/topaz/upscale/image/api).
 

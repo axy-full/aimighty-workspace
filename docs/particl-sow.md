@@ -46,7 +46,7 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 | **ElevenLabs** | Voice / audio | The Audio tab's engine. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |
 
-**Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `2,200 credits / $200 · 200 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit is worth in vendor cost and the monthly cap. **Nowhere else, and never on anything that spends.**
+**Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `2,200 credits / $200 · 200 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit costs and the monthly cap. **Nowhere else, and never on anything that spends.**
 
 Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.
 
@@ -155,7 +155,7 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 
 ### 1.0 Tenancy, billing, onboarding — gates everything
 
-**Keys and metering.** Platform holds the keys; workspaces don't bring their own (design the adapter so a workspace key *can* override later; don't build the UI). Every engine call goes through one server-side **metering layer** stamping `workspace_id`, `kind`, `model`, `engine_cost_usd`, `billed_credits`, `paid_by_platform`, `duration_ms`, `status` and `created_by` (`meter_events`, `lib/meter.ts`). **What is NOT there, so it is not assumed:** there is no `multiplier_applied` and no per-workspace multiplier, so §7A's internal-at-1.0× case is unbuilt. (`project_id` and `shot_id` ARE columns and are written — an earlier note here claimed otherwise and was wrong.) The margin is derivable per row rather than stored. The intent below stands: no engine is ever called from a route that bypasses the meter. Still to build: the per-workspace multiplier. **Peak concurrency per engine is NOT a sampler and never needed to be** — every job already records when it began and how long it ran, so the peak is derived from the intervals themselves, exactly and for all history. That is strictly better than sampling, which can only see the instants it happens to look at. The line below asked for it sampled per minute and retained — that reading is what justifies a provider limit increase later, and it can't be backfilled.
+**Keys and metering.** Platform holds the keys; workspaces don't bring their own (design the adapter so a workspace key *can* override later; don't build the UI). Every engine call goes through one server-side **metering layer** stamping `workspace_id`, `kind`, `model`, `engine_cost_usd`, `billed_credits`, `paid_by_platform`, `duration_ms`, `status` and `created_by` (`meter_events`, `lib/meter.ts`). **What is NOT there, so it is not assumed:** there is no per-workspace pricing override, so §7A's internal-workspace case is unbuilt. (`project_id` and `shot_id` ARE columns and are written — an earlier note here claimed otherwise and was wrong.) The margin is derivable per row rather than stored. The intent below stands: no engine is ever called from a route that bypasses the meter. Still to build: the per-workspace pricing override. **Peak concurrency per engine is NOT a sampler and never needed to be** — every job already records when it began and how long it ran, so the peak is derived from the intervals themselves, exactly and for all history. That is strictly better than sampling, which can only see the instants it happens to look at. The line below asked for it sampled per minute and retained — that reading is what justifies a provider limit increase later, and it can't be backfilled.
 
 **Billing.** Prepaid credit balance per workspace, bought in packs by card; invoicing for larger accounts later. Balance in the header beside the workspace switcher and on Usage. Project caps convert to credits; the workspace balance is the hard stop above them. At zero, renders queue with "top up to release", the owner and admins are notified, nothing is silently dropped. Statements per workspace / month / project, itemised by shot and take in credits with one USD line for the pack cost — this is how a workspace bills its own client.
 
@@ -219,45 +219,44 @@ Every LLM call goes through the **Vercel API** adapter, metered in credits, so t
 
 ## 7A. Pricing — decided for launch
 
-The governing rule: **every tier is profitable even if the customer uses everything included.** Cost every inclusion at full use, at engine cost plus 3% payment fees. Typical usage (40–60% of inclusions) is where the margin lives; worst case is the floor.
+Pricing policy (multipliers, margins, floor guard, volume phases) is kept privately by the owner; it is not in this repo. What follows is what customers see and what the code must guarantee. Anything that changes what a workspace is charged needs the owner's approval.
 
 ### Credits
-- **1 credit = US$0.10, fixed.** Sell price = engine cost × 1.5, rounded up to the next whole credit per job. Batches multiply before rounding.
-- The ledger stores `engine_cost_usd` and `billed_credits` per job. There is no `margin_pct` column and there does not need to be: the margin is `billed_credits x creditUsd() - engine_cost_usd`, derivable per row, and storing it would be a second copy of a number that can only disagree with the first. The rate card is generated from the adapter registry, never hand-edited.
-- **Floor guard:** if any engine's rolling 7-day margin drops under 10%, its sell multiplier auto-raises to restore 1.5× and the platform admin is alerted. This runs in the metering layer, not in a spreadsheet.
-- **The aimighty workspace is billed at cost.** For now, the aimighty workspace (and any other workspace flagged `internal: true` in the admin console) has its sell multiplier set to 1.0 — credits are charged at exact engine cost plus payment fees, with no platform margin, and no platform fee. It sits on the same ledger, the same metering, the same statements as every other workspace; the only difference is the multiplier. This is a per-workspace override on the same field that Phase B tunes per engine, so it costs nothing to build and nothing to remove. The admin console shows internal workspaces separately in spend and margin reporting so they never distort the platform's numbers.
-- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe. This is how a production stays competitive while per-clip prices sit above aggregators with volume rates.
+- **1 credit = US$0.10, fixed**, the public price. A credit's price is `creditUsd()` (`lib/creditTerms.ts`, overridable by `CREDIT_USD`).
+- Every job is priced from engine cost through the margin table (`margins()` in `lib/creditTerms.ts`, overridable by the `CREDIT_MARGINS` env var) and rounded up to the next whole credit per job. Batches multiply before rounding. The table is keyed by engine, so pricing one engine differently is a config change, not a refactor.
+- The ledger stores `engine_cost_usd` and `billed_credits` per job. The rate card is generated from the adapter registry, never hand-edited.
+- Customers never receive vendor costs for work on the platform's keys: no engine cost or margin reaches anyone but a platform admin, and a vendor cost is never shown next to our price. A workspace on its own keys sees its own vendors' dollars.
+- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe.
 
-Reference rate card at launch (regenerate from live engine costs before publishing):
+Reference rate card at launch, in credits (regenerate from the code before publishing):
 
 **CORRECTED 10 September 2026, from `lib/vendorRates.ts`.** The card below was
 written from costs that did not match the code, and it was wrong in both
-directions — Kling 3.0 Pro read $1.68 for what the rates say is $0.84 (the
-per-second figure doubled), and Topaz read $0.40 for what is really $1.50.
-Published, it would have over-quoted one row twofold and under-quoted another
-fourfold. The app has always billed from the real rates; it was the card that
-lied. Two rows named engines that do not exist and are gone.
+directions. Published, it would have over-quoted one row twofold and
+under-quoted another fourfold. The app has always billed from the real rates;
+it was the card that lied. Two rows named engines that do not exist and are
+gone.
 
 Every figure is computed, not asserted: per-second engines are
 `rate x seconds` (`secondRateOf`), Seedance is token-priced off the billed
 frame (`billedFrame` rounds each side up to a multiple of 16, which is why
 1080p is metered at 1088), stills come from `imagePricing`, and every "sells
-at" is `ceil(cost x 1.5 / 0.10)`.
+at" goes through `billCredits`.
 
-| Action | Engine cost | Sells at |
-|---|---|---|
-| Standard still (Nano Banana 2, 512) | ~$0.045 | 1 cr |
-| Keyframe still (Nano Banana Pro, 1K) | ~$0.134 | 3 cr |
-| Kling 3.0 Standard, 5s 1080p | ~$0.42 | 7 cr |
-| Kling 3.0 Standard, 5s 1080p, audio | ~$0.63 | 10 cr |
-| Kling 3.0 Pro, 5s 1080p, audio | ~$0.84 | 13 cr |
-| Seedance 2.0, 5s 1080p | ~$1.88 | 29 cr |
-| Seedance 2.5, 5s 720p | ~$1.16 | 18 cr |
-| Seedance 2.5, 5s 1080p | ~$2.86 | 43 cr |
-| Topaz upscale, 5s 1080p | ~$1.50 | 23 cr |
-| Topaz upscale, 5s 4K | ~$2.50 | 38 cr |
-| Identity training (1,500 steps) | ~$3.60 | 54 cr |
-| Prompt enhancement | ~$0.01 | 1 cr |
+| Action | Sells at |
+|---|---|
+| Standard still (Nano Banana 2, 512) | 1 cr |
+| Keyframe still (Nano Banana Pro, 1K) | 3 cr |
+| Kling 3.0 Standard, 5s 1080p | 7 cr |
+| Kling 3.0 Standard, 5s 1080p, audio | 10 cr |
+| Kling 3.0 Pro, 5s 1080p, audio | 13 cr |
+| Seedance 2.0, 5s 1080p | 29 cr |
+| Seedance 2.5, 5s 720p | 18 cr |
+| Seedance 2.5, 5s 1080p | 43 cr |
+| Topaz upscale, 5s 1080p | 23 cr |
+| Topaz upscale, 5s 4K | 38 cr |
+| Identity training (1,500 steps) | 54 cr |
+| Prompt enhancement | 1 cr |
 
 Gone from the card, because the engine is not in the product: **Wan 2.6** —
 `alibaba/wan-v3.0-video` appears only in the gateway shortlist and gateway
@@ -266,8 +265,8 @@ video is explicitly unrunnable — and **Veo 3.1**, which is in neither
 ElevenLabs rather than per call, so it has no single figure and is not a card
 row; see the audio terms.
 
-Identity training is $3.60, not $2.00: 1,500 steps at $0.0024 (`TRAIN_STEPS`,
-`TRAIN_USD_PER_STEP` in `lib/identities.ts`), with a 1,000-step floor.
+Identity training is priced per step (`TRAIN_STEPS`, `TRAIN_USD_PER_STEP` in
+`lib/identities.ts`), with a 1,000-step floor.
 
 ### Tiers
 
@@ -293,14 +292,14 @@ region of UI (`--color-panel`). Rule 5 says one vocabulary, decided once, so
 the tier work uses **plan** for the subscription and keeps `tier` meaning what
 it already means.
 
-| Tier | Price | Included | Members | Worst-case cost | Worst-case gross |
-|---|---|---|---|---|---|
-| **Invite** | $0 | 250 cr once, 1 production | 3 | $3.50 | marketing cost |
-| **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited | $38 | $11 · 22% |
-| **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
-| **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited | $750 | $249 · 25% |
+| Tier | Price | Included | Members |
+|---|---|---|---|
+| **Invite** | $0 | 250 cr once, 1 production | 3 |
+| **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited |
+| **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited |
+| **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited |
 
-- **Included credits expire at cycle end. No rollover.** Breakage is real margin. (Panels struck, 10 September — see the amendment above.)
+- **Included credits expire at cycle end. No rollover.** (Panels struck, 10 September — see the amendment above.)
 - **No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.
 - **Annual: 20% off.** Auto-cancel: if a workspace has generated nothing in the 60 days before renewal, don't renew — let it lapse and say so.
 - ~~Panel inclusions are on the standard engine only.~~ Struck 10 September with the panel rows. Pro stills and all video draw credits regardless of plan — which, with panels gone, is simply: everything draws credits.
@@ -339,24 +338,12 @@ nothing can leave a plan, and the two differ only for someone who has.
 | Agency | $2,000 | 20,000 + 4,000 | $0.083 |
 
 ### Guardrails in code
-1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`); each approval costs ~$3.50.
+1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`).
 2. Bonus credits never exceed 20% of a pack.
 3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
 4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
 5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
-6. Workspaces flagged `internal: true` bill at multiplier 1.0 and pay no platform fee. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
-
-### What changes at volume (do not build now — flags only)
-- **Phase B (~$20–50k/mo engine spend):** volume rates from ModelArk, Kling and fal at committed spend, target 20–30% off. **Hold sell prices flat**; margin rises to ~50%. Move standard panels to GPU-hour open weights (panel cost under 1¢). Per-engine multipliers tuned from the ledger: premium 1.7×, commodity 1.4×.
-- **Phase C (300+ workspaces):** own GPU pool for open-weight draft video, enterprise contracts, BYOK for large studios on a higher platform fee, recipe marketplace with revenue share.
-
-Build the adapter so the multiplier is per engine from day one, even though it launches at a flat 1.5×. That's a config change later, not a refactor.
-
-### Milestones
-Hard fixed costs ≈ $300/mo. Typical contribution: Studio ~$32, Agency ~$110, Production ~$550.
-- Break-even on hard costs: ~10 Studio or 3 Agency.
-- One salary (~$4k/mo): ~15 Agency + 30 Studio, or 4 Production + 10 Agency.
-- ~$25k/mo contribution: ~40 Agency + 100 Studio + 8 Production — roughly where Phase B rates lift every number by ~15 points.
+6. Workspaces flagged `internal: true` carry a pricing override set by the private policy. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
 
 ---
 
@@ -552,7 +539,7 @@ Per surface, state which of the three layouts it supports and what the mobile ve
 ## 13. How to work
 
 1. Confirm or correct every assumption in sections 2 and 5 against the code before changing anything. Specifically: where keys live, whether `workspace_id` is on every table, whether the metering layer exists and **which call paths bypass it**, how Atomik shares auth and data, and what "its own database" means in the schema. Report back.
-2. Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites) and section 9 (graph geometry). Pricing is decided in 7A — implement it as written; the multiplier, tiers, packs and guardrails are config-driven so Phase B changes are settings, not code.
+2. Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites) and section 9 (graph geometry). Pricing is decided in 7A — implement it as written; the margin table, plans, packs and guardrails are config-driven, so a pricing change is a setting, not code.
 3. Phase order: finish Phase 0 → 1.0 → 1.1 → the rest of Phase 1 → Phase 2 (2.1 and 2.2 first, they're what a paying team feels) → Phase 3 → Phase 4 → Phase 5. Two things from Phase 4 can jump the queue because everything after them gets easier: the ⌘K command palette (4.2) and resizable persisted panes (4.1).
 4. For anything schema-touching, summarise what changed as a diff against this document and update it. A scope of work that drifts from the code is worse than none.
 5. Each PR states: what it costs a workspace to use, how it's mocked in tests, what changed in the prompt compiler, and where the new code is workspace-scoped.
@@ -620,22 +607,19 @@ the zip, and the `EDL ↓` link is off the production page. The handover is the
 masters and the shot list.
 
 **§7A margin — done, 10 September.** `lib/creditTerms.ts` carried a per-engine
-table dated 6 September running from 1.25 to 1.5, so every price it produced
-was under §7A's rate card and the card and the buttons disagreed — a 5-second
-Seedance 2.5 1080p take billed 40 credits where the card says 43. The card is
-right: all twelve of its lines are `ceil(engine cost × 1.5 ÷ 0.10)` exactly.
-The table is now a single `"*": 1.5` entry and stays keyed by engine, which is
-what §7A asks for — "the multiplier is per engine from day one, even though it
-launches at a flat 1.5×" — so Phase B's premium 1.7 / commodity 1.4 is a key
-added here, not a refactor. A test asserts the published card line by line.
+table dated 6 September, and every price it produced disagreed with §7A's rate
+card, so the card and the buttons disagreed. The card is right. The table is now a single
+`"*"` entry and stays keyed by engine, which is what §7A asks for, so pricing
+one engine differently is a key added here, not a refactor. A test asserts the
+published card line by line.
 
-Two things the raise exposed, fixed with it. `lib/creditSql.ts` built
+Two things the change exposed, fixed with it. `lib/creditSql.ts` built
 `CASE model … ELSE … END` from the engine keys and emitted an **empty CASE** —
 a SQL syntax error — once there were none; that expression is inlined into the
 usage, admin and statement queries, so a one-entry table took all three down.
 And `lib/held.ts` compared a take's **stored** estimate against the balance
-while billing it at the current rate, so a take held at 40 credits would
-release as soon as the balance covered 40 and then charge 43. `needs` is
+while billing it at the current rate, so a take held at the old price would
+release as soon as the balance covered it and then charge the new one. `needs` is
 re-derived at release now.
 
 **§7A ledger — the grant knows whether it was bought, 10 September.**
@@ -714,7 +698,8 @@ draw structures, two of which were rejected outright, and an unread column is
 the same mistake as an unread function.
 
 **Not built, and named here so it is not assumed:** §7A's plans/tiers, the
-floor guard, the `internal: true` multiplier, guardrails 1 and 3–6; invoicing;
+private policy's floor guard, the `internal: true` pricing override, guardrails
+1 and 3–6; invoicing;
 recurring billing of any kind (`startCheckout` throws for anything but
 `manual`, so a $49/mo plan today is an admin remembering every month); panel
 allowances and the §2.8 board pipeline they would count.
@@ -731,7 +716,7 @@ Studio Script now accepts complete PDF, TXT and Fountain screenplays. The origin
 
 Gen/Images gains Topaz precision upscaling from uploaded or generated originals. Standard V2, High Fidelity V2, Low Resolution V2, CGI and Text Refine offer 1×/2×/4× with optional face strength; creative face reconstruction remains zero. Original PNG/JPEG/WebP inputs are capped at 30 MB and outputs at 48 MP/16,384 pixels per side. Transparent or animated sources require a flattened still first.
 
-The server inspects original dimensions, derives the output band, and binds source/settings/price in the existing quote and credit-reservation flow. Published fal prices verified 14 September are $0.08 ≤24 MP and $0.16 ≤48 MP, or 2 cr/3 cr at the existing 1.5× rule. No plan or pack changes. A durable provider handle, per-job reconciliation lease, retained original, new reusable output and idempotent settlement support interrupted jobs. Details and verification limits: `docs/topaz-image-upscale.md`. Astra 2 video pricing/output controls remain a separate follow-up; image models are not branded Astra. No paid provider rehearsal is claimed.
+The server inspects original dimensions, derives the output band, and binds source/settings/price in the existing quote and credit-reservation flow. The existing credit terms quote 2 cr up to 24 MP and 3 cr up to 48 MP. No plan or pack changes. A durable provider handle, per-job reconciliation lease, retained original, new reusable output and idempotent settlement support interrupted jobs. Details and verification limits: `docs/topaz-image-upscale.md`. Astra 2 video pricing/output controls remain a separate follow-up; image models are not branded Astra. No paid provider rehearsal is claimed.
 
 ### 14 September 2026 — saved sound mix and transport
 

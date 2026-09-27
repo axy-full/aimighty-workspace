@@ -3,7 +3,7 @@
 import { ModelPicker, type ThinkingModel } from "./ModelPicker";
 
 export type PlannerModel = ThinkingModel & {
-  owner: string; description: string; band: string; price: string;
+  owner: string; description: string; band: string;
 };
 
 export default function ModelMenu({ value, models, onPick, disabled }: {

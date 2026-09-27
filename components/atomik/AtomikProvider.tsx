@@ -260,7 +260,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const cap = production ? (money.inCredits ? production.capCredits ?? null : production.capUsd ?? null) : null;
   const spent = production ? (money.inCredits ? production.credits ?? 0 : production.spend ?? 0) : 0;
   /* In credits, what the ledger billed the turns — never the dollars rounded up. */
-  const planning = loaded ? (money.inCredits ? loaded.chat.textCredits ?? 0 : loaded.chat.textCostUsd) : 0;
+  const planning = loaded ? (money.inCredits ? loaded.chat.textCredits ?? 0 : loaded.chat.textCostUsd ?? 0) : 0;
   const approveLabel = useCallback((s: Step) => {
     const members = batchOf(s, plan);
     if (members.length < 2) return priceLabel(s);

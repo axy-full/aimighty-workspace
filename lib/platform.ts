@@ -1,3 +1,4 @@
+import { CREW_MCP_SCHEMA } from "./crew/mcp-schema";
 import { fenceDatabase } from "./recoveryDatabaseClient";
 import { columnInstaller } from "./schemaInitialization";
 import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
@@ -52,6 +53,7 @@ export const isSuperAdmin = (email: string | null | undefined) => {
 };
 
 const SCHEMA = [
+  ...CREW_MCP_SCHEMA,
   ...SECURITY_AUDIT_SCHEMA,
   ...ACCOUNT_SECURITY_SCHEMA,
   `CREATE TABLE IF NOT EXISTS accounts (
@@ -165,6 +167,29 @@ const SCHEMA = [
      updated_at       INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS meter_events_ws ON meter_events(workspace_id, created_at)`,
+  // A monotonic receipt revision supports incremental tenant projections across servers.
+  `CREATE TABLE IF NOT EXISTS meter_credit_receipts (
+     revision INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE,
+     workspace_id TEXT NOT NULL, credits REAL NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS meter_credit_receipts_ws ON meter_credit_receipts(workspace_id, revision)`,
+  `CREATE TRIGGER IF NOT EXISTS meter_credit_receipt_insert AFTER INSERT ON meter_events BEGIN
+     INSERT INTO meter_credit_receipts(event_id,workspace_id,credits)
+     VALUES(NEW.id,NEW.workspace_id,CASE WHEN NEW.paid_by_platform=1 THEN COALESCE(NEW.billed_credits,0) ELSE 0 END)
+     ON CONFLICT(event_id) DO UPDATE SET revision=excluded.revision,credits=excluded.credits;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS meter_credit_receipt_update AFTER UPDATE OF billed_credits,paid_by_platform ON meter_events
+   WHEN COALESCE(OLD.billed_credits,0)<>COALESCE(NEW.billed_credits,0) OR OLD.paid_by_platform<>NEW.paid_by_platform BEGIN
+     INSERT INTO meter_credit_receipts(event_id,workspace_id,credits)
+     VALUES(NEW.id,NEW.workspace_id,CASE WHEN NEW.paid_by_platform=1 THEN COALESCE(NEW.billed_credits,0) ELSE 0 END)
+     ON CONFLICT(event_id) DO UPDATE SET revision=excluded.revision,credits=excluded.credits;
+   END`,
+  `CREATE TABLE IF NOT EXISTS meter_credit_receipt_migrations(id INTEGER PRIMARY KEY CHECK(id=1))`,
+  `INSERT INTO meter_credit_receipts(event_id,workspace_id,credits)
+   SELECT id,workspace_id,CASE WHEN paid_by_platform=1 THEN COALESCE(billed_credits,0) ELSE 0 END
+   FROM meter_events WHERE NOT EXISTS(SELECT 1 FROM meter_credit_receipt_migrations WHERE id=1)
+   AND NOT EXISTS(SELECT 1 FROM meter_credit_receipts WHERE event_id=meter_events.id)`,
+  `INSERT OR IGNORE INTO meter_credit_receipt_migrations(id) VALUES(1)`,
   `CREATE TABLE IF NOT EXISTS memberships (
      workspace_id TEXT NOT NULL,
      account_id   TEXT NOT NULL,
@@ -380,6 +405,8 @@ export function platformReady(): Promise<void> {
       // Already-migrated databases skip the data scan on cold starts.
       await addColumn("credit_grants", GRANT_KIND_COLUMN, GRANT_KIND_BACKFILL);
       await addColumn("topup_requests", TOPUP_BONUS_COLUMN);
+      await addColumn("meter_events", "credit_usd REAL");
+      await addColumn("meter_events", "credit_margin REAL");
       /* Reporting content is open to anybody — a victim must not need an
          account — so the counting has to be by something an anonymous caller
          still has. Salted and truncated, the same shape access_requests

@@ -359,8 +359,11 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
       "The identity quote changed. Review its current credit price before training.",
       409,
     );
+  /* A dollar approval is read only from a workspace that pays its vendors in dollars. On the
+     platform's keys the vendor's price is not the customer's to probe, and a refusal that turned
+     on it would answer, one guess at a time, what the vendor charges. */
   if (
-    value.maxUsd != null &&
+    value.maxUsd != null && !creditsApply(currentTenant()?.workspace) &&
     (!Number.isFinite(value.maxUsd) || value.maxUsd < SOUL_TRAINING_USD)
   )
     throw new SoulIdentityError(
