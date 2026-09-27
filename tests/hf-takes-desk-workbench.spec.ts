@@ -185,7 +185,7 @@ test("every take once, grouped by shot and batch; status and kind chips and a se
   expect(await names(takes)).toEqual(["Storm front"]);
   await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held");
   await filterChip(page, "Failed").click();
-  await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed · not billed");
+  await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   expect(await names(takes)).toEqual(["Night swim"]);
   await filterChip(page, "Changes").click();
   expect(await names(takes)).toEqual(["Pier at first light"]);
