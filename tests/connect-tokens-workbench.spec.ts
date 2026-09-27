@@ -16,6 +16,8 @@ test("API tokens on /connect: a credit workspace reads a token's month in credit
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
+  const staleScope = await page.request.get("/api/tokens", { headers: { "X-Workbench-Scope": `particl-active-other-workspace-${me.id}` } });
+  expect(staleScope.status()).toBe(409);
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 500, "Token test", "admin", "test", Date.now()] }); }
   finally { platform.close(); }
@@ -32,6 +34,9 @@ test("API tokens on /connect: a credit workspace reads a token's month in credit
   const agent = await playwright.request.newContext({ baseURL, extraHTTPHeaders: { Authorization: `Bearer ${(await minted.json()).token}` } });
   let billed = 0;
   try {
+    const denied = await agent.get("/api/tokens");
+    expect(denied.status()).toBe(403);
+    expect(await denied.json()).toEqual({ error: expect.stringContaining("signed-in browser session") });
     const body = { prompt: "A red fox on the ice", model: "gemini-3.1-flash-image", projectId, shotId: "", ratio: "16:9", resolution: "1K", duration: 5, refine: false, references: [] };
     const quote = await agent.post("/api/generate/quote", { data: body }).then((r) => r.json());
     const made = await agent.post("/api/generate", { headers: { "Idempotency-Key": `tokens-${randomUUID()}` }, data: { ...body, maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint } });

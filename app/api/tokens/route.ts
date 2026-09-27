@@ -8,7 +8,7 @@ import { creditsApply } from "@/lib/credits";
 import { billedCreditsExpr } from "@/lib/creditSql";
 import { tokenMonthStart } from "@/lib/cycle";
 import {
-  currentUser, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
+  requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -40,8 +40,9 @@ export const dynamic = "force-dynamic";
  * figure). A workspace on its own keys reads and caps in dollars.
  */
 export const GET = withTenant(async function GET() {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
+  const got = await requireSession();
+  if (got.response) return got.response;
+  const user = got.user;
   await ready();
   await syncCreditReceipts();
   /* A credit workspace reads each token's month in credits billed, never the vendor's dollars (see /api/analytics). */

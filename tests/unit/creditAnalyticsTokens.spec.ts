@@ -87,6 +87,7 @@ async function routes(ws: TenantWorkspace) {
     "next/server": nextServer,
     "@/lib/auth": {
       requireUser: async () => ({ user }),
+      requireSession: async () => ({ user }),
       currentUser: async () => user,
       withTenant: (fn: Handler) => (req: Request) => runInTenant(ws, () => fn(req), { user } as never),
     },
