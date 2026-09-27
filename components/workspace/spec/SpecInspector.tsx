@@ -1,5 +1,5 @@
 "use client";
-import { ownerRunBy, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
+import { OWNER_RUN_LEGACY_SUITES, ownerBadgeNote, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { runChip } from "@/lib/workspace/atomik-view";
@@ -15,8 +15,9 @@ import { Button, Kicker } from "../ui";
  * on the shell's Atomik host — the same engine, gate and panel every other
  * surface uses. A plan with no backend, or missing what it needs, is disabled
  * and says why; a paid plan stops at the panel's gate with the live quote.
- * A plan that runs on the connected account is the owner's: a member is told
- * who runs it instead of being offered the button (idea 19).
+ * A plan that runs on the connected account, or on a suite the owner runs
+ * there, is the owner's: a member is told who runs it instead of being
+ * offered the button (idea 19).
  */
 export function SpecInspector({ state }: InspectorBodyProps) {
   const page = state.page;
@@ -25,7 +26,8 @@ export function SpecInspector({ state }: InspectorBodyProps) {
   const atomik = useAtomik();
   const plan = atomik.plan(page);
   const capability = useConnectedCapability(undefined, { read: false });
-  const ownerRun = !capability.owner && runsOnOwnerAccount(plan);
+  /* Any plan on a suite the owner runs (Business, Viral), and any plan with a step on the connected account. */
+  const ownerRun = !capability.owner && (runsOnOwnerAccount(plan) || OWNER_RUN_LEGACY_SUITES.includes(state.suite));
   const facts = useSpecFacts(page) ?? { ...EMPTY_FACTS, planPrice: plan?.priceLabel ?? null };
   if (!spec) return null;
 
@@ -60,7 +62,7 @@ export function SpecInspector({ state }: InspectorBodyProps) {
           <p className="pxw-insp-plan-line">{plan.line}</p>
           <div className="pxw-insp-plan-price">{plan.priceLabel}</div>
           {ownerRun ? (
-            <p className="pxw-insp-reason" data-testid="spec-plan-owner">Run by {ownerRunBy(capability.ownerName)} on the Higgsfield account.</p>
+            <p className="pxw-insp-reason" data-testid="spec-plan-owner">{ownerBadgeNote(capability.ownerName)}.</p>
           ) : (<>
             <Button
               variant={chip.tone === "waiting" ? "amber" : "primary"}

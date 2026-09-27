@@ -17,11 +17,12 @@ const store = createCapabilityStore(async (scope) => {
 /**
  * Who runs the connected account here, and whether it answers
  * (lib/shell/connected-capability.ts). Whether this person is the owner — and,
- * for a member, the owner's name — comes from the server-rendered session, so a
- * member's surfaces render their card on the first paint and nothing is read
- * for them. For the owner the connection is read once per scope and shared;
- * `read: false` only listens (a surface whose own reply carries the connection
- * settles it instead, and the shell's chrome needs only `owner`).
+ * for a member, the owner's name — comes from the server-rendered session (the
+ * shell's own /api/me answer, lib/session), so a member's surfaces render their
+ * card on the first paint and nothing is read for them. For the owner the
+ * connection is read once per scope and shared; `read: false` only listens (a
+ * surface whose own reply carries the connection settles it instead, and the
+ * shell's chrome needs only `owner`).
  */
 export function useConnectedCapability(scope?: string | null, options: { read?: boolean } = {}): ConnectedCapability & { refresh: () => void } {
   const session = useSession();
@@ -30,12 +31,25 @@ export function useConnectedCapability(scope?: string | null, options: { read?: 
   const key = (scope === undefined ? session.requestScope : scope) ?? "";
   const read = options.read !== false;
   const entry = useSyncExternalStore(store.subscribe, () => (key ? store.get(key) : undefined), () => undefined);
-  useEffect(() => { if (owner && read && key) void store.ensure(key); }, [owner, read, key]);
+  /* A bust drops the entry: a surface still on screen reads again. A failed read is not read again on
+     its own (that would loop against a refusing route); Try again (`refresh`) or the next surface does. */
+  const missing = !entry;
+  useEffect(() => { if (owner && read && key && missing) void store.ensure(key); }, [owner, read, key, missing]);
   const refresh = useCallback(() => { if (owner && key) void store.ensure(key, true); }, [owner, key]);
   return useMemo(() => ({ ...capabilityOf(owner, entry, ownerName), refresh }), [owner, entry, ownerName, refresh]);
 }
 
-/** A surface that read the connection in its own reply shares it with the rest (Viral's runs, Cast's jobs). */
-export function settleConnectedCapability(scope: string | null | undefined, reply: ConnectionReply) {
-  if (scope && reply && typeof reply === "object") store.settle(scope, reply);
+/** Where the scope stands before a surface's own read that carries the connection (Viral's runs, Cast's jobs, Engines). */
+export function markConnectedCapability(scope: string | null | undefined): number | undefined {
+  return scope ? store.mark(scope) : undefined;
+}
+
+/** A surface that read the connection in its own reply shares it with the rest — unless the account changed since `since`. */
+export function settleConnectedCapability(scope: string | null | undefined, reply: ConnectionReply, since?: number) {
+  if (scope && reply && typeof reply === "object") store.settle(scope, reply, since);
+}
+
+/** Connecting, reconnecting or disconnecting: every surface reads the account afresh (Workspace › Engines). */
+export function bustConnectedCapability(scope: string | null | undefined) {
+  if (scope) store.bust(scope);
 }

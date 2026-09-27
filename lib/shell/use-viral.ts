@@ -5,7 +5,7 @@ import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { POLL, pollDelay, presentTimeout, type PollRate } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
-import { settleConnectedCapability, useConnectedCapability } from "./use-connected-capability";
+import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "./use-connected-capability";
 import { ESTIMATE_LIFETIME_MS, mergeRuns, pendingJobIds, runAfterStatus, runCannotSettle, runInFlight, viralFailure, type ViralRun } from "./viral";
 
 /**
@@ -106,9 +106,10 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
         setRuns((prev) => (mine() ? { draftId, jobs: [], status: "ready", error: null, nextCursor: null, pages: 1, more: "idle" } : prev));
         return;
       }
+      const since = markConnectedCapability(scope);
       const json = await readPage(draftId, null);
       setConnection({ connected: json?.connection?.connected === true && json?.connection?.requiresReconnect !== true, owner: true });
-      settleConnectedCapability(scope, json?.connection);
+      settleConnectedCapability(scope, json?.connection, since);
       if (json?.capabilities) setCapabilities(json.capabilities);
       setRuns((prev) => {
         if (!mine()) return prev;

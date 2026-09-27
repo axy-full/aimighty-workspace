@@ -469,7 +469,7 @@
 .gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(6px); }
 .gx-sheet { width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: gx-pop .2s var(--gx-ease) both; }
 .gx-sheet-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; }
-.gx-sheet-head .gx-seg, .gx-sheet-head .gx-sheet-catalogue { margin-right: auto; }
+.gx-sheet-head .gx-seg { margin-right: auto; }
 .gx-sheet-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .gx-sheet-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 6px; min-height: 48px; }
 .gx-sheet-row:hover, .gx-sheet-row[aria-selected="true"] { background: var(--gx-input); }
@@ -803,12 +803,17 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx { --gx-owner: #F2C661; }
 .gx-owner-run-page { padding: 20px; }
 .gx-owner-run-page > .gx-owner-run { max-width: 560px; }
-.gx-owner-run { gap: 8px; }
-.gx-owner-run-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--gx-owner); }
-.gx-reason.gx-owner-run-eyebrow { display: flex; gap: 6px; font-size: 12.5px; }
+.gx-owner-run { gap: 10px; }
+/* Every label here is text-2 or the owner's amber: text-3 on the card reads dimmer than the floor. */
+.gx-owner-run-eyebrow { display: flex; align-items: center; gap: 7px; min-width: 0; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-owner); overflow-wrap: anywhere; }
 .gx-owner-run-eyebrow .gx-glyph { flex: none; }
 .gx-owner-run .gx-workflow-title { overflow-wrap: anywhere; }
-.gx-owner-run .gx-hint { max-width: 60ch; line-height: 1.5; }
+.gx-owner-run-line { margin: 0; max-width: 60ch; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-owner-run-alt { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--gx-hair); }
+.gx-owner-run-label { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-owner-run-what { font-size: 14px; font-weight: 500; color: var(--gx-text); overflow-wrap: anywhere; }
+/* The price is never cut: it wraps whole. */
+.gx-owner-run-price { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-family: var(--gx-mono); font-size: 13px; color: var(--gx-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .gx-owner-run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 @media (max-width: 767px) { .gx-owner-run-page { padding: 12px; } .gx-owner-run-actions > button { flex: 1 1 160px; justify-content: center; } }
 /* The badge: key + "Owner" beside the label; a key alone on the glyph's shoulder wherever the header drops to icons. */

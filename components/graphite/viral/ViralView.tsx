@@ -41,7 +41,7 @@ const refs = (n: number) => `${n} ${n === 1 ? "ref" : "refs"}`;
 export function ViralView({ scope, project, page, items }: { scope: string; project: Project | null; page: ViralPage | "history"; items: LibraryEntry[] }) {
   const viral = useViral(scope, project?.id ?? null, page === "history" ? null : VIRAL_PAGES[page]);
   /* Genjutsu runs only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19). */
-  if (viral.member) return <OwnerRunCard surface="viral" page />;
+  if (viral.member) return <OwnerRunCard surface="viral" scope={scope} aspect={project?.aspect} page />;
   if (page === "history") return <HistoryView scope={scope} project={project} viral={viral} items={items} />;
   return <Composer key={page} scope={scope} page={page} project={project} viral={viral} items={items} />;
 }

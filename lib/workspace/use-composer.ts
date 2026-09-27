@@ -21,6 +21,9 @@ import {
   type ConnectedJob,
 } from "../higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
+import { useSession } from "../session";
+import { CAPABILITY_UNREADABLE } from "../shell/connected-capability";
+import { useConnectedCapability } from "../shell/use-connected-capability";
 import {
   activeModel,
   billingWording,
@@ -333,6 +336,8 @@ export type ComposerHost = {
   generate: () => void;
   /** Read the engine list again after a failed read (Gen's model sheet › Try again). */
   retryEngines: () => void;
+  /** Read the connected account again after the owner's read of it failed (`capability.unreadable` › Try again). */
+  retryConnection: () => void;
   scope: string;
   /** Batches of takes 2–4 still being followed, newest last: Gen's Results show each as one strip. */
   batches: BatchView[];
@@ -373,7 +378,6 @@ export function useComposer(options: {
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
-  const [capability, setCapability] = useState<ConnectedCapability | null>(null);
   const [catalogue, setCatalogue] = useState<{ rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
   const [quote, setQuote] = useState<ComposerQuote | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -424,25 +428,19 @@ export function useComposer(options: {
     return () => controller.abort();
   }, [open, scope]);
 
-  /* The connected account is only read when the switch is used. */
+  /* The connected account is only read when the switch is used, through the shell's one shared read
+     (lib/shell/use-connected-capability): who owns the workspace and whether it is suspended come from
+     the session; the connection is read once per scope for every surface, and a failed read is the
+     owner's error to retry, never a demotion to member. */
   const wantsConnected = open && state.billing === "connected";
-  useEffect(() => {
-    if (!wantsConnected || capability) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const me = await studioRequest<{ owner?: boolean; workspace?: { suspended?: boolean } }>("/api/me", { signal: controller.signal, cache: "no-store" });
-        const connection = me.owner === true
-          ? await studioRequest<{ connected?: boolean; requiresReconnect?: boolean }>("/api/higgsfield/consumer/connection", { signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" })
-          : { connected: false, requiresReconnect: false };
-        if (controller.signal.aborted) return;
-        setCapability({ owner: me.owner === true, connected: connection.connected === true && connection.requiresReconnect !== true, suspended: me.workspace?.suspended === true });
-      } catch {
-        if (!controller.signal.aborted) setCapability({ owner: false, connected: false, suspended: false });
-      }
-    })();
-    return () => controller.abort();
-  }, [wantsConnected, capability, scope]);
+  const session = useSession();
+  const suspended = session.workspace?.suspended === true;
+  const shared = useConnectedCapability(scope, { read: wantsConnected });
+  const capability = useMemo<ConnectedCapability | null>(() => {
+    if (!shared.owner) return { owner: false, connected: false, suspended };
+    if (shared.status === "loading") return null;
+    return { owner: true, connected: shared.status === "ready" && shared.connected, suspended, unreadable: shared.status === "error" ? shared.error ?? CAPABILITY_UNREADABLE : null };
+  }, [shared.owner, shared.status, shared.connected, shared.error, suspended]);
 
   const canReadCatalogue = wantsConnected && capability?.owner === true && capability.connected && !catalogue;
   useEffect(() => {
@@ -1145,7 +1143,7 @@ export function useComposer(options: {
     buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, capability, project: target, projectNotice, generate, retryEngines, scope,
+    audio, capability, project: target, projectNotice, generate, retryEngines, retryConnection: shared.refresh, scope,
     batches: batchViews,
     batchJobIds: batches.flatMap((run) => (run.source === "connected" ? run.takes.flatMap((take) => (take.jobId ? [take.jobId] : [])) : [])),
   };

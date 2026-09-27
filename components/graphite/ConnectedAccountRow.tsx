@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "@/lib/session";
+import { bustConnectedCapability, markConnectedCapability, settleConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { consumerAuthorizeUrl, connectionOutcome } from "@/lib/shell/workspace-view";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -11,7 +13,9 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * the ledger only (nothing is sent, deleted or resubmitted). The sign-in
  * callback returns here with `?higgsfield=<outcome>`; every read reports
  * whether the grant is live (`onLinked`), so the developer-API row below
- * follows a disconnect at once.
+ * follows a disconnect at once. Every read settles the shell's shared answer
+ * (lib/shell/use-connected-capability), and a connect or disconnect busts it,
+ * so no other surface keeps the old connection.
  */
 type CapacityJob = { id: string; draftId: string; projectName: string | null; workflow: string; status: string; createdAt: number; releasable: boolean };
 type Capacity = { limit: number; active: number; mine: CapacityJob[] };
@@ -29,6 +33,8 @@ const since = (ms: number) => {
 
 export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLinked?: (live: boolean) => void }) {
   const scoped = useScopedFetch();
+  const session = useSession();
+  const scope = session.signedIn ? session.requestScope ?? null : null;
   const [state, setState] = useState<Connection | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -41,14 +47,16 @@ export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLin
     try { return connectionOutcome(new URLSearchParams(window.location.search).get("higgsfield")); } catch { return null; }
   });
   const read = useCallback(async () => {
+    const since = markConnectedCapability(scope);
     try {
       const response = await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" });
       const json = await response.json().catch(() => null) as (Connection & { error?: string }) | null;
       if (!response.ok || !json) throw new Error(json?.error ?? "The connection could not be read.");
       setState(json); setProblem(null);
+      settleConnectedCapability(scope, json, since);
       onLinked?.(json.connected === true && json.requiresReconnect !== true);
     } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be read."); onLinked?.(false); }
-  }, [scoped, onLinked]);
+  }, [scoped, onLinked, scope]);
   useEffect(() => {
     if (!owner) return;
     const t = setTimeout(() => void read(), 0);
@@ -68,9 +76,11 @@ export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLin
       if (kind === "connect") {
         const url = consumerAuthorizeUrl(json?.url);
         if (!url) throw new Error("The account returned a sign-in address this page will not open.");
+        bustConnectedCapability(scope);
         window.location.assign(url);
         return;
       }
+      bustConnectedCapability(scope);
       setNote("Account disconnected."); await read();
     } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be changed."); }
     finally { setBusy(null); }

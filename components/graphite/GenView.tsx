@@ -650,6 +650,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
         {block ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : null}
+        {/* The owner's read of the connected account failed: said as it is (never "not connected"), with Try again. */}
+        {block && block === composer.capability?.unreadable ? (
+          <div className="gx-retry" data-testid="gen-connection-retry"><button type="button" className="gx-hbtn" onClick={composer.retryConnection}>Try again</button></div>
+        ) : null}
         {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
             sticky Generate (GLASS_SPEC §3) is the button and its one-line foot, nothing taller. */}
         <div className="gx-gen-takes" data-testid="gen-takes">

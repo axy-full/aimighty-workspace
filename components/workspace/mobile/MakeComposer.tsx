@@ -13,6 +13,7 @@ import {
 import { composerEyebrow, renderPrimaryLabel } from "@/lib/workspace/make";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useComposer, type ComposerHost } from "@/lib/workspace/use-composer";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useSecondsField } from "@/lib/workspace/use-seconds-field";
 import type { MobilePrimary } from "./MobileActionBar";
 import { MobileSheet } from "./MobileSheet";
@@ -134,6 +135,8 @@ export function MakeComposerCard() {
 
 export function MakeComposerSheet() {
   const ctx = useMakeComposer();
+  /* The connected account is the owner's (every route behind it refuses anyone else): a member is not offered the switch (idea 19). */
+  const { owner } = useConnectedCapability(undefined, { read: false });
   if (!ctx || !ctx.open) return null;
   const { host, setOpen } = ctx;
   const audioTask = host.model?.audioTask;
@@ -213,22 +216,24 @@ export function MakeComposerSheet() {
           </>
         ) : null}
 
-        <span className="pxm-kicker" data-functional-label="">Credits</span>
-        <div className="pxm-segmented" role="group" aria-label="Credits used">
-          {(["workspace", "connected"] as BillingSource[]).map((source) => (
-            <button
-              key={source}
-              type="button"
-              className="pxm-segment"
-              data-on={host.state.billing === source ? "" : undefined}
-              aria-pressed={host.state.billing === source}
-              data-testid={`mobile-composer-billing-${source}`}
-              onClick={() => host.dispatch({ type: "billing", value: source })}
-            >
-              {BILLING_LABELS[source]}
-            </button>
-          ))}
-        </div>
+        {owner ? (<>
+          <span className="pxm-kicker" data-functional-label="">Credits</span>
+          <div className="pxm-segmented" role="group" aria-label="Credits used">
+            {(["workspace", "connected"] as BillingSource[]).map((source) => (
+              <button
+                key={source}
+                type="button"
+                className="pxm-segment"
+                data-on={host.state.billing === source ? "" : undefined}
+                aria-pressed={host.state.billing === source}
+                data-testid={`mobile-composer-billing-${source}`}
+                onClick={() => host.dispatch({ type: "billing", value: source })}
+              >
+                {BILLING_LABELS[source]}
+              </button>
+            ))}
+          </div>
+        </>) : null}
 
         {host.state.references.length ? (
           <ul className="pxm-ref-list" aria-label="References">

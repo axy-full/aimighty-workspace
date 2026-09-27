@@ -45,7 +45,7 @@ const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 export function BusinessView({ scope, project, page }: { scope: string; project: Project | null; page: "ads" | "dtc" | "setup" }) {
   const business = useBusiness(scope);
   /* Business runs only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19) — on the first paint, from the session. */
-  if (business.connection?.owner === false) return <OwnerRunCard surface="business" page />;
+  if (business.connection?.owner === false) return <OwnerRunCard surface="business" scope={scope} aspect={project?.aspect} page />;
   if (page === "setup") return <SetupView business={business} />;
   if (page === "dtc") return <ImageAdsView scope={scope} project={project} business={business} />;
   return <AdsView scope={scope} project={project} business={business} />;

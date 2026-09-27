@@ -15,7 +15,7 @@ import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest
 import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
 import { CONFIRM } from "@/lib/shell/confirmations";
 import { castStillPrompt } from "@/lib/shell/connected-capability";
-import { settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
+import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useConfirm } from "@/lib/shell/use-confirm";
 import type { Asset, Project } from "@/lib/workbench/studio";
@@ -92,7 +92,8 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   useEffect(() => {
     if (member) return;
     let alive = true;
-    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then((r) => r.json()).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) setConnected(Boolean(j.connection?.connected)); settleConnectedCapability(scope, j.connection); }).catch(() => { if (alive) setConnected(false); });
+    const since = markConnectedCapability(scope);
+    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then((r) => r.json()).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) setConnected(Boolean(j.connection?.connected)); settleConnectedCapability(scope, j.connection, since); }).catch(() => { if (alive) setConnected(false); });
     void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModels(Object.fromEntries(j.catalogue.models.map((m) => [m.id, m]))); }).catch(() => { if (alive) setModels({}); });
     void call<Elements>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
     void call<{ characters: ConnectedCharacter[] }>({ action: "characters" }).then((j) => { if (alive) setSouls(j.characters ?? []); }).catch(() => undefined);
@@ -284,7 +285,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
-      {member ? <OwnerRunCard surface="cast" /> : connected === false ? (
+      {member ? <OwnerRunCard surface="cast" scope={scope} aspect={p.aspect} /> : connected === false ? (
         <section className="gx-gen-card pd-recover" data-testid="cast-connect">
           <p className="gx-hint">Soul Cinema runs on your connected Higgsfield account. Connect it once and every character and element here can be built.</p>
           <button type="button" className="gx-primary" onClick={() => shell.goWorkspace("engines")}>Open Workspace › Engines</button>
@@ -378,7 +379,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               ) : null}
               <div className="gx-gen-enhance">
                 {member ? (
-                  <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} title={castStillPrompt(entry) ? undefined : "Write its prompt first."} data-testid="cast-still-gen"
+                  <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} aria-describedby={castStillPrompt(entry) ? undefined : `cast-still-why-${entry.id}`} data-testid="cast-still-gen"
                     onClick={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })}>Make a still in Gen</button>
                 ) : quote ? (
                   <>
@@ -391,6 +392,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                 <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this entry"}`} onClick={() => setCast((c) => ({ ...c, entries: c.entries.filter((x) => x.id !== entry.id) }))}>Remove</button>
               </div>
               {reason && !member && !quote && !building ? <span className="gx-reason" data-testid="cast-blocked">{reason}</span> : null}
+              {member && !castStillPrompt(entry) ? <span className="gx-reason" id={`cast-still-why-${entry.id}`} data-testid="cast-still-why">Name it or write its prompt first.</span> : null}
               {shown && !building && !member ? (
                 <div className="pd-finish" data-testid="cast-finish">
                   {FINISH.map(({ tool, label: finishLabel }) => {

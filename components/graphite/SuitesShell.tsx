@@ -34,7 +34,7 @@ import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
-import { WorkflowHost } from "./tools/WorkflowHost";
+import { WorkflowHosts } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
@@ -350,7 +350,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         {firstRunAbove}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
-                            {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
                           </div>
                         ) : null}
                         {shell.page.id === "astra" ? <AstraOutputs /> : null}
@@ -365,7 +365,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
-                            {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
                           </div>
                         ) : null}
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}

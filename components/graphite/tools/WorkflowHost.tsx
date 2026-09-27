@@ -3,11 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities } from "@/components/suites/AtomikVoiceTools";
 import { workflowReason, type WorkflowCapability, type WorkflowSurface } from "@/lib/shell/workflows";
 import { useShell } from "@/lib/shell/state";
-import { ownerRunBy } from "@/lib/shell/connected-capability";
-import { settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
+import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { Glyph } from "../icons";
+import { OwnerRunCard } from "../OwnerRunCard";
 import type { Project } from "@/lib/workbench/studio";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 
@@ -20,13 +19,24 @@ const record = (v: unknown): v is Record<string, unknown> => typeof v === "objec
  * report is filed as a note) or, when it cannot run, the one reason inline.
  * Opening reads only this project's saved jobs and the account's tool flags.
  * Who owns the workspace comes from the session (idea 19): a member reads
- * nothing and is told who runs the tool.
+ * nothing and meets the owner-run card instead.
  */
 export function WorkflowHost({ surface, scope, project }: { surface: WorkflowSurface; scope: string; project: Project | null }) {
+  const { owner } = useConnectedCapability(scope, { read: false });
+  return owner ? <OwnerWorkflow surface={surface} scope={scope} project={project} /> : <OwnerRunCard surface="workflows" scope={scope} tools={[surface.title]} />;
+}
+
+/** A page's connected workflows: each one for the owner; for a member, one card naming them all (idea 19). */
+export function WorkflowHosts({ surfaces, scope, project }: { surfaces: readonly WorkflowSurface[]; scope: string; project: Project | null }) {
+  const { owner } = useConnectedCapability(scope, { read: false });
+  if (!owner) return <OwnerRunCard surface="workflows" scope={scope} tools={surfaces.map((surface) => surface.title)} />;
+  return <>{surfaces.map((surface) => <OwnerWorkflow key={surface.tool} surface={surface} scope={scope} project={project} />)}</>;
+}
+
+function OwnerWorkflow({ surface, scope, project }: { surface: WorkflowSurface; scope: string; project: Project | null }) {
   const shell = useShell();
   const scoped = useScopedFetch(scope);
   const session = useSession();
-  const { owner, ownerName } = useConnectedCapability(scope, { read: false });
   const suspended = session.workspace?.suspended === true;
   const [capability, setCapability] = useState<WorkflowCapability | null>(null);
   const [capabilities, setCapabilities] = useState<VoiceCapabilities | null>(null);
@@ -38,7 +48,7 @@ export function WorkflowHost({ surface, scope, project }: { surface: WorkflowSur
   const load = useCallback(async () => {
     if (!draftId) return;
     try {
-      if (!owner) { setCapability({ owner: false, connected: false, suspended: false }); return; }
+      const since = markConnectedCapability(scope);
       const response = await scoped(`${voiceEndpoint}?draftId=${encodeURIComponent(draftId)}`, { cache: "no-store" });
       const json = await response.json().catch(() => null) as { connection?: { connected?: boolean; requiresReconnect?: boolean }; capabilities?: unknown; jobs?: unknown[]; error?: string } | null;
       if (!response.ok) throw new Error(json?.error ?? "The connected account could not be read.");
@@ -50,12 +60,12 @@ export function WorkflowHost({ surface, scope, project }: { surface: WorkflowSur
       setJobs(Array.isArray(json?.jobs) && json.jobs.length <= 25 ? json.jobs.map((job) => parseVoiceJob(job, draftId)) : []);
       setRevision((n) => n + 1);
       setCapability({ owner: true, connected: json?.connection?.connected === true && json?.connection?.requiresReconnect !== true, suspended });
-      settleConnectedCapability(scope, json?.connection);
+      settleConnectedCapability(scope, json?.connection, since);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The connected account could not be read.");
     }
-  }, [scoped, draftId, owner, suspended, scope]);
+  }, [scoped, draftId, suspended, scope]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
 
   const reason = workflowReason(surface, { hasProject: Boolean(project), capability, capabilities, error });
@@ -67,11 +77,7 @@ export function WorkflowHost({ surface, scope, project }: { surface: WorkflowSur
         <h2 className="gx-workflow-title">{surface.title}</h2>
         <p className="gx-hint">{surface.line}</p>
       </div>
-      {!owner ? (
-        <p className="gx-reason gx-owner-run-eyebrow" role="status" data-testid={`workflow-${surface.tool}-reason`}>
-          <Glyph name="key" size={12} className="gx-owner-badge-key" />Run by {ownerRunBy(ownerName)} on the Higgsfield account
-        </p>
-      ) : reason ? (
+      {reason ? (
         <p className="gx-reason" role="status" data-testid={`workflow-${surface.tool}-reason`}>
           {reason}{reason.includes("Workspace › Engines") ? <> <button type="button" className="cw-link" onClick={() => shell.goWorkspace("engines")}>Open Engines</button></> : null}
         </p>
