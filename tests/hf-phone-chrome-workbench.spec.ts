@@ -208,6 +208,10 @@ test("phone chrome: every layer measured, and the page gets most of the screen",
       expect.soft(content.height, `${screen.id}: at least 60% of ${vh}px for the page`).toBeGreaterThanOrEqual(Math.ceil(vh * 0.6));
     if (PORTRAIT.includes(info.project.name) && WITH_GATE.includes(screen.id))
       expect.soft(content.height, `${screen.id}: at least half of ${vh}px for the page`).toBeGreaterThanOrEqual(Math.ceil(vh * 0.5));
+    if (!PORTRAIT.includes(info.project.name) && (TARGETS.includes(screen.id) || WITH_GATE.includes(screen.id) || screen.id === "library"))
+      expect.soft(content.height, `${screen.id}: at least half of landscape height remains usable`).toBeGreaterThanOrEqual(Math.ceil(vh * 0.5));
+    if (PORTRAIT.includes(info.project.name) && screen.id === "library")
+      expect.soft(content.height, "files stay visible below the Library controls").toBeGreaterThanOrEqual(Math.ceil(vh * 0.25));
   }
   /* The owner's measure: Takes at 360×640 showed 127px of its page. */
   if (size === "360x640") expect(report.takes.content.height).toBeGreaterThanOrEqual(380);
@@ -311,7 +315,7 @@ test("phone: the chrome keeps the floors on every page — 44px targets, no labe
 });
 
 test("phone: the Suites and Search wait behind the context badge, one tap away; the page head's glyphs and the bar's switcher work", async ({ page }, info) => {
-  test.skip(!PORTRAIT.includes(info.project.name), "the portrait phones");
+  test.skip(!PHONES.includes(info.project.name), "the phone sizes");
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page, "/suites?suite=studio&page=rig");
@@ -354,7 +358,8 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   /* A tap anywhere else, or Escape, closes it without going anywhere. */
   await badge.click();
   await expect(suites).toBeVisible();
-  await page.getByTestId("tabbar").click({ position: { x: 4, y: 29 } });
+  if (PORTRAIT.includes(info.project.name)) await page.getByTestId("tabbar").click({ position: { x: 4, y: 29 } });
+  else await page.getByTestId("content").click({ position: { x: 700, y: 20 } });
   await expect(suites).toBeHidden();
   await badge.click();
   await page.keyboard.press("Escape");

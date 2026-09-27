@@ -52,6 +52,8 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await page.getByTestId("crew-goal").fill(GOAL);
   await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
   await page.getByTestId("crew-run").click();
+  /* Observe the transient confirmation before checking the durable transcript. */
+  await expect(page.getByTestId("toast")).toContainText(/Round 1 complete · \d+ cr settled/);
 
   const messages = page.getByTestId("crew-message");
   await expect(messages).toHaveCount(9, { timeout: 30_000 });
@@ -66,7 +68,6 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await expect(page.getByTestId("crew-solutions").locator(".cw-solution")).toHaveCount(3);
   await expect(panel).toContainText(/\d+ cr settled/);
   await expect(panel).toContainText("1 of 6");
-  await expect(page.getByTestId("toast")).toContainText(/Round 1 complete · \d+ cr settled/);
 
   /* An interjection joins the transcript; Pin adds a fourth solution. */
   await page.getByTestId("crew-say").fill("Keep the tin out of frame.");

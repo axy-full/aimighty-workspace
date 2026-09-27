@@ -268,7 +268,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
   const projectHead = (
-    <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
+    <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
       onPick={pickProject} onCreate={createProject} />
   );
   const genHead = (

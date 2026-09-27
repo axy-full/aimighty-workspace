@@ -21,7 +21,7 @@
 .gx .gx-pagehead .gx-primary[data-priced] { column-gap: 0; }
 .gx-menu-btn { display: none; }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
   /* ── The island: row 1 is 44px of targets, row 2 the bar. The aurora and dots keep to its rounded edge. The error
      page's static header (components/graphite/FaultPage) keeps its own layout: none of this reaches it. ── */
   .gx .gx-header:not([data-static]) { margin: max(8px, env(safe-area-inset-top)) 10px 0; min-height: 0; padding: 4px 6px; gap: 6px; row-gap: 4px; z-index: 35; }
@@ -36,7 +36,7 @@
   }
   /* The context badge is the Suites button: it shrinks (never the credits) and says it opens. */
   .gx .gx-menu-btn { display: inline-flex; align-items: center; gap: 2px; flex: 0 1 auto; min-width: 44px; height: 44px; padding: 0 2px 0 0; color: var(--gx-accent-text); }
-  .gx .gx-menu-btn > .gx-brand-mark { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 18px; letter-spacing: .08em; }
+  .gx .gx-menu-btn > .gx-brand-mark { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 18px; letter-spacing: .08em; }
   .gx .gx-menu-btn > .gx-glyph { flex: none; transform: rotate(90deg); transition: transform .2s var(--om-ease); }
   .gx .gx-header:not([data-static])[data-menu] > .gx-menu-btn > .gx-glyph { transform: rotate(-90deg); }
   .gx .gx-header:not([data-static]) > .gx-jobs { flex: 0 1 auto; min-width: 44px; overflow: hidden; }
@@ -105,6 +105,49 @@
   .gx .gx-gen-cta { bottom: -8px; padding: 6px 16px 4px; gap: 2px; }
   .gx .gx-gen-go.gx-primary { min-height: 44px; }
   .gx .gx-gen-cta > .gx-gen-foot { line-height: 1.25; }
+  /* Type filters scroll as a single row, leaving the files visible below them. */
+  .gx .gx-library { gap: 8px; padding: 8px 12px; }
+  .gx .gx-library > .gx-panel-head { min-height: 44px; align-items: center; }
+  .gx .gx-library > .gx-chips { flex-wrap: nowrap; overflow-x: auto; min-width: 0; min-height: 44px; scroll-padding-inline: 4px; }
+  .gx .gx-library > .gx-chips > .gx-chip { flex: none; }
+}
+
+/* A phone on its side uses the available width for one header row. Its page
+   keeps at least half the screen; there is no floating tab bar at this width. */
+@media (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
+  .gx { --ph-clear: 16px; }
+  .gx .gx-header:not([data-static]) {
+    height: auto; min-height: 52px; flex-wrap: nowrap; overflow: visible;
+    margin: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+    padding: 3px 6px; border: var(--gl-edge); border-radius: 22px;
+    background: var(--gl-panel); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift);
+  }
+  .gx .gx-header > .gx-brand > .gx-brand-name { display: none; }
+  .gx .gx-header > .gx-bar { order: 0; flex: 1 1 0; }
+  .gx .gx-header > .gx-spacer { display: none; }
+  .gx .gx-header > .gx-jobs, .gx .gx-header > .gx-credits, .gx .gx-header > .gx-avatar { order: 1; flex-shrink: 0; }
+  .gx .gx-header:not([data-static]) > .gx-jobs { max-width: 96px; }
+  .gx .gx-header:not(:has(> .gx-bar)) > .gx-spacer { display: block; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-seg { right: auto; width: 360px; padding-top: 54px; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-search { right: auto; width: 348px; height: 44px; }
+  .gx .gx-header .gx-seg-btn > .gx-seg-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .gx .gx-header .gx-seg-btn { flex-direction: column; gap: 3px; }
+  .gx .gx-header .gx-seg-btn .gx-sig { display: none; }
+  .gx .gx-main > .gx-pagehead { flex-wrap: nowrap; }
+  .gx .gx-avatar, .gx .gx-credits, .gx .gx-jobs { min-height: 44px; min-width: 44px; }
+  .gx .gx-stage { padding-top: 10px; }
+  .gx .gx-gen-cta { bottom: -8px; }
+  .gx .gx-toast { bottom: 12px; }
+  /* Use the width for two compact control rows above a real asset viewport. */
+  .gx .gx-library.gx-panel--overlay { width: min(640px, calc(100% - 20px)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 44px 48px minmax(0, 1fr); gap: 6px 12px; }
+  .gx .gx-library > .gx-panel-head { grid-column: 1; grid-row: 1; min-width: 0; gap: 6px; }
+  .gx .gx-library > .gx-seg { grid-column: 2; grid-row: 1; min-width: 0; }
+  .gx .gx-library:not(:has(> .gx-seg)) > .gx-panel-head { grid-column: 1 / -1; }
+  .gx .gx-library > .gx-field { grid-column: 1; grid-row: 2; align-self: center; min-width: 0; }
+  .gx .gx-library > .gx-chips { grid-column: 2; grid-row: 2; align-self: center; }
+  .gx .gx-library > .gx-assets { grid-column: 1 / -1; grid-row: 3; }
+  .gx .gx-library > .gx-tools, .gx .gx-library > .gx-banner { grid-column: 1 / -1; grid-row: 2 / -1; overflow-y: auto; }
+  .gx .gx-library > .gx-lib-foot { display: none; }
 }
 
 /* ── The floors on any phone, either way up: a segmented option is 44px wide as well as tall, and an eyebrow label
