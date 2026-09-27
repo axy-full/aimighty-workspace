@@ -434,6 +434,10 @@ test("long names stay inside the desk: a shot, a batch, a selected take and a se
   };
   await inside(selected.locator(".pd-selected-name"), selected, "the selected name");
   await inside(takes.getByTestId("takes-shot").locator(".pd-desk-head-name"), page.getByTestId("edit-takes"), "the shot");
+  /* CI and phone fonts can be wider than the local UI font: keep the same fit assertions under that constraint. */
+  await page.addStyleTag({ content: '[data-testid="edit-stage"], [data-testid="edit-stage"] * { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' });
+  await inside(selected.locator(".pd-selected-name"), selected, "the selected name in a wider font");
+  await inside(takes.getByTestId("takes-shot").locator(".pd-desk-head-name"), page.getByTestId("edit-takes"), "the shot in a wider font");
   await page.getByTestId("takes-search").fill("unbrokensearchwordwithoutanyspaces".repeat(4));
   await expect(page.getByTestId("takes-empty")).toContainText("Nothing matches");
   const empty = (await page.getByTestId("takes-empty").boundingBox())!;
