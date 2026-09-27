@@ -2,6 +2,8 @@ import { goWorkbenchStage as stage, openWorkbenchInspector } from "./helpers/wor
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import sharp from "sharp";
 import ts from "typescript";
 import { signInLocally } from "./helpers/workbenchLocal";
@@ -200,6 +202,21 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
     data: { project, revision },
   });
   expect(save.ok(), await save.text()).toBe(true);
+  // The preview makes its WebGL 2 renderer once its LUT is read and runs its
+  // first draw in that same task: a count of them says that draw has run.
+  await page.addInitScript(() => {
+    const root = window as Window & { renderers?: number };
+    root.renderers = 0;
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      kind: string,
+      options?: unknown,
+    ) {
+      if (kind === "webgl2") root.renderers!++;
+      return original.call(this, kind, options);
+    } as typeof original;
+  });
   await page.goto(await legacyShell(page, "/workbench"));
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
@@ -221,6 +238,33 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
   });
   await expect(panel.getByRole("alert")).toContainText("incomplete");
   expect(uploads).toBe(0);
+  // The still's original is first read when the look turns on, with the LUT
+  // (on CI both land at once behind a cold route). Hold that read open after
+  // its bytes: the preview meets a still with a size but no pixels yet, and
+  // the graded frame must still arrive once the still is whole.
+  let release!: () => void;
+  const whole = new Promise<void>((resolve) => (release = resolve));
+  const holder = createServer((_, response) => {
+    response.writeHead(200, { "Content-Type": "image/png" });
+    response.write(bytes);
+    void whole.then(() => response.end());
+  });
+  await new Promise<void>((resolve) => holder.listen(0, "127.0.0.1", resolve));
+  holder.unref();
+  const { port } = holder.address() as AddressInfo;
+  // Only that read is paused and redirected; page.route pauses every request.
+  const cdp = await page.context().newCDPSession(page);
+  let reads = 0;
+  cdp.on("Fetch.requestPaused", ({ requestId }) => {
+    void cdp.send("Fetch.continueRequest", {
+      requestId,
+      ...(reads++ ? {} : { url: `http://127.0.0.1:${port}/` }),
+    });
+  });
+  await cdp.send("Fetch.enable", { patterns: [{ urlPattern: `*${upload.url}` }] });
+  const renderers = () =>
+    page.evaluate(() => (window as Window & { renderers?: number }).renderers);
+  const before = await renderers();
   // Swap red and blue. At 2 points, trilinear interpolation should be exact.
   const cube = `TITLE "Channel swap"\nLUT_3D_SIZE 2\n${Array.from({ length: 8 }, (_, i) => `${(i >> 2) & 1} ${(i >> 1) & 1} ${i & 1}`).join("\n")}\n`;
   await input.setInputFiles({
@@ -231,6 +275,20 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
   const selected = panel.getByLabel("Sequence LUT", { exact: true });
   await expect(selected).not.toHaveValue("");
   const lutId = await selected.inputValue();
+  await expect.poll(renderers).toBeGreaterThan(before!);
+  const still = page.locator(`img[src="${upload.url}"]`);
+  await expect
+    .poll(() =>
+      still.evaluate((img: HTMLImageElement) => [img.complete, img.naturalWidth]),
+    )
+    .toEqual([false, 256]);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  release();
   const preview = page.getByLabel("Graded timeline preview", { exact: true });
   const pixel = () =>
     preview.evaluate((canvas: HTMLCanvasElement) =>
@@ -241,6 +299,9 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
       ].slice(0, 3),
     );
   await expect.poll(pixel).toEqual([192, 128, 64]);
+  await cdp.send("Fetch.disable");
+  holder.closeAllConnections();
+  holder.close();
   await panel.getByLabel("LUT mix", { exact: true }).focus();
   await page.keyboard.press("Home");
   await expect(preview).toHaveCount(0);

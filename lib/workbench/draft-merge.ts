@@ -372,6 +372,8 @@ function fitNote(project: Project, mine: Project, path: Path, limit: number, los
 
 /** A field of the project, in the words the page uses. */
 function labelOf(path: Path): string {
+  /* Brief's and Beats' notes to the writer (production.notes.draft / .beats): named as the box, not as its key. */
+  if (path[0] === "production" && path[1] === "notes") return "The notes box";
   const key = String(path[path.length - 1] ?? path[0]);
   const words: Record<string, string> = { brief: "The brief", script: "The script", notes: "The notes", text: "The shot's text", description: "The description", prompt: "The prompt", world: "The world" };
   return words[key] ?? `The ${key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}`;
