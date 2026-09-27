@@ -7,7 +7,7 @@ import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
-import { billCredits, billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
@@ -350,7 +350,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const mine = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since);
       const job = cost + (baseline.get(event.id)?.cost ?? 0);
       const spending = creditsApply(ws)
-        ? (mine.reduce((sum, r) => sum + r.credits, 0) + billCredits(job, marginKeyOf(event.kind, event.model))) * creditUsd()
+        ? (mine.reduce((sum, r) => sum + r.credits, 0) + creditsAtTerms(job, terms)) * creditUsd()
         : mine.reduce((sum, r) => sum + r.cost, 0) + job;
       if (spending > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
@@ -358,7 +358,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
        token's jobs this month billed or reserved, plus this job at the engine's margin. */
     if (options.token?.capCredits != null) {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.credits, 0);
-      const needs = billCredits(cost + (baseline.get(event.id)?.cost ?? 0), marginKeyOf(event.kind, event.model));
+      const needs = creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms);
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)

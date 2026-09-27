@@ -58,7 +58,7 @@ test("a burst of takes cannot pass a credits ceiling: reserved jobs count before
   await runInTenant(ws, async () => {
     await token();
     const capped = { token: { id: "tok_cr", capUsd: null, capCredits: 30 } };
-    // One dollar at the engine is 15 credits here (CREDIT_USD 0.10 at the 1.5 margin): two fit in 30, a third does not.
+    // Two fixture reservations fit the ceiling; the third must be refused.
     await reserveGenerationSpend(take("g1"), capped);
     await reserveGenerationSpend(take("g2"), capped);
     await expect(reserveGenerationSpend(take("g3"), capped)).rejects.toMatchObject({ status: 429, message: expect.stringContaining("30 cr monthly ceiling") });
@@ -67,6 +67,31 @@ test("a burst of takes cannot pass a credits ceiling: reserved jobs count before
     const { platformDb } = await import("../../lib/platform");
     const metered = await platformDb().execute({ sql: "SELECT id FROM meter_events WHERE workspace_id=? ORDER BY id", args: [ws.id] });
     expect(metered.rows.map((r) => String(r.id))).toEqual(["g1", "g2", "g4"].map(uid));
+  });
+});
+
+test("a token ceiling retains the admitted terms when a reservation is checked again", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { platformDb } = await import("../../lib/platform");
+  const { ws, token } = await setup("frozen", 15);
+  await runInTenant(ws, async () => {
+    await token();
+    const capped = { token: { id: "tok_cr", capUsd: null, capCredits: 15 } };
+    const event = take("frozen");
+    await reserveGenerationSpend(event, capped);
+    try {
+      process.env.CREDIT_USD = "0.01";
+      await reserveGenerationSpend(event, capped);
+      const row = (await platformDb().execute({ sql: "SELECT billed_credits FROM meter_events WHERE id=?", args: [event.id] })).rows[0];
+      expect(Number(row.billed_credits)).toBe(15);
+      process.env.CREDIT_USD = "1.00";
+      await expect(reserveGenerationSpend({ ...event, engineCostUsd: 2 }, capped)).rejects.toMatchObject({ status: 429 });
+      const unchanged = (await platformDb().execute({ sql: "SELECT billed_credits FROM meter_events WHERE id=?", args: [event.id] })).rows[0];
+      expect(Number(unchanged.billed_credits)).toBe(15);
+    } finally {
+      process.env.CREDIT_USD = "0.10";
+    }
   });
 });
 
