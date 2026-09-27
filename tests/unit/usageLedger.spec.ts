@@ -229,7 +229,8 @@ test("a dollar workspace reads its takes in dollars; the connected account's and
     const t = Date.now();
     const rows: [string, string, string, number | null, number | null, number][] = [
       ["d_charged", "{}", "succeeded", 1.25, 0.05, t - 1000],
-      ["d_failed", "{}", "failed", null, null, t - 2000],
+      /* A zero refinement is known; the render charge still is not. */
+      ["d_failed", "{}", "failed", null, 0, t - 2000],
       ["d_cancelled", "{}", "cancelled", 0, null, t - 3000],
       ["d_running", "{}", "running", null, null, t - 4000],
       ["d_held", "{}", "held", null, null, t - 5000],

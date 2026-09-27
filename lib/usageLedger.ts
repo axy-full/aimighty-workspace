@@ -39,7 +39,8 @@ const CHARGE = "CASE WHEN paid_by_platform=1 THEN COALESCE(billed_credits,0) ELS
 /* A take a dollar workspace paid for: not the connected account's (its provider's credits, listed with
    ?rows=connected) and not the starter production's demo takes, which nobody rendered or paid for. */
 const LISTED = `g.id NOT GLOB 'gen_hfc_*' AND NOT (json_valid(g.params) AND (COALESCE(json_extract(g.params,'$.consumerCreditUnit'),'')='higgsfield_credits' OR COALESCE(json_extract(g.params,'$.demo'),0)<>0))`;
-const DOLLARS = "CASE WHEN g.cost_usd IS NULL AND g.refine_cost_usd IS NULL THEN NULL ELSE COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) END";
+/* A known refinement charge cannot settle an unknown render charge. */
+const DOLLARS = "CASE WHEN g.cost_usd IS NULL THEN NULL ELSE g.cost_usd+COALESCE(g.refine_cost_usd,0) END";
 const MONTH = (col: string) => `strftime('%Y-%m',datetime(${col}/1000,'unixepoch'))`;
 
 type Cursor = { at: number; id: string };
