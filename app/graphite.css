@@ -566,7 +566,8 @@
 .gx-tile-face[data-face="held"] { background-color: rgba(255, 159, 10, .07); }
 .gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
 .gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
-.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed); border-color: rgba(255, 69, 58, .45); }
+/* The mark in the danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
+.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: #FF6961; border-color: rgba(255, 69, 58, .45); }
 .gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); }
 /* Paused, not stopped: two bars drawn, so no font turns them into a square. */
 .gx-tile-pause { width: 9px; height: 11px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
