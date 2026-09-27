@@ -65,6 +65,9 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
   const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  /* A read that failed is said first, with Retry, where it is seen: on a short phone, behind a search and three rows
+     of filters, it sat under the tab bar. With nothing read at all, there is nothing to search or filter either. */
+  const failed = Boolean(error && !ready);
   /* The shell's own library store (one per scope and project): its next page, and a later read that failed. */
   const library = useProjectLibrary(useSession().requestScope ?? "", project?.id ?? null);
   const open = (entry: LibraryEntry) => {
@@ -110,8 +113,11 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
             </div>
           )) : <p className="gx-empty">This page has no tools of its own. Assets are on the next tab.</p>}
         </div>
+      ) : failed && !items.length ? (
+        <div className="gx-empty" role="alert" data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
       ) : (
         <>
+          {failed ? <div className="gx-empty" role="alert" data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div> : null}
           <input className="gx-field" aria-label="Search assets" placeholder="Search this project" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
@@ -120,9 +126,7 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
             className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
             after={<>
-              {!shown.length ? (error && !ready
-                ? <div className="gx-empty" role="alert" style={{ gridColumn: "1 / -1" }} data-testid="library-error"><p className="gx-gen-error">{error}</p>{onRetry ? <button type="button" className="gx-hbtn" onClick={onRetry}>Retry</button> : null}</div>
-                : <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p>) : null}
+              {!shown.length ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!ready && !error ? "Reading this project…" : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
               {/* Past the first page: a later read that failed, and Load more (the first read's failure is said above). */}
               {project && !(error && !ready) ? <LibraryMore library={library} /> : null}
             </>}

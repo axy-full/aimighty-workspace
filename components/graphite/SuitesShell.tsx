@@ -50,6 +50,7 @@ import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
+import { ShellToast } from "./ShellToast";
 import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
@@ -433,7 +434,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </div>
         ) : null}
         <TabBar />
-        {state.toast ? <div className="gx-toast" role="status" data-testid="toast">{state.toast}</div> : null}
+        <ShellToast text={state.toast} />
       </div>
       </JobsTrayProvider>
     </AtomikHost>
