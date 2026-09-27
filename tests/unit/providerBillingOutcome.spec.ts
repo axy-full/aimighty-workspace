@@ -258,3 +258,12 @@ test("provider diagnostics preserve reserved credits and immutable receipt terms
     expect(await fundingOf(randomUUID())).toBe("platform");
   });
 });
+
+
+test("an unreadable recorded outcome cannot fall back to private provider diagnostics", async () => {
+  const { rowToGeneration } = await import("../../lib/jobs");
+  const failed = rowToGeneration({ id: "invalid-outcome", status: "failed", params: "{}", provider_outcome: "{invalid",
+    error: "Private account details token=sk-unitfixture1234567890secret" });
+  expect(failed.error).toBe("Did not render");
+  expect(failed.failure).toMatchObject({ kind: "unknown", message: null });
+});

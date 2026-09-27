@@ -220,7 +220,8 @@ export function rowToGeneration(r: any): Generation {
     refineModel: r.refine_model ?? null,
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
     refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
-    error: outcome && (inCredits || outcome.funding !== "own") ? failureCopy(outcome.kind, "platform").what : r.error ?? null,
+    error: r.provider_outcome != null && (inCredits || outcome?.funding !== "own")
+      ? failureCopy(outcome?.kind ?? "unknown", "platform").what : r.error ?? null,
     failure,
     createdBy: r.created_by ?? "",
     authorName: r.author_name ?? null,
