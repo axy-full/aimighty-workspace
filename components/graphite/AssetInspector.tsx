@@ -41,7 +41,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   /* A take older than the loaded pages (a link, the desk's search) is asked for by id once the library has read; an answer
      for another project or take than the one shown now is dropped. */
   const projectId = project?.id ?? null;
-  const ready = library.state.status === "ready" && !library.state.error;
+  const ready = library.state.status === "ready";
   const [looked, setLooked] = useState<string | null>(null);
   const lookKey = projectId ? `${projectId}\u0000${id}` : null;
   useEffect(() => {
@@ -51,12 +51,14 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     return () => { current = false; };
   }, [entry, ready, scope, projectId, id, lookKey, looked]);
   if (!entry) {
-    const failed = library.state.status === "error";
-    const missing = library.state.status === "ready" && !library.state.moreBusy && looked === lookKey;
+    /* A read that failed is said with Try again — never "not in this project", which only a read that answered can say. */
+    const searched = library.state.status === "ready" && !library.state.moreBusy && looked === lookKey;
+    const failed = library.state.status === "error" || (searched && Boolean(library.state.error));
+    const missing = searched && !library.state.error;
     return (
       <div className="gx-insp-asset" data-testid="asset-inspector-missing"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
         {failed
-          ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={library.refresh} testId="inspector-library-error" compact />
+          ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={() => { setLooked(null); return library.refresh(); }} testId="inspector-library-error" compact />
           : <p className="gx-empty" role="status">{missing ? "This asset is not in this project." : library.state.status === "ready" ? "Finding this asset…" : "Reading this project…"}</p>}
       </div>
     );
