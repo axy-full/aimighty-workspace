@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { dispatchGeneration, sendClaimedGeneration, settlePendingGeneration } from "../../lib/workspace/generate-submit";
+import { dispatchGeneration, sendClaimedGeneration, settlePendingGeneration, settleStoredRequest } from "../../lib/workspace/generate-submit";
 import { claimPendingGeneration, pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import type { GenerationBodyInput } from "../../lib/workbench/generation-request";
 
@@ -229,4 +229,67 @@ test("a final refusal lets a claimed send go; one that is not final keeps it; a 
       expect(Boolean(readPendingGeneration(storage, SLOT)), JSON.stringify(answer)).toBe(kept);
     });
   }
+});
+
+/* A stored request that is not a dispatch claim (the Make composer's batch takes and audio): asked about by its key,
+   and re-quoted before it may go again, only at exactly the price approved for it (settleStoredRequest). */
+const STORED = { key: "stored-take-0001", body: JSON.stringify({ prompt: "A brass key.", model: ENGINE, maxCredits: 3, variation: 2 }) };
+
+test("a stored request that landed is followed, and nothing is quoted or sent", async () => {
+  await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_2", status: "running" } }) }, async (calls) => {
+    expect(await settleStoredRequest({ scope: SCOPE, ...STORED, endpoint: "/api/generate", approved: { price: 3, unit: "cr" } }))
+      .toEqual({ state: "landed", jobId: "gen_2", status: "running" });
+    expect(calls).toEqual([{ path: "/api/generate/check", key: null, body: { key: STORED.key, endpoint: "/api/generate", body: STORED.body } }]);
+  });
+});
+
+test("a stored request that never arrived may go again only at exactly its approved price; a moved price is reported, not sent", async () => {
+  for (const [price, outcome] of [[3, { state: "resend" }], [2, { state: "repriced", price: 2, unit: "cr", credits: 2 }], [4, { state: "repriced", price: 4, unit: "cr", credits: 4 }]] as const) {
+    await withServer({
+      "/api/generate/check": () => ({ json: { state: "absent" } }),
+      "/api/generate/quote": (body) => {
+        expect(body).toEqual(JSON.parse(STORED.body));
+        return { json: { estimatedCredits: price, price, unit: "cr", fingerprint: "f".repeat(64) } };
+      },
+    }, async (calls) => {
+      expect(await settleStoredRequest({ scope: SCOPE, ...STORED, endpoint: "/api/generate", approved: { price: 3, unit: "cr" } })).toEqual(outcome);
+      expect(calls.map((c) => c.path)).toEqual(["/api/generate/check", "/api/generate/quote"]);
+    });
+  }
+  /* Audio is re-quoted by its own route; dollars are compared to the cent. */
+  const audio = { key: "stored-audio-0001", body: JSON.stringify({ task: "speech", text: "A line.", maxCredits: 21 }) };
+  await withServer({
+    "/api/generate/check": () => ({ json: { state: "refused", status: 402, error: "Not enough credits" } }),
+    "/api/audio": (body) => ({ json: body.quoteOnly ? { estimatedCredits: 21, price: 2.1, unit: "usd" } : { error: "not a quote" } }),
+  }, async (calls) => {
+    expect(await settleStoredRequest({ scope: SCOPE, ...audio, endpoint: "/api/audio", approved: { price: 2.1000000001, unit: "usd" } })).toEqual({ state: "resend" });
+    expect(calls[1]).toMatchObject({ path: "/api/audio", body: { task: "speech", text: "A line.", maxCredits: 21, quoteOnly: true } });
+  });
+  /* A key already known to be refused is only re-quoted. */
+  await withServer({ "/api/generate/quote": () => ({ json: { estimatedCredits: 3, price: 3, unit: "cr" } }) }, async (calls) => {
+    expect(await settleStoredRequest({ scope: SCOPE, ...STORED, endpoint: "/api/generate", approved: { price: 3, unit: "cr" }, ask: false })).toEqual({ state: "resend" });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);
+  });
+});
+
+test("a stored request whose fate or price cannot be read sends nothing", async () => {
+  const cases: Record<string, (body: Record<string, unknown>) => Answer>[] = [
+    { "/api/generate/check": () => ({ json: { state: "pending" } }) },
+    { "/api/generate/check": () => "network" },
+    { "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate/quote": () => "network" },
+    { "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate/quote": () => ({ json: { estimatedCredits: 2.5, price: 2.5, unit: "cr" } }) },
+  ];
+  for (const routes of cases)
+    await withServer(routes, async () => {
+      expect((await settleStoredRequest({ scope: SCOPE, ...STORED, endpoint: "/api/generate", approved: { price: 3, unit: "cr" } })).state).toBe("unknown");
+    });
+});
+
+test("a claim stored without its route (the Make composer's audio) is checked against the route it names", async () => {
+  const storage = memory();
+  storage.setItem(STORAGE_ID, JSON.stringify({ key: "audio-claim-0001", body: JSON.stringify({ task: "speech", text: "A line." }), credits: 21 }));
+  await withServer({ "/api/generate/check": () => ({ json: { state: "absent" } }) }, async (calls) => {
+    expect(await settlePendingGeneration({ scope: SCOPE, storageId: STORAGE_ID, storage, endpoint: "/api/audio" })).toMatchObject({ state: "lost" });
+    expect(calls[0].body).toMatchObject({ key: "audio-claim-0001", endpoint: "/api/audio" });
+  });
 });

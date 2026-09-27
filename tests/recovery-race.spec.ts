@@ -50,6 +50,7 @@ for (const surface of ["batch", "audio", "writing"] as const) {
       expect(productionProjectId).toBeTruthy();
     }
     const submissions: string[] = [];
+    const checks: string[] = [];
     await context.route("**/api/**", async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
@@ -87,6 +88,17 @@ for (const surface of ["batch", "audio", "writing"] as const) {
         });
       if (path === "/api/audio" && request.postDataJSON()?.quoteOnly)
         return json({ estimatedCredits: 14, price: 14, unit: "cr" });
+      /* A recovery asks by its key first (the request whose answer was lost here landed), and a take
+         refused for good is re-quoted before it goes again: at the price it was approved at. */
+      if (path === "/api/generate/check") {
+        const key = String(request.postDataJSON().key);
+        checks.push(key);
+        return json(submissions.includes(key) ? { state: "landed", id: "mock-paid-job", status: "running" } : { state: "absent" });
+      }
+      if (path === "/api/generate/quote") {
+        const ceiling = request.postDataJSON().maxCredits;
+        return json({ estimatedCredits: ceiling, price: ceiling, unit: "cr" });
+      }
       if (path === "/api/atomik/ideas/draft" && request.postDataJSON()?.quoteOnly === true) {
         expect(request.headers()["idempotency-key"]).toBeUndefined();
         return json({ model: "anthropic/claude-sonnet-4.6", effort: "auto", estimateCredits: 2 });
@@ -187,14 +199,17 @@ for (const surface of ["batch", "audio", "writing"] as const) {
       await expect(
         other.getByRole("textbox", { name: "Prompt", exact: true }),
       ).toHaveValue("");
-    expect(submissions).toHaveLength(2);
+    /* Audio: the lost request landed, so it is followed by its key and nothing is sent again. */
+    const sent = surface === "audio" ? 1 : 2;
+    expect(submissions).toHaveLength(sent);
     await page.evaluate(() => Reflect.get(window, "releaseRecoveryClaim")());
     await expect(
       page.getByText(/already (?:been )?recovered/).first(),
     ).toBeVisible();
-    expect(submissions).toHaveLength(2);
+    expect(submissions).toHaveLength(sent);
     if (surface === "batch") expect(submissions[1]).not.toBe(submissions[0]);
-    else expect(submissions[1]).toBe(submissions[0]);
+    else if (surface === "writing") expect(submissions[1]).toBe(submissions[0]);
+    else expect(checks).toEqual([submissions[0]]);
     await other.close();
   });
 }
