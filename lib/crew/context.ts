@@ -12,7 +12,7 @@ const clip = (text: string, max = SECTION_MAX) => (text.length > max ? `${text.s
 const oneLine = (text: string | undefined | null) => String(text ?? "").replace(/\s+/g, " ").trim();
 
 export function projectContext(project: Project, context: CrewContext): string {
-  const out = [`Project: ${project.name}${oneLine(project.description) ? ` — ${oneLine(project.description)}` : ""}. ${project.aspect}, ${project.fps} fps.`];
+  const out = [`Project: ${clip(oneLine(project.name), 240)}${clip(oneLine(project.description), 240) ? ` — ${clip(oneLine(project.description), 240)}` : ""}. ${project.aspect}, ${project.fps} fps.`];
   if (context.brief) {
     const parts = [oneLine(project.brief), oneLine(project.audience) && `Audience: ${oneLine(project.audience)}`, oneLine(project.deliverables) && `Deliver: ${oneLine(project.deliverables)}`, oneLine(project.direction) && `Direction: ${oneLine(project.direction)}`].filter(Boolean);
     out.push(`Brief: ${parts.length ? clip(parts.join(" ")) : "(none written yet)"}`);

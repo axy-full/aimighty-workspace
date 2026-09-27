@@ -35,9 +35,10 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
   try {
     const session = await readSession(caller.userId, (await params).id);
     if (!session) throw new CrewError("That room is not in this workspace.", 404);
+    if (session.needsReview) throw new CrewError("This round needs an engine outcome review. It will not be sent again.", 409);
     const body = await req.json().catch(() => ({}));
     if (currentTenant()?.workspace?.suspendedAt) throw new CrewError("This workspace is suspended. Rendering is paused.", 403);
-    if (!xaiConnected()) throw new CrewError("Add key in Workspace › Engines.", 503);
+    if (!xaiConnected()) throw new CrewError("Crew's managed engine is unavailable.", 503);
     if (!session.goal.trim()) throw new CrewError("Write the goal.", 400);
     if (session.roundsRun >= ROUNDS_MAX) throw new CrewError(`This room has run its ${ROUNDS_MAX} rounds. Start a new session.`, 409);
     const project = await crewProject(caller.userId, session.projectId);
@@ -73,7 +74,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
         } catch (error) {
           await releaseRound(userId, session.id).catch(() => {});
           const status = typeof (error as { status?: unknown })?.status === "number";
-          emit({ event: "error", data: { error: status && error instanceof Error ? error.message : "The round stopped. Nothing was charged." } });
+          emit({ event: "error", data: { error: status && error instanceof Error ? error.message : "The round stopped. Check the room’s outcome before trying again." } });
           if (!status) console.error("crew round:", error);
         } finally {
           try { controller.close(); } catch { /* already closed */ }

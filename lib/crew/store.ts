@@ -1,3 +1,4 @@
+import { CREW_CONTEXT_SCHEMA, CREW_DISPATCH_SCHEMA } from "./mcp-schema";
 import { db, ready, id as newId, now } from "../db";
 import { requireTenant } from "../tenant";
 import {
@@ -22,6 +23,7 @@ export type CrewSession = {
   spendCr: number | null; spendUsd: number; createdBy: string; createdAt: number;
   /** A round is being run right now (claimRound), so a press whose reply was lost waits for it rather than sending another. */
   running?: boolean;
+  needsReview?: boolean;
 };
 export type CrewMessage = {
   id: string; sessionId: string; round: number; phase: CrewPhase | "note"; memberId: string | null; toMemberId: string | null;
@@ -36,6 +38,8 @@ export async function crewReady() {
   if (!configured.has(id))
     configured.set(id, (async () => {
       await ready();
+      await db().execute(CREW_CONTEXT_SCHEMA);
+      await db().execute(CREW_DISPATCH_SCHEMA);
       await db().execute(`CREATE TABLE IF NOT EXISTS crew_members(id TEXT PRIMARY KEY, owner TEXT NOT NULL, project_id TEXT NOT NULL, preset_id TEXT,
         name TEXT NOT NULL, department TEXT NOT NULL, stance TEXT NOT NULL, effort TEXT NOT NULL, color TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1, is_chair INTEGER NOT NULL DEFAULT 0, sort INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`);
@@ -65,6 +69,7 @@ const session = (r: Row): CrewSession => ({
   id: String(r.id), projectId: String(r.project_id), goal: String(r.goal), context: { ...DEFAULT_CONTEXT, ...(JSON.parse(String(r.context || "{}")) as Partial<CrewContext>) },
   model: String(r.model), roundsRun: Number(r.rounds_run), spendCr: r.spend_cr == null ? null : Number(r.spend_cr), spendUsd: Number(r.spend_usd ?? 0),
   createdBy: String(r.created_by), createdAt: Number(r.created_at),
+  needsReview: Boolean(r.needs_review),
   running: r.running_since != null && Number(r.running_since) >= now() - STALE_MS,
 });
 /** A message carries the speaker as they were when they spoke: a renamed or removed member does not rewrite the minutes. */
@@ -152,7 +157,7 @@ export async function createSession(owner: string, input: { projectId: string; g
 }
 export async function readSession(owner: string, id: string): Promise<CrewSession | null> {
   await crewReady();
-  const row = (await db().execute({ sql: "SELECT * FROM crew_sessions WHERE id=? AND owner=?", args: [id, owner] })).rows[0];
+  const row = (await db().execute({ sql: "SELECT s.*, EXISTS(SELECT 1 FROM crew_round_dispatches d WHERE d.session_id=s.id AND d.round>s.rounds_run AND (d.state='review' OR (d.state='started' AND (s.running_since IS NULL OR s.running_since < strftime('%s','now')*1000-600000)))) AS needs_review FROM crew_sessions s WHERE id=? AND owner=?", args: [id, owner] })).rows[0];
   return row ? session(row as Row) : null;
 }
 export async function updateSessionBrief(owner: string, id: string, patch: { goal?: string; context?: CrewContext; model?: string }): Promise<void> {
@@ -186,7 +191,7 @@ const STALE_MS = 10 * 60_000;
 export async function claimRound(owner: string, id: string, round: number): Promise<boolean> {
   const ts = now();
   const claimed = await db().execute({
-    sql: "UPDATE crew_sessions SET running_since=? WHERE id=? AND owner=? AND rounds_run=? AND (running_since IS NULL OR running_since < ?)",
+    sql: "UPDATE crew_sessions SET running_since=? WHERE id=? AND owner=? AND rounds_run=? AND (running_since IS NULL OR running_since < ?) AND NOT EXISTS(SELECT 1 FROM crew_round_dispatches d WHERE d.session_id=crew_sessions.id AND d.round>crew_sessions.rounds_run AND d.state IN ('started','review'))",
     args: [ts, id, owner, round - 1, ts - STALE_MS],
   });
   return claimed.rowsAffected > 0;
@@ -241,4 +246,14 @@ export async function setSolutionStatus(id: string, status: CrewSolutionStatus):
 export async function removeSolution(owner: string, id: string): Promise<void> {
   await crewReady();
   await archiveAndDelete(db(), "crew_solutions", "id=? AND session_id IN (SELECT id FROM crew_sessions WHERE owner=?)", [id, owner]);
+}
+
+/** A durable fence is written before any paid request. A crash leaves it closed. */
+export async function claimRoundDispatch(sessionId: string, round: number): Promise<void> {
+  await crewReady();
+  const result = await db().execute({ sql: "INSERT INTO crew_round_dispatches(session_id,round,started_at,state) VALUES(?,?,?,'started') ON CONFLICT(session_id,round) DO UPDATE SET state='started',started_at=excluded.started_at WHERE crew_round_dispatches.state='released'", args: [sessionId, round, now()] });
+  if (!result.rowsAffected) throw new CrewError("This round already contacted its engine. Check its outcome before starting another round.", 409);
+}
+export async function finishRoundDispatch(sessionId: string, round: number, uncertain: boolean): Promise<void> {
+  await db().execute({ sql: "UPDATE crew_round_dispatches SET state=? WHERE session_id=? AND round=?", args: [uncertain ? "review" : "released", sessionId, round] });
 }
