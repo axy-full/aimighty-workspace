@@ -695,6 +695,35 @@ export async function claimConsumerDispatchBatch(
   });
 }
 
+/**
+ * Check, then fence (a batch whose submit reply was lost). In one write, under
+ * the same lock as claimConsumerDispatchBatch: each job still quoted has its
+ * quote closed now, so a request still on its way can never claim it (the
+ * claim refuses an expired quote before anything is sent); a job already
+ * claimed is left exactly as it is. Returns every job as it stands after. The
+ * answer never changes afterwards: a fenced quote is never dispatchable again.
+ */
+export async function fenceConsumerQuotes(
+  inputs: ConsumerJobScope[],
+): Promise<ConsumerJob[]> {
+  if (!Array.isArray(inputs) || inputs.length < 1 || inputs.length > CONSUMER_ACTIVE_LIMIT) invalid();
+  inputs.forEach(jobScope);
+  if (new Set(inputs.map((input) => input.id)).size !== inputs.length) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const now = Date.now();
+    const jobs: ConsumerJob[] = [];
+    for (const input of inputs) {
+      await tx.execute({
+        sql: "UPDATE higgsfield_consumer_jobs SET quote_expires_at=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='quoted' AND quote_expires_at>?",
+        args: [now, now, input.id, input.userId, input.draftId, now],
+      });
+      jobs.push(asJob(await requiredRow(tx, input)));
+    }
+    return jobs;
+  });
+}
+
 type DispatchInput = ConsumerJobScope & { claimToken: string };
 function dispatchInput(input: DispatchInput) {
   jobScope(input);
