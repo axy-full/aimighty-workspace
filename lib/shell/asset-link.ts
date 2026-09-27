@@ -106,7 +106,8 @@ export function withoutLink(search: string, dropAsset = false): string {
  * takes (Previous/Next, the viewer's arrows), a link resolving and a repair
  * rewrite the entry they are on, so Back still leaves the take, not each step.
  */
-export type SelectReason = "open" | "close" | "step" | "link" | "repair";
+export type SelectReason = "open" | "close" | "step" | "link" | "repair" | "pick";
+/** `pick` is a selection with no page of its own (a Library tile, the context menu): it rewrites the entry too. */
 export function selectHistory(reason: SelectReason): "push" | "replace" {
   return reason === "open" || reason === "close" ? "push" : "replace";
 }

@@ -123,7 +123,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       case "use-as-reference": actions.useAsReference(target.id); return;
       case "retry": actions.retry(target.id); return;
       case "open-in-inspector":
-        dispatch({ type: "patch", patch: { selKind: "take", selId: target.id } });
+        shell.selectAsset(target.id, { reason: "pick" });
         shell.openInspector();
         return;
       case "move": {

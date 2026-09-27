@@ -247,7 +247,10 @@ async function lookupAsset(scope: string, projectId: string, source: Source, id:
   const response = await fetch("/api/workbench/library?" + query, { cache: "no-store", headers: { "X-Workbench-Scope": scope } });
   const json = await response.json().catch(() => null);
   if (!response.ok || !Array.isArray(json?.[source])) throw new Error(json?.error || "The project library could not be loaded.");
-  return (json[source] as (LibraryUpload | Generation)[]).filter((item) => item?.id === id);
+  const rows = json[source] as (LibraryUpload | Generation)[];
+  /* A server that does not know `id` yet (a deploy in progress) answers its first page instead: not an answer. */
+  if (rows.some((item) => item?.id !== id)) throw new Error("The library did not look this asset up.");
+  return rows;
 }
 
 /** Keep a looked-up asset in the store: shown now, and through every later re-read of the loaded range. */

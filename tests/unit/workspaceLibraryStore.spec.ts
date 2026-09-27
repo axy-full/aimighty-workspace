@@ -65,7 +65,7 @@ test("a failed first read is an error that a refresh clears, not 'Reading…' fo
 });
 
 /* A library over a fake route that answers at once: 60 a page, newest first, and one asset by `id` under the same membership. */
-function routeLibrary(generations: string[], opts: { lookup?: "answer" | "fail" } = {}) {
+function routeLibrary(generations: string[], opts: { lookup?: "answer" | "fail" | "ignore" } = {}) {
   const original = globalThis.fetch;
   const asked: string[] = [];
   const row = (id: string) => ({ id, createdAt: 1_000 - generations.indexOf(id), params: {}, status: "succeeded", kind: "image", model: "m", prompt: "" });
@@ -74,7 +74,7 @@ function routeLibrary(generations: string[], opts: { lookup?: "answer" | "fail" 
     asked.push(url.search);
     const source = url.searchParams.get("source")!, id = url.searchParams.get("id"), offset = Number(url.searchParams.get("cursor") ?? 0);
     if (source === "uploads") return new Response(JSON.stringify({ uploads: [], nextCursor: null }), { status: 200 });
-    if (id !== null) {
+    if (id !== null && opts.lookup !== "ignore") {
       if (opts.lookup === "fail") return new Response(JSON.stringify({ error: "Resting." }), { status: 503 });
       return new Response(JSON.stringify({ generations: generations.includes(id) ? [row(id)] : [], nextPageCursor: null }), { status: 200 });
     }
@@ -122,5 +122,14 @@ test("when the lookup cannot answer, the search pages back as before, and still 
     expect(lib.asked.filter((q) => q.includes("cursor="))).toHaveLength(3);
     expect(await findProjectTake("scope-e", "p5", "generation:g1499")).toBe(false);
     expect(projectLibraryState("scope-e", "p5").generations.length).toBeLessThan(1500);
+  } finally { lib.restore(); }
+});
+
+test("a server that does not know the lookup yet answers its first page: that is not taken as an answer, and the search pages back", async () => {
+  const lib = routeLibrary(many(300), { lookup: "ignore" });
+  try {
+    expect(await findProjectTake("scope-f", "p6", "generation:g0130")).toBe(true);
+    expect(lib.asked.filter((q) => q.includes("cursor="))).toHaveLength(2);
+    expect(projectLibraryState("scope-f", "p6").generations).toHaveLength(180);
   } finally { lib.restore(); }
 });

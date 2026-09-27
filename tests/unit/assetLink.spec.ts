@@ -77,6 +77,7 @@ test("opening and leaving a take are history entries; stepping, a link and a rep
   expect(selectHistory("step")).toBe("replace");
   expect(selectHistory("link")).toBe("replace");
   expect(selectHistory("repair")).toBe("replace");
+  expect(selectHistory("pick")).toBe("replace");
 });
 
 test("a copied link carries the workspace, the production and the take, and never a draft", () => {

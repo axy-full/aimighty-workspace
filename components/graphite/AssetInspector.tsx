@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SAY, referenceRole } from "@/lib/shell/assets";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
@@ -8,7 +8,7 @@ import { settledFact } from "@/lib/usageLedgerTerms";
 import { useLedgerEntry } from "./UsageLedger";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
-import { entryFace, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryFace, findProjectTake, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { takeStatusWord } from "@/lib/workspace/takes";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
@@ -34,13 +34,26 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const made = entry?.asset.origin === "generation" ? entry.asset.value : null;
   const quote = made ? providerCreditQuote(made.providerCreditQuote) : null;
   const settled = useLedgerEntry(made && !quote ? made.id : null, entry?.take.status);
+  /* A take older than the loaded pages (a link, the desk's search) is asked for by id once the library has read; an answer
+     for another project or take than the one shown now is dropped. */
+  const projectId = project?.id ?? null;
+  const ready = library.state.status === "ready" && !library.state.error;
+  const [looked, setLooked] = useState<string | null>(null);
+  const lookKey = projectId ? `${projectId}\u0000${id}` : null;
+  useEffect(() => {
+    if (entry || !ready || !projectId || !lookKey || looked === lookKey) return;
+    let current = true;
+    void findProjectTake(scope, projectId, id).catch(() => false).then(() => { if (current) setLooked(lookKey); });
+    return () => { current = false; };
+  }, [entry, ready, scope, projectId, id, lookKey, looked]);
   if (!entry) {
     const failed = library.state.status === "error";
+    const missing = library.state.status === "ready" && !library.state.moreBusy && looked === lookKey;
     return (
-      <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
+      <div className="gx-insp-asset" data-testid="asset-inspector-missing"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
         {failed
           ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={library.refresh} testId="inspector-library-error" compact />
-          : <p className="gx-empty">{library.state.status === "ready" && !library.state.moreBusy ? "This asset is no longer in the project." : "Reading this project…"}</p>}
+          : <p className="gx-empty" role="status">{missing ? "This asset is not in this project." : library.state.status === "ready" ? "Finding this asset…" : "Reading this project…"}</p>}
       </div>
     );
   }

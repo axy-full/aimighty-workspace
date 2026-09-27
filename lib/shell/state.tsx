@@ -8,6 +8,9 @@ import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 import { useSession } from "@/lib/session";
 import { projectChanged } from "@/lib/workspace/data";
+import { pageKind } from "@/lib/workspace/pages";
+import { validAssetId } from "@/lib/preview";
+import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, withAsset, withoutLink, type AssetLink, type SelectReason } from "./asset-link";
 import { useConnectedCollector } from "./use-connected-collector";
 
 /**
@@ -17,11 +20,13 @@ import { useConnectedCollector } from "./use-connected-collector";
  * Workspace views, each suite's remembered page, the Library tab and the
  * overlay panels, the palette, the context menu, the clipboard and undo).
  *
- * The shell owns three search params at its route — `view`, `tab`, `sp` — and
- * the workspace provider carries them across its own URL writes.
+ * The shell owns its search params at its route — `view`, `tab`, `sp`, `cp`,
+ * `room`, the selected take (`asset`) and a link's own `ws` and `production`
+ * (lib/shell/asset-link.ts) — and the workspace provider carries them across
+ * its own URL writes.
  */
 export const SUITES_PATH = "/suites";
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room"] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", ASSET_PARAM, ...LINK_PARAMS] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
@@ -68,6 +73,19 @@ export type Shell = {
   undo: () => Promise<void>;
   /** The shell as it is now, for work that finishes after the component that started it has gone (a toast's Open). */
   live: () => Shell;
+  /** The selected take as the address bar carries it (`asset`), or null. */
+  asset: string | null;
+  /**
+   * The one way a surface selects a take (the Takes desk, the viewer's arrows, a link): the Workspace
+   * selection and the URL (`asset`, `sel`) move together; `reason` decides whether it is a history entry
+   * (lib/shell/asset-link.ts › selectHistory). It never opens the phone's Inspector. `ifCurrent` clears
+   * or replaces only while that take is still the selected one; a malformed id is refused.
+   */
+  selectAsset: (id: string | null, opts?: { reason?: SelectReason; ifCurrent?: string }) => void;
+  /** The link the page was opened with (a take, and where it belongs), until it resolves or is dismissed. */
+  link: AssetLink | null;
+  /** The link has resolved (its own params leave the address bar) or was dismissed (`drop`: the take leaves too). */
+  endLink: (drop: boolean) => void;
 };
 
 const ShellContext = createContext<Shell | null>(null);
@@ -77,7 +95,7 @@ export function useShell(): Shell {
   return value;
 }
 
-type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId };
+type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; asset: string | null };
 function readParams(search: string): Params {
   const q = new URLSearchParams(search);
   const view = q.get("view");
@@ -87,6 +105,7 @@ function readParams(search: string): Params {
     tab: WORKSPACE_TABS.some((t) => t.id === tab) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
     cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
+    asset: assetParam(q),
   };
 }
 function writeParams(params: Params, mode: "push" | "replace") {
@@ -95,8 +114,16 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (params.view === "workspace") q.set("tab", params.tab); else q.delete("tab");
   if (params.sp) q.set("sp", params.sp); else q.delete("sp");
   if (params.view === "crew") q.set("cp", params.cp); else q.delete("cp");
+  const asset = validAssetId(params.asset);
+  if (asset) q.set(ASSET_PARAM, asset); else q.delete(ASSET_PARAM);
   const text = q.toString();
   const url = window.location.pathname + (text ? "?" + text : "") + window.location.hash;
+  if (url === window.location.pathname + window.location.search + window.location.hash) return;
+  if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
+}
+/** Rewrite (or add) the entry with only the search changed. */
+function writeSearch(search: string, mode: "push" | "replace") {
+  const url = window.location.pathname + search + window.location.hash;
   if (url === window.location.pathname + window.location.search + window.location.hash) return;
   if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
 }
@@ -127,6 +154,26 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const liveRef = useRef<Shell | null>(null);
   const live = useCallback(() => liveRef.current!, []);
 
+  /* The selected take, as the URL carries it: the Workspace selection is the one source, `asset` (and `sel`) follow it. */
+  const take = ws.state.selKind === "take" ? validAssetId(ws.state.selId) : null;
+  const selection = useRef({ selKind: ws.state.selKind, selId: ws.state.selId, page: ws.state.page });
+  useEffect(() => { selection.current = { selKind: ws.state.selKind, selId: ws.state.selId, page: ws.state.page }; }, [ws.state.selKind, ws.state.selId, ws.state.page]);
+  const latestWs = useRef(ws);
+  useEffect(() => { latestWs.current = ws; }, [ws]);
+  /* How the next selection change enters history (selectAsset says); anything else rewrites the entry it is on. */
+  const nextEntry = useRef<"push" | "replace" | null>(null);
+  useEffect(() => {
+    const mode = nextEntry.current ?? "replace";
+    nextEntry.current = null;
+    if (assetParam(window.location.search) === take) return;
+    writeSearch(withAsset(window.location.search, take), mode);
+    /* The state layer's own `sel` follows in the same entry, so the two never disagree. */
+    latestWs.current.syncUrl();
+  }, [take]);
+
+  /* A link to a take (lib/shell/asset-link.ts), read once from the URL the page opened with. */
+  const [link, setLink] = useState<AssetLink | null>(() => readAssetLink(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
+
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
     const onPop = () => setParams(readParams(window.location.search));
@@ -140,7 +187,12 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const mapped = pageOfLegacy(ws.state.suite, ws.state.page, params.sp ?? memory[suiteId]);
   const page = mapped ?? suite.pages[0];
 
-  const apply = useCallback((next: Params, mode: "push" | "replace") => { setParams(next); writeParams(next, mode); }, []);
+  /* The take in the URL is always the live selection's, whatever else the write changes. */
+  const apply = useCallback((next: Omit<Params, "asset"> & { asset?: string | null }, mode: "push" | "replace") => {
+    const s = selection.current;
+    const withTake = { ...next, asset: s.selKind === "take" ? validAssetId(s.selId) : null };
+    setParams(withTake); writeParams(withTake, mode);
+  }, []);
 
   const goSuite = useCallback((id: ShellSuiteId, pageId?: string) => {
     const target = pageId ? restorePage(id, pageId) : restorePage(id, memory[id]);
@@ -227,6 +279,26 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     },
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
+    asset: take,
+    selectAsset: (id, opts = {}) => {
+      const now = selection.current;
+      const current = now.selKind === "take" ? now.selId : null;
+      if (opts.ifCurrent !== undefined && current !== opts.ifCurrent) return;
+      const next = id === null ? null : validAssetId(id);
+      /* A malformed id is refused; clearing when no take is selected leaves a shot or a page selection alone. */
+      if ((id !== null && !next) || next === current) return;
+      nextEntry.current = selectHistory(opts.reason ?? "pick");
+      /* Leaving a take on Takes keeps Takes' own kind (nothing selected in its grid); elsewhere the page is selected again. */
+      const cleared = pageKind(now.page) === "take" ? { selKind: "take" as const, selId: null } : { selKind: "page" as const, selId: now.page };
+      selection.current = next ? { ...now, selKind: "take", selId: next } : { ...now, ...cleared };
+      latestWs.current.dispatch({ type: "patch", patch: next ? { selKind: "take", selId: next } : cleared });
+    },
+    link,
+    endLink: (drop) => {
+      setLink(null);
+      writeSearch(withoutLink(window.location.search, drop), "replace");
+      if (drop && selection.current.selKind === "take" && selection.current.selId) live().selectAsset(null, { reason: "link" });
+    },
     undo: async () => {
       const popped = popUndo(undoRef.current, ws.state.projectId);
       if (!popped) { ws.toast(undoRef.current.length ? "Nothing to undo in this project." : "Nothing to undo."); return; }
@@ -240,7 +312,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live]);
+  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live, link, take]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

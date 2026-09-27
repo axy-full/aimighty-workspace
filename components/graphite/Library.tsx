@@ -79,8 +79,9 @@ export function Library({ project = null, items, library, projects = "ready", ov
      three rows of filters, it sat under the tab bar. With nothing read, there is nothing to search or filter either, so the
      Assets tab is the banner alone. A later read that failed is said at the list's end, beside Load more. */
   const failed = view.banner?.tone === "error" ? view.banner : null;
+  /* A tile selects its take through the shell (the URL carries it) and shows it in the Inspector. */
   const open = (entry: LibraryEntry) => {
-    dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
+    shell.selectAsset(entry.take.id, { reason: "pick" });
     shell.openInspector();
   };
   return (
