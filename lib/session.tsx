@@ -25,10 +25,9 @@ import { signInHrefFor } from "./signIn";
 
 export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
-/* No `margins`. It used to be here, and with `creditUsd` beside it a customer
-   could divide the markup back out of any price on the screen — §2 says margin
-   is never shown, and shipping it counts. What the browser gets instead is
-   `rates`, already converted, in lib/rateTable.ts. */
+/* No `margins`. It used to be here, beside `creditUsd`, where any customer
+   could read it — §2 says margin is never shown, and shipping it counts. What
+   the browser gets instead is `rates`, already converted, in lib/rateTable.ts. */
 export type SessionCredits = { creditUsd: number; granted: number; used: number; balance: number };
 export type Session = {
   signedIn: boolean;

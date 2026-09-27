@@ -1,5 +1,8 @@
+import { syncCreditReceipts } from "./creditReceipts";
 import { db, ready, id as newId, now } from "./db";
 import { billedCreditsSum } from "./creditSql";
+import { creditsApply } from "./credits";
+import { currentTenant } from "./tenant";
 import { STEPS } from "@/components/ui/Stepper";
 
 /**
@@ -20,17 +23,23 @@ import { STEPS } from "@/components/ui/Stepper";
 
 export type ProductionStatus = "active" | "delivered";
 
+/* One unit per workspace, never both. `capUsd` and `spentUsd` are the vendors'
+   dollars and go only to a workspace that pays its vendors itself; on the
+   platform's keys they would sit beside the credits the same rows were
+   billed, which is the margin, and that workspace reads `spentCredits`. A
+   workspace on its own keys is not sent `spentCredits` either: its dollars at
+   the platform's rate, beside the dollars, are the same margin. */
 export type ProjectRow = {
   id: string; productionId: string; name: string; format: string; runtimeSecs: number | null;
   /** Index into the six steps: Brief · Shots · Boards · Takes · Approve · Deliver. */
   step: number;
-  shots: number; capCredits: number | null; capUsd: number | null; spentCredits: number; spentUsd: number;
+  shots: number; capCredits: number | null; capUsd?: number | null; spentCredits?: number; spentUsd?: number;
   needYou: number; mediaCount: number; createdAt: number;
 };
 
 export type ProductionRow = {
   id: string; name: string; client: string; status: ProductionStatus;
-  capCredits: number | null; capUsd: number | null; spentCredits: number; spentUsd: number;
+  capCredits: number | null; capUsd?: number | null; spentCredits?: number; spentUsd?: number;
   needYou: number; createdAt: number; projects: ProjectRow[];
 };
 
@@ -56,12 +65,20 @@ export function stepFromStage(stage: string | null | undefined): number {
 
 /** The list for a workspace on credits: the vendor's dollars withheld, credits kept. */
 export function withoutVendorSpend(list: ProductionRow[]): ProductionRow[] {
-  return list.map((p) => ({ ...p, spentUsd: 0, projects: p.projects.map((j) => ({ ...j, spentUsd: 0 })) }));
+  const clean = <T extends { spentUsd?: number; capUsd?: number | null }>(row: T): T => {
+    const copy = { ...row };
+    delete copy.spentUsd;
+    delete copy.capUsd;
+    return copy;
+  };
+  return list.map((p) => ({ ...clean(p), projects: p.projects.map(clean) }));
 }
 
 /** Board 7a in one read: productions, their projects, counts and money. */
 export async function listProductions(): Promise<ProductionRow[]> {
   await ready();
+  await syncCreditReceipts();
+  const dollars = !creditsApply(currentTenant()?.workspace);
   const [prods, projs] = await Promise.all([
     db().execute(`SELECT * FROM productions ORDER BY created_at DESC`),
     db().execute(`
@@ -85,9 +102,10 @@ export async function listProductions(): Promise<ProductionRow[]> {
     const row: ProjectRow = {
       id: String(r.id), productionId: String(r.production_id ?? ""), name: String(r.name), format: String(r.format ?? ""),
       runtimeSecs: r.runtime_target == null ? null : Number(r.runtime_target), step: cleanStep(r.step),
-      shots: Number(r.shots ?? 0), capCredits: r.cap_credits == null ? null : Number(r.cap_credits), capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
-      spentCredits: Number(r.credits ?? 0), spentUsd: Number(r.spend ?? 0), needYou: Number(r.need ?? 0), mediaCount: Number(r.media ?? 0),
+      shots: Number(r.shots ?? 0), capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      needYou: Number(r.need ?? 0), mediaCount: Number(r.media ?? 0),
       createdAt: Number(r.created_at ?? 0),
+      ...(dollars ? { capUsd: r.cap_usd == null ? null : Number(r.cap_usd), spentUsd: Number(r.spend ?? 0) } : { spentCredits: Number(r.credits ?? 0) }),
     };
     const list = byProd.get(row.productionId) ?? [];
     list.push(row); byProd.set(row.productionId, list);
@@ -96,9 +114,11 @@ export async function listProductions(): Promise<ProductionRow[]> {
     const projects = byProd.get(String(r.id)) ?? [];
     return {
       id: String(r.id), name: String(r.name), client: String(r.client ?? ""), status: cleanStatus(r.status),
-      capCredits: r.cap_credits == null ? null : Number(r.cap_credits), capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
-      spentCredits: projects.reduce((a, p) => a + p.spentCredits, 0), spentUsd: projects.reduce((a, p) => a + p.spentUsd, 0),
+      capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
       needYou: projects.reduce((a, p) => a + p.needYou, 0), createdAt: Number(r.created_at ?? 0), projects,
+      ...(dollars
+        ? { capUsd: r.cap_usd == null ? null : Number(r.cap_usd), spentUsd: projects.reduce((a, p) => a + (p.spentUsd ?? 0), 0) }
+        : { spentCredits: projects.reduce((a, p) => a + (p.spentCredits ?? 0), 0) }),
     };
   });
 }
