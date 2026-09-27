@@ -95,6 +95,15 @@ async function ledger(tenantUrl: string, workspaceId: string, productionShotId: 
   }
 }
 
+/** The ledger once `jobs` jobs exist and each is on the meter: admission writes a job's row, then reserves its charge. */
+async function settledLedger(tenantUrl: string, workspaceId: string, productionShotId: string | undefined, jobs: number) {
+  await expect.poll(async () => {
+    const books = await ledger(tenantUrl, workspaceId, productionShotId);
+    return [books.jobs.length, books.charges.length];
+  }, { timeout: 60_000 }).toEqual([jobs, jobs]);
+  return ledger(tenantUrl, workspaceId, productionShotId);
+}
+
 const CLAIMS = "particl:pending-generation:";
 /** The claimed attempt for one node in the browser's recovery storage, if any. */
 const claimOf = (page: Page, projectId: string, nodeId: string) =>
@@ -227,8 +236,7 @@ test("Studio's Recover submitted take never re-sends a Rig take that never reach
   expect(posted).toHaveLength(1);
   expect(posted[0].key).not.toBe(first.key);
   expect(posted[0].body.maxCredits).toBe(shown);
-  await expect.poll(async () => (await ledger(tenantUrl, workspaceId, productionShot)).jobs.length, { timeout: 60_000 }).toBe(1);
-  books = await ledger(tenantUrl, workspaceId, productionShot);
+  books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   expect({ made: books.jobs.map((j) => madeOf(j.prompt)), billed: books.charges.map((c) => c.credits) }).toEqual({ made: ["the node as it is now"], billed: [shown] });
   expect(errors).toEqual([]);
 });
@@ -250,7 +258,7 @@ test("Studio's Recover submitted take follows a Rig take that reached the server
   expect(sent[mark].body.key).toBe(first.key);
   await expect.poll(() => claimOf(page, project.id, SHOT)).toBeNull();
   const productionShot = (await savedProject(page, scope, project)).shotMappings?.[SHOT];
-  const books = await ledger(tenantUrl, workspaceId, productionShot);
+  const books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   expect({ made: books.jobs.map((j) => j.id), billed: books.charges.map((c) => c.credits) }).toEqual({ made: [landedId], billed: [credits] });
   expect(errors).toEqual([]);
 });
@@ -344,8 +352,7 @@ test("Edit & Sound's recovery shows the stored request, never re-sends it when i
   expect(posted).toHaveLength(1);
   expect(posted[0].key).not.toBe(first.key);
   expect(posted[0].body).toMatchObject({ text: SOUND_AFTER, maxCredits: shown });
-  await expect.poll(async () => (await ledger(tenantUrl, workspaceId, productionShot)).jobs.length, { timeout: 60_000 }).toBe(1);
-  books = await ledger(tenantUrl, workspaceId, productionShot);
+  books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   expect({ made: books.jobs.map((j) => madeOf(j.prompt)), billed: books.charges.map((c) => c.credits) }).toEqual({ made: ["the new description"], billed: [shown] });
   expect(credits).toBeGreaterThan(0);
   expect(errors).toEqual([]);
@@ -368,7 +375,7 @@ test("Edit & Sound's recovery follows a sound effect that reached the server wit
   expect(sent[mark].body.key).toBe(first.key);
   await expect.poll(() => claimOf(page, project.id, nodeId)).toBeNull();
   const { productionShot } = await sfxNode(page, scope, project);
-  const books = await ledger(tenantUrl, workspaceId, productionShot);
+  const books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   expect({ made: books.jobs.map((j) => j.id), billed: books.charges.map((c) => c.credits) }).toEqual({ made: [landedId], billed: [credits] });
   expect(errors).toEqual([]);
 });
