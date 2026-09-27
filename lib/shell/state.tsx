@@ -121,8 +121,9 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (url === window.location.pathname + window.location.search + window.location.hash) return;
   if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
 }
-/** Rewrite (or add) the entry with only the search changed. */
+/** Rewrite (or add) the entry with only the search changed — only while the address bar is the shell's (a navigation away may already have moved it). */
 function writeSearch(search: string, mode: "push" | "replace") {
+  if (window.location.pathname !== SUITES_PATH) return;
   const url = window.location.pathname + search + window.location.hash;
   if (url === window.location.pathname + window.location.search + window.location.hash) return;
   if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
@@ -165,7 +166,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   useEffect(() => {
     const mode = nextEntry.current ?? "replace";
     nextEntry.current = null;
-    if (assetParam(window.location.search) === take) return;
+    if (window.location.pathname !== SUITES_PATH || assetParam(window.location.search) === take) return;
     writeSearch(withAsset(window.location.search, take), mode);
     /* The state layer's own `sel` follows in the same entry, so the two never disagree. */
     latestWs.current.syncUrl();

@@ -133,3 +133,12 @@ test("a server that does not know the lookup yet answers its first page: that is
     expect(projectLibraryState("scope-f", "p6").generations).toHaveLength(180);
   } finally { lib.restore(); }
 });
+
+test("two surfaces looking for the same take at once ask once", async () => {
+  const lib = routeLibrary(many(500));
+  try {
+    const [a, b] = await Promise.all([findProjectTake("scope-g", "p7", "generation:g0400"), findProjectTake("scope-g", "p7", "generation:g0400")]);
+    expect([a, b]).toEqual([true, true]);
+    expect(lib.asked.filter((q) => q.includes("id=g0400"))).toHaveLength(1);
+  } finally { lib.restore(); }
+});

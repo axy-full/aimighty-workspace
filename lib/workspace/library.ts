@@ -50,6 +50,8 @@ type Entry = {
   epoch: number;
   /** Assets a link asked for by id that sit older than the loaded pages: kept through every re-read of the range. */
   pinned: { uploads: LibraryUpload[]; generations: Generation[] };
+  /** Searches for one take in flight: the desk and the Inspector looking for the same take ask once. */
+  finding: Map<string, Promise<boolean>>;
 };
 const entries = new Map<string, Entry>();
 const keyOf = (scope: string, projectId: string) => JSON.stringify([scope, projectId]);
@@ -59,7 +61,7 @@ export const LIBRARY_RETRY_MS = [2_000, 8_000, 30_000] as const;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null }, epoch: 0, pinned: { uploads: [], generations: [] } };
+    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null }, epoch: 0, pinned: { uploads: [], generations: [] }, finding: new Map() };
     entries.set(key, found);
   }
   return found;
@@ -278,7 +280,17 @@ function pin(key: string, source: Source, row: LibraryUpload | Generation) {
  * its job's own time, so pages older than that cannot hold it. Answers whether
  * the take is loaded now.
  */
-export async function findProjectTake(scope: string, projectId: string, takeId: string, since?: number): Promise<boolean> {
+export function findProjectTake(scope: string, projectId: string, takeId: string, since?: number): Promise<boolean> {
+  const e = entry(keyOf(scope, projectId));
+  const asked = `${takeId}\u0000${since ?? ""}`;
+  const running = e.finding.get(asked);
+  if (running) return running;
+  const search = searchProjectTake(scope, projectId, takeId, since).finally(() => { if (e.finding.get(asked) === search) e.finding.delete(asked); });
+  e.finding.set(asked, search);
+  return search;
+}
+
+async function searchProjectTake(scope: string, projectId: string, takeId: string, since?: number): Promise<boolean> {
   const key = keyOf(scope, projectId);
   const e = entry(key);
   const split = takeId.indexOf(":");
