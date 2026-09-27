@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { getGeneration } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
-import { heldNeeds, releaseHeldJobs, releaseRefusal, type HeldInfo } from "@/lib/held";
+import { heldNeedsFor, releaseHeldJobs, releaseRefusal } from "@/lib/held";
 import { creditState } from "@/lib/credits";
 import { standing, workspaceLimits } from "@/lib/limits";
 
@@ -22,12 +22,16 @@ export const POST = withTenant(async function POST(_req: Request, { params }: Ct
   }
   const out = await releaseHeldJobs({ only: id, defer: (fn) => after(fn) });
   if (!out.released.length) {
+    const held = (gen.params as { held?: { why?: unknown; needs?: unknown } }).held;
+    const [credits, latest, limits, st, figures] = await Promise.all([creditState(), getGeneration(id), workspaceLimits(), standing(), heldNeedsFor([id])]);
     /* The figure the release was just measured against (the jobs tray's "Held · needs N cr"), not the one written when it was held. */
-    const needs = heldNeeds((gen.params as { held?: Partial<HeldInfo> }).held, gen.kind, gen.model);
-    const [credits, latest, limits, st] = await Promise.all([creditState(), getGeneration(id), workspaceLimits(), standing()]);
-    /* A cap that refused it is written on the take by the release itself. */
-    const reason = latest?.status === "held" && latest.error ? latest.error : null;
-    const refusal = releaseRefusal({ needs, balance: credits ? credits.balance : null, reason, slotsFull: st.running >= limits.concurrency });
+    const needs = figures.get(id) ?? Number(held?.needs ?? 0);
+    /* A cap that refused it is written on the take by this release (moving its updated_at); an older
+       refusal left on the take is not why this one started nothing. */
+    const reason = latest?.status === "held" && latest.error && latest.updatedAt > gen.updatedAt ? latest.error : null;
+    /* A take held for a slot waits on no balance. */
+    const balance = held?.why === "slots" || !credits ? null : credits.balance;
+    const refusal = releaseRefusal({ needs, balance, reason, slotsFull: st.running >= limits.concurrency });
     return NextResponse.json({ error: refusal.error }, { status: refusal.status });
   }
   return NextResponse.json({ released: true, id });

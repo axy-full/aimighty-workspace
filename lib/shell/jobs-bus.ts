@@ -1,9 +1,10 @@
 /**
- * "A job just started": said by every place that submits one (the shared
- * dispatch in lib/workspace/generate-submit, Business's and Viral's
- * connected submits), heard by the header's jobs tray, which reads the list
- * again at once instead of on its next turn. Carries nothing but the id; the
- * tray's read is still the truth.
+ * "A job just started, or just ended": said by every place that submits one
+ * (the shared dispatch in lib/workspace/generate-submit, Business's and
+ * Viral's connected submits) and by the readers that see one settle
+ * (Business's and Viral's own polls, the shell's connected collector), heard
+ * by the header's jobs tray, which reads the list again soon instead of on
+ * its next turn. Carries nothing but the id; the tray's read is the truth.
  */
 export const JOBS_EVENT = "particl:jobs";
 

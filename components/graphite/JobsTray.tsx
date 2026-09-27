@@ -1,41 +1,57 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import type { Fault } from "@/components/Boundary";
 import LazyMedia from "@/components/LazyMedia";
-import { ACTION_LABEL, inFlight, priceLabel, trayAge, type TrayJob } from "@/lib/jobsTray";
+import { ACTION_LABEL, moving, priceLabel, trayWhen, type TrayJob } from "@/lib/jobsTray";
 import { SAY } from "@/lib/shell/assets";
-import { recreatePreset, type RecipeSource } from "@/lib/shell/recipe";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
+import { handTakeToTakes } from "@/lib/shell/take-handover";
 import { useJobsTray, type JobsTrayState, type RowProblem } from "@/lib/shell/use-jobs-tray";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 
 /**
- * The header's jobs pill and its tray (a popover on desktop, a bottom sheet on
- * a phone): every take this person has rendering, held or just finished, from
- * any page and either engine — its real stage, how long it has been going,
- * the approved price, and the one thing to do about it.
+ * The header's jobs pill and its tray (a popover on desktop and on a phone on
+ * its side, a bottom sheet on a phone): every take this person has rendering,
+ * waiting, held or just finished, from any page and either engine — its real
+ * stage, how long it has been going or when it finished, the ledger's figure,
+ * and the one thing to do about it.
  */
 const KIND_TAG: Record<TrayJob["kind"], string> = { video: "VID", image: "IMG", audio: "AUD", other: "•••" };
 
 export function JobsPill() {
   const tray = useJobsTray();
   const anchor = useRef<HTMLButtonElement>(null);
-  /* Stopped (the account changed in another tab): the last count is not this account's to show. */
-  if (!tray || ((!tray.summary || tray.stopped) && !tray.open)) return null;
-  const summary = tray.summary;
-  const text = summary?.text ?? "Jobs";
+  if (!tray) return null;
+  const { summary } = tray;
+  /* Nothing at all, or stopped (the account changed in another tab: the last count is not this account's to show). */
+  if ((!summary || tray.stopped) && !tray.open) return null;
+  const quiet = !summary || summary.kind === "quiet";
   return (
     <>
-      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={summary?.tone ?? "idle"} aria-haspopup="dialog" aria-expanded={tray.open}
-        aria-label={summary ? `Jobs: ${text}` : "Jobs"} onClick={() => tray.setOpen(!tray.open)} data-testid="running-jobs">
+      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"}
+        aria-haspopup="dialog" aria-expanded={tray.open} aria-label={quiet ? "Jobs" : `Jobs: ${summary.text}`}
+        onClick={() => tray.setOpen(!tray.open)} data-testid="running-jobs">
         <span className="gx-jobs-dot" aria-hidden="true" />
-        <span className="gx-jobs-long" aria-hidden="true">{text}</span>
-        <span className="gx-jobs-short" aria-hidden="true">{summary?.short ?? "Jobs"}</span>
+        <span className="gx-jobs-long" aria-hidden="true">{quiet ? "Jobs" : summary.text}</span>
+        <span className="gx-jobs-short" aria-hidden="true">{quiet ? "Jobs" : summary.short}</span>
       </button>
       {tray.open ? <JobsTray tray={tray} anchor={anchor} /> : null}
     </>
+  );
+}
+
+/** The pill's place when the tray itself fails to draw (components/Boundary): the header stays, and says so. */
+export function JobsFault({ fault }: { fault: Fault }) {
+  return (
+    <button type="button" className="gx-hbtn gx-jobs" data-tone="red" onClick={() => { if (!fault.pending) fault.retry(); }} aria-disabled={fault.pending || undefined}
+      aria-label={`The jobs tray could not be shown. ${fault.pending ? "Trying…" : "Try again"}`} data-testid="jobs-fault">
+      <span className="gx-jobs-dot" aria-hidden="true" />
+      <span className="gx-jobs-long" aria-hidden="true">{fault.pending ? "Jobs · Trying…" : "Jobs · Try again"}</span>
+      <span className="gx-jobs-short" aria-hidden="true">{fault.pending ? "Trying…" : "Try again"}</span>
+    </button>
   );
 }
 
@@ -53,6 +69,18 @@ function useAnchor(anchor: RefObject<HTMLElement | null>) {
   return at;
 }
 
+const FOCUSABLE = "button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+/** A dialog that says it is modal keeps Tab inside it: past the last control is the first, and back. */
+function keepFocus(e: KeyboardEvent<HTMLDivElement>) {
+  if (e.key !== "Tab") return;
+  const inside = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.getClientRects().length);
+  if (!inside.length) { e.preventDefault(); return; }
+  const first = inside[0], last = inside[inside.length - 1];
+  const at = document.activeElement;
+  if (e.shiftKey && (at === first || at === e.currentTarget)) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+}
+
 function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTMLButtonElement | null> }) {
   const shell = useShell();
   const at = useAnchor(anchor);
@@ -60,19 +88,28 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
   const close = () => { tray.setOpen(false); anchor.current?.focus(); };
   useEffect(() => { panel.current?.focus(); }, []);
   const { jobs, summary } = tray;
+  const head = jobs.length ? (summary && summary.kind !== "quiet" ? summary.text : "Nothing running") : tray.status === "loading" ? "Reading…" : "";
   const style = at ? ({ "--jobs-top": `${at.top}px`, "--jobs-right": `${at.right}px` } as React.CSSProperties) : undefined;
   /* Out of the header island: a `backdrop-filter` ancestor would contain the fixed veil. */
   return createPortal(
     <div className="gx-veil gx-jobs-veil" onClick={close} data-testid="jobs-veil">
       <div ref={panel} className="gx-sheet gx-jobs-tray" role="dialog" aria-modal="true" aria-label="Jobs" tabIndex={-1} style={style}
-        onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } }} data-testid="jobs-tray">
+        onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } else keepFocus(e); }} data-testid="jobs-tray">
         <div className="gx-sheet-head gx-jobs-head">
           <span className="gx-panel-title">Jobs</span>
-          <span className="gx-jobs-count" data-testid="jobs-summary">{summary?.text ?? (tray.status === "loading" ? "Reading…" : "Nothing running")}</span>
+          {head ? <span className="gx-jobs-count" data-testid="jobs-summary">{head}</span> : null}
           <span className="gx-spacer" />
           <button type="button" className="gx-hbtn" onClick={close} data-testid="jobs-close">Close</button>
         </div>
         <div className="gx-sheet-list gx-scroll gx-jobs-list" data-testid="jobs-list">
+          {/* A failed read keeps the last rows (or says so over none) and is asked again on its own; Try again asks at once. Said first, above the rows it is about. */}
+          {tray.error ? (
+            <div className="gx-jobs-note" role="alert" data-testid="jobs-error">
+              <span>{tray.error}</span>
+              {tray.stopped ? null : <button type="button" className="gx-hbtn gx-jobs-retry" onClick={tray.refresh} data-testid="jobs-retry">Try again</button>}
+            </div>
+          ) : null}
+          {tray.partial ? <p className="gx-jobs-note" role="status" data-testid="jobs-partial">Connected-account jobs could not be read just now. They show again on the next read.</p> : null}
           {jobs.length ? (
             <ul className="gx-jobs-rows" aria-label="Jobs">
               {jobs.map((job) => <JobRow key={job.id} job={job} tray={tray} problem={tray.problems[job.id] ?? null} onDone={() => tray.setOpen(false)} />)}
@@ -81,18 +118,10 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
             <p className="gx-empty gx-jobs-empty" data-testid="jobs-loading" aria-busy="true">Reading your jobs…</p>
           ) : (
             <div className="gx-empty gx-jobs-empty" data-testid="jobs-empty">
-              <p>Nothing rendering. What you generate shows here until it lands in Takes.</p>
+              <p>Nothing is rendering or waiting, and nothing finished in the last 6 hours.</p>
               <button type="button" className="gx-hbtn gx-jobs-act--primary" onClick={() => { tray.setOpen(false); shell.goGen(); }} data-testid="jobs-generate">Generate</button>
             </div>
           )}
-          {/* A failed read keeps the last rows (or says so over none) and is asked again on its own; Try now asks at once. */}
-          {tray.error ? (
-            <div className="gx-jobs-note" role="alert" data-testid="jobs-error">
-              <span>{tray.error}</span>
-              {tray.stopped ? null : <button type="button" className="gx-hbtn gx-jobs-retry" onClick={tray.refresh} data-testid="jobs-retry">Try now</button>}
-            </div>
-          ) : null}
-          {tray.partial ? <p className="gx-jobs-note" role="status" data-testid="jobs-partial">Connected-account jobs could not be read just now.</p> : null}
         </div>
       </div>
     </div>,
@@ -106,9 +135,7 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
   const session = useSession();
   const openProject = ws.state.projectId;
   const where = job.projectName && job.draftId !== openProject ? job.projectName : null;
-  /* A held row's label already names what it needs. */
-  const price = job.stage === "held" ? null : priceLabel(job.price);
-  const meta = [trayAge(job.createdAt, tray.now), price].filter(Boolean).join(" · ");
+  const price = priceLabel(job.price);
   const busy = tray.releasing.has(job.id);
 
   /* The take's own project first, when it is not the one open. */
@@ -120,23 +147,21 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
   const act = () => {
     if (problem?.topUp) { shell.goWorkspace("credits"); onDone(); return; }
     switch (job.action) {
-      case "open": toProject(); shell.goSuite("studio", "takes"); onDone(); return;
-      case "business": toProject(); shell.goSuite("business"); onDone(); return;
+      case "open":
+        toProject();
+        /* That take and no other: Takes opens on it, and says so while it is found. */
+        if (job.takeId) { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } }); handTakeToTakes(job.takeId); }
+        shell.goSuite("studio", "takes"); onDone(); return;
+      case "ads": toProject(); shell.goSuite("business", "ads"); onDone(); return;
       case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
       case "release": void tray.release(job.id); return;
       case "recreate": {
-        const recipe = job.recipe;
-        if (!recipe) return;
-        /* Gen is handed the take's own words (and settings, where Particl made it); it is priced again before anything runs. */
-        if (recipe.connected) {
-          sendGenPreset({ prompt: recipe.prompt, model: recipe.model, type: recipe.kind === "image" || recipe.kind === "audio" ? recipe.kind : "video", billing: "connected", references: [], note: `Recreate · ${job.name}` });
-        } else {
-          const source = { id: job.id, kind: recipe.kind, model: recipe.model, prompt: recipe.prompt, params: recipe.params, provider: "", task: recipe.task ?? "generate" } as RecipeSource;
-          sendGenPreset(recreatePreset(source, { name: job.name }));
-        }
-        ws.toast(SAY.recreate(job.name));
+        if (!job.preset) return;
+        /* Gen is handed the take's own recipe (lib/shell/recipe, as the Library's Recreate builds it); it is priced again before anything runs. */
         toProject();
-        shell.goGen();
+        sendGenPreset(job.preset);
+        if (shell.view === "gen") shell.closePanels(); else shell.goGen();
+        ws.toast(SAY.recreate(job.name));
         onDone();
       }
     }
@@ -149,14 +174,16 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
       </span>
       <span className="gx-jobs-body">
         <span className="gx-jobs-name" title={where ? `${job.name} · ${where}` : job.name}>{job.name}</span>
+        {/* The stage, how long it has been going (or when it finished), and the figure — each whole: a figure is never cut short. */}
         <span className="gx-jobs-meta">
           <span className="gx-jobs-stage" data-testid="jobs-stage">{job.label}</span>
-          {meta ? <span className="gx-jobs-when"> · {meta}</span> : null}
+          <span className="gx-jobs-when" data-testid="jobs-when">{trayWhen(job, tray.now)}</span>
+          {price ? <span className="gx-jobs-price" data-testid="jobs-price">{price}</span> : null}
         </span>
         {where ? <span className="gx-jobs-where" data-testid="jobs-where">{where}</span> : null}
         {job.progress != null ? (
           <span className="gx-jobs-ring" role="progressbar" aria-label={job.label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(job.progress * 100)} style={{ "--p": job.progress } as React.CSSProperties}>{Math.round(job.progress * 100)}%</span>
-        ) : inFlight(job) ? <span className="gx-jobs-bar" role="progressbar" aria-label={job.label} data-testid="jobs-bar" /> : null}
+        ) : moving(job) ? <span className="gx-jobs-bar" role="progressbar" aria-label={job.label} data-testid="jobs-bar" /> : null}
         {job.reason ? <span className="gx-jobs-reason" data-testid="jobs-reason">{job.reason}</span> : null}
         {problem ? <span className="gx-jobs-problem" role="status" data-testid="jobs-problem">{problem.message}</span> : null}
       </span>

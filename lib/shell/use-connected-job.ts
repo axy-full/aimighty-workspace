@@ -283,7 +283,7 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
       done: (reply) => !connectedRecoverable(reply.job),
       onValue: ({ job, pollAfterSeconds }) => {
         lastRead.current = { id, at: Date.now(), hintSeconds: pollAfterSeconds };
-        if (!connectedRecoverable(job)) forgetJob(store(), key, id);
+        if (!connectedRecoverable(job)) { forgetJob(store(), key, id); announceJob(id); }
         setState((now) => (mine(now) ? settledState(job) : now));
       },
       onError: (error) => {

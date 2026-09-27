@@ -143,6 +143,19 @@ export function heldNeeds(held: Partial<HeldInfo> | null | undefined, kind: stri
 }
 
 /**
+ * What each of these held takes needs now, read off the raw rows (the
+ * browser's copy of a take carries no estimate to derive it from). The jobs
+ * tray's "Held · needs N cr" and a refused Release both say this figure,
+ * which is the one releaseHeldJobs measures the take against.
+ */
+export async function heldNeedsFor(ids: readonly string[]): Promise<Map<string, number>> {
+  if (!ids.length) return new Map();
+  const wanted = new Set(ids);
+  /* Every held take fits one read: HELD_LIMIT keeps the line far under heldRows' 50. */
+  return new Map((await heldRows()).filter((r) => wanted.has(r.id)).map((r) => [r.id, r.needs]));
+}
+
+/**
  * Why a Release someone pressed started nothing. Short on credits is a 402
  * (the jobs tray turns its button into Top up); a reason written on the take
  * (a project, shot or token cap) is said as it is; otherwise it is waiting

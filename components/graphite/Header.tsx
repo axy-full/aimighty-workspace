@@ -6,7 +6,8 @@ import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { JobsPill } from "./JobsTray";
+import Boundary from "@/components/Boundary";
+import { JobsFault, JobsPill } from "./JobsTray";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -60,7 +61,8 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
         <span className="gx-key">⌘K</span>
       </button>
       <span className="gx-spacer" />
-      <JobsPill />
+      {/* The tray draws rows the server sent: one that cannot be drawn costs the pill, never the header. */}
+      <Boundary what="Jobs" probe="jobs" fallback={(fault) => <JobsFault fault={fault} />}><JobsPill /></Boundary>
       <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>
         <span className="gx-credits-n">{credits.text.replace(/\s*cr$/i, "")}</span>
         {/cr$/i.test(credits.text) ? <span className="gx-credits-u">cr</span> : null}
