@@ -404,6 +404,8 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
   await open(page, tray);
   /* Strict Mode may abort its probe read; only completed responses advance the pace. */
   await expect.poll(() => completedReads).toBe(1);
+  /* The response must have reached React before advancing the next poll's clock. */
+  await expect(page.getByTestId("running-jobs")).toBeVisible();
   await page.waitForTimeout(250);
 
   /* Never sooner than the 10 s the server asked for (plus the margin), nor much later. */
