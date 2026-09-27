@@ -19,6 +19,7 @@ import { readDraft } from "@/lib/workbench/records";
 import { uploadReservationsReady } from "@/lib/uploadReservations";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -176,6 +177,7 @@ export function forgetShortsPresets() {
 const sameInput = (a: unknown, b: ConsumerShortsInput) => sameConsumerValue(parseConsumerShortsInput(a), b);
 const PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 export async function quoteConsumerShorts(userId: string, draftId: string, input: ConsumerShortsInput, idempotencyKey: string) {
+  requireConsumerFunding();
   const normalized = parseConsumerShortsInput(input);
   // A style the owner saved on the account is its own library, never Particl's.
   if (!SHORTS_LISTED_SOURCES.includes(normalized.preset.source))

@@ -30,6 +30,8 @@ const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }
 const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(SETUP_TYPE_IDS.length).optional() }).strict();
 const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll, setup]);
 function problem(error: unknown) {
+  if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
+    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
     return Response.json({ code: `original_${error.code}`, error: error.message }, {
       status: error.code === "quota" ? 507 : error.code === "timeout" ? 504 : error.code === "storage_unavailable" ? 503 : error.code === "invalid_video" ? 422 : error.code === "not_found" ? 404 : 409,

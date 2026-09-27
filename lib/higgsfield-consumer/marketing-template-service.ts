@@ -13,6 +13,7 @@ import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -190,6 +191,7 @@ async function requireTemplate(userId: string, presetId: string): Promise<{ temp
 }
 const sameInput = (a: unknown, b: ConsumerMarketingTemplateInput) => sameConsumerValue(parseConsumerMarketingTemplateInput(a), b);
 export async function quoteConsumerMarketingTemplate(userId: string, draftId: string, value: ConsumerMarketingTemplateInput, idempotencyKey: string) {
+  requireConsumerFunding();
   const input = parseConsumerMarketingTemplateInput(value);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {

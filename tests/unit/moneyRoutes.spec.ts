@@ -60,7 +60,7 @@ async function auth(ws: TenantWorkspace) {
 }
 
 test("Usage and its summary keep hidden takes and chats as spent, and a reading counts text down", async () => {
-  const ws = workspace("ws_usage", false);
+  const ws = workspace(`money_routes_usage_${path.basename(dir)}`, false);
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { recordCheck } = await import("../../lib/reconcile");

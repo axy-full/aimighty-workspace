@@ -10,6 +10,7 @@ import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -174,6 +175,7 @@ export async function quoteConsumerGeneration(
     importKey?: string;
   } = {},
 ) {
+  requireConsumerFunding();
   const normalized = parseConsumerGenerationInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
   await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
@@ -440,6 +442,7 @@ export async function quoteConsumerGenerationBatch(
   keys: string[],
   options: { batchId: string; composer?: "gen" | null },
 ) {
+  requireConsumerFunding();
   if (!Array.isArray(keys) || keys.length < 2 || keys.length > CONSUMER_ACTIVE_LIMIT || new Set(keys).size !== keys.length || !isBatchId(options.batchId))
     throw new ConsumerVideoServiceError("invalid_batch", "Choose 2 to 4 takes for one batch.", 400);
   const views: ConsumerGenerationView[] = [];

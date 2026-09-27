@@ -63,6 +63,8 @@ const poll = z
   .strict();
 const requestSchema = z.discriminatedUnion("action", [quote, submit, poll]);
 function problem(error: unknown) {
+  if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
+    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerGenjutsuError)
     return Response.json(
       { code: error.code, error: error.message },

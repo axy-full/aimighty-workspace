@@ -13,6 +13,7 @@ import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -132,6 +133,7 @@ export function assertVoiceToolEnabled(input: Pick<ConsumerVoiceToolInput, "tool
     throw new VoiceToolError("analysis_disabled", "Analyse video is not available: the connected account advertises no price for it and its report format is unverified.");
 }
 export async function quoteConsumerVoiceTool(userId: string, draftId: string, input: ConsumerVoiceToolInput, idempotencyKey: string) {
+  requireConsumerFunding();
   const normalized = parseConsumerVoiceToolInput(input);
   assertVoiceToolEnabled(normalized);
   // A voice the owner made on the account is its own library, never Particl's.

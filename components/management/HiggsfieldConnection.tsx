@@ -83,7 +83,7 @@ export default function HiggsfieldConnection() {
       : <p role="status">{key?.set ? "Identity engine available" : "Identity engine temporarily unavailable"}</p>}
     {data && superAdmin && <div className="mt-5 space-y-3">
       <p className="text-sm text-mute">Check the saved connection and available identity render price estimates. No training or generation credits are spent.</p>
-      <button className="management-button" type="button" disabled={!!busy || !canVerify} onClick={() => void verify()}>{busy === 'verify' ? 'Verifying connection…' : 'Verify connection'}</button>
+      <button className="management-button" style={{ minHeight: 44 }} type="button" disabled={!!busy || !canVerify} onClick={() => void verify()}>{busy === 'verify' ? 'Verifying connection…' : 'Verify connection'}</button>
       {!canVerify && <p className="text-sm text-mute">Configure the shared engine in the private deployment settings to verify it.</p>}
       {verificationError && <ManagementNotice error>{verificationError}</ManagementNotice>}
       {verification && <ManagementNotice error={verification.auth === 'rejected' || verification.auth === 'unavailable' || verification.auth === 'not_configured'}>

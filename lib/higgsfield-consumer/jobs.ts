@@ -9,6 +9,7 @@ import { validateConsumerMarketingTemplateSources } from "./marketing-template-s
 import { validateConsumerVoiceToolSources } from "./voice-tool-sources";
 import { validateConsumerShortsSources } from "./shorts-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
+import { requireTenant } from "@/lib/tenant";
 
 export type ConsumerWorkflow =
   "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template" | "voice-tool" | "shorts";
@@ -62,6 +63,7 @@ export type CreateConsumerJob = ConsumerScope & {
 export type ConsumerFailureCode =
   "submission_rejected" | "provider_failed" | "invalid_result";
 export type ConsumerJobErrorCode =
+  | "particl_quote_unavailable"
   | "invalid_input"
   | "not_found"
   | "idempotency_conflict"
@@ -74,9 +76,19 @@ export class ConsumerJobError extends Error {
     public readonly code: ConsumerJobErrorCode,
     public readonly status: number = 409,
   ) {
-    super(code);
+    super(code === "particl_quote_unavailable"
+      ? "This tool is not available with Particl credits yet. Existing jobs remain available. Choose an available Studio model."
+      : code);
     this.name = "ConsumerJobError";
   }
+}
+
+/** A provider-wallet quote cannot authorize a managed studio's spend. Platform
+ * workspaces need a retail quote and ledger reservation before this transport
+ * can be enabled for new work. Existing receipts and collections remain valid. */
+export function requireConsumerFunding(): void {
+  if (requireTenant().usesPlatformKeys)
+    throw new ConsumerJobError("particl_quote_unavailable", 409);
 }
 export const CONSUMER_ACTIVE_LIMIT = 4;
 /**
@@ -296,6 +308,7 @@ async function requiredRow(
 export async function createConsumerJob(
   input: CreateConsumerJob,
 ): Promise<{ job: ConsumerJob; replayed: boolean }> {
+  requireConsumerFunding();
   scope(input);
   identifier(input.connectedOwnerId);
   identifier(input.connectionGeneration);
@@ -623,6 +636,7 @@ export async function claimConsumerDispatch(
   return workbenchTransaction(async (tx) => {
     const row = await requiredRow(tx, input);
     if (row.status !== "quoted") return null;
+    requireConsumerFunding();
     // Deletion may not initiate new spend, but already dispatched receipts
     // remain accessible to their immutable owner for reconciliation.
     await requireDraft(tx, input);
@@ -664,6 +678,7 @@ export async function claimConsumerDispatch(
 export async function claimConsumerDispatchBatch(
   inputs: ConsumerJobScope[],
 ): Promise<{ job: ConsumerJob; claimToken: string }[] | null> {
+  requireConsumerFunding();
   if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > CONSUMER_ACTIVE_LIMIT) invalid();
   inputs.forEach(jobScope);
   if (new Set(inputs.map((input) => input.id)).size !== inputs.length) invalid();

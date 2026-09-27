@@ -4,6 +4,7 @@ import { readDraft, saveDraft } from "@/lib/workbench/records";
 import { newProject } from "@/lib/workbench/studio";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerRecoveryJobs, readConsumerJobAfterAdmissions,
   claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
@@ -78,6 +79,7 @@ async function connected(userId: string, expectedGeneration?: string) {
   return access;
 }
 export async function quoteConsumerMarketingVideo(userId: string, draftId: string, input: ConsumerVideoInput, idempotencyKey: string) {
+  requireConsumerFunding();
   const normalized = parseConsumerVideoInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else.
   await refuseForeignMarketingSetup(userId, setupIdsOfVideoInput(normalized));
