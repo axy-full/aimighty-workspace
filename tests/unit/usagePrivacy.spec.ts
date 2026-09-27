@@ -89,6 +89,7 @@ async function usageAs(ws: TenantWorkspace, user: TenantUser): Promise<{ body: B
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/creditTerms": await import("../../lib/creditTerms"),
     "@/lib/usageLedger": await import("../../lib/usageLedger"),
+    "@/lib/usageParams": await import("../../lib/usageParams"),
   }).GET;
   const response = await GET(new Request("http://localhost/api/usage"));
   expect(response.status).toBe(200);
