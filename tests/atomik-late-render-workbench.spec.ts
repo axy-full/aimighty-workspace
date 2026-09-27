@@ -130,7 +130,11 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
   await cont().click();
   await expect.poll(() => renders.length, { timeout: 60_000 }).toBe(2);
   expect(renders[1]).toMatchObject({ key: `atomik-step:${f.stepId}:2`, body: { maxCredits: again } });
-  await expect.poll(async () => (await ledger(f.tenantUrl, f.workspaceId)).jobs.length, { timeout: 60_000 }).toBe(1);
+  /* Once the job is on the meter: admission writes a job's row, then reserves its charge. */
+  await expect.poll(async () => {
+    const now = await ledger(f.tenantUrl, f.workspaceId);
+    return [now.jobs.length, now.charges.length];
+  }, { timeout: 60_000 }).toEqual([1, 1]);
   books = await ledger(f.tenantUrl, f.workspaceId);
   expect(books.charges).toEqual([again]);
   expect(f.errors).toEqual([]);
