@@ -1,5 +1,6 @@
 import { displayModelName } from "../models";
 import { audioTaskAvailable, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
+import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -91,6 +92,8 @@ export type ComposerState = {
   enhance: boolean;
   /** Takes per Generate (the stepper, 1–4). Two or more go as one batch at the total on the button (lib/workspace/take-batch.ts). */
   count: number;
+  /** Gen's film vocabulary (lib/workspace/film-vocabulary.ts): one camera-bank value per row; a row that is absent is Auto. */
+  shot: Record<string, string>;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
@@ -110,6 +113,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   picks: {},
   enhance: false,
   count: 1,
+  shot: {},
   notice: null,
 };
 
@@ -129,6 +133,8 @@ export type ComposerRecipe = {
   prompt?: string;
   references?: ComposerReference[];
   sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
+  /** The take's shot setup (params.shotSpec); none puts every chip back to Auto. */
+  shot?: Record<string, string>;
 };
 
 export type ComposerAction =
@@ -144,6 +150,7 @@ export type ComposerAction =
   | { type: "referenceRole"; key: string; role: string }
   | { type: "enhance"; value: boolean }
   | { type: "count"; value: number }
+  | { type: "shot"; value: Record<string, string> }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -214,6 +221,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, enhance: action.value };
     case "count":
       return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
+    case "shot":
+      return { ...state, shot: { ...action.value }, notice: null };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -238,6 +247,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         instrumental: sound.instrumental ?? state.instrumental,
         voiceId: sound.voiceId ?? state.voiceId,
         count: 1,
+        shot: { ...(recipe.shot ?? {}) },
         notice: null,
       };
     }
@@ -500,6 +510,8 @@ export function composerBlock(input: {
   capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
+  /** The words as sent: with Gen's film vocabulary written in, they can run past what the connected account takes. */
+  sentPrompt?: string;
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
@@ -513,6 +525,8 @@ export function composerBlock(input: {
   if (input.catalogue.loading && !model) return READING_MODELS;
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
   if (!state.prompt.trim()) return "Write what to generate.";
+  if (state.billing === "connected" && (input.sentPrompt?.length ?? 0) > PROMPT_LIMIT)
+    return `With the setup written in, the words run past ${PROMPT_LIMIT.toLocaleString("en-US")} characters. Shorten them or set fewer chips.`;
   if (model.audioTask === "speech" && !state.voiceId) return "Choose a voice.";
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
