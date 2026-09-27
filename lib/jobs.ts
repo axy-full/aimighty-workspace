@@ -1,3 +1,5 @@
+import { syncCreditReceipts } from "./creditReceipts";
+import { billedCreditsExpr } from "./creditSql";
 import { isGenjutsuModel } from "./genjutsuTypes";
 import { isConsumerVideoModel, isConsumerOriginalParams } from "./higgsfield-consumer/original-identity";
 import { reconcileGenjutsuVideo } from "./genjutsuVideo";
@@ -9,7 +11,6 @@ import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -176,16 +177,16 @@ export function rowToGeneration(r: any): Generation {
     totalTokens: r.total_tokens ?? null,
     /* The unit this workspace pays in, and only that one.
        A workspace on the platform's keys is sent `creditsBilled` — the
-       ledger's own figure, computed here where the margin lives — and NOT
-       `cost_usd`, which is what the vendor charged the platform. Sending both
-       was how the markup came to be a subtraction away on any take card. A
-       workspace on its own keys gets the dollars, because those are the
-       dollars that left its account. */
+       ledger's own figure, computed here on the server — and NOT `cost_usd`,
+       which is what the vendor charged the platform. Sending both put a vendor
+       cost beside our price on every take card. A workspace on its own keys
+       gets the dollars, because those are the dollars that left its
+       account. */
     costUsd: inCredits || providerCreditQuote ? null : (r.cost_usd ?? null),
     refineCostUsd: inCredits || providerCreditQuote ? null : (r.refine_cost_usd ?? null),
     providerCreditQuote,
     creditsBilled: inCredits && !providerCreditQuote
-      ? billCredits(Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind, r.model))
+      ? Number(r.receipt_credits ?? 0)
       : null,
     refineModel: r.refine_model ?? null,
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
@@ -210,7 +211,7 @@ export function rowToGeneration(r: any): Generation {
 }
 
 const SELECT = `
-  SELECT g.*, p.name AS project_name, u.name AS author_name,
+  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, p.name AS project_name, u.name AS author_name,
          s.code AS shot_code, s.scene AS shot_scene, s.title AS shot_title
   FROM generations g
   LEFT JOIN projects p ON p.id = g.project_id
@@ -241,6 +242,7 @@ export async function listGenerations(opts: {
   unfiled?: boolean;
 } = {}): Promise<Generation[]> {
   await ready();
+  await syncCreditReceipts();
   const where: string[] = [];
   const args: any[] = [];
 
@@ -308,6 +310,7 @@ export async function listGenerations(opts: {
 
 export async function getGeneration(genId: string): Promise<Generation | null> {
   await ready();
+  await syncCreditReceipts();
   const rs = await db().execute({
     sql: `${SELECT} WHERE g.id = ? AND g.deleted = 0 LIMIT 1`,
     args: [genId],
@@ -602,12 +605,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
       totalTokens: task.totalTokens,
       durationS: deliveredSeconds ?? gen.durationS,
       costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
-      creditsBilled: creditsApply(currentTenant()?.workspace)
-        ? billCredits(
-            (cost ?? 0) + savedCosts.refinement,
-            marginKeyOf(gen.kind, gen.model),
-          )
-        : null,
+      creditsBilled: (await getGeneration(gen.id))?.creditsBilled ?? null,
       error: task.error,
       updatedAt: ts,
     };
@@ -640,6 +638,7 @@ export async function hasActiveGenerations(): Promise<boolean> {
  */
 export async function syncActive(limit = 12): Promise<void> {
   await ready();
+  await syncCreditReceipts();
   const rs = await db().execute({
     sql: `${SELECT} WHERE g.status IN ('queued','running') AND g.deleted = 0
           ORDER BY g.created_at DESC LIMIT ?`,
@@ -659,6 +658,7 @@ export async function syncPending(
   options: { deadlineAt?: number } = {},
 ): Promise<ReconcileResult & { deferred: number }> {
   await ready();
+  await syncCreditReceipts();
   await uploadReservationsReady();
   const bounded = Math.max(1, Math.min(50, limit));
   const results = {

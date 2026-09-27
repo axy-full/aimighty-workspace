@@ -29,7 +29,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * one of them, `checkLimits` from three and not this one either. `meter()`
  * only records — it has never refused anything. So a member of any workspace,
  * holding zero credits and past the monthly allowance, could press this in a
- * loop at $3.60 of the platform's fal money a press, with no rate limit in
+ * loop, spending the platform's fal money on every press, with no rate limit in
  * front of it. Both sibling identity routes already checked; ground rule 1
  * is "other people's money", and this was the one door with no lock.
  */

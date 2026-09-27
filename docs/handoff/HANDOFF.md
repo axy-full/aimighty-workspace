@@ -55,7 +55,8 @@ These are owner decisions and repo law. Breaking one is a defect, not a preferen
    `ApprovedQuote` token only `approve()` can mint.
 2. **One credit is US$0.10** (`creditUsd()` in `lib/creditTerms.ts`, overridable by `CREDIT_USD`). Every
    conversion and every printed rate derives from it — no second definition anywhere. Customers are billed
-   `usd × margin / creditUsd`, margin 1.5 (`LAUNCH_MARGIN`).
+   `usd × margin / creditUsd`, rounded up per job, from the margin table (`margins()`, overridable by
+   `CREDIT_MARGINS`); the margin values are pricing policy, kept privately by the owner.
 3. **Connected-account credits are the provider's currency, not ours.** Never convert them at our rate, never
    call them ten cents, never name the provider. A unit test pins that the connected files do not import the rate.
 4. **Model names:** real names for models we integrate directly (Seedance 2.5, Kling 3.0, Nano Banana 2, Eleven
