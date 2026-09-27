@@ -290,7 +290,7 @@ test("the desk route opens to the platform owner's browser session alone, and de
   });
 });
 
-test("while designated, the connection cannot be disconnected or re-signed and its workspace cannot be deleted", async () => {
+test("while designated, the connection cannot be disconnected and its workspace cannot be deleted; a sign-in is still allowed", async () => {
   const { account, tenant, scope } = await modules();
   const owner = await host();
   const other = await host();
@@ -335,15 +335,17 @@ test("while designated, the connection cannot be disconnected or re-signed and i
   const request = (method: string, id: Identity) =>
     new Request("https://particl.example/api/any", { method, headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope.workbenchScopeFor(id.workspaceId, id.userId) }, body: JSON.stringify({ name: "Host" }) });
   await tenant.runWithStore({ workspace: null, user: null }, async () => {
-    for (const [name, call] of [["disconnect", () => connection.DELETE(request("DELETE", owner))], ["sign-in", () => connect.POST(request("POST", owner))]] as const) {
-      const locked = await call();
-      expect(locked.status, name).toBe(409);
-      expect(await locked.json(), name).toEqual({ error: account.PLATFORM_ACCOUNT_LOCKED, code: "platform_account_locked" });
-    }
+    const locked = await connection.DELETE(request("DELETE", owner));
+    expect(locked.status).toBe(409);
+    expect(await locked.json()).toEqual({ error: account.PLATFORM_ACCOUNT_LOCKED, code: "platform_account_locked" });
     const kept = await workspaces.DELETE(request("DELETE", owner));
     expect(kept.status).toBe(409);
     expect((await kept.json()).error).toMatch(/platform desk/);
-    expect({ removed, begun, deleted }).toEqual({ removed: [], begun: [], deleted: [] });
+    expect({ removed, deleted }).toEqual({ removed: [], deleted: [] });
+    // A sign-in may start (the callback completes it only for the pinned account; see the next test).
+    expect((await connect.POST(request("POST", owner))).status).toBe(200);
+    expect(begun).toEqual([{ workspaceId: owner.workspaceId, userId: owner.userId }]);
+    begun.length = 0;
     // Any other connection and workspace are untouched by the lock.
     identity = other;
     expect((await connection.DELETE(request("DELETE", other))).status).toBe(200);
@@ -351,4 +353,56 @@ test("while designated, the connection cannot be disconnected or re-signed and i
     expect((await workspaces.DELETE(request("DELETE", other))).status).toBe(200);
     expect({ removed, begun, deleted }).toEqual({ removed: [{ workspaceId: other.workspaceId, userId: other.userId }], begun: [{ workspaceId: other.workspaceId, userId: other.userId }], deleted: [other.workspaceId] });
   });
+});
+
+test("the designated connection re-signs only with its own account; another account's sign-in leaves its grant untouched", async () => {
+  const { account, oauth, store, platform, tenant } = await modules();
+  await platform.platformReady();
+  const n = ++sequence, identity = { workspaceId: `ws_webacct${n}${randomBytes(3).toString("hex")}`, userId: `acct_webacct_${n}` };
+  await platform.platformDb().batch([
+    { sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,?,0,0)", args: [identity.workspaceId, identity.workspaceId, "Host", "file:unused.db", identity.userId] },
+    { sql: "INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,'owner',0,0)", args: [identity.workspaceId, identity.userId] },
+  ], "write");
+  const clientId = oauth.consumerConfiguration().clientId;
+  const idToken = (sub: string) => ["e30", Buffer.from(JSON.stringify({ iss: oauth.CONSUMER_ISSUER, sub, aud: clientId })).toString("base64url"), "signature"].join(".");
+  const signInAs = async (sub: string, options: { requiredSubjectHash?: string } = {}) => {
+    const { url } = await oauth.beginConsumerAuthorization(identity, "browser-session");
+    const params = new URLSearchParams({ state: new URL(url).searchParams.get("state")!, code: "authorization-code", iss: oauth.CONSUMER_ISSUER });
+    return oauth.finishConsumerAuthorization(identity, "browser-session", params, (async () =>
+      Response.json({ access_token: `access-${sub}`, refresh_token: "refresh-private", expires_in: 3600, token_type: "Bearer", id_token: idToken(sub) })) as typeof fetch, options);
+  };
+  await signInAs("owner-account");
+  await account.designatePlatformAccount(identity, identity.userId);
+  const pinned = (await account.readPlatformDesignation())!.subjectHash;
+  const before = (await store.claimConsumerAccess(identity)) as { generation: string };
+  // Another account: refused, and the grant, generation and account stay exactly as they were.
+  await expect(signInAs("another-account", { requiredSubjectHash: pinned })).rejects.toMatchObject({ code: "account_pinned" });
+  expect(await store.claimConsumerAccess(identity)).toMatchObject({ kind: "ready", token: "access-owner-account", generation: before.generation });
+  expect((await account.platformAccountHealth()).reason).toBeNull();
+  // The same account again: completes, same grant generation, still serving.
+  await signInAs("owner-account", { requiredSubjectHash: pinned });
+  expect(await store.claimConsumerAccess(identity)).toMatchObject({ kind: "ready", generation: before.generation });
+  expect((await account.platformAccountHealth()).reason).toBeNull();
+
+  // The callback route pins the designated connection, and only that one.
+  const seen: unknown[] = [];
+  let caller = identity;
+  const callback = loadRoute<{ GET: (req: Request) => Promise<Response> }>("app/api/higgsfield/consumer/callback/route.ts", {
+    "next/headers": { cookies: async () => ({ get: () => ({ value: "browser-session" }) }) },
+    "@/lib/auth": { requireOwner: async () => ({ user: { id: caller.userId, owner: true } }), SESSION_COOKIE: "session", withTenant: (handler: unknown) => handler },
+    "@/lib/tenant": { requireTenant: () => ({ id: caller.workspaceId }) },
+    "@/lib/higgsfield-consumer/oauth": {
+      consumerCallbackLocation: oauth.consumerCallbackLocation, ConsumerOAuthError: oauth.ConsumerOAuthError,
+      finishConsumerAuthorization: async (_id: unknown, _session: unknown, _params: unknown, _fetch: unknown, options: unknown) => { seen.push(options); },
+    },
+    "@/lib/higgsfield-consumer/platform-account": account,
+  });
+  const back = new Request("https://particl.example/api/higgsfield/consumer/callback?state=s&code=c");
+  await tenant.runWithStore({ workspace: null, user: null }, async () => {
+    expect((await callback.GET(back)).headers.get("Location")).toMatch(/higgsfield=connected$/);
+    caller = { workspaceId: "ws_elsewhere", userId: "someone" };
+    await callback.GET(back);
+  });
+  expect(seen).toEqual([{ requiredSubjectHash: pinned }, {}]);
+  await account.releasePlatformAccount(identity.userId);
 });

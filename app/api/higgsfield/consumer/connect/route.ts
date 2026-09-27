@@ -7,7 +7,6 @@ import {
   beginConsumerAuthorization,
   ConsumerOAuthError,
 } from "@/lib/higgsfield-consumer/oauth";
-import { isDesignatedIdentity, PLATFORM_ACCOUNT_LOCKED } from "@/lib/higgsfield-consumer/platform-account";
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
 export const POST = withTenant(
@@ -21,10 +20,6 @@ export const POST = withTenant(
         workspaceId: requireTenant().id,
         userId: auth.user.id,
       };
-      // A new sign-in could replace the designated platform connection's
-      // account; it is released on the platform desk first.
-      if (await isDesignatedIdentity(identity))
-        return Response.json({ error: PLATFORM_ACCOUNT_LOCKED, code: "platform_account_locked" }, { status: 409, headers });
       await takeAccountLimit(
         `higgsfield-consumer-connect:${identity.workspaceId}:${identity.userId}`,
         5,

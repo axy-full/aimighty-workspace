@@ -8,8 +8,10 @@
  * that changes either one closes the tools for new work: a different account
  * signing in, a disconnect or refused refresh, a paused or released
  * designation, the host workspace deleted or suspended, or its owner gone.
- * While designated, the connection cannot be disconnected or re-signed from
- * Workspace › Engines, and its workspace cannot be deleted.
+ * While designated, the connection cannot be disconnected from Workspace ›
+ * Engines, a sign-in there completes only for the pinned account (another
+ * account's sign-in leaves the grant untouched), and its workspace cannot be
+ * deleted.
  *
  * Nothing here spends, and nothing it returns to a route carries a token, a
  * grant generation, an account hash, a wallet or a balance. Tenant data never
@@ -106,7 +108,7 @@ export class PlatformAccountError extends Error {
   }
 }
 export const PLATFORM_ACCOUNT_LOCKED =
-  "This account runs website tools for every workspace. Release or move it on the platform desk before changing it.";
+  "This account runs website tools for every workspace. Release or move it on the platform desk before disconnecting it.";
 
 /** Why new website work cannot run through the designation right now. Server-side detail only. */
 export type WebsiteAccountReason = "unset" | "paused" | "disconnected" | "reconnect" | "account_changed" | "workspace_unavailable";
