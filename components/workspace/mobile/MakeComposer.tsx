@@ -203,12 +203,11 @@ export function MakeComposerSheet() {
             <select
               id="pxm-composer-voice"
               className="pxm-select"
-              value={host.state.voiceId}
+              value={host.voice?.id ?? ""}
               disabled={host.submitting}
               onChange={(event) => host.dispatch({ type: "voice", value: event.target.value })}
             >
-              <option value="">Choose a voice</option>
-              {(host.audio?.voices ?? []).map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+              {host.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
             </select>
           </>
         ) : null}

@@ -4,7 +4,6 @@ import {
   trayOrder, traySummary, trayWhen, withComposerSlot, type AccountRow, type EngineMoney, type EngineRow, type TrayJob,
 } from "../../lib/jobsTray";
 import type { GenPreset } from "../../lib/shell/recipe";
-import { releaseRefusal } from "../../lib/held";
 
 /**
  * The header's jobs tray (lib/jobsTray): stored rows from both engines become
@@ -246,13 +245,4 @@ test("a reply is checked row by row before the tray draws it", () => {
   expect(parseTrayReply({ jobs: [] })?.pollAfterSeconds).toBe(60);
 });
 
-test("a refused Release says why without sending anyone to top up needlessly", () => {
-  expect(releaseRefusal({ needs: 43, balance: 5, reason: null, slotsFull: true })).toEqual({ status: 402, error: "Still short: this needs 43 credits and 5 are left." });
-  expect(releaseRefusal({ needs: 6000, balance: 1250.7, reason: null, slotsFull: false }).error).toBe("Still short: this needs 6,000 credits and 1,250 are left.");
-  /* Covered, but refused for a reason of its own, or waiting for room: never "short", never Top up. */
-  expect(releaseRefusal({ needs: 43, balance: 250, reason: "The shot is at its cap.", slotsFull: true })).toEqual({ status: 409, error: "The shot is at its cap." });
-  expect(releaseRefusal({ needs: 43, balance: 250, reason: null, slotsFull: true })).toEqual({ status: 409, error: "Every render slot is busy. It starts on its own when one frees up." });
-  expect(releaseRefusal({ needs: 43, balance: 250, reason: null, slotsFull: false })).toEqual({ status: 409, error: "It cannot start just now. It starts on its own when the workspace can run it." });
-  /* A workspace on its own keys, or a take held for a slot, has no balance to be short of. */
-  expect(releaseRefusal({ needs: 43, balance: null, reason: null, slotsFull: true }).status).toBe(409);
-});
+

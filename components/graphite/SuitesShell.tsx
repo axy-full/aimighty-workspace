@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
-import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
+import { tileAspect, uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
 import { FILES_EVENT, type FilesDropDetail } from "@/components/DragLayer";
 import { useWorkspace } from "@/lib/workspace/state";
 import { GenerateComposer } from "@/components/workspace/GenerateComposer";
@@ -31,6 +31,7 @@ import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
+import { LoadBanner } from "./TakeTile";
 import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
@@ -252,9 +253,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const firstRunAbove = !project && data.status === "ready" && shell.view === "suite" && shell.suite.id === "studio"
     ? <FirstRun key={`first-run:${shell.page.id}`} stage={shell.page.id} lead={`Open or create a project to use ${shell.page.title}.`} actions={projectActions} now={now} />
     : null;
-  /* The project list or this project's library failed to read: said, with Retry, instead of an empty shell. */
+  /* The project list failed to read: said, with Try again, instead of an empty shell (a failed library read is each grid's own banner). */
   const projectsError = data.status === "error" ? data.error ?? "Projects could not be loaded." : null;
-  const libraryError = library.state.status === "error" ? library.state.error ?? "The project library could not be loaded." : null;
+  /* Every card and skeleton holds the project's frame (the card contract, components/graphite/TakeTile.tsx). */
+  const aspect = tileAspect(project?.aspect);
 
   const overlay = !shell.wide;
   const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
@@ -291,17 +293,20 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             <WorkspaceView account={account} />
           </Boundary>
         ) : (
-          <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
+          <div className="gx-body" style={{ gridTemplateColumns: columns, ...(aspect ? { "--tile-aspect": aspect } : {}) } as React.CSSProperties} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
             {showLibrary ? (
               <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`}
                 fallback={(fault) => <FaultAside kind="library" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : undefined} />}>
-                <Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
+                <Library project={project} items={items} library={library} projects={data.status} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
               </Boundary>
             ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
+              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
                 onPick={pickProject} onCreate={createProject} />
+              {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
+                  "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
+              {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
@@ -315,7 +320,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   </div>
                   <div className="gx-stage gx-scroll" data-testid="content">
                     <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
-                      <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                      <GenView scope={scope} project={project} items={items} library={library} projects={data.status} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
                     </Boundary>
                   </div>
                 </>
@@ -326,10 +331,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   <div className="gx-stage gx-scroll" data-testid="content">
                     <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
                     {projectsError && !project ? (
-                      <div className="gx-empty" role="alert" data-testid="projects-error">
-                        <p className="gx-gen-error">{projectsError}</p>
-                        <button type="button" className="gx-hbtn" onClick={data.retry}>Retry</button>
-                      </div>
+                      <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (

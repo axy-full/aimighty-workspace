@@ -260,7 +260,11 @@ type Options = {
   signal?: AbortSignal;
   /** Tests may shorten, but cannot increase, the production deadline. */
   timeoutMs?: number;
+  /** Read as each call starts, so a test can shorten only the call it hangs. */
   callTimeoutMs?: number;
+  /** Shortens only a call that may spend (one given `sending`), so the reads
+   * before it keep their own deadline. */
+  sendTimeoutMs?: number;
 };
 type ConsumerSession = {
   protocolVersion: string;
@@ -572,7 +576,12 @@ async function withConsumerSession<T>(
     controller.signal.addEventListener("abort", abortRequest, { once: true });
     const requestMs = Math.min(
       callCeilingMs,
-      Math.max(1, options.callTimeoutMs ?? callCeilingMs),
+      Math.max(
+        1,
+        (sending ? options.sendTimeoutMs : undefined) ??
+          options.callTimeoutMs ??
+          callCeilingMs,
+      ),
     );
     const requestDeadline =
       method === "tools/call"

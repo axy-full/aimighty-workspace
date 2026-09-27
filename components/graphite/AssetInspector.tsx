@@ -8,10 +8,13 @@ import { settledFact } from "@/lib/usageLedgerTerms";
 import { useLedgerEntry } from "./UsageLedger";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
-import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryFace, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { takeStatusWord } from "@/lib/workspace/takes";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { openPreview } from "@/components/PreviewLayer";
+import { LoadBanner } from "./TakeTile";
+import { ReleaseTake } from "./ReleaseTake";
 
 /**
  * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
@@ -37,7 +40,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     return (
       <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
         {failed
-          ? <div className="gx-empty" role="alert"><p className="gx-gen-error">{library.state.error ?? "The project library could not be loaded."}</p><button type="button" className="gx-hbtn" onClick={() => void library.refresh()}>Retry</button></div>
+          ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={library.refresh} testId="inspector-library-error" compact />
           : <p className="gx-empty">{library.state.status === "ready" && !library.state.moreBusy ? "This asset is no longer in the project." : "Reading this project…"}</p>}
       </div>
     );
@@ -48,11 +51,14 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const role = referenceRole(entry.media);
   const facts: [string, string][] = [
     ["Kind", generation ? "Generation" : "Upload"],
-    ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
+    /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
+    ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
     ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
-    ["Status", take.status],
+    ["Status", takeStatusWord(take)],
+    /* Why it failed or waits, in the row's own words when they say more. */
+    ...(take.reason ? [["Reason", take.detail ? `${take.reason} · ${take.detail}` : take.reason] as [string, string]] : []),
   ];
   const download = generation ? `/api/media/${encodeURIComponent(generation.id)}?download=1` : `/api/uploads/${encodeURIComponent(upload!.id)}?download=1`;
   const downloadable = upload || (generation?.status === "succeeded" && generation.storedUrl);
@@ -75,6 +81,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       </dl>
       {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
       <span className="gx-eyebrow">Actions</span>
+      {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
           <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>
@@ -110,7 +117,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
         <video ref={player} src={entry.url} playsInline preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
       ) : entry.url && entry.media === "audio" ? (
         <><audio ref={player} src={entry.url} preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} /><span className="gx-badge">AUDIO</span></>
-      ) : <span className="gx-badge">{entry.take.status === "rendering" ? "RENDERING" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
+      ) : <span className="gx-badge">{entry.take.status === "rendering" || entry.take.status === "held" ? takeStatusWord(entry.take).toUpperCase() : entry.take.status === "failed" ? (entry.take.cancelled ? "CANCELLED" : "FAILED") : entryFace(entry) === "unavailable" ? "PREVIEW UNAVAILABLE" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
       {timed ? <button type="button" className="gx-play" aria-pressed={playing} onClick={toggle}>{playing ? "Pause" : "Play"}</button> : null}
     </div>
   );

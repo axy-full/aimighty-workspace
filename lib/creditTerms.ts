@@ -88,6 +88,19 @@ export function billCredits(usd: number, engine?: string | null): number {
   return billCreditsWith(usd, marginFor(engine), creditUsd());
 }
 
+/**
+ * What a take held at zero (lib/held.ts heldInfo) costs to start now, in whole
+ * credits: its engine dollars at today's rate. The snapshot's `needs` is what
+ * it cost when it was held, and stands in only for a row too old to carry
+ * `estUsd`. The Release button shows this figure and the release charges it.
+ */
+export function heldPriceNow(held: { estUsd?: unknown; needs?: unknown } | null | undefined, kind: string | null | undefined, model: string | null | undefined): number {
+  const est = Number(held?.estUsd ?? 0);
+  const now = Number.isFinite(est) && est > 0 ? billCredits(est, marginKeyOf(kind, model)) : 0;
+  const then = Number(held?.needs ?? 0);
+  return now || (Number.isFinite(then) && then > 0 ? Math.ceil(then) : 0);
+}
+
 /** The unrounded figure, for a running total. */
 export const usdToCredits = (usd: number, engine?: string | null): number => (usd * marginFor(engine)) / creditUsd();
 /** Dollars of vendor cost a number of credits buys at no margin. */

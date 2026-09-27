@@ -85,7 +85,10 @@
 .gx-hbtn:hover { background: var(--gx-input-hover); }
 .gx-hbtn[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
 .gx-credits-n { font-family: var(--gx-mono); font-size: 13px; font-weight: 600; }
-.gx-credits-u { color: var(--gx-text-3); font-size: 12px; }
+.gx-credits-u { color: var(--gx-text-2); font-size: 12px; }
+/* The balance cannot pay for the last price quoted here: amber, and it still opens Plans & credits. */
+.gx .gx-hbtn.gx-credits[data-low] { color: #FFB340; background: rgba(255, 159, 10, .14); border-color: rgba(255, 159, 10, .6); }
+.gx .gx-hbtn.gx-credits[data-low] .gx-credits-u { color: #FFB340; }
 .gx-jobs { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); gap: 8px; }
 .gx-jobs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
 
@@ -613,6 +616,99 @@
 @media (prefers-reduced-motion: reduce) { .gx-sheet-skel, .gx-sheet-price-skel { animation: none; } }
 @media (max-width: 1023px) { .gx-gen { grid-template-columns: minmax(0, 1fr); padding: 12px; } }
 
+/* ── One card contract for takes: Gen › Results, Library › Assets, Takes ─
+   The picture area holds the project's frame (--tile-aspect, set on the shell
+   body) from the first skeleton to the landed media, so nothing jumps. */
+.gx-tile { position: relative; }
+.gx-tile-media { position: relative; }
+.gx-tile .gx-asset-thumb, .gx-asset.gx-skel .gx-skel-thumb { aspect-ratio: var(--tile-aspect, 4 / 3); }
+.gx-tile-face { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gx-text-3);
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .03) 0 8px, transparent 8px 16px); }
+.gx-tile-face[data-face="failed"] { background-color: rgba(255, 69, 58, .08); }
+.gx-tile-face[data-face="stopped"] .gx-tile-glyph { color: var(--gx-text-2); }
+.gx-tile-face[data-face="held"] { background-color: rgba(255, 159, 10, .07); }
+.gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
+.gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
+.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed); border-color: rgba(255, 69, 58, .45); }
+.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); }
+/* Paused, not stopped: two bars drawn, so no font turns them into a square. */
+.gx-tile-pause { width: 9px; height: 11px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+.gx-tile-face[data-face="live"] .gx-tile-glyph { border: 0; }
+.gx-tile-spin { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--gx-hair-strong); border-top-color: var(--gx-accent); animation: gx-spin 1s linear infinite; }
+@keyframes gx-spin { to { transform: rotate(360deg); } }
+.gx-tile-chip { position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); height: 20px; padding: 0 8px 0 7px; display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text);
+  background: rgba(12, 12, 16, .72); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(8px); pointer-events: none; }
+.gx-tile-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--gx-idle); }
+.gx-tile-chip[data-tone="live"] .gx-tile-chip-dot { background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-tile-chip[data-tone="picked"] .gx-tile-chip-dot { background: var(--gx-accent); }
+.gx-tile-chip[data-tone="waiting"] .gx-tile-chip-dot { background: var(--gx-waiting); }
+.gx-tile-chip[data-tone="done"] .gx-tile-chip-dot { background: var(--gx-done); }
+.gx-tile-chip[data-tone="failed"] { color: #FFB4AE; border-color: rgba(255, 69, 58, .4); }
+.gx-tile-chip[data-tone="failed"] .gx-tile-chip-dot { background: var(--gx-failed); }
+.gx-tile-reason { display: block; margin-top: 3px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gx-tile-reason[data-tone="failed"] { color: #FF8A80; }
+.gx-tile-reason[data-tone="waiting"] { color: var(--gx-waiting); }
+.gx-asset.gx-tile > .gx-tile-reason { padding: 0 2px; }
+/* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
+.gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"], [data-face="stopped"]) .gx-tile-glyph { display: none; }
+.gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+/* Refresh is the tile's second action: a round button in its top-right corner, small enough that a press
+   in the middle of the smallest tile (the 2-up Library on a 360 px phone) still opens the take. */
+.gx-tile-over { position: absolute; inset: 0; display: grid; place-items: start end; padding: 6px; pointer-events: none; }
+.gx-tile-refresh { pointer-events: auto; width: 28px; height: 28px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 15px; line-height: 1;
+  color: var(--gx-text); background: rgba(12, 12, 16, .72); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(8px); }
+.gx-tile-refresh:hover { background: var(--gx-input-hover); }
+.gx-tile-refresh:disabled { opacity: .6; cursor: default; }
+.gx-tile-refresh[aria-busy="true"] > span { animation: gx-spin 1s linear infinite; }
+/* Release on a take held for credits: the price on the button; a refusal says why, with the way to more credits. */
+.gx-release { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
+.gx-release[data-place="inspector"] { margin-top: 0; flex: 1 1 100%; }
+.gx .gx-hbtn.gx-release-btn { justify-content: center; width: 100%; height: auto; min-height: 32px; padding-block: 6px; white-space: normal; text-align: center; line-height: 1.25; color: #FFC46B; border-color: rgba(255, 159, 10, .45); }
+.gx-release[data-place="inspector"] .gx-release-btn { width: auto; align-self: flex-start; }
+.gx-release-note { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; line-height: 1.4; color: #FF8A80; overflow-wrap: anywhere; min-width: 0; }
+.gx-release-note[data-tone="short"] { color: #FFC46B; }
+.gx-release-ask { color: var(--gx-text-2); }
+.pd-take-cell > .gx-release { margin-top: 6px; }
+/* Release sits under the take it starts, never beside it. */
+.gx .pd-take-cell:has(> .gx-release) { flex-wrap: wrap; align-content: flex-start; }
+.gx .pd-take-cell > .gx-release { flex: 1 1 100%; }
+/* A held take's need: on the chip where the tile shows it whole, else on its own line under the name. A price is never cut. */
+.gx-tile { container-type: inline-size; }
+.gx-tile-need { display: none; }
+@container (max-width: 259px) {
+  .gx-tile-chip .gx-chip-need { display: none; }
+  .gx-tile-need { display: block; }
+}
+/* Skeletons: the card's own shape, a slow pulse, no text. */
+.gx-skel { pointer-events: none; }
+.gx-skel-thumb { display: block; width: 100%; border-radius: 6px; background: rgba(255, 255, 255, .06); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-skel-line { display: block; width: 72%; height: 10px; margin-top: 9px; border-radius: 4px; background: rgba(255, 255, 255, .06); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-skel-line--short { width: 44%; margin-top: 6px; }
+/* A read that failed: one line and Try again, never an empty grid. */
+.gx-banner { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 12px; border-radius: 10px; font-size: 12.5px; color: var(--gx-text);
+  border: 1px solid rgba(255, 69, 58, .35); background: rgba(255, 69, 58, .08); }
+.gx-banner[data-tone="stale"] { border-color: rgba(255, 159, 10, .35); background: rgba(255, 159, 10, .08); }
+.gx-banner-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--gx-failed); }
+.gx-banner[data-tone="stale"] .gx-banner-dot { background: var(--gx-waiting); }
+.gx-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gx-banner[data-compact] { flex-wrap: wrap; }
+.gx-banner[data-compact] .gx-banner-text { flex-basis: calc(100% - 18px); }
+.gx-banner[data-compact] .gx-hbtn { margin-left: 18px; }
+.gx-main > .gx-banner { flex: none; margin: 0 20px 8px; }
+/* In a stage that has nothing else to show (the project list did not load), the banner keeps the page's gutters. */
+.gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-tile-refresh { width: 44px; height: 44px; font-size: 18px; }
+  .gx .gx-hbtn.gx-release-btn { min-height: 44px; }
+  .gx-tile-chip { height: 22px; font-size: 12px; }
+  .gx-main > .gx-banner { margin: 0 12px 8px; }
+  .gx-stage > .gx-banner { margin: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gx-skel-thumb, .gx-skel-line, .gx-tile-spin, .gx-tile-chip-dot, .gx-tile-refresh[aria-busy="true"] > span { animation: none; }
+}
+
 /* ── Assets on every page (FINAL_SPEC §1 step 1) ─────────────────────── */
 .gx-asset[data-cut="true"] { opacity: .45; }
 .gx-asset[data-cut="true"] .gx-asset-thumb { outline: 1px dashed var(--gx-hair-strong); outline-offset: -1px; }
@@ -671,7 +767,20 @@
 .wsx-name { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wsx-balance { font-family: var(--gx-mono); font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
 .wsx-packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
-.wsx-pack { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.wsx-pack { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-width: 0; }
+.wsx-pack-line { margin-bottom: 6px; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.wsx-whole { white-space: nowrap; }
+/* The buttons line up along the row's foot, however the lines above them wrap. */
+.wsx-pack .wsx-pack-go { margin-top: auto; justify-content: center; }
+/* The Plans card's labels clear the #7C7C84 floor. */
+.wsx-plans .gx-eyebrow { color: var(--gx-text-2); }
+.wsx-ask { font-size: 12.5px; color: var(--gx-text-2); }
+.wsx-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wsx-list > .gx-eyebrow { margin-bottom: 4px; }
+.wsx-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; padding: 4px 0; border-top: 1px solid var(--gx-hair); min-width: 0; }
+.wsx-list-what { min-width: 0; font-size: 13px; color: var(--gx-text); overflow-wrap: anywhere; }
+.wsx-list-row[data-status]:not([data-status="requested"]) .wsx-list-what { color: var(--gx-text-2); }
+.wsx-list-amount { flex: none; font-family: var(--gx-mono); font-size: 13px; font-weight: 600; color: var(--gx-text); }
 .wsx-bar { display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12.5px; min-height: 28px; }
 .wsx-bar > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wsx-bar-track { height: 8px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }
@@ -761,6 +870,9 @@
 .gx-stepper button:disabled { opacity: .4; cursor: default; }
 .gx-stepper span { min-width: 22px; text-align: center; font-family: var(--gx-mono); font-weight: 600; color: var(--gx-text); }
 @media (max-width: 767px), (pointer: coarse) { .gx-stepper button { width: 44px; height: 44px; } }
+/* Gen › Audio: the length stepper and music's Instrumental switch share a row, and wrap on a narrow phone. */
+.gx-gen-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx-gen-sound .gx-stepper span { min-width: 52px; padding: 0 4px; white-space: nowrap; }
 
 /* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
 .gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }

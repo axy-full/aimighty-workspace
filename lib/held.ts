@@ -5,7 +5,7 @@ import { db, ready, now } from "./db";
 import { meter } from "./meter";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
@@ -109,7 +109,8 @@ export function planRelease(held: { id: string; needs: number }[], balance: numb
 type HeldRow = {
   id: string; kind: "video" | "image" | "audio"; model: string; engine: string;
   projectId: string | null; shotId: string | null; createdBy: string | null;
-  estUsd: number; needs: number; why: HeldWhy;
+  /** `needs` is what it costs to start now; `heldAt` what it cost when it was held — the figure approved at Generate. */
+  estUsd: number; needs: number; heldAt: number | null; why: HeldWhy;
   token?: { id: string; capUsd: number | null };
 };
 
@@ -158,21 +159,43 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
          the margin moved to a flat 1.5 (§7A): a take held at 40 credits would
          be released as soon as the balance covered 40, then bill 43 — a
          workspace pushed negative by a price change it never saw. Whatever is
-         released has to be measured against what it costs NOW.
+         released has to be measured against what it costs NOW, and a figure
+         that moved is started only by a person approving it (Release).
          The snapshot is still the fallback, for a row old enough to have no
          `estUsd` in it, where deriving would give zero and release it free. */
       estUsd,
-      needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
+      needs: heldPriceNow(held, kind, model),
+      heldAt: Number(held.needs) > 0 ? Math.ceil(Number(held.needs)) : null,
       why: held.why === "slots" ? "slots" : "credits",
       token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap) } : undefined,
     };
   });
 }
 
+/** Why one take a person pressed Release on did not start. Nothing was reserved or charged for it. */
+export type ReleaseRefusal = { status: number; error: string; needs: number; balance: number | null };
+
+export const SLOTS_BUSY = "Every render slot is busy. It starts on its own when one is free.";
+export function stillShort(needs: number, balance: number | null): string {
+  const left = Math.max(0, Math.floor(balance ?? 0));
+  return `Still short: this needs ${needs} credit${needs === 1 ? "" : "s"} and ${left} ${left === 1 ? "is" : "are"} left.`;
+}
+/** The price on the button is what the person approved (lib/workspace/rig.ts dispatchGate says the same for Generate). */
+export function repriced(needs: number): string {
+  return `The price is now ${needs.toLocaleString("en-US")} cr. Press Release again to approve it.`;
+}
+/** Written on a take whose price moved while it waited: nobody approved the new figure, so nothing starts it on its own. */
+export function movedPrice(needs: number): string {
+  return `The price is now ${needs.toLocaleString("en-US")} cr. Release it at that price to start it.`;
+}
+
 /**
  * Release what the balance now covers. `only` releases one take (a person
- * pressing Release); `defer` is how the caller keeps the render alive past
- * its response (by default, Next's `after` behind a recovery continuation).
+ * pressing Release); `approved` is the exact credits that person was shown,
+ * and a take whose price is now different is not started; `defer` is how the
+ * caller keeps the render alive past its response (by default, Next's
+ * `after` behind a recovery continuation). With `only`, a take that does not
+ * start comes back with `refused`: why, in the words to show.
  *
  * Takes held for credits keep their order among themselves: the first the
  * balance does not cover stops that line. A take that only waited for a
@@ -180,7 +203,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
  * or token cap), spends nothing and holds up nobody: the reason is written
  * on it, and the line is measured again without it.
  */
-export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {}): Promise<{ released: string[]; short: number }> {
+export async function releaseHeldJobs(opts: { only?: string; approved?: number; defer?: Defer } = {}): Promise<{ released: string[]; short: number; refused?: ReleaseRefusal }> {
   await assertRecoveryOpen();
   const rows = await heldRows(opts.only);
   if (!rows.length) return { released: [], short: 0 };
@@ -197,12 +220,26 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
   const exempt = shotCapExemption(opts.only ? currentTenant()?.user?.role === "admin" : false);
   const released: string[] = [];
   let creditsStalled = false;
+  let refusal: ReleaseRefusal | undefined;
+  const refuse = (status: number, error: string, r: HeldRow) => { if (opts.only) refusal = { status, error, needs: r.needs, balance }; };
   for (const r of rows) {
-    if (running >= limits.concurrency) break;
-    if (r.why === "credits" && (creditsStalled || !plan.release.includes(r.id))) {
-      creditsStalled = true;
+    /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
+    if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
+    /* Nobody approved a price that moved while the take waited for credits: it is left, said, for a person to
+       release at the new figure (its card offers Release at it), and it holds up nobody behind it. */
+    if (!opts.only && balance != null && r.why === "credits" && r.heldAt != null && r.needs !== r.heldAt) {
+      const said = movedPrice(r.needs);
+      await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held' AND COALESCE(error,'')<>?",
+        args: [said, now(), r.id, said] }).catch(() => {});
+      refused.add(r.id);
+      plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
       continue;
     }
+    const short = r.why === "credits" && (creditsStalled || !plan.release.includes(r.id));
+    /* A person's press hears the reason that stands even when a slot frees: short is short. */
+    if (short && opts.only) { creditsStalled = true; refuse(402, stillShort(r.needs, balance), r); continue; }
+    if (running >= limits.concurrency) { refuse(409, SLOTS_BUSY, r); break; }
+    if (short) { creditsStalled = true; continue; }
     // The meter first: work the platform cannot bill does not start.
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
@@ -210,6 +247,10 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
                     { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
     } catch (e) {
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
+      const status = e instanceof SpendReservationError ? e.status : 503;
+      /* Short at the reservation (another take reserved credits meanwhile): said with the balance as it is now. */
+      const left = status === 402 && opts.only ? ((await creditState().catch(() => null))?.balance ?? balance) : balance;
+      refuse(status, status === 402 ? stillShort(r.needs, left) : e instanceof SpendReservationError ? e.message : "This take could not be started just now. Nothing was charged.", r);
       // A workspace-wide stop (every slot reserved, the hourly limit, a paused workspace) ends the pass.
       if (!(e instanceof SpendReservationError) || !(e.perJob || e.status === 402)) break;
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held'",
@@ -248,7 +289,7 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
     running += 1;
   }
   if (released.length) invalidate(PROJECTS_KEY);
-  return { released, short: rows.length - released.length };
+  return { released, short: rows.length - released.length, ...(refusal && !released.length ? { refused: refusal } : {}) };
 }
 
 function siteUrl(): string {
@@ -276,32 +317,4 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
     text: `${body}\n\n${link}`,
     html: `<p>${esc(body)}</p><p><a href="${esc(link)}">Open Settings</a></p>`,
   })));
-}
-
-/**
- * What each of these held takes would cost to start now, read off the raw
- * rows (the browser's copy of a take carries no estimate to derive it from):
- * the figure releaseHeldJobs measures a take against, which a refused
- * Release names so the next press can approve it.
- */
-export async function heldNeedsFor(ids: readonly string[]): Promise<Map<string, number>> {
-  if (!ids.length) return new Map();
-  const wanted = new Set(ids);
-  const rows = ids.length === 1 ? await heldRows(ids[0]) : await heldRows();
-  return new Map(rows.filter((r) => wanted.has(r.id)).map((r) => [r.id, r.needs]));
-}
-
-/**
- * Why a Release someone pressed started nothing. Short on credits is a 402
- * (the jobs tray turns its button into Top up); a reason written on the take
- * (a project, shot or token cap) is said as it is; otherwise it is waiting
- * for a render slot or the workspace's hourly room, and starts on its own —
- * never "short" while the balance covers it, which would send someone to buy
- * credits they do not need.
- */
-export function releaseRefusal(o: { needs: number; balance: number | null; reason: string | null; slotsFull: boolean }): { status: 402 | 409; error: string } {
-  if (o.balance != null && o.balance < o.needs)
-    return { status: 402, error: `Still short: this needs ${o.needs.toLocaleString("en-US")} credits and ${Math.max(0, Math.floor(o.balance)).toLocaleString("en-US")} are left.` };
-  if (o.reason) return { status: 409, error: o.reason };
-  return { status: 409, error: o.slotsFull ? "Every render slot is busy. It starts on its own when one frees up." : "It cannot start just now. It starts on its own when the workspace can run it." };
 }
