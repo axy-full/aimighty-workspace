@@ -130,11 +130,12 @@ for (const [label, options] of [
   ["legacy internal dollars", { legacy: true }],
   ["workspace-owned vendor keys", { platformKeys: false }],
 ] as const) {
-  test(`${label} keeps its existing dollar spend without changing units`, async () => {
+  test(`${label} uses its credit ledger without revealing vendor spend`, async () => {
     const { GET, queries } = teamRoute(options);
     const body = await (await GET()).json();
-    expect(body.users[0]).toMatchObject({ clips: 4, spend: 47.123456789 });
-    expect(queries.find((query) => query.source === "tenant")?.sql).toContain(
+    expect(body.users[0]).toMatchObject({ clips: 4 });
+    expect(body.users[0]).not.toHaveProperty("spend");
+    expect(queries.find((query) => query.source === "tenant")?.sql).not.toContain(
       "cost_usd",
     );
   });

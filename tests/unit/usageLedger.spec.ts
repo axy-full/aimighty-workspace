@@ -128,6 +128,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     await meter({ ...video, id: id("failed_paid"), status: "failed", engineCostUsd: 0.5 });
     /* On the workspace's own key: no credits, whatever the vendor charged. */
     await meter({ id: id("own_key"), kind: "image", engine: "openai", model: "gpt-image-2.5-flare", status: "succeeded", engineCostUsd: 0.0421, createdBy: "u_editor" });
+    await platformDb().execute({ sql: "UPDATE meter_events SET paid_by_platform=0,billed_credits=0 WHERE id=?", args: [id("own_key")] });
   });
   const at = Date.now();
   /* A failed agent run as PR #398's `unbilled` meter event writes it: the vendor's cost kept, nothing billed. */
@@ -216,7 +217,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
   });
 });
 
-test("a dollar workspace reads its takes in dollars; the connected account's and the demo's are not among them", async () => {
+test("a migrated workspace never invents a historical credit charge from vendor costs", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { usageLedgerPage, parseLedgerQuery, ledgerCsv } = await import("../../lib/usageLedger");
   const ws = workspace("dollars", false);
@@ -242,15 +243,10 @@ test("a dollar workspace reads its takes in dollars; the connected account's and
     for (const [key, params, status, cost, refine, at] of rows)
       await db().execute({ sql: gen, args: [key, "dreamina-seedance-2-5-260628", "a harbour", params, status, "video", "byteplus", cost, refine, "u_producer", at, at] });
     const page = await usageLedgerPage(q(), admin("u_producer"));
-    expect(page.unit).toBe("usd");
-    expect(page.rows.map((r) => [r.id, r.state])).toEqual([
-      ["d_charged", "charged"], ["d_failed", "failed-not-billed"], ["d_cancelled", "failed-not-billed"],
-      ["d_running", "running"], ["d_held", "waiting"], ["d_unpriced", "unpriced"],
-    ]);
-    expect(page.rows[0]).toMatchObject({ usd: 1.3, who: "Producer" });
-    expect(page.totals).toEqual({ jobs: 6, charged: 1.3, notBilled: 2 });
-    expect(JSON.stringify(page)).not.toContain("credits");
-    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd");
+    expect(page.unit).toBe("credits");
+    expect(page.rows).toEqual([]); // No historical Particl ledger entries were recorded.
+    expect(JSON.stringify(page)).not.toMatch(/"usd"|"costUsd"/);
+    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,credits");
   });
 });
 

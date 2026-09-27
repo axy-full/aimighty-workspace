@@ -69,7 +69,7 @@ async function seed(ws: TenantWorkspace) {
       ...[["owner", "Owner", "admin"], ["h", "Heavy", "member"], ["l", "Light", "member"]].map(([id, name, role]) => ({
         sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,'x',?,?)", args: [id, `${id}@example.invalid`, name, role, now],
       })),
-      ...(["h", "l"] as const).flatMap((group) => [
+      ...(["l", "h"] as const).flatMap((group) => [
         { sql: "INSERT INTO projects(id,name,category,created_at) VALUES(?,?,?,?)", args: [`p_${group}`, `Project ${group.toUpperCase()}`, `Category ${group.toUpperCase()}`, now] },
         { sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES(?,?,?,?,?)", args: [`s_${group}`, `p_${group}`, group.toUpperCase(), now, now] },
       ]),
@@ -129,13 +129,13 @@ test("a credit workspace's analytics are credits alone, and every list is ordere
   expect(orders(body)).toEqual({ byModel: ["l", "h"], byProject: ["l", "h"], byPerson: ["l", "h"], byCategory: ["l", "h"], byShot: ["l", "h"] });
 });
 
-test("a workspace on its own keys reads its own dollars, ordered by them", async () => {
+test("a migrated workspace reads retail credits without exposing vendor spend", async () => {
   const ws = workspace("ws_own_keys_analytics", false);
   await seed(ws);
   const body = await (await routes(ws)).analytics();
-  expect(body.totals.spend).toBeCloseTo(1.98, 6);
-  expect(body.byModel[0].spend).toBeCloseTo(1, 6);
-  expect(orders(body)).toEqual({ byModel: ["h", "l"], byProject: ["h", "l"], byPerson: ["h", "l"], byCategory: ["h", "l"], byShot: ["h", "l"] });
+  expect(JSON.stringify(body)).not.toMatch(/"spend"|"promptSpend"/);
+  expect(body.totals.credits).toBe(31);
+  expect(orders(body)).toEqual({ byModel: ["l", "h"], byProject: ["l", "h"], byPerson: ["l", "h"], byCategory: ["l", "h"], byShot: ["l", "h"] });
 });
 
 test("API tokens: a credit workspace's month is the credits billed; one on its own keys reads dollars", async () => {
@@ -145,6 +145,6 @@ test("API tokens: a credit workspace's month is the credits billed; one on its o
   const inCredits = await (await routes(credit)).tokens();
   expect(inCredits).toMatchObject({ unit: "cr", tokens: [{ id: "tok_1", capUsd: 20, spendThisMonth: 31 }] });
   const inDollars = await (await routes(own)).tokens();
-  expect(inDollars.unit).toBe("usd");
-  expect(inDollars.tokens[0].spendThisMonth).toBeCloseTo(1.98, 6);
+  expect(inDollars.unit).toBe("cr");
+  expect(inDollars.tokens[0].spendThisMonth).toBe(31);
 });

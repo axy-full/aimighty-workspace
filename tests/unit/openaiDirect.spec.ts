@@ -12,16 +12,16 @@ const fakeKey = 'test-openai-key-never-sent';
 const model = 'openai/gpt-6-astra';
 const response = (text = '{"ok":true}') => ({ id: 'resp_fixture', object: 'response', created_at: 1, model: 'gpt-6-astra', status: 'completed', output: [{ type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }], usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: { cached_tokens: 12, cache_write_tokens: 30 }, output_tokens_details: { reasoning_tokens: 7 } }, error: null, incomplete_details: null });
 const originalFetch = globalThis.fetch, originalMock = process.env.ENGINE_MOCK, originalKey = process.env.OPENAI_API_KEY;
-test.beforeEach(() => { delete process.env.ENGINE_MOCK; delete process.env.OPENAI_API_KEY; });
+test.beforeEach(() => { delete process.env.ENGINE_MOCK; process.env.OPENAI_API_KEY = fakeKey; });
 test.afterEach(() => { globalThis.fetch = originalFetch; if (originalMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = originalMock; if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey; });
 
 test('direct routing respects tenant key isolation and does not reroute non-OpenAI models', async () => {
   process.env.OPENAI_API_KEY = 'deployment-test-only';
-  await runInTenant(workspace({ gateway: 'workspace-gateway' }), async () => { expect(textVendor(model)).toBe('gateway'); });
+  await runInTenant(workspace({ gateway: 'workspace-gateway' }), async () => { expect(textVendor(model)).toBe('openai'); });
   await runInTenant(workspace({}, true), async () => { expect(textVendor(model)).toBe('openai'); });
   await runInTenant(workspace({ openai: fakeKey }), async () => {
     expect(textVendor(model)).toBe('openai'); expect(textVendor('anthropic/claude-fixture')).toBe('gateway');
-    expect(await languageAuth(model)).toEqual({ Authorization: `Bearer ${fakeKey}`, [TEXT_PROVIDER_HEADER]: 'openai' });
+    expect(await languageAuth(model)).toEqual({ Authorization: 'Bearer deployment-test-only', [TEXT_PROVIDER_HEADER]: 'openai' });
   });
 });
 test('raw modern requests retain exact model IDs, images, effort and strict JSON schema in Responses format', async () => {
@@ -51,6 +51,7 @@ test('gatewayPost directly dispatches OpenAI without Gateway credentials and doe
   expect(calls).toEqual(['https://api.openai.com/v1/responses']);
 });
 test('provider connection changes fail closed before a raw or SDK request', async () => {
+  delete process.env.OPENAI_API_KEY;
   let calls = 0; globalThis.fetch = async () => { calls++; throw new Error('must not send'); };
   await runInTenant(workspace({ gateway: 'gateway-key' }), async () => {
     const auth = { Authorization: `Bearer ${fakeKey}`, [TEXT_PROVIDER_HEADER]: 'openai' };

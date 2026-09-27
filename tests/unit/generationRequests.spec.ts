@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -135,6 +136,7 @@ test("project and token ceilings include in-flight reservations", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   await runInTenant(workspace("caps", false), async () => {
+    await fundFixtureWorkspace();
     await ready();
     await db().execute(`INSERT INTO projects(id,name,created_at,cap_usd) VALUES('p_cap','Cap',0,1)`);
     await reserveGenerationSpend({ id: "gen_cap_a", projectId: "p_cap", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 });
@@ -156,6 +158,7 @@ test("text and media share the atomic concurrency gate", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const ws = { ...workspace("shared-slots", false), concurrency: 1 };
   await runInTenant(ws, async () => {
+    await fundFixtureWorkspace();
     await reserveGenerationSpend({ id: "text_slot", kind: "text", engine: "vercel", model: "mock", status: "running", engineCostUsd: 0.01 });
     await expect(reserveGenerationSpend({ id: "video_slot", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: 1 })).rejects.toThrow(/slot/);
   });

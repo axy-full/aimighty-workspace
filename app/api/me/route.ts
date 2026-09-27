@@ -5,7 +5,6 @@ import { currentTenant } from "@/lib/tenant";
 import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
-import { creditsApply } from "@/lib/credits";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +32,7 @@ export const GET = withTenant(async function GET() {
        its own keys is handed the dollars it actually pays its vendors. The
        vendor's dollars and the margin never cross the wire together, which is
        what §2 means by margin never being shown. */
-    rates: buildRateTable(creditsApply(store?.workspace) ? "cr" : "usd"),
+    rates: buildRateTable("cr"),
     models: store?.workspace ? await effectiveModels().catch(() => null) : null,
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });

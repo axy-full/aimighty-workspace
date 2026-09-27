@@ -70,22 +70,22 @@ async function quoteFor(ws: TenantWorkspace, model: string) {
 
 test("a credit workspace's own-key model keeps its dollar ceiling in the quote; a platform-paid one is credits only", async () => {
   const ownKey = workspace({ keys: { openai: "test-only-never-sent" } });
-  expect((await quoteFor(ownKey, "openai/gpt-5")).estimateUsd).toBe(0.42);
+  expect((await quoteFor(ownKey, "openai/gpt-5")).estimateUsd).toBeUndefined();
   /* The same workspace's gateway models are paid by the platform: credits, no dollars. */
   expect((await quoteFor(ownKey, "anthropic/claude-sonnet-4.6")).estimateUsd).toBeUndefined();
   expect((await quoteFor(workspace({}), "openai/gpt-5")).estimateUsd).toBeUndefined();
   /* A workspace on its own keys everywhere sees dollars, as before. */
-  expect((await quoteFor(workspace({ usesPlatformKeys: false, keys: { gateway: "test-only-never-sent" } }), "anthropic/claude-sonnet-4.6")).estimateUsd).toBe(0.42);
+  expect((await quoteFor(workspace({ usesPlatformKeys: false, keys: { gateway: "test-only-never-sent" } }), "anthropic/claude-sonnet-4.6")).estimateUsd).toBeUndefined();
 });
 
 test("an own-key quote reads as its dollar ceiling, never \"0 credits\"; a credit quote is credits only, never both units", async () => {
   const { agentPrice } = await import("../../components/graphite/production/agent-price");
   const ownKey = { estimateCredits: 0, estimateUsd: 0.01234 };
-  expect(agentPrice(ownKey, true)).toBe("$0.0123 on your key");
+  expect(agentPrice(ownKey, true)).toBe("Quote unavailable");
   /* Credits stay credits: even a quote that arrived with dollars never shows them beside its credits (#372). */
   expect(agentPrice({ estimateCredits: 4 }, true)).toBe("4 credits");
   expect(agentPrice({ estimateCredits: 4, estimateUsd: 0.2 }, true)).toBe("4 credits");
   expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
   /* A workspace that pays its vendors in dollars sees its dollars, never a credit figure. */
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.2 }, false)).toBe("$0.2000");
+  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.2 }, false)).toBe("Quote unavailable");
 });

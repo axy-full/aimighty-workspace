@@ -623,6 +623,7 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
   const { createHash } = await import('node:crypto');
   const { createAstraScene } = await import('../../lib/astra-blender/scene');
   const { serializeAstraScene } = await import('../../lib/astra-blender/proposal');
+  const priorKey = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = 'unit-only-managed';
   const previousMock = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
   try { for (const unknown of [false, true]) {
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
@@ -639,7 +640,8 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
       const request = { ...input, model: priced.id, refs: [], maxCredits: 0,
         ...(agentKind === 'suite' ? { suite: 'particl' as const } : {}),
         ...(agentKind === 'astra' ? { astraBlender: { sceneDigest: createHash('sha256').update(serializeAstraScene(scene)).digest('hex') } } : {}) };
-      const prepared = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+      const quote = await quoteAtomikJob({ ...request, maxCredits: undefined }, 'owner', h.deps);
+      const prepared = await prepareAtomikJob({ ...request, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps);
       const row = (await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
       expect(JSON.parse(String(row.provider_body)).pricingModel.pricing).toEqual(priced.pricing);
       let calls = 0;
@@ -660,5 +662,5 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
       const receipt = (await db().execute({ sql: 'SELECT provider_response,usage FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
       expect(String(receipt.provider_response)).toContain('cached_tokens'); expect(String(receipt.usage)).toContain('cached_tokens');
     });
-  } } finally { if (previousMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = previousMock; }
+  } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (previousMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = previousMock; }
 });

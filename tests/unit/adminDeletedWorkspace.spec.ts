@@ -111,5 +111,5 @@ test("the desk states the welcome grant from the same source provisioning uses, 
   expect(route).toContain("deletedAt:");
   const page = readFileSync("app/(app)/admin/page.tsx", "utf8");
   expect(page).not.toContain("VERCEL_TOKEN");
-  expect(page).toContain("0 from self-serve sign-up");
+  expect(page).toContain("self-serve sign-ups start with 0");
 });

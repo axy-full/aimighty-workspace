@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -32,7 +33,7 @@ test.afterEach(()=>{globalThis.fetch=originalFetch;});
 function workspace(name:string):TenantWorkspace { return {id:name,slug:name,name,legacy:true,dbUrl:`file:${path.join(dir,name+".db")}`,dbToken:null,keys:{},usesPlatformKeys:false,allowanceUsd:null,gatewayKeyId:null,ownerId:"owner",createdAt:0,suspendedAt:null,suspendedReason:null,flaggedAt:null,flagNote:null,concurrency:20,rendersPerHour:200,storageQuotaBytes:null,deletedAt:null}; }
 async function job(id:string):Promise<VideoJob> {
   const {db,ready,now}=await import("../../lib/db"),{getModel}=await import("../../lib/models"),{getTask}=await import("../../lib/tasks"),{meter}=await import("../../lib/meter"),{higgsfieldCredentialFingerprint}=await import("../../lib/higgsfield");
-  await ready(); const model=getModel(GENJUTSU_MODELS["motion-transfer"]);
+  await ready(); await fundFixtureWorkspace(); const model=getModel(GENJUTSU_MODELS["motion-transfer"]);
   const params={ratio:"adaptive",resolution:"720p",duration:5,watermark:false,higgsfieldCredentialFingerprint:higgsfieldCredentialFingerprint(),higgsfieldVendorCostUsd:0.75,genjutsuSource:{width:1280,height:720,seconds:5,firstTimestamp:0}};
   await db().execute({sql:"INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_by,created_at,updated_at) VALUES(?,'video',?,'',?,'queued','higgsfield','genjutsu','owner',?,?)",args:[id,model.id,JSON.stringify(params),now(),now()]});
   await meter({id,kind:"video",engine:"higgsfield",model:model.id,status:"running",engineCostUsd:.75});
@@ -112,7 +113,7 @@ test("accepted receipt recovers tenant handle outage, collects original bytes on
     expect((await submitVideoRow(id)).ok).toBe(true);expect(submissions).toBe(1);
     await reconcileGenjutsuVideo(id);await reconcileGenjutsuVideo(id);
     expect(polls).toBe(1);expect(submissions).toBe(1);
-    const gen=(await getGeneration(id))!;expect(gen.status).toBe("succeeded");expect(gen.storedUrl).toBe(`/api/media/${id}`);expect(gen.costUsd).toBe(.75);
+    const gen=(await getGeneration(id))!;expect(gen.status).toBe("succeeded");expect(gen.storedUrl).toBe(`/api/media/${id}`);expect(gen.costUsd).toBeNull(); expect(gen.creditsBilled).toBe(12);
     expect(gen.params).not.toHaveProperty("higgsfieldVideoHandle");expect(JSON.stringify(gen)).not.toContain("credentialFingerprint");
     expect(await readVideoBytes(id)).toEqual(readFileSync("public/fixtures/clip.mp4"));
     // The measured length is on the column the per-second tools price from, not only in params.

@@ -66,7 +66,7 @@ test("a finished text run on credits reports the credits the ledger billed; on o
     args: [],
   });
   expect(await runInTenant(credits, () => textRunCost({ id: "app_pages_text_reserved", costUsd: 0.12 }))).toEqual({ credits: null });
-  expect(await runInTenant(own, () => textRunCost({ id: "app_pages_text_2", costUsd: 0.12 }))).toEqual({ costUsd: 0.12 });
+  expect(await runInTenant(own, () => textRunCost({ id: "app_pages_text_2", costUsd: 0.12 }))).toEqual({ credits: null });
 });
 
 /* ── The list routes, run for real against the throwaway database ─────────── */
@@ -166,12 +166,12 @@ test("a workspace on credits is sent its credits and never the vendor's dollars;
 
   ws.current = own;
   const shotsUsd = (await get(r.shots, "/api/shots?projectId=prj_l")).json.shots as { id: string; spend: number }[];
-  expect(shotsUsd.find((s) => s.id === shotId)!.spend).toBeCloseTo(1.88, 9);
+  expect(shotsUsd.find((s) => s.id === shotId)!.spend).toBe(0);
   const projectsUsd = (await get(r.projects, "/api/projects")).json as { unit: string; projects: { id: string; spend: number }[] };
-  expect(projectsUsd.unit).toBe("usd");
-  expect(projectsUsd.projects.find((p) => p.id === "prj_l")!.spend).toBeCloseTo(1.88, 9);
+  expect(projectsUsd.unit).toBe("cr");
+  expect(projectsUsd.projects.find((p) => p.id === "prj_l")!.spend).toBe(0);
   const prodUsd = ((await get(r.productions, "/api/productions")).json.productions as { id: string; spentUsd: number }[]).find((p) => p.id === "prd_l")!;
-  expect(prodUsd.spentUsd).toBeCloseTo(1.88, 9);
+  expect(prodUsd.spentUsd).toBe(0);
 
   /* One project, from its own row: the page asks here before it says a project does not exist. */
   ws.current = credits;

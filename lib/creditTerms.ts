@@ -1,7 +1,7 @@
 /**
  * The credit: the platform's own unit of spend.
  *
- * One credit is US$0.10 by default (CREDIT_USD). A workspace on the
+ * The retail credit value is set by CREDIT_USD. A workspace on the
  * platform's keys buys and burns credits, never dollars: a job is charged in
  * whole credits, rounded up, and nothing that costs the platform money costs
  * a workspace less than one credit. Batches multiply before they round.
@@ -31,8 +31,8 @@
  * anything else in.
  */
 export function creditUsd(): number {
-  const n = Number(process.env.CREDIT_USD ?? 0.10);
-  return Number.isFinite(n) && n > 0 ? n : 0.10;
+  const n = Number(process.env.CREDIT_USD ?? 0.08);
+  return Number.isFinite(n) && n > 0 ? n : 0.08;
 }
 
 export function signupCredits(): number {

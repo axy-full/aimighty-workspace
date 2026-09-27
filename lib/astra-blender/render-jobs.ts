@@ -90,8 +90,6 @@ async function snapshot(input: AstraRenderRequest, owner: string): Promise<Snaps
     if (!runtime.configured)
         throw new AstraRenderError(runtime.reason!, 503);
     const ws = requireTenant();
-    if (!ws.legacy && !ws.usesPlatformKeys)
-        throw new AstraRenderError('Enable platform compute funding before using native 3D.', 403);
     const project = await getAtomikProject(owner, input.projectId);
     if(project.assets.length>PROJECT_LIMITS.assets-3)throw new AstraRenderError(`Make room for three native render outputs in this project (maximum ${limitText(PROJECT_LIMITS.assets)} assets).`,422);
     if (!project.productionProjectId)

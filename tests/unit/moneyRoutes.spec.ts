@@ -75,7 +75,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     "@/lib/storageCost": { storageLedger: async () => null },
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
-    "@/lib/creditUsage": { creditUsage: async () => ({}), creditUsageSummary: async () => ({}) },
+    "@/lib/creditUsage": await import("../../lib/creditUsage"),
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/creditTerms": await import("../../lib/creditTerms"),
@@ -96,25 +96,22 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
       { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('c1',?,?,1,0.2)`, args: [reading, reading] },
       { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('m1','c1','assistant',0.2,?)`, args: [reading + 1_000] },
     ]);
+    const { meter } = await import("../../lib/meter");
+    for (const [id, kind, engine, cost] of [["g1", "video", "byteplus", 1], ["g2", "video", "byteplus", .5], ["g3", "text", "vercel", .03], ["m1", "text", "vercel", .2]] as const)
+      await meter({ id, kind, engine, model: "fixture", status: "succeeded", engineCostUsd: cost });
     await recordCheck({ provider: "vercel", balanceUsd: 10, spendUsd: 2, balanceCredits: null, spendCredits: null, note: "", checkedAt: reading, userId: "owner" });
   });
 
   const body = await (await usage(new Request("http://localhost/api/usage"))).json();
   expect(body.recent.find((row: { id: string }) => row.id === "g1").params).toEqual({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12 });
   expect(JSON.stringify(body)).not.toContain("private-test-");
-  const byteplus = body.vendors.find((v: { id: string }) => v.id === "byteplus");
-  // The deleted take was paid for: it stays spent.
-  expect(byteplus.renderSpend).toBeCloseTo(1.5, 6);
-  const vercel = body.vendors.find((v: { id: string }) => v.id === "vercel");
-  // The hidden chat's turn and the prompt written after the reading both come off the reading.
-  expect(vercel.promptSpend).toBeCloseTo(0.23, 6);
-  expect(vercel.anchor.sinceUsd).toBeCloseTo(0.23, 6);
-  expect(vercel.remaining).toBeCloseTo(10 - 0.23, 6);
-  expect(vercel.spent).toBeCloseTo(2 + 0.23, 6);
-
+  expect(body.unit).toBe("credits");
+  expect(body.credits.used).toBe(27);
+  expect(body.vendors.every((vendor: Record<string, unknown>) => !("remaining" in vendor) && !("anchor" in vendor))).toBe(true);
   const brief = await (await summary(new Request("http://localhost/api/usage/summary"))).json();
-  expect(brief.spentUsd).toBeCloseTo(1.53, 6);
-  // A hidden take is not rendering, whatever its row says.
+  expect(brief.spentCredits).toBe(27);
+  expect(brief.promptSpendCredits).toBe(4);
+  expect(brief).not.toHaveProperty("spentUsd");
   expect(brief.pending).toBe(0);
 });
 
@@ -173,8 +170,8 @@ test("drafted shots and a rewritten scene carry credits to a credit workspace an
 test("a workspace that pays its vendors keeps the writing's dollars, and no take is priced by the route", async () => {
   const { shots } = await writerRoutes(workspace("ws_writer_usd", false), SHOTS);
   const drafted = await (await shots(post("http://localhost/api/atomik/shots/draft", { projectId: "p1", scene: 1 }))).json();
-  expect(drafted.costUsd).toBeCloseTo(0.4, 6);
-  expect(drafted.writingCredits).toBeUndefined();
+  expect(drafted.costUsd).toBeUndefined();
+  expect(drafted.writingCredits).toBe(6);
   expect(drafted.sceneUsd).toBeUndefined();
   expect(drafted.shots.every((s: Record<string, unknown>) => !("takeUsd" in s))).toBe(true);
 });

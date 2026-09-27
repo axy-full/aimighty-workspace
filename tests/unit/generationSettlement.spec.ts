@@ -269,8 +269,8 @@ for (const paid of [true, false])
         });
         await reserveGenerationSpend(event(id));
         const result = await syncGeneration((await getGeneration(id))!);
-        expect(result.costUsd).toBe(paid ? null : 0.4);
-        expect(result.creditsBilled).toBe(paid ? 6 : null);
+        expect(result.costUsd).toBeNull();
+        expect(result.creditsBilled).toBe(6);
         expect(
           Number(
             (

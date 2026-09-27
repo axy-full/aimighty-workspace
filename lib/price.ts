@@ -12,7 +12,6 @@
  */
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
-import { usd } from "@/lib/format";
 import { providerCreditQuote, formatProviderCreditQuote, sumWithProviderCreditQuotes, type ProviderCreditQuote } from "./providerCreditQuote";
 
 
@@ -63,31 +62,8 @@ export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
 export function useMoney(): Money {
   const { rates } = useSession();
   return useMemo<Money>(() => {
-    /* Dollars, for a workspace that pays its vendors in them. The figures
-       arrive already in dollars — the server built the table that way — so
-       nothing here converts and nothing here knows a margin.
-       
-       THE UNIT IS THE TABLE'S, and only the table's. This used to read
-       `!credits || rates.unit === "usd"`, which meant a VISITOR — who has no
-       credit balance because they have no workspace — got the dollar
-       formatter applied to a credit table. The signed-out composer read
-       "$39.81" for a shot that costs 40 credits: not the vendor's dollars,
-       not the price, just a credit figure with a dollar sign in front of it.
-       A balance says what somebody HAS; it was never what they pay in. */
-    if (rates.unit === "usd") {
-      const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
-      return {
-        inCredits: false,
-        price: (n) => (n > 0 && n < 0.005 ? "<1¢" : usd(n, 2)),
-        rate: (n) => usd(n, 3),
-        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : usd(all(g), 2); },
-        takeCredits: () => 0,
-        sum: (list) => sumWithProviderCreditQuotes(list, standard => usd(standard.reduce((a, g) => a + all(g), 0), 2)),
-        of: (v) => usd(v.spend ?? 0, 2),
-        each: (v, n) => (n > 0 ? usd((v.spend ?? 0) / n, 2) : "—"),
-        approx: (n) => usd(n, 0),
-      };
-    }
+    // Stale pre-migration rate tables must never expose or relabel vendor costs.
+    const currentTable = rates.unit === "cr";
     /* Credits. Every figure that reaches this hook is ALREADY in credits:
        estimates come off the rate table the server converted, and a finished
        take's credits come off the ledger, which did the conversion when it
@@ -101,14 +77,14 @@ export function useMoney(): Money {
     const ofCredits = (v: Amount) => v.credits ?? 0;
     return {
       inCredits: true,
-      price: (n) => cr(whole(n)),
-      rate: (n) => `${n.toFixed(1)} cr`,
+      price: (n) => currentTable ? cr(whole(n)) : "Quote unavailable",
+      rate: (n) => currentTable ? `${n.toFixed(1)} cr` : "Quote unavailable",
       take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : cr(takeCredits(g)); },
       takeCredits,
       sum: (list) => sumWithProviderCreditQuotes(list, standard => cr(standard.reduce((a, g) => a + takeCredits(g), 0))),
       of: (v) => cr(ofCredits(v)),
       each: (v, n) => (n > 0 ? cr(ofCredits(v) / n) : "—"),
-      approx: (n) => `≈ ${cr(whole(n))}`,
+      approx: (n) => currentTable ? `≈ ${cr(whole(n))}` : "Quote unavailable",
     };
   }, [rates]);
 }
