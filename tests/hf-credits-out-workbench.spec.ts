@@ -262,6 +262,9 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await tile(assets, "Storm front").locator(".gx-asset-thumb").click();
   const inspector = page.getByTestId("asset-inspector");
   await expect(page.getByTestId("inspector-title")).toHaveText("Storm front");
+  /* Held at zero has reserved nothing: the usage ledger (#407) has no row for it yet. */
+  const settledFact = page.getByTestId("asset-facts").locator("div").filter({ hasText: /^Settled/ });
+  await expect(settledFact).toHaveText("SettledNothing charged yet");
   await inspector.getByTestId("take-release").click();
   await expect(inspector.getByTestId("take-release-note")).toContainText("Still short");
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="inspector-release"]'), "Inspector Release under 44×44").toEqual([]);
@@ -274,6 +277,16 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await expect(page.getByTestId("inspector-title")).toHaveText("Night ferry across the outer harbour");
   await expect(inspector.getByTestId("take-release")).toHaveText("Release Night ferry across the outer harbour · 12,345 cr");
   await expect(inspector.getByTestId("take-release-note")).toHaveCount(0);
+  if (!wide) {
+    await page.getByTestId("close-inspector").click();
+    if (!(await assets.isVisible())) await page.getByTestId("toggle-library").click();
+    if (!(await assets.isVisible())) await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
+  }
+  /* Released, it was charged at admission: the ledger holds its 15 cr while it runs, then charges them. */
+  await tile(assets, "Harbour dawn").locator(".gx-asset-thumb").click();
+  await expect(page.getByTestId("inspector-title")).toHaveText("Harbour dawn");
+  await expect(settledFact).toHaveText(/^Settled(Held · 15 cr|15 cr)$/);
+  await expect(inspector.getByTestId("take-release")).toHaveCount(0);
   if (!wide) await page.getByTestId("close-inspector").click();
 
   /* Add credits opens Plans & credits. */
