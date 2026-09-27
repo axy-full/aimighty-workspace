@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft, saveDraft } from "@/lib/workbench/records";
 import { newProject } from "@/lib/workbench/studio";
+import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork } from "./access";
 import { websiteFunding } from "./funding";
 import {
@@ -17,6 +18,7 @@ import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFai
 import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { setupIdsOfVideoInput } from "./marketing-records";
 import { refuseForeignMarketingSetup } from "./marketing-setup";
+import { refuseForeignAccountObjects } from "./account-objects";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 
 /** The owner-approved verification run. Its creative mode is explicit:
@@ -51,7 +53,7 @@ function presentVideo(job: ConsumerJob, availability: ConsumerOriginalAvailabili
   let result = job.resultManifest;
   if (availability !== "available" && result?.original && typeof result.original === "object" && !Array.isArray(result.original))
     result = { ...result, original: Object.fromEntries(Object.entries(result.original).filter(([key]) => key !== "asset")) };
-  return {
+  return workspaceJobView(job, {
     id: job.id, draftId: job.draftId, status: job.status,
     input: snapshot.input, workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId, quoteCredits: job.quoteCredits,
@@ -60,7 +62,7 @@ function presentVideo(job: ConsumerJob, availability: ConsumerOriginalAvailabili
     providerJobId: job.providerJobId, result,
     originalAvailability: availability, originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt, failureCode: job.failureCode, setAside: consumerJobSetAside(job, observedAt), createdAt: job.createdAt,
-  };
+  });
 }
 export async function consumerVideoView(job: ConsumerJob) {
   const observedAt = Date.now();
@@ -79,6 +81,8 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
   const normalized = parseConsumerVideoInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else.
   await refuseForeignMarketingSetup(userId, setupIdsOfVideoInput(normalized));
+  // An element token in the prompt must name one this workspace made.
+  await refuseForeignAccountObjects({ prompt: normalized.prompt }, funding);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
@@ -115,10 +119,10 @@ async function ownedVideo(input: ConsumerJobScope) {
     throw new ConsumerVideoServiceError("not_found", "This marketing job is not available.", 404);
   return job;
 }
-export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, approval: { workspaceId: string; credits: number }) {
+export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, approval: { workspaceId?: string | null; credits: number }) {
   const job = await ownedVideo(scope);
   if (job.status !== "quoted") return consumerVideoView(job);
-  if (approval.workspaceId !== job.higgsfieldWorkspaceId || approval.credits !== job.quoteCredits)
+  if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const input = parseConsumerVideoInput(JSON.parse(job.payloadJson).input);
@@ -126,7 +130,7 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
-    const result = await submitConsumerVideo(access.accessToken, input, approval.workspaceId, approval.credits, {
+    const result = await submitConsumerVideo(access.accessToken, input, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
@@ -209,7 +213,7 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
       // original remains recoverable by the next admitted poll.
       return { job: await consumerVideoView(completed ?? await ownedVideo(scope)), pollAfterSeconds };
     }
-    return { job: await consumerVideoView(await ownedVideo(scope)), providerStatus: response.raw, pollAfterSeconds };
+    return { job: await consumerVideoView(await ownedVideo(scope)), providerStatus: providerDetail(claim.job, response.raw), pollAfterSeconds };
   } finally { await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 }); }
 }
 export async function consumerMarketingJobs(userId: string, draftId?: string) {

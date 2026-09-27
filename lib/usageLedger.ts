@@ -232,8 +232,9 @@ async function dollarTotals(q: LedgerQuery): Promise<DollarLedgerPage["totals"]>
 
 /* ── The viewer's connected account: the provider's credits, as quoted ── */
 
-/* Only a durable dispatch claim is an approved commitment (lib/higgsfield-consumer/activity.ts). */
-const ADMITTED = "j.user_id=? AND j.dispatch_claim_hash IS NOT NULL AND j.status<>'quoted'";
+/* Only a durable dispatch claim is an approved commitment (lib/higgsfield-consumer/activity.ts).
+   The viewer's own account only: a platform-funded job is in the credits ledger, never here. */
+const ADMITTED = "j.user_id=? AND j.dispatch_claim_hash IS NOT NULL AND j.status<>'quoted' AND COALESCE(j.funding,'own_account')<>'platform_account'";
 
 async function connectedRows(userId: string, q: LedgerQuery): Promise<{ rows: ConnectedLedgerRow[]; next: string | null }> {
   const where = [ADMITTED];

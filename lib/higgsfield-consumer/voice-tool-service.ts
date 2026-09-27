@@ -10,6 +10,7 @@
  */
 import { createHash } from "node:crypto";
 import { readDraft } from "@/lib/workbench/records";
+import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
 import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
 import {
@@ -75,7 +76,7 @@ function presentVoiceTool(job: ConsumerJob, availability: ConsumerOriginalAvaila
   if (availability !== "available" && result?.original && typeof result.original === "object" && !Array.isArray(result.original))
     result = { ...result, original: Object.fromEntries(Object.entries(result.original).filter(([key]) => key !== "asset")) };
   const report = snapshot.tool.output === "report";
-  return {
+  return workspaceJobView(job, {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -99,7 +100,7 @@ function presentVoiceTool(job: ConsumerJob, availability: ConsumerOriginalAvaila
     failureCode: job.failureCode,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
-  };
+  });
 }
 export type ConsumerVoiceToolView = ReturnType<typeof presentVoiceTool>;
 export async function consumerVoiceToolView(job: ConsumerJob) {
@@ -204,10 +205,10 @@ async function ownedJob(input: ConsumerJobScope) {
     throw new ConsumerVideoServiceError("not_found", "This voice job is not available.", 404);
   return job;
 }
-export async function submitConsumerVoiceToolJob(scope: ConsumerJobScope, approval: { workspaceId: string; credits: number }) {
+export async function submitConsumerVoiceToolJob(scope: ConsumerJobScope, approval: { workspaceId?: string | null; credits: number }) {
   const job = await ownedJob(scope);
   if (job.status !== "quoted") return consumerVoiceToolView(job);
-  if (approval.workspaceId !== job.higgsfieldWorkspaceId || approval.credits !== job.quoteCredits)
+  if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -217,7 +218,7 @@ export async function submitConsumerVoiceToolJob(scope: ConsumerJobScope, approv
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
-    const result = await submitConsumerVoiceTool(access.accessToken, input, snapshot.params, snapshot.shape, approval.workspaceId, approval.credits, {
+    const result = await submitConsumerVoiceTool(access.accessToken, input, snapshot.params, snapshot.shape, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
@@ -307,7 +308,7 @@ export async function pollConsumerVoiceTool(scope: ConsumerJobScope) {
         return { job: await consumerVoiceToolView(completed ?? (await ownedJob(scope))), pollAfterSeconds };
       }
     }
-    return { job: await consumerVoiceToolView(await ownedJob(scope)), providerStatus: response.raw, pollAfterSeconds };
+    return { job: await consumerVoiceToolView(await ownedJob(scope)), providerStatus: providerDetail(claim.job, response.raw), pollAfterSeconds };
   } finally {
     await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 });
   }

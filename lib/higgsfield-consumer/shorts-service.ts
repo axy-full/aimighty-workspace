@@ -18,6 +18,7 @@ import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { uploadReservationsReady } from "@/lib/uploadReservations";
 import { ConsumerOAuthError } from "./oauth";
+import { approvalMatches, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
 import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
 import {
@@ -122,7 +123,7 @@ async function presentShorts(job: ConsumerJob, observedAt: number, progress?: { 
   const clips = manifestClips(job);
   await clipAvailability(job, clips);
   for (const clip of clips) if (clip.availability !== "available" && object(clip.original)) clip.original = Object.fromEntries(Object.entries(clip.original).filter(([key]) => key !== "asset")) as ConsumerJson;
-  return {
+  return workspaceJobView(job, {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -144,7 +145,7 @@ async function presentShorts(job: ConsumerJob, observedAt: number, progress?: { 
     failureCode: job.failureCode,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
-  };
+  });
 }
 export type ConsumerShortsView = Awaited<ReturnType<typeof presentShorts>>;
 export async function consumerShortsView(job: ConsumerJob, progress?: { clips: number; collected: number; status: string }) {
@@ -239,10 +240,10 @@ async function ownedJob(input: ConsumerJobScope) {
     throw new ConsumerVideoServiceError("not_found", "This Shorts session is not available.", 404);
   return job;
 }
-export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval: { workspaceId: string; credits: number }) {
+export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval: { workspaceId?: string | null; credits: number }) {
   const job = await ownedJob(scope);
   if (job.status !== "quoted") return consumerShortsView(job);
-  if (approval.workspaceId !== job.higgsfieldWorkspaceId || approval.credits !== job.quoteCredits)
+  if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this session’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -251,7 +252,7 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
-    const result = await submitConsumerShorts(access.accessToken, input, snapshot.params, approval.workspaceId, approval.credits, {
+    const result = await submitConsumerShorts(access.accessToken, input, snapshot.params, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);

@@ -577,6 +577,9 @@ export async function collectConsumerVideoOriginal(
             ...(clip ? { consumerParentJobId: job.id, consumerParentProviderJobId: job.providerJobId, clipIndex: clip.index } : {}),
             consumerCredits: job.quoteCredits,
             consumerCreditUnit: "higgsfield_credits",
+            // Paid in Particl credits on the platform's shared account: the
+            // account's own figures above stay on the server (lib/jobs.ts › rowToGeneration).
+            ...(job.funding === "platform_account" ? { consumerFunding: "platform_account" } : {}),
             originalSha256: sha256,
             ...(options.enhancedPrompt ? { enhancedPrompt: options.enhancedPrompt } : {}),
             ...(metadata!.width !== undefined ? { width: metadata!.width } : {}),

@@ -7,6 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { readDraft } from "@/lib/workbench/records";
+import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
 import { OWN_ACCOUNT, jobFunding, websiteFunding, type ConsumerFunding } from "./funding";
 import {
@@ -70,6 +71,7 @@ import { ConsumerVideoServiceError } from "./video-service";
 import { requireConnectedPreset } from "./presets";
 import { setupIdsOfParameters } from "./marketing-records";
 import { refuseForeignMarketingSetup } from "./marketing-setup";
+import { refuseForeignAccountObjects } from "./account-objects";
 import { isBatchId } from "@/lib/variations";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
@@ -92,7 +94,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
   let result = job.resultManifest;
   if (availability !== "available" && result?.original && typeof result.original === "object" && !Array.isArray(result.original))
     result = { ...result, original: Object.fromEntries(Object.entries(result.original).filter(([key]) => key !== "asset")) };
-  return {
+  return workspaceJobView(job, {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -116,7 +118,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     failureCode: job.failureCode,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
-  };
+  });
 }
 export type ConsumerGenerationView = ReturnType<typeof presentGeneration>;
 export async function consumerGenerationView(job: ConsumerJob) {
@@ -141,9 +143,11 @@ export async function connectedGenerationCatalogue(userId: string, options: { re
     read: () => readConnectedCatalogue(access.accessToken),
   });
 }
-export const presentCatalogue = (catalogue: ConnectedCatalogue, type?: ConnectedOutputType) => ({
+/** `shared`: the catalogue was read on the platform's shared account for a
+ * workspace, which never sees that account's plan (its unlimited-use flags). */
+export const presentCatalogue = (catalogue: ConnectedCatalogue, type?: ConnectedOutputType, options: { shared?: boolean } = {}) => ({
   models: listCatalogueModels(catalogue, { type }),
-  unlim: catalogue.unlim,
+  unlim: options.shared ? null : catalogue.unlim,
   complete: catalogue.complete,
   fetchedAt: catalogue.fetchedAt,
 });
@@ -175,6 +179,8 @@ export async function quoteConsumerGeneration(
   const normalized = parseConsumerGenerationInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
   await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
+  // A Soul ID or element named by id (a parameter, a prompt token) must be one this workspace made.
+  await refuseForeignAccountObjects({ prompt: normalized.prompt, parameters: normalized.parameters }, funding);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
@@ -254,10 +260,10 @@ async function ownedGeneration(input: ConsumerJobScope) {
     throw new ConsumerVideoServiceError("not_found", "This generation job is not available.", 404);
   return job;
 }
-export async function submitConsumerGenerationJob(scope: ConsumerJobScope, approval: { workspaceId: string; credits: number }) {
+export async function submitConsumerGenerationJob(scope: ConsumerJobScope, approval: { workspaceId?: string | null; credits: number }) {
   const job = await ownedGeneration(scope);
   if (job.status !== "quoted") return consumerGenerationView(job);
-  if (approval.workspaceId !== job.higgsfieldWorkspaceId || approval.credits !== job.quoteCredits)
+  if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -267,7 +273,7 @@ export async function submitConsumerGenerationJob(scope: ConsumerJobScope, appro
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
-    const result = await submitConsumerGeneration(access.accessToken, model, input, snapshot.params, approval.workspaceId, approval.credits, {
+    const result = await submitConsumerGeneration(access.accessToken, model, input, snapshot.params, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
@@ -351,7 +357,7 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
       });
       return { job: await consumerGenerationView(completed ?? (await ownedGeneration(scope))), pollAfterSeconds };
     }
-    return { job: await consumerGenerationView(await ownedGeneration(scope)), providerStatus: response.raw, pollAfterSeconds };
+    return { job: await consumerGenerationView(await ownedGeneration(scope)), providerStatus: providerDetail(claim.job, response.raw), pollAfterSeconds };
   } finally {
     await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 });
   }

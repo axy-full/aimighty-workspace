@@ -10,7 +10,9 @@
  */
 import { createHash } from "node:crypto";
 import { readDraft } from "@/lib/workbench/records";
+import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
+import { refuseForeignAccountObjects } from "./account-objects";
 import { OWN_ACCOUNT, jobFunding, websiteFunding, type ConsumerFunding } from "./funding";
 import {
   ownsConsumerJob,
@@ -83,7 +85,7 @@ function presentTemplateJob(job: ConsumerJob, availability: ConsumerOriginalAvai
   let result = job.resultManifest;
   if (availability !== "available" && result?.original && typeof result.original === "object" && !Array.isArray(result.original))
     result = { ...result, original: Object.fromEntries(Object.entries(result.original).filter(([key]) => key !== "asset")) };
-  return {
+  return workspaceJobView(job, {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -106,7 +108,7 @@ function presentTemplateJob(job: ConsumerJob, availability: ConsumerOriginalAvai
     failureCode: job.failureCode,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
-  };
+  });
 }
 export type ConsumerMarketingTemplateView = ReturnType<typeof presentTemplateJob>;
 export async function consumerMarketingTemplateView(job: ConsumerJob) {
@@ -186,6 +188,8 @@ const sameInput = (a: unknown, b: ConsumerMarketingTemplateInput) => sameConsume
 export async function quoteConsumerMarketingTemplate(userId: string, draftId: string, value: ConsumerMarketingTemplateInput, idempotencyKey: string) {
   const funding = await websiteFunding({ workflow: "marketing-template" });
   const input = parseConsumerMarketingTemplateInput(value);
+  // An element token in the prompt must name one this workspace made.
+  await refuseForeignAccountObjects({ prompt: input.prompt }, funding);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
@@ -248,10 +252,10 @@ async function ownedTemplateJob(input: ConsumerJobScope) {
     throw new ConsumerVideoServiceError("not_found", "This template job is not available.", 404);
   return job;
 }
-export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope, approval: { workspaceId: string; credits: number }) {
+export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope, approval: { workspaceId?: string | null; credits: number }) {
   const job = await ownedTemplateJob(scope);
   if (job.status !== "quoted") return consumerMarketingTemplateView(job);
-  if (approval.workspaceId !== job.higgsfieldWorkspaceId || approval.credits !== job.quoteCredits)
+  if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -263,7 +267,7 @@ export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
     const result = await submitConsumerMarketingTemplate(
-      access.accessToken, template, costs, input, snapshot.params, snapshot.shape, approval.workspaceId, approval.credits,
+      access.accessToken, template, costs, input, snapshot.params, snapshot.shape, job.higgsfieldWorkspaceId!, job.quoteCredits,
       {
         admit: async () => {
           await accessForJob(job);
@@ -341,7 +345,7 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
       });
       return { job: await consumerMarketingTemplateView(completed ?? (await ownedTemplateJob(scope))), pollAfterSeconds };
     }
-    return { job: await consumerMarketingTemplateView(await ownedTemplateJob(scope)), providerStatus: response.raw, pollAfterSeconds };
+    return { job: await consumerMarketingTemplateView(await ownedTemplateJob(scope)), providerStatus: providerDetail(claim.job, response.raw), pollAfterSeconds };
   } finally {
     await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 });
   }

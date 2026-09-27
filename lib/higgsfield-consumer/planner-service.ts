@@ -85,11 +85,14 @@ export type ConnectedPlanner = {
 
 /** Cached per connection for two minutes, so the paid planning quote and the
  * turn it prices see the same context. */
-async function plannerContext(userId: string, generation: string, accessToken: string): Promise<PlannerContext> {
-  const key = createHash("sha256").update(`${requireTenant().id}:${userId}:${generation}`).digest("hex");
+/** `accountFacts` is the connection owner's own wallet balance and plan: read
+ * only when the planner runs on the caller's own connection, never on the
+ * platform's shared account for a workspace. */
+async function plannerContext(userId: string, generation: string, accessToken: string, accountFacts = true): Promise<PlannerContext> {
+  const key = createHash("sha256").update(`${requireTenant().id}:${userId}:${generation}:${accountFacts ? "own" : "shared"}`).digest("hex");
   const cached = contextCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.context;
-  const context = summarizePlannerReads(await readConnectedPlannerReads(accessToken, plannerReads("")));
+  const context = summarizePlannerReads(await readConnectedPlannerReads(accessToken, plannerReads("", { accountFacts })), { accountFacts });
   contextCache.set(key, { context, expiresAt: Date.now() + CONTEXT_TTL_MS });
   while (contextCache.size > 256) contextCache.delete(contextCache.keys().next().value!);
   return context;

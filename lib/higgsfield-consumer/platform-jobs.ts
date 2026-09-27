@@ -39,6 +39,13 @@ export function websiteJobsReady() {
       `CREATE INDEX IF NOT EXISTS idx_website_account_jobs_state ON website_account_jobs(state, created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_website_account_jobs_host ON website_account_jobs(host_workspace_id, host_user_id, state)`,
       `CREATE TABLE IF NOT EXISTS website_account_leases (name TEXT PRIMARY KEY, holder TEXT NOT NULL, until INTEGER NOT NULL)`,
+      // One provider job is one platform job, across every workspace.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_website_account_jobs_provider ON website_account_jobs(provider_job_id) WHERE provider_job_id IS NOT NULL`,
+      // Which workspace made each object on the shared account (a Soul ID, an
+      // element, a setup item, an imported file): exactly one, for good.
+      `CREATE TABLE IF NOT EXISTS website_account_objects (
+        provider_object_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('soul','element','setup','media')),
+        workspace_id TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     ])
       await tx.execute(sql);
   }).catch((error) => {
@@ -49,10 +56,27 @@ export function websiteJobsReady() {
 
 export class WebsiteRegistryError extends Error {
   readonly paidAttempted = false;
-  constructor(readonly code: "registry_conflict" | "invalid_entry" | "provider_job_conflict") {
-    super(code);
+  constructor(readonly code: "registry_conflict" | "invalid_entry" | "provider_job_conflict" | "capacity" | "object_conflict") {
+    super(code === "capacity" ? "The shared account is busy with other work. Try again shortly; nothing was charged." : code);
     this.name = "WebsiteRegistryError";
   }
+}
+
+/** How long an admitted job may hold the shared account's capacity (as the per-workspace window). */
+export const WEBSITE_CAPACITY_WINDOW_MS = 2 * 3_600_000;
+/**
+ * The shared account's in-flight caps (private runtime configuration): all
+ * workspaces together (`HF_ACCOUNT_MAX_ACTIVE`, default 4) and any one
+ * workspace (`HF_ACCOUNT_WORKSPACE_SHARE`, default half of that, 1–4). A
+ * workspace's own limit of four still applies on top.
+ */
+export function websiteAccountCapacity(): { maxActive: number; workspaceShare: number } {
+  const whole = (value: string | undefined, fallback: number) => {
+    const n = Number(value);
+    return Number.isSafeInteger(n) && n >= 1 && n <= 1000 ? n : fallback;
+  };
+  const maxActive = whole(process.env.HF_ACCOUNT_MAX_ACTIVE, 4);
+  return { maxActive, workspaceShare: Math.min(maxActive, whole(process.env.HF_ACCOUNT_WORKSPACE_SHARE, Math.min(4, Math.max(1, Math.floor(maxActive / 2))))) };
 }
 
 export type WebsiteJobState = "reserved" | "claimed" | "accepted" | "uncertain" | "settled" | "released";
@@ -143,6 +167,16 @@ export async function registerWebsiteDispatchTx(tx: Tx, entry: WebsiteJobEntry, 
     if (byMeter && byJob && byMeter.meterId === byJob.meterId && same(byMeter, entry)) return "replayed";
     throw new WebsiteRegistryError("registry_conflict");
   }
+  // Global capacity and each workspace's share, decided in the same transaction as the reservation.
+  const { maxActive, workspaceShare } = websiteAccountCapacity();
+  const counts = (
+    await tx.execute({
+      sql: `SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN workspace_id=? THEN 1 ELSE 0 END),0) AS mine
+        FROM website_account_jobs WHERE state IN ${IN_FLIGHT_SQL} AND created_at>?`,
+      args: [entry.workspaceId, at - WEBSITE_CAPACITY_WINDOW_MS],
+    })
+  ).rows[0];
+  if (Number(counts?.total ?? 0) >= maxActive || Number(counts?.mine ?? 0) >= workspaceShare) throw new WebsiteRegistryError("capacity");
   await tx.execute({
     sql: `INSERT INTO website_account_jobs(meter_id,workspace_id,job_id,user_id,workflow,tool,host_workspace_id,host_user_id,subject_hash,generation,
       website_credits,credit_usd,particl_credits,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'reserved',?,?)`,
@@ -185,6 +219,11 @@ export async function moveWebsiteJobTx(
     if (!options.providerJobId || !UUID.test(options.providerJobId)) throw new WebsiteRegistryError("invalid_entry");
     providerJobId = options.providerJobId.toLowerCase();
     if (pin.providerJobId !== null && pin.providerJobId !== providerJobId) throw new WebsiteRegistryError("provider_job_conflict");
+    // A provider job already recorded for any other job, in any workspace, is never adopted.
+    const other = (
+      await tx.execute({ sql: "SELECT 1 FROM website_account_jobs WHERE provider_job_id=? AND meter_id<>? LIMIT 1", args: [providerJobId, pin.meterId] })
+    ).rows[0];
+    if (other) throw new WebsiteRegistryError("provider_job_conflict");
   }
   if (pin.state === to && (to !== "accepted" || pin.providerJobId === providerJobId)) return true;
   if (!MOVES[to].includes(pin.state)) return false;
@@ -229,4 +268,39 @@ export async function releaseWebsiteLease(name: string, holder: string): Promise
   return accountTransaction(async (tx) =>
     (await tx.execute({ sql: "UPDATE website_account_leases SET until=0 WHERE name=? AND holder=?", args: [name, holder] })).rowsAffected === 1,
   );
+}
+
+/* ── Objects on the shared account ────────────────────────────────────── */
+
+export type WebsiteObjectKind = "soul" | "element" | "setup" | "media";
+const OBJECT_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
+/**
+ * Record which workspace made an object on the shared account, inside the
+ * caller's transaction. The same workspace again is a no-op; another
+ * workspace refuses — an upstream object belongs to exactly one workspace.
+ */
+export async function registerWebsiteObjectTx(tx: Tx, object: { id: string; kind: WebsiteObjectKind; workspaceId: string }, at = Date.now()) {
+  if (!OBJECT_ID.test(object.id) || !ID.test(object.workspaceId) || !["soul", "element", "setup", "media"].includes(object.kind))
+    throw new WebsiteRegistryError("invalid_entry");
+  const row = (await tx.execute({ sql: "SELECT kind,workspace_id FROM website_account_objects WHERE provider_object_id=?", args: [object.id] })).rows[0];
+  if (row) {
+    if (String(row.workspace_id) === object.workspaceId && String(row.kind) === object.kind) return;
+    throw new WebsiteRegistryError("object_conflict");
+  }
+  await tx.execute({
+    sql: "INSERT INTO website_account_objects(provider_object_id,kind,workspace_id,created_at) VALUES(?,?,?,?)",
+    args: [object.id, object.kind, object.workspaceId, at],
+  });
+}
+/** Which workspace made each of these objects on the shared account; ids no workspace made are absent. */
+export async function websiteObjectOwners(ids: readonly string[]): Promise<Map<string, { kind: WebsiteObjectKind; workspaceId: string }>> {
+  const wanted = [...new Set(ids.filter((id) => typeof id === "string" && OBJECT_ID.test(id)))].slice(0, 500);
+  const out = new Map<string, { kind: WebsiteObjectKind; workspaceId: string }>();
+  if (!wanted.length) return out;
+  await websiteJobsReady();
+  const rows = await accountTransaction((tx) =>
+    tx.execute({ sql: `SELECT provider_object_id,kind,workspace_id FROM website_account_objects WHERE provider_object_id IN (${wanted.map(() => "?").join(",")})`, args: wanted }),
+  );
+  for (const row of rows.rows) out.set(String(row.provider_object_id), { kind: String(row.kind) as WebsiteObjectKind, workspaceId: String(row.workspace_id) });
+  return out;
 }

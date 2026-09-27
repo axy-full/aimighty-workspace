@@ -130,8 +130,19 @@ export function rowToGeneration(r: any): Generation {
      in decides what the row is allowed to carry. */
   const inCredits = creditsApply(currentTenant()?.workspace);
   let params = JSON.parse(r.params || "{}");
+  /* Collected on the platform's shared website account for this workspace: it
+     paid Particl credits, so the account's own credits and job ids never leave
+     the server, and no provider quote stands in for its receipt. */
+  const platformFunded = params.consumerFunding === "platform_account";
+  if (platformFunded) {
+    delete params.consumerCredits;
+    delete params.consumerCreditUnit;
+    delete params.consumerProviderJobId;
+    delete params.consumerParentProviderJobId;
+    delete params.consumerFunding;
+  }
   const providerCreditQuote: ProviderCreditQuote | null =
-    /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
+    !platformFunded && /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
     (isConsumerVideoModel(r.model) || isConsumerOriginalParams(params)) && r.status === "succeeded" &&
     params.consumerCreditUnit === "higgsfield_credits" &&
     typeof params.consumerCredits === "number" && Number.isFinite(params.consumerCredits) && params.consumerCredits >= 0

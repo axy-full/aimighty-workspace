@@ -29,8 +29,10 @@ const columns = states
   .join(",");
 // A restore can quarantine a never-submitted quote as uncertain. Only an actual
 // durable dispatch claim is an approved commitment; untouched quotes never count.
+// This is the viewer's OWN account: a platform-funded job is paid in Particl
+// credits and its account credits are never summed here (or shown anywhere).
 const admitted =
-  "j.user_id=? AND j.dispatch_claim_hash IS NOT NULL AND j.status<>'quoted'";
+  "j.user_id=? AND j.dispatch_claim_hash IS NOT NULL AND j.status<>'quoted' AND COALESCE(j.funding,'own_account')<>'platform_account'";
 function totals(row: Row | undefined): ConsumerActivityTotals {
   return Object.fromEntries(
     states.map((state) => [

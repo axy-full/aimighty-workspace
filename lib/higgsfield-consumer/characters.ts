@@ -6,14 +6,15 @@
  * never an instruction.
  */
 import { requireTenant } from "@/lib/tenant";
-import { requireConsumerFunding } from "./jobs";
+import { ConsumerJobError } from "./jobs";
+import { websiteFunding } from "./funding";
 import { getConsumerAccess, ConsumerOAuthError } from "./oauth";
 import { readConnectedPlannerReads, createConsumerCharacter, listConsumerCharacters, CONNECTED_LIBRARY_GETS, CONNECTED_LIBRARY_PAGES, type ConsumerCharacterCreate } from "./mcp";
 import { ready } from "@/lib/db";
 import { resolveConsumerGenerationSources } from "./generation-sources";
 import { parseCharacters, parseCharacterCreate, type ConnectedCharacter, type ConnectedPlan, type SoulBuildOutcome, type SoulBuildSource, parsePlan } from "./soul-build";
 import { onlyParticlCharacters, particlCharacterIds, recordParticlCharacter } from "./character-records";
-import { accountCreatedAt, assertNoOpenBuild, buildFingerprint, claimBuild, matchBuild, openBuilds, pagingForOpenBuilds, settleBuild, type PendingBuild } from "./build-records";
+import { accountCreatedAt, assertNoOpenBuild, buildFingerprint, claimBuild, matchableEntries, matchBuild, openBuilds, pagingForOpenBuilds, settleBuild, type PendingBuild } from "./build-records";
 export * from "./soul-build";
 
 /** Every entry the paged read can return, parsed (the caller narrows them). */
@@ -42,7 +43,7 @@ function unrecordedCharacters(value: unknown, ours: ReadonlySet<string>) {
 }
 async function resolveOpenCharacterBuilds(userId: string, builds: Awaited<ReturnType<typeof openBuilds>>, value: unknown, ours: Set<string>): Promise<PendingBuild[]> {
   if (!builds.length) return [];
-  const unrecorded = unrecordedCharacters(value, ours);
+  const unrecorded = await matchableEntries(userId, unrecordedCharacters(value, ours));
   const open: PendingBuild[] = [];
   for (const build of builds) {
     const soulId = matchBuild(build, unrecorded.filter((entry) => !ours.has(entry.id)));
@@ -99,7 +100,9 @@ export async function connectedPlan(userId: string): Promise<ConnectedPlan> {
  * price control there is, because the account offers no cost tool for training.
  */
 export async function buildConnectedCharacter(userId: string, input: ConsumerCharacterCreate & { sources: SoulBuildSource[]; projectId?: string | null }): Promise<SoulBuildOutcome> {
-  requireConsumerFunding();
+  // New identities for managed workspaces are built on the commercial API
+  // (Cast › Build identity); the seam refuses this website build for them.
+  if ((await websiteFunding({ tool: "soul-build" })).kind !== "own_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const access = await getConsumerAccess(requireTenant().id, userId);
   if (!access) throw new ConsumerOAuthError("reconnect_required");
   await ready();

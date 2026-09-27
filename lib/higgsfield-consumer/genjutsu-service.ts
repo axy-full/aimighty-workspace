@@ -1,4 +1,5 @@
 import { readDraft } from "@/lib/workbench/records";
+import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork } from "./access";
 import { websiteFunding } from "./funding";
 import {
@@ -73,7 +74,7 @@ function presentGenjutsu(
         Object.entries(result.original).filter(([key]) => key !== "asset"),
       ),
     };
-  return {
+  return workspaceJobView(job, {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -94,7 +95,7 @@ function presentGenjutsu(
     failureCode: job.failureCode,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
-  };
+  });
 }
 export async function consumerGenjutsuView(job: ConsumerJob) {
   const observedAt = Date.now();
@@ -228,14 +229,11 @@ async function ownedGenjutsu(input: ConsumerJobScope) {
 }
 export async function submitConsumerGenjutsuJob(
   scope: ConsumerJobScope,
-  approval: { workspaceId: string; credits: number },
+  approval: { workspaceId?: string | null; credits: number },
 ) {
   const job = await ownedGenjutsu(scope);
   if (job.status !== "quoted") return consumerGenjutsuView(job);
-  if (
-    approval.workspaceId !== job.higgsfieldWorkspaceId ||
-    approval.credits !== job.quoteCredits
-  )
+  if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError(
       "approval_changed",
       "Review this job’s wallet and exact credit quote again.",
@@ -252,8 +250,8 @@ export async function submitConsumerGenjutsuJob(
       access.accessToken,
       input,
       params,
-      approval.workspaceId,
-      approval.credits,
+      job.higgsfieldWorkspaceId!,
+      job.quoteCredits,
       {
         admit: async () => {
           await accessForJob(job);
@@ -423,7 +421,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
     }
     return {
       job: await consumerGenjutsuView(await ownedGenjutsu(scope)),
-      providerStatus: response.raw,
+      providerStatus: providerDetail(claim.job, response.raw),
       pollAfterSeconds,
     };
   } finally {
