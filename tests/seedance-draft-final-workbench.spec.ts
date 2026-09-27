@@ -249,7 +249,8 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   /* The final lands beside its draft, without the watermark. */
   await expect(strip.getByTestId("draft-final-status")).toHaveText("The 1080p final is made, without the watermark.", { timeout: 120_000 });
   await expect(strip.getByTestId("gen-draft-take")).toHaveCount(2);
-  await expect(strip.locator('[data-pair="final"] [data-testid="gen-draft-take-status"]')).toHaveText("No watermark");
+  await expect(strip.locator('[data-pair="draft"] [data-testid="gen-draft-take-note"]')).toHaveText("Watermarked");
+  await expect(strip.locator('[data-pair="final"] [data-testid="gen-draft-take-note"]')).toHaveText("No watermark");
   await expect(strip.getByTestId("draft-final-make")).toHaveCount(0);
 
   /* The books: two jobs, two charges, each at the price on its button. */
@@ -274,6 +275,11 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await expect(pair).toHaveCount(1, { timeout: 60_000 });
   await expect(pair.getByTestId("edit-take")).toHaveCount(2);
   await expect(pair.locator(".gx-batch-label")).toHaveText("draft → final");
+
+  /* The Library's flat grid keeps the pair together, each card named as the draft or the final. */
+  await openGen(page, s.project);
+  if (await page.getByTestId("toggle-library").isVisible()) await page.getByTestId("toggle-library").click();
+  await expect(page.getByTestId("library").getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
   expect(s.errors).toEqual([]);
 });
 
@@ -315,7 +321,7 @@ test("a draft past its seven days cannot make a final: the button is off, it say
   expect(s.errors).toEqual([]);
 });
 
-test("a final refused at moderation is not charged, says so, and the draft can make its final again at the price on the button", async ({ page }, info) => {
+test("a final refused at moderation is not charged on the books, its card says why, and the draft can make its final again at the price on the button", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(300_000);
   const s = await seeded(page);
@@ -329,10 +335,13 @@ test("a final refused at moderation is not charged, says so, and the draft can m
   await make.click();
   await strip.getByTestId("draft-final-approve-send").click();
 
-  /* Refused by the (mocked) engine: the final's tile says it was not charged, and the draft offers its final again. */
-  await expect(strip.locator('[data-pair="final"] [data-testid="gen-draft-take-status"]')).toHaveText("Failed · not charged", { timeout: 120_000 });
-  await expect(strip.getByTestId("draft-final-status")).toHaveText("The last final did not render. Nothing was charged for it.");
+  /* Refused by the (mocked) engine: the final's card says it failed and why (the card contract, components/graphite/TakeTile.tsx),
+     and the draft offers its final again. What it cost is the books' to say (below), never a guess on the page. */
+  await expect(strip.locator('[data-pair="final"] [data-testid="take-chip"]')).toHaveText("Failed", { timeout: 120_000 });
+  await expect(strip.locator('[data-pair="final"] [data-testid="take-reason"]')).toHaveText("Refused by the content filter");
+  await expect(strip.getByTestId("draft-final-status")).toHaveText("The last final did not render.");
   await expect(strip.getByTestId("draft-final-make")).toHaveAttribute("aria-label", `Make the 1080p final · ${finalPrice.toLocaleString("en-US")} cr`, { timeout: 60_000 });
+  await expect(strip).not.toContainText(/not charged|not billed|nothing was charged|refunded/i);
   await floors(page, info, strip);
   await shot(page, info, strip, "final-refused");
 

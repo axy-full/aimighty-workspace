@@ -183,7 +183,8 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
     : view.state === "finalising" ? `Making the ${FINAL_RESOLUTION} final…`
     : view.state === "finalFailed" ? "The final did not render. Another final is unavailable for this draft; review the take’s status."
     : view.state === "final" ? `The ${FINAL_RESOLUTION} final is made, without the watermark.`
-    : view.retry ? "The last final did not render. Nothing was charged for it." : null;
+    /* Whether that final was charged is its own card's and the usage ledger's to say, from the recorded outcome; not guessed here. */
+    : view.retry ? "The last final did not render." : null;
 
   return (
     <div className="gx-draft-bar" data-testid="draft-final" data-state={view.state} data-draft-id={draft.id}>
@@ -225,15 +226,15 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
   );
 }
 
-/** A draft or final tile's status line, in the strip's own words. */
-function pairStatus(entry: LibraryEntry, role: "draft" | "final"): { text: string; tone: "blue" | "green" | "red" | "amber" | undefined } {
+/**
+ * What a rendered draft or final carries that its card does not say: whether
+ * the watermark is on it. Where it stands (Queued, Rendering, Held, Failed and
+ * why) is the card's own chip and reason line (components/graphite/TakeTile.tsx).
+ */
+function pairNote(entry: LibraryEntry, role: "draft" | "final"): string | null {
   const g = entry.asset.origin === "generation" ? entry.asset.value : null;
-  if (!g) return { text: "", tone: undefined };
-  if (g.status === "failed" || g.status === "cancelled")
-    return { text: entry.take.failedUnbilled ? "Failed · not charged" : "Failed", tone: "red" };
-  if (g.status === "held") return { text: "Held", tone: "amber" };
-  if (g.status !== "succeeded") return { text: g.status === "queued" ? "Queued" : "Rendering", tone: "blue" };
-  return { text: role === "draft" ? "Watermarked" : "No watermark", tone: role === "final" ? "green" : undefined };
+  if (!g || g.status !== "succeeded") return null;
+  return role === "draft" ? "Watermarked" : "No watermark";
 }
 
 /**
@@ -246,8 +247,8 @@ export function DraftStrip({ scope, projectId, draft, finals, tile, testId, acti
   projectId: string | null;
   draft: LibraryEntry;
   finals: readonly LibraryEntry[];
-  /** The caller's tile for one take, with the label and status line the strip gives it. */
-  tile: (entry: LibraryEntry, label: string, status: { text: string; tone: "blue" | "green" | "red" | "amber" | undefined }) => ReactNode;
+  /** The caller's tile for one take (the card contract's TakeTile), with the label and watermark note the strip gives it. */
+  tile: (entry: LibraryEntry, label: string, note: string | null) => ReactNode;
   testId: string;
   actions?: boolean;
   plain?: boolean;
@@ -263,8 +264,8 @@ export function DraftStrip({ scope, projectId, draft, finals, tile, testId, acti
     <TakeStrip batchId={`draft:${draftGen.id}`} testId={testId} state={live ? "live" : "done"} plain={plain}
       label={ordered.length ? `draft → final` : "draft"} name={draft.take.name} meta={settled}
       foot={<DraftFinalBar scope={scope} projectId={projectId} draft={draftGen} finals={finalGens} actions={actions} />}>
-      {tile(draft, `draft · ${DRAFT_RESOLUTION}`, pairStatus(draft, "draft"))}
-      {ordered.map((f) => tile(f, `final · ${FINAL_RESOLUTION}`, pairStatus(f, "final")))}
+      {tile(draft, `draft · ${DRAFT_RESOLUTION}`, pairNote(draft, "draft"))}
+      {ordered.map((f) => tile(f, `final · ${FINAL_RESOLUTION}`, pairNote(f, "final")))}
     </TakeStrip>
   );
 }
