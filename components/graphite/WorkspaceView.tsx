@@ -14,6 +14,7 @@ import {
 } from "@/lib/shell/workspace-view";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { UsageLedger } from "./UsageLedger";
 import { creditsLabel } from "@/lib/workspace/format";
 import { requestAccountRefresh, type WorkspaceAccount } from "@/lib/workspace/data";
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
@@ -541,6 +542,7 @@ function Usage() {
         </div>
       ))}
       {data && !shown.length ? <span className="cw-dim">Nothing settled yet.</span> : null}
+      <UsageLedger />
     </div>
   );
 }

@@ -85,8 +85,9 @@ import type { Generation } from "./types";
  * closed) is remembered in this browser, with the take it was in its batch —
  * one record per take, named by its settings and prompt, so other takes made
  * meanwhile (here or in another tab) leave it be. The next Generate of that
- * same take takes it up again — the same shot and claimed request, or the
- * connected job it submitted, read back first: one the account still has as
+ * same take takes it up again — the same shot, its claimed request checked on
+ * the server (followed if it landed, never re-sent), or the connected job it
+ * submitted, read back first: one the account still has as
  * quoted is sent again as itself (its first submission may still be on its
  * way in; the account takes one per job), one that did not render is made
  * again — and goes on from there, never paying for it
@@ -219,7 +220,7 @@ type ResumeRecord =
 /* One record per project and take — the take named by its settings and prompt — so a take made meanwhile, here or in another tab, never replaces it. */
 const RESUME_PREFIX = "particl:composer-resume:v2:";
 const RESUME_KEY = (scope: string, projectId: string, take: string) => `${RESUME_PREFIX}${JSON.stringify([scope, projectId, stableId("take", take)])}`;
-/** A record nobody took up in a week is let go (its claimed request is still replayed by the dispatch). */
+/** A record nobody took up in a week is let go (its claimed request is still settled by the dispatch: checked, never re-sent). */
 const RESUME_MS = 7 * 24 * 60 * 60 * 1000;
 function readResume(scope: string, projectId: string, take: string): ResumeRecord | null {
   try {
@@ -727,7 +728,7 @@ export function useComposer(options: {
           if (!identity) throw new Error(`${reference.name} cannot be used as a reference.`);
           return { ...identity, role: referenceRole({ kind: reference.kind }) };
         });
-        /* The take's own recovery key: a claimed request left unconfirmed is replayed, never sent twice. Sound
+        /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
            takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
         const storageId = pendingGenerationKey(scope, filed.project.id, model.audioTask ? `${shot.id}:${stableId("take", now.quoteKey)}` : shot.id);
         const outcome = await dispatchGeneration({
