@@ -132,7 +132,7 @@ PW_BASE_URL=http://localhost:4999 ./node_modules/.bin/playwright test --project=
   ```bash
   gh api repos/axy-full/aimighty-workspace/actions/jobs/<job-id>/logs | grep -E "✘|shutdown signal|[resources]"
   ```
-  Failure artifacts (`browser-failure-<suite>-<shard>`) contain `dev-ci.log` and the traces.
+  Failure artifacts (`browser-failure-<suite>-<shard>`) contain one dev-server log per sub-shard, `dev-ci-<k>-of-36.log`, and the traces.
 - **Known flakes:**
   - `management-scope.spec.ts:6` on a cold dev server;
   - the `color-workbench.spec.ts:96` LUT pixel read at 390;

@@ -148,7 +148,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const plan = await planOf(ws).catch(() => null);
   const ceiling = ceilingFor(plan, "productions");
   if (ceiling != null) {
-    const have = await db().execute(`SELECT COUNT(*) AS n FROM projects`);
+    /* The starter production is a sample, not one of the plan's productions (lib/starter.ts). */
+    const have = await db().execute(`SELECT COUNT(*) AS n FROM projects WHERE starter = 0`);
     if (wouldExceed(Number((have.rows[0] as { n?: number })?.n ?? 0), ceiling)) {
       return NextResponse.json({ error: ceilingMessage(plan!, "productions", ceiling) }, { status: 402 });
     }

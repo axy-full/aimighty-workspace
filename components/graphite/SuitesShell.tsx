@@ -32,7 +32,7 @@ import { Inspector } from "./Inspector";
 import { Library } from "./Library";
 import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
-import { ProjectHead } from "./ProjectHead";
+import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
@@ -50,6 +50,10 @@ import { RigLibrary } from "./production/RigExtras";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
+import Boundary from "@/components/Boundary";
+import { throwIfArmed } from "@/lib/shell/fault";
+import { FaultAside, PanelFault } from "./PanelFault";
+import { FirstRun, type ProjectActions } from "./FirstRun";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
@@ -60,6 +64,8 @@ import { WorkspaceView } from "./WorkspaceView";
  * provider as the shell it replaces, so every page body works from day one.
  */
 export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
+  /* A throw out here (the chrome itself) is app/suites/error.tsx's; everything below has its own boundary. */
+  throwIfArmed("shell");
   const ws = useWorkspace();
   const shell = useShell();
   const { state, dispatch, selectProject, toast } = ws;
@@ -217,15 +223,49 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     const held = takeHeldAgentRequest(requestScope);
     if (held) prefillAgentRequest(requestScope, "atomik", openProjectId, held);
   }, [openProjectId, requestScope]);
+  /* One way to open, start and explore a project, whichever surface asks: the switcher, a stage's first-run card, the Studio home. */
+  const pickProject = (id: string) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
+  const createProject = async (name: string) => {
+    const created = newProject(name.slice(0, PROJECT_NAME_MAX));
+    const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
+    if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
+    pickProject(created.id);
+    toast(`${created.name} is open`);
+    return null;
+  };
+  /* The workspace's starter production, seeded on first use and opened as this person's draft; a second press opens the same one. */
+  const openStarter = async () => {
+    const response = await fetch("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ action: "starter" }) }).catch(() => null);
+    const body = (await response?.json().catch(() => null)) as { project?: { id?: unknown; name?: unknown }; error?: unknown } | null;
+    if (!response?.ok || typeof body?.project?.id !== "string") return typeof body?.error === "string" ? body.error : "The starter production could not be opened. Try again.";
+    pickProject(body.project.id);
+    toast(`${typeof body.project.name === "string" ? body.project.name : "The starter production"} is open. Its takes are samples: nothing was generated or charged.`);
+    return null;
+  };
+  const projectActions: ProjectActions = { projects: data.projects, onPick: pickProject, onCreate: createProject, onStarter: openStarter };
+  /* A Studio stage with no project open: while the list is still being read, say so; then the first-run card. */
+  const noProject = (stage: string, lead: string) => data.status === "loading"
+    ? <p className="gx-empty" role="status" data-testid={`${stage}-opening`}>Opening your projects…</p>
+    : <FirstRun key={`first-run:${stage}`} stage={stage} lead={lead} actions={projectActions} now={now} />;
+  /* The Studio stages whose bodies are tools (Rig, Astra, Edit & Sound, Deliver) keep them, with the same card above. */
+  const firstRunAbove = !project && data.status === "ready" && shell.view === "suite" && shell.suite.id === "studio"
+    ? <FirstRun key={`first-run:${shell.page.id}`} stage={shell.page.id} lead={`Open or create a project to use ${shell.page.title}.`} actions={projectActions} now={now} />
+    : null;
   /* The project list or this project's library failed to read: said, with Retry, instead of an empty shell. */
   const projectsError = data.status === "error" ? data.error ?? "Projects could not be loaded." : null;
   const libraryError = library.state.status === "error" ? library.state.error ?? "The project library could not be loaded." : null;
 
   const overlay = !shell.wide;
   const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
-  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector : shell.inspOpen);
+  /* The desktop Studio home inspects nothing of its own: its Inspector column opens for a take picked there, never for a stage spec it does not show. */
+  const onStudioHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "stages";
+  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
+  /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
+     Moving to another page, project or selection gives it a fresh go. */
+  const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
+  const stageProbe = `stage:${shell.page.id}`;
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
@@ -237,23 +277,29 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        <AtomikGate />
-        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
+        {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
+        <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
+          <AtomikGate />
+        </Boundary>
+        {shell.view === "crew" ? <><CrewStrip room={crew} />
+          <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
+            <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
+          </Boundary></> : shell.view === "workspace" ? (
+          <Boundary what="Workspace" probe="workspace" resetKey={`workspace:${shell.wsTab}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="workspace" /></div>}>
+            <WorkspaceView account={account} />
+          </Boundary>
+        ) : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
+            {showLibrary ? (
+              <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`}
+                fallback={(fault) => <FaultAside kind="library" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : undefined} />}>
+                <Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
+              </Boundary>
+            ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
-                onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
-                onCreate={async (name) => {
-                  const created = newProject(name.slice(0, 120));
-                  const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
-                  if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
-                  try { localStorage.setItem(scope, created.id); } catch { /* the URL still carries it */ }
-                  selectProject(created.id);
-                  toast(`${created.name} is open`);
-                  return null;
-                }} />
+                onPick={pickProject} onCreate={createProject} />
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
@@ -266,7 +312,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     </>) : null}
                   </div>
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
+                      <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    </Boundary>
                   </div>
                 </>
               ) : (
@@ -274,6 +322,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
                   {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
+                    <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
                     {projectsError && !project ? (
                       <div className="gx-empty" role="alert" data-testid="projects-error">
                         <p className="gx-gen-error">{projectsError}</p>
@@ -282,21 +331,22 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
-                      <StudioHome key="stages" project={project} items={items} />
+                      <StudioHome key="stages" project={project} items={items} actions={projectActions} loading={data.status === "loading"} now={now} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "brief" ? (
-                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
+                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("brief", "Open or create a project to write its script.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
-                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
+                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : noProject("beats", "Open or create a project to break its script into beats.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
-                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
+                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : noProject("takes", "Open or create a project to see its takes.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "environment" ? (
-                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to build its world.</p>
+                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("environment", "Open or create a project to build its world.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
-                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to cast it.</p>
+                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("cast", "Open or create a project to cast it.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (
-                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : <p className="gx-empty">Open or create a project to storyboard it.</p>
+                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : noProject("boards", "Open or create a project to storyboard it.")
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
+                        {firstRunAbove}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
@@ -309,7 +359,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
+                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (<>
+                      {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
@@ -319,21 +370,51 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
-                    )}
+                    </>)}
+                    </Boundary>
                   </div>
                 </>
               )}
-              <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}><GenerationStrip /></div>
+              <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}>
+                <Boundary what="The run strip" probe="strip" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="strip" variant="inline" /></div>}><GenerationStrip /></Boundary>
+              </div>
             </main>
-            {showInspector ? <Inspector scope={scope} project={project} overlay={overlay} /> : null}
+            {showInspector ? (
+              <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
+                fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
+                <Inspector scope={scope} project={project} overlay={overlay} />
+              </Boundary>
+            ) : null}
           </div>
         )}
-        <Palette items={items} onAsk={ask} />
+        <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
+          <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
+            <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Search" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="palette" dialog actions={<button type="button" className="gx-hbtn" onClick={() => shell.setPalette(false)}>Close</button>} />
+            </div>
+          </div>
+        )}>
+          <Palette items={items} onAsk={ask} />
+        </Boundary>
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
-          <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
+          {/* Closed, the composer shows nothing, so a failure there shows nothing either until it is opened — like Search and Atomik. */}
+          <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => !state.composer ? null : (
+            <div className="gx-fault-dock"><PanelFault fault={fault} name="composer" variant="inline"
+              actions={<button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { composer: false } })}>Close</button>} /></div>
+          )}>
+            <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
+          </Boundary>
         </div>
         {/* The page's Atomik plan: "Run stage" and the Inspector's Approve open it; its gate approves. */}
-        <AtomikSheet />
+        <Boundary what="Atomik" probe="atomik-sheet" resetKey={state.agentOpen ? "open" : "closed"} fallback={(fault) => !state.agentOpen ? null : (
+          <div className="gx-veil" onClick={() => dispatch({ type: "patch", patch: { agentOpen: false } })} data-testid="atomik-veil">
+            <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Atomik" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="atomik-sheet" dialog actions={<button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { agentOpen: false } })}>Close</button>} />
+            </div>
+          </div>
+        )}>
+          <AtomikSheet />
+        </Boundary>
         <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (
           <div className="gx-veil" onClick={() => setMoving(null)} data-testid="move-veil">

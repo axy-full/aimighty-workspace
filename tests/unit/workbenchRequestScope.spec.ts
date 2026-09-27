@@ -40,6 +40,11 @@ function route() {
       mapNodeShot: record("map", "shot"),
       publishBible: record("publish", { version: 1 }),
     },
+    /* Studio's first run: seeding the starter production writes to the workspace, so it is gated like a save. */
+    "@/lib/workbench/starter-draft": {
+      openStarterDraft: record("starter", { project: draft, revision: 1, created: true, seeded: true }),
+      StarterUnavailableError: class StarterUnavailableError extends Error {},
+    },
   };
   const compiled = ts.transpileModule(
     readFileSync("app/api/workbench/projects/route.ts", "utf8"),
@@ -74,7 +79,7 @@ for (const [label, captured] of [
   ],
   ["an unstamped old browser", null],
 ] as const) {
-  test(`${label} cannot save, publish, map or open before touching storage`, async () => {
+  test(`${label} cannot save, publish, map, open or seed the starter before touching storage`, async () => {
     const { exports, calls, draft } = route();
     for (const [method, body] of [
       ["PUT", { project: draft, revision: 0 }],
@@ -84,6 +89,7 @@ for (const [label, captured] of [
       ],
       ["POST", { action: "map-shot", projectId: draft.id, nodeId: "a" }],
       ["POST", { action: "open", projectId: "existing-production" }],
+      ["POST", { action: "starter" }],
     ] as const) {
       const response = await exports[method](
         new Request("http://localhost/api/workbench/projects", {
@@ -113,7 +119,7 @@ for (const [label, captured] of [
   });
 }
 
-test("the current captured account can save and publish; ordinary GET clients stay compatible", async () => {
+test("the current captured account can save, publish and open the starter; ordinary GET clients stay compatible", async () => {
   const { exports, calls, draft } = route();
   const headers = {
     "X-Workbench-Scope": requestScope.workbenchScopeFor(
@@ -149,6 +155,10 @@ test("the current captured account can save and publish; ordinary GET clients st
     ).status,
   ).toBe(200);
   expect(calls).toContain("publish");
+  const starter = await exports.POST(new Request("http://localhost/api/workbench/projects", { method: "POST", headers, body: JSON.stringify({ action: "starter" }) }));
+  expect(starter.status).toBe(200);
+  expect(await starter.json()).toMatchObject({ created: true, project: { id: draft.id } });
+  expect(calls).toContain("starter");
   expect(
     (await exports.GET(new Request("http://localhost/api/workbench/projects")))
       .status,

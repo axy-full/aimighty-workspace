@@ -12,7 +12,8 @@ export type MediaJob = {
 };
 /** Sound tools file their output under the name the server gave it (source · dubbed (Language)), not the lane node's title. */
 const SOURCE_NAMED_TASKS=new Set(['dub','voiceChange']);
-export const activeMediaJob=(job:MediaJob)=>!['succeeded','failed','cancelled'].includes(job.status);
+/** Not yet in the terminal set: succeeded, failed or cancelled. */
+export const activeMediaJob=(job:Pick<MediaJob,'status'>)=>!['succeeded','failed','cancelled'].includes(job.status);
 
 /** Recover every missing asset that fits the persisted draft. A late take cannot
  * replace a newer take or a person's manual/selected asset on the canvas. */
