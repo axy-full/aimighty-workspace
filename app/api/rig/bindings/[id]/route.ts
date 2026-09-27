@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
@@ -36,6 +37,7 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
+  await syncCreditReceipts();
 
   const { id: shotId } = await params;
   const shot = await shotOf(shotId);

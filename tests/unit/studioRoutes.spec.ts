@@ -53,6 +53,7 @@ test("a project refused by the plan's production ceiling leaves no empty product
     "@/lib/productions": await import("../../lib/productions"),
     "@/lib/db": await import("../../lib/db"),
     "@/lib/cache": await import("../../lib/cache"),
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/platform": { planOf: async () => invite, getPlatformLayer: async () => null },
     "@/lib/credits": await import("../../lib/credits"),

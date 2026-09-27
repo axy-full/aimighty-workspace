@@ -73,6 +73,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     "@/lib/auth": await auth(ws),
     "@/lib/reconcile": await import("../../lib/reconcile"),
     "@/lib/storageCost": { storageLedger: async () => null },
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/creditUsage": { creditUsage: async () => ({}), creditUsageSummary: async () => ({}) },
     "@/lib/credits": await import("../../lib/credits"),
