@@ -2,6 +2,7 @@ import { db, ready, now } from "./db";
 import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { creditsApply } from "./credits";
+import { withoutVendorDollars } from "./analyticsRedact";
 import { PipelineStore } from "./pipeline/store";
 import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
@@ -44,8 +45,8 @@ function parsed(value: unknown) {
     return {};
   }
 }
-function generation(row: Row) {
-  const params = parsed(row.params);
+function generation(row: Row, creditWorkspace: boolean) {
+  let params = parsed(row.params);
   if (params && typeof params === "object") {
     delete params.paidClaim;
     delete params.producedOutcome;
@@ -60,8 +61,15 @@ function generation(row: Row) {
     delete params.higgsfieldVideoPollUntil;
     delete params.higgsfieldVideoPollToken;
     delete params.genjutsuOriginal;
+    /* The working figures in a take's params are what vendors charge (lib/jobs.ts rowToGeneration
+       reads them the same way): a workspace billed in credits exports none of them. */
+    if (creditWorkspace) {
+      params = withoutVendorDollars(params) as Record<string, unknown>;
+      if (row.kind === "audio") { delete params.estCredits; delete params.credits; delete params.tier; }
+    }
   }
-  return { ...row, params };
+  /* An audio take's token count is the voice vendor's credits. */
+  return { ...row, ...(creditWorkspace && row.kind === "audio" ? { total_tokens: null } : {}), params };
 }
 
 /** Tenant data plus the requesting owner's private work; never collaborators' private drafts. */
@@ -92,7 +100,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     ).rows.map((row) => ({ ...row }));
     contents.generations = (
       await tx.execute("SELECT * FROM generations ORDER BY created_at")
-    ).rows.map(generation);
+    ).rows.map((row) => generation(row, creditWorkspace));
     // Export reusable local bindings and source history, never provider handles
     // or account fingerprints. Respect the same private project boundary as the API.
     contents.soul_identities = tables.has("soul_identities") ? (await tx.execute({

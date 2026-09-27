@@ -9,24 +9,23 @@ test("nothing costs nothing; anything that costs money costs at least one credit
 });
 
 test("a job rounds up to the next whole credit at its engine's margin", () => {
-  /* Every number here is `ceil(vendor x 1.5 / 0.10)` — SOW §7A, whose whole
-     rate card derives from that and nothing else. Written out rather than
-     computed, because a test that recomputes the rule it is checking passes
-     whatever the rule becomes. */
-  // A 5-second Seedance 2.5 1080p shot, $2.864 at the vendor. §7A card: 43.
+  /* Every number here is written out rather than computed, because a test
+     that recomputes the rule it is checking passes whatever the rule
+     becomes. */
+  // A 5-second Seedance 2.5 1080p shot.
   expect(billCreditsWith(2.864, marginFor("dreamina-seedance-2-5-260628", DEFAULT_MARGINS), 0.1)).toBe(43);
-  // A 5-second Kling 3.0 standard shot, $0.42.
+  // A 5-second Kling 3.0 standard shot.
   expect(billCreditsWith(0.42, marginFor("fal-ai/kling-video/v3/standard", DEFAULT_MARGINS), 0.1)).toBe(7);
-  // One Nano Banana Pro still, $0.134. §7A card: 3 at $0.15.
+  // One Nano Banana Pro still.
   expect(billCreditsWith(0.134, marginFor("gemini-3-pro-image", DEFAULT_MARGINS), 0.1)).toBe(3);
   // A whole-number boundary rounds exactly, not up again.
   expect(billCreditsWith(1, 1, 0.1)).toBe(10);
 });
 
 test("every engine is on the launch multiplier, and it is 1.5", () => {
-  /* §7A: "Sell price = engine cost x 1.5." One rate at launch, keyed by
-     engine so Phase B is a config change. A second entry appearing here is
-     a pricing decision and should fail until it is a deliberate one. */
+  /* One rate at launch, keyed by engine so a per-engine price is a config
+     change. A second entry appearing here is a pricing decision and should
+     fail until it is a deliberate one. */
   expect(Object.keys(DEFAULT_MARGINS)).toEqual(["*"]);
   expect(DEFAULT_MARGINS["*"]).toBe(1.5);
   for (const engine of [
@@ -73,8 +72,8 @@ test("the markup does not cross the wire", async () => {
   /* SOW §2: "margin is the gap, set platform-side per engine, never shown."
      `CreditState` is what /api/me hands the browser, and it carried the
      margin table long after the browser stopped converting anything with it.
-     One flat 1.5 is a plainer disclosure than fourteen numbers were, which is
-     what made the dead field worth removing rather than leaving.
+     One flat entry is a plainer disclosure than fourteen numbers were, which
+     is what made the dead field worth removing rather than leaving.
 
      Asserted on the shape rather than on a response, because the leak was a
      field on a type — anything that serialises this gets it for free. */

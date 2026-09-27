@@ -34,6 +34,8 @@ export const PHASE_LABEL: Record<CrewPhase | "note", string> = { propose: "Propo
 
 export const ROUNDS_MAX = 6;
 export const MEMBER_MAX_TOKENS = 220;
+export const CREW_OUTPUT_TOKENS: Record<CrewEffort, number> = { low: 1024, medium: 2048, high: 4096 };
+export const CREW_MAX_TURNS = 2;
 export const PARALLEL_CAP = 6;
 export const REQUEST_TIMEOUT_MS = 45_000;
 export const GOAL_MAX = 1200;
@@ -109,7 +111,7 @@ export function chairOf<T extends { id: string; isChair: boolean }>(active: read
 export function roundBlock(input: { goal: string; seated: number; running: boolean; roundsRun: number; keyConnected: boolean; hasProject: boolean }): string | null {
   if (input.running) return "";
   if (!input.hasProject) return "Open a project first.";
-  if (!input.keyConnected) return "Add key in Workspace › Engines.";
+  if (!input.keyConnected) return "Crew's managed engine is unavailable.";
   if (!input.goal.trim()) return "Write the goal.";
   if (!input.seated) return "Seat at least one member.";
   if (input.roundsRun >= ROUNDS_MAX) return `This room has run its ${ROUNDS_MAX} rounds. Start a new session.`;
@@ -125,11 +127,11 @@ export type Rate = { inputUsdPerToken: number; outputUsdPerToken: number };
 export function roundCeilingUsd(input: { seated: number; goalChars: number; contextChars: number; transcriptChars: number; stanceChars: number }, rate: Rate): number {
   const calls = callsInRound(input.seated);
   if (!calls) return 0;
-  /* ~3 characters a token is conservative for English; +64 tokens of wire overhead a call. */
-  const perProposal = MEMBER_MAX_TOKENS * 4;
-  const grown = input.transcriptChars + input.seated * perProposal * 2;
-  const promptTokens = Math.ceil((input.goalChars + input.contextChars + input.stanceChars + grown + 600) / 3) + 64;
-  return calls * (promptTokens * rate.inputUsdPerToken + MEMBER_MAX_TOKENS * rate.outputUsdPerToken);
+  // UTF-8 can occupy four bytes per character. Count bytes conservatively,
+  // including the tool schema/result and the bounded reasoning allowance.
+  const grown = input.transcriptChars + input.seated * MEMBER_MAX_TOKENS * 8 * 2;
+  const promptTokens = (input.goalChars + input.contextChars + input.stanceChars + grown + 1200) * 4 + 4096;
+  return calls * CREW_MAX_TURNS * (promptTokens * rate.inputUsdPerToken + CREW_OUTPUT_TOKENS.high * rate.outputUsdPerToken);
 }
 export function callCostUsd(usage: { promptTokens: number; completionTokens: number }, rate: Rate): number {
   return usage.promptTokens * rate.inputUsdPerToken + usage.completionTokens * rate.outputUsdPerToken;

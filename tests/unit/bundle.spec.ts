@@ -8,11 +8,11 @@ import { DEFAULT_MARGINS } from "../../lib/creditTerms";
  *
  * This is the only check that proves it, because it reads the artifact a
  * browser is actually served rather than the imports we meant to write. Two
- * halves used to be in there and either one is enough to give the markup away:
+ * halves used to be in there and neither may reach a browser:
  *
- *   · the vendors' per-second rates (`withoutAudio:.084`), because the
+ *   · the vendors' per-second rates (`withoutAudio:<rate>`), because the
  *     estimator is bundled so the composer can reprice without a round trip;
- *   · the margin table itself (`identity-training":1.38`), a literal in
+ *   · the margin table itself (`"<engine>":<margin>`), a literal in
  *     lib/creditTerms.ts, which the browser imported for the same reason.
  *
  * It needs a build. Without one it says so and skips rather than passing on
@@ -64,7 +64,7 @@ test("no margin reaches the browser", () => {
   test.skip(files.length === 0, "no build in .next — run `next build` first");
 
   /* The margin table is keyed by engine id, so the pair is what gives it
-     away: a bare 1.38 could be anything, `"identity-training":1.38` could
+     away: a bare number could be anything, `"<engine>":<margin>` could
      not. */
   const found: string[] = [];
   for (const f of files) {

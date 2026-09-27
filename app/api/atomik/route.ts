@@ -6,7 +6,7 @@ import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
-import { menuFor, priceLabel, type CatalogModel } from "@/lib/catalog";
+import { menuFor, type CatalogModel } from "@/lib/catalog";
 import { connectedEngineModels, connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
 import { RecipeError, recipeForMessage } from "@/lib/higgsfield-consumer/recipes-service";
 
@@ -40,10 +40,13 @@ function band(m: CatalogModel): "Low cost" | "Medium cost" | "High cost" | "" {
   return perM <= 3 ? "Low cost" : perM <= 15 ? "Medium cost" : "High cost";
 }
 
+/* No per-token price here. The gateway's rate is what the platform pays for
+   a planner, and the menu is read by every workspace, credit ones included;
+   the band says cheap or dear, and a turn's price is its quote, in credits. */
 const shape = (m: CatalogModel) => ({
   id: m.id, name: m.name, owner: m.owner, released: m.released,
   description: m.description.slice(0, 120),
-  band: band(m), price: priceLabel(m), efforts: atomikEffortOptions(m),
+  band: band(m), efforts: atomikEffortOptions(m),
   vision: m.inputModalities?.includes("image") ?? false,
 });
 

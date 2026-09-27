@@ -8,7 +8,7 @@
  * priced per second of the SOURCE, so the number the uploader wrote in the
  * header is the number the platform pays against, and for fal engines that
  * same estimate is what the ledger records as the cost. A 300-second clip
- * declared as four buys $150 of Topaz for about five credits, and nothing
+ * declared as four buys 300 seconds of Topaz for the price of four, and nothing
  * downstream ever learns the difference.
  *
  * There is no decoder here — no ffprobe, no ffmpeg — so this cannot measure

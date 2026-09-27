@@ -22,9 +22,8 @@ export function soulCharacterGenerationEnabled(): boolean {
  * composer imports so it can reprice a duration change without a round trip.
  * That put the engines' real per-second rates into a PUBLIC static chunk:
  * `grep -o "withoutAudio:\\.[0-9]*" .next/static/chunks/*.js` returned
- * `.084`, `.112`, `.3`, `.5`. With the margin table — also a literal in the
- * bundle — a visitor could compute the platform's markup exactly, which §2 of
- * the scope of work says is never shown.
+ * them, beside the margin table — also a literal in the bundle — and §2 of
+ * the scope of work says margin is never shown.
  *
  * So the catalogue and the rates are two files now. lib/models.ts describes
  * what a model IS and can go anywhere; this says what it COSTS and must not
