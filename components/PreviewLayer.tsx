@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { downloadUrl, galleryOf, originalUrl, readPreview, type PreviewItem } from "@/lib/preview";
+import { assetIdFromUrl, downloadUrl, galleryOf, originalUrl, readPreview, validAssetId, type PreviewItem } from "@/lib/preview";
 import { bindPreview, onBindingsEnded, type ActResult, type BoundAction, type Binding } from "@/lib/shell/preview-bridge";
 
 const SELECTOR = "[data-preview-url]";
@@ -48,7 +48,10 @@ export default function PreviewLayer() {
     setHot(null);
     const session = ++sessions.current;
     const surface = el.closest("[data-preview-gallery]")?.getAttribute("data-preview-gallery") ?? null;
-    const shell = surface ? bound(bindPreview(surface, readPreview(el)?.asset ?? null), session) : null;
+    /* The take: the element's own, its tile's (a picture inside a tile carries only its URL), or the one its URL names. */
+    const own = readPreview(el);
+    const asset = own?.asset ?? validAssetId(el.closest("[data-preview-asset]")?.getAttribute("data-preview-asset")) ?? assetIdFromUrl(own?.url);
+    const shell = surface ? bound(bindPreview(surface, asset), session) : null;
     setOpen(shell ?? { ...galleryOf(el), session, binding: null });
   }, []);
 

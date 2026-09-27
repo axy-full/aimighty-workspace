@@ -157,8 +157,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
 
   /* The selected take, as the URL carries it: the Workspace selection is the one source, `asset` (and `sel`) follow it. */
   const take = ws.state.selKind === "take" ? validAssetId(ws.state.selId) : null;
-  const selection = useRef({ selKind: ws.state.selKind, selId: ws.state.selId, page: ws.state.page });
-  useEffect(() => { selection.current = { selKind: ws.state.selKind, selId: ws.state.selId, page: ws.state.page }; }, [ws.state.selKind, ws.state.selId, ws.state.page]);
+  /* The Workspace's own latest state, not the rendered one: a child's effect in the same commit (a link landing) must see the
+     selection a parent's transition just made. `latest` and `dispatch` read the provider's ref, whichever render they came from. */
   const latestWs = useRef(ws);
   useEffect(() => { latestWs.current = ws; }, [ws]);
   /* How the next selection change enters history (selectAsset says); anything else rewrites the entry it is on. */
@@ -193,7 +193,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
 
   /* The take in the URL is always the live selection's, whatever else the write changes. */
   const apply = useCallback((next: Omit<Params, "asset"> & { asset?: string | null }, mode: "push" | "replace") => {
-    const s = selection.current;
+    const s = latestWs.current.latest();
     const withTake = { ...next, asset: s.selKind === "take" ? validAssetId(s.selId) : null };
     setParams(withTake); writeParams(withTake, mode);
   }, []);
@@ -285,7 +285,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     setRunCommand: (run) => { runRef.current = run; },
     asset: take,
     selectAsset: (id, opts = {}) => {
-      const now = selection.current;
+      const now = latestWs.current.latest();
       const current = now.selKind === "take" ? now.selId : null;
       if (opts.ifCurrent !== undefined && current !== opts.ifCurrent) return;
       const next = id === null ? null : validAssetId(id);
@@ -294,14 +294,14 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       nextEntry.current = selectHistory(opts.reason ?? "pick");
       /* Leaving a take on Takes keeps Takes' own kind (nothing selected in its grid); elsewhere the page is selected again. */
       const cleared = pageKind(now.page) === "take" ? { selKind: "take" as const, selId: null } : { selKind: "page" as const, selId: now.page };
-      selection.current = next ? { ...now, selKind: "take", selId: next } : { ...now, ...cleared };
       latestWs.current.dispatch({ type: "patch", patch: next ? { selKind: "take", selId: next } : cleared });
     },
     link,
     endLink: (drop) => {
       setLink(null);
       writeSearch(withoutLink(window.location.search, drop), "replace");
-      if (drop && selection.current.selKind === "take" && selection.current.selId) live().selectAsset(null, { reason: "link" });
+      const now = latestWs.current.latest();
+      if (drop && now.selKind === "take" && now.selId) live().selectAsset(null, { reason: "link" });
     },
     undo: async () => {
       const popped = popUndo(undoRef.current, ws.state.projectId);
