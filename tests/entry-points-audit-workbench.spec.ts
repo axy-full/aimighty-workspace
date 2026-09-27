@@ -56,6 +56,27 @@ test("Suites Workspace › Engines links the token page; the platform desk is fo
   await expect(page.getByTestId("platform-desk")).toHaveCount(0);
 });
 
+test("on a phone, the tokens row is the last card on Engines and ends above the tab bar", async ({ page }, info) => {
+  test.skip(!["workbench-360x640", "workbench-390x844"].includes(info.project.name), "the phones with a pinned tab bar");
+  await signInLocally(page.request);
+  await page.goto("/suites?view=workspace&tab=engines");
+  /* Everything above it has loaded, so nothing moves it after the measure. */
+  await expect(page.getByTestId("ws-engine").first()).toBeVisible();
+  await expect(page.getByTestId("engine-connected-account")).toBeVisible();
+  await expect(page.getByTestId("engine-developer-api")).toBeVisible();
+  await expect(page.getByTestId("workspace-connect-link")).toContainText(/token/);
+  const end = () => page.getByTestId("workspace-view").evaluate(async (pane) => {
+    pane.scrollTop = pane.scrollHeight;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const row = pane.querySelector<HTMLElement>('[data-testid="engine-connect"]')!;
+    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
+    const pinned = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed";
+    return { last: row.parentElement?.lastElementChild === row, gap: pinned ? Math.round((bar.getBoundingClientRect().top - row.getBoundingClientRect().bottom) * 100) / 100 : null };
+  });
+  expect((await end()).last, "the tokens row is the tab's last card").toBe(true);
+  await expect.poll(async () => (await end()).gap, { message: "at the pane's end, the tokens row ends above the pinned tab bar" }).toBeGreaterThanOrEqual(0);
+});
+
 test("public metadata: robots, sitemap, one icon per URL, and client review pages without Particl's install card", async ({ page, baseURL }, info) => {
   test.skip(info.project.name !== DESKTOP, "Metadata, once.");
   /* The server builds these URLs with siteOrigin() from its APP_ORIGIN (CI gives the
