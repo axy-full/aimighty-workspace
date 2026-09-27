@@ -46,8 +46,8 @@ async function setup(name: string, credits: number, concurrency = 4) {
   });
   return ws;
 }
-/* A 5 s Seedance take priced at $1.00 on the engine: 15 credits at §7A's 1.5 on a $0.10 credit. `heldAt` is the
-   figure it was held at; a different one says the price moved while it waited. */
+/* A held take with fixed test pricing. `heldAt` is the figure it was held at;
+   a different one says the price moved while it waited. */
 async function held(id: string, by: string, heldAt = 15, at = Date.now()) {
   const { db, ready } = await import("../../lib/db");
   await ready();
