@@ -1,7 +1,7 @@
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCredits, billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
 import { getSetting } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
@@ -77,7 +77,7 @@ export async function spentBy(column: "project_id" | "shot_id", keys: string[]):
       });
       for (const r of rs.rows as unknown as { id: string; k: string | null; kind: string | null; model: string | null; cost: number }[]) {
         const cost = Number(r.cost ?? 0);
-        rows.set(String(r.id), { key: r.k == null ? null : String(r.k), usd: cost, credits: billCredits(cost, marginKeyOf(String(r.kind), String(r.model))) });
+        rows.set(String(r.id), { key: r.k == null ? null : String(r.k), usd: cost, credits: billCreditsWith(cost, marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10) });
       }
     }
   };
@@ -103,7 +103,7 @@ export async function spentBy(column: "project_id" | "shot_id", keys: string[]):
       await takes("id", [...metered.keys()].filter((id) => !rows.has(id)));
       for (const [id, m] of metered) {
         const prior = rows.get(id);
-        rows.set(id, { key: m.key ?? prior?.key ?? null, usd: Math.max(prior?.usd ?? 0, m.usd), credits: Math.max(prior?.credits ?? 0, m.credits) });
+        rows.set(id, { key: m.key ?? prior?.key ?? null, usd: Math.max(prior?.usd ?? 0, m.usd), credits: m.credits });
       }
     } catch { /* without the platform record, the takes alone */ }
   }

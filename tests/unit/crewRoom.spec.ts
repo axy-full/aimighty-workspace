@@ -50,7 +50,7 @@ test("Run round says why it cannot run, in the design's words", () => {
   expect(roundBlock(ok)).toBeNull();
   expect(roundBlock({ ...ok, goal: "  " })).toBe("Write the goal.");
   expect(roundBlock({ ...ok, seated: 0 })).toBe("Seat at least one member.");
-  expect(roundBlock({ ...ok, keyConnected: false })).toBe("Add key in Workspace › Engines.");
+  expect(roundBlock({ ...ok, keyConnected: false })).toBe("Crew's managed engine is unavailable.");
   expect(roundBlock({ ...ok, roundsRun: ROUNDS_MAX })).toContain("Start a new session");
   expect(roundBlock({ ...ok, running: true })).toBe("");
 });
@@ -106,7 +106,7 @@ test("a room's rounds go to the model it was priced for, not whatever XAI_MODEL 
   /* No request leaves the test: fetch is answered here, with a fake key. */
   globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
     sent.push(String(JSON.parse(String(init?.body)).model));
-    return new Response(JSON.stringify({ choices: [{ message: { content: "24mm." } }], usage: { prompt_tokens: 10, completion_tokens: 2 } }), { status: 200 });
+    return new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "24mm." }] }], usage: { input_tokens: 10, output_tokens: 2, cost_in_usd_ticks: 320000 } }), { status: 200 });
   }) as typeof fetch;
   process.env.ENGINE_MOCK = "0";
   process.env.XAI_API_KEY = "test-key-not-real";

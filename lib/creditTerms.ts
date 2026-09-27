@@ -1,32 +1,27 @@
 /**
  * The credit: the platform's own unit of spend.
  *
- * One credit is ten cents of vendor cost by default (CREDIT_USD). A
- * workspace on the platform's keys buys and burns credits, never dollars:
- * a job is charged in whole credits, rounded up, and nothing that costs the
- * platform money costs a workspace less than one credit. Batches multiply
- * before they round.
+ * One credit is US$0.10 by default (CREDIT_USD). A workspace on the
+ * platform's keys buys and burns credits, never dollars: a job is charged in
+ * whole credits, rounded up, and nothing that costs the platform money costs
+ * a workspace less than one credit. Batches multiply before they round.
  *
  * The margin sits between what the vendor charges and what the workspace
- * pays. **SOW §7A: sell price = engine cost x 1.5.** One multiplier, flat,
- * for every engine — which is why the table below has a single entry.
+ * pays; its values are pricing policy (SOW §7A). At launch one rate covers
+ * every engine, which is why the table below has a single entry.
  *
  * The table is keyed by engine anyway, and stays keyed by engine, because
- * §7A asks for exactly that: "Build the adapter so the multiplier is per
- * engine from day one, even though it launches at a flat 1.5x. That's a
- * config change later, not a refactor." Phase B tunes premium to 1.7 and
- * commodity to 1.4 by adding keys here or setting CREDIT_MARGINS; nothing
- * downstream has to change for that to work.
+ * §7A asks for exactly that: pricing one engine differently is a key added
+ * here or an entry in CREDIT_MARGINS, a config change rather than a
+ * refactor; nothing downstream has to change for that to work.
  *
  * It is one entry rather than fourteen identical ones on purpose. A table
  * of the same number repeated pretends there are fourteen decisions when
- * §7A made one, and every copy is a place for the launch rate to drift.
+ * there was one, and every copy is a place for the launch rate to drift.
  *
- * This replaced a per-engine table dated 6 September that ran from 1.25 to
- * 1.5. Every price it produced was under §7A's rate card — a 5-second
- * Seedance 2.5 1080p take billed 40 credits where the card says 43 — so
- * the card and the buttons disagreed. The card is right; it derives from
- * cost x 1.5 exactly, on all twelve of its lines.
+ * This replaced a per-engine table dated 6 September whose prices
+ * disagreed with §7A's rate card, so the card and the buttons disagreed.
+ * The card is right.
  *
  * CREDIT_MARGINS, a JSON object of the same shape, overrides any entry.
  * SIGNUP_CREDITS is what a workspace starts with the day it signs up.
@@ -175,8 +170,8 @@ export function fundedFraction(paidCredits: number, freeCredits: number): number
  * was in this shape while the browser converted vendor dollars into credits
  * itself; that conversion moved to the server, and the field stayed behind as
  * payload nobody read. Dead weight is one thing while it is a table of
- * fourteen numbers somebody has to interpret, and another once §7A makes it
- * `{"*": 1.5}` — a single number in `/api/me` that states the markup outright.
+ * fourteen numbers somebody has to interpret, and another once it is a
+ * single entry — one number in `/api/me` that states the margin outright.
  * Every figure that reaches the browser is already in credits.
  */
 export type CreditState = {

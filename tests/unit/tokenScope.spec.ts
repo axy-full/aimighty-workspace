@@ -46,6 +46,7 @@ test("actual token POST and DELETE refuse read and render bearers before databas
     "@/lib/securityAudit": { securityAuditStatement: forbiddenDb },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/credits": { creditsApply: forbiddenDb },
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": { billedCreditsExpr: forbiddenDb },
   };
   for (const [file, method] of [

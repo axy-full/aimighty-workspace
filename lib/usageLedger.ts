@@ -50,9 +50,10 @@ type Cursor = { at: number; id: string };
  */
 export type LedgerViewer = { id: string; admin: boolean };
 const TEAMMATE = "Teammate";
-function nameFor(viewer: LedgerViewer, author: string, names: Map<string, string>): string | null {
+const mayName = (viewer: LedgerViewer, author: string) => viewer.admin || author === viewer.id;
+export function nameFor(viewer: LedgerViewer, author: string, names: Map<string, string>): string | null {
   if (!author) return null;
-  return viewer.admin || author === viewer.id ? names.get(author) ?? null : TEAMMATE;
+  return mayName(viewer, author) ? names.get(author) ?? null : TEAMMATE;
 }
 export type LedgerQuery = { source: "ledger" | "connected"; month: string | null; range: { from: number; to: number } | null; cursor: Cursor | null; limit: number; id: string | null; csv: boolean };
 
@@ -112,10 +113,29 @@ export function meteredEngine(kind: string, engine: string, model: string): stri
 
 /** The names a viewer may read: everyone's for owners and admins, a member's own otherwise. */
 async function names(ids: string[], viewer: LedgerViewer): Promise<Map<string, string>> {
-  const wanted = [...new Set(ids.filter((id) => id && (viewer.admin || id === viewer.id)))];
+  const wanted = [...new Set(ids.filter((id) => id && mayName(viewer, id)))];
   if (!wanted.length) return new Map();
   const rs = await db().execute({ sql: `SELECT id,name FROM users WHERE id IN (${wanted.map(() => "?").join(",")})`, args: wanted });
   return new Map(rs.rows.map((r) => [String(r.id), String(r.name)]));
+}
+
+type Spend = { n: number; spend: number; credits: number };
+/**
+ * GET /api/usage's `byPerson` under the same rule, largest `spend` first.
+ * Owners and admins read a row per person by name. A member reads their own
+ * row by name and the rest of the team as one "Teammate" row, so no
+ * teammate's spend is told apart from another's.
+ */
+export async function spendByPerson(rows: (Spend & { author: string })[], viewer: LedgerViewer): Promise<(Spend & { name: string })[]> {
+  const who = await names(rows.map((r) => r.author), viewer);
+  const out = new Map<string, Spend & { name: string }>();
+  for (const { author, n, spend, credits } of rows) {
+    const key = author && !mayName(viewer, author) ? TEAMMATE : `id:${author}`;
+    const row = out.get(key);
+    if (row) Object.assign(row, { n: row.n + n, spend: row.spend + spend, credits: row.credits + credits });
+    else out.set(key, { name: nameFor(viewer, author, who) ?? "Unknown", n, spend, credits });
+  }
+  return [...out.values()].sort((a, b) => b.spend - a.spend);
 }
 
 /* ── Credits: the meter ─────────────────────────────────────────────── */

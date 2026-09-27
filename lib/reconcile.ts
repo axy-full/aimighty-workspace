@@ -31,6 +31,8 @@ export type LedgerCheck = {
   spendCredits: number | null;
   note: string;
   checkedAt: number;
+  /** Who took the reading: /api/usage names them only as lib/usageLedger.ts allows. */
+  createdBy: string | null;
   authorName: string | null;
 };
 
@@ -45,6 +47,7 @@ function rowTo(r: any): LedgerCheck {
     spendCredits: r.spend_credits == null ? null : Number(r.spend_credits),
     note: r.note ?? "",
     checkedAt: Number(r.checked_at),
+    createdBy: r.created_by == null ? null : String(r.created_by),
     authorName: r.author_name ?? null,
   };
 }

@@ -1,7 +1,7 @@
 import { resolveRecoveryJobTx } from "./recovery";
 import { platformDb, platformReady, now } from "./platform";
 import { currentTenant } from "./tenant";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import type { Span } from "./concurrency";
 import { paidByPlatformEngine } from "./platformSpend";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
@@ -116,7 +116,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
     try {
       await billingTransaction(async (tx) => {
         await syncBillingLedger(tx, workspaceId, ts);
-        const previous = await tx.execute({ sql: `SELECT workspace_id,status,billed_credits,paid_by_platform FROM meter_events WHERE id=?`, args: [e.id] });
+        const previous = await tx.execute({ sql: `SELECT workspace_id,status,billed_credits,paid_by_platform,credit_usd,credit_margin,kind,model,engine_cost_usd FROM meter_events WHERE id=?`, args: [e.id] });
         const row = previous.rows[0];
         if (row && row.workspace_id !== workspaceId) throw new Error("Meter event belongs to another workspace.");
         // A late start notification cannot replace a completed bill with its old estimate.
@@ -124,18 +124,24 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         if (row?.status === "succeeded" && e.status === "failed") return;
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
-        const billed = cost == null ? null : fundedByPlatform && !e.unbilled ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
+        const terms = row ? recordedBillingTerms(row, String(row.kind), String(row.model)) : currentBillingTerms(e.kind, e.model);
+        // Reconciliation of the same final cost cannot reprice an existing receipt.
+        const billed = cost == null ? null : !fundedByPlatform || e.unbilled ? 0
+          : row && row.status !== "running" && row.status === e.status && Number(row.engine_cost_usd) === cost
+            ? Number(row.billed_credits ?? 0) : creditsAtTerms(cost, terms);
         await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
         await tx.execute({
         sql: `INSERT INTO meter_events
                 (id, workspace_id, project_id, shot_id, kind, engine, model, status,
-                 engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at, provider_outcome)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at, credit_usd, credit_margin, provider_outcome)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
               ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 engine_cost_usd = COALESCE(excluded.engine_cost_usd, meter_events.engine_cost_usd),
                 billed_credits = COALESCE(excluded.billed_credits, meter_events.billed_credits),
                 paid_by_platform = excluded.paid_by_platform,
+                credit_usd = COALESCE(meter_events.credit_usd, excluded.credit_usd),
+                credit_margin = COALESCE(meter_events.credit_margin, excluded.credit_margin),
                 project_id = COALESCE(excluded.project_id, meter_events.project_id),
                 shot_id = COALESCE(excluded.shot_id, meter_events.shot_id),
                 duration_ms = COALESCE(excluded.duration_ms, meter_events.duration_ms),
@@ -143,7 +149,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
                 provider_outcome = COALESCE(excluded.provider_outcome, meter_events.provider_outcome),
                 updated_at = excluded.updated_at`,
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
-               cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts,
+               cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin,
                e.providerOutcome ? serializeOutcome(e.providerOutcome) : null],
         });
         if (e.status === "succeeded" || (e.status === "failed" && cost === 0)) await resolveRecoveryJobTx(tx, workspaceId, e.id);

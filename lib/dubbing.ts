@@ -5,8 +5,7 @@ import { elevenLabsErrorOutcome, serializeOutcome, silentOutcome, type ProviderO
 import { db, ready, now, id as newId } from "./db";
 import { allowanceCheck } from "./allowance";
 import { invalidate, PROJECTS_KEY } from "./cache";
-import { billCredits } from "./creditTerms";
-import { creditsApply } from "./credits";
+import { creditsApply, quotedCredits } from "./credits";
 import { requireTenant } from "./tenant";
 import { getShot } from "./shots";
 import { checkCap } from "./caps";
@@ -173,7 +172,8 @@ export async function executeDubbingAdmission(
   const minutes = billableMinutes(seconds);
   const usdPerMinute = dubbingUsdPerMinute(mode);
   const reservedUsd = dubbingUsd(seconds, mode);
-  const estimatedCredits = billCredits(reservedUsd, "elevenlabs");
+  /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
+  const estimatedCredits = quotedCredits(reservedUsd, "elevenlabs");
   const inCredits = creditsApply(requireTenant());
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd", sourceSeconds: seconds, minutes, mode });

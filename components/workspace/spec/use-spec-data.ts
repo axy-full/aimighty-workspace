@@ -37,11 +37,12 @@ export function usePipelineRuns(productionId: string | null | undefined, scope: 
   return state && state.key === key ? state.runs : null;
 }
 
-type BudgetProject = { id: string; credits: number; capCredits: number | null };
+type BudgetProject = { id: string; credits?: number; capCredits: number | null };
 
-/** GET /api/projects — the production's settled spend and cap, in credits. */
+/** GET /api/projects — the production's settled spend and cap, in credits. A workspace on its own
+ *  keys is sent no credits (they would sit beside its dollars), so its spend reads as not known here. */
 export function useProjectBudget(productionId: string | null | undefined, scope: string | null) {
-  const [state, setState] = useState<{ key: string; budget: { credits: number; capCredits: number | null } } | null>(null);
+  const [state, setState] = useState<{ key: string; budget: { credits: number | null; capCredits: number | null } } | null>(null);
   const key = productionId && scope ? `${scope}:${productionId}` : "";
   useEffect(() => {
     if (!productionId || !scope) return;
@@ -49,7 +50,7 @@ export function useProjectBudget(productionId: string | null | undefined, scope:
     scoped<{ projects?: BudgetProject[] }>("/api/projects", scope, controller.signal)
       .then((body) => {
         const found = (body.projects ?? []).find((item) => item.id === productionId);
-        if (found) setState({ key: `${scope}:${productionId}`, budget: { credits: Number(found.credits) || 0, capCredits: found.capCredits ?? null } });
+        if (found) setState({ key: `${scope}:${productionId}`, budget: { credits: found.credits == null ? null : Number(found.credits) || 0, capCredits: found.capCredits ?? null } });
       })
       .catch(() => { /* Facts show "—" until the budget reads. */ });
     return () => controller.abort();

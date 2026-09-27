@@ -2,7 +2,8 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billedCreditsExpr } from "./creditSql";
+import { syncCreditReceipts } from "./creditReceipts";
 import { getSetting } from "./settings";
 import { getModel, modelLabel } from "./models";
 import { buildFilename } from "./naming";
@@ -38,11 +39,12 @@ const PRESIGN_CONCURRENCY = 16;
 
 export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$" }> {
   await ready();
+  await syncCreditReceipts();
   const ws = requireTenant();
   const unit: "cr" | "$" = creditsApply(ws) ? "cr" : "$";
   const template = await getSetting("namingTemplate");
   const rs = await db().execute(`
-    SELECT g.id, g.created_at, g.kind, g.model, g.status, g.version, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.bytes, g.stored_url,
+    SELECT ${billedCreditsExpr("g")} AS receipt_credits, g.id, g.created_at, g.kind, g.model, g.status, g.version, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.bytes, g.stored_url,
            p.name AS project_name, p.code AS project_code, s.scene AS scene, s.code AS shot_code, s.title AS shot_title, u.name AS user_name
     FROM generations g
     LEFT JOIN projects p ON p.id = g.project_id
@@ -74,7 +76,7 @@ export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$
       take: kind === "image" ? `S${version ?? 1}` : kind === "audio" ? "A" : `v${version ?? 1}`,
       kind, engine: modelLabel(model), resolution: p.resolution ? String(p.resolution).toUpperCase() : "",
       duration: kind === "video" && p.duration ? `${p.duration}s` : "", status: String(r.status),
-      credits: unit === "cr" ? billCredits(usd, marginKeyOf(kind, model)) : 0, usd: unit === "$" ? usd : 0,
+      credits: unit === "cr" ? Number(r.receipt_credits ?? 0) : 0, usd: unit === "$" ? usd : 0,
       prompt: String(r.prompt ?? ""), filename, url: hasMaster ? `/api/media/${id}` : "", bytes: r.bytes == null ? null : Number(r.bytes),
     };
     rows.push(row);
