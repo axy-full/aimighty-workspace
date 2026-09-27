@@ -66,8 +66,22 @@ export function r2Backend(env: Environment = process.env): StorageBackend {
 export function cloudBackend(env: Environment = process.env): StorageBackend {
   const kind = backendKind(env);
   if (kind === "blob") return blobBackend();
-  if (kind === "r2") return r2Backend(env);
+  if (kind === "r2") return migrationBackend(r2Backend(env), env.BLOB_READ_WRITE_TOKEN ? blobBackend() : null);
   throw new Error("Storage backend \"local\" keeps objects on disk; there is no cloud backend to call.");
+}
+
+/** New writes and cleanup touch R2 only. Missing originals remain readable on Blob. */
+export function migrationBackend(primary: StorageBackend, fallback: StorageBackend | null, fallbackKey = (key: string) => key): StorageBackend {
+  if (!fallback) return primary;
+  return {
+    ...primary,
+    async get(key, options) { return await primary.get(key, options) ?? fallback.get(fallbackKey(key), options); },
+    async head(key) { return await primary.head(key) ?? fallback.head(fallbackKey(key)); },
+    async presignGet(key, validUntilMs, options) {
+      const store = await primary.head(key) ? primary : fallback;
+      return store.presignGet(store === primary ? key : fallbackKey(key), Math.min(validUntilMs, Date.now() + 900_000), options);
+    },
+  };
 }
 
 /* ── Stored values ─────────────────────────────────────────────────────── */
@@ -98,7 +112,10 @@ export function resolveStored(stored: string | null | undefined): ResolvedObject
   if (/^https?:\/\//.test(stored)) {
     let hostname = "";
     try { hostname = new URL(stored).hostname.toLowerCase(); } catch { /* refused below */ }
-    if (hostname.endsWith(BLOB_HOST)) return { backend: blobBackend(), key: stored, publicUrl: hostname.endsWith(PUBLIC_BLOB_HOST) };
+    if (hostname.endsWith(BLOB_HOST)) {
+      if (backendKind() === "r2") return { backend: migrationBackend(r2Backend(), process.env.BLOB_READ_WRITE_TOKEN ? blobBackend() : null, () => stored), key: decodeURIComponent(new URL(stored).pathname.slice(1)), publicUrl: false };
+      return { backend: blobBackend(), key: stored, publicUrl: hostname.endsWith(PUBLIC_BLOB_HOST) };
+    }
     throw new Error("Stored media URL does not belong to a known storage backend.");
   }
   return { backend: cloudBackend(), key: stored, publicUrl: false };

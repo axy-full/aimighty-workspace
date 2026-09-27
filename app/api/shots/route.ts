@@ -76,9 +76,9 @@ export const GET = withTenant(async function GET(req: Request) {
       const newest = list.find((r) => r.status === "succeeded");
       back.set(sid, {
         state,
-        master: approved ? { id: approved.id, version: approved.version == null ? null : Number(approved.version), url: approved.stored_url ?? approved.source_url ?? null } : null,
+        master: approved ? { id: approved.id, version: approved.version == null ? null : Number(approved.version), url: approved.stored_url ? `/api/media/${approved.id}` : approved.source_url ?? null } : null,
         // The newest finished take, for the card's well when nothing is approved yet.
-        poster: newest ? (newest.stored_url ?? newest.source_url ?? null) : null,
+        poster: newest ? (newest.stored_url ? `/api/media/${newest.id}` : newest.source_url ?? null) : null,
       });
     }
   }

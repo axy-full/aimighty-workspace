@@ -61,7 +61,7 @@ class FakeS3 {
 
     const segments = url.pathname.split("/").slice(1);
     if (segments[0] !== CONFIG.bucket) return s3Error(404, "NoSuchBucket");
-    const key = segments.length > 1 ? segments.slice(1).map(decodeURIComponent).join("/") : null;
+    const key = segments.length > 1 && segments.slice(1).join("") ? segments.slice(1).map(decodeURIComponent).join("/") : null;
 
     if (key === null) {
       if (method === "GET" && query["list-type"] === "2") return this.list(query);
@@ -149,7 +149,7 @@ class FakeS3 {
   private complete(key: string, uploadId: string, body: Buffer, headers: Record<string, string>): Response {
     const upload = this.uploads.get(uploadId);
     if (!upload || upload.key !== key) return s3Error(404, "NoSuchUpload");
-    const listed = [...body.toString().matchAll(/<PartNumber>(\d+)<\/PartNumber><ETag>&quot;([0-9a-f]+)&quot;<\/ETag>/g)].map((m) => ({ number: Number(m[1]), etag: m[2] }));
+    const listed = [...body.toString().matchAll(/<Part>([\s\S]*?)<\/Part>/g)].map((m) => ({ number: Number(m[1].match(/<PartNumber>(\d+)<\/PartNumber>/)?.[1]), etag: m[1].match(/<ETag>(?:&quot;|")([0-9a-f]+)(?:&quot;|")<\/ETag>/)?.[1] }));
     const ordered = [...upload.parts.keys()].sort((a, b) => a - b);
     if (listed.length !== ordered.length || listed.some((p, i) => p.number !== ordered[i] || createHash("md5").update(upload.parts.get(p.number)!).digest("hex") !== p.etag)) return s3Error(400, "InvalidPart");
     if (ordered.slice(0, -1).some((n) => upload.parts.get(n)!.length < 5 * 1024 * 1024)) return s3Error(400, "EntityTooSmall");
@@ -263,7 +263,7 @@ test("PutObject with If-None-Match maps 412 to ObjectExistsError and storeVideoB
   const backend = backendFor(fake);
   const first = Buffer.from("first original bytes");
   await backend.put("generations/one.mp4", first, { contentType: "video/mp4", overwrite: false });
-  expect(fake.calls.at(-1)).toMatchObject({ method: "PUT", path: `/${CONFIG.bucket}/generations/one.mp4`, headers: { "if-none-match": "*", "content-type": "video/mp4", "cache-control": "private, no-store" } });
+  expect(fake.calls.at(-1)).toMatchObject({ method: "PUT", path: `/${CONFIG.bucket}/generations/one.mp4`, headers: { "if-none-match": "*", "content-type": "video/mp4", "cache-control": "private, max-age=31536000, immutable" } });
   const again = backend.put("generations/one.mp4", Buffer.from("other bytes"), { contentType: "video/mp4", overwrite: false });
   await expect(again).rejects.toBeInstanceOf(ObjectExistsError);
   await again.catch((error) => expect(isObjectExistsError(error)).toBe(true));
@@ -285,10 +285,10 @@ test("PutObject with If-None-Match maps 412 to ObjectExistsError and storeVideoB
   const original = Buffer.from("consumer original mp4 bytes");
   await runInTenant({ id: "r2-studio", legacy: false } as TenantWorkspace, async () => {
     const stored = await storage.storeVideoBytes("orig", original);
-    expect(stored).toEqual({ url: "/api/media/orig", bytes: original.length, sha256: createHash("sha256").update(original).digest("hex") });
+    expect(stored).toEqual({ url: "ws/r2-studio/generations/orig.mp4", bytes: original.length, sha256: createHash("sha256").update(original).digest("hex") });
     expect(fake.objects.get("ws/r2-studio/generations/orig.mp4")!.bytes).toEqual(original);
     // A repeat with the same bytes hits 412 and verifies the stored hash.
-    await expect(storage.storeVideoBytes("orig", original)).resolves.toMatchObject({ url: "/api/media/orig" });
+    await expect(storage.storeVideoBytes("orig", original)).resolves.toMatchObject({ url: "ws/r2-studio/generations/orig.mp4" });
     expect(fake.calls.filter((c) => c.method === "PUT" && c.path.endsWith("/orig.mp4"))).toHaveLength(2);
     expect(fake.calls.filter((c) => c.method === "GET" && c.path.endsWith("/orig.mp4"))).toHaveLength(1);
     // Different bytes are refused and the original is untouched.
@@ -318,11 +318,11 @@ test("multipart uploads assemble 3.5 MB chunks into 8 MiB parts and abort on a f
   const parts = fake.calls.filter((c) => c.method === "PUT" && c.query.partNumber);
   expect(parts.map((c) => c.body.length)).toEqual([R2_PART_SIZE, R2_PART_SIZE, CHUNK * COUNT - 2 * R2_PART_SIZE]);
   expect(parts.map((c) => c.query.partNumber)).toEqual(["1", "2", "3"]);
-  expect(fake.calls.map((c) => `${c.method} ${Object.keys(c.query).join(",")}`)).toEqual([
+  expect(fake.calls.map((c) => `${c.method} ${Object.keys(c.query).filter(k => k !== "x-id").join(",")}`)).toEqual([
     "POST uploads", "PUT partNumber,uploadId", "PUT partNumber,uploadId", "PUT partNumber,uploadId", "POST uploadId",
   ]);
   expect(fake.calls[0].headers["content-type"]).toBe("application/octet-stream");
-  expect(fake.calls[0].headers["cache-control"]).toBe("private, no-store");
+  expect(fake.calls[0].headers["cache-control"]).toBe("private, max-age=31536000, immutable");
   const stored = fake.objects.get("uploads/big.bin")!;
   expect(stored.bytes.length).toBe(CHUNK * COUNT);
   expect(createHash("sha256").update(stored.bytes).digest("hex")).toBe(hash.digest("hex"));
@@ -331,7 +331,7 @@ test("multipart uploads assemble 3.5 MB chunks into 8 MiB parts and abort on a f
 
   fake.failPart = 2;
   fake.calls = [];
-  await expect(backend.put("uploads/broken.bin", chunks(), { contentType: "application/octet-stream", overwrite: true, multipart: true })).rejects.toThrow(/UploadPart.*500/);
+  await expect(backend.put("uploads/broken.bin", chunks(), { contentType: "application/octet-stream", overwrite: true, multipart: true })).rejects.toThrow(/MultipartUpload.*500/);
   expect(fake.aborted).toEqual(["upload-2"]);
   expect(fake.objects.has("uploads/broken.bin")).toBe(false);
   expect(fake.calls.at(-1)).toMatchObject({ method: "DELETE", query: { uploadId: "upload-2" } });
@@ -355,12 +355,17 @@ test("range reads forward Range with identity encoding and a mismatched content-
     process: { ...process, env: { ...process.env, BLOB_READ_WRITE_TOKEN: "", STORAGE_BACKEND: "r2", R2_ACCOUNT_ID: CONFIG.accountId, R2_ACCESS_KEY_ID: CONFIG.accessKeyId, R2_SECRET_ACCESS_KEY: CONFIG.secretAccessKey, R2_BUCKET: CONFIG.bucket } },
   });
   await runInTenant({ id: "range-r2", legacy: false } as TenantWorkspace, async () => {
+    const signed = await storage.presignedReadUrl("ws/range-r2/uploads/clip.mp4", 24);
+    expect(new URL(signed).searchParams.get("X-Amz-Expires")).toBe("900");
+    await expect(storage.presignedReadUrl("ws/another-studio/uploads/clip.mp4")).rejects.toThrow(/does not belong/);
+    await expect(storage.readUploadBytes("clip", "mp4", "ws/another-studio/uploads/clip.mp4")).rejects.toThrow(/does not belong/);
+    await expect(storage.presignedReadUrl("ws/range-r2/uploads/clip.mp4", 1, "https://old.private.blob.vercel-storage.com/ws/another-studio/uploads/clip.mp4")).rejects.toThrow(/does not belong/);
     const range = { start: 4, end: 7, total: 12 };
     const result = await storage.openUploadStream("clip", "mp4", range, "/api/uploads/clip", AbortSignal.timeout(5_000));
     expect(result.size).toBe(4);
     expect(Buffer.from(await new Response(result.stream).arrayBuffer())).toEqual(Buffer.from("4567"));
     expect(fake.calls.at(-1)).toMatchObject({ method: "GET", path: `/${CONFIG.bucket}/ws/range-r2/uploads/clip.mp4`, headers: { range: "bytes=4-7", "accept-encoding": "identity" } });
-    expect(fake.calls.at(-1)!.headers.authorization).toMatch(/SignedHeaders=host;range;x-amz-content-sha256;x-amz-date,/);
+    expect(fake.calls.at(-1)!.headers.authorization.match(/SignedHeaders=([^,]+)/)![1].split(";")).toEqual(expect.arrayContaining(["host", "range", "x-amz-content-sha256", "x-amz-date"]));
 
     const video = await storage.openVideoStream("gen", range);
     expect(Buffer.from(await new Response(video).arrayBuffer())).toEqual(Buffer.from("4567"));
@@ -409,16 +414,16 @@ test("ListObjectsV2 follows continuation tokens and DeleteObjects batches with a
   fake.calls = [];
   await backend.del(keys.slice(0, 3));
   expect(fake.calls).toHaveLength(1);
-  expect(fake.calls[0]).toMatchObject({ method: "POST", path: `/${CONFIG.bucket}`, query: { delete: "" } });
-  expect(fake.calls[0].headers["content-md5"]).toMatch(/^[A-Za-z0-9+/]+=*$/);
-  expect(fake.calls[0].body.toString()).toBe("<Delete><Quiet>true</Quiet><Object><Key>ws/a/chunks/s/0</Key></Object><Object><Key>ws/a/chunks/s/1</Key></Object><Object><Key>ws/a/chunks/s/2</Key></Object></Delete>");
+  expect(fake.calls[0]).toMatchObject({ method: "POST", path: `/${CONFIG.bucket}/`, query: { delete: "" } });
+  expect(fake.calls[0].headers["x-amz-checksum-crc32"]).toMatch(/^[A-Za-z0-9+/]+=*$/);
+  expect([...fake.calls[0].body.toString().matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1])).toEqual(keys.slice(0, 3));
   expect([...fake.objects.keys()].sort()).toEqual(["ws/a/uploads/u.bin", "ws/a/uploads/v&w.bin", "ws/b/uploads/other.bin"]);
 
   fake.batchDeleteFails = true;
   fake.calls = [];
   await backend.del(["ws/a/uploads/u.bin", "ws/a/uploads/v&w.bin", "ws/a/uploads/gone.bin"]);
   expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
-    `POST /${CONFIG.bucket}`,
+    `POST /${CONFIG.bucket}/`,
     `DELETE /${CONFIG.bucket}/ws/a/uploads/u.bin`,
     `DELETE /${CONFIG.bucket}/ws/a/uploads/v%26w.bin`,
     `DELETE /${CONFIG.bucket}/ws/a/uploads/gone.bin`,
@@ -445,7 +450,7 @@ test("presigned GET URLs carry the signature and response headers and read back 
   expect(parsed.searchParams.get("X-Amz-Algorithm")).toBe("AWS4-HMAC-SHA256");
   expect(parsed.searchParams.get("X-Amz-Credential")).toBe(`${CONFIG.accessKeyId}/20260919/auto/s3/aws4_request`);
   expect(parsed.searchParams.get("X-Amz-Date")).toBe("20260919T120000Z");
-  expect(parsed.searchParams.get("X-Amz-Expires")).toBe("21600");
+  expect(parsed.searchParams.get("X-Amz-Expires")).toBe("900");
   expect(parsed.searchParams.get("X-Amz-SignedHeaders")).toBe("host");
   expect(parsed.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
   expect(parsed.searchParams.get("response-content-disposition")).toBe("attachment; filename=\"movie (1).mp4\"");
@@ -465,8 +470,22 @@ test("presigned GET URLs carry the signature and response headers and read back 
 
   // Expiry is bounded to what S3 accepts.
   const far = new URL(await backend.presignGet("k", now.getTime() + 30 * 24 * 3600_000));
-  expect(far.searchParams.get("X-Amz-Expires")).toBe(String(7 * 24 * 3600));
+  expect(far.searchParams.get("X-Amz-Expires")).toBe("900");
   for (const invalid of [now.getTime() - 1, now.getTime(), NaN, Infinity]) {
     await expect(backend.presignGet("k", invalid)).rejects.toThrow(/expiry must be in the future/);
   }
+});
+
+test("R2 switches buffered files above the multipart threshold to bounded parts", async () => {
+  const fake = new FakeS3();
+  const backend = backendFor(fake);
+  const bytes = Buffer.alloc(100 * 1024 * 1024 + 1, 3);
+  await backend.put("ws/large/uploads/master.bin", bytes, { contentType: "application/octet-stream", overwrite: false });
+  const parts = fake.calls.filter(call => call.query.partNumber);
+  expect(parts.length).toBeGreaterThan(1);
+  expect(parts.every(call => call.body.length <= R2_PART_SIZE)).toBe(true);
+  expect(fake.objects.get("ws/large/uploads/master.bin")!.bytes.equals(bytes)).toBe(true);
+  expect(fake.calls.every(call => !Object.hasOwn(call.headers, "expect"))).toBe(true);
+  expect(fake.calls.find(call => call.query.uploadId && call.method === "POST")!.headers["if-none-match"]).toBe("*");
+  expect(fake.uploads.size).toBe(0);
 });
