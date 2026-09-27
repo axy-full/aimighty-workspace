@@ -16,6 +16,37 @@ export function soulCharacterGenerationEnabled(): boolean {
 }
 
 /**
+ * What one credit of the platform's designated website account costs, in
+ * dollars (private runtime configuration, `HF_ACCOUNT_CREDIT_USD`). Unset or
+ * invalid means website-only tools stay unavailable to every managed
+ * workspace: a quote in the account's own credits is never a client price.
+ */
+export function websiteAccountCreditUsd(): number | null {
+  const value = Number(process.env.HF_ACCOUNT_CREDIT_USD);
+  return Number.isFinite(value) && value > 0 && value < 1000 ? value : null;
+}
+
+/**
+ * Fixed per-operation prices, in the website account's credits, for tools the
+ * account cannot price itself (`HF_ACCOUNT_FIXED_CREDITS`, a private JSON
+ * object keyed by website tool id). A tool without a valid entry here stays
+ * unavailable until one is set.
+ */
+export function websiteAccountFixedCredits(): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(process.env.HF_ACCOUNT_FIXED_CREDITS || "{}");
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(parsed))
+    if (/^[a-z][a-z-]{0,39}$/.test(key) && typeof value === "number" && Number.isFinite(value) && value > 0 && value < 1_000_000) out[key] = value;
+  return out;
+}
+
+/**
  * What the vendors charge — in dollars, and never in a browser.
  *
  * These numbers used to live inside `MODELS` in lib/models.ts, which the

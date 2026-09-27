@@ -10,6 +10,7 @@ import {
 import { probeDeveloperApi } from "@/lib/higgsfield-consumer/developer-api";
 import { consumerCapacity, setAsideConsumerJob } from "@/lib/higgsfield-consumer/jobs";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
+import { isDesignatedIdentity, PLATFORM_ACCOUNT_LOCKED } from "@/lib/higgsfield-consumer/platform-account";
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
 /**
@@ -86,10 +87,12 @@ export const DELETE = withTenant(
     const auth = await requireOwner();
     if (auth.response) return auth.response;
     try {
-      await removeConsumerConnection({
-        workspaceId: requireTenant().id,
-        userId: auth.user.id,
-      });
+      const identity = { workspaceId: requireTenant().id, userId: auth.user.id };
+      // The platform's designated connection runs website tools for every
+      // workspace: it is released on the platform desk, never removed here.
+      if (await isDesignatedIdentity(identity))
+        return Response.json({ error: PLATFORM_ACCOUNT_LOCKED, code: "platform_account_locked" }, { status: 409, headers });
+      await removeConsumerConnection(identity);
       return Response.json(
         { connected: false, requiresReconnect: false },
         { headers },

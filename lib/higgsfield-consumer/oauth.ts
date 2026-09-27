@@ -433,13 +433,14 @@ export type ConsumerAccess = { accessToken: string; generation: string };
 export async function getConsumerAccess(
   workspaceId: string,
   userId: string,
-  options: { expectedGeneration?: string; fetch?: typeof fetch } = {},
+  options: { expectedGeneration?: string; expectedSubjectHash?: string; fetch?: typeof fetch } = {},
 ): Promise<ConsumerAccess | null> {
   try {
     const access = await claimConsumerAccess({
       workspaceId,
       userId,
       expectedGeneration: options.expectedGeneration,
+      ...(options.expectedSubjectHash === undefined ? {} : { expectedSubjectHash: options.expectedSubjectHash }),
     });
     if (access.kind === "changed")
       throw new ConsumerOAuthError("connection_changed");

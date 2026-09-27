@@ -69,6 +69,7 @@ function load(action: Action, ctx: Context | null) {
     },
     "@/lib/deletion": {},
     "@/lib/purge": {},
+    "@/lib/higgsfield-consumer/platform-account": { isDesignatedWorkspace: async () => false },
   };
   const compiled = ts.transpileModule(readFileSync(paths[action], "utf8"), {
     compilerOptions: {
