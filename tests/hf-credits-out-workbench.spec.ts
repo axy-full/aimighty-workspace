@@ -381,7 +381,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await packs.nth(1).getByTestId("ws-pack-request").click();
   const posted = await (await reply).json();
   expect(posted).toMatchObject({ emailed: false, checkout: { kind: "queued" }, request: { label: "Team", credits: 2000, bonus: 200, usd: 200, status: "requested" } });
-  await expect(page.getByTestId("ws-plans-note")).toHaveText("Requested · it waits on the platform desk. Nothing is charged here; the credits land once payment is confirmed.");
+  await expect(page.getByTestId("ws-plans-note")).toHaveText("Requested. It waits on the platform desk; nothing is charged here, and the credits land once payment is confirmed.");
   const request = page.getByTestId("ws-topup-request").filter({ hasText: "Team" });
   await expect(request).toContainText("Team · 2,200 cr · waiting on the platform since");
   expect(await balanceOf(page)).toBe(before);

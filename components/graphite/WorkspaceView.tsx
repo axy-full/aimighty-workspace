@@ -418,7 +418,7 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
       setNote({ ok: false, text: "Checkout returned an address this page will not open." }); return;
     }
     /* Nothing is charged by asking: the platform takes payment its own way, then the credits land. */
-    setNote({ ok: true, text: `Requested · ${json?.emailed ? "the platform admin was emailed" : "it waits on the platform desk"}. Nothing is charged here; the credits land once payment is confirmed.` });
+    setNote({ ok: true, text: `Requested. ${json?.emailed ? "The platform admin was emailed" : "It waits on the platform desk"}; nothing is charged here, and the credits land once payment is confirmed.` });
     void topups.read();
   };
   const withdraw = async (id: string) => {
