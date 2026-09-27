@@ -5,7 +5,7 @@ import { db, ready, now } from "./db";
 import { meter } from "./meter";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
@@ -109,7 +109,8 @@ export function planRelease(held: { id: string; needs: number }[], balance: numb
 type HeldRow = {
   id: string; kind: "video" | "image" | "audio"; model: string; engine: string;
   projectId: string | null; shotId: string | null; createdBy: string | null;
-  estUsd: number; needs: number; why: HeldWhy;
+  /** `needs` is what it costs to start now; `heldAt` what it cost when it was held — the figure approved at Generate. */
+  estUsd: number; needs: number; heldAt: number | null; why: HeldWhy;
   token?: { id: string; capUsd: number | null };
 };
 
@@ -158,11 +159,13 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
          the margin moved to a flat 1.5 (§7A): a take held at 40 credits would
          be released as soon as the balance covered 40, then bill 43 — a
          workspace pushed negative by a price change it never saw. Whatever is
-         released has to be measured against what it costs NOW.
+         released has to be measured against what it costs NOW, and a figure
+         that moved is started only by a person approving it (Release).
          The snapshot is still the fallback, for a row old enough to have no
          `estUsd` in it, where deriving would give zero and release it free. */
       estUsd,
-      needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
+      needs: heldPriceNow(held, kind, model),
+      heldAt: Number(held.needs) > 0 ? Math.ceil(Number(held.needs)) : null,
       why: held.why === "slots" ? "slots" : "credits",
       token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap) } : undefined,
     };
@@ -180,6 +183,10 @@ export function stillShort(needs: number, balance: number | null): string {
 /** The price on the button is what the person approved (lib/workspace/rig.ts dispatchGate says the same for Generate). */
 export function repriced(needs: number): string {
   return `The price is now ${needs.toLocaleString("en-US")} cr. Press Release again to approve it.`;
+}
+/** Written on a take whose price moved while it waited: nobody approved the new figure, so nothing starts it on its own. */
+export function movedPrice(needs: number): string {
+  return `The price is now ${needs.toLocaleString("en-US")} cr. Release it at that price to start it.`;
 }
 
 /**
@@ -216,14 +223,23 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
   let refusal: ReleaseRefusal | undefined;
   const refuse = (status: number, error: string, r: HeldRow) => { if (opts.only) refusal = { status, error, needs: r.needs, balance }; };
   for (const r of rows) {
-    if (running >= limits.concurrency) { refuse(409, SLOTS_BUSY, r); break; }
     /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
     if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
-    if (r.why === "credits" && (creditsStalled || !plan.release.includes(r.id))) {
-      creditsStalled = true;
-      refuse(402, stillShort(r.needs, balance), r);
+    /* Nobody approved a price that moved while the take waited for credits: it is left, said, for a person to
+       release at the new figure (its card offers Release at it), and it holds up nobody behind it. */
+    if (!opts.only && balance != null && r.why === "credits" && r.heldAt != null && r.needs !== r.heldAt) {
+      const said = movedPrice(r.needs);
+      await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held' AND COALESCE(error,'')<>?",
+        args: [said, now(), r.id, said] }).catch(() => {});
+      refused.add(r.id);
+      plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
       continue;
     }
+    const short = r.why === "credits" && (creditsStalled || !plan.release.includes(r.id));
+    /* A person's press hears the reason that stands even when a slot frees: short is short. */
+    if (short && opts.only) { creditsStalled = true; refuse(402, stillShort(r.needs, balance), r); continue; }
+    if (running >= limits.concurrency) { refuse(409, SLOTS_BUSY, r); break; }
+    if (short) { creditsStalled = true; continue; }
     // The meter first: work the platform cannot bill does not start.
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",

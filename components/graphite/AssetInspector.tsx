@@ -72,7 +72,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
       <span className="gx-eyebrow">Actions</span>
-      {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
+      {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
           <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>

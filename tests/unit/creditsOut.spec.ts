@@ -46,16 +46,22 @@ async function setup(name: string, credits: number, concurrency = 4) {
   });
   return ws;
 }
-/* A 5 s Seedance take priced at $1.00 on the engine: 15 credits at §7A's 1.5 on a $0.10 credit. */
-async function held(id: string, by: string) {
+/* A 5 s Seedance take priced at $1.00 on the engine: 15 credits at §7A's 1.5 on a $0.10 credit. `heldAt` is the
+   figure it was held at; a different one says the price moved while it waited. */
+async function held(id: string, by: string, heldAt = 15, at = Date.now()) {
   const { db, ready } = await import("../../lib/db");
   await ready();
   await db().execute({
     sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,billed_to,task)
           VALUES(?,'video','byteplus','dreamina-seedance-2-0-260128','test',?,'held',?,?,?,'byteplus','generate')`,
-    args: [id, JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: 1, needs: 15, at: 1, why: "credits" } }), by, Date.now(), Date.now()],
+    args: [id, JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: 1, needs: heldAt, at: 1, why: "credits" } }), by, at, at],
   });
 }
+/* What the ledger took for a take: the sum of its debits, however many times it was reserved. */
+const debited = async (id: string) => {
+  const { platformDb } = await import("../../lib/platform");
+  return Number((await platformDb().execute({ sql: "SELECT COALESCE(SUM(credits),0) AS n FROM billing_debits WHERE event_id=?", args: [id] })).rows[0].n);
+};
 const row = async (id: string) => {
   const { db } = await import("../../lib/db");
   return (await db().execute({ sql: "SELECT status,error,json_extract(params,'$.releasedAt') AS released FROM generations WHERE id=?", args: [id] })).rows[0];
@@ -189,13 +195,14 @@ test("Release: a double press and a lost reply release once and charge once; sti
       expect(replies.every((r) => r.released === true)).toBe(true);
       expect(replies.filter((r) => r.already === true)).toHaveLength(1);
       expect(await metered("gen_co_once")).toEqual([expect.objectContaining({ billed_credits: 15 })]);
+      expect(await debited("gen_co_once")).toBe(15);
       expect(await balance()).toBe(5);
 
       /* The reply was lost and the person presses again: it is already released; nothing more is charged. */
       const again = await release("gen_co_once", { credits: 15 });
       expect(again.status).toBe(200);
       expect(await again.json()).toEqual({ released: true, id: "gen_co_once", already: true });
-      expect(await metered("gen_co_once")).toHaveLength(1);
+      expect(await debited("gen_co_once")).toBe(15);
       expect(await balance()).toBe(5);
       expect(engine.submits).toHaveLength(1);
 
@@ -244,6 +251,60 @@ test("Release: every slot busy says so and charges nothing; a discarded take is 
     expect(net.calls).toEqual([]);
   } finally {
     net.restore();
+    engine.restore();
+  }
+});
+
+test("Release: short with every slot busy is said as short, never as 'starts on its own'", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const release = releaseRoute(() => MEMBER);
+  const engine = await standInEngine();
+  try {
+    await runInTenant(await setup("short-busy", 5, 1), async () => {
+      await held("gen_co_short_busy", MEMBER.id);
+      await db().execute({
+        sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,billed_to,task)
+              VALUES('gen_co_busy','video','byteplus','dreamina-seedance-2-0-260128','test','{}','running',?,?,?,'byteplus','generate')`,
+        args: [MEMBER.id, Date.now(), Date.now()],
+      });
+      const short = await release("gen_co_short_busy", { credits: 15 });
+      expect(short.status).toBe(402);
+      expect((await short.json()).error).toBe("Still short: this needs 15 credits and 5 are left.");
+      expect(await debited("gen_co_short_busy")).toBe(0);
+    });
+    expect(engine.submits).toEqual([]);
+  } finally {
+    engine.restore();
+  }
+});
+
+test("a price that moved while a take waited is started only by a person approving it; the browser is shown that price", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { getGeneration } = await import("../../lib/jobs");
+  const release = releaseRoute(() => MEMBER);
+  const engine = await standInEngine();
+  try {
+    await runInTenant(await setup("moved", 100), async () => {
+      const t = Date.now() - 60_000;
+      /* Held at 12 (what Generate showed), now 15; the take behind it is at its own price. */
+      await held("gen_co_moved", MEMBER.id, 12, t);
+      await held("gen_co_behind", MEMBER.id, 15, t + 1);
+      /* A top-up, a settlement or the cron: nobody approved 15, so it waits and says why; the take behind starts. */
+      const out = await releaseHeldJobs({ defer: async () => {} });
+      expect(out.released).toEqual(["gen_co_behind"]);
+      expect(await row("gen_co_moved")).toMatchObject({ status: "held", error: "The price is now 15 cr. Release it at that price to start it." });
+      expect(await debited("gen_co_moved")).toBe(0);
+      /* The card shows what Release would charge now, not the old figure. */
+      expect((await getGeneration("gen_co_moved"))?.params.held).toEqual({ why: "credits", needs: 15 });
+      /* A person pressing Release at 15 is the approval. */
+      expect((await release("gen_co_moved", { credits: 12 })).status).toBe(409);
+      expect((await release("gen_co_moved", { credits: 15 })).status).toBe(200);
+      expect(await debited("gen_co_moved")).toBe(15);
+      expect(await balance()).toBe(70);
+    });
+  } finally {
     engine.restore();
   }
 });
@@ -419,5 +480,5 @@ test("Plans lists packs as the platform prices them, requests by where they stan
     "Studio · 5,750 cr · added Sep 27",
   ]);
   expect(grantRow({ id: "g", credits: 2000, note: "Team pack · 2,000 credits", createdAt: at })).toEqual({ amount: "+2,000 cr", what: "Team pack · 2,000 credits", when: "Sep 27" });
-  expect(grantRow({ id: "g", credits: -50, note: " ", createdAt: at })).toMatchObject({ amount: "−50 cr", what: "Credits added" });
+  expect(grantRow({ id: "g", credits: -50, note: " ", createdAt: at })).toMatchObject({ amount: "−50 cr", what: "Credits removed" });
 });

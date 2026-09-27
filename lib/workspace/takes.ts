@@ -130,7 +130,8 @@ const needsLine = (needs: number) => `Needs ${needs.toLocaleString("en-US")} cr`
  */
 export function heldBlock(g: Pick<Row, "status" | "error">): { reason: string; detail?: string } | null {
   const raw = g.status === "held" ? (g.error ?? "").trim() : "";
-  if (!raw) return null;
+  /* A shortfall is what the chip already says ("needs 12 cr"), and its figures go stale as credits move. */
+  if (!raw || failureKind(raw) === "balance") return null;
   const line = firstLine(raw);
   return line && line !== raw ? { reason: line, detail: raw } : { reason: line || raw };
 }

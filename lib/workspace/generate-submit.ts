@@ -51,6 +51,12 @@ export async function dispatchGeneration(options: {
   request: DispatchRequest;
   /** Called once the attempt is claimed, before the paid POST, with its approved credits. */
   onClaim?: (credits: number) => void;
+  /**
+   * Whether this quote is the header's last price (lib/workspace/last-quote.ts). The Gen composer says
+   * no: its button shows the whole press (every take), which it records itself, and each take is sent
+   * here one at a time.
+   */
+  remember?: boolean;
   /** Injected only by tests; the browser's own storage otherwise. */
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }): Promise<DispatchOutcome> {
@@ -73,7 +79,7 @@ export async function dispatchGeneration(options: {
         if (!Number.isFinite(fresh.estimatedCredits) || fresh.estimatedCredits < 0 || !FINGERPRINT.test(fresh.fingerprint ?? ""))
           throw new Error("The live price could not be confirmed. Nothing was submitted.");
         /* The header's last quote (lib/workspace/last-quote.ts): this is the figure the press is measured against. */
-        rememberWorkspaceQuote(scope, fresh.estimatedCredits);
+        if (options.remember !== false) rememberWorkspaceQuote(scope, fresh.estimatedCredits);
         const gate = dispatchGate(shown, fresh.estimatedCredits);
         if (!gate.ok) return { state: "repriced", credits: gate.credits, reason: gate.reason };
         credits = fresh.estimatedCredits;
@@ -85,7 +91,7 @@ export async function dispatchGeneration(options: {
           body: JSON.stringify({ ...request.quoteBody, quoteOnly: true }),
         });
         if (!validAudioQuote(fresh)) throw new Error("The live price could not be confirmed. Nothing was submitted.");
-        rememberWorkspaceQuote(scope, fresh.estimatedCredits);
+        if (options.remember !== false) rememberWorkspaceQuote(scope, fresh.estimatedCredits);
         const gate = dispatchGate(shown, fresh.estimatedCredits);
         if (!gate.ok) return { state: "repriced", credits: gate.credits, reason: gate.reason };
         credits = fresh.estimatedCredits;

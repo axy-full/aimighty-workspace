@@ -488,7 +488,7 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
       ) : null}
       {applies ? (
         <div className="wsx-list" data-testid="ws-grants">
-          <span className="gx-eyebrow">Credits added</span>
+          <span className="gx-eyebrow">Credit history</span>
           {grants.map((g) => {
             const row = grantRow(g);
             return (
@@ -498,7 +498,7 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
               </div>
             );
           })}
-          {topups.data && !grants.length ? <span className="wsx-ask">Nothing added yet.</span> : null}
+          {topups.data && !grants.length ? <span className="wsx-ask">No credits in or out yet.</span> : null}
         </div>
       ) : null}
       {topups.error ? <p className="gx-gen-error" role="alert" data-testid="ws-topups-error">{topups.error} <button type="button" className="gx-hbtn" onClick={() => void topups.read()}>Try again</button></p> : null}

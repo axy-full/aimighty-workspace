@@ -734,6 +734,8 @@ export function useComposer(options: {
           scope,
           storageId,
           shown,
+          /* The button's whole figure is this composer's last quote (recorded above), not one take's. */
+          remember: false,
           request: model.audioTask
             ? {
                 endpoint: "/api/audio",

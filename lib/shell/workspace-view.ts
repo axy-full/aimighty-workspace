@@ -66,10 +66,10 @@ export function requestRows(requests: readonly TopupRequestRow[] | undefined, an
   const all = requests ?? [];
   return [...all.filter((r) => r.status === "requested"), ...all.filter((r) => r.status !== "requested").slice(0, answered)];
 }
-/** A grant as the history lists it: `+2,000 cr` beside what it was and when. */
+/** A grant as the history lists it: `+2,000 cr` (or `−50 cr`, an adjustment) beside what it was and when. */
 export function grantRow(g: TopupGrant): { amount: string; what: string; when: string } {
   const amount = `${g.credits >= 0 ? "+" : "−"}${Math.abs(g.credits).toLocaleString("en-US")} cr`;
-  return { amount, what: g.note.trim() || "Credits added", when: day(g.createdAt) ?? "" };
+  return { amount, what: g.note.trim() || (g.credits >= 0 ? "Credits added" : "Credits removed"), when: day(g.createdAt) ?? "" };
 }
 /** Where a card checkout may send the browser: https only, never a scheme that runs code. */
 export function checkoutUrl(raw: unknown, origin: string): string | null {

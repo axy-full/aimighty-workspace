@@ -196,7 +196,8 @@ test("owner: a held take says what it needs and releases at that price, once; st
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=takes");
   const takes = page.getByTestId("edit-takes");
-  await expect(tile(takes, "Harbour dawn")).toBeVisible();
+  /* The first page a fresh dev server compiles can take a while. */
+  await expect(tile(takes, "Harbour dawn")).toBeVisible({ timeout: 60_000 });
 
   /* Its own state: held, not rendering; the need on the chip and the exact price on Release. */
   await expect(tile(takes, "Harbour dawn")).toHaveAttribute("data-status", "held");
@@ -253,6 +254,28 @@ test("owner: a held take says what it needs and releases at that price, once; st
   /* A wheel (a finger) reaches the page's last row, and on a phone it ends above the tab bar. */
   await clearOfTabBar(page, page.getByTestId("takes-assets").locator(":scope > *").last(), true);
 
+  /* The Inspector's Release is the take's own: moving to another held take brings no word or price across. */
+  const wide = WIDE.includes(info.project.name);
+  if (!wide) await page.getByTestId("toggle-library").click();
+  await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
+  const assets = page.getByTestId("library-assets");
+  await tile(assets, "Storm front").locator(".gx-asset-thumb").click();
+  const inspector = page.getByTestId("asset-inspector");
+  await expect(page.getByTestId("inspector-title")).toHaveText("Storm front");
+  await inspector.getByTestId("take-release").click();
+  await expect(inspector.getByTestId("take-release-note")).toContainText("Still short");
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="inspector-release"]'), "Inspector Release under 44×44").toEqual([]);
+  if (!wide) {
+    await page.getByTestId("close-inspector").click();
+    if (!(await assets.isVisible())) await page.getByTestId("toggle-library").click();
+    if (!(await assets.isVisible())) await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
+  }
+  await tile(assets, "Night ferry").locator(".gx-asset-thumb").click();
+  await expect(page.getByTestId("inspector-title")).toHaveText("Night ferry across the outer harbour");
+  await expect(inspector.getByTestId("take-release")).toHaveText("Release Night ferry across the outer harbour · 12,345 cr");
+  await expect(inspector.getByTestId("take-release-note")).toHaveCount(0);
+  if (!wide) await page.getByTestId("close-inspector").click();
+
   /* Add credits opens Plans & credits. */
   await tile(takes, "Storm front").getByTestId("take-release-credits").click();
   await expect(page.getByTestId("ws-plans")).toBeVisible();
@@ -276,7 +299,13 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=takes");
   const takes = page.getByTestId("edit-takes");
-  await expect(tile(takes, "Lamp line").getByTestId("take-chip")).toHaveText("Held · needs 15 cr");
+  await expect(tile(takes, "Lamp line").getByTestId("take-chip")).toHaveText("Held · needs 15 cr", { timeout: 60_000 });
+
+  /* A gateway's page instead of the route's answer: not claimed either way, and nothing reached the route. */
+  await page.route("**/api/jobs/*/release", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "<html><body>Bad gateway</body></html>" }), { times: 1 });
+  await tile(takes, "Lamp line").getByTestId("take-release").click();
+  await expect(tile(takes, "Lamp line").getByTestId("take-release-note")).toHaveText("The release was not confirmed. Press Release again to check — it is never charged twice.");
+  expect(await meterRows(theirs)).toEqual([]);
 
   /* The first reply is lost on the way back: the release happened, the page was not told. */
   let lose = true;
@@ -354,7 +383,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await page.goto("/suites?view=workspace&tab=credits");
   const plans = page.getByTestId("ws-plans");
   const packs = page.getByTestId("ws-pack");
-  await expect(page.getByTestId("ws-topups-error")).toContainText("Credits are not answering right now.");
+  await expect(page.getByTestId("ws-topups-error")).toContainText("Credits are not answering right now.", { timeout: 60_000 });
   await expect(packs).toHaveCount(0);
   failRead = false;
   await page.getByTestId("ws-topups-error").getByRole("button", { name: "Try again" }).click();
@@ -438,7 +467,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
 
 test("the credits pill turns amber when the balance is below the last price quoted, reads that quote without asking for one, and opens Plans", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const s = await seed(page);
+  await seed(page);
   const balance = await balanceOf(page);
   /* The Generate button's own price read (GET /api/workbench/engines?model=…), answered with a figure one take
      can afford and two cannot. */
@@ -454,7 +483,7 @@ test("the credits pill turns amber when the balance is below the last price quot
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?view=gen");
   const pill = page.getByTestId("workspace-credits");
-  await expect(pill).toContainText(balance.toLocaleString("en-US"));
+  await expect(pill).toContainText(balance.toLocaleString("en-US"), { timeout: 60_000 });
   await expect(pill).not.toHaveAttribute("data-low");
   const generate = page.getByTestId("gen-generate");
   await page.getByRole("textbox", { name: "Direction", exact: true }).fill("A lighthouse beam sweeping fog at dusk");

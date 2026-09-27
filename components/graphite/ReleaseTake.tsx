@@ -19,6 +19,7 @@ import { useOptionalToast } from "@/lib/workspace/state";
  * route allows: the take's author, the owner, an admin.
  */
 type Note = { tone: "short" | "error"; text: string };
+const UNCONFIRMED = "The release was not confirmed. Press Release again to check — it is never charged twice.";
 type Reply = { released?: boolean; already?: boolean; error?: string; credits?: number };
 
 export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry; onReleased: () => Promise<unknown> | void; place: "tile" | "inspector" }) {
@@ -45,26 +46,32 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
     if (pressed.current) return;
     pressed.current = true;
     setBusy(true); setNote(null);
+    let released = false;
     try {
       const response = await scoped(`/api/jobs/${encodeURIComponent(generation.id)}/release`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credits }),
       });
       const reply = await response.json().catch(() => null) as Reply | null;
       if (response.ok && reply?.released) {
+        released = true;
         toast?.(reply.already ? `${take.name} was already released.` : `${take.name} released · ${credits.toLocaleString("en-US")} cr`);
         requestAccountRefresh();
-        await onReleased();
-        return;
+      } else if (!reply?.error || response.status >= 500) {
+        /* No answer the route wrote (a gateway's page, a server fault): it may have started. Same as a lost reply. */
+        setNote({ tone: "error", text: UNCONFIRMED });
+      } else {
+        if (typeof reply.credits === "number" && reply.credits !== credits) setRepriced(reply.credits);
+        setNote({ tone: response.status === 402 ? "short" : "error", text: reply.error });
       }
-      if (typeof reply?.credits === "number" && reply.credits !== credits) setRepriced(reply.credits);
-      setNote({ tone: response.status === 402 ? "short" : "error", text: reply?.error ?? "This take could not be released. Nothing was charged." });
     } catch {
       /* The reply was lost: the server may have released it. Pressing again asks, and never charges twice. */
-      setNote({ tone: "error", text: "The release was not confirmed. Press Release again to check — it is never charged twice." });
+      setNote({ tone: "error", text: UNCONFIRMED });
     } finally {
       pressed.current = false;
       setBusy(false);
     }
+    /* Read again after the answer, outside it: a failed re-read is the library's to say, not the release's. */
+    if (released) await Promise.resolve(onReleased()).catch(() => undefined);
   };
   return (
     <div className="gx-release" data-place={place} data-testid="take-release-row">
