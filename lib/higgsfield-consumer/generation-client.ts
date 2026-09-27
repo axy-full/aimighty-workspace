@@ -138,6 +138,14 @@ export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
 }
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);
+/**
+ * The least a page waits between two status reads of one job, in seconds:
+ * the route allows a person 30 status reads a minute across every job and
+ * tab (app/api/higgsfield/consumer/generation/route.ts), so a job is never
+ * asked about more than every 6 s. Pollers pass it as a floor under the
+ * account's own pollAfterSeconds (lib/poll), which jitter never cuts short.
+ */
+export const CONNECTED_READ_FLOOR_S = 6;
 
 /** The preflight refusals that release a held submission so a fresh quote may be taken. */
 export const CONNECTED_PREFLIGHT_CODES = new Set([
