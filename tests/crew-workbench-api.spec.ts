@@ -58,12 +58,14 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(quote.estimateUsd).toBeUndefined();
     expect(await events()).toHaveLength(0);
 
-    /* No price seen, or a lower one: refused before anything is reserved. */
+    /* No price seen, or a lower one, or no round named: refused before anything is reserved. */
     expect((await request.post(rounds, { headers, data: {} })).status()).toBe(409);
-    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits - 1 } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits - 1, round: 1 } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits, round: 2 } })).status()).toBe(409);
     expect(await events()).toHaveLength(0);
 
-    const ran = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits } });
+    const ran = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits, round: 1 } });
     expect(ran.ok(), await ran.text()).toBe(true);
     expect(ran.headers()["content-type"]).toContain("text/event-stream");
     const stream = parseSse(await ran.text());
@@ -93,6 +95,11 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(settled).toHaveLength(1);
     expect(settled[0]).toMatchObject({ status: "succeeded", engine: "xai", model: session.model });
     expect(Number(settled[0].credits)).toBe(Number(done.spendCr));
+    /* The round number is the request's key: round 1 sent again (a second press, or the request arriving late) runs nothing. */
+    const again = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits + 50, round: 1 } });
+    expect(again.status()).toBe(409);
+    expect((await again.json()).error).toBe("Round 1 has already run. Read the room again before running another.");
+    expect(await events()).toHaveLength(1);
 
     /* A note is free and joins the transcript; a pin becomes a solution. */
     const note = await request.post(`/api/crew/sessions/${session.id}/notes`, { headers, data: { text: "Keep the tin out of frame." } });
@@ -104,15 +111,17 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(room.messages).toHaveLength(10);
     expect(room.solutions).toHaveLength(4);
 
-    /* → Brief appends to the saved brief; Board it adds a draft frame; Open in Gen writes nothing. */
+    /* → Brief appends to the saved brief; → Rig (wire value `boards`) adds a draft scene node and names it; Open in Gen writes nothing. */
     const route = (id: string, to: string) => request.post(`/api/crew/solutions/${id}/route`, { headers, data: { to } });
     expect(await route(solutions[0].id, "brief").then((r) => r.json())).toMatchObject({ status: "sent_to_brief" });
-    expect(await route(solutions[1].id, "boards").then((r) => r.json())).toMatchObject({ status: "boarded" });
+    const placed = await route(solutions[1].id, "boards").then((r) => r.json());
+    expect(placed).toMatchObject({ status: "boarded", title: "Cut on the drop" });
+    expect(placed.nodeId).toMatch(/^node/);
     expect(await route(solutions[2].id, "gen").then((r) => r.json())).toMatchObject({ status: "generated", prompt: solutions[2].text });
     expect((await route(solutions[2].id, "rig")).status()).toBe(400);
     const after = (await request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project;
     expect(after.brief).toContain(`Crew · ${solutions[0].text}`);
-    expect(after.nodes.at(-1)).toMatchObject({ type: "scene", title: "Cut on the drop", status: "draft" });
+    expect(after.nodes.at(-1)).toMatchObject({ id: placed.nodeId, type: "scene", title: "Cut on the drop", status: "draft" });
 
     const minutes = await request.get(`/api/crew/sessions/${session.id}/minutes`, { headers });
     expect(minutes.headers()["content-type"]).toContain("text/markdown");

@@ -125,8 +125,8 @@ function firstLine(message: string): string {
 /**
  * Why a take failed, in one line a card can carry (lib/jobState.ts failureKind
  * reads the row's own words). The row's message rides along as `detail` when
- * it says more, for the tooltip. Nothing here claims a refund: the card's chip
- * says "not billed" only when the ledger shows nothing charged.
+ * it says more, for the tooltip. Failure state alone does not establish the
+ * provider's billing outcome.
  */
 export function failureReason(g: Row): { reason: string; detail?: string } {
   const raw = (g.error ?? "").trim();
@@ -151,17 +151,16 @@ export type ChipTone = "idle" | "live" | "waiting" | "failed" | "picked" | "done
 export type TakeChip = { label: string; tone: ChipTone };
 
 /**
- * The card's status chip (Queued / Rendering / Held / Failed · not billed /
+ * The card's status chip (Queued / Rendering / Held / Failed /
  * Cancelled / Picked / Approved / Changes). A take waiting for review and an
- * upload carry none. `compact` shortens the one long label for a 2-up sidebar
- * tile; the billing note then rides on the reason line instead.
+ * upload carry none. Billing outcomes must be confirmed separately.
  */
-export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled">, compact = false): TakeChip | null {
+export function takeChip(take: Pick<Take, "status" | "stage" | "cancelled">): TakeChip | null {
   switch (take.status) {
     case "rendering": return take.stage === "held" ? { label: "Held", tone: "waiting" } : take.stage === "queued" ? { label: "Queued", tone: "idle" } : { label: "Rendering", tone: "live" };
     case "failed": {
       const word = take.cancelled ? "Cancelled" : "Failed";
-      return { label: take.failedUnbilled && !compact ? `${word} · not billed` : word, tone: take.cancelled ? "idle" : "failed" };
+      return { label: word, tone: take.cancelled ? "idle" : "failed" };
     }
     case "picked": return { label: "Picked", tone: "picked" };
     case "approved": return { label: "Approved", tone: "done" };
@@ -171,14 +170,13 @@ export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled" 
 }
 
 /** The status in words, where there is room for all of them (the Inspector's facts). */
-export function takeStatusWord(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled">): string {
+export function takeStatusWord(take: Pick<Take, "status" | "stage" | "cancelled">): string {
   return takeChip(take)?.label ?? (take.status === "uploaded" ? "Uploaded" : "In review");
 }
 
-/** The line under a card's name: the failure or hold reason, with the billing note when the chip had no room for it. */
-export function takeReasonLine(take: Pick<Take, "status" | "reason" | "failedUnbilled">, compact = false): string | null {
-  if (!take.reason) return null;
-  return compact && take.status === "failed" && take.failedUnbilled ? `Not billed · ${take.reason}` : take.reason;
+/** The failure or hold reason, independent of the billing outcome. */
+export function takeReasonLine(take: Pick<Take, "reason">): string | null {
+  return take.reason || null;
 }
 
 /* ── The Takes desk (Studio › Takes): review filters and review words ──── */

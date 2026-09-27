@@ -96,6 +96,8 @@ async function fixture(page: Page, brokenMapping = false, campaign = false, plai
     key: string | undefined;
     scope: string | undefined;
   }[] = [];
+  /* A lost acknowledgement is asked about by its key (POST /api/generate/check), never re-sent. */
+  const checks: { key: string; endpoint: string; body: string; scope: string | undefined }[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/api/**", async (route) => {
@@ -187,6 +189,12 @@ async function fixture(page: Page, brokenMapping = false, campaign = false, plai
         unit: "cr",
       });
     }
+    if (endpoint === "/api/generate/check") {
+      const asked = req.postDataJSON();
+      checks.push({ ...asked, scope: req.headers()["x-workbench-scope"] });
+      /* The lost submission reached the server and made marketing-job; only its acknowledgement was lost. */
+      return json(!lost && submissions.some((s) => s.key === asked.key) ? { state: "landed", id: "marketing-job", status: "queued" } : { state: "absent" });
+    }
     if (endpoint === "/api/generate") {
       const sent = {
         body: req.postData()!,
@@ -241,6 +249,7 @@ async function fixture(page: Page, brokenMapping = false, campaign = false, plai
   return {
     quotes,
     submissions,
+    checks,
     errors,
     scope,
     project: () => project,
@@ -279,7 +288,7 @@ async function openNode(page: Page) {
   return page.getByRole("dialog", { name: "Generate a new take", exact: true });
 }
 
-test("Marketing edits require a new mapped live quote and lost acknowledgement recovers identical request after reload", async ({
+test("Marketing edits require a new mapped live quote and a lost acknowledgement is recovered by its key after reload, never re-sent", async ({
   page,
 }, info) => {
   test.skip(
@@ -339,8 +348,8 @@ test("Marketing edits require a new mapped live quote and lost acknowledgement r
     .getByRole("button", { name: "Recover submitted take", exact: true })
     .click();
   await expect(dialog).not.toBeVisible();
-  expect(f.submissions).toHaveLength(2);
-  expect(f.submissions[1]).toEqual(f.submissions[0]);
+  expect(f.submissions).toHaveLength(1);
+  expect(f.checks).toEqual([{ key: f.submissions[0].key, endpoint: "/api/generate", body: f.submissions[0].body, scope: f.scope }]);
   expect(f.quotes).toHaveLength(quoteCount);
   expect(f.maps()).toBe(mapCount);
   expect(f.errors).toEqual([]);
@@ -381,8 +390,8 @@ test("Moleculr restores accepted prompt and 4k marketing settings after lost ack
   expect(f.submissions).toHaveLength(1);
   await dialog.getByRole("button", { name: "Recover submitted take", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  expect(f.submissions).toHaveLength(2);
-  expect(f.submissions[1]).toEqual(f.submissions[0]);
+  expect(f.submissions).toHaveLength(1);
+  expect(f.checks).toEqual([{ key: f.submissions[0].key, endpoint: "/api/generate", body: f.submissions[0].body, scope: f.scope }]);
   expect(f.quotes).toHaveLength(quoteCount);
   const savedSettings = { modelId, resolution: "4k", ratio: "3:4", marketing: { quality: "medium", enhancePrompt: false } };
   await expect.poll(() => f.project().moleculr!.variants[0].generation).toEqual(savedSettings);
@@ -398,10 +407,10 @@ test("Moleculr restores accepted prompt and 4k marketing settings after lost ack
   await expect(dialog.getByLabel("Marketing image quality")).toBeEnabled();
   await expect(dialog.getByRole("button", { name: "Generate · 3 cr estimated", exact: true })).toBeEnabled();
   expect(f.quotes.at(-1)?.body).toMatchObject({ prompt: acceptedPrompt, model: modelId, resolution: "4k", ratio: "3:4", marketing: { quality: "medium", enhancePrompt: false } });
-  expect(f.submissions).toHaveLength(2);
+  expect(f.submissions).toHaveLength(1);
   await page.screenshot({ path: info.outputPath("moleculr-accepted-generation-restored.png") });
   await page.keyboard.press("Escape");
-  expect(f.submissions).toHaveLength(2);
+  expect(f.submissions).toHaveLength(1);
   expect(f.errors).toEqual([]);
 });
 
@@ -442,14 +451,15 @@ test("a preset whose engine is not connected here opens on a connected engine, s
   await expect(dialog.getByRole("button", { name: "Generate · 2 cr estimated", exact: true })).toBeEnabled();
   await expect(dialog).not.toContainText("No generation engine is configured");
   expect(f.submissions).toHaveLength(0);
-  /* The take is made on the stand-in (mocked: the first acknowledgement is lost, the retry lands). */
+  /* The take is made on the stand-in (mocked: its acknowledgement is lost, and Recover follows the job it made). */
   const direction = "Stand-in take: the product on a plain sweep.";
   await dialog.getByLabel("Generation direction").fill(direction);
   await dialog.getByRole("button", { name: "Generate · 2 cr estimated", exact: true }).click();
   await dialog.getByRole("button", { name: "Recover submitted take", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  expect(f.submissions).toHaveLength(2);
-  expect(JSON.parse(f.submissions[1].body).model).toBe("image-plain");
+  expect(f.submissions).toHaveLength(1);
+  expect(f.checks.map((c) => c.key)).toEqual([f.submissions[0].key]);
+  expect(JSON.parse(f.submissions[0].body).model).toBe("image-plain");
   /* The variant stays set up for the Marketing Studio engine, for when it is connected. */
   await expect.poll(() => f.project().nodes.find((node) => node.id === "marketing-node")!.text).toBe(direction);
   expect(f.project().moleculr!.variants[0].generation).toEqual({ modelId, marketing: { quality: "high", enhancePrompt: false }, ratio: "3:4" });

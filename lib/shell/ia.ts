@@ -27,7 +27,7 @@ export type ShellPage = {
   gapBefore: boolean;
   /** The shell renders its own Graphite view for this page (Business from step 2, Viral from step 3, Atomik › Skills from step 5); the legacy mapping only feeds state. */
   own?: boolean;
-  /** Reached from the phone's tab bar, never from the stage strip (Studio home). */
+  /** Never a tab in the stage strip: the phone's Home, and the Studio home (the phone's stage grid; on a desktop, where the mark goes). */
   phoneOnly?: boolean;
 };
 
@@ -56,10 +56,11 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 }
 
 /**
- * The phone's two screens outside the strip (GLASS_SPEC §3): `home` is the
- * suite picker — "Where to?" — that the Home tab and the mark return to;
- * `stages` is the Studio stage grid behind the Studio tile, with a Home back.
- * Both share Brief's backing page.
+ * The two screens outside the strip (GLASS_SPEC §3): `home` is the phone's
+ * suite picker — "Where to?" — that the Home tab and the phone's mark return
+ * to; `stages` is the Studio home: the stage grid behind the phone's Studio
+ * tile (with a Home back), and where the mark goes on a desktop. Both share
+ * Brief's backing page.
  */
 function withHome(suite: ShellSuite): ShellSuite {
   const legacy = { suite: suite.legacy, page: suite.pages[0].legacy.page };

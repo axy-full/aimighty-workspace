@@ -1,6 +1,7 @@
 import { audioClips, type AudioClip } from "./audio";
 import { nodeAudioBody, type NodeAudioTask } from "./generation-audio";
 import { uid, type Asset, type CanvasNode, type Project } from "./studio";
+import { stableId } from "./stable-id";
 
 /**
  * Edit & Sound: generating straight into the timeline lanes.
@@ -63,8 +64,10 @@ export function createSoundNode(project: Project, task: SoundJobTask): CanvasNod
   const index = isSoundTool(task)
     ? SOUND_TASKS.length + SOUND_TOOLS.findIndex((t) => t.id === task)
     : SOUND_TASKS.findIndex((t) => t.id === task);
+  /* One lane per sound task: made in two windows at once, it is still one node (one id). A locked lane keeps its id; a new one beside it gets its own. */
+  const id = stableId("node", soundNodeRole(task));
   return {
-    id: uid("node"),
+    id: project.nodes.some((n) => n.id === id) ? uid("node") : id,
     type: "audio",
     mode: "Audio",
     role: soundNodeRole(task),
@@ -132,6 +135,30 @@ export function soundGenerationBody(input: {
   return input.task === "sound"
     ? { ...base, promptInfluence: Math.max(0, Math.min(1, input.promptInfluence)) }
     : base;
+}
+
+/** What a stored request asked for, in the form's own terms (soundFormOf). */
+export type SoundForm = {
+  text?: string; seconds?: number; instrumental?: boolean; promptInfluence?: number; voiceId?: string; modelId?: string;
+  source?: { generationId: string } | { uploadId: string }; removeBackgroundNoise?: boolean; sourceLang?: string; targetLang?: string; mode?: string;
+};
+/**
+ * A request claimed before its reply was lost reads back into the form that
+ * built it (soundGenerationBody, voiceChangeBody, dubBody), so what is waiting
+ * is on show rather than an empty form. Anything malformed is left out.
+ */
+export function soundFormOf(body: Record<string, unknown>): SoundForm {
+  const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined);
+  const flag = (v: unknown) => (typeof v === "boolean" ? v : undefined);
+  const seconds = count(body.durationSeconds) ?? (count(body.lengthMs) !== undefined ? count(body.lengthMs)! / 1000 : undefined);
+  const source = text(body.sourceGenId) ? { generationId: text(body.sourceGenId)! } : text(body.sourceUploadId) ? { uploadId: text(body.sourceUploadId)! } : undefined;
+  const form: SoundForm = {
+    text: text(body.text), seconds, instrumental: flag(body.instrumental), promptInfluence: count(body.promptInfluence),
+    voiceId: text(body.voiceId), modelId: text(body.modelId), source, removeBackgroundNoise: flag(body.removeBackgroundNoise),
+    sourceLang: text(body.sourceLang), targetLang: text(body.targetLang), mode: text(body.mode),
+  };
+  return Object.fromEntries(Object.entries(form).filter(([, v]) => v !== undefined)) as SoundForm;
 }
 
 /** A queued generation and where it lands once its bytes exist. */

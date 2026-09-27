@@ -13,6 +13,7 @@ import {
   type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type ImageAdsState, type SetupItem, type SetupPreset, type SetupType,
 } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
+import { useOpenTake } from "@/lib/shell/use-open-take";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
 import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
@@ -394,18 +395,51 @@ function CatalogueAgain({ business }: { business: Business }) {
 }
 
 /**
+ * A Setup read that failed: what went wrong (lib/shell/use-business words it), and Try again. Try again
+ * stays focusable while its read is out, and when a good read takes the row away, focus stays in the
+ * section it reloaded instead of falling back to the top of the page.
+ */
+function ReadProblem({ error, busy, onRetry, testId }: { error: string; busy: boolean; onRetry: () => void; testId: string }) {
+  const row = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = row.current;
+    return () => {
+      if (!node?.contains(document.activeElement)) return;
+      const home = node.closest<HTMLElement>("section, [data-read-home]") ?? node.parentElement;
+      if (!home) return;
+      if (!home.hasAttribute("tabindex")) { home.tabIndex = -1; home.dataset.focusHome = ""; }
+      home.focus({ preventScroll: true });
+    };
+  }, []);
+  return (
+    <div ref={row} className="gx-retry" role="alert" aria-busy={busy} data-testid={testId}>
+      <span className="gx-gen-error">{error}</span>
+      <button type="button" className="gx-hbtn" aria-disabled={busy} onClick={() => { if (!busy) onRetry(); }}>{busy ? "Reading…" : "Try again"}</button>
+    </div>
+  );
+}
+
+/** A running job whose last status read failed: said plainly (use-connected-job words it) while it is asked again, later. */
+function RunProblem({ state, testId }: { state: ConnectedJobState; testId: string }) {
+  if (state.phase !== "running" || !state.problem) return null;
+  return <p className="gx-reason" role="status" data-testid={testId}>{state.problem}</p>;
+}
+
+/**
  * The finished take beside the composer. It stays while Price again (or a
  * change to the ad) prices the next run.
  */
-function LatestTake({ job, testId, onTakes, onLibrary }: { job: ConnectedJob; testId: string; onTakes: () => void; onLibrary: () => void }) {
+function LatestTake({ job, testId, scope, project, onLibrary }: { job: ConnectedJob; testId: string; scope: string; project: Project | null; onLibrary: () => void }) {
   const original = connectedOriginal(job), kind = original?.kind;
   const media = original && (kind === "image" || kind === "video") ? { url: original.url, kind } : null;
+  /* Open in Takes lands on this take, selected — not on the list. */
+  const { openTake, opening } = useOpenTake(scope, project);
   return (
     <section className="gx-gen-results bz-latest" aria-label="Latest take" data-testid={testId}>
       <div className="gx-gen-results-head">
         <span className="gx-panel-title">Latest take</span>
         <span className="bz-done-actions">
-          <button type="button" className="gx-hbtn" onClick={onTakes}>Open Takes</button>
+          <button type="button" className="gx-hbtn" disabled={!original || opening !== null} onClick={() => void openTake(job.id, original?.generationId, job.createdAt)} data-testid={`${testId}-open`}>{opening ? "Opening…" : "Open in Takes"}</button>
           <button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button>
         </span>
       </div>
@@ -475,7 +509,7 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
     <div className="gx-gen bz gx-enter" data-testid="ads-view">
       <section className="gx-gen-card" aria-label="Marketing Studio">
         <Connection business={business} testId="ads-connect" />
-        {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="ads-setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.ads])}>Try again</button></p> : null}
+        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.ads])} testId="ads-setup-error" /> : null}
         <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
         <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="ads-product"
@@ -524,13 +558,14 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
         {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
         {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
         <JobError job={job} testId="ads-error" />
+        <RunProblem state={job.state} testId="ads-problem" />
         <PriceAgain job={job} blocked={blocked} testId="ads-requote" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit(inputKey)} data-testid="ads-generate">
           {priceLabel(job.state, "Generate ad", blocked)}
         </button>
         {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · filed to this project</p> : null}
       </section>
-      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="ads-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
+      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="ads-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
     </div>
   );
 }
@@ -586,7 +621,7 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
           </div>
           {dtc ? <p className="gx-hint" data-testid="dtc-copy">{DTC_COPY}</p> : null}
         </div>
-        {business.setup.error && dtc ? <p className="gx-gen-error" role="alert">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup([...PRESET_TYPES.dtc])}>Try again</button></p> : null}
+        {business.setup.error && dtc ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.dtc])} testId="dtc-setup-error" /> : null}
         {dtc ? (<>
           <SetupPicker label="Style" note="the ad format · required, no default" type="image_style" business={business} value={s.styleId} onPick={(id) => set({ ...s, styleId: id })} testId="dtc-style" />
           <SetupPicker label="Brand kit" note="optional · a completed kit" type="brand_kit" business={business} value={s.brandKitId} onPick={(id) => set({ ...s, brandKitId: id })} testId="dtc-brand-kit" />
@@ -625,12 +660,13 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
         {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
         {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
         <JobError job={job} testId="dtc-error" />
+        <RunProblem state={job.state} testId="dtc-problem" />
         <PriceAgain job={job} blocked={blocked} testId="dtc-requote" />
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit(inputKey)} data-testid="dtc-generate">
           {priceLabel(job.state, "Generate image", blocked)}
         </button>
       </section>
-      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="dtc-done" onTakes={() => { job.reset(); shell.goSuite("studio", "takes"); }} onLibrary={() => shell.openLibrary("assets")} /> : null}
+      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="dtc-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
       {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
       <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
         <div className="gx-gen-row">
@@ -682,9 +718,9 @@ function SetupView({ business }: { business: Business }) {
   };
   return (
     <div className="bz-setup gx-enter" data-testid="setup-view" data-detail={selected ? "" : undefined}>
-      <div className="bz-setup-list">
+      <div className="bz-setup-list" data-read-home="">
         <Connection business={business} testId="setup-connect" />
-        {business.setup.error ? <p className="gx-gen-error" role="alert" data-testid="setup-error">{business.setup.error} <button type="button" className="cw-link" disabled={setupLoading} onClick={() => void readSetup()}>Try again</button></p> : null}
+        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup()} testId="setup-error" /> : null}
         {connected && !read && !setupFailed && (setupLoading || business.setup.connected === null) ? (
           <div className="bz-group" aria-busy="true" data-testid="setup-loading">
             <span className="gx-eyebrow">Reading…</span>

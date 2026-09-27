@@ -78,7 +78,8 @@ Commits: **A** `893b6ae` (`lib/workbench/node-graph.ts`, `canvas-selection.ts`, 
 | 2 | Fixed (B) | `publishSelection` computes the shared set from `old` inside `change()`: one snapshot, undoable, redo stack cleared. `publishBible` still applies the server's version outside history; undo/redo carry the current `bibleVersion` so a step back never offers a stale version. |
 | 3 | Fixed (B) | Ctrl/⌘+Z in Shared view toasts "Undo is unavailable in Shared view…"; the Undo tool and context item are labelled with the reason when read-only; `mobile-handoff.css` no longer hides the Undo tool on phones. |
 | 4 | Fixed (B) | `undo()`/`redo()` peek first and pop only when the entry belongs to the current project; an empty stack says "Nothing to undo". |
-| 5–7 | Deferred | Legacy /rig board — owner decision (safeguards vs retire). |
+| 5 | Fixed (`fix/replay-idempotency-keys`) | `runNode` sends the price on the button as `maxCredits` (credit workspaces), under an Idempotency-Key claimed in recovery storage first (`sendClaimedGeneration`); after a lost reply the next Run asks `POST /api/generate/check` what became of it, and a run that landed is followed, never sent twice. The phone board's Apply does the same per shot. |
+| 6–7 | Deferred | Legacy /rig board — owner decision (safeguards vs retire). |
 | 8 | Fixed (B) | Output ports capture the pointer; release resolves the drop with `elementFromPoint`, otherwise resets `wire`/cursor wherever it happens (also on `pointercancel`/`lostpointercapture`). The wire help banner is `pointer-events:none` so it cannot sit over a drop target on short canvases. |
 | 9 | Fixed (B) | Window-level `pointerup`/`pointercancel` cleanup of the touch pointer map; a pinch only exists with two live pointers; no `viewport.current!`. |
 | 10 | Fixed (B) | Space is swallowed only when the target is not a button/link/checkbox/combobox/slider/switch/tab/menu item. |

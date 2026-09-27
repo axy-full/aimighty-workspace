@@ -5,7 +5,10 @@ import type { Board, BoardNode } from "@/lib/boards";
 import type { ElementFull } from "@/lib/elements";
 import type { RateTable } from "@/lib/rateTable";
 import { charged, estimateVideo } from "@/lib/rateTable";
-import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes } from "@/lib/rigApply";
+import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes, takeOf } from "@/lib/rigApply";
+import { useSession } from "@/lib/session";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import { estimateTokens, costUsd, getModel } from "@/lib/models";
 import { Mono } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
@@ -190,6 +193,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [subset, setSubset] = useState<Subset | null>(null);
   const [busy, setBusy] = useState(false);
+  const { requestScope } = useSession();
   const picked = pickedId ?? boundId;
   const changing = picked != null && picked !== boundId;
   const vNum = (id: string | null) => { const i = versions.findIndex((v) => v.id === id); return i >= 0 ? `v${i + 1}` : "v—"; };
@@ -217,14 +221,22 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
 
   const apply = async () => {
     if (!src || !port || !picked || !chosen || !engine || busy || cost(chosen.list) == null) return;
+    if (!requestScope) { toast("Reload this page in the intended account and workspace before making changes."); return; }
     setBusy(true);
     try {
       const targets = rerenderable(chosen.list);
-      /* The price on the button is the ceiling: a take that would now cost more is refused, not charged. */
-      const { started, failure } = await sendTakes(targets, (s) => fetch("/api/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: rates.unit === "cr" ? quote(s) : null })),
-      }));
+      /* The price on the button is the ceiling: a take that would now cost more is refused, not charged.
+         Each take goes under a stored Idempotency-Key, one slot per shot: after a lost reply the next
+         Apply asks what became of it first, so a take that landed is followed and never sent twice. */
+      const { started, failure } = await sendTakes(targets, async (s) => {
+        const credits = rates.unit === "cr" ? quote(s) : null;
+        return takeOf(await sendClaimedGeneration({
+          scope: requestScope,
+          storageId: pendingGenerationKey(requestScope, projectId ?? "unfiled", `rig-apply:${s.id}`),
+          body: rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: credits }),
+          credits: credits ?? 0,
+        }));
+      });
       /* The binding changes only once a take is actually rendering with it. */
       if (started.length) onRebind(src.id, port.id, picked, vNum(picked));
       toast(applySummary({ asset: element?.name ?? "Asset", from: vNum(boundId), to: vNum(picked), started: started.length, sent: targets.length, cost: price(started), failure, skipped: chosen.list.length - targets.length }));

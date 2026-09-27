@@ -2,12 +2,13 @@ import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
 import { withTenant, requireSession } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { saveSchema } from '@/lib/workbench/studio-schema';
+import { draftWriteTagSchema, saveSchema } from '@/lib/workbench/studio-schema';
 import { saveProblem } from '@/lib/workbench/save-problem';
 import { newProject, type Project } from '@/lib/workbench/studio';
-import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible } from '@/lib/workbench/records';
+import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkDraftWrite, DraftConflictError } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
+import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -52,9 +53,9 @@ export const PUT=withTenant(async(req:Request)=>{
   const parsed=saveSchema.safeParse(value);
   if(!parsed.success)return Response.json({error:saveProblem(parsed.error)},{status:400});
   await workbenchReady();
-  const {project:p,revision}=parsed.data;
-  try{return Response.json(await saveDraft(auth.user.id,p,revision));}
-  catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.'},{status:409});}
+  const {project:p,revision,write}=parsed.data;
+  try{return Response.json(await saveDraft(auth.user.id,p,revision,write));}
+  catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
 
 export const POST=withTenant(async(req:Request)=>{
@@ -63,6 +64,16 @@ export const POST=withTenant(async(req:Request)=>{
   if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   if(originProblem(req))return Response.json({error:'Invalid request origin'},{status:403});
   const body=await req.json().catch(()=>null);
+  /* Studio's first run: the workspace's starter production, seeded once and opened as this person's draft.
+     Sample takes on the platform's own previews: no engine is called and nothing is charged (lib/starter.ts). */
+  if(body?.action==='starter'){
+    try{return projectResponse(req,await openStarterDraft(auth.user.id));}
+    catch(error){
+      if(error instanceof StarterUnavailableError)return Response.json({error:error.message},{status:409,headers:noStore});
+      console.error('The starter production could not be opened:',error);
+      return Response.json({error:'The starter production could not be opened. Try again.'},{status:500,headers:noStore});
+    }
+  }
   if(!body || typeof body.projectId!=='string')return Response.json({error:'Choose a project.'},{status:400});
   await workbenchReady();
   if(body.action==='open'){
@@ -72,6 +83,14 @@ export const POST=withTenant(async(req:Request)=>{
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
     return projectResponse(req,{project:p,revision:0});
+  }
+  if(body.action==='check-write'){
+    /* A save whose reply was lost: did it land (and at which revision)? Checking fences it off, so the answer is final; the draft comes back as it is now. */
+    const write=draftWriteTagSchema.safeParse(body.write);
+    if(!write.success)return Response.json({error:'Name the save to check.'},{status:400});
+    const landed=await checkDraftWrite(auth.user.id,body.projectId,write.data);
+    const now=await readDraft(auth.user.id,body.projectId);
+    return projectResponse(req,{landed,project:now?.project??null,revision:now?.revision??0});
   }
   const draft=await readDraft(auth.user.id,body.projectId);
   if(!draft)return Response.json({error:'Save your project first.'},{status:404});

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { zoomAround, wheelFactor, panBy, stepZoom, resetZoom, fitView, pinchView, clampZoom, loadView, saveView, viewKey, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, DEFAULT_VIEW, type View } from "../../lib/viewport";
+import { zoomAround, wheelFactor, panBy, stepZoom, resetZoom, fitView, pinchView, clampZoom, loadView, saveView, viewKey, boardHeight, BOARD_FLOOR, BOARD_GAP, BOARD_MIN, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, DEFAULT_VIEW, type View } from "../../lib/viewport";
 
 /**
  * The Rig canvas viewport (Suites Rig graph; change request 1 §6): zoom about the
@@ -94,4 +94,21 @@ test("the remembered view round-trips per board per user and rejects junk", () =
   expect(loadView(key)).toBeNull();
   store[key] = "{\"zoom\":9,\"pan\":{\"x\":0,\"y\":0}}";
   expect(loadView(key)?.zoom).toBe(ZOOM_MAX);
+});
+
+test("the board fills its pane below it, never under the floor where there is room, and never past what the pane shows", () => {
+  /* Desktops (measured at 1440x900 and 1920x1080): the floor, then the room below. */
+  expect(boardHeight({ top: 285, bottom: 889, padBottom: 0 }, 478, 900)).toBe(BOARD_FLOOR);
+  expect(boardHeight({ top: 285, bottom: 1069, padBottom: 0 }, 444, 1080)).toBe(1069 - BOARD_GAP - 444);
+  /* Phones: the pane keeps 110px clear for the tab bar; the board starts below the fold, so it is what the pane shows at once. */
+  const phone = boardHeight({ top: 428, bottom: 844, padBottom: 110 }, 750, 844);
+  expect(phone).toBe(844 - 110 - BOARD_GAP - 428);
+  expect(428 + phone).toBeLessThanOrEqual(844 - 110);
+  /* A phone on its side or the smallest phone shows less than a row of takes: the board keeps one, and the pane scrolls. */
+  expect(boardHeight({ top: 266, bottom: 390, padBottom: 0 }, 426, 390)).toBe(BOARD_MIN);
+  expect(boardHeight({ top: 372, bottom: 640, padBottom: 110 }, 700, 640)).toBe(BOARD_MIN);
+  /* Never taller than the pane shows, even where the floor would be. */
+  expect(boardHeight({ top: 0, bottom: 380, padBottom: 0 }, 40, 380)).toBe(380 - BOARD_GAP);
+  /* A pane scrolled partly off the top counts only what is on screen. */
+  expect(boardHeight({ top: -100, bottom: 300, padBottom: 0 }, 900, 600)).toBe(300 - BOARD_GAP);
 });

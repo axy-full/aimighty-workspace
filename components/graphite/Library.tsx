@@ -75,7 +75,9 @@ export function Library({ project = null, items, library, projects = "ready", ov
   /* "60+" while the cursors say the project holds more than is loaded (Load more at the list's end). */
   const more = Boolean(project) && library.hasMore;
   const assetCount = counted ? `${items.length.toLocaleString("en-US")}${more ? "+" : ""}` : view.skeletons ? "…" : "—";
-  /* A first read that failed is the banner above the grid; a later one is said at the list's end, beside Load more. */
+  /* A first read that failed is said first, with Try again, where it is seen (#398): on a short phone, behind a search and
+     three rows of filters, it sat under the tab bar. With nothing read, there is nothing to search or filter either, so the
+     Assets tab is the banner alone. A later read that failed is said at the list's end, beside Load more. */
   const failed = view.banner?.tone === "error" ? view.banner : null;
   const open = (entry: LibraryEntry) => {
     dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
@@ -120,10 +122,10 @@ export function Library({ project = null, items, library, projects = "ready", ov
             </div>
           )) : <p className="gx-empty">This page has no tools of its own. Assets are on the next tab.</p>}
         </div>
+      ) : failed ? (
+        <LoadBanner banner={failed} onRetry={library.refresh} testId="library-error" compact />
       ) : (
         <>
-          {/* First, above the filters: on a phone the list under them can sit behind the dock. */}
-          {failed ? <LoadBanner banner={failed} onRetry={library.refresh} testId="library-error" compact /> : null}
           <input className="gx-field" aria-label="Search assets" placeholder="Search this project" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="gx-chips" role="group" aria-label="Asset kind">
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
@@ -133,7 +135,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
             before={view.skeletons ? <TakeSkeletons count={4} variant="library" /> : null}
             after={<>
-              {!shown.length && (project ? !view.skeletons && !failed : view.empty)
+              {!shown.length && (project ? !view.skeletons : view.empty)
                 ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!project ? "Open a project to see what it has made." : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
               {project && !failed ? <LibraryMore library={library} auto /> : null}
             </>}

@@ -9,8 +9,10 @@ import { applyDevelopment } from "@/lib/workbench/development-apply";
 import { developmentSourceHash } from "@/lib/workbench/development-client";
 import { sourceCanonical } from "@/lib/workbench/development-types";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
-import { pricedAgentText } from "./agent-price";
+import { agentCharged, agentPrice, agentReserved } from "./agent-price";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
+import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, withNotes } from "@/lib/production/notes";
+import { useMoney } from "@/lib/price";
 import { sha256Hex } from "@/lib/production/hash";
 import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { ScreenplayImport, ScriptScene } from "@/lib/workbench/screenplay";
@@ -20,13 +22,15 @@ import { uploadWorkbench } from "@/lib/workbench/upload";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { useWorkspace } from "@/lib/workspace/state";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
+import { CONFIRM } from "@/lib/shell/confirmations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { useConfirm } from "@/lib/shell/use-confirm";
+import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 
 export const PROMPT_LIMIT = 30_000;
-export const NOTES_LIMIT = 5_000;
 const STAGE: Record<string, string> = { draft: "drafting", critique: "critiquing the draft", refine: "refining", complete: "finishing" };
 
 
@@ -44,13 +48,24 @@ export function BriefStage({ projectId, scope, onBeats }: { projectId: string; s
 
 function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDraftEditor>; scope: string; onBeats?: () => void }) {
   const p = editor.project!;
-  const { toast, go } = useWorkspace();
+  const { toast } = useWorkspace();
+  const { confirm } = useConfirm();
+  const { inCredits } = useMoney();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   /* Pictures and text files attached to the prompt or the notes go with the writer's next run. */
   const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
   const [tab, setTab] = useState<"write" | "script">("write");
-  const [notes, setNotes] = useState("");
+  /* The notes live on the project draft, so a reload keeps them (lib/production/notes.ts). */
+  const notes = notesOf(p, "draft");
+  const setNotes = (text: string) => editor.change((old) => withNotes(old, "draft", text));
+  /* A start answers after a round trip; a stage closed by then never writes again (its draft's revision is old). */
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  /* Notes leave the box only once the server holds the run they went with, and only while they are still what was sent. */
+  const clearSent = (sent: { kind?: string; fromJobId?: string; instructions?: string } | null | undefined) => (held: boolean) => {
+    if (held && mounted.current && sent?.kind === "write" && sent.fromJobId) editor.change((old) => clearSentNotes(old, "draft", sent));
+  };
   const [viewing, setViewing] = useState<string | null>(null);
   const [full, setFull] = useState<Record<string, DevelopmentJob>>({});
   const [approvedHash, setApprovedHash] = useState<string | null>(null);
@@ -122,19 +137,26 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
     if (sourceCanonical(latest.current, job.kind) !== sourceCanonical(current, job.kind)) throw new Error("The project changed while checking the result. Try again.");
     editor.change((old) => applyDevelopment(old, job, choice));
     if (!(await editor.ensureSaved())) throw new Error("The result was added locally, but is not saved yet.");
-    toast("idea" in choice ? "Idea added to the creative direction" : "Scene breakdown added to the Rig");
+    if ("idea" in choice) { toast("Idea added to the creative direction"); return; }
+    announceDraftWritten(current.id);
+    confirm(CONFIRM.breakdownToRig());
   }
   async function buildScenes(scenes: ScriptScene[]) {
     try {
       const nodes = buildScreenplayNodes(latest.current, scenes);
       editor.change((old) => ({ ...old, nodes: [...old.nodes, ...nodes] }));
       if (!(await editor.ensureSaved())) throw new Error("The scene nodes were added locally, but are not saved yet.");
-      toast(`${nodes.length} scene nodes added to Rig`);
-      go("particl", "rig");
+      announceDraftWritten(latest.current.id);
+      confirm(CONFIRM.breakdownToRig(nodes.length), { go: true });
     } catch (error) { toast(error instanceof Error ? error.message : "Could not build these scenes."); }
   }
 
-  const quoteLine = (q: NonNullable<typeof quote>) => pricedAgentText(`${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${q.value.estimateCredits.toLocaleString()} credits`, q.value, true);
+  /* Every figure in the one unit this workspace pays in (./agent-price). */
+  const price = (q: NonNullable<typeof quote>) => agentPrice(q.value, inCredits);
+  const quoteLine = (q: NonNullable<typeof quote>) => `${q.value.calls} agent steps — draft, critique, refine · ${thinkingModelName(q.input.model)} · up to ${price(q)}`;
+  /* The newest draft is a redraft that could not finish: said beside the notes, which it offers back. */
+  const failedRedraft = failed && shown ? failed : null;
+  const notesAgain = failedRedraft?.source === "draft" ? notesBack(notes, failedRedraft.instructions) : null;
 
   return (
     <div className="pd-stage gx-enter" data-testid="brief-stage">
@@ -146,7 +168,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
       {runs.pending ? (
         <div className="gx-gen-card pd-recover" role="alert" data-testid="agent-recover">
           <p className="gx-hint">An earlier {runs.pendingInput?.kind === "write" ? "script" : "agent"} request was sent but not confirmed. Recovering it re-reads that exact request; it is never sent twice.</p>
-          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => void runs.start()}>{runs.busy || "Recover the request"}</button>
+          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => { const sent = runs.pendingInput; void runs.start().then(clearSent(sent)); }}>{runs.busy || "Recover the request"}</button>
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
@@ -185,7 +207,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             <div className="gx-gen-enhance">
               {writeQuote ? (
                 <>
-                  <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} onClick={() => void runs.start()} data-testid="brief-write">{runs.busy || pricedAgentText(`Write the script · up to ${writeQuote.value.estimateCredits.toLocaleString()} credits`, writeQuote.value)}</button>
+                  <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(writeBlocked)} onClick={() => void runs.start()} data-testid="brief-write">{runs.busy || `Write the script · up to ${price(writeQuote)}`}</button>
                   <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                   <span className="gx-hint" data-testid="brief-quote">{quoteLine(writeQuote)}</span>
                 </>
@@ -201,7 +223,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
             <section className="gx-gen-card pd-progress" role="status" aria-label="The agent is writing" data-testid="brief-progress">
               <span className="gx-eyebrow" data-functional-label="">{agentLabel(agentFamilyOf(active.model) ?? "claude")} is {STAGE[active.currentStage] ?? "writing"}</span>
               <div className="pd-meter" aria-hidden="true"><span style={{ width: `${Math.round(((active.completedSteps + 0.5) / Math.max(1, active.totalSteps)) * 100)}%` }} /></div>
-              <span className="gx-hint">Step {Math.min(active.completedSteps + 1, active.totalSteps)} of {active.totalSteps} · {thinkingModelName(active.model)} · reserved up to {active.estimateCredits.toLocaleString()} credits</span>
+              <span className="gx-hint">Step {Math.min(active.completedSteps + 1, active.totalSteps)} of {active.totalSteps} · {thinkingModelName(active.model)} · {agentReserved(active, inCredits)}</span>
             </section>
           ) : failed && !shown ? <p className="gx-gen-error" role="alert" data-testid="brief-failed">{failed.error ?? "The agent could not finish this script."}</p> : null}
 
@@ -225,7 +247,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                   <ul>{shown.result.script.notes.map((n, i) => <li key={`n${i}`}>{n}</li>)}{shown.result.assumptions.map((n, i) => <li key={`a${i}`} className="pd-assume">Assumed: {n}</li>)}</ul>
                 </div>
               ) : null}
-              <p className="gx-hint">{thinkingModelName(shown.model)} · {shown.credits != null ? `${shown.credits.toLocaleString()} credits` : "settling"}{shown.instructions ? ` · redrafted from: “${shown.instructions.slice(0, 120)}${shown.instructions.length > 120 ? "…" : ""}”` : ""}</p>
+              <p className="gx-hint">{thinkingModelName(shown.model)} · {agentCharged(shown, inCredits) ?? "settling"}{shown.instructions ? ` · redrafted from: “${shown.instructions.slice(0, 120)}${shown.instructions.length > 120 ? "…" : ""}”` : ""}</p>
 
               <div className="gx-gen-enhance">
                 {approved && approval?.jobId === shown.id ? (
@@ -242,10 +264,16 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
                 <span className="gx-eyebrow" data-functional-label="">Not there yet? Notes for the next draft</span>
                 <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="brief-notes-attach"><textarea className="gx-textarea pd-small" maxLength={NOTES_LIMIT} value={notes} placeholder="What should change — a scene, a character’s voice, the ending, the length…" onChange={(e) => setNotes(e.target.value)} data-testid="brief-notes" /></PromptAttach>
               </label>
+              {failedRedraft && !active ? (
+                <div className="pd-failed" role="alert" data-testid="brief-redraft-failed">
+                  <p className="gx-gen-error">{failedRedraft.error ?? "The agent could not finish its last draft."}</p>
+                  {notesAgain ? <button type="button" className="gx-hbtn" onClick={() => setNotes(notesAgain)} data-testid="brief-notes-restore">{notes.trim() ? "Add those notes again" : "Use those notes again"}</button> : null}
+                </div>
+              ) : null}
               <div className="gx-gen-enhance">
                 {redraftQuote ? (
                   <>
-                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then((held) => { if (held) setNotes(""); })} data-testid="brief-redraft">{runs.busy || pricedAgentText(`Redraft · up to ${redraftQuote.value.estimateCredits.toLocaleString()} credits`, redraftQuote.value)}</button>
+                    <button type="button" className="gx-primary" disabled={Boolean(runs.busy) || Boolean(redraftBlocked)} onClick={() => void runs.start().then(clearSent(redraftQuote.input))} data-testid="brief-redraft">{runs.busy || `Redraft · up to ${price(redraftQuote)}`}</button>
                     <button type="button" className="gx-hbtn" onClick={runs.clearQuote}>Change</button>
                     <span className="gx-hint" data-testid="brief-redraft-quote">{quoteLine(redraftQuote)}</span>
                   </>
@@ -278,7 +306,7 @@ function BriefBody({ editor, scope, onBeats }: { editor: ReturnType<typeof useDr
           </div></div>
         </div>
       )}
-      <p className="gx-hint pd-save" role="status" data-testid="brief-save">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status" data-testid="brief-save">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

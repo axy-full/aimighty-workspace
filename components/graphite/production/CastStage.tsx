@@ -8,12 +8,14 @@ import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
+import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, mergeAgentCast, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
 import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
 import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
+import { CONFIRM } from "@/lib/shell/confirmations";
 import { useShell } from "@/lib/shell/state";
+import { useConfirm } from "@/lib/shell/use-confirm";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
@@ -55,6 +57,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const p = editor.project!;
   const shell = useShell();
   const { toast } = useWorkspace();
+  const { confirm } = useConfirm();
   const scoped = useScopedFetch(scope);
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
@@ -107,13 +110,11 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     if (!done?.result?.cast || cast.agentJobId === done.id || taken.current.has(done.id)) return;
     taken.current.add(done.id);
     const proposals = done.result.cast;
-    setCast((c) => {
-      const names = new Set(c.entries.map((e) => e.name.trim().toLowerCase()));
-      const fresh = proposals.filter((e) => !names.has(e.name.trim().toLowerCase())).map((e) => newEntry(e.kind, e.name, e.description, e.prompt, { model: e.model, category: e.category }));
-      return { ...c, entries: [...c.entries, ...fresh].slice(0, CAST_LIMITS.entries), agentJobId: done.id };
-    });
-    void editor.ensureSaved().then(() => toast(`The agent cast ${proposals.length} characters and elements`));
-  }, [castRuns, cast.agentJobId, setCast, editor, toast]);
+    /* The confirmation counts what was added, not what was proposed. */
+    let counts = { added: 0, known: 0, overLimit: 0 };
+    setCast((c) => { const merged = mergeAgentCast(c, proposals, done.id); counts = merged; return merged.cast; });
+    void editor.ensureSaved().then(() => confirm(CONFIRM.castTaken(counts)));
+  }, [castRuns, cast.agentJobId, setCast, editor, confirm]);
 
   /* ── Builds in flight: followed until the account returns the original, then filed as Cast or Elements. ── */
   const followKey = cast.entries.filter((e) => e.job?.status === "submitted").map((e) => `${e.id}:${e.job!.id}`).join(",");
@@ -139,7 +140,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
             const next: CastEntry = { ...e, job: undefined, takes: [{ genId: original.generationId, at: new Date().toISOString() }, ...e.takes].slice(0, CAST_LIMITS.takes), selected: original.generationId };
             return { ...old, assets: old.assets.some((a) => a.id === asset.id) || old.assets.length >= PROJECT_LIMITS.assets ? old.assets : [...old.assets, asset], production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
           });
-          void editor.ensureSaved().then(() => { void refreshProjectLibrary(scope, latest.current.id); toast(`${entry.name || "The build"} is in the library as ${entry.kind === "character" ? "Cast" : "Elements"}`); });
+          void editor.ensureSaved().then(() => { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.castBuilt(entry.name, entry.kind)); });
         } catch { /* read again next tick */ }
       }
       if (alive) timer = setTimeout(() => void tick(), wait * 1000);
@@ -297,8 +298,8 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <button type="button" className="gx-hbtn" onClick={() => setCast((c) => ({ ...c, entries: [...c.entries, newEntry("element")].slice(0, CAST_LIMITS.entries) }))} data-testid="cast-add-element">+ Element</button>
         </div>
         {activeCast ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeCast.model) ?? "claude")} is casting · step {Math.min(activeCast.completedSteps + 1, activeCast.totalSteps)} of {activeCast.totalSteps}</p> : null}
-        <AgentAction id="cast-agent" secondary estimateLabel="Have the agent cast the film" startLabel={(c) => `Cast it · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-          describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+        <AgentAction id="cast-agent" secondary estimateLabel="Have the agent cast the film" startLabel={(price) => `Cast it · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+          describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
           onEstimate={() => void runs.estimate({ kind: "cast", model: agentModel!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       </section>
 
@@ -419,7 +420,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
       </section>
 
       <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

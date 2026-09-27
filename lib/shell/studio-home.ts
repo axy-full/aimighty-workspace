@@ -5,6 +5,7 @@
  * never from sample data.
  */
 import type { Project } from "@/lib/workbench/studio";
+import type { ProjectSummary } from "@/lib/workspace/data";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { shellSuite, type ShellPage } from "./ia";
 
@@ -27,8 +28,10 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
   const rendered = project?.shots.filter((s) => Boolean(s.assetId)).length ?? 0;
   const assets = project?.assets ?? [];
   const frames = assets.filter((a) => /board|frame/i.test(String(a.category ?? ""))).length;
-  const cast = assets.filter((a) => a.category === "Character").length;
-  const elements = assets.filter((a) => a.category === "Element").length;
+  /* The Cast & Elements stage's own entries count too (a starter production's cast has no pictures yet). */
+  const entries = project?.production?.cast?.entries ?? [];
+  const cast = Math.max(assets.filter((a) => a.category === "Character").length, entries.filter((e) => e.kind === "character").length);
+  const elements = Math.max(assets.filter((a) => a.category === "Element").length, entries.filter((e) => e.kind === "element").length);
   const places = project?.production?.environment?.entries ?? [];
   const plated = places.filter((e) => e.selected).length;
   const clips = project?.audioClips?.length ?? 0;
@@ -99,4 +102,46 @@ export function upNext(project: Project | null): { id: string; index: number; na
 /** Newest generated takes first, at most six, for the row. */
 export function recentTakes(items: readonly LibraryEntry[], limit = 6): LibraryEntry[] {
   return items.filter((e) => e.take.kind === "GEN").slice(0, limit);
+}
+
+/** A project with nothing in it yet: its next step is the brief. */
+export function startsEmpty(project: Project | null): boolean {
+  return Boolean(project) && !project!.brief?.trim() && !project!.script?.trim() && !project!.nodes.length && !project!.shots.length;
+}
+
+/** The open project's takes still generating, newest first: the Studio home's Running list. */
+export function runningTakes(items: readonly LibraryEntry[]): LibraryEntry[] {
+  return items.filter((e) => e.take.kind === "GEN" && e.take.status === "rendering");
+}
+
+/**
+ * Studio's first run (components/graphite/FirstRun): the four stages a
+ * production moves through, in order, each a tap into its page.
+ */
+export const FIRST_RUN_STEPS: { id: "brief" | "beats" | "boards" | "takes"; label: string; line: string }[] = [
+  { id: "brief", label: "Brief", line: "Write the idea and the script" },
+  { id: "beats", label: "Beats", line: "Split it into scenes and shots" },
+  { id: "boards", label: "Boards", line: "Frame every shot" },
+  { id: "takes", label: "Takes", line: "Generate, then approve" },
+];
+
+/** When a project was last saved, as a time: the list route sends a number; older rows and fixtures an ISO date. */
+export function savedAt(project: Pick<ProjectSummary, "updatedAt">): number | null {
+  const value = project.updatedAt as unknown;
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
+  if (typeof value !== "string" || !value) return null;
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return n;
+  const t = Date.parse(value);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** The projects to offer beside the open one: most recently saved first, never the open one, at most `limit`. */
+export function recentProjects(projects: readonly ProjectSummary[], openId: string | null, limit = 4): ProjectSummary[] {
+  return projects
+    .filter((p) => p.id !== openId)
+    .map((p, i) => ({ p, i, at: savedAt(p) ?? 0 }))
+    .sort((a, b) => b.at - a.at || a.i - b.i)
+    .slice(0, Math.max(0, limit))
+    .map(({ p }) => p);
 }

@@ -9,7 +9,7 @@ import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import {
-  DEFAULT_ENVIRONMENT, ENVIRONMENT_CATEGORY, ENVIRONMENT_LIMITS, ENVIRONMENT_MODELS, environmentsFromBeats, newEnvironmentEntry, plateAsset, plateRequest,
+  DEFAULT_ENVIRONMENT, ENVIRONMENT_CATEGORY, ENVIRONMENT_LIMITS, ENVIRONMENT_MODELS, environmentsFromBeats, newEnvironmentEntry, plateAsset, plateRequest, sourcedPlaceId,
   type Environment, type EnvironmentEntry, type EnvironmentPlate,
 } from "@/lib/production/environment";
 import { entryAsset } from "@/lib/production/sequence";
@@ -22,6 +22,8 @@ import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { useWorkspace } from "@/lib/workspace/state";
+import { CONFIRM } from "@/lib/shell/confirmations";
+import { useConfirm } from "@/lib/shell/use-confirm";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
 import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
@@ -51,6 +53,7 @@ export function EnvironmentStage({ projectId, scope, items, onBeats }: { project
 function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof useDraftEditor>; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const p = editor.project!;
   const { toast } = useWorkspace();
+  const { confirm } = useConfirm();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   /* Attached to the world: the agent sees it when it builds the world and its places. */
   const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
@@ -81,7 +84,14 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
     let added = 0;
     setEnv((e) => {
       const names = new Set(e.entries.map((x) => x.name.trim().toLowerCase()));
-      const fresh = proposal.entries.filter((x) => !names.has(x.name.trim().toLowerCase())).map((x) => newEnvironmentEntry(x.name, x.notes, x.prompt));
+      /* Each place takes an id from this run and its name: another tab taking the same run makes the same places, which the merge of the two saves holds once. */
+      const ids = new Set(e.entries.map((x) => x.id));
+      const fresh = proposal.entries.filter((x) => {
+        const id = sourcedPlaceId(done.id, x.name);
+        if (names.has(x.name.trim().toLowerCase()) || ids.has(id)) return false;
+        ids.add(id);
+        return true;
+      }).map((x) => newEnvironmentEntry(x.name, x.notes, x.prompt, sourcedPlaceId(done.id, x.name)));
       /* A place the director named but gave no prompt takes the agent's. */
       const filled = e.entries.map((x) => {
         const theirs = proposal.entries.find((y) => y.name.trim().toLowerCase() === x.name.trim().toLowerCase());
@@ -116,7 +126,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
             return { ...old, assets, production: { ...old.production, environment: { ...e, entries: e.entries.map((x) => (x.id === entry.id ? next : x)) } } };
           });
           if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.error || "This plate did not render. Nothing was billed for a failed render." }));
-          void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); toast(`${entry.name || "The plate"} is in the library as Environment`); } });
+          void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.plateBuilt(entry.name)); } });
         } catch { /* the next tick reads it again */ }
       }
     };
@@ -281,8 +291,8 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
         <span className="gx-eyebrow" data-functional-label="">Build it with the agent · optional</span>
         <p className="gx-hint">The agent reads the brief, the script and the beat sheet and writes the world’s rules and every place with a plate prompt. What you wrote is kept; you can also build the world entirely by hand.</p>
         {activeEnv ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeEnv.model) ?? "claude")} is building the world · step {Math.min(activeEnv.completedSteps + 1, activeEnv.totalSteps)} of {activeEnv.totalSteps}</p> : null}
-        <AgentAction id="environment-agent" secondary estimateLabel="Have the agent build the world" startLabel={(c) => `Build the world · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-          describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+        <AgentAction id="environment-agent" secondary estimateLabel="Have the agent build the world" startLabel={(price) => `Build the world · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+          describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
           onEstimate={() => void runs.estimate({ kind: "environment", model: agentModel!.id, effort: agent.effort, ...attach.input })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       </section>
 
@@ -364,7 +374,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
         })}
         {!env.entries.length ? <p className="gx-empty">No places yet. Add them from the beat sheet, let the agent build the world, or add one by hand.</p> : null}
       </section>
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

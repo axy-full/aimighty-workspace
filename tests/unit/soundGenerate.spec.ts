@@ -10,6 +10,7 @@ import {
   parseSoundPlacements,
   placeGeneratedClip,
   readSoundPlacements,
+  soundFormOf,
   soundGenerationBody,
   soundNodeRole,
   soundPlacementsKey,
@@ -170,3 +171,21 @@ test("a generated clip never runs past the cut or its own file", () => {
   expect(() => placeGeneratedClip({ ...project, shots: [] }, placement, asset, 3)).toThrow(/the cut is empty/);
 });
 
+
+/* A request claimed before its reply was lost is shown, not replayed: the form reads back what it asked for. */
+test("a stored request reads back into the form it was built from, and nothing it does not carry", () => {
+  const stored = (body: Record<string, unknown>) => ({ ...body, projectId: "prod-1", shotId: "shot-1", maxCredits: 14, title: "Voice-over · a line" });
+  expect(soundFormOf(stored(soundGenerationBody({ task: "speech", text: "A line.", seconds: 0, instrumental: false, promptInfluence: 0.3, voiceId: "voiceAAA01", modelId: "mock-speech" }))))
+    .toEqual({ text: "A line.", voiceId: "voiceAAA01", modelId: "mock-speech" });
+  expect(soundFormOf(stored(soundGenerationBody({ task: "sound", text: "Rain on tin.", seconds: 7.5, instrumental: false, promptInfluence: 0.6, voiceId: "", modelId: "" }))))
+    .toEqual({ text: "Rain on tin.", seconds: 7.5, promptInfluence: 0.6 });
+  expect(soundFormOf(stored(soundGenerationBody({ task: "music", text: "Slow piano.", seconds: 45, instrumental: true, promptInfluence: 0.3, voiceId: "", modelId: "" }))))
+    .toEqual({ text: "Slow piano.", seconds: 45, instrumental: true });
+  const audio: Asset = { ...asset, id: "interview", generationId: undefined, uploadId: "up-1", name: "Interview.wav" };
+  expect(soundFormOf(stored(voiceChangeBody({ source: audio, voiceId: "voiceAAA01", voiceName: "Avery", removeBackgroundNoise: true }))))
+    .toEqual({ source: { uploadId: "up-1" }, voiceId: "voiceAAA01", removeBackgroundNoise: true });
+  expect(soundFormOf(stored(dubBody({ source: asset, sourceLang: "auto", targetLang: "es", mode: "v1" }))))
+    .toEqual({ source: { generationId: "gen-vo-1" }, sourceLang: "auto", targetLang: "es", mode: "v1" });
+  /* Anything malformed is left out rather than guessed. */
+  expect(soundFormOf({ text: 3, durationSeconds: "long", voiceId: null, lengthMs: -1 })).toEqual({});
+});

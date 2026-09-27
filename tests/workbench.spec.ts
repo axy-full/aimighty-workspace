@@ -22,6 +22,7 @@ async function fixture(page: Page) {
   let atomikRequestId = "";
   let budgetFailure = true;
   const generationRequests: { key: string | undefined; body: Record<string, unknown> }[] = [];
+  const checks: { key: string; endpoint: string; body: string }[] = [];
   const image = await readFile("public/campaign/hero.webp");
   await page.route("**/api/**", async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -38,6 +39,13 @@ async function fixture(page: Page) {
       return json({ project, revision, projects: [{ id: project.id, name: project.name }], productions: [] });
     }
     if (path === "/api/workbench/engines") return json({ models: [{ id: "mock-image", label: "Mock image engine", kind: "image", resolutions: ["1k"], ratios: ["16:9", "9:16", "1:1"], durations: [], maxReferenceImages: 8, maxReferenceVideos: 0 }], credits: 3 });
+    /* Recover asks what became of the request by its key; it reached the server and made generated-browser. */
+    if (path === "/api/generate/check") {
+      expect(request.headers()["x-workbench-scope"]).toBe(`particl-active-${me.workspace.id}-${me.id}`);
+      checks.push(body);
+      generated = true;
+      return json({ state: "landed", id: "generated-browser", status: "succeeded" });
+    }
     if (path === "/api/generate") {
       expect(request.headers()["x-workbench-scope"]).toBe(`particl-active-${me.workspace.id}-${me.id}`);
       generationRequests.push({ key: request.headers()["idempotency-key"], body });
@@ -60,7 +68,7 @@ async function fixture(page: Page) {
     if (path.startsWith("/api/media/") || path.startsWith("/api/workbench/preview/") || path === "/api/uploads/upload-browser") return route.fulfill({ contentType: "image/webp", body: image });
     return json({ error: `Unexpected request in mocked browser workflow: ${path}` }, 501);
   });
-  return { current: () => project, generationRequests };
+  return { current: () => project, generationRequests, checks };
 }
 
 test("studio context actions edit the right node, respect locks, support keyboard and reuse assets", async ({ page }, testInfo) => {
@@ -283,10 +291,11 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await expect(generation.getByLabel("Generation direction", { exact: true })).toBeDisabled();
   await generation.getByRole("button", { name: "Recover submitted take", exact: true }).click();
   await expect(generation).not.toBeVisible();
-  expect(state.generationRequests).toHaveLength(2);
+  expect(state.generationRequests).toHaveLength(1);
   expect(state.generationRequests[0].key).toBeTruthy();
-  expect(state.generationRequests[1].key).toBe(state.generationRequests[0].key);
-  expect(state.generationRequests[1].body).toMatchObject({ projectId: "prod-browser", shotId: "shot-browser" });
+  expect(state.generationRequests[0].body).toMatchObject({ projectId: "prod-browser", shotId: "shot-browser" });
+  /* Recovered by its key, never re-sent. */
+  expect(state.checks.map((c) => ({ ...c, body: JSON.parse(c.body) }))).toEqual([{ key: state.generationRequests[0].key, endpoint: "/api/generate", body: state.generationRequests[0].body }]);
   await expect.poll(() => state.current().assets.some(asset => asset.generationId === "generated-browser")).toBeTruthy();
 
   if (mobile) {

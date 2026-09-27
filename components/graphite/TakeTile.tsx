@@ -34,19 +34,22 @@ function Face({ face, entry, onFail }: { face: EntryFace; entry: LibraryEntry; o
   return <span className="gx-tile-face" data-face={face}><span className="gx-tile-glyph" aria-hidden="true">{glyph}</span></span>;
 }
 
+/* "Preview unavailable" is said under the name; this is its Refresh, named in full for a screen reader and on hover. */
 function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void; name: string }) {
   const [busy, setBusy] = useState(false);
   return (
-    <button type="button" className="gx-tile-refresh" disabled={busy} aria-label={`Refresh the preview of ${name}`} data-testid="take-refresh"
+    <button type="button" className="gx-tile-refresh" disabled={busy} aria-busy={busy} aria-label={`Refresh the preview of ${name}`} title="Refresh" data-testid="take-refresh"
       onClick={async (event) => { event.stopPropagation(); setBusy(true); try { await onRefresh(); } finally { setBusy(false); } }}>
-      {busy ? "Refreshing…" : "Refresh"}
+      <span aria-hidden="true">↻</span>
     </button>
   );
 }
 
-export function TakeTile({ entry, variant, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
+  /** Its place in a batch strip ("take 2", components/graphite/TakeStrip.tsx), said in place of its name: the strip names the batch. */
+  label?: string;
   selected?: boolean;
   /** The Takes grid is a radio group: the take open in the editor below. */
   checked?: boolean;
@@ -67,10 +70,9 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   const [attempt, setAttempt] = useState(0);
   const base = entryFace(entry);
   const face: EntryFace = base === "media" && broken != null && broken === entry.url ? "unavailable" : base;
-  const compact = variant === "library";
-  const chip = takeChip(take, compact);
-  /* A finished take whose copy is missing says so under its name; Refresh sits on the picture. */
-  const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take, compact);
+  const chip = takeChip(take);
+  /* A finished take whose copy is missing says so under its name; Refresh sits in the picture's corner. */
+  const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take);
   const kind = entryKind(entry);
   const refresh = async () => { setBroken(null); setAttempt((n) => n + 1); await onRefresh(); };
   const fail = () => setBroken(entry.url);
@@ -79,7 +81,8 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
       <Face key={attempt} face={face} entry={entry} onFail={fail} />
       {/* The kind, except where Refresh has the picture to itself. */}
       {face !== "unavailable" && (variant !== "grid" || kind === "audio" || kind === "file") ? <span className="gx-badge">{KIND_BADGE[kind]}</span> : null}
-      {fresh ? <span className="gx-badge gx-badge--new">NEW</span> : null}
+      {/* NEW gives its corner to Refresh. */}
+      {fresh && face !== "unavailable" ? <span className="gx-badge gx-badge--new">NEW</span> : null}
       {chip ? <Chip {...chip} /> : null}
     </>
   );
@@ -87,16 +90,19 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
   const why = reason ? <span className="gx-tile-reason" data-tone={tone} title={face === "unavailable" ? "The stored copy did not load. Refresh reads the library again." : take.detail ?? reason} data-testid="take-reason">{reason}</span> : null;
   const refreshButton = face === "unavailable" ? <span className="gx-tile-over"><Refresh onRefresh={refresh} name={take.name} /></span> : null;
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
-  const label = [take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
-  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-take": take.id, "data-testid": "take-tile" };
+  const spoken = [label, take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
+  const shownName = label ?? take.name;
+  /* In a strip the card is one of the strip's list of takes (TakeStrip), under #406's `gen-batch-take`. */
+  const strip = Boolean(label) && variant === "grid";
+  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-take": take.id, "data-testid": strip ? "gen-batch-take" : "take-tile", ...(strip ? { role: "listitem" } : {}) };
 
   if (variant === "take") {
     return (
       <div className="pd-take-cell gx-tile" {...attrs} data-row-start={rowStart || undefined}>
-        <button type="button" role="radio" aria-checked={checked} aria-label={label} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
+        <button type="button" role="radio" aria-checked={checked} aria-label={spoken} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
           {...previewAttrs(entryPreview(entry))} {...dragAttrs(take.id, { name: take.name, kind: entry.media ?? "file" })}>
           <span className="gx-tile-media pd-take-media">{inner}</span>
-          <span className="pd-take-name">{take.name}</span>
+          <span className="pd-take-name">{shownName}</span>
           {why}
         </button>
         {refreshButton}
@@ -104,9 +110,9 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
     );
   }
   return (
-    <div className="gx-asset gx-tile" {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
+    <div className={strip ? "gx-asset gx-tile gx-batch-take" : "gx-asset gx-tile"} {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
       <div className="gx-tile-media">
-        <button type="button" className="gx-asset-thumb" title={take.name} aria-label={label} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
+        <button type="button" className="gx-asset-thumb" title={take.name} aria-label={spoken} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
           onDragStart={(e) => { e.dataTransfer.setData("text/plain", take.id); e.dataTransfer.effectAllowed = dragEffect; }}
           onClick={onOpen}>
           {inner}
@@ -120,7 +126,7 @@ export function TakeTile({ entry, variant, selected = false, checked = false, cu
         </div>
       ) : (
         <>
-          <span className="gx-asset-name">{take.name}</span>
+          <span className="gx-asset-name">{shownName}</span>
           <span className="gx-asset-meta">{take.meta}</span>
         </>
       )}

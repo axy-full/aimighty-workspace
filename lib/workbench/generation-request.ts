@@ -26,6 +26,10 @@ export type GenerationBodyInput = {
   quoteFingerprint?: string;
   firstFrameAssetId?: string;
   soul?: { soulIdentityId: string; soulStrength: number; workbenchProjectId: string };
+  /** The shot setup picked from the camera bank (Gen's film vocabulary), kept on the take so Recreate brings it back. */
+  shotSpec?: Record<string, string> | null;
+  /** One take of a batch (Gen's takes 2–4): admission stores both, and Takes shows the siblings as one strip. */
+  batch?: { id: string; variation: number };
 };
 
 export function generationRequestBody(input: GenerationBodyInput): Record<string, unknown> {
@@ -44,6 +48,8 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(model.marketing ? { marketing: input.marketing, quoteFingerprint: input.quoteFingerprint } : input.quoteFingerprint ? { quoteFingerprint: input.quoteFingerprint } : {}),
     ...(input.kind === "video" ? { firstFrameAssetId: input.firstFrameAssetId ?? "" } : {}),
     ...(model.soulIdentity && input.soul ? input.soul : {}),
+    ...(input.shotSpec && Object.keys(input.shotSpec).length ? { shotSpec: input.shotSpec } : {}),
+    ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
   };
 }
 

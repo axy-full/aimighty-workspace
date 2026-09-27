@@ -21,8 +21,11 @@ const SHOTS: Record<string, string> = Object.fromEntries(SIZES.map((name) => [na
 const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const MIN = 60_000;
 const DRAFT = "ws-jobs";
-/* The collector's pace (lib/shell/connected-collector.ts): 20 s between reads, a few reads for a job the account has not accepted. */
-const NEXT_READ = "00:21";
+/* The collector's pace (lib/shell/connected-collector.ts): 20 s, then 1.5x longer while a job is unchanged, up to a minute,
+   ±20% — so a read is never more than 72 s after the one before; a few reads for a job the account has not accepted. */
+const NEXT_READ = "01:13";
+/* After failed reads it waits a minute, doubling up to five (±20%): six minutes reach the next read. */
+const NEXT_READ_AFTER_FAILURES = "06:01";
 const UNSETTLED_READS = 6;
 const fixture = (): Project => ({ ...newProject("Harbour night shoot"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
 const uuid = (n: number) => `9d2b3c4e-5f60-4a7b-8c9d-${String(n).padStart(12, "0")}`;
@@ -80,6 +83,32 @@ async function mockGeneration(page: Page, jobs: Job[], reply: (id: string) => Re
     return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
   });
   return { posts, listed: () => listed };
+}
+
+/**
+ * The collector reads the jobs one after another and times each one's next read from its own answer, so a clock
+ * jump that lands while a read is still out skips that job at the jump and leaves it a read behind the rest. This
+ * counts the status reads the page has sent and not yet taken in (answered, body read); the returned wait holds a
+ * jump until none is out.
+ */
+async function countStatusReads(page: Page) {
+  await page.addInitScript(() => {
+    let out = 0;
+    Object.defineProperty(window, "__statusReadsOut", { get: () => out });
+    const send = window.fetch.bind(window);
+    /* Queued ahead of the reader's own continuation, which sets the job's next read in that same turn. */
+    const settle = () => queueMicrotask(() => { out -= 1; });
+    window.fetch = async (input, init) => {
+      if (init?.method !== "POST" || !String(input).includes("/api/higgsfield/consumer/generation") || !String(init.body).includes('"action":"status"')) return send(input, init);
+      out += 1;
+      let response: Response;
+      try { response = await send(input, init); } catch (error) { settle(); throw error; }
+      const json = response.json.bind(response);
+      response.json = () => json().finally(settle);
+      return response;
+    };
+  });
+  return () => expect.poll(() => page.evaluate(() => (window as typeof window & { __statusReadsOut: number }).__statusReadsOut)).toBe(0);
 }
 
 async function noOverflow(page: Page) {
@@ -141,6 +170,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   const reads = (job: Job) => asked.filter((id) => id === job.id).length;
   const saves: string[] = [];
   page.on("request", (request) => { if (request.method() === "PUT" && request.url().includes("/api/workbench/projects")) saves.push(request.url()); });
+  const readsTakenIn = await countStatusReads(page);
   await page.clock.install();
   await page.goto("/suites?view=gen");
   await expect(page.getByTestId("gen-view")).toBeVisible();
@@ -157,7 +187,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await expect(page.getByText("Nothing generated in this project yet.")).toHaveCount(0);
   /* A passing problem is said plainly; the card stays and is asked again. */
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Confirming · 3 h");
-  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Too many requests. Try again shortly.");
+  await expect(card("Rain on the quay").getByRole("status")).toHaveText("Could not check this take. Checking again shortly.");
   /* A take from an earlier account connection cannot be checked: said once, never asked again, dismissable. */
   await expect(card("Fog rolling").locator(".gx-asset-meta")).toHaveText("Can't be checked");
   await expect(card("Fog rolling").getByRole("status")).toHaveText("Started on an earlier account connection, so it can't be checked from here.");
@@ -167,8 +197,9 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   /* A job the account has not confirmed is read a few times, then left as it is: said so, with Dismiss. */
   await expect.poll(() => reads(unconfirmed)).toBe(1);
   for (let read = 2; read <= UNSETTLED_READS; read++) {
+    await readsTakenIn();
     await page.clock.fastForward(NEXT_READ);
-    await expect.poll(() => reads(unconfirmed)).toBe(read);
+    await expect.poll(() => [reads(unconfirmed), reads(setAside)]).toEqual([read, read]);
   }
   await expect(card("Gulls").locator(".gx-asset-meta")).toHaveText("Not confirmed · never sent twice");
   await expect(card("Gulls").getByRole("status")).toHaveText("Free its slot in Workspace › Engines.");
@@ -192,7 +223,9 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await shoot(page, info.project.name, "gen-picked-up", "gen-resumed", 1);
 
   /* Well past the asking: the stopped jobs are never read again, and a job only priced never was. */
+  await readsTakenIn();
   await page.clock.fastForward("02:00");
+  await readsTakenIn();
   await page.clock.fastForward(NEXT_READ);
   expect(reads(earlier)).toBe(1);
   expect(reads(unconfirmed)).toBe(UNSETTLED_READS);
@@ -200,6 +233,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   expect(reads(priced)).toBe(0);
 
   /* The account finishes the rendering take: announced once, gone from the cards, in the results. */
+  await readsTakenIn();
   rendered = true;
   library.generations = [generation({ id: GEN, kind: "video", title: "Harbour at dusk", prompt: "A slow dolly push across the wet harbour", projectId: "prod-ws" })];
   await page.clock.fastForward(NEXT_READ);
@@ -207,9 +241,10 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await expect(cards).toHaveCount(4);
   /* The landed take is a result card (components/graphite/TakeTile.tsx), no longer a picked-up one. */
   await expect(page.getByTestId("gen-view").locator(".gx-gen-grid").getByTestId("take-tile")).toHaveCount(1);
+  await readsTakenIn();
   /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
   confirmed = true;
-  await page.clock.fastForward("01:01");
+  await page.clock.fastForward(NEXT_READ_AFTER_FAILURES);
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
   await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
   if (narrow) await expect(jump).toHaveText("4 earlier takes to check");

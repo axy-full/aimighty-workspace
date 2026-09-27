@@ -187,6 +187,8 @@ export const productionSchema = z.object({
       characters: z.array(z.string().max(200)).max(30), locations: z.array(z.string().max(200)).max(15), props: z.array(z.string().max(200)).max(30),
     }).strict()).max(1000),
   }).strict().optional(),
+  /** The director's unsent notes to the writer, per box (lib/production/notes.ts); a run that carries them keeps its own copy. */
+  notes: z.object({ draft: z.string().max(5000).optional(), beats: z.string().max(5000).optional() }).strict().optional(),
   /** An uploaded beat sheet (a Final Draft beat board PDF), as the text the browser read from it; the agent summarises it into beats. */
   beatSource: z.object({
     name: z.string().max(300), sha256: z.string().regex(/^[a-f0-9]{64}$/), pages: z.number().int().min(1).max(400), text: z.string().max(200_000), at: z.string().datetime(),
@@ -323,6 +325,8 @@ export const projectSchema = z.object({
     })
     .optional(),
   developmentApplications: z.array(z.string().max(240)).max(1000).optional(),
+  /* Records made from a shared source that were taken out (lib/workbench/merge.ts noteTakenOut): an editor keeps 1,000, a merge of two may hold both sides'. */
+  takenOut: z.array(z.string().max(100)).max(2000).optional(),
   scriptReviews: z
     .record(
       z.string().max(100),
@@ -338,10 +342,17 @@ export const projectSchema = z.object({
   sharedAssets: z.array(asset).max(PROJECT_LIMITS.assets).optional(),
 });
 
+/** Which editor sent a save and its count of saves sent, so a save whose reply was lost can be checked (lib/workbench/records.ts). */
+export const draftWriteTagSchema = z.object({
+  writer: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
+  seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+}).strict();
+
 export const saveSchema = z
   .object({
     project: projectSchema,
     revision: z.number().int().min(0),
+    write: draftWriteTagSchema.optional(),
   })
   .superRefine(({ project }, context) => {
     try { if (project.astraNative) validateAstraNativeBindings(project.astraNative, [...project.assets, ...(project.sharedAssets ?? [])]); } catch(error) {context.addIssue({code:"custom",path:["project","astraNative"],message:(error as Error).message});}
