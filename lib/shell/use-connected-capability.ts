@@ -22,9 +22,13 @@ const store = createCapabilityStore(async (scope) => {
  * card on the first paint and nothing is read for them. For the owner the
  * connection is read once per scope and shared; `read: false` only listens (a
  * surface whose own reply carries the connection settles it instead, and the
- * shell's chrome needs only `owner`).
+ * shell's chrome needs only `owner`). `scope` is the scope the answer is for
+ * ("" when there is none: signed out, or not the session's scope), and
+ * `revision` moves only when the account is connected, reconnected or
+ * disconnected there — never on an ordinary read — so a surface can tie what
+ * it read to the connection it read it under.
  */
-export function useConnectedCapability(scope?: string | null, options: { read?: boolean } = {}): ConnectedCapability & { revision: number; refresh: () => void } {
+export function useConnectedCapability(scope?: string | null, options: { read?: boolean } = {}): ConnectedCapability & { scope: string; revision: number; refresh: () => void } {
   const session = useSession();
   const owner = session.signedIn && session.owner === true;
   const ownerName = session.workspace?.ownerName ?? null;
@@ -38,7 +42,7 @@ export function useConnectedCapability(scope?: string | null, options: { read?: 
   const missing = !entry;
   useEffect(() => { if (owner && read && key) void store.ensure(key); }, [owner, read, key, missing]);
   const refresh = useCallback(() => { if (owner && key) void store.ensure(key, true); }, [owner, key]);
-  return useMemo(() => ({ ...capabilityOf(owner, entry, ownerName), revision, refresh }), [owner, entry, ownerName, revision, refresh]);
+  return useMemo(() => ({ ...capabilityOf(owner, entry, ownerName), scope: key, revision, refresh }), [owner, entry, ownerName, key, revision, refresh]);
 }
 
 /** Where the scope stands before a surface's own read that carries the connection (Viral's runs, Cast's jobs, Engines). */
