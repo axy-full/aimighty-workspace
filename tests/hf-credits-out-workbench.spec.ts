@@ -141,7 +141,9 @@ async function clearOfTabBar(page: Page, el: Locator, wheel = false) {
   const bar = page.getByTestId("tabbar");
   const barShown = await bar.isVisible();
   const floor = barShown ? (await bar.boundingBox())!.y : viewport.height;
-  if (wheel) {
+  /* The wheel over the visible middle of the pane `el` scrolls in, again on each look: the page may still be growing (a
+     re-read landing) when the first turn of the wheel reaches the end. */
+  const toEnd = async () => {
     const at = await el.evaluate((node, floor) => {
       let pane = node.parentElement;
       while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
@@ -150,12 +152,12 @@ async function clearOfTabBar(page: Page, el: Locator, wheel = false) {
       const top = Math.max(0, box.top), bottom = Math.min(innerHeight, box.bottom, floor);
       return { x: box.left + box.width / 2, y: (top + bottom) / 2 };
     }, floor);
-    if (at) {
-      await page.mouse.move(at.x, at.y);
-      for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 1200);
-    }
-  }
+    if (!at) return;
+    await page.mouse.move(at.x, at.y);
+    for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 1200);
+  };
   await expect.poll(async () => {
+    if (wheel) await toEnd();
     const box = (await el.boundingBox())!;
     return Math.round((box.y + box.height) * 100) / 100 <= Math.round(floor * 100) / 100;
   }, { message: barShown ? "ends above the tab bar" : "ends on screen" }).toBe(true);
