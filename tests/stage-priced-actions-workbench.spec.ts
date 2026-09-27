@@ -89,7 +89,7 @@ test("a changed plate discards the old quote, reads again on request failure, an
     if (failQuote) return route.fulfill({ status: 503, json: { error: "The price is unavailable. Try again." } });
     return route.fulfill({ json: { estimatedCredits: 4, fingerprint: "a".repeat(64) } });
   });
-  await page.goto(`/suites?suite=studio&page=environment&project=${store.current.id}`);
+  await page.goto(`/suites?suite=studio&page=boards&sp=environment&project=${store.current.id}`);
   const place = page.getByTestId("environment-entry").first();
   const action = place.getByTestId("environment-render");
   await expect(action).toHaveText("Render a plate · 4 credits");
@@ -141,7 +141,7 @@ test("the server retains more than five pending renders and the stages resume ev
   await page.getByTestId("frame-render").click();
   await expect.poll(async () => (await read()).production!.boards!.frames.shot.pending?.length).toBe(8);
   expect(submitted).toBe(1);
-  await page.goto(`/suites?suite=studio&page=environment&project=${project.id}`);
+  await page.goto(`/suites?suite=studio&page=boards&sp=environment&project=${project.id}`);
   await expect.poll(() => plates.every((job) => seen.has(job.jobId))).toBe(true);
   await expect(page.getByRole("button", { name: "Remove Harbour", exact: true })).toBeDisabled();
   expect((await read()).production!.boards!.frames.shot.pending!.map((job) => job.jobId)).toEqual([...frames.map((job) => job.jobId), "gen_frame_7"]);
