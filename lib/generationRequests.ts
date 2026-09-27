@@ -7,7 +7,7 @@ import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
@@ -293,7 +293,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const baseline = new Map<string, Baseline>(rows.rows.map((r) => [String(r.id), {
     id: String(r.id), projectId: r.project_id == null ? null : String(r.project_id), shotId: r.shot_id == null ? null : String(r.shot_id),
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
-    credits: billCredits(Number(r.cost), marginKeyOf(String(r.kind), String(r.model))), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
+    credits: billCreditsWith(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
@@ -321,7 +321,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const prior = merged.get(String(r.id));
       merged.set(String(r.id), { id: String(r.id), projectId: r.project_id == null ? prior?.projectId ?? null : String(r.project_id), shotId: r.shot_id == null ? prior?.shotId ?? null : String(r.shot_id),
         tokenId: r.reservation_token == null ? prior?.tokenId ?? null : String(r.reservation_token),
-        cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Math.max(prior?.credits ?? 0, Number(r.billed_credits ?? 0)), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
+        cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Number(r.billed_credits ?? 0), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
       else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
     }
@@ -331,12 +331,12 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + billCredits(cost, marginKeyOf(event.kind, event.model)) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+      if (shotCredits + creditsAtTerms(cost, terms) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
     if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
-      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? billCredits(cost + (baseline.get(event.id)?.cost ?? 0), marginKeyOf(event.kind, event.model)) : cost + (baseline.get(event.id)?.cost ?? 0),
+      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms) : cost + (baseline.get(event.id)?.cost ?? 0),
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }

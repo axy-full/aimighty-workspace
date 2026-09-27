@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { modelLabel } from "@/lib/models";
@@ -28,6 +29,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
+  await syncCreditReceipts();
   /* A workspace billed in credits reads credits: vendor dollars beside them are the margin. */
   const inCredits = creditsApply(requireTenant());
 
