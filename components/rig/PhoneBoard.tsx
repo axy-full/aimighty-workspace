@@ -5,13 +5,16 @@ import type { Board, BoardNode } from "@/lib/boards";
 import type { ElementFull } from "@/lib/elements";
 import type { RateTable } from "@/lib/rateTable";
 import { charged, estimateVideo } from "@/lib/rateTable";
-import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes } from "@/lib/rigApply";
+import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes, takeOf } from "@/lib/rigApply";
+import { useSession } from "@/lib/session";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import { estimateTokens, costUsd, getModel } from "@/lib/models";
 import { Mono } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
-import { KIND_TAG, KIND_WORD } from "@/components/rig/nodes";
+import { KIND_TAG, KIND_WORD, isRunnable } from "@/components/rig/nodes";
 
 /**
  * The Rig on a phone (design/particl-v2-mobile/README.md, board M5):
@@ -122,6 +125,8 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
             /* image · video · edit · upscale · audio · voice · compare */
             const done = Boolean(n.output?.genId);
             const busy = running.has(n.id);
+            /* Edit, upscale, audio, voice and compare have no runner and no price on a board (components/rig/nodes.ts). */
+            const runnable = isRunnable(n.kind);
             const on = selected === n.id;
             const secs = Number(n.settings.seconds ?? 5);
             const filedTo = n.output?.filedTo ? board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot" : null;
@@ -153,10 +158,10 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                     ) : <Mono>{n.state === "stale" ? "Stale · upstream changed" : "Not run"}</Mono>}
                   </div>
                 )}
-                <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy}
-                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo ? "text-ink-body" : "text-ink"}`}>
-                  <span className="truncate">{done ? (filedTo ? `Filed · ${filedTo} v${n.output!.filedTo!.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
-                  <Mono cost>{fmt(done ? n.credits : priceOf(n))}</Mono>
+                <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy || !runnable}
+                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo || !runnable ? "text-ink-body" : "text-ink"}`}>
+                  <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (filedTo ? `Filed · ${filedTo} v${n.output!.filedTo!.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
+                  {runnable && <Mono cost>{fmt(done ? n.credits : priceOf(n))}</Mono>}
                 </button>
                 {!last && dot("bottom")}
               </div>
@@ -190,6 +195,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [subset, setSubset] = useState<Subset | null>(null);
   const [busy, setBusy] = useState(false);
+  const { requestScope } = useSession();
   const picked = pickedId ?? boundId;
   const changing = picked != null && picked !== boundId;
   const vNum = (id: string | null) => { const i = versions.findIndex((v) => v.id === id); return i >= 0 ? `v${i + 1}` : "v—"; };
@@ -217,14 +223,22 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
 
   const apply = async () => {
     if (!src || !port || !picked || !chosen || !engine || busy || cost(chosen.list) == null) return;
+    if (!requestScope) { toast("Reload this page in the intended account and workspace before making changes."); return; }
     setBusy(true);
     try {
       const targets = rerenderable(chosen.list);
-      /* The price on the button is the ceiling: a take that would now cost more is refused, not charged. */
-      const { started, failure } = await sendTakes(targets, (s) => fetch("/api/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: rates.unit === "cr" ? quote(s) : null })),
-      }));
+      /* The price on the button is the ceiling: a take that would now cost more is refused, not charged.
+         Each take goes under a stored Idempotency-Key, one slot per shot: after a lost reply the next
+         Apply asks what became of it first, so a take that landed is followed and never sent twice. */
+      const { started, failure } = await sendTakes(targets, async (s) => {
+        const credits = rates.unit === "cr" ? quote(s) : null;
+        return takeOf(await sendClaimedGeneration({
+          scope: requestScope,
+          storageId: pendingGenerationKey(requestScope, projectId ?? "unfiled", `rig-apply:${s.id}`),
+          body: rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: credits }),
+          credits: credits ?? 0,
+        }));
+      });
       /* The binding changes only once a take is actually rendering with it. */
       if (started.length) onRebind(src.id, port.id, picked, vNum(picked));
       toast(applySummary({ asset: element?.name ?? "Asset", from: vNum(boundId), to: vNum(picked), started: started.length, sent: targets.length, cost: price(started), failure, skipped: chosen.list.length - targets.length }));

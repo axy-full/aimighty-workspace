@@ -107,8 +107,9 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
   const spoken = [label, take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
   const shownName = label ?? take.name;
-  /* In a strip the card is one of the strip's list of takes (TakeStrip). */
-  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": label && variant === "grid" ? "gen-batch-take" : "take-tile", ...(label && variant === "grid" ? { role: "listitem" } : {}) };
+  /* In a strip the card is one of the strip's list of takes (TakeStrip), under #406's `gen-batch-take`. */
+  const strip = Boolean(label) && variant === "grid";
+  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": strip ? "gen-batch-take" : "take-tile", ...(strip ? { role: "listitem" } : {}) };
 
   if (variant === "take") {
     return (
@@ -126,7 +127,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
     );
   }
   return (
-    <div className={label ? "gx-asset gx-tile gx-batch-take" : "gx-asset gx-tile"} {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
+    <div className={strip ? "gx-asset gx-tile gx-batch-take" : "gx-asset gx-tile"} {...attrs} data-selected={selected} data-cut={cut || undefined} data-asset={take.id}>
       <div className="gx-tile-media">
         <button type="button" className="gx-asset-thumb" title={take.name} aria-label={spoken} draggable data-ctx={`asset:${take.id}`} {...previewAttrs(entryPreview(entry))}
           onDragStart={(e) => { e.dataTransfer.setData("text/plain", take.id); e.dataTransfer.effectAllowed = dragEffect; }}

@@ -23,6 +23,7 @@ import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
+import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
 /**
@@ -108,6 +109,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
         {shell.wsTab === "dashboard" ? <ManagementDashboard /> : null}
         {shell.wsTab === "engines" ? <Engines /> : null}
         {shell.wsTab === "security" ? <Security /> : null}
+        {shell.wsTab === "engines" ? <ConnectRow /> : null}
         {shell.wsTab === "general" ? (
           <div className="wsx-card">
             <span className="gx-eyebrow">{name}{session.role ? ` · ${session.role}` : ""}</span>
@@ -115,6 +117,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
             {others.map((w) => (
               <button key={w.id} type="button" className="gx-rowlink" disabled={busy} onClick={() => change("switch", w.id)}><span>Switch to {w.name}</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></button>
             ))}
+            {session.superAdmin ? <a className="gx-rowlink" href="/admin" data-testid="platform-desk"><span>Platform desk</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></a> : null}
             <button type="button" className="gx-rowlink" disabled={busy} onClick={() => change("logout")} data-testid="sign-out"><span>Sign out</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></button>
           </div>
         ) : null}

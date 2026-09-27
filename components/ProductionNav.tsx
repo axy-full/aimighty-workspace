@@ -20,22 +20,28 @@ import { AtomikMark } from "@/components/AtomikMark";
  * So the row is written once and every production page renders it. Adding a
  * surface now means adding a line here, not remembering five files.
  *
- * Cast and Cost deliberately point at /studio and /usage, which are not
- * production-scoped: that is how they already worked, and this change is
- * about finding the Rig, not re-planning the nav.
+ * Cost deliberately points at /usage, which is not production-scoped: that
+ * is how it already worked, and this change is about finding the Rig, not
+ * re-planning the nav.
+ *
+ * Elements (the element library and its version swaps) and Setup (the shot
+ * builder, where the project's Setup is saved) were the same story again:
+ * built, working, and linked from nowhere. Setup reads the project from the
+ * switcher, so its tab points the switcher here first.
  */
-export type ProductionTab = "production" | "shots" | "canvas" | "rig";
+export type ProductionTab = "production" | "shots" | "canvas" | "rig" | "elements";
 
 export default function ProductionNav({ id, on }: { id: string; on: ProductionTab }) {
   /* Shots is the v2 grid (design/particl-v2 §7), which lives under the
      project's production; the overview here is the cap and the numbers. */
-  const { projects } = useProject();
+  const { projects, setSelection } = useProject();
   const productionId = projects.find((p) => p.id === id)?.productionId ?? null;
   const tabs: [ProductionTab, string, string][] = [
     ["production", "Project", `/projects/${id}`],
     ["shots", "Shots", productionId ? `/productions/${productionId}/${id}/shots` : "/productions"],
     ["canvas", "Canvas", `/projects/${id}/canvas`],
     ["rig", "Rig", `/rig/canvas/new?project=${encodeURIComponent(id)}`],
+    ["elements", "Elements", `/projects/${id}/rig/elements`],
   ];
   return (
     <nav className="subnav" aria-label="Project">
@@ -44,6 +50,7 @@ export default function ProductionNav({ id, on }: { id: string; on: ProductionTa
           ? <span key={key} className="subnav-item is-on" aria-current="page">{label}</span>
           : <Link key={key} href={href} className="subnav-item">{label}</Link>
       )}
+      <Link href="/studio/shot" className="subnav-item" onClick={() => setSelection(id)}>Setup</Link>
       <Link href="/library" className="subnav-item">Library</Link>
       <Link href="/usage" className="subnav-item">Cost</Link>
       <Link href="/atomik/shots" className="subnav-note hdr-mono-link flex items-center gap-2">

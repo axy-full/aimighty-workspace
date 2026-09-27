@@ -123,7 +123,11 @@ export async function withGenerationRequestData(
   if (!inserted.rowsAffected) {
     const rows = await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] });
     const row = rows.rows[0];
-    if (row.fingerprint !== fingerprint) return Response.json({ error: "This Idempotency-Key already names a different request." }, { status: 409 });
+    if (row.fingerprint !== fingerprint) {
+      /* A key set aside (fenceGenerationRequest) answers every request that arrives under it the same way, and admits none. */
+      if (setAside(row.response_json)) return new Response(String(row.response_json), { status: Number(row.response_status), headers: { "Content-Type": "application/json", "Idempotency-Status": "complete", "Idempotency-Replayed": "true" } });
+      return Response.json({ error: "This Idempotency-Key already names a different request." }, { status: 409 });
+    }
     const headers = { "Idempotency-Replayed": "true" };
     if (row.response_json) return new Response(String(row.response_json), { status: Number(row.response_status), headers: { ...headers, "Content-Type": "application/json", "Idempotency-Status": "complete" } });
     if (row.generation_id) {
@@ -178,6 +182,26 @@ export type GenerationRequestCheck =
   | { state: "mismatch" };
 
 const SET_ASIDE = "This request was set aside: it had not reached the server when it was checked. Nothing was charged.";
+const setAside = (json: unknown) => {
+  try { return Boolean(json) && (JSON.parse(String(json)) as { code?: unknown }).code === "set_aside"; } catch { return false; }
+};
+
+/**
+ * Set a key the server has never seen aside for good: its claim is written
+ * complete, with a reply that refuses it, so a request that arrives under it
+ * later is answered with that reply and admits nothing
+ * (withGenerationRequestData). True only when this call wrote it; false when a
+ * claim for the key already existed, whose own record then says what it
+ * became. The person's own claims, in this workspace's database only.
+ */
+export async function fenceGenerationRequest(input: { userId: string; key: string; fingerprint: string }): Promise<boolean> {
+  await generationRequestsReady();
+  const fenced = await db().execute({
+    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+    args: [input.userId, input.key, input.fingerprint, JSON.stringify({ error: SET_ASIDE, code: "set_aside" }), now(), now()],
+  });
+  return fenced.rowsAffected > 0;
+}
 
 /**
  * Did the request sent under this key land? Asked for the person who sent it
@@ -193,12 +217,7 @@ const SET_ASIDE = "This request was set aside: it had not reached the server whe
  */
 export async function checkGenerationRequest(input: { userId: string; key: string; fingerprint: string }): Promise<GenerationRequestCheck> {
   const { userId, key, fingerprint } = input;
-  await generationRequestsReady();
-  const fenced = await db().execute({
-    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
-    args: [userId, key, fingerprint, JSON.stringify({ error: SET_ASIDE, code: "set_aside" }), now(), now()],
-  });
-  if (fenced.rowsAffected) return { state: "absent" };
+  if (await fenceGenerationRequest({ userId, key, fingerprint })) return { state: "absent" };
   const read = async () => (await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] })).rows[0];
   let row = await read();
   if (!row || row.fingerprint !== fingerprint) return { state: "mismatch" };

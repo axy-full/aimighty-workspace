@@ -124,3 +124,6 @@ test("a large balance is written in full, and still clears the header's floors",
   expect(Math.round(title.height * 100) / 100).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 });
+
+/* A route handler still awaiting route.fetch() when a test ends would fail it with "route.fetch: Test ended". */
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });

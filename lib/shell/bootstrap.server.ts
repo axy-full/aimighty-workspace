@@ -6,6 +6,8 @@ import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
 import { runInTenant } from "@/lib/tenant";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
+import { shellEntryRedirect } from "@/lib/signIn";
+import { searchStringOf } from "@/lib/workspace/switchover";
 
 /**
  * What a signed-in shell needs before it renders: the request scope, the
@@ -13,13 +15,13 @@ import { workbenchScopeFor } from "@/lib/workbench/request-scope";
  * /workspace and /suites both start here, so the two surfaces cannot drift in
  * what they know about the workspace, its credits or its rates.
  */
-export async function shellBootstrap(searchParams: Promise<Record<string, string | string[] | undefined>>) {
+export async function shellBootstrap(searchParams: Promise<Record<string, string | string[] | undefined>>, pathname: "/suites" | "/workspace" = "/suites") {
   const ctx = await currentContext();
   if (ctx?.mfaRequired) redirect("/account/security");
-  if (!ctx?.workspace) {
-    const project = (await searchParams).project;
-    redirect("/workbench" + (typeof project === "string" ? "?" + new URLSearchParams({ project }) : ""));
-  }
+  /* A visitor — a teammate whose session lapsed, holding a shared link — signs
+     in and comes back to this exact suite and page. Only an account with no
+     workspace goes to /workbench, and it keeps the whole query too. */
+  if (!ctx?.workspace) redirect(shellEntryRedirect(pathname, searchStringOf(await searchParams), Boolean(ctx)));
   const credits = await creditStateFor(ctx.workspace).catch(() => null);
   const initialAccount = {
     workspace: { id: ctx.workspace.id, name: ctx.workspace.name },

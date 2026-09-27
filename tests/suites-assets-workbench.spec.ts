@@ -87,12 +87,13 @@ test("right-click: every command works or says exactly why not; delete is soft a
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: false } });
 
-  /* Recreate opens Gen with the render's own recipe. */
+  /* Recreate opens Gen with the render's own recipe, and the toast says it is there. */
   await wideTile.click({ button: "right" });
   await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
+  await expect(page.getByTestId("toast")).toHaveText("Wide on the water’s recipe is in Gen.");
   expect(errors).toEqual([]);
 });
 

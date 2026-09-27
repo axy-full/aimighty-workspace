@@ -61,6 +61,7 @@ import {
   type GenerationBatch,
 } from "@/lib/useGenerationBatch";
 import { lockedClaim } from "@/lib/usePaidAction";
+import { settleStoredRequest } from "@/lib/workspace/generate-submit";
 import { useLegacyRecovery } from "@/lib/useRecoverySurface";
 import {
   pendingGenerationKey,
@@ -525,6 +526,17 @@ function ScopedComposer({
   const [instrumentalChoice, setInstrumental] = useState(true);
   const instrumental: boolean =
     recoveredBody?.instrumental ?? instrumentalChoice;
+  /** A stored audio request's own settings, kept in the form once it is let go (it is the person's again). */
+  const keepAudioRequest = (sent: Record<string, unknown> | null) => {
+    if (!sent) return;
+    if (typeof sent.text === "string") setPrompt(sent.text);
+    if (sent.task === "speech" || sent.task === "sound" || sent.task === "music") setTrack(sent.task);
+    if (typeof sent.voiceId === "string") setVoiceId(sent.voiceId);
+    if (typeof sent.modelId === "string") setSpeechModel(sent.modelId);
+    if (typeof sent.lengthMs === "number") setLengthS(sent.lengthMs / 1000);
+    if (typeof sent.durationSeconds === "number") setSfxS(sent.durationSeconds);
+    if (typeof sent.instrumental === "boolean") setInstrumental(sent.instrumental);
+  };
   const sample = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const sModel =
@@ -712,63 +724,98 @@ function ScopedComposer({
     try {
       if (kind === "audio") {
         if (!pendingAudio && !currentQuote) return;
-        const proposed: PendingAudio = pendingAudio ?? {
-          key: crypto.randomUUID(),
-          body: JSON.stringify({
-            ...JSON.parse(audioBody),
-            maxCredits: currentQuote!.estimatedCredits,
-          }),
-          credits: currentQuote!.estimatedCredits,
-          price: currentQuote!.price,
-          unit: currentQuote!.unit,
-        };
-        const submitted = await lockedClaim(recoveryKey, () => {
-          const saved = readPendingGeneration(localStorage, recoveryKey);
-          if (pendingAudio && (!saved || saved.key !== pendingAudio.key))
+        let submitted: PendingAudio | null = null;
+        if (pendingAudio) {
+          /* A request stored earlier whose reply never came is asked about by its key first, never re-sent
+             blind (settleStoredRequest, the Rig's rule): landed, it is followed; never arrived, it is set aside
+             and re-quoted, and goes again, under a new key, only at the price it was approved at. One tab at a time. */
+          const settled = await lockedClaim(recoveryKey, async () => {
+            const saved = readPendingGeneration(localStorage, recoveryKey) as PendingAudio | null;
+            if (!saved || saved.key !== pendingAudio.key)
+              throw new Error(
+                "This audio request has already been recovered. Refresh before starting another.",
+              );
+            const outcome = await settleStoredRequest({
+              scope: requestScope ?? "", key: saved.key, endpoint: "/api/audio", body: saved.body,
+              approved: { price: saved.price ?? saved.credits, unit: saved.unit ?? "cr" },
+            });
+            if (outcome.state === "landed" || outcome.state === "repriced")
+              clearPendingGeneration(localStorage, recoveryKey, saved.key);
+            if (outcome.state !== "resend") return { outcome, again: null };
+            const again: PendingAudio = { ...saved, key: crypto.randomUUID(), endpoint: "/api/audio" };
+            localStorage.setItem(recoveryKey, JSON.stringify(again));
+            return { outcome, again };
+          });
+          notifyComposerStorage();
+          const { outcome } = settled;
+          if (outcome.state === "unknown") throw new Error(outcome.reason);
+          if (outcome.state === "repriced") {
+            /* Never arrived, and priced differently now: the request is the person's again, at its new price. */
+            keepAudioRequest(recoveredBody);
             throw new Error(
-              "This audio request has already been recovered. Refresh before starting another.",
+              `Your last audio request never reached the server, and its price is now ${audioCostLabel(outcome)}. Nothing was sent; generate it again to approve that price.`,
             );
-          if (saved && saved.body !== proposed.body)
-            throw new Error(
-              "Recover the saved audio request before starting another.",
-            );
-          return claimPendingGeneration(localStorage, recoveryKey, proposed);
-        });
+          }
+          submitted = settled.again;
+        } else {
+          const proposed: PendingAudio = {
+            key: crypto.randomUUID(),
+            body: JSON.stringify({
+              ...JSON.parse(audioBody),
+              maxCredits: currentQuote!.estimatedCredits,
+            }),
+            credits: currentQuote!.estimatedCredits,
+            price: currentQuote!.price,
+            unit: currentQuote!.unit,
+            endpoint: "/api/audio",
+          };
+          submitted = await lockedClaim(recoveryKey, () => {
+            const saved = readPendingGeneration(localStorage, recoveryKey);
+            if (saved && saved.body !== proposed.body)
+              throw new Error(
+                "Recover the saved audio request before starting another.",
+              );
+            return claimPendingGeneration(localStorage, recoveryKey, proposed);
+          });
+        }
         notifyComposerStorage();
         setMenu(null);
-        const r = await fetch("/api/audio", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": submitted.key,
-            "X-Workspace-Id": workspace!.id,
-            "X-Actor-Email": email!,
-          },
-          body: submitted.body,
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          if (r.headers.get("Idempotency-Status") === "complete") {
-            await lockedClaim(recoveryKey, () =>
-              clearPendingGeneration(localStorage, recoveryKey, submitted.key),
+        /* Landed: its job is followed, and nothing is sent. */
+        if (submitted) {
+          const r = await fetch("/api/audio", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": submitted.key,
+              "X-Workspace-Id": workspace!.id,
+              "X-Actor-Email": email!,
+            },
+            body: submitted.body,
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            if (r.headers.get("Idempotency-Status") === "complete") {
+              await lockedClaim(recoveryKey, () =>
+                clearPendingGeneration(localStorage, recoveryKey, submitted.key),
+              );
+              notifyComposerStorage();
+            }
+            throw new Error(
+              j.error ??
+                "Audio submission could not be confirmed. Recover asks what became of it; it is never sent twice.",
             );
-            notifyComposerStorage();
           }
-          throw new Error(
-            j.error ??
-              "Audio submission could not be confirmed. Recover it with the same request.",
+          if (typeof j.id !== "string")
+            throw new Error(
+              "Audio submission could not be confirmed. Recover asks what became of it before anything else is sent.",
+            );
+          await lockedClaim(recoveryKey, () =>
+            clearPendingGeneration(localStorage, recoveryKey, submitted.key),
           );
+          notifyComposerStorage();
+          if (Array.isArray(j.notices) && j.notices.length)
+            toast(j.notices.join(" · "));
         }
-        if (typeof j.id !== "string")
-          throw new Error(
-            "Audio submission could not be confirmed. Recover the submitted audio before starting another.",
-          );
-        await lockedClaim(recoveryKey, () =>
-          clearPendingGeneration(localStorage, recoveryKey, submitted.key),
-        );
-        notifyComposerStorage();
-        if (Array.isArray(j.notices) && j.notices.length)
-          toast(j.notices.join(" · "));
       } else {
         const applied: ShotSpec = { ...detected, ...spec };
         const base = {
@@ -927,7 +974,7 @@ function ScopedComposer({
   const recovery =
     kind === "audio"
       ? pendingAudio
-        ? "Your audio request is saved. Recover it to confirm the same submission."
+        ? "Your audio request is unconfirmed. Recover asks the server what became of it; it is never sent twice."
         : null
       : pendingBatch
         ? `${pendingBatch.cursor} of ${pendingBatch.variants.length} takes submitted. ${pendingBatch.refusal ? pendingBatch.refusal.message + " Retry only the remaining takes." : "Recover to confirm the pending take and finish the remaining requests."}`

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
-import { nodeAudioBody, type NodeAudioSetup } from "../workbench/generation-audio";
+import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "../workbench/generation-audio";
 import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media-reference-input";
 import { pendingGenerationKey } from "../workbench/pending-generation";
 import { createSoundNode, findSoundNode } from "../workbench/sound-generate";
@@ -23,8 +23,10 @@ import {
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
 import {
   activeModel,
+  audioSeconds,
   billingWording,
   composerBlock,
+  composerVoices,
   composerButtonLabel,
   composerButtonParts,
   composerReducer,
@@ -326,6 +328,11 @@ export type ComposerHost = {
   wording: string;
   /** The audio setup, for the voice row. */
   audio: NodeAudioSetup | null;
+  /** A speech model's voices (each model its own vendor's, composerVoices), and the one the line is read in: the pick, else the first. */
+  voices: { id: string; name: string }[];
+  voice: { id: string; name: string } | null;
+  /** A sound effect's or music's length as billed: the seconds held to the model's range. */
+  seconds: number;
   capability: ConnectedCapability | null;
   /** The project the composer files into; null until one is open or created. */
   project: Project | null;
@@ -357,6 +364,12 @@ export function useComposer(options: {
    * only where it starts differs.
    */
   initialType?: ComposerType;
+  /**
+   * How the words go out with the composer's `shot` (Gen's film vocabulary, lib/workspace/film-vocabulary.ts
+   * › composeForSend). Handed in by the one composer that has the chips, so the camera bank stays out of
+   * the others; without it the words go as typed.
+   */
+  compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -463,24 +476,27 @@ export function useComposer(options: {
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
+  /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts). */
+  const compose = options.compose;
+  const sent = useMemo(() => (compose ? compose(state.prompt, state.shot, state.type) : { prompt: state.prompt, shotSpec: null }), [compose, state.prompt, state.shot, state.type]);
+
+  /* Sound as it is billed: the length held to the model's range, and the voice a line is read in — the one picked
+     while this model has it, else the model's first (each speech model reads in its own vendor's voices). The picker,
+     the price on the button and the request all read these, so what is shown is what is sent. */
+  const seconds = audioSeconds(model?.audioTask, state.seconds);
+  const voices = useMemo(() => (model?.audioTask === "speech" ? composerVoices(audio, model.id) : []), [audio, model]);
+  const voice = speechVoiceFor(voices, state.voiceId);
+  const voiceId = voice?.id ?? "";
 
   const quoteKey = quoteKeyFor({
     billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
-    references: state.references, prompt: state.prompt.trim(), seconds: state.seconds,
-    instrumental: state.instrumental, voiceId: state.voiceId,
+    references: state.references, prompt: sent.prompt.trim(), seconds,
+    instrumental: state.instrumental, voiceId,
   });
 
   /* ── The live price on the button ───────────────────────────────────── */
   const audioBody = model?.audioTask
-    ? nodeAudioBody({
-        task: model.audioTask,
-        text: state.prompt,
-        /* Music has a ten-second floor in the audio route; sound has none. */
-        seconds: model.audioTask === "music" ? Math.max(10, state.seconds) : state.seconds,
-        instrumental: state.instrumental,
-        voiceId: state.voiceId || audio?.voices[0]?.id || "",
-        modelId: model.id,
-      })
+    ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
   /* The connected quote body, when it can be built at all. */
@@ -490,7 +506,7 @@ export function useComposer(options: {
     /* FINAL_SPEC §3–4: the settings the live catalogue entry declares, never
        invented; `enhance_prompt` only when the schema declares it — true on
        Auto, false for a raw: prompt, which is never rewritten. */
-    const raw = /^\s*raw:/i.test(state.prompt);
+    const raw = /^\s*raw:/i.test(sent.prompt);
     const parameters: Record<string, string | number | boolean> = {
       ...(model.ratios?.length ? { aspect_ratio: settings.ratio } : {}),
       ...(model.durations?.length ? { duration: settings.duration } : {}),
@@ -499,12 +515,12 @@ export function useComposer(options: {
       ...(model.soulId && settings.soulId ? { soul_id: settings.soulId } : {}),
     };
     return {
-      type: state.type, model: model.id, prompt: raw ? state.prompt.replace(/^\s*raw:\s*/i, "").trim() : state.prompt.trim(), parameters,
+      type: state.type, model: model.id, prompt: raw ? sent.prompt.replace(/^\s*raw:\s*/i, "").trim() : sent.prompt.trim(), parameters,
       medias: roles.length
         ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
         : [],
     } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
+  }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
@@ -576,15 +592,16 @@ export function useComposer(options: {
     if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
   }, [scope, buttonTotal]);
   const blocked = composerBlock({
-    state, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
+    state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
       : { loading: engines.loading, error: engines.error },
+    sentPrompt: connectedInput?.prompt,
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -759,9 +776,10 @@ export function useComposer(options: {
             : {
                 endpoint: "/api/generate",
                 input: {
-                  prompt: composer.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
+                  /* Every take of the batch goes in the words as sent: the film vocabulary written in, the setup as data. */
+                  prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
-                  batch: { id: batchId, variation },
+                  batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec,
                 },
               };
           const outcome = await sendWorkspaceBatch({ scope, shown, count, storageId, request });
@@ -941,7 +959,7 @@ export function useComposer(options: {
             : {
                 endpoint: "/api/generate",
                 input: {
-                  prompt: composer.prompt.trim(),
+                  prompt: now.sent.prompt.trim(),
                   kind: model.type === "video" ? "video" : "image",
                   model: { id: model.id },
                   mapping,
@@ -950,6 +968,7 @@ export function useComposer(options: {
                   duration: settings.duration,
                   references,
                   firstFrameAssetId: "",
+                  shotSpec: now.sent.shotSpec,
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null, projectId: project.id }),
@@ -1142,7 +1161,7 @@ export function useComposer(options: {
     buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, capability, project: target, projectNotice, generate, retryEngines, scope,
+    audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, scope,
     batches: batchViews,
     batchJobIds: batches.flatMap((run) => (run.source === "connected" ? run.takes.flatMap((take) => (take.jobId ? [take.jobId] : [])) : [])),
   };

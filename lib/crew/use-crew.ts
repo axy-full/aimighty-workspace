@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useSession } from "@/lib/session";
+import { clearPendingRound, pendingRoundKey, readPendingRound, roundFate, writePendingRound, type PendingRound } from "./pending-round";
 import { DEFAULT_CONTEXT, minutesFile, roundBlock, type CrewContext, type CrewPhase } from "./room";
 import type { CrewMember, CrewSession, CrewSolution, MemberPatch, SessionSummary, StoredMessage } from "./store";
 
@@ -8,18 +10,48 @@ import type { CrewMember, CrewSession, CrewSolution, MemberPatch, SessionSummary
  * The room, in the browser. Everything here is read from or written through
  * /api/crew — the roster, the transcript and the solutions are the server's.
  * The Run round button wears a live quote; pressing it approves exactly that
- * figure (`maxCredits`), and the round arrives as server-sent events.
+ * figure (`maxCredits`) for exactly one round (`round`), and the round
+ * arrives as server-sent events. A round whose answer never came back is
+ * kept (pending-round) and settled from the room before anything else is
+ * sent, so a second press after a lost reply is never a second paid round.
  */
 export type RoomMessage = StoredMessage & { to: string | null };
 export type CrewStatus = { connected: boolean; priced: boolean; model: string };
 type Quote = { key: string; credits: number | null; usd: number | null; reason: string | null };
 
 const STORE = (projectId: string) => `particl-crew-room-${projectId}`;
+/** The server answered this press, or this press sent nothing: not a lost reply. */
+class RoundAnswer extends Error {}
+const LAST_RAN = "Your last round ran; the room has been re-read. Nothing new was sent.";
+const LAST_RUNNING = "Your last round is still running. Nothing new was sent; press Run round again in a moment.";
+const LAST_UNCHECKED = "Your last round could not be checked. Nothing new was sent; press Run round again in a moment.";
+const LAST_NOT_RUN = "Your last round did not run. Nothing was charged for it.";
 const remember = (projectId: string, id: string | null) => { try { if (id) sessionStorage.setItem(STORE(projectId), id); else sessionStorage.removeItem(STORE(projectId)); } catch { /* the room still works for this visit */ } };
 const recall = (projectId: string) => { try { return sessionStorage.getItem(STORE(projectId)); } catch { return null; } };
 
 export function useCrew(projectId: string | null) {
   const scoped = useScopedFetch();
+  const { requestScope } = useSession();
+  /* A round sent whose answer has not come back: in this browser's storage, so it outlives a reload (and in memory when storage is refused). */
+  const unanswered = useRef<PendingRound | null>(null);
+  const pendingRounds = useMemo(() => {
+    const key = (sessionId: string) => pendingRoundKey(requestScope ?? "", sessionId);
+    return {
+      read(sessionId: string): PendingRound | null {
+        let stored: PendingRound | null = null;
+        try { stored = readPendingRound(localStorage, key(sessionId)); } catch { /* storage refused: memory below */ }
+        return stored ?? (unanswered.current?.sessionId === sessionId ? unanswered.current : null);
+      },
+      write(pending: PendingRound) {
+        unanswered.current = pending;
+        try { writePendingRound(localStorage, key(pending.sessionId), pending); } catch { /* kept in memory for this visit */ }
+      },
+      clear(pending: PendingRound) {
+        if (unanswered.current?.sessionId === pending.sessionId && unanswered.current.round === pending.round) unanswered.current = null;
+        try { clearPendingRound(localStorage, key(pending.sessionId), pending.round); } catch { /* nothing stored */ }
+      },
+    };
+  }, [requestScope]);
   const [status, setStatus] = useState<CrewStatus | null>(null);
   const [members, setMembers] = useState<CrewMember[]>([]);
   const [session, setSession] = useState<CrewSession | null>(null);
@@ -42,11 +74,12 @@ export function useCrew(projectId: string | null) {
     return json;
   }, [scoped]);
 
-  const openRoom = useCallback(async (id: string) => {
+  const openRoom = useCallback(async (id: string): Promise<CrewSession> => {
     const room = await call<{ session: CrewSession; members: CrewMember[]; messages: RoomMessage[]; solutions: CrewSolution[] }>(`/api/crew/sessions/${encodeURIComponent(id)}`);
     setSession(room.session); setMembers(room.members); setMessages(room.messages); setSolutions(room.solutions);
     setGoal(room.session.goal); setContext(room.session.context); setNotice(null);
     remember(room.session.projectId, room.session.id);
+    return room.session;
   }, [call]);
 
   const refreshSessions = useCallback(async () => {
@@ -127,10 +160,34 @@ export function useCrew(projectId: string | null) {
     if (approved == null) return null;
     setRunning(true); setNotice(null); setThinking([]);
     let outcome: string | null = null;
+    /* This press's round once it is sent, and whether the server's own answer to it came back. */
+    let sent: PendingRound | null = null;
+    let answered = false;
+    /* What became of an earlier round whose answer never came back, said beside what this press does. */
+    let earlier = "";
     try {
-      const room = await ensureRoom();
-      const response = await scoped(`/api/crew/sessions/${room.id}/rounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxCredits: approved }) });
-      if (!response.ok || !response.body) throw new Error((await response.json().catch(() => null))?.error ?? "The round could not start. Nothing was charged.");
+      let room = await ensureRoom();
+      /* A round sent earlier whose answer never came back is settled first, from the room itself. Nothing is sent until it is known. */
+      const waiting = pendingRounds.read(room.id);
+      if (waiting) {
+        const read = await openRoom(room.id).catch(() => null);
+        const fate = read ? roundFate(waiting, read) : null;
+        if (fate !== "not-run") {
+          if (fate === "ran") pendingRounds.clear(waiting);
+          throw new RoundAnswer(fate === "ran" ? LAST_RAN : fate === "running" ? LAST_RUNNING : LAST_UNCHECKED);
+        }
+        /* It never ran, or stopped unbilled: the route runs one round of that number at most, so this one may go. */
+        pendingRounds.clear(waiting);
+        room = read!;
+        earlier = LAST_NOT_RUN;
+      }
+      sent = { sessionId: room.id, round: room.roundsRun + 1, credits: approved };
+      pendingRounds.write(sent);
+      const response = await scoped(`/api/crew/sessions/${room.id}/rounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxCredits: approved, round: sent.round }) });
+      if (!response.ok || !response.body) {
+        answered = true;
+        throw new RoundAnswer((await response.json().catch(() => null))?.error ?? "The round could not start. Nothing was charged.");
+      }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -140,8 +197,8 @@ export function useCrew(projectId: string | null) {
         else if (event === "message") { const m = data as unknown as RoomMessage; setThinking((t) => t.filter((id) => id !== m.memberId)); setMessages((all) => [...all, m]); }
         else if (event === "failed") setThinking((t) => t.filter((id) => id !== data.memberId));
         else if (event === "solutions") setSolutions((all) => [...all, ...(data as unknown as CrewSolution[])]);
-        else if (event === "done") outcome = data.billed ? `Round ${data.round} complete${data.spendCr == null ? "" : ` · ${Number(data.spendCr).toLocaleString("en-US")} cr settled`}` : String(data.note ?? "The round was not billed.");
-        else if (event === "error") outcome = String(data.error ?? "The round stopped. Nothing was charged.");
+        else if (event === "done") { answered = true; outcome = data.billed ? `Round ${data.round} complete${data.spendCr == null ? "" : ` · ${Number(data.spendCr).toLocaleString("en-US")} cr settled`}` : String(data.note ?? "The round was not billed."); }
+        else if (event === "error") { answered = true; outcome = String(data.error ?? "The round stopped. Nothing was charged."); }
       };
       for (;;) {
         const { value, done } = await reader.read();
@@ -154,24 +211,35 @@ export function useCrew(projectId: string | null) {
           if (event && data) { try { handle(event, JSON.parse(data)); } catch { /* a malformed frame is skipped, the room is re-read below */ } }
         }
       }
+      if (earlier) outcome = outcome ? `${earlier} ${outcome}` : earlier;
       await openRoom(room.id);
       void refreshSessions();
     } catch (error) {
-      /* The stream can drop while the server finishes the round (a deploy
-         cut-over did exactly that on 21 September). The room is the record,
-         so re-read it before saying anything about the round. */
-      const reread = live.current.session ? await openRoom(live.current.session.id).then(() => true).catch(() => false) : false;
-      const message = error instanceof Error ? error.message : "";
-      outcome = reread
-        ? "The connection dropped while the room was talking; the room has been re-read."
-        : /failed to fetch|network|load failed/i.test(message) ? "The connection dropped and the room could not be re-read. Reload to see what the round did." : message || "The round stopped. Nothing was charged.";
+      if (error instanceof RoundAnswer) {
+        /* Answered (or settled from the room): said as it is, over a room read afresh when this press sent one. */
+        outcome = earlier ? `${earlier} ${error.message}` : error.message;
+        if (sent && live.current.session) await openRoom(live.current.session.id).catch(() => {});
+      } else {
+        /* The stream can drop while the server finishes the round (a deploy
+           cut-over did exactly that on 21 September). The room is the record,
+           so re-read it before saying anything about the round; this round stays
+           unanswered until the room says it ran (else the next press asks again). */
+        const read = live.current.session ? await openRoom(live.current.session.id).catch(() => null) : null;
+        if (read && sent && roundFate(sent, read) === "ran") pendingRounds.clear(sent);
+        const reread = Boolean(read);
+        const message = error instanceof Error ? error.message : "";
+        outcome = reread
+          ? "The connection dropped while the room was talking; the room has been re-read."
+          : /failed to fetch|network|load failed/i.test(message) ? "The connection dropped and the room could not be re-read. Reload to see what the round did." : message || "The round stopped. Nothing was charged.";
+      }
       void refreshSessions();
     } finally {
+      if (sent && answered) pendingRounds.clear(sent);
       setRunning(false); setPhase(null); setThinking([]);
     }
     if (outcome) setNotice(outcome);
     return outcome;
-  }, [ensureRoom, scoped, openRoom, refreshSessions]);
+  }, [ensureRoom, scoped, openRoom, refreshSessions, pendingRounds]);
 
   const guard = useCallback(async (work: () => Promise<void>) => {
     try { setNotice(null); await work(); } catch (error) { setNotice(error instanceof Error ? error.message : "Crew could not do that."); }
@@ -182,7 +250,7 @@ export function useCrew(projectId: string | null) {
     setGoal, setContext: (key: keyof CrewContext) => setContext((c) => ({ ...c, [key]: !c[key] })),
     runRound,
     newRoom: () => { if (projectId) remember(projectId, null); setSession(null); setMessages([]); setSolutions([]); setGoal(""); setContext(DEFAULT_CONTEXT); setNotice(null); },
-    reopen: (id: string) => guard(() => openRoom(id)),
+    reopen: (id: string) => guard(async () => { await openRoom(id); }),
     /** Moves the open room to the deployment's engine; the next quote prices it there. */
     moveToCurrentEngine: () => guard(async () => {
       if (!session) return;
@@ -194,9 +262,10 @@ export function useCrew(projectId: string | null) {
     say: (text: string) => guard(async () => { const room = await ensureRoom(); const { message } = await call<{ message: RoomMessage }>(`/api/crew/sessions/${room.id}/notes`, { method: "POST", body: JSON.stringify({ text }) }); setMessages((all) => [...all, message]); }),
     pin: (messageId: string) => guard(async () => { const { solution } = await call<{ solution: CrewSolution }>("/api/crew/solutions", { method: "POST", body: JSON.stringify({ messageId }) }); setSolutions((all) => [...all, solution]); }),
     dropSolution: (id: string) => guard(async () => { await call(`/api/crew/solutions?id=${encodeURIComponent(id)}`, { method: "DELETE" }); setSolutions((all) => all.filter((s) => s.id !== id)); }),
-    routeSolution: async (id: string, to: "brief" | "boards" | "gen"): Promise<{ status: CrewSolution["status"]; prompt?: string } | null> => {
+    /** Where it went: the Rig route also names the draft shot it wrote (`nodeId`, `title`), so the confirmation can open it. */
+    routeSolution: async (id: string, to: "brief" | "boards" | "gen"): Promise<{ status: CrewSolution["status"]; prompt?: string; nodeId?: string; title?: string } | null> => {
       try {
-        const routed = await call<{ status: CrewSolution["status"]; prompt?: string }>(`/api/crew/solutions/${encodeURIComponent(id)}/route`, { method: "POST", body: JSON.stringify({ to }) });
+        const routed = await call<{ status: CrewSolution["status"]; prompt?: string; nodeId?: string; title?: string }>(`/api/crew/solutions/${encodeURIComponent(id)}/route`, { method: "POST", body: JSON.stringify({ to }) });
         setSolutions((all) => all.map((s) => (s.id === id ? { ...s, status: routed.status } : s)));
         return routed;
       } catch (error) { setNotice(error instanceof Error ? error.message : "Crew could not send that."); return null; }

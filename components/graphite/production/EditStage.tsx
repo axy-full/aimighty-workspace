@@ -211,8 +211,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A take of a batch is named by its number too: the strip's siblings share one prompt. */
   const selectedBatch = entry ? entryBatch(entry) : undefined;
   const selectedTake = selectedBatch && typeof selectedBatch.batchId === "string" && isVariation(selectedBatch.variation) ? selectedBatch.variation : null;
-  /* One generation to pick; inside a strip it is named by its take number, the strip carries the prompt. */
-  /* One take in the Generations radio group — the card contract's (TakeTile) — labelled "take N" inside a batch strip. */
+  /* One generation to pick — the card contract's (TakeTile); inside a strip it is named by its take number, the strip carries the prompt. */
   const takeButton = (e: LibraryEntry, label?: string) => (
     <TakeTile key={e.take.id} entry={e} variant="take" label={label} checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={library.refresh} />
   );
