@@ -50,6 +50,7 @@ export const TOOLS: ToolDef[] = [
         ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
         audio: { type: "boolean", description: "Native audio track. Seedance 2.5 only. Default false." },
         seed: { type: "number", description: "Fix the seed to make a shot reproducible." },
+        request_id: { type: "string", description: "Optional: any string unique to this render (a UUID is ideal). If a call is retried with the same request_id after its reply was lost, the render it started is returned instead of starting another. Letters, digits, dots, colons, dashes and underscores; up to 120." },
       },
       required: ["prompt"],
     },
@@ -132,12 +133,13 @@ function describe(g: Gen): string {
 
 /** Calls the workspace's own API as the caller, so scopes and caps still apply. */
 export function makeCaller(origin: string, authorization: string) {
-  return async function call(pathname: string, init: { method?: string; body?: unknown } = {}) {
+  return async function call(pathname: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
     const res = await fetch(`${origin}${pathname}`, {
       method: init.method ?? "GET",
       headers: {
         Authorization: authorization,
         ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
       },
       body: init.body ? JSON.stringify(init.body) : undefined,
       cache: "no-store",
@@ -193,6 +195,10 @@ export async function runTool(
       // offer; a tool must not then report the value it asked for as if it
       // had been used. Refuse up front, naming the options.
       const def = getModel(model);
+      const requestId = args.request_id;
+      if (requestId !== undefined && (typeof requestId !== "string" || !/^[A-Za-z0-9._:-]{1,120}$/.test(requestId)))
+        throw new Error("request_id must be 1–120 letters, digits, dots, colons, dashes or underscores.");
+      const key = requestId === undefined ? null : `mcp-render:${requestId}`;
       const duration = Number(args.duration ?? 5);
       const resolution = String(args.resolution ?? "1080p");
       const ratio = String(args.ratio ?? "16:9");
@@ -205,24 +211,33 @@ export async function runTool(
       if (!def.ratios.includes(ratio)) {
         throw new Error(`Aspect ratio must be one of ${def.ratios.join(", ")} for ${def.label}.`);
       }
+      const body = {
+        prompt: args.prompt,
+        model,
+        ratio,
+        resolution,
+        duration,
+        generateAudio: Boolean(args.audio),
+        seed: args.seed ?? null,
+        watermark: false,
+        projectId: project?.id ?? null,
+      };
+      /* Priced first, and sent with that price as its ceiling: it can never bill more than it reports.
+         request_id, when given, is its Idempotency-Key, so a retried call gets back the render it started. */
+      const quote = (await call("/api/generate/quote", { method: "POST", body })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown; fingerprint?: unknown };
+      const credits = quote.estimatedCredits, price = quote.price;
+      if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price))
+        throw new Error("This render could not be priced, so nothing was started.");
       const out = (await call("/api/generate", {
         method: "POST",
-        body: {
-          prompt: args.prompt,
-          model,
-          ratio,
-          resolution,
-          duration,
-          generateAudio: Boolean(args.audio),
-          seed: args.seed ?? null,
-          watermark: false,
-          projectId: project?.id ?? null,
-        },
+        body: { ...body, maxCredits: credits, ...(typeof quote.fingerprint === "string" ? { quoteFingerprint: quote.fingerprint } : {}) },
+        headers: key ? { "Idempotency-Key": key } : undefined,
       })) as { id: string };
       return (
         `Rendering started.\n\nid: ${out.id}\nproject: ${project?.name ?? "Unfiled"}\n` +
         `model: ${displayModelName(model)} · ` +
-        `${resolution} · ${ratio} · ${duration}s\n\n` +
+        `${resolution} · ${ratio} · ${duration}s\n` +
+        `price: ${quote.unit === "usd" ? `$${price.toFixed(2)}` : `${credits} cr`}\n\n` +
         `Call wait_for_render with this id to collect it.`
       );
     }
