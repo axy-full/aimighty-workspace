@@ -93,7 +93,7 @@ export default function AdminPage() {
         <div className="page-head">
           <div>
             <h1 className="page-h1">Platform</h1>
-            <p className="page-sub">Who may sign up, who has asked, and every workspace on this deployment. Each workspace has its own database, its own keys and its own owner.</p>
+            <p className="page-sub">Who may sign up, who has asked, and every workspace on this deployment. Each organisation has its own database, credit balance and owner. Engines use shared platform credentials.</p>
           </div>
         </div>
         {!data ? <Waiting label="Reading the platform" /> : (
@@ -152,7 +152,7 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys: ${data.welcomeCredits ?? "—"} credits from an approved invitation, 0 from self-serve sign-up (one credit is ${usd(data.creditUsd, 2)} of vendor cost). Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits.</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
@@ -181,8 +181,6 @@ function CreditsCell({ w, onChanged }: {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
-  if (w.legacy) return <span className="mono-s">THE PLATFORM</span>;
-  if (!w.platformKeys) return <span className="mono-s">ITS OWN</span>;
   // Nobody can open a deleted workspace, so its balance is read, not topped up.
   if (w.deletedAt) return <span className="mono-s">PLATFORM · {w.credits ? `${creditsNumber(w.credits.balance)} CR` : "—"}</span>;
   async function grant() {

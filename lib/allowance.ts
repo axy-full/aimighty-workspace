@@ -29,7 +29,7 @@ export { vendorKeyNameFor, renderKeyNameFor } from "./platformSpend";
 /** The workspace's monthly cap on the platform's keys, or null when none applies. */
 export function allowanceUsd(): number | null {
   const ws = currentTenant()?.workspace;
-  if (!ws || ws.legacy || !ws.usesPlatformKeys) return null;
+  if (!ws) return null;
   return ws.allowanceUsd ?? defaultAllowanceUsd();
 }
 
@@ -62,8 +62,7 @@ export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?:
   if (spent >= cap || spent + Math.max(0, estUsd) > cap) {
     return {
       ok: false, status: 429,
-      error: `This workspace has used $${spent.toFixed(2)} of its $${cap.toFixed(2)} monthly cap on the platform's engines. ` +
-             `Ask management to raise it.`,
+      error: "This workspace has reached its engine spending limit. Ask management to raise it.",
     };
   }
   return { ok: true };

@@ -6,21 +6,9 @@ import { billingStateFor } from "./billingLedger";
 
 export type { CreditState } from "./creditTerms";
 
-/**
- * A workspace's credit balance.
- *
- * Granted minus used. Grants are rows in the platform record (the welcome
- * grant at sign-up, whatever management adds on /admin); used is the
- * platform-paid spend read off the workspace's own tables, converted at
- * the credit terms. Nothing is written when a render finishes — the
- * balance is a sum, so it cannot drift from the ledger it is a view of.
- *
- * Credits apply to a workspace on the platform's keys. The studio's own
- * workspace and any workspace on its own keys spend dollars with their
- * vendors and have no balance here.
- */
+/** Every organisation has its own credit ledger, including the original workspace. */
 export function creditsApply(ws: TenantWorkspace | null | undefined): boolean {
-  return Boolean(ws && !ws.legacy && ws.usesPlatformKeys);
+  return Boolean(ws);
 }
 
 export async function creditStateFor(ws: TenantWorkspace): Promise<CreditState | null> {

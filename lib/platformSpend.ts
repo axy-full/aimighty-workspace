@@ -20,17 +20,15 @@ const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
 };
 
 /** Does this vendor's bill land on the platform for the current workspace? */
-export function paidByPlatform(name: VendorKeyName): boolean {
-  const ws = currentTenant()?.workspace;
-  if (!ws || ws.legacy || !ws.usesPlatformKeys) return false;
-  return !ws.keys[name];
+export function paidByPlatform(_name: VendorKeyName): boolean {
+  return Boolean(currentTenant()?.workspace);
 }
 
 /** Native compute has no workspace BYOK credentials. Disabled platform funding fails admission. */
 export function paidByPlatformEngine(engine: string): boolean {
   if (engine === "vercel-sandbox") {
     const ws = currentTenant()?.workspace;
-    return Boolean(ws && !ws.legacy && ws.usesPlatformKeys);
+    return Boolean(ws);
   }
   return paidByPlatform(vendorKeyNameFor(engine));
 }

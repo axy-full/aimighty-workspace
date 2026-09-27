@@ -276,7 +276,7 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     dbUrl: legacy ? (process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db") : String(r.db_url),
     dbToken: legacy ? (process.env.TURSO_AUTH_TOKEN ?? null) : dbToken,
     keys,
-    usesPlatformKeys: Number(r.uses_platform_keys ?? 0) === 1,
+    usesPlatformKeys: true,
     allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd),
     gatewayKeyId: r.gateway_key_id ? String(r.gateway_key_id) : null,
     ownerId: String(r.owner_id), createdAt: Number(r.created_at ?? 0),
@@ -503,7 +503,7 @@ export const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-"
  * within its allowance, rather than open onto five empty key fields.
  */
 export function platformKeysByDefault(): boolean {
-  return process.env.PLATFORM_KEYS_FOR_NEW_WORKSPACES !== "0";
+  return true;
 }
 
 /** Existing callers use the same durable, zero-grant customer provisioning path. */
@@ -517,9 +517,10 @@ export async function createWorkspace(input: { name: string; owner: { id: string
 
 /** Whose keys a workspace's engines run on. */
 export async function setWorkspaceMode(id: string, usesPlatformKeys: boolean, actorId: string | null = null): Promise<void> {
+  if (!usesPlatformKeys) throw new Error("All workspaces use Particl credits and managed engines.");
   await platformReady();
   await platformDb().batch([{
-    sql: `UPDATE workspaces SET uses_platform_keys = ?, updated_at = ? WHERE id = ? AND legacy = 0`,
+    sql: `UPDATE workspaces SET uses_platform_keys = ?, updated_at = ? WHERE id = ?`,
     args: [usesPlatformKeys ? 1 : 0, now(), id],
   }, securityAuditStatement({ workspaceId:id, actorId, action:"workspace.mode_changed", targetType:"workspace", targetId:id, details:{mode:usesPlatformKeys?"platform":"own"}}, true)], "write");
 }
@@ -527,7 +528,7 @@ export async function setWorkspaceMode(id: string, usesPlatformKeys: boolean, ac
 /** Dollars a month on the platform's keys; null returns it to the deployment's default. */
 export async function setWorkspaceAllowance(id: string, usd: number | null): Promise<void> {
   await platformDb().execute({
-    sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ? AND legacy = 0`,
+    sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ?`,
     args: [usd, now(), id],
   });
 }
