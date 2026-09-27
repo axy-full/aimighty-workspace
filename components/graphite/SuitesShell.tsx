@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
+import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useAssetLink, useLinkView } from "@/lib/shell/use-asset-link";
+import { AssetLinkCard } from "./AssetLinkCard";
 import { tileAspect, uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
 import { FILES_EVENT, type FilesDropDetail } from "@/components/DragLayer";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -75,7 +78,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const { state, dispatch, selectProject, toast } = ws;
   const session = useSession();
   const account = useAccount(initialAccount);
-  const data = useProjects(scope, state.projectId, (id) => selectProject(id, { replace: true }));
+  /* A link to a take holds project resolution until it can open in a project of this person's (lib/shell/use-asset-link.ts). */
+  const scopedFetch = useScopedFetch();
+  const linkControl = useAssetLink({ scope, workspace: session.workspace, workspaces: session.workspaces, projectId: state.projectId, selectProject, fetch: scopedFetch });
+  const data = useProjects(scope, state.projectId, (id) => selectProject(id, { replace: true }), linkControl.hold);
+  const linkView = useLinkView(linkControl, data);
+  const linkCard = linkView.phase === "none" ? null : <AssetLinkCard link={linkControl} view={linkView} />;
   const project = data.project;
   const library = useProjectLibrary(scope, project?.id ?? null);
   const items = library.items;
@@ -275,7 +283,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     if (held) prefillAgentRequest(requestScope, "atomik", openProjectId, held);
   }, [openProjectId, requestScope]);
   /* One way to open, start and explore a project, whichever surface asks: the switcher, a stage's first-run card, the Studio home. */
-  const pickProject = (id: string) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
+  /* Choosing a project leaves a link that has not opened yet: that project, not the link's, is what opens. */
+  const pickProject = (id: string) => { if (linkControl.link) linkControl.dismiss(); try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
   const createProject = async (name: string) => {
     const created = newProject(name.slice(0, PROJECT_NAME_MAX));
     const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
@@ -355,7 +364,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
               {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
                   "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
               {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
-              {shell.view === "gen" ? (
+              {linkCard ? (
+                <div className="gx-stage gx-scroll" data-testid="content">{linkCard}</div>
+              ) : shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
                     <h1 className="gx-h1" data-testid="page-title">Generate</h1>
@@ -434,7 +445,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             {showInspector ? (
               <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
                 fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
-                <Inspector scope={scope} project={project} overlay={overlay} />
+                <Inspector scope={scope} project={project} overlay={overlay} held={Boolean(linkCard)} />
               </Boundary>
             ) : null}
           </div>
