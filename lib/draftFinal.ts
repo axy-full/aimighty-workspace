@@ -65,8 +65,7 @@ export function draftExpiry(params: Params): number | null {
 /**
  * Whether a final that already exists still holds its draft. Only a final
  * that ended without rendering AND without a charge lets the draft go again
- * (the vendor bills neither a failed nor a moderated task, and a request it
- * refused was never sent). An outcome still being reconciled keeps its
+ * according to the stored outcome. An outcome still being reconciled keeps its
  * charge, so it keeps the draft too: its task may exist at the vendor.
  */
 export function finalHoldsDraft(final: { status: string; charged: boolean } | null): boolean {
@@ -92,6 +91,7 @@ export type DraftState =
   | { state: "expired"; expiresAt: number }
   | { state: "ready"; expiresAt: number; retry: string | null }
   | { state: "finalising"; finalId: string }
+  | { state: "finalFailed"; finalId: string }
   | { state: "final"; finalId: string };
 
 export function draftState(
@@ -100,9 +100,15 @@ export function draftState(
   now = Date.now(),
 ): DraftState {
   if (draft.status === "failed" || draft.status === "cancelled") return { state: "failed" };
-  const latest = [...finals].sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+  const claimedId = typeof draft.params?.finalGenId === "string" ? draft.params.finalGenId : null;
+  const latest = finals.find((f) => f.id === claimedId) ?? [...finals].sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+  // A library page may not contain the claimed final yet. Follow it before offering another.
+  if (claimedId && !finals.some((f) => f.id === claimedId)) return { state: "finalising", finalId: claimedId };
   if (latest?.status === "succeeded") return { state: "final", finalId: latest.id };
-  if (latest && finalHoldsDraft(latest)) return { state: "finalising", finalId: latest.id };
+  if (latest && finalHoldsDraft(latest)) return {
+    state: latest.status === "failed" || latest.status === "cancelled" ? "finalFailed" : "finalising",
+    finalId: latest.id,
+  };
   if (draft.status !== "succeeded") return { state: "rendering" };
   /* The server sends the expiry; without it, the row's own birth is the earliest the clock can have started. */
   const expiresAt = draftExpiry(draft.params) ?? draftExpiresAt(draftSentAt(draft.createdAt));

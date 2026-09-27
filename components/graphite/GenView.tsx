@@ -644,7 +644,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         ) : null}
         {/* Draft mode (lib/draftFinal.ts): this workspace's own route only — the connected catalogue's version is unverified. */}
         {state.billing === "workspace" && state.type === "video" && draftOffered(model) ? (
-          <div className="gx-gen-row" data-testid="gen-draft">
+          <div className="gx-gen-row" data-testid="gen-draft-option">
             <span className="gx-eyebrow" data-functional-label="">Draft</span>
             <div className="gx-draft-option">
               <button type="button" className="gx-toggle" role="switch" aria-checked={Boolean(settings.draft)} onClick={() => composer.dispatch({ type: "pick", value: { draft: !settings.draft } })} data-testid="gen-draft-toggle">

@@ -5,7 +5,7 @@ import { DRAFT_RESOLUTION, FINAL_RESOLUTION, draftDate, draftState, type DraftSt
 import type { Generation } from "@/lib/jobs";
 import { movedOn, poll } from "@/lib/poll";
 import { draftFinalBody } from "@/lib/workbench/generation-request";
-import { activeMediaJob, type MediaJob } from "@/lib/workbench/job-recovery";
+import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { sendClaimedGeneration, settlePendingGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
@@ -28,7 +28,7 @@ const FINE_DETAIL = "A new render at 1080p, without the watermark: framing and m
 const KEPT = "Its prompt, references, length and shape come from this draft and can’t change.";
 
 /** Whether a final's take cost this workspace anything, from what the browser is told (credits, or its own dollars). */
-const charged = (g: Generation) => (g.creditsBilled ?? 0) > 0 || (g.costUsd ?? 0) > 0;
+const charged = (g: Generation) => (g.creditsBilled == null && g.costUsd == null) || (g.creditsBilled ?? 0) > 0 || (g.costUsd ?? 0) > 0;
 const viewOf = (draft: Generation, finals: readonly Generation[], now: number): DraftState =>
   draftState(draft, finals.map((f) => ({ id: f.id, status: f.status, charged: charged(f), createdAt: f.createdAt })), now);
 
@@ -67,8 +67,10 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
   const [now, setNow] = useState(() => Date.now());
   /** A final sent from here that the library has not shown yet: followed all the same. */
   const [sent, setSent] = useState<string | null>(null);
-  const known = sent && finals.some((f) => f.id === sent) ? null : sent;
-  const view = known ? { state: "finalising" as const, finalId: known } : viewOf(draft, finals, now);
+  const [observed, setObserved] = useState<Generation | null>(null);
+  const allFinals = observed && !finals.some((f) => f.id === observed.id) ? [...finals, observed] : finals;
+  const known = sent && allFinals.some((f) => f.id === sent) ? null : sent;
+  const view = known ? { state: "finalising" as const, finalId: known } : viewOf(draft, allFinals, now);
   const ready = view.state === "ready";
   const expiresAt = view.state === "ready" || view.state === "expired" ? view.expiresAt : null;
 
@@ -85,7 +87,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
   const [approving, setApproving] = useState(false);
   const [sending, setSending] = useState(false);
   const [asked, setAsked] = useState(0);
-  const quoteKey = ready ? `${draft.id}:${view.retry ?? ""}:${asked}` : "";
+  const quoteKey = ready ? `${scope}:${draft.id}:${view.retry ?? ""}:${asked}` : "";
   const price = quote && quote.key === quoteKey ? quote.value : null;
   const problem = failed && failed.key === quoteKey ? failed.text : null;
   const pricing = actions && ready && !price && !problem;
@@ -109,11 +111,12 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
     const moved = movedOn();
     const poller = poll({
       immediate: true,
-      read: (signal) => studioRequest<{ generation: MediaJob }>(`/api/jobs/${encodeURIComponent(following)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      read: (signal) => studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(following)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
       moved: (data) => moved(following, data.generation.status),
       done: (data) => !activeMediaJob(data.generation),
       onValue: (data) => {
         if (activeMediaJob(data.generation)) return;
+        setObserved(data.generation);
         if (projectId) void refreshProjectLibrary(scope, projectId);
         if (data.generation.status === "succeeded") toast("The 1080p final rendered. Filed in Takes beside its draft.");
       },
@@ -123,10 +126,15 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
 
   const storageId = pendingGenerationKey(scope, projectId ?? "unfiled", `final:${draft.id}`);
   const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (approving) panel.current?.scrollIntoView({ block: "nearest" }); }, [approving]);
+  const makeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!approving || !ready) return;
+    panel.current?.scrollIntoView({ block: "nearest" });
+    panel.current?.querySelector<HTMLButtonElement>('[data-testid="draft-final-approve-send"]')?.focus({ preventScroll: true });
+  }, [approving, ready]);
 
   const approve = async () => {
-    if (!price) return;
+    if (!price || !ready) return;
     setSending(true);
     setNote(null);
     try {
@@ -159,7 +167,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
       /* Refused because the draft already has its final (another tab, another press): show that final. */
       if (projectId) void refreshProjectLibrary(scope, projectId);
     } catch (error) {
-      setNote(neutralCopy(error instanceof StudioRequestError || error instanceof Error ? error.message : "The final could not be sent.", "The final could not be sent. Nothing was charged."));
+      setNote(neutralCopy(error instanceof StudioRequestError || error instanceof Error ? error.message : "The final could not be sent.", "The final’s status could not be confirmed. Check it before trying again."));
     } finally {
       setSending(false);
     }
@@ -173,15 +181,16 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
     : view.state === "failed" ? "The draft did not render, so it has no final to make."
     : view.state === "expired" ? `This draft expired on ${draftDate(expiresAt!)}: a final can only be made within seven days of its draft.`
     : view.state === "finalising" ? `Making the ${FINAL_RESOLUTION} final…`
+    : view.state === "finalFailed" ? "The final did not render. Another final is unavailable for this draft; review the take’s status."
     : view.state === "final" ? `The ${FINAL_RESOLUTION} final is made, without the watermark.`
     : view.retry ? "The last final did not render. Nothing was charged for it." : null;
 
   return (
     <div className="gx-draft-bar" data-testid="draft-final" data-state={view.state} data-draft-id={draft.id}>
       {facts.length ? <p className="gx-draft-facts" data-testid="draft-final-facts">{facts.join(" · ")}</p> : null}
-      {status ? <p className="gx-draft-status" id={statusId} data-tone={view.state === "expired" || view.state === "failed" ? "red" : view.state === "final" ? "green" : undefined} data-testid="draft-final-status">{status}</p> : null}
+      {status ? <p className="gx-draft-status" id={statusId} data-tone={view.state === "expired" || view.state === "failed" || view.state === "finalFailed" ? "red" : view.state === "final" ? "green" : undefined} data-testid="draft-final-status">{status}</p> : null}
       {actions && (view.state === "ready" || view.state === "expired") && !approving ? (
-        <button type="button" className="gx-primary gx-gen-go gx-draft-go" disabled={view.state === "expired" || !price || sending}
+        <button ref={makeButton} type="button" className="gx-primary gx-gen-go gx-draft-go" disabled={view.state === "expired" || !price || sending}
           aria-describedby={view.state === "expired" ? statusId : undefined} data-priced={price && view.state === "ready" ? "" : undefined}
           onClick={() => { setNote(null); setApproving(true); }} data-testid="draft-final-make"
           aria-label={view.state === "ready" && price ? `Make the ${FINAL_RESOLUTION} final · ${price.credits.toLocaleString("en-US")} cr` : `Make the ${FINAL_RESOLUTION} final`}>
@@ -195,7 +204,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
           <button type="button" className="gx-hbtn" onClick={() => setAsked((n) => n + 1)} data-testid="draft-final-requote">Try again</button>
         </div>
       ) : null}
-      {actions && approving && price ? (
+      {actions && ready && approving && price ? (
         <div className="gx-draft-approve" ref={panel} role="group" aria-label={`Approve the ${FINAL_RESOLUTION} final`} data-testid="draft-final-approve">
           <p className="gx-draft-approve-title">Make the {FINAL_RESOLUTION} final from this draft?</p>
           <ul className="gx-draft-approve-list">
@@ -207,7 +216,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
               aria-label={sending ? "Sending…" : `Approve · ${price.credits.toLocaleString("en-US")} cr`}>
               {sending ? "Sending…" : <><span className="gx-go-act">Approve</span><span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{price.credits.toLocaleString("en-US")} cr</span></>}
             </button>
-            <button type="button" className="gx-hbtn" disabled={sending} onClick={() => { setApproving(false); setNote(null); }} data-testid="draft-final-cancel">Cancel</button>
+            <button type="button" className="gx-hbtn" disabled={sending} onClick={() => { setApproving(false); setNote(null); requestAnimationFrame(() => makeButton.current?.focus({ preventScroll: true })); }} data-testid="draft-final-cancel">Cancel</button>
           </div>
         </div>
       ) : null}

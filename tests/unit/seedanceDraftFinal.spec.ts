@@ -298,7 +298,9 @@ test("a draft's final is available for seven days from when its request left, re
     expect(draftState(draft, [{ ...final, status: "succeeded" }], born + 8 * DAY)).toEqual({ state: "final", finalId: "f1" });
     expect(draftState(draft, [{ ...final, status: "failed" }], born + 2 * DAY)).toEqual({ state: "ready", expiresAt: draftExpiresAt(born), retry: "f1" });
     /* A failed final whose outcome kept a charge holds the draft: its task may exist at the vendor. */
-    expect(draftState(draft, [{ ...final, status: "failed", charged: true }], born + 2 * DAY)).toEqual({ state: "finalising", finalId: "f1" });
+    expect(draftState(draft, [{ ...final, status: "failed", charged: true }], born + 2 * DAY)).toEqual({ state: "finalFailed", finalId: "f1" });
+
+    expect(draftState({ ...draft, params: { ...draft.params, finalGenId: "f1" } }, [], born + 2 * DAY)).toEqual({ state: "finalising", finalId: "f1" });
 
     /* The browser is told the same date the server enforces. */
     const { getGeneration } = await import("../../lib/jobs");
@@ -428,6 +430,12 @@ test("a final that failed uncharged frees its draft for one more; a failure that
     expect(held.status).toBe(409);
     expect((await held.json()).finalId).toBe(secondId);
 
+    /* A claimed final missing from a read is uncertain, never permission to submit again. */
+    await seedDraft("gen_draft_missing_final", { params: { finalGenId: "gen_missing" } });
+    const unknown = await post(s, { model: SD25, finalOf: "gen_draft_missing_final", maxCredits: priced.quote.estimatedCredits }, "missing-final-press");
+    expect(unknown.status).toBe(409);
+    expect((await unknown.json()).finalId).toBe("gen_missing");
+
     /* Two presses at once on a free draft: one final, one refusal, one reservation. */
     await seedDraft("gen_draft_race");
     const raceBody = { model: SD25, finalOf: "gen_draft_race", maxCredits: priced.quote.estimatedCredits };
@@ -438,6 +446,25 @@ test("a final that failed uncharged frees its draft for one more; a failure that
     const finals = (await db().execute("SELECT id FROM generations WHERE json_extract(params,'$.finalOf')='gen_draft_race'")).rows;
     expect(finals).toHaveLength(1);
   }));
+
+test("a final cannot cross a workspace boundary or run from a changed approval", async () => {
+  await scope("draft-tenant-source", async () => { await seedDraft("gen_private_draft"); });
+  await scope("draft-tenant-other", async (s) => {
+    const out = await s.gen.prepareGeneration({ model: SD25, finalOf: "gen_private_draft" }, actor);
+    expect(out).toMatchObject({ ok: false, status: 404 });
+    expect(await meters()).toEqual([]);
+  });
+  await scope("draft-changed-approval", async (s) => {
+    const { db } = await import("../../lib/db");
+    await seedDraft("gen_changed_draft");
+    const priced = await quote(s, { model: SD25, finalOf: "gen_changed_draft" });
+    await db().execute("UPDATE generations SET params=json_set(params,'$.generateAudio',json('true')) WHERE id='gen_changed_draft'");
+    const out = await post(s, { model: SD25, finalOf: "gen_changed_draft", maxCredits: priced.quote.estimatedCredits, quoteFingerprint: priced.quote.fingerprint }, "changed-approval-press");
+    expect(out.status).toBe(409);
+    expect(await meters()).toEqual([]);
+    expect(dispatched).toEqual([]);
+  });
+});
 
 test("Takes and the Library draw a draft with its finals: one strip, and side by side in the flat grid", async () => {
   const { groupTakes } = await import("../../lib/variations");

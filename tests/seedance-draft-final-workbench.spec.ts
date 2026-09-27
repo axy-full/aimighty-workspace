@@ -231,6 +231,7 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   const approval = strip.getByTestId("draft-final-approve");
   await expect(approval).toContainText("Its prompt, references, length and shape come from this draft and can’t change.");
   await expect(approval).toContainText("fine detail such as texture or small text can differ slightly");
+  await expect(approval.getByTestId("draft-final-approve-send")).toBeFocused();
   await expect(approval.getByTestId("draft-final-approve-send")).toHaveAttribute("aria-label", `Approve · ${finalPrice.toLocaleString("en-US")} cr`);
   expect(s.sent.filter((x) => x.path === "/api/generate").length).toBe(before);
   await floors(page, info, strip);

@@ -244,7 +244,7 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
   const heldBy = typeof params.finalGenId === "string" ? params.finalGenId : "";
   if (heldBy) {
     const prior = (await db().execute({ sql: `SELECT status, cost_usd FROM generations WHERE id = ? LIMIT 1`, args: [heldBy] })).rows[0];
-    if (prior && finalHoldsDraft({ status: String(prior.status), charged: Number(prior.cost_usd ?? 0) > 0 }))
+    if (!prior || finalHoldsDraft({ status: String(prior.status), charged: Number(prior.cost_usd ?? 0) > 0 }))
       return { error: "This draft already has its final.", status: 409, finalId: heldBy };
   }
   const ratio = typeof params.ratio === "string" ? params.ratio : "";
