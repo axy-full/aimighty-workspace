@@ -1,6 +1,6 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { createClient } from "@libsql/client";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
@@ -15,6 +15,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
  * not in /api/usage, not in the file, not in the Inspector, not on the page.
  * A workspace that pays its vendors reads its takes in dollars. The viewer's
  * connected account is listed apart, in that provider's credits as quoted.
+ * A member reads their own name and "Teammate" for everyone else's spend.
  * Real local routes on a mock engine; nothing is rendered or paid for.
  * Screenshots are opt-in: USAGE_LEDGER_SHOTS=<dir>.
  */
@@ -384,4 +385,79 @@ test("the ledger says it is reading, says when there is nothing yet, and a refus
   await expect(page.getByTestId("ws-ledger").getByRole("status")).toHaveCount(0);
   if (PHONES.includes(info.project.name)) await ledgerFloors(page);
   await shot(page, info, "ledger-states");
+});
+
+test("a member reads their own name and “Teammate” for everyone else's spend: on Usage, Plans & credits and the Dashboard, and in every /api/usage answer", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* The owner makes the workspace; a second account joins it as a member. */
+  const { workspace } = await signInLocally(page.request, "Ledger Owner");
+  const owner = (await (await page.request.get("/api/me")).json()) as { id: string; email: string };
+  await signInLocally(page.request, "Ledger Member");
+  const member = (await (await page.request.get("/api/me")).json()) as { id: string; email: string };
+  const code = randomBytes(18).toString("base64url");
+  const tag = randomUUID().slice(0, 8), now = Date.now();
+  /* A third teammate, on the roster only. */
+  const editor = { id: `u_editor_${tag}`, name: "Ledger Editor", email: `ledger-editor-${tag}@example.test` };
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    await platform.execute({
+      sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+      args: [code, workspace.id, member.email, "Ledger Member", "member", owner.id, now, now + 3_600_000],
+    });
+    /* The meter: a job each by the owner, the editor and the member. */
+    for (const [key, by, usd, credits, age] of [["owner", owner.id, 2.8667, 43, 3000], ["editor", editor.id, 1.3333, 20, 2000], ["member", member.id, 0.4444, 7, 1000]] as const)
+      await platform.execute({
+        sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,'video','byteplus',?,'succeeded',?,?,1,?,?,?)`,
+        args: [`gen_${key}_${tag}`, workspace.id, SEEDANCE, usd, credits, by, now - age, now - age],
+      });
+  } finally { platform.close(); }
+  const accepted = await page.request.post("/api/auth/accept", { data: { code } });
+  expect(accepted.ok(), await accepted.text()).toBe(true);
+  expect(await (await page.request.get("/api/me")).json()).toMatchObject({ id: member.id, role: "member", workspace: { id: workspace.id } });
+  const tenant = createClient({ url: await tenantOf(workspace.id), timeout: 10_000 });
+  try { await tenant.execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,'x','admin',?)", args: [editor.id, editor.email, editor.name, now] }); }
+  finally { tenant.close(); }
+
+  await forbidPaidWork(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const bodies = usageBodies(page);
+  const teammates = ["Ledger Owner", owner.email, editor.name, editor.email];
+  const noTeammate = async (where: string) => {
+    const text = await page.evaluate(() => document.body.innerText);
+    for (const other of teammates) expect(text, `${where} shows ${other}`).not.toContain(other);
+  };
+
+  /* Usage: the member's own job by name, a teammate's as "Teammate". */
+  await page.goto("/suites?view=workspace&tab=usage");
+  const rows = page.getByTestId("ws-ledger-row");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.filter({ hasText: "Ledger Member" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "Teammate" })).toHaveCount(2);
+  await expect(page.getByTestId("ws-usage-bar")).toHaveCount(1);
+  await noTeammate("Usage");
+  await shot(page, info, "member-usage");
+
+  await page.getByRole("tab", { name: "Plans & credits" }).click();
+  await expect(page.getByTestId("ws-plans")).toBeVisible();
+  await noTeammate("Plans & credits");
+
+  /* The Dashboard's credit ledger by person: the member's own row, and the rest of the team as one. */
+  await page.getByRole("tab", { name: "Dashboard" }).click();
+  const people = page.getByTestId("dash-ledger-people");
+  await expect(people).toContainText("Ledger Member");
+  await noTeammate("Dashboard");
+  await expect(people.locator("tbody tr")).toHaveCount(2);
+  await expect(people.locator("tbody tr").nth(0).locator("td")).toHaveText(["Teammate", "2", "63"]);
+  await expect(people.locator("tbody tr").nth(1).locator("td")).toHaveText(["Ledger Member", "1", "7"]);
+  await shot(page, info, "member-dashboard");
+
+  /* No answer /api/usage gave the page carries a teammate's name or address, or a dollar; nor does a fresh one. */
+  const wire = [...(await bodies()), await (await page.request.get("/api/usage")).text()];
+  expect(wire.filter((body) => body.includes('"byPerson"')).length, "the bars, the Dashboard and a fresh read").toBeGreaterThanOrEqual(3);
+  for (const body of wire) {
+    for (const other of teammates) expect(body, `an /api/usage answer names ${other}`).not.toContain(other);
+    expect(body).not.toMatch(/usd/i);
+  }
+  expect(errors).toEqual([]);
 });
