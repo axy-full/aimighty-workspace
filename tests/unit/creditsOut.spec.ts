@@ -309,6 +309,49 @@ test("a price that moved while a take waited is started only by a person approvi
   }
 });
 
+test("a slot-held take also waits for approval when its price changes", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { getGeneration } = await import("../../lib/jobs");
+  const release = releaseRoute(() => MEMBER);
+  const engine = await standInEngine();
+  try {
+    await runInTenant(await setup("slot-repriced", 100), async () => {
+      await held("gen_co_slot_repriced", MEMBER.id, 12);
+      await db().execute("UPDATE generations SET params=json_set(params,'$.held.why','slots') WHERE id='gen_co_slot_repriced'");
+      expect((await releaseHeldJobs({ defer: async () => {} })).released).toEqual([]);
+      expect(await debited("gen_co_slot_repriced")).toBe(0);
+      expect(await row("gen_co_slot_repriced")).toMatchObject({ status: "held", error: "The price is now 15 cr. Release it at that price to start it." });
+      /* The card must offer approval rather than keep saying it will start on its own. */
+      expect((await getGeneration("gen_co_slot_repriced"))?.params.held).toEqual({ why: "credits", needs: 15 });
+      expect((await release("gen_co_slot_repriced", { credits: 12 })).status).toBe(409);
+      expect((await release("gen_co_slot_repriced", { credits: 15 })).status).toBe(200);
+      expect(await debited("gen_co_slot_repriced")).toBe(15);
+    });
+    expect(engine.submits).toHaveLength(1);
+  } finally { engine.restore(); }
+});
+
+test("a legacy held take without an estimate is kept without a reservation or submission", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const release = releaseRoute(() => MEMBER);
+  const engine = await standInEngine();
+  try {
+    await runInTenant(await setup("missing-estimate", 100), async () => {
+      await held("gen_co_missing_estimate", MEMBER.id);
+      await db().execute("UPDATE generations SET params=json_remove(params,'$.held.estUsd') WHERE id='gen_co_missing_estimate'");
+      expect((await releaseHeldJobs({ defer: async () => {} })).released).toEqual([]);
+      expect((await release("gen_co_missing_estimate", { credits: 15 })).status).toBe(409);
+      expect(await row("gen_co_missing_estimate")).toMatchObject({ status: "held" });
+      expect(await debited("gen_co_missing_estimate")).toBe(0);
+    });
+    expect(engine.submits).toEqual([]);
+  } finally { engine.restore(); }
+});
+
 function topupsRoute(user: () => Person, sent: unknown[]) {
   const mail = createRequire(path.resolve("app/api/workspaces/topups/route.ts"))("@/lib/mail") as typeof import("../../lib/mail");
   const platform = createRequire(path.resolve("app/api/workspaces/topups/route.ts"))("@/lib/platform") as typeof import("../../lib/platform");

@@ -110,7 +110,7 @@ type HeldRow = {
   id: string; kind: "video" | "image" | "audio"; model: string; engine: string;
   projectId: string | null; shotId: string | null; createdBy: string | null;
   /** `needs` is what it costs to start now; `heldAt` what it cost when it was held — the figure approved at Generate. */
-  estUsd: number; needs: number; heldAt: number | null; why: HeldWhy;
+  estUsd: number; estimateValid: boolean; needs: number; heldAt: number | null; why: HeldWhy;
   token?: { id: string; capUsd: number | null };
 };
 
@@ -148,6 +148,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
     const kind = (row.kind === "image" || row.kind === "audio" ? row.kind : "video") as HeldRow["kind"];
     const model = String(row.model);
     const estUsd = Number(held.estUsd ?? 0);
+    const needs = heldPriceNow(held, kind, model);
     return {
       id: String(row.id), kind, model,
       engine: String(row.billed_to ?? row.provider ?? "byteplus"),
@@ -164,7 +165,8 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
          The snapshot is still the fallback, for a row old enough to have no
          `estUsd` in it, where deriving would give zero and release it free. */
       estUsd,
-      needs: heldPriceNow(held, kind, model),
+      estimateValid: held.estUsd != null && Number.isFinite(estUsd) && estUsd >= 0 && (estUsd > 0 || needs === 0),
+      needs,
       heldAt: Number(held.needs) > 0 ? Math.ceil(Number(held.needs)) : null,
       why: held.why === "slots" ? "slots" : "credits",
       token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap) } : undefined,
@@ -223,11 +225,21 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
   let refusal: ReleaseRefusal | undefined;
   const refuse = (status: number, error: string, r: HeldRow) => { if (opts.only) refusal = { status, error, needs: r.needs, balance }; };
   for (const r of rows) {
+    /* An old or incomplete snapshot cannot authorize a free or guessed reservation. Keep the take intact. */
+    if (!r.estimateValid) {
+      const said = "This take's saved price is incomplete. Recreate it to get a current quote; this take is kept.";
+      refuse(409, said, r);
+      await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held' AND COALESCE(error,'')<>?",
+        args: [said, now(), r.id, said] }).catch(() => {});
+      refused.add(r.id);
+      plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
+      continue;
+    }
     /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
     if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
     /* Nobody approved a price that moved while the take waited for credits: it is left, said, for a person to
        release at the new figure (its card offers Release at it), and it holds up nobody behind it. */
-    if (!opts.only && balance != null && r.why === "credits" && r.heldAt != null && r.needs !== r.heldAt) {
+    if (!opts.only && balance != null && r.heldAt != null && r.needs !== r.heldAt) {
       const said = movedPrice(r.needs);
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held' AND COALESCE(error,'')<>?",
         args: [said, now(), r.id, said] }).catch(() => {});
