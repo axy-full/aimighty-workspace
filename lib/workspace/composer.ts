@@ -509,10 +509,10 @@ export function quoteKeyFor(input: {
   return JSON.stringify([
     input.billing, input.type, input.modelId,
     input.settings.ratio, input.settings.resolution, input.settings.duration, input.settings.soulId ?? "",
-    /* A draft sends another body at the same price as any 480p take: its approval is its own. */
-    input.settings.draft ? "draft" : "",
     input.references.map((r) => `${r.origin}:${r.id}`),
     priced, input.seconds, input.instrumental, input.voiceId,
+    // Keep existing recovery keys unchanged. Only the new draft body gets its own discriminator.
+    ...(input.settings.draft ? ["draft"] : []),
   ]);
 }
 

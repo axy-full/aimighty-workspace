@@ -387,3 +387,35 @@ test("a final that never reached the server is checked on the next press, never 
   expect(charges.map((c) => c.credits)).toEqual([charges[0].credits, finalPrice]);
   expect(s.errors).toEqual([]);
 });
+
+
+test("a moved final quote needs fresh approval and sends no render", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const s = await seeded(page);
+  await draftByApi(page, s, WORDS);
+  let moved = false;
+  await page.route("**/api/generate/quote", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (!body.finalOf) return route.fallback();
+    const reply = await route.fetch();
+    const data = await reply.json();
+    return route.fulfill({ json: { ...data, estimatedCredits: Number(data.estimatedCredits) + (moved ? 1 : 0) } });
+  });
+  await openGen(page, s.project);
+  const strip = page.getByTestId("gen-draft").first();
+  const make = strip.getByTestId("draft-final-make");
+  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });
+  const original = creditsIn(await make.getAttribute("aria-label"));
+  await make.click();
+  const approve = strip.getByTestId("draft-final-approve-send");
+  moved = true;
+  await approve.click();
+  await expect(strip.getByTestId("draft-final-note")).toContainText(`The price is now ${original + 1} cr. Approve again`);
+  await expect(approve).toHaveAttribute("aria-label", `Approve · ${original + 1} cr`);
+  expect(s.sent.filter((x) => x.path === "/api/generate")).toHaveLength(0);
+  expect((await ledger(s)).jobs).toHaveLength(1);
+  await floors(page, info, strip);
+  await strip.getByTestId("draft-final-cancel").click();
+  await expect(make).toBeFocused();
+  expect(s.errors).toEqual([]);
+});

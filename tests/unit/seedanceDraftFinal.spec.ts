@@ -483,3 +483,14 @@ test("Takes and the Library draw a draft with its finals: one strip, and side by
   expect(cells.map((c) => (c.kind === "one" ? c.take.id : c.kind === "draft" ? `${c.draft.id}:${c.finals.map((f) => f.id).join("+")}` : `${c.batchId}:${c.takes.map((t) => t.id).join("+")}`)))
     .toEqual(["draftA:final2+final1", "plain", "b_abcd:b1+b2", "orphan", "draftB:"]);
 });
+
+
+test("draft quote keys preserve ordinary take recovery keys and only distinguish drafts", async () => {
+  const { quoteKeyFor } = await import("../../lib/workspace/composer");
+  const input = { billing: "workspace" as const, type: "video" as const, modelId: SD25,
+    settings: { ratio: "16:9", resolution: "480p", duration: 5 }, references: [], prompt: "A lighthouse", seconds: 30, instrumental: true, voiceId: "" };
+  const ordinary = quoteKeyFor(input);
+  expect(ordinary).toBe(JSON.stringify(["workspace", "video", SD25, "16:9", "480p", 5, "", [], "", 30, true, ""]));
+  const draft = quoteKeyFor({ ...input, settings: { ...input.settings, draft: true } });
+  expect(JSON.parse(draft)).toEqual([...JSON.parse(ordinary), "draft"]);
+});
