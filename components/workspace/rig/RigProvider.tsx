@@ -11,6 +11,7 @@ import { dispatchGeneration, settlePendingGeneration } from "@/lib/workspace/gen
 import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
+import { DRAFT_WRITTEN, writtenProject } from "@/lib/workspace/draft-written";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { connectNodes } from "@/lib/workspace/rig-graph";
@@ -346,29 +347,45 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     return () => controller.abort();
   }, [projectId, load, flush, setDraft, park]);
 
-  /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): the Rig catches up
-     with the saved version, its own edits laid over it, before anything is built from it — never its older copy
-     until its next save. In turn with the saves, and never while a save's outcome is unknown. */
-  const onRig = state.page === "rig";
-  const wasOnRig = useRef(onRig);
-  useEffect(() => {
-    const came = onRig && !wasOnRig.current;
-    wasOnRig.current = onRig;
-    if (!came || !projectId) return;
+  /* The Rig catches up with the saved version of its project, its own edits laid over it (lib/workbench/draft-merge):
+     never its older copy until its next save. In turn with the saves, and never while a save's outcome is unknown. */
+  const catchUpSaved = useCallback((id: string) => {
     chain.current = chain.current.catch(() => false).then(async () => {
       const held = draftRef.current;
-      if (!held || held.project.id !== projectId || held.writer.unconfirmed) return true;
+      if (!held || held.project.id !== id || held.writer.unconfirmed) return true;
       let data: { project?: Project | null; revision: number };
-      try { data = await draftRequest(`${API}/projects?id=${encodeURIComponent(projectId)}`, scope); }
+      try { data = await draftRequest(`${API}/projects?id=${encodeURIComponent(id)}`, scope); }
       catch { return true; }
       const now = draftRef.current;
-      if (!data.project || !now || now.project.id !== projectId || !(data.revision > now.revision) || now.writer.unconfirmed) return true;
+      if (!data.project || !now || now.project.id !== id || !(data.revision > now.revision) || now.writer.unconfirmed) return true;
       const project = mergeDraft(now.base, now.project, data.project, { ancestors: now.ancestors, made: now.made });
       setDraft({ ...now, project, base: data.project, revision: data.revision });
       if (project !== now.project) catchUpRef.current?.(now.project, project);
       return true;
     });
-  }, [onRig, projectId, scope, setDraft]);
+  }, [scope, setDraft]);
+
+  /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): it catches up before
+     anything is built from it. */
+  const onRig = state.page === "rig";
+  const wasOnRig = useRef(onRig);
+  useEffect(() => {
+    const came = onRig && !wasOnRig.current;
+    wasOnRig.current = onRig;
+    if (came && projectId) catchUpSaved(projectId);
+  }, [onRig, projectId, catchUpSaved]);
+
+  /* The draft was written elsewhere in this tab (lib/workspace/draft-written: a Crew solution sent to the Rig or the
+     Brief, a Brief breakdown), perhaps with the Rig already the page: the same catch-up, straight away, so what a
+     confirmation says is on the Rig is there when its Open lands. An edit made meanwhile is merged, never replaced. */
+  useEffect(() => {
+    const onWritten = (event: Event) => {
+      const id = writtenProject(event);
+      if (id && id === draftRef.current?.project.id) catchUpSaved(id);
+    };
+    window.addEventListener(DRAFT_WRITTEN, onWritten);
+    return () => window.removeEventListener(DRAFT_WRITTEN, onWritten);
+  }, [catchUpSaved]);
 
   /* Best effort: a page being hidden sends the pending save now. */
   useEffect(() => {

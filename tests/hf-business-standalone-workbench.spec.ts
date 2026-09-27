@@ -155,7 +155,7 @@ test("Ads: product and setting are stills from this project, the avatar an engin
   const before = libraryReads();
   await page.getByTestId("ads-generate").click();
   await expect(page.getByTestId("ads-done")).toContainText("Rendered and filed to this project.", { timeout: 15_000 });
-  await expect(page.getByTestId("ads-done").getByRole("button", { name: "Open Takes" })).toBeVisible();
+  await expect(page.getByTestId("ads-done").getByRole("button", { name: "Open in Takes" })).toBeVisible();
   /* One message, not two: the toast is gone. */
   await expect(page.getByText("Rendered and filed to this project.")).toHaveCount(1);
   /* Takes and the Library read one store: it is re-read once the job finishes. */

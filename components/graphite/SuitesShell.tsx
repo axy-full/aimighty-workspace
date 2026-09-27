@@ -15,7 +15,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
-import { boundUndo } from "@/lib/shell/undo";
+import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
 import { AtomikGate } from "./AtomikGate";
@@ -50,7 +50,6 @@ import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
-import { ShellToast } from "./ShellToast";
 import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
@@ -434,7 +433,29 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </div>
         ) : null}
         <TabBar />
-        <ShellToast text={state.toast} />
+        {state.toast ? (() => {
+          /* A confirmation with somewhere to go carries its Open (lib/shell/confirmations); one the undo stack can take back
+             carries its Undo, the phone's ⌘Z (lib/shell/state › pushUndo), while that step is still the one ⌘Z would undo.
+             A mouse over it, or keyboard focus on it, holds it on screen. A tap does not: on a phone it sits over the page's
+             bottom actions, so it times out. */
+          const given = ws.toastAction?.text === state.toast ? ws.toastAction.action : null;
+          const action = given && (!given.live || given.live()) ? given : null;
+          const undo = given?.kind === "undo";
+          /* An undo toast's "⌘Z to undo" is for keyboards (hidden on touch screens), and only while ⌘Z would undo that step. */
+          const { lead, hint } = undo ? splitUndoHint(state.toast) : { lead: state.toast, hint: "" };
+          return (
+            <div className="gx-toast" role="status" data-testid="toast" data-open={action ? "" : undefined}
+              onPointerEnter={action ? (e) => { if (e.pointerType === "mouse") ws.holdToast(true); } : undefined}
+              onPointerLeave={action ? (e) => { if (e.pointerType === "mouse") ws.holdToast(false); } : undefined}
+              onFocus={action ? (e) => { if (e.target.matches(":focus-visible")) ws.holdToast(true); } : undefined}
+              onBlur={action ? () => ws.holdToast(false) : undefined}>
+              {action ? <>
+                <span className="gx-toast-text">{lead}{hint ? <span className="gx-toast-kbd">{hint}</span> : null}</span>
+                <button type="button" className={undo ? "gx-toast-undo" : "gx-toast-open"} onClick={(e) => { e.stopPropagation(); action.run(); }} data-testid={undo ? "toast-undo" : "toast-open"}>{action.label}</button>
+              </> : lead}
+            </div>
+          );
+        })() : null}
       </div>
     </AtomikHost>
   );
