@@ -151,15 +151,16 @@ test("a workspace on credits is sent its credits and never the vendor's dollars;
 
   const shotsCr = (await get(r.shots, "/api/shots?projectId=prj_l")).json.shots as { id: string; spend: number; credits: number }[];
   const mine = shotsCr.find((s) => s.id === shotId)!;
-  expect(mine.spend).toBe(0);
+  expect(mine).not.toHaveProperty("spend");
   expect(mine.credits).toBeGreaterThan(0);
   const projectsCr = (await get(r.projects, "/api/projects")).json as { unit: string; projects: { id: string; spend: number; credits: number }[] };
   expect(projectsCr.unit).toBe("cr");
-  expect(projectsCr.projects.find((p) => p.id === "prj_l")).toMatchObject({ spend: 0, credits: mine.credits });
+  expect(projectsCr.projects.find((p) => p.id === "prj_l")).toMatchObject({ credits: mine.credits });
+  expect(projectsCr.projects.find((p) => p.id === "prj_l")).not.toHaveProperty("spend");
   const prodsCr = (await get(r.productions, "/api/productions")).json.productions as { id: string; spentUsd: number; spentCredits: number; projects: { spentUsd: number; spentCredits: number }[] }[];
   const prodCr = prodsCr.find((p) => p.id === "prd_l")!;
-  expect(prodCr.spentUsd).toBe(0);
-  expect(prodCr.projects[0].spentUsd).toBe(0);
+  expect(prodCr).not.toHaveProperty("spentUsd");
+  expect(prodCr.projects[0]).not.toHaveProperty("spentUsd");
   expect(prodCr.spentCredits).toBe(mine.credits);
   /* Nothing in any of the three answers carries the vendor figure. */
   for (const body of [shotsCr, projectsCr, prodsCr]) expect(JSON.stringify(body)).not.toContain("1.88");

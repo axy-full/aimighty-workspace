@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { claimStep, getStep, reconcileRunningSteps } from "@/lib/atomik";
+import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib/atomik";
 import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
      its own route, which quotes, claims and submits in one place. */
   const pending = await getStep(id);
   if (pending && connectedMeta(pending.params))
-    return NextResponse.json({ error: "Approve this step at its connected-credit price.", step: pending }, { status: 409 });
+    return NextResponse.json({ error: "Approve this step at its connected-credit price.", step: stepForBrowser(pending) }, { status: 409 });
 
   let step = await claimStep(id, got.user.id);
   /* A step left running by an approval that never reached the renderer is
@@ -35,7 +35,7 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
      approval may take it. */
   if (!step && pending?.status === "running" && !pending.genId && (await reconcileRunningSteps(pending.chatId)))
     step = await claimStep(id, got.user.id);
-  if (step) return NextResponse.json({ step });
+  if (step) return NextResponse.json({ step: stepForBrowser(step) });
 
   /* Nothing was claimed. Say which of the two reasons it was, because
      "already running" and "gone" want different things from the person. */
@@ -48,7 +48,7 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
       error: existing.status === "rejected"
         ? "That one was already turned down."
         : "That one is already running — it was approved a moment ago.",
-      step: existing,
+      step: stepForBrowser(existing),
     },
     { status: 409 },
   );

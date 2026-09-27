@@ -46,6 +46,9 @@ export async function platformSpendThisMonth(): Promise<number> {
   return platformSpendSince(cycleBounds(1, Date.now()).start);
 }
 
+/** What a workspace hears at its monthly cap on the platform's engines. */
+export const ALLOWANCE_REACHED = "This workspace has reached its monthly cap on the platform's engines. Ask management to raise it.";
+
 /**
  * The gate. Call before spending on `vendor`; a refusal carries the
  * sentence to show and the status to send.
@@ -60,11 +63,9 @@ export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?:
   if (cap == null) return { ok: true };
   const spent = await platformSpendThisMonth();
   if (spent >= cap || spent + Math.max(0, estUsd) > cap) {
-    return {
-      ok: false, status: 429,
-      error: `This workspace has used $${spent.toFixed(2)} of its $${cap.toFixed(2)} monthly cap on the platform's engines. ` +
-             `Ask management to raise it.`,
-    };
+    /* No figures. The cap and what counts against it are the vendors'
+       dollars, and the workspace hearing this is billed in credits. */
+    return { ok: false, status: 429, error: ALLOWANCE_REACHED };
   }
   return { ok: true };
 }

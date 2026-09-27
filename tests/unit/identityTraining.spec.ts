@@ -83,10 +83,13 @@ const nextServer = () => createRequire(path.resolve("package.json"))("next/serve
 test("the train route refuses a run that costs more than the approved price, before any money check", async () => {
   const usd = 3.6;
   const started: string[] = [], walls: number[] = [];
+  let inCredits = true;
   const route = load("app/api/identities/[id]/train/route.ts", {
     "next/server": nextServer(),
     "@/lib/auth": { requireRender: async () => ({ user: { id: "caller" } }), withTenant: (h: Handler) => h },
-    "@/lib/identities": { trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; } },
+    "@/lib/identities": { trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
+    "@/lib/credits": { creditsApply: () => inCredits },
+    "@/lib/tenant": { currentTenant: () => null },
     "@/lib/allowance": { allowanceCheck: async (_v: string, cost: number) => { walls.push(cost); return { ok: true }; } },
     "@/lib/limits": { checkLimits: async () => ({ allow: true }) },
     "@/lib/creditTerms": { billCredits },
@@ -104,14 +107,22 @@ test("the train route refuses a run that costs more than the approved price, bef
   expect(started).toEqual([]);
   expect(walls).toEqual([]);
 
+  // A dollar approval is read from a workspace on its own keys, which pays the vendor itself.
+  inCredits = false;
   const cheap = await post({ consent: true, maxUsd: usd - 0.01 });
   expect(cheap.status).toBe(409);
   expect(started).toEqual([]);
+  inCredits = true;
 
   const approved = await post({ consent: true, maxCredits: credits });
   expect(approved.status).toBe(202);
   expect(started).toEqual(["idn_1"]);
   expect(walls).toEqual([usd]);
+
+  // On the platform's keys a dollar guess is not read at all, so it answers nothing about what the vendor charges.
+  const probe = await post({ consent: true, maxUsd: 0.01, maxCredits: credits });
+  expect(probe.status).toBe(202);
+  expect(started).toEqual(["idn_1", "idn_1"]);
 });
 
 test("a retried New asset hands back the caller's own untrained identity instead of a name clash", async () => {
@@ -135,6 +146,7 @@ test("a retried New asset hands back the caller's own untrained identity instead
       updateIdentity: async (id: string, patch: { photos: string[]; description?: string }) => { updated.push({ id, ...patch }); return { ...fixtures.find((f) => f.id === id), ...patch }; },
       createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Iver" || input.name === "Tove") throw new Error(`There is already an identity called ${input.name}.`); return { id: "idn_new", name: input.name }; },
       syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => 3.6, RENDER_USD_PER_MP: 0.035, TRAINER: "trainer",
+      identityForBrowser: (i: { loraUrl?: string | null }) => ({ ...i, loraUrl: undefined, trained: Boolean(i.loraUrl) }),
     },
     "@/lib/fal": { falConfigured: () => true },
     "@/lib/credits": { creditsApply: () => true },
