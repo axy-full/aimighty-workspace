@@ -4,6 +4,7 @@ import { platformDb } from "./platform";
 import { billingStateFor } from "./billingLedger";
 import { modelLabel } from "./models";
 import { PROVIDERS } from "./providers";
+import { visibleUsageParams } from "./usageParams";
 
 type Row = Record<string, unknown>;
 const charge =
@@ -41,23 +42,6 @@ export async function creditUsageSummary() {
     },
     vendors: vendors(),
   };
-}
-
-function visibleParams(raw: unknown): Record<string, string | number> {
-  let value: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = JSON.parse(String(raw ?? "{}"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      value = parsed as Record<string, unknown>;
-  } catch {}
-  const result: Record<string, string | number> = {};
-  for (const key of ["resolution", "ratio"])
-    if (typeof value[key] === "string" && String(value[key]).length <= 40)
-      result[key] = String(value[key]);
-  for (const key of ["duration", "steps"])
-    if (typeof value[key] === "number" && Number.isFinite(value[key]))
-      result[key] = Number(value[key]);
-  return result;
 }
 
 export async function creditUsage() {
@@ -198,7 +182,7 @@ export async function creditUsage() {
               : null,
         prompt: detail ? String(detail.prompt ?? "") : "",
         credits: Number(r.credits),
-        params: detail ? visibleParams(detail.params) : {},
+        params: detail ? visibleUsageParams(detail.params) : {},
         createdAt: Number(r.created_at),
         refineLabel: null,
       };
