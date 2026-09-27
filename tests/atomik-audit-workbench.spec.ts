@@ -112,9 +112,11 @@ test("Treatment: leaving while a save is on its way does not file the tab's own 
   await logline.fill("A kitchen at dawn, the kettle on.");
   await page.getByRole("button", { name: "Break down into shots →" }).click();
   await expect(page).toHaveURL(/\/atomik\/breakdown/);
-  await page.waitForTimeout(4500);
-  const saved = await read();
-  expect({ logline: saved.treatment?.logline, draft: saved.treatment?.draft, versions: saved.versions.length }).toEqual({ logline: "A kitchen at dawn, the kettle on.", draft: 1, versions: 0 });
+  // The second save waits out the held answer (3 s), longer when a route compiles meanwhile.
+  await expect.poll(async () => {
+    const saved = await read();
+    return { logline: saved.treatment?.logline, draft: saved.treatment?.draft, versions: saved.versions.length };
+  }, { timeout: 30_000 }).toEqual({ logline: "A kitchen at dawn, the kettle on.", draft: 1, versions: 0 });
 });
 
 test("Workspace › General: a member reads the rules and is offered no control the routes would refuse", async ({ page }) => {

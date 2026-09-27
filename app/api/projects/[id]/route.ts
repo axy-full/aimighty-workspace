@@ -7,6 +7,35 @@ import { archiveDeleteStatements, archiveTransaction, type ArchiveStep } from "@
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
+/**
+ * One project, read from its own row. The list (GET /api/projects) is memoised
+ * for 15 seconds per server instance, so a project made a moment ago can be
+ * missing from it on another instance; a page asks here before it says a
+ * project does not exist. An archived project has left the table, and is 404.
+ */
+export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
+  const got = await requireUser();
+  if (got.response) return got.response;
+  await ready();
+  const { id } = await params;
+  const rs = await db().execute({
+    sql: `SELECT id, name, description, code, category, cap_usd, cap_credits, cap_unlocked, production_id FROM projects WHERE id = ? LIMIT 1`,
+    args: [id],
+  });
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const r = rs.rows[0] as any;
+  if (!r) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  return NextResponse.json({
+    project: {
+      id: String(r.id), name: String(r.name ?? ""), description: r.description == null ? "" : String(r.description),
+      code: String(r.code ?? ""), category: String(r.category ?? ""),
+      capUsd: r.cap_usd == null ? null : Number(r.cap_usd), capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      capUnlocked: Number(r.cap_unlocked ?? 0) === 1,
+      productionId: r.production_id ? String(r.production_id) : null,
+    },
+  }, { headers: { "Cache-Control": "private, no-store" } });
+});
+
 export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;

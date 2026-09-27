@@ -6,6 +6,8 @@ import { useApi } from "@/lib/useApi";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
 import ImpactSheet from "@/components/ImpactSheet";
+import ProductionNav from "@/components/ProductionNav";
+import { appAlert } from "@/components/dialog";
 import { versionLine } from "@/lib/rig";
 import type { ElementFull } from "@/lib/elements";
 import type { Impact } from "@/lib/impact";
@@ -29,10 +31,11 @@ export default function RigElementsPage({ params }: { params: Promise<{ id: stri
   const [asking, setAsking] = useState<{ impact: Impact; kindWord: string; versionLabel: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  if (error) return <Trouble label="The element library didn't load" />;
-  if (!data) return <Waiting />;
+  const nav = <ProductionNav id={projectId} on="elements" />;
+  if (error) return <>{nav}<Trouble label="The element library didn't load" /></>;
+  if (!data) return <>{nav}<Waiting /></>;
   if (!data.elements.length) {
-    return <Empty title="No elements yet" line="A character, a location, a prop or a look, defined once and cited in every shot after." />;
+    return <>{nav}<Empty title="No elements yet" line="A character, a location, a prop or a look, defined once and cited in every shot after." /></>;
   }
 
   /* Asking is a POST with no choice on it. The route answers 409 with the
@@ -51,11 +54,17 @@ export default function RigElementsPage({ params }: { params: Promise<{ id: stri
       });
       const json = await res.json().catch(() => ({}));
       if (json?.impact) setAsking({ impact: json.impact, kindWord, versionLabel });
-      else if (json?.ok) await refresh();
+      else if (res.ok && json?.ok) await refresh();
+      /* Anything else is a refusal (a member, a lapsed session, a server fault): say so. */
+      else await appAlert("The version didn't change", json?.error ?? `The server answered ${res.status}.`);
+    } catch (e) {
+      await appAlert("The version didn't change", (e as Error).message);
     } finally { setBusy(null); }
   }
 
   return (
+    <>
+    {nav}
     <div className="rig-els">
       <header className="rig-els-head">
         <h1 className="rig-els-title">Elements</h1>
@@ -109,5 +118,6 @@ export default function RigElementsPage({ params }: { params: Promise<{ id: stri
         />
       ) : null}
     </div>
+    </>
   );
 }

@@ -28,7 +28,7 @@ type UsageMonths = { months?: { month: string; credits: number }[] };
 
 export default function AccountMenu() {
   const scopedFetch = useScopedFetch();
-  const { signedIn, name, role, workspace, workspaces } = useSession();
+  const { signedIn, name, role, workspace, workspaces, superAdmin } = useSession();
   const signIn = useSignInHref();
   const path = usePathname();
   const router = useRouter();
@@ -120,6 +120,15 @@ export default function AccountMenu() {
               <Link href="/settings" role="menuitem" onClick={() => setOpen(false)} className={row(path.startsWith("/settings") || path.startsWith("/team"))}>
                 Settings<Mono cost>⌘,</Mono>
               </Link>
+              {/* Tokens for assistants and scripts, and the platform owner's desk: both were linked from nowhere. */}
+              <Link href="/connect" role="menuitem" onClick={() => setOpen(false)} className={row(path.startsWith("/connect"))}>
+                Assistants &amp; API tokens
+              </Link>
+              {superAdmin && (
+                <Link href="/admin" role="menuitem" onClick={() => setOpen(false)} className={row(path.startsWith("/admin"))}>
+                  Platform desk
+                </Link>
+              )}
               <button type="button" role="menuitem" onClick={() => setSwitching(true)} className={row(false)}>
                 Switch workspace<span className="ui-mono tracking-normal text-ink-muted">▸</span>
               </button>

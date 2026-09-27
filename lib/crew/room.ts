@@ -79,6 +79,24 @@ export function parseSolutions(text: string): string[] {
   return text.split("\n").map((line) => line.trim()).filter((line) => /^\d+\./.test(line)).map((line) => line.replace(/^\d+\.\s*/, "")).filter(Boolean);
 }
 
+/** The longest a Rig shot's title is. */
+export const SHOT_TITLE_MAX = 80;
+/**
+ * A solution as a draft Rig shot: the words before " — " name it (cut at a
+ * word, with "…", when longer than a shot title may be); the rest is its text.
+ */
+export function solutionShot(solution: string): { title: string; text: string } {
+  const [head, ...rest] = solution.split(" — ");
+  const name = head.replace(/\s+/g, " ").trim();
+  let title = name;
+  if (name.length > SHOT_TITLE_MAX) {
+    const cut = name.slice(0, SHOT_TITLE_MAX - 1);
+    const space = cut.lastIndexOf(" ");
+    title = `${(space >= SHOT_TITLE_MAX / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:–—-]+$/, "")}…`;
+  }
+  return { title: title || "Crew solution", text: (rest.join(" — ") || solution).trim() };
+}
+
 /** Every seated member speaks twice and the chair once more. */
 export function callsInRound(seated: number): number {
   return seated > 0 ? seated * 2 + 1 : 0;

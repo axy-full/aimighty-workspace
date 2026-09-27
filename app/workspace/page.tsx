@@ -12,11 +12,11 @@ export const metadata = { title: "Particl — Workspace" };
 
 /**
  * The redesigned workspace shell. Outside the (app) layout, like /workbench.
- * Signed-out visitors and accounts without a workspace go to /workbench,
- * which already handles both.
+ * Signed-out visitors are sent to sign in and back; accounts without a
+ * workspace go to /workbench, which handles that case.
  */
 export default async function Workspace({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { scope, session, initialAccount } = await shellBootstrap(searchParams);
+  const { scope, session, initialAccount } = await shellBootstrap(searchParams, "/workspace");
   return (
     <SessionProvider key={scope} value={session}>
       <WorkspaceApp key={scope} scope={scope} initialAccount={initialAccount} />
