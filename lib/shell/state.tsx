@@ -2,8 +2,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
-import { popUndo, pushUndo, type UndoEntry } from "./undo";
+import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
+import { libraryHasTools } from "./production-tools";
+import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
+import { useSession } from "@/lib/session";
+import { projectChanged } from "@/lib/workspace/data";
+import { useConnectedCollector } from "./use-connected-collector";
 
 /**
  * The Suites shell's own state (README › State), layered over the workspace
@@ -55,7 +60,8 @@ export type Shell = {
   openCtx: (ctx: CtxState) => void;
   closeCtx: () => void;
   setClip: (clip: Clip | null) => void;
-  pushUndo: (entry: UndoEntry) => void;
+  /** Records an inverse. With `say`, the shell toasts it with an Undo (a phone has no ⌘Z), shown while this step is the one ⌘Z would undo. */
+  pushUndo: (entry: UndoEntry, say?: string) => void;
   /** The shell's command path (SuitesShell registers it), so panels never grow a second one. */
   runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
   setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
@@ -95,21 +101,29 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
 }
 
-export function ShellProvider({ children }: { children: ReactNode }) {
+export function ShellProvider({ children, initialSearch }: { children: ReactNode; initialSearch?: string }) {
   const ws = useWorkspace();
-  const [params, setParams] = useState<Params>(() => readParams(typeof window === "undefined" ? "" : window.location.search));
+  const [params, setParams] = useState<Params>(() => readParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
   const [memory, setMemory] = useState<Partial<Record<ShellSuiteId, string>>>({});
   const [wide, setWide] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= WIDE_FROM));
   const [libTab, setLibTab] = useState<LibTab>("tools");
   const [libOpen, setLibOpen] = useState(false);
   const [inspOpen, setInspOpen] = useState(false);
-  const [palette, setPaletteOpen] = useState(false);
+  /* `?find=1` (the 404's and the error page's Search) lands with ⌘K open — read from the opening URL, like the params above. */
+  const [palette, setPaletteOpen] = useState(() => findRequested(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
   const [ctx, setCtx] = useState<CtxState | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
-  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const [undoStack, setUndoState] = useState<UndoEntry[]>([]);
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
+  /* The stack as of the last change, written with the state so two quick ⌘Z presses never pop one step twice. */
   const undoRef = useRef(undoStack);
-  useEffect(() => { undoRef.current = undoStack; }, [undoStack]);
+  const setUndoStack = useCallback((next: (stack: UndoEntry[]) => UndoEntry[]) => {
+    undoRef.current = next(undoRef.current);
+    setUndoState(undoRef.current);
+  }, []);
+  /* Every step remembers the project it was made in (lib/shell/undo.ts). */
+  const projectRef = useRef(ws.state.projectId);
+  useEffect(() => { projectRef.current = ws.state.projectId; }, [ws.state.projectId]);
   const liveRef = useRef<Shell | null>(null);
   const live = useCallback(() => liveRef.current!, []);
 
@@ -147,18 +161,38 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     landed.current = true;
     if (ws.state.view !== "studio" || !mapped) {
       const target = mapped ?? suite.pages[0];
-      ws.go(target.legacy.suite, target.legacy.page);
+      /* The landing replaces the entry URL: Back leaves /suites instead of re-opening the same page. */
+      ws.go(target.legacy.suite, target.legacy.page, { replace: true });
       writeParams({ ...params, sp: target.id }, "replace");
     }
+    /* One shot: a reload of this URL should not reopen search. */
+    if (findRequested(window.location.search)) window.history.replaceState(null, "", window.location.pathname + withoutFind(window.location.search) + window.location.hash);
     // Run once, against the URL the page was opened with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* Leaving a page is when a composer that polled its own connected job lets go of it, and when an
+     editor that is not a stage (the Rig) has saved: the collector lists the project's jobs, and the
+     shell's copy of the project is read again. */
+  const session = useSession();
+  const place = `${params.view}:${page.id}`;
+  const strip = ws.state.gen;
+  useConnectedCollector({
+    scope: session.requestScope ?? null, owner: session.owner, projectId: ws.state.projectId, place, toast: ws.toast,
+    strip: strip ? { id: strip.id, done: strip.tone === "green" || strip.tone === "red" } : null,
+  });
+  const placed = useRef(place);
+  useEffect(() => {
+    if (placed.current === place) return;
+    placed.current = place;
+    projectChanged(ws.state.projectId);
+  }, [place, ws.state.projectId]);
+
   const value = useMemo<Shell>(() => ({
-    /* Gen is not a stage and has no tools of its own: there the Library is
-       what you can drag in, however you arrived (tab, palette or a link). */
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: params.view === "gen" ? "assets" : libTab, libOpen, inspOpen,
-    inspector: ws.state.inspector, palette, ctx, clip, canUndo: undoStack.length > 0,
+    /* Where a page has no tools of its own (Gen, the Business and Viral composers, the phone's
+       Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
+    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
+    inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
     goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp }, "push"); },
@@ -171,8 +205,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     },
     openLibrary: (tab) => {
       if (tab) setLibTab(tab);
-      /* Crew and Workspace have no Library: it opens over the suite page the person came from. */
-      if (params.view === "crew" || params.view === "workspace") apply({ ...params, view: "suite" }, "push");
+      /* Crew and Workspace have no Library: the suite page they were opened over hosts it. */
+      if (params.view === "crew" || params.view === "workspace") { setPaletteOpen(false); apply({ ...params, view: "suite" }, "push"); }
       if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); }
     },
     openInspector: () => {
@@ -184,18 +218,29 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     openCtx: (next) => setCtx(next),
     closeCtx: () => setCtx(null),
     setClip,
-    pushUndo: (entry) => setUndoStack((stack) => pushUndo(stack, entry)),
+    pushUndo: (entry, say) => {
+      const stamped = { ...entry, projectId: entry.projectId ?? projectRef.current };
+      setUndoStack((stack) => pushUndo(stack, stamped));
+      /* The toast's Undo (lib/workspace/state › ToastAction) stays as long as an Open does, long enough to reach on a phone, and
+         shows only while this step is still the one ⌘Z would undo in this project. */
+      if (say) ws.toast(say, { label: "Undo", kind: "undo", run: () => void live().undo(), live: () => popUndo(undoRef.current, projectRef.current)?.entry === stamped });
+    },
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
     undo: async () => {
-      const popped = popUndo(undoRef.current);
-      if (!popped) { ws.toast("Nothing to undo."); return; }
-      setUndoStack(popped.rest);
-      await popped.entry.undo();
-      ws.toast(popped.entry.label);
+      const popped = popUndo(undoRef.current, ws.state.projectId);
+      if (!popped) { ws.toast(undoRef.current.length ? "Nothing to undo in this project." : "Nothing to undo."); return; }
+      setUndoStack((stack) => stack.filter((entry) => entry !== popped.entry));
+      try {
+        ws.toast(undoneLabel(popped.entry, await popped.entry.undo()));
+      } catch (error) {
+        /* The step is still owed: it goes back on the stack, and the toast says why it did not happen. */
+        setUndoStack((stack) => pushUndo(stack, popped.entry));
+        ws.toast(`Could not undo: ${error instanceof Error && error.message ? error.message : "try again."}`);
+      }
     },
     live,
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack.length, goSuite, apply, ws, live]);
+  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

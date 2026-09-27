@@ -10,13 +10,14 @@ process.env.PLATFORM_DATABASE_URL=`file:${path.join(dir,'platform.db')}`;
 process.env.TURSO_DATABASE_URL=`file:${path.join(dir,'primary.db')}`;
 process.env.KEYRING_SECRET??='unit-test-keyring-secret-unit-test-keyring';
 process.env.ENGINE_MOCK='1';
-function workspace(name:string):TenantWorkspace{return {id:'ws_'+name,slug:name,name,legacy:true,dbUrl:`file:${path.join(dir,name+'.db')}`,dbToken:null,keys:{},usesPlatformKeys:false,allowanceUsd:null,gatewayKeyId:null,ownerId:'owner',createdAt:0,suspendedAt:null,suspendedReason:null,flaggedAt:null,flagNote:null,concurrency:null,rendersPerHour:null,storageQuotaBytes:null,deletedAt:null};}
-async function makeJob(genId:string,provider:'byteplus'|'fal'='byteplus'):Promise<VideoJob>{
+function workspace(name:string,keys:Record<string,string>={}):TenantWorkspace{return {id:'ws_'+name,slug:name,name,legacy:true,dbUrl:`file:${path.join(dir,name+'.db')}`,dbToken:null,keys,usesPlatformKeys:false,allowanceUsd:null,gatewayKeyId:null,ownerId:'owner',createdAt:0,suspendedAt:null,suspendedReason:null,flaggedAt:null,flagNote:null,concurrency:null,rendersPerHour:null,storageQuotaBytes:null,deletedAt:null};}
+async function makeJob(genId:string,provider:'byteplus'|'fal'|'xai'='byteplus'):Promise<VideoJob>{
  const {db,ready,now}=await import('../../lib/db');const {getModel}=await import('../../lib/models');const {getTask}=await import('../../lib/tasks');const {meter}=await import('../../lib/meter');
- await ready();const model=getModel(provider==='fal'?'fal-ai/kling-video/v3/standard':'dreamina-seedance-2-0-260128');
+ await ready();const model=getModel(provider==='fal'?'fal-ai/kling-video/v3/standard':provider==='xai'?'grok-imagine-video-1.5':'dreamina-seedance-2-0-260128');
  const params={ratio:'16:9',resolution:'720p',duration:5,watermark:false};
  await db().execute({sql:`INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_at,updated_at) VALUES(?,'video',?,'Test',?,'queued',?,'generate',?,?)`,args:[genId,model.id,JSON.stringify(params),provider,now(),now()]});
- await meter({id:genId,kind:'video',engine:provider,model:model.id,status:'running',engineCostUsd:.7});
+ const {billedTo}=await import('../../lib/providers');
+ await meter({id:genId,kind:'video',engine:billedTo(provider),model:model.id,status:'running',engineCostUsd:.7});
  return {genId,model,task:getTask('generate'),prompt:'Test',params,references:[],source:null,ts:now()};
 }
 
@@ -35,10 +36,12 @@ test('concurrent submission and late held-row delivery have one durable paid own
 
 test('transport failures, 5xx and malformed acceptance never retry or refund uncertain spend',async()=>{
  const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {db}=await import('../../lib/db');const {platformDb}=await import('../../lib/platform');
- const failures:[('byteplus'|'fal'),string][]=[['byteplus','Could not reach ModelArk: fetch failed'],['byteplus','Ark submit failed (500): upstream failure'],['fal','Could not reach fal.ai: socket hang up'],['fal','fal.ai did not answer within 60s. The job may still be on their queue.'],['fal','fal.ai returned 503: upstream failure.'],['byteplus','ModelArk sent an unreadable submit response']];
- for(const [index,[provider,message]] of failures.entries()){
+ const {FalHttpError}=await import('../../lib/fal');const {XaiHttpError}=await import('../../lib/xaiVideo');
+ // The shapes the adapters really throw (lib/fal.ts call(), lib/xaiVideo.ts, lib/ark.ts).
+ const failures:[('byteplus'|'fal'|'xai'),()=>Error][]=[['byteplus',()=>new Error('Could not reach the video engine: fetch failed')],['byteplus',()=>new Error('Ark submit failed (500): upstream failure')],['fal',()=>new Error('Could not reach the render service: socket hang up')],['fal',()=>new Error('The render service did not answer within 60s. The job may still be on their queue.')],['fal',()=>new FalHttpError(503,'The render service returned 503: upstream failure.')],['byteplus',()=>new Error('The video engine sent an unreadable submit response')],['xai',()=>new XaiHttpError(500,'Grok Imagine Video refused the request (500): upstream failure')],['xai',()=>new XaiHttpError(408,'Grok Imagine Video refused the request (408): timeout')],['xai',()=>new Error('Grok Imagine Video returned no request id.')]];
+ for(const [index,[provider,failure]] of failures.entries()){
   const engine=engineFor(provider),original=engine.render;let calls=0;
-  engine.render=async()=>{calls++;throw new Error(message);};
+  engine.render=async()=>{calls++;throw failure();};
   try{await runInTenant(workspace('uncertain_'+index),async()=>{
    const job=await makeJob('gen_uncertain_'+index,provider);const result=await submitVideoJob(job);
    expect(result.ok).toBe(false);if(!result.ok){expect(result.cls).toBe('uncertain');expect(result.error).toContain('estimated cost remains reserved');}
@@ -50,17 +53,81 @@ test('transport failures, 5xx and malformed acceptance never retry or refund unc
 });
 
 test('explicit provider rejection releases only the rejected reservation without automatic retries',async()=>{
- const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {platformDb}=await import('../../lib/platform');
- for(const provider of ['byteplus','fal'] as const){
+ const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {platformDb}=await import('../../lib/platform');const {db}=await import('../../lib/db');
+ const {FalHttpError}=await import('../../lib/fal');const {XaiHttpError}=await import('../../lib/xaiVideo');const {preflight}=await import('../../lib/preflight');
+ const refusals:[('byteplus'|'fal'|'xai'),()=>Promise<never>][]=[
+  ['byteplus',async()=>{throw new Error('Ark submit failed (422): invalid input');}],
+  ['fal',async()=>{throw new FalHttpError(422,'The render service refused the request: invalid input.');}],
+  ['fal',async()=>{throw new FalHttpError(402,'The render service account is out of credit — top it up in the render account billing settings.');}],
+  ['fal',async()=>{throw new FalHttpError(401,'The render service rejected the key (401).');}],
+  ['fal',async()=>{throw new FalHttpError(429,'The render service rate limit — too many requests at once. Try a new request later.');}],
+  ['xai',async()=>{throw new XaiHttpError(422,'Grok Imagine Video refused the request (422): moderated');}],
+  ['xai',async()=>{throw new XaiHttpError(403,'Grok Imagine Video refused the request (403): forbidden');}],
+  // Anything raised while the request is still being built was never sent.
+  ['xai',()=>preflight(()=>{throw new Error('Grok Imagine Video 1.5 renders from reference images at up to 720p. Choose 720p or 480p.');})],
+  ['fal',()=>preflight(async()=>{throw new Error('Motion control needs a still of the character — attach one.');})],
+  ['byteplus',()=>preflight(async()=>{throw new Error('Request body is 70.0 MB, over the video engine\'s 64 MB limit.');})],
+ ];
+ for(const [index,[provider,refuse]] of refusals.entries()){
   const engine=engineFor(provider),original=engine.render;let calls=0;
-  engine.render=async()=>{calls++;throw new Error(provider==='fal'?'fal.ai refused the request: invalid input.':'Ark submit failed (422): invalid input');};
-  try{await runInTenant(workspace('rejected_'+provider),async()=>{
-   const job=await makeJob('gen_rejected_'+provider,provider);const result=await submitVideoJob(job);
-   expect(result.ok).toBe(false);if(!result.ok)expect(result.cls).toBe('fatal');
+  engine.render=async()=>{calls++;return refuse();};
+  try{await runInTenant(workspace('rejected_'+index),async()=>{
+   const job=await makeJob('gen_rejected_'+index,provider);const result=await submitVideoJob(job);
+   expect(result.ok).toBe(false);if(!result.ok){expect(result.cls).not.toBe('uncertain');expect(result.error).not.toContain('estimated cost remains reserved');}
    await submitVideoJob(job);expect(calls).toBe(1);
+   expect((await db().execute({sql:'SELECT status,cost_usd FROM generations WHERE id=?',args:[job.genId]})).rows[0]).toMatchObject({status:'failed',cost_usd:0});
    expect((await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=?',args:[job.genId]})).rows[0].engine_cost_usd).toBe(0);
   });}finally{engine.render=original;}
  }
+});
+
+test('a refused submission starts the take that waited for its slot, not the ten-minute cron',async()=>{
+ const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {db,now}=await import('../../lib/db');
+ const engine=engineFor('byteplus'),original=engine.render;let calls=0;
+ engine.render=async()=>{calls++;if(calls===1)throw new Error('Ark submit failed (422): invalid input');return {handle:{provider:'byteplus',ref:'slot-came-back',model:'mock'}};};
+ try{await runInTenant({...workspace('slot_back'),concurrency:1},async()=>{
+  const job=await makeJob('gen_refused_first');
+  await db().execute({sql:`INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,billed_to,created_by,created_at,updated_at) VALUES('gen_waited','video',?,'Test',?,'held','byteplus','generate','byteplus','owner',?,?)`,
+   args:[job.model.id,JSON.stringify({...job.params,held:{estUsd:.7,needs:11,at:1,why:'slots'}}),now(),now()]});
+  const result=await submitVideoJob(job);
+  expect(result.ok).toBe(false);
+  // The refusal freed the one slot; the held take was released and sent from its row.
+  expect((await db().execute("SELECT status,ark_task_id FROM generations WHERE id='gen_waited'")).rows[0]).toMatchObject({status:'running',ark_task_id:'slot-came-back'});
+  expect(calls).toBe(2);
+ });}finally{engine.render=original;}
+});
+
+test('the real xAI and fal adapters report refusals and unsent requests as rejected, never as uncertain',async()=>{
+ const {runInTenant}=await import('../../lib/tenant');const {submitVideoJob}=await import('../../lib/submitVideo');const {platformDb}=await import('../../lib/platform');
+ const originalFetch=globalThis.fetch;const posts:string[]=[];
+ let reply:()=>Response=()=>Response.json({error:{message:'unused'}},{status:500});
+ globalThis.fetch=async(input:RequestInfo|URL)=>{posts.push(String(input));return reply();};
+ process.env.ENGINE_MOCK='0';
+ const reserved=async(id:string)=>(await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=?',args:[id]})).rows[0].engine_cost_usd;
+ try{
+  await runInTenant(workspace('real_xai',{xai:'unit-test-key'}),async()=>{
+   reply=()=>Response.json({error:{message:'Content moderated'}},{status:422});
+   const refused=await makeJob('gen_real_xai_422','xai');
+   expect(await submitVideoJob(refused)).toMatchObject({ok:false,cls:'fatal'});expect(posts).toHaveLength(1);expect(await reserved(refused.genId)).toBe(0);
+   reply=()=>new Response('upstream',{status:502});
+   const unknown=await makeJob('gen_real_xai_502','xai');
+   expect(await submitVideoJob(unknown)).toMatchObject({ok:false,cls:'uncertain'});expect(posts).toHaveLength(2);expect(await reserved(unknown.genId)).toBe(.7);
+   const guided=await makeJob('gen_real_xai_1080','xai');guided.params={...guided.params,resolution:'1080p'};
+   guided.references=[{id:'guide',kind:'image',mime:'image/png',ext:'png',storedUrl:'/guide.png',role:'reference_image'}];
+   const result=await submitVideoJob(guided);
+   expect(result).toMatchObject({ok:false});if(!result.ok){expect(result.cls).not.toBe('uncertain');expect(result.error).toContain('up to 720p');}
+   expect(posts).toHaveLength(2);expect(await reserved(guided.genId)).toBe(0);
+  });
+  await runInTenant(workspace('real_xai_unkeyed'),async()=>{
+   const unkeyed=await makeJob('gen_real_xai_unkeyed','xai');
+   expect(await submitVideoJob(unkeyed)).toMatchObject({ok:false});expect(posts).toHaveLength(2);expect(await reserved(unkeyed.genId)).toBe(0);
+  });
+  await runInTenant(workspace('real_fal',{fal:'unit-test-key'}),async()=>{
+   reply=()=>Response.json({detail:'Exhausted balance'},{status:402});
+   const broke=await makeJob('gen_real_fal_402','fal');
+   expect(await submitVideoJob(broke)).toMatchObject({ok:false,cls:'fatal'});expect(posts).toHaveLength(3);expect(await reserved(broke.genId)).toBe(0);
+  });
+ }finally{globalThis.fetch=originalFetch;process.env.ENGINE_MOCK='1';}
 });
 
 test('handle writes retry safely, and committed writes with lost acknowledgments recover without resubmitting',async()=>{

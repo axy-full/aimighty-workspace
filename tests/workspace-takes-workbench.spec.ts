@@ -34,7 +34,7 @@ function library(): LibraryRoute {
 
 async function open(page: Page, store: LibraryRoute, onFile?: (id: string) => void) {
   const account = await signInLocally(page.request);
-  const db = createClient({ url: localPlatformDbUrl() });
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try { await db.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [account.workspace.id] }); } finally { db.close(); }
   await forbidPaidWork(page);
   await mockMedia(page);

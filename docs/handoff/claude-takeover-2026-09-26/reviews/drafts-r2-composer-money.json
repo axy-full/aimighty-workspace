@@ -1,0 +1,85 @@
+{
+ "breaks": [
+  {
+   "severity": "major",
+   "title": "After a lost paid reply, a new prompt replays and bills the old prompt's request, and the new prompt is never sent",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 488,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-1-workbench.spec.ts (2 tests, both fail on every run)",
+   "scenario": "Gen, workspace credits, video. Prompt A ('A red fox crosses the frozen harbour at dusk.'), Generate. The claimed POST /api/generate loses its reply. The person replaces the prompt with B ('A lighthouse beam sweeps over black water at night.') and presses Generate at the price on the button. The resume record matches on quoteKey alone, and quoteKeyFor (lib/workspace/composer.ts:350) leaves the prompt out for workspace video and image. So the resumed shot and A's claimed request are replayed with the same Idempotency-Key, and B is never sent. Observed POSTs: [{A, key K}, {A, key K}]; the draft holds one shot, titled A. (a) First request never reached the server: A is sent and billed on the second press, a prompt the person had already replaced. (b) First request reached the server: B produces no job, and the server hands back A's job. In both cases the strip and the 'rendered. Filed in Takes' toast carry B's name, because setRun takes its name from the current prompt, while the job is A. This is a regression: on origin/main every Generate added a new shot, so B was quoted and sent. The same root cause also files a B take into shot 'A' with A's direction note whenever the resume outlives a take with no claimed request (repriced, refused, map-shot error)."
+  },
+  {
+   "severity": "major",
+   "title": "A connected batch that stops at take 2 or later for any reason except a lost reply starts over from take 1 on the next Generate, so take 1 is paid for twice",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 526,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-2-workbench.spec.ts (3 failing tests + a passing workspace control)",
+   "scenario": "Connected account, Motion 1, 2 takes at 9 cr. Take 1 is submitted. Three stops were tested. (a) Take 2's re-quote comes back at 10 and the page says 'The price is now 10 connected cr. Press Generate again to approve it.' The person presses: takes 1 and 2 are both submitted again, 3 connected submissions for a 2-take ask. (b) Take 2's submit is refused with 429 ('busy\u2026 Try again in a moment'); pressing again gives 3 submissions. (c) 4 takes, and take 3's quote hits the route's own limit of 6 quotes a minute per person (app/api/higgsfield/consumer/generation/route.ts:140). The button quote plus one re-quote per take reaches that limit inside one batch. After a later Generate: 6 submissions for 4 takes. The cause: the connected loop writes the resume record only around the submit and clears it on any 4xx. The early returns for a moved price, an expired quote and a quote error leave nothing behind, so `start` goes back to 0. The workspace path goes on from take 2 in the same situation (control: 2 paid), which is what the branch's own 'charges two takes in all, not three' spec requires."
+  },
+  {
+   "severity": "major",
+   "title": "The record of a lost paid take is one slot per project: any other take on that project wipes it, and the next Generate pays for the lost take a second time",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 143,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-3-workbench.spec.ts (2 tests)",
+   "scenario": "Tab A: Gen video 'A red fox\u2026'. The paid POST reaches the server (job gen_\u20261 is made and billed) and its reply is lost, so the resume record is written. Then another take lands on the same project with other settings, either from another tab of the same browser (localStorage is shared) or from this tab after switching to Image. `remember` overwrites the per-project slot with its own record and clears it once its take is accepted. Back in tab A, the fox take with the same settings: Generate. Nothing is resumed, so a new shot, quote, claim and key are made. Observed: 2 Idempotency-Keys and 2 jobs for the one fox take, both billed, and 2 fox shots in the draft. Connected and workspace takes share the slot, so a connected take clears a workspace record and the other way round. The fix's promise that such a take is 'never paying for it twice' holds only if nothing else is generated on the project in between."
+  },
+  {
+   "severity": "minor",
+   "title": "A connected take the account reports as failed is announced as landing in Takes, and the next Generate submits nothing",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 499,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-4-workbench.spec.ts",
+   "scenario": "A connected submit loses its reply, and its status then reads 'failed' (not billed). The next Generate with the same settings treats any status other than 'quoted' as reached. It says 'That take reached the connected account. It files into Takes as it lands.' and submits nothing (1 submission in total). The person asked for a take, gets none, and is told one is coming. In a batch, the failed take is skipped silently."
+  },
+  {
+   "severity": "minor",
+   "title": "Every connected take is polled twice, because two composers are mounted on Gen; three takes exceed the route's limit of 30 status calls a minute",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 662,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-5-workbench.spec.ts ('each take's status is polled once per interval\u2026')",
+   "scenario": "SuitesShell mounts GenView's composer and the always-mounted GenerateComposer overlay (components/graphite/SuitesShell.tsx:287). Both follow every connected job, through `followers` and the restored session list, and both poll every 6 s. A 3-take batch was measured over 30 s at 10 status calls per job, which is 60 a minute. The route allows 30 a minute per person (route.ts:140), so polls, the Atomik page's own polls and the resume's status read ('Your last take could not be checked') all start getting 429s. On main the composer polled only the last job, and only in the instance that ran it."
+  },
+  {
+   "severity": "minor",
+   "title": "A connected job that was never submitted (still 'quoted') is polled for the rest of the session, even after its take was submitted again",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 541,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-5-workbench.spec.ts ('a submit that never reached the account stops being polled\u2026')",
+   "scenario": "A submit fails with a network error, and the catch calls followConnected on the quoted job. The next Generate re-quotes and submits the take as a new job. `finished()` counts only completed and failed as done, so the dead quoted job stays in connectedJobs and in sessionStorage. Measured: 10 status polls in 30 s for the dead job after the resubmit, from both composers. This adds to the rate-limit pressure in the finding above."
+  },
+  {
+   "severity": "minor",
+   "title": "Connected resume can resubmit while the lost submit is still being admitted on the server",
+   "file": "lib/higgsfield-consumer/generation-service.ts",
+   "line": 231,
+   "reproduced": false,
+   "scenario": "submitConsumerGenerationJob keeps the job 'quoted' until admit() \u2192 claimConsumerDispatch, which comes after requireModel and connected() (network calls). Suppose the client's submit fetch fails while the server is still before admit, and the person presses Generate. The resume's status read returns 'quoted', so the composer re-quotes and submits a new job, then the first submit is admitted too: two connected charges. The window is short and needs server timing that the browser mocks cannot produce, so this was not reproduced."
+  },
+  {
+   "severity": "minor",
+   "title": "Copy: a resumed batch with one take left says 'Takes 2\u20132 submitted'",
+   "file": "lib/workspace/use-composer.ts",
+   "line": 633,
+   "reproduced": true,
+   "spec": "tests/zz-break-composer-money-r2-2-workbench.spec.ts (control test output)",
+   "scenario": "Workspace, 2 takes. Take 2's price moves, and the person presses Generate again. The notice reads 'Takes 2\u20132 submitted, each at the price shown.'"
+  }
+ ],
+ "checked": [
+  "Previous round's breaks, re-checked through the folded tests in tests/suites-draft-merge-workbench.spec.ts: 'a lost reply is merged again over another window's save' (Cast rewritten, Cast connection dropped then rewritten on another device, Cast + Character then deleted, Rig + Add shot then deleted, Rig rename never goes back), 'direction note typed in two windows' (one op, and a fresh Rig shows it), 'merge of two valid saves overflows the schema' (five-of-six reference upload saves, and so do later edits), 'two Environment tabs take one agent run' (world held once), and 'link to a dropped node' (the wire goes, and the grade takes another input). All pass. One Gen test ('stays on Gen') failed once, on a dev-server navigation while about 20 other Playwright processes were running, and passed 2/2 on a rerun.",
+  "Gen stale-snapshot fix: two takes after a Brief edit elsewhere keep the Brief and both shots; takes with other saves landing between them and a lost save reply are checked and never made twice (branch specs pass).",
+  "Lost paid reply with the SAME settings, when the person stays on Gen, leaves for Studio and comes back, or reloads: paid for once (branch specs pass). The breaks above are what happens when the prompt changes or another take intervenes.",
+  "Sound: a new prompt is a new request; when Edit & Sound makes the lane during Gen's save, the project keeps one lane (pass).",
+  "Workspace two-take recovery after take 2 is cut off, and after a price move at take 2 (control in r2-2): 2 paid in all (pass).",
+  "Connected: a lost submit is read back, not resubmitted; takes submitted after leaving Gen are still followed and filed (pass). Filing dedupes by generationId even though two composers file each completion.",
+  "Code review: saveOnLatest and writeDraft with a writer tag plus the check-write fence (records.ts checkDraftWrite; saveDraft refuses seq <= seen), so a late PUT cannot land after the check. /api/generate idempotency (generationRequests.ts) returns 409 pending without Idempotency-Status complete, so dispatchGeneration keeps the claim. Takes file into the project captured at click (run.projectId, map-shot on filed.project.id). useProjects keeps the old project until the new one loads, so Generate during a switch files where the UI says.",
+  "New specs, all run on :4790 with ENGINE_MOCK=1; everything connected was intercepted, and nothing reached a real engine or account: tests/zz-break-composer-money-r2-1-workbench.spec.ts, -r2-2- (3 failing + 1 passing control), -r2-3-, -r2-4-, -r2-5- (2 tests). Specs 1, 3 and 4 were rerun and fail the same way each time. No product code was edited, nothing was committed, and the other agents' zz-* files were left untouched."
+ ]
+}

@@ -374,7 +374,7 @@
   .formats button { min-width: 0; padding: 9px 8px; gap: 4px; border: 0; border-radius: 6px; background: transparent; }
   .formats button[aria-pressed="true"] { background: var(--graphite-selected); }
   .formats strong { font-size: 13px; font-weight: 500; }
-  .formats span { font-size: 10px; line-height: 1.4; }
+  .formats span { font-size: 12px; line-height: 1.4; }
   .grid { grid-template-columns: minmax(0, 1fr); border: 0; background: transparent; gap: 20px; }
   .source, .breakdown { padding: 0; border: 0; background: transparent; }
   .source > textarea { min-height: 350px; padding: 17px; border: 1px solid var(--graphite-edge); border-radius: 12px; background: var(--graphite-card); font: 16px/1.85 var(--graphite-mono); }
@@ -388,13 +388,14 @@
   .sceneTitle { font-size: 14px; line-height: 1.5; gap: 10px; }
   .sceneTitle input { width: 22px; height: 22px; margin-top: 0; accent-color: var(--graphite-accent); }
   .scene small { font-size: 12px; margin: 6px 0 10px; }
-  .scene > label:not(.sceneTitle) { font-size: 11px; line-height: 1.6; letter-spacing: 0; }
+  .scene > label:not(.sceneTitle) { font-size: 12px; line-height: 1.6; letter-spacing: 0; }
   .scene textarea { min-height: 68px; padding: 10px 12px; font-size: 16px; line-height: 1.5; }
   .scene details { font-size: 12px; }
   .scene summary { min-height: 44px; display: flex; align-items: center; }
   .scene pre { padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.7; }
   .beat { grid-template-columns: 18px minmax(0, 1fr) 32px; gap: 6px; margin: 8px 0; }
-  .beat > span { font-size: 11px; }
+  .beat > span { font-size: 12px; }
+  .header :global(.eyebrow) { font-size: 12px; }
   .notice, .error { margin: 12px 0; padding: 12px; font-size: 12px; line-height: 1.6; border-radius: 8px; }
   .importReview { margin-bottom: 16px; padding: 16px; font-size: 13px; line-height: 1.6; border-radius: 12px; }
   .importReview input[type="checkbox"] { width: 20px; height: 20px; }

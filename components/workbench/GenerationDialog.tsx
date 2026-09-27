@@ -11,10 +11,11 @@ import {
 import { Button } from "./ui/button";
 import { mediaReferenceIdentity, mediaQuoteReferences } from '@/lib/workbench/media-reference-input';
 import { generationRequestBody, resolveGenerationReferences } from "@/lib/workbench/generation-request";
-import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
+import { audioTaskAvailable, nodeAudioBody, speechVoiceFor, speechVoicesFor, usableAudioTask, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { referenceVideoModels } from "@/lib/workbench/reference-ad";
-import type { ModelDef } from "@/lib/models";
+import { displayModelName, type ModelDef } from "@/lib/models";
+import { NumberDraftInput } from "./NumberDraftInput";
 import type { MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
 import {
   pendingGenerationKey,
@@ -23,6 +24,7 @@ import {
   clearPendingGeneration,
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
+import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
 
 type Model = {
   id: string;
@@ -77,15 +79,7 @@ function validMapping(value: unknown): value is { shotId: string; productionProj
   const mapping = value as Record<string, unknown>;
   return [mapping.shotId, mapping.productionProjectId].every(item => typeof item === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(item));
 }
-export function GenerationDialog({
-  target,
-  project,
-  scope,
-  onClose,
-  onSave,
-  onQueued,
-  onAsset,
-}: {
+type GenerationDialogProps = {
   scope: string;
   target: GenerationTarget;
   project: Project;
@@ -93,7 +87,30 @@ export function GenerationDialog({
   onSave: () => Promise<boolean>;
   onQueued: (id: string, kind?: "image" | "video" | "audio", accepted?: { prompt: string; options: MoleculrGenerationOptions }) => void;
   onAsset: (id: string, fields: Partial<Asset>) => void;
-}) {
+};
+/**
+ * A take claimed earlier whose reply was lost is never sent again (it shares
+ * its recovery key with the Rig's take of the same node). Recover asks the
+ * server what became of it (settlePendingGeneration): landed, that job is
+ * followed; never arrived or refused, it is let go and the dialog starts again
+ * from the node as it is now, so nothing goes until its fresh price is on the
+ * button and that button is pressed.
+ */
+export function GenerationDialog(props: GenerationDialogProps) {
+  const [fresh, setFresh] = useState({ round: 0, notice: "" });
+  return <TakeDialog key={fresh.round} {...props} notice={fresh.notice} onLetGo={(notice) => setFresh((f) => ({ round: f.round + 1, notice }))} />;
+}
+function TakeDialog({
+  target,
+  project,
+  scope,
+  onClose,
+  onSave,
+  onQueued,
+  onAsset,
+  notice,
+  onLetGo,
+}: GenerationDialogProps & { notice: string; onLetGo: (notice: string) => void }) {
   const callbacks = useRef({ onSave });
   useEffect(() => { callbacks.current = { onSave }; }, [onSave]);
   const [preparationRevision, setPreparationRevision] = useState(0);
@@ -144,7 +161,9 @@ export function GenerationDialog({
       fingerprint?: string;
     } | null>(null),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(initial.error);
+    [error, setError] = useState(initial.error),
+    /** The preset's own engine, when this workspace has not connected it and another engine stands in. */
+    [missingEngine, setMissingEngine] = useState("");
   const model = models.find((m) => m.id === modelId && m.kind === kind);
   const boundRefs = useMemo(() => target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
@@ -158,9 +177,13 @@ export function GenerationDialog({
   const refs = useMemo(() => kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs, [kind, model?.soulIdentity, boundRefs]);
   const referenceQuery = mediaQuoteReferences(refs);
   const roleFor = (asset: Asset) => asset.kind === "video" ? "reference_video" : kind === "video" && asset.id === firstFrameId ? "first_frame" : "reference_image";
-  const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) }))) : null;
+  const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) })), resolution) : null;
+  /* Each speech model reads in its own vendor's voices: the list swaps with the model. */
+  const speechModelId = speechModel || audioSetup?.defaultSpeechModel || "";
+  const speechVoices = speechVoicesFor(audioSetup, speechModelId);
+  const speechVoiceId = speechVoiceFor(speechVoices, voiceId)?.id ?? "";
   const audioBody = JSON.stringify(nodeAudioBody({ task: audioTask, text: prompt, seconds: audioSeconds, instrumental,
-    voiceId: voiceId || audioSetup?.voices[0]?.id || "", modelId: speechModel || audioSetup?.defaultSpeechModel || "" }));
+    voiceId: speechVoiceId, modelId: speechModelId }));
   const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined, ...(model?.marketing ? { prompt, marketing, shotId: mapped?.shotId, projectId: mapped?.productionProjectId } : {}) });
   const cost = pending?.credits ?? (!referenceProblem && quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
@@ -168,11 +191,15 @@ export function GenerationDialog({
       .then((d) => {
         const available = initial.pending ? d.models : referenceVideoModels(d.models, videoReferenceKinds.split(','));
         setModels(available);
-        const preferred = target.options?.modelId ? available.find(m => m.id === target.options?.modelId) : undefined;
-        const first = preferred || (!target.options?.modelId ? (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
+        const wanted = target.options?.modelId;
+        const preferred = wanted ? available.find(m => m.id === wanted) : undefined;
+        /* A preset (Marketing Studio, a template) names its engine; when this workspace has not
+           connected it, the first engine of the same kind stands in — named, never silently. */
+        const first = preferred || (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
           || available.find(m => m.kind === initialKind && !m.soulIdentity)
-          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined) : undefined);
+          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined);
         if (first && !initial.pending && initialKind !== "audio") {
+          if (wanted && !preferred) setMissingEngine(wanted);
           setKind(first.kind);
           setModelId(first.id);
           setResolution(target.options?.resolution && first.resolutions.includes(target.options.resolution) ? target.options.resolution : first.resolutions[0]);
@@ -195,10 +222,15 @@ export function GenerationDialog({
     if (kind !== "audio") return;
     const abort = new AbortController();
     studioRequest<NodeAudioSetup>("/api/audio", { signal: abort.signal, headers: { "X-Workbench-Scope": scope } })
-      .then(data => { setAudioSetup(data); if (!data.configured) setError("Audio generation is not configured for this workspace."); })
+      .then(data => {
+        setAudioSetup(data);
+        /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone lands on a spoken line. */
+        if (!initial.pending) setAudioTask(task => usableAudioTask(data, task));
+        if (!data.configured) setError("Audio generation is not configured for this workspace.");
+      })
       .catch(error => { if (!abort.signal.aborted) setError(error.message); });
     return () => abort.abort();
-  }, [kind, scope]);
+  }, [kind, scope, initial.pending]);
   useEffect(() => {
     if (kind !== "audio" || pending || !audioSetup?.configured || !prompt.trim() || (audioTask === "speech" && !JSON.parse(audioBody).voiceId)) return;
     const abort = new AbortController();
@@ -259,6 +291,10 @@ export function GenerationDialog({
   function acceptedSettings(attempt: PendingGeneration) {
     if(attempt.endpoint==='/api/audio')return undefined;
     const body=JSON.parse(attempt.body);
+    /* A stand-in engine made this take (the preset's own is not connected here): the preset keeps
+       its engine and settings, so it is itself again once that engine is connected. */
+    const wanted=target.options?.modelId;
+    if(wanted&&body.model!==wanted&&models.length&&!models.some(m=>m.id===wanted))return {prompt:String(body.prompt??target.prompt),options:target.options!};
     return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength}};
   }
   async function submit() {
@@ -267,50 +303,58 @@ export function GenerationDialog({
     setError("");
     let attempt: PendingGeneration | null = null;
     try {
-      // Recover before saving/mapping/uploading: retries cannot alter the accepted payload.
-      attempt = readPendingGeneration(window.localStorage, storageId);
-      if (!attempt) {
-        if (!(await onSave()))
-          throw new Error("Save your latest work before generating.");
-        const mapping = await studioRequest<{
-          shotId: string;
-          productionProjectId: string;
-        }>("/api/workbench/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-          body: JSON.stringify({
-            action: "map-shot",
-            projectId: project.id,
-            nodeId: target.node.id,
-          }),
-        });
-        if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
-        const references = await resolveGenerationReferences(refs, roleFor, { scope, onAsset });
-        const body = JSON.stringify(kind === "audio" ? {
-          ...JSON.parse(audioBody), projectId: mapping.productionProjectId, shotId: mapping.shotId, maxCredits: cost!,
-        } : generationRequestBody({
-          prompt,
-          kind,
-          model: model!,
-          mapping,
-          ratio,
-          resolution,
-          duration,
-          maxCredits: cost!,
-          references,
-          marketing,
-          quoteFingerprint: quote?.fingerprint,
-          firstFrameAssetId: firstFrameId,
-          soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
-        }));
-        attempt = claimPendingGeneration(window.localStorage, storageId, {
-          key: crypto.randomUUID(),
-          body,
-          credits: cost!,
-          endpoint: kind === "audio" ? "/api/audio" : "/api/generate",
-        });
-        setPending(attempt);
+      /* Whatever is claimed for this node is asked about first, by its own key, and never sent again. */
+      let claimed: PendingGeneration | null = null;
+      try { claimed = readPendingGeneration(window.localStorage, storageId); } catch { /* settled below as unreadable */ }
+      const settled = await settlePendingGeneration({ scope, storageId });
+      if (settled.state === "unknown") { setError(settled.reason); return; }
+      if (settled.state === "landed") {
+        /* It reached the server: that take is followed, at the price approved for it, and nothing is sent. */
+        onQueued(settled.jobId, claimed?.endpoint === "/api/audio" ? "audio" : model?.kind, claimed ? acceptedSettings(claimed) : undefined);
+        onClose();
+        return;
       }
+      /* Recover never spends. Let go, the node as it is now is priced afresh before anything can go. */
+      if (pending) { onLetGo(settled.state === "lost" ? settled.reason : ""); return; }
+      if (!(await onSave()))
+        throw new Error("Save your latest work before generating.");
+      const mapping = await studioRequest<{
+        shotId: string;
+        productionProjectId: string;
+      }>("/api/workbench/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+        body: JSON.stringify({
+          action: "map-shot",
+          projectId: project.id,
+          nodeId: target.node.id,
+        }),
+      });
+      if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
+      const references = await resolveGenerationReferences(refs, roleFor, { scope, onAsset });
+      const body = JSON.stringify(kind === "audio" ? {
+        ...JSON.parse(audioBody), projectId: mapping.productionProjectId, shotId: mapping.shotId, maxCredits: cost!,
+      } : generationRequestBody({
+        prompt,
+        kind,
+        model: model!,
+        mapping,
+        ratio,
+        resolution,
+        duration,
+        maxCredits: cost!,
+        references,
+        marketing,
+        quoteFingerprint: quote?.fingerprint,
+        firstFrameAssetId: firstFrameId,
+        soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
+      }));
+      const proposed: PendingGeneration = { key: crypto.randomUUID(), body, credits: cost!, endpoint: kind === "audio" ? "/api/audio" : "/api/generate" };
+      const claim = claimPendingGeneration(window.localStorage, storageId, proposed);
+      setPending(claim);
+      /* Another window claimed this node meanwhile: that request is its own to send, never this one's. */
+      if (claim.key !== proposed.key) throw new Error("Another Generate of this is already on its way. Nothing new was sent.");
+      attempt = claim;
       const result = await studioRequest<{ id: string }>(attempt.endpoint ?? "/api/generate", {
         method: "POST",
         headers: {
@@ -322,7 +366,7 @@ export function GenerationDialog({
       });
       if (!result.id)
         throw new Error(
-          "The server has not confirmed a job yet. Retry to recover this same request.",
+          "The server has not confirmed a job yet. Recover asks what became of it; nothing is sent again.",
         );
       clearPendingGeneration(window.localStorage, storageId, attempt.key);
       onQueued(result.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind, acceptedSettings(attempt));
@@ -394,19 +438,20 @@ export function GenerationDialog({
               ))}
             </select>
           </label>}
+          {kind !== "audio" && missingEngine && model && <p role="note" className="muted small-copy">{displayModelName(missingEngine)} isn’t connected in this workspace, so this take uses {model.label}.</p>}
           {kind === "audio" && <div className="generation-options">
             <label className="field-label">Audio type<select aria-label="Audio type" value={audioTask} disabled={busy || !!pending} onChange={event => {
               const task = event.target.value as NodeAudioTask; setAudioTask(task); setAudioSeconds(task === "music" ? 30 : 10);
-            }}><option value="sound">Sound effect / ambience</option><option value="music">Music</option><option value="speech">Dialogue / voice</option></select></label>
+            }}><option value="sound" disabled={!!audioSetup?.configured && !audioTaskAvailable(audioSetup, "sound")}>Sound effect / ambience</option><option value="music" disabled={!!audioSetup?.configured && !audioTaskAvailable(audioSetup, "music")}>Music</option><option value="speech">Dialogue / voice</option></select></label>
             {audioTask === "speech" ? <>
-              <label className="field-label">Voice<select aria-label="Audio voice" value={voiceId || audioSetup?.voices[0]?.id || ""} disabled={busy || !!pending} onChange={event => setVoiceId(event.target.value)}>
-                {!audioSetup?.voices.length && <option value="">No voices available</option>}{audioSetup?.voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+              <label className="field-label">Voice<select aria-label="Audio voice" value={speechVoiceId} disabled={busy || !!pending} onChange={event => setVoiceId(event.target.value)}>
+                {!speechVoices.length && <option value="">No voices available</option>}{speechVoices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
               </select></label>
-              <label className="field-label">Speech model<select aria-label="Speech model" value={speechModel || audioSetup?.defaultSpeechModel || ""} disabled={busy || !!pending} onChange={event => setSpeechModel(event.target.value)}>
+              <label className="field-label">Speech model<select aria-label="Speech model" value={speechModelId} disabled={busy || !!pending} onChange={event => setSpeechModel(event.target.value)}>
                 {audioSetup?.speechModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select></label>
-            </> : <label className="field-label">Seconds<input aria-label="Audio duration" type="number" min={audioTask === "music" ? 10 : 0.5} max={audioTask === "music" ? 300 : 30} step={audioTask === "music" ? 1 : 0.5}
-              value={audioSeconds} disabled={busy || !!pending} onChange={event => setAudioSeconds(Math.max(audioTask === "music" ? 10 : 0.5, Math.min(audioTask === "music" ? 300 : 30, Number(event.target.value) || 10)))} /></label>}
+            </> : <label className="field-label">Seconds<NumberDraftInput aria-label="Audio duration" min={audioTask === "music" ? 10 : 0.5} max={audioTask === "music" ? 300 : 30} step={audioTask === "music" ? 1 : 0.5}
+              value={audioSeconds} disabled={busy || !!pending} onCommit={setAudioSeconds} /></label>}
             {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
           </div>}
           {kind !== "audio" && model?.marketing && <div className="generation-options">
@@ -492,10 +537,11 @@ export function GenerationDialog({
             )}
           </div>}
           {kind === "audio" && <p className="muted small-copy">Audio uses your written direction or script. The node’s visual references remain attached to the node.</p>}
+          {notice && <p role="status" className="muted small-copy">{notice}</p>}
           {pending && (
             <p role="status" className="muted small-copy">
-              A previous submission is awaiting confirmation. Retry recovers the
-              same take using its saved settings.
+              Your last Generate of this node is unconfirmed. Recover asks the
+              server what became of it; nothing is sent again.
             </p>
           )}
           {error && (

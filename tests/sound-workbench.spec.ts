@@ -181,6 +181,31 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
       fadeIn: 6,
       fadeOut: 6,
     });
+  /* Typing a Duration passes through shorter lengths (the "2" of "24"); the fades survive them. */
+  const length = clip.getByLabel("Duration", { exact: true });
+  await length.fill("");
+  await length.pressSequentially("24", { delay: 80 });
+  await length.press("Enter");
+  await expect(clip.getByLabel("Fade in", { exact: true })).toHaveValue("6");
+  await expect(clip.getByLabel("Fade out", { exact: true })).toHaveValue("6");
+  await expect
+    .poll(async () => (await read()).project.audioClips?.[0])
+    .toMatchObject({ duration: 24, fadeIn: 6, fadeOut: 6 });
+  /* A gain typed key by key ("-1", then "-12") is one undo step, not one per keystroke. */
+  const gain = clip.getByLabel("Gain (dB)", { exact: true });
+  await gain.fill("");
+  await gain.pressSequentially("-12", { delay: 80 });
+  await gain.press("Enter");
+  await expect
+    .poll(async () => (await read()).project.audioClips?.[0].gainDb)
+    .toBe(-12);
+  await page
+    .getByRole("slider", { name: "Sequence playhead" })
+    .press("ControlOrMeta+z");
+  await expect(gain).toHaveValue("-6");
+  await expect
+    .poll(async () => (await read()).project.audioClips?.[0].gainDb)
+    .toBe(-6);
   await page.reload();
   await stage(page, "edit");
   await openWorkbenchInspector(page, "sound");

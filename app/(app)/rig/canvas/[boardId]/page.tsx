@@ -6,7 +6,9 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { estimateVideo, estimateImage } from "@/lib/rateTable";
+import { charged as whole, estimateVideo, estimateImage } from "@/lib/rateTable";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import { estimateTokens, costUsd } from "@/lib/models";
 import type { Board, BoardNode, BoardWire, NodeKind } from "@/lib/boards";
 import { markStale } from "@/lib/boardGraph";
@@ -73,7 +75,7 @@ function Canvas() {
   const { boardId } = useParams<{ boardId: string }>();
   const search = useSearchParams();
   const router = useRouter();
-  const { signedIn, rates, models, name: myName } = useSession();
+  const { signedIn, rates, models, name: myName, requestScope } = useSession();
   const money = useMoney();
   const toast = useToast();
   const { engines, engineLabel } = useAtomik();
@@ -287,17 +289,33 @@ function Canvas() {
     const imageNode = upstream("image");
     const prompt = [String(n.settings.prompt ?? ""), promptNode?.text ?? "", shot?.description ?? shot?.title ?? "", n.kind === "video" ? String(n.settings.motion ?? "") : ""].filter(Boolean).join(". ").trim();
     if (!prompt) { toast("Wire a prompt or a shot in first."); return; }
+    if (!requestScope) { toast("Reload this page in the intended account and workspace before running a node."); return; }
     setRunning((r) => new Set(r).add(n.id));
     patchNode(n.id, { state: "running" });
     try {
       const engine = engineOf(n);
+      /* The price on the button is the ceiling: a run that would now cost more is refused, not charged. */
+      const credits = rates.unit === "cr" ? whole(rates, price) : null;
       const body = n.kind === "image"
         ? { prompt, model: engine, projectId, shotId: shot?.id, resolution: n.settings.resolution ?? "1K", ratio: n.settings.ratio ?? "16:9" }
         : { prompt, model: engine, projectId, shotId: shot?.id, resolution: n.settings.resolution ?? "1080p", ratio: n.settings.ratio ?? "16:9", duration: Number(n.settings.seconds ?? 5),
             references: imageNode?.output?.genId ? [{ genId: imageNode.output.genId, role: "first_frame" }] : undefined };
-      const r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.id) { patchNode(n.id, { state: "failed" }); toast(j.error ?? "That node didn't run."); return; }
+      /* Under a stored Idempotency-Key, one slot per node: after a lost reply the next Run asks what became of
+         it first, so a run that landed is followed, and never sent twice (sendClaimedGeneration). */
+      const sent = await sendClaimedGeneration({
+        scope: requestScope,
+        storageId: pendingGenerationKey(requestScope, projectId ?? "unfiled", `rig-canvas:${b.id}:${n.id}`),
+        body: { ...body, ...(credits != null ? { maxCredits: credits } : {}) },
+        credits: credits ?? 0,
+      });
+      if (sent.state === "unknown") {
+        patchNode(n.id, { state: n.state });
+        toast(sent.lost ? "The connection dropped before the server answered. Run node checks what became of it; it is never sent twice." : "Your last run of this node could not be checked yet. Nothing new was sent; run it again in a moment.");
+        return;
+      }
+      if (sent.state === "refused") { patchNode(n.id, { state: "failed" }); toast(sent.reason); return; }
+      if (sent.followed) toast(`${n.label}'s last run reached the server. Following it; nothing new was sent.`);
+      const j = { id: sent.jobId };
       const started = Date.now();
       /* The render is asynchronous; the node waits on it the way a take does. */
       let gen: Generation | null = null;
@@ -369,7 +387,7 @@ function Canvas() {
   const spent = b.nodes.reduce((a, n) => a + (n.output?.genId ? n.credits : 0), 0);
   const unrun = b.nodes.filter((n) => (n.kind === "image" || n.kind === "video") && !n.output?.genId);
   const unrunCost = unrun.reduce((a, n) => a + priceOf(n), 0);
-  const hrefs = rigHrefs(projectId ?? "", b.id, null);
+  const hrefs = rigHrefs(projectId ?? "", b.id);
   const addItems: MenuItem[] = [
     { kind: "item", label: "New asset", keys: fmt(0), onSelect: () => setAssetSheet(true) },
     { kind: "divider" },

@@ -6,26 +6,28 @@ import { useSession } from "@/lib/session";
 /**
  * Workspace › Dashboard (owner, 24 September: "the management dashboard in
  * the Suites"). Production oversight from the analytics route that already
- * computes it — spend in dollars and credits by project, person and model;
+ * computes it — spend in the workspace's unit (credits, or dollars for a
+ * workspace on its own keys) by project, person and model;
  * revisions per shot; where generations stall; category and prompting
  * patterns — plus the credit ledger's view of all paid work (agents and
  * connected jobs included). Filter by project and period; export as CSV.
  */
 type Row = Record<string, unknown>;
+/* `spend` is vendor dollars: the route sends it only to a workspace that pays its vendors itself. */
 type Analytics = {
-  totals: { generations: number; succeeded: number; failed: number; pending: number; spend: number; credits: number; promptSpend: number; renderMs: number; people: number; shots: number; successRate: number };
-  byProject: { id: string | null; name: string; n: number; spend: number; credits: number; failed: number; people: number; renderMs: number }[];
-  byPerson: { id: string; name: string; email?: string; n: number; spend: number; credits: number; failed: number; projects: number }[];
-  byModel: { model: string; label: string; n: number; spend: number; credits: number; failed: number; avgMs: number | null }[];
-  byShot: { id: string; code: string | null; scene: string | null; title: string | null; takes: number; spend: number; credits: number; ok: number; failed: number }[];
+  totals: { generations: number; succeeded: number; failed: number; pending: number; spend?: number; credits: number; promptSpend?: number; renderMs: number; people: number; shots: number; successRate: number };
+  byProject: { id: string | null; name: string; n: number; spend?: number; credits: number; failed: number; people: number; renderMs: number }[];
+  byPerson: { id: string; name: string; email?: string; n: number; spend?: number; credits: number; failed: number; projects: number }[];
+  byModel: { model: string; label: string; n: number; spend?: number; credits: number; failed: number; avgMs: number | null }[];
+  byShot: { id: string; code: string | null; scene: string | null; title: string | null; takes: number; spend?: number; credits: number; ok: number; failed: number }[];
   stuck?: { model: string; resolution: string | null; n: number; avgMs: number | null; maxMs: number | null; failed: number; retried: number }[];
-  byCategory?: { category: string; n: number; spend: number; credits: number; failed: number; avgMs: number | null; projects: number; shots: number }[];
+  byCategory?: { category: string; n: number; spend?: number; credits: number; failed: number; avgMs: number | null; projects: number; shots: number }[];
   patterns?: { avgPromptLength: number; refined: number; withCast: number; withReferences: number; filedToShots: number; unfiled: number; takesPerShot: number };
   personalOnly?: boolean;
 };
 type Ledger = { byProject?: { name: string; n?: number; credits?: number }[]; byPerson?: { name: string; n?: number; credits?: number }[] };
 
-const usd = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const usd = (n: number | undefined) => `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const int = (n: number) => Math.round(n).toLocaleString("en-US");
 const hours = (ms: number) => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1)} h` : `${Math.round(ms / 60_000)} min`);
 const secs = (ms: number | null) => (ms == null ? "—" : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${Math.round(ms / 1000)} s`);
@@ -82,23 +84,28 @@ export function ManagementDashboard() {
   }, [scoped]);
 
   const credits = session.rates.unit !== "usd";
+  /* One money column, in the workspace's unit: credits billed, or the vendor dollars a workspace on its own keys paid. */
+  const amount = <T extends { spend?: number; credits: number }>() => (credits
+    ? { label: "Credits", value: (r: T) => `${int(r.credits)} cr`, numeric: true }
+    : { label: "Cost", value: (r: T) => usd(r.spend), numeric: true });
   const t = data?.totals;
   const it = data?.patterns;
   const scopeName = projectId === "all" ? "All projects" : projects.find((p) => p.id === projectId)?.name ?? "This project";
   const exportCsv = useMemo(() => () => {
     if (!data) return;
+    const amountCsv: [string, string] = credits ? ["credits", "Credits"] : ["spend", "Cost (USD)"];
     const parts = [
       `# ${scopeName} · ${PERIODS.find((p) => p.days === days)?.label}`,
-      "# By project", csv(data.byProject as unknown as Row[], [["name", "Project"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["people", "People"], ["renderMs", "Render ms"]]),
-      "", "# By person", csv(data.byPerson as unknown as Row[], [["name", "Person"], ["email", "Email (masked)"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["projects", "Projects"]]),
-      "", "# By model", csv(data.byModel as unknown as Row[], [["label", "Model"], ["n", "Generations"], ["spend", "Cost (USD)"], ["credits", "Credits"], ["failed", "Failed"], ["avgMs", "Average ms"]]),
-      "", "# Revisions per shot", csv(data.byShot as unknown as Row[], [["code", "Shot"], ["title", "Title"], ["takes", "Takes"], ["ok", "Succeeded"], ["failed", "Failed"], ["spend", "Cost (USD)"], ["credits", "Credits"]]),
+      "# By project", csv(data.byProject as unknown as Row[], [["name", "Project"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["people", "People"], ["renderMs", "Render ms"]]),
+      "", "# By person", csv(data.byPerson as unknown as Row[], [["name", "Person"], ["email", "Email (masked)"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["projects", "Projects"]]),
+      "", "# By model", csv(data.byModel as unknown as Row[], [["label", "Model"], ["n", "Generations"], amountCsv, ["failed", "Failed"], ["avgMs", "Average ms"]]),
+      "", "# Revisions per shot", csv(data.byShot as unknown as Row[], [["code", "Shot"], ["title", "Title"], ["takes", "Takes"], ["ok", "Succeeded"], ["failed", "Failed"], amountCsv]),
     ].join("\n");
     const url = URL.createObjectURL(new Blob([parts], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = `particl-dashboard-${scopeName.replace(/[^\w-]+/g, "_")}-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [data, days, scopeName]);
+  }, [data, days, scopeName, credits]);
 
   return (
     <div className="wsx-card mdx" data-testid="ws-dashboard">
@@ -119,8 +126,9 @@ export function ManagementDashboard() {
       {t ? (
         <>
           <div className="mdx-tiles" data-testid="dash-totals">
-            <div className="mdx-tile"><span className="gx-eyebrow">Cost</span><strong data-testid="dash-cost">{usd(t.spend)}</strong><span className="cw-dim">vendor cost{t.promptSpend ? ` · ${usd(t.promptSpend)} prompt writing` : ""}</span></div>
-            {credits ? <div className="mdx-tile"><span className="gx-eyebrow">Credits</span><strong>{int(t.credits)} cr</strong><span className="cw-dim">billed to the workspace</span></div> : null}
+            {credits
+              ? <div className="mdx-tile"><span className="gx-eyebrow">Credits</span><strong data-testid="dash-credits">{int(t.credits)} cr</strong><span className="cw-dim">billed to the workspace</span></div>
+              : <div className="mdx-tile"><span className="gx-eyebrow">Cost</span><strong data-testid="dash-cost">{usd(t.spend)}</strong><span className="cw-dim">vendor cost{t.promptSpend ? ` · ${usd(t.promptSpend)} prompt writing` : ""}</span></div>}
             <div className="mdx-tile"><span className="gx-eyebrow">Generations</span><strong data-testid="dash-generations">{int(t.generations)}</strong><span className="cw-dim">{int(t.succeeded)} made · {int(t.failed)} failed{t.pending ? ` · ${int(t.pending)} running` : ""}</span></div>
             <div className="mdx-tile"><span className="gx-eyebrow">Success</span><strong>{pct(t.succeeded, t.generations)}</strong><span className="cw-dim">of generations</span></div>
             <div className="mdx-tile"><span className="gx-eyebrow">Render time</span><strong>{hours(t.renderMs)}</strong><span className="cw-dim">machine time, not people time</span></div>
@@ -129,20 +137,18 @@ export function ManagementDashboard() {
 
           {projectId === "all" ? (
             <Table caption="By project · click one to focus the dashboard on it" testid="dash-projects" rows={data!.byProject} onPick={(r) => r.id && setProjectId(r.id)}
-              columns={[{ label: "Project", value: (r) => r.name }, { label: "Generations", value: (r) => int(r.n), numeric: true }, { label: "Cost", value: (r) => usd(r.spend), numeric: true },
-                ...(credits ? [{ label: "Credits", value: (r: Analytics["byProject"][number]) => int(r.credits), numeric: true }] : []),
+              columns={[{ label: "Project", value: (r) => r.name }, { label: "Generations", value: (r) => int(r.n), numeric: true }, amount<Analytics["byProject"][number]>(),
                 { label: "Failed", value: (r) => int(r.failed), numeric: true }, { label: "People", value: (r) => int(r.people), numeric: true }, { label: "Render", value: (r) => hours(r.renderMs), numeric: true }]} />
           ) : null}
           <Table caption="By person" testid="dash-people" rows={data!.byPerson}
-            columns={[{ label: "Person", value: (r) => (r.email ? `${r.name} · ${r.email}` : r.name) }, { label: "Generations", value: (r) => int(r.n), numeric: true }, { label: "Cost", value: (r) => usd(r.spend), numeric: true },
-              ...(credits ? [{ label: "Credits", value: (r: Analytics["byPerson"][number]) => int(r.credits), numeric: true }] : []),
+            columns={[{ label: "Person", value: (r) => (r.email ? `${r.name} · ${r.email}` : r.name) }, { label: "Generations", value: (r) => int(r.n), numeric: true }, amount<Analytics["byPerson"][number]>(),
               { label: "Failed", value: (r) => int(r.failed), numeric: true }, { label: "Projects", value: (r) => int(r.projects), numeric: true }]} />
           <Table caption="By model" testid="dash-models" rows={data!.byModel}
-            columns={[{ label: "Model", value: (r) => r.label }, { label: "Generations", value: (r) => int(r.n), numeric: true }, { label: "Cost", value: (r) => usd(r.spend), numeric: true },
+            columns={[{ label: "Model", value: (r) => r.label }, { label: "Generations", value: (r) => int(r.n), numeric: true }, amount<Analytics["byModel"][number]>(),
               { label: "Failed", value: (r) => `${int(r.failed)} · ${pct(r.failed, r.n)}`, numeric: true }, { label: "Average time", value: (r) => secs(r.avgMs), numeric: true }]} />
           <Table caption="Revisions per shot · the shots that took the most takes" testid="dash-shots" rows={data!.byShot.slice(0, 25)}
             columns={[{ label: "Shot", value: (r) => [r.code, r.title].filter(Boolean).join(" · ") || "—" }, { label: "Takes", value: (r) => int(r.takes), numeric: true },
-              { label: "Made", value: (r) => int(r.ok), numeric: true }, { label: "Failed", value: (r) => int(r.failed), numeric: true }, { label: "Cost", value: (r) => usd(r.spend), numeric: true }]} />
+              { label: "Made", value: (r) => int(r.ok), numeric: true }, { label: "Failed", value: (r) => int(r.failed), numeric: true }, amount<Analytics["byShot"][number]>()]} />
           {data!.stuck ? (
             <Table caption="Where generations stall · slowest first" testid="dash-stuck" rows={data!.stuck.slice(0, 15)}
               columns={[{ label: "Model", value: (r) => r.model }, { label: "Resolution", value: (r) => r.resolution ?? "—" }, { label: "Runs", value: (r) => int(r.n), numeric: true },
@@ -152,7 +158,7 @@ export function ManagementDashboard() {
           {data!.byCategory?.length ? (
             <Table caption="By category" testid="dash-categories" rows={data!.byCategory}
               columns={[{ label: "Category", value: (r) => r.category }, { label: "Projects", value: (r) => int(r.projects), numeric: true }, { label: "Generations", value: (r) => int(r.n), numeric: true },
-                { label: "Cost", value: (r) => usd(r.spend), numeric: true }, { label: "Failed", value: (r) => pct(r.failed, r.n), numeric: true }, { label: "Average time", value: (r) => secs(r.avgMs), numeric: true }]} />
+                amount<NonNullable<Analytics["byCategory"]>[number]>(), { label: "Failed", value: (r) => pct(r.failed, r.n), numeric: true }, { label: "Average time", value: (r) => secs(r.avgMs), numeric: true }]} />
           ) : null}
           {it ? (
             <div className="mdx-tiles" data-testid="dash-iteration">

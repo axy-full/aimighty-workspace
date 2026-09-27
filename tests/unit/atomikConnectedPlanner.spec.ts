@@ -25,7 +25,7 @@ const models = plannerModels(catalogue.models);
 /** Replies shaped like the account's listings; links and offers must never reach the planner. */
 const replies: Record<string, unknown> = {
   presets_show: { presets: [{ id: "preset-dolly", name: "Dolly zoom", preview_url: "https://cdn.example.invalid/p.mp4" }, { id: "preset-orbit", name: "Orbit" }] },
-  list_voices: { voices: [{ voice_id: "voice-nova", voice_type: "preset", name: "Nova", preview_url: "https://cdn.example.invalid/v.mp3" }], next_cursor: null },
+  list_voices: { voices: [{ voice_id: "voice-nova", voice_type: "preset", name: "Nova", preview_url: "https://cdn.example.invalid/v.mp3" }, { voice_id: "voice-owned", voice_type: "element", name: "Owned" }, { voice_id: "voice-untyped", name: "Untyped" }], next_cursor: null },
   show_characters: { items: [{ soul_id: "soul-1", name: "Mara", status: "ready" }] },
   show_reference_elements: { items: [{ id: "elem-1", name: "red-bicycle", category: "prop" }] },
   show_generations: { items: [{ id: randomUUID(), type: "video", model: "kling3_0", status: "completed", results: { rawUrl: "https://cdn.example.invalid/x.mp4" } }] },
@@ -68,6 +68,8 @@ test("A1: the planner's account reads are fixed, free, checked against the surfa
   expect(context.balance).toBe(1468.53);
   const text = context.lines.join("\n");
   expect(text).toContain("Voices: voice-nova (preset, Nova)");
+  /* A voice made on the account, or one of no stated kind, is never shown to the planner (the pickers' rule). */
+  expect(text).not.toMatch(/voice-owned|voice-untyped/);
   expect(text).not.toContain("Trained characters");
   expect(text).not.toContain("Reference elements");
   expect(text).not.toContain("Recent generations");

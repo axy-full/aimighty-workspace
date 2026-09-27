@@ -20,6 +20,8 @@ export type CrewSession = {
   id: string; projectId: string; goal: string; context: CrewContext; model: string; roundsRun: number;
   /** Settled credits; null on a workspace that bills none. */
   spendCr: number | null; spendUsd: number; createdBy: string; createdAt: number;
+  /** A round is being run right now (claimRound), so a press whose reply was lost waits for it rather than sending another. */
+  running?: boolean;
 };
 export type CrewMessage = {
   id: string; sessionId: string; round: number; phase: CrewPhase | "note"; memberId: string | null; toMemberId: string | null;
@@ -63,6 +65,7 @@ const session = (r: Row): CrewSession => ({
   id: String(r.id), projectId: String(r.project_id), goal: String(r.goal), context: { ...DEFAULT_CONTEXT, ...(JSON.parse(String(r.context || "{}")) as Partial<CrewContext>) },
   model: String(r.model), roundsRun: Number(r.rounds_run), spendCr: r.spend_cr == null ? null : Number(r.spend_cr), spendUsd: Number(r.spend_usd ?? 0),
   createdBy: String(r.created_by), createdAt: Number(r.created_at),
+  running: r.running_since != null && Number(r.running_since) >= now() - STALE_MS,
 });
 /** A message carries the speaker as they were when they spoke: a renamed or removed member does not rewrite the minutes. */
 export type StoredMessage = CrewMessage & { name: string; department: string; color: string };
@@ -152,8 +155,9 @@ export async function readSession(owner: string, id: string): Promise<CrewSessio
   const row = (await db().execute({ sql: "SELECT * FROM crew_sessions WHERE id=? AND owner=?", args: [id, owner] })).rows[0];
   return row ? session(row as Row) : null;
 }
-export async function updateSessionBrief(owner: string, id: string, patch: { goal?: string; context?: CrewContext }): Promise<void> {
+export async function updateSessionBrief(owner: string, id: string, patch: { goal?: string; context?: CrewContext; model?: string }): Promise<void> {
   await crewReady();
+  if (patch.model !== undefined) await db().execute({ sql: "UPDATE crew_sessions SET model=? WHERE id=? AND owner=?", args: [patch.model, id, owner] });
   if (patch.goal !== undefined) await db().execute({ sql: "UPDATE crew_sessions SET goal=? WHERE id=? AND owner=?", args: [patch.goal, id, owner] });
   if (patch.context !== undefined) await db().execute({ sql: "UPDATE crew_sessions SET context=? WHERE id=? AND owner=?", args: [JSON.stringify(patch.context), id, owner] });
 }
@@ -170,11 +174,20 @@ export async function listSessions(owner: string, projectId: string): Promise<Se
 
 /** One round at a time per session. A claim older than ten minutes is a crashed run, not a running one. */
 const STALE_MS = 10 * 60_000;
-export async function claimRound(owner: string, id: string): Promise<boolean> {
+/**
+ * Claim round `round` of a session, and only that round: the round number is
+ * the request's key. It is claimed in the same write that checks the rounds
+ * already run, and a billed round advances that count in the same write that
+ * releases it (releaseRound), so a round is billed at most once however many
+ * times it is sent: a second press after a lost reply, or the lost request
+ * itself arriving late, finds the count moved on (or the round running) and
+ * runs nothing.
+ */
+export async function claimRound(owner: string, id: string, round: number): Promise<boolean> {
   const ts = now();
   const claimed = await db().execute({
-    sql: "UPDATE crew_sessions SET running_since=? WHERE id=? AND owner=? AND (running_since IS NULL OR running_since < ?)",
-    args: [ts, id, owner, ts - STALE_MS],
+    sql: "UPDATE crew_sessions SET running_since=? WHERE id=? AND owner=? AND rounds_run=? AND (running_since IS NULL OR running_since < ?)",
+    args: [ts, id, owner, round - 1, ts - STALE_MS],
   });
   return claimed.rowsAffected > 0;
 }

@@ -82,7 +82,7 @@ import {
   identityForCast,
   startIdentityStill,
   runIdentityRender,
-  RENDER_USD_PER_MP,
+  renderUsdForRatio,
   RENDER_RATIOS,
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
@@ -92,7 +92,7 @@ import { approvedTakeOf } from "@/lib/shots";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 import {
-  bindGenerationRequest,
+  claimBinding,
   reserveGenerationSpend,
   SpendReservationError,
 } from "@/lib/generationRequests";
@@ -111,6 +111,22 @@ import {
   admitPrepared,
   assertAdmissionActor,
 } from "./admissionSupport";
+
+/**
+ * The shot-control chips, kept as data and not just baked into the prose, so
+ * re-opening a take brings them back set — changing one control and running
+ * it again is the entire reason to have them. Short strings, twenty rows.
+ */
+function shotSpecOf(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const spec = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => typeof v === "string" && v)
+      .slice(0, 20)
+      .map(([k, v]) => [k.slice(0, 24), String(v).slice(0, 40)]),
+  );
+  return Object.keys(spec).length ? spec : null;
+}
 
 const ROLES: ImageRole[] = [
   "first_frame",
@@ -318,7 +334,7 @@ export async function executeGenerationAdmission(
     if (!allowance.ok && (await heldCount()) >= HELD_LIMIT) {
       return admissionReply(
         {
-          error: `${HELD_LIMIT} takes are already held for credits. Top up to release them before adding more.`,
+          error: `${HELD_LIMIT} takes are already held. Top up, or discard some, before adding more.`,
         },
         { status: 402 },
       );
@@ -931,7 +947,7 @@ export async function executeGenerationAdmission(
     const afterCast = ceilingProblem(references, model, castUsed);
     if (afterCast) return admissionReply({ error: afterCast }, { status: 400 });
     if (model.kind === "video" && task.id === "generate") {
-      const rolesProblem = videoReferenceProblem(model, references);
+      const rolesProblem = videoReferenceProblem(model, references, params.resolution);
       if (rolesProblem) return admissionReply({ error: rolesProblem }, { status: 400 });
     }
 
@@ -1053,7 +1069,7 @@ export async function executeGenerationAdmission(
         marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
       }
       const estStillUsd = marketingUsd ?? (trained
-        ? RENDER_USD_PER_MP
+        ? renderUsdForRatio(ratio)
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
       if (
@@ -1144,8 +1160,8 @@ export async function executeGenerationAdmission(
           version: stillVersion,
           createdBy: got.user.id,
           tokenId: got.token?.id ?? null,
+          requestClaim,
         });
-        await bindGenerationRequest(requestClaim, started.genId);
         try {
           await reserveGenerationSpend(
             {
@@ -1231,6 +1247,8 @@ export async function executeGenerationAdmission(
         rawPrompt: stillPrompt !== prompt ? prompt : undefined,
         cast: castUsed.length ? castUsed : undefined,
         reason: stillReason ?? undefined,
+        /* A still's framing, lens, light and look from Gen's chips, so Recreate brings them back set. */
+        shotSpec: shotSpecOf(body.shotSpec) ?? undefined,
         batchId: isBatchId(body.batchId) ? body.batchId : undefined,
         variation:
           isBatchId(body.batchId) &&
@@ -1262,8 +1280,10 @@ export async function executeGenerationAdmission(
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
 
-      await withMediaSources(stillParams, (tx) =>
-        tx.execute({
+      // The claim is bound in the same write: a claim naming no job proves there is none.
+      const stillBinding = await claimBinding(requestClaim, genId);
+      await withMediaSources(stillParams, async (tx) => {
+        await tx.execute({
           sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
              created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
@@ -1289,9 +1309,9 @@ export async function executeGenerationAdmission(
             model.stillTask ?? "generate",
             billedTo(model.provider),
           ],
-        }),
-      );
-      await bindGenerationRequest(requestClaim, genId);
+        });
+        for (const bind of stillBinding) await tx.execute(bind);
+      });
       invalidate(PROJECTS_KEY);
       if (holdStill) {
         if (holdStill.why === "slots") {
@@ -1706,18 +1726,10 @@ export async function executeGenerationAdmission(
     const genId = id("gen");
     const ts = now();
     const hasVideoInput = references.some((r) => r.kind === "video");
-    // The shot-control chips are kept as data, not just baked into the prose,
-    // so re-opening a take brings them back set — changing one control and
-    // running it again is the entire reason to have them.
-    const shotSpec =
-      body.shotSpec && typeof body.shotSpec === "object"
-        ? Object.fromEntries(
-            Object.entries(body.shotSpec as Record<string, unknown>)
-              .filter(([, v]) => typeof v === "string" && v)
-              .slice(0, 20)
-              .map(([k, v]) => [k.slice(0, 24), String(v).slice(0, 40)]),
-          )
-        : null;
+    const shotSpec = shotSpecOf(body.shotSpec);
+    /* The words as they came, whenever what renders differs from them (a camera move chosen for an Auto
+       camera, the platform's rules), so Recreate hands back the person's words and never the server's. */
+    if (rawPrompt === undefined && finalPrompt !== prompt) rawPrompt = prompt;
 
     const storedParams = {
       ...params,
@@ -1742,7 +1754,7 @@ export async function executeGenerationAdmission(
         body.variation <= 8
           ? body.variation
           : undefined,
-      shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
+      shotSpec: shotSpec ?? undefined,
       // The bank's neutral preview this clip is for, when the console rendered it for one (brief 1.4).
       previewFor:
         typeof body.previewFor === "string" &&
@@ -1800,8 +1812,10 @@ export async function executeGenerationAdmission(
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
-    await withMediaSources(storedParams, (tx) =>
-      tx.execute({
+    // The claim is bound in the same write: a claim naming no job proves there is none.
+    const binding = await claimBinding(requestClaim, genId);
+    await withMediaSources(storedParams, async (tx) => {
+      await tx.execute({
         sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
@@ -1831,10 +1845,9 @@ export async function executeGenerationAdmission(
           refineMs,
           billedTo(model.provider ?? "byteplus"),
         ],
-      }),
-    );
-
-    await bindGenerationRequest(requestClaim, genId);
+      });
+      for (const bind of binding) await tx.execute(bind);
+    });
 
     /* What made this take, written once and never afterwards (brief 3, 1c).
      Additive and best-effort: it happens after the row exists, it cannot

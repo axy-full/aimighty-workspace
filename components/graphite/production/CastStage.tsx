@@ -12,7 +12,7 @@ import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, 
 import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
 import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
-import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/soul-build";
+import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
 import { CONFIRM } from "@/lib/shell/confirmations";
 import { castStillPrompt } from "@/lib/shell/connected-capability";
 import { settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
@@ -33,6 +33,8 @@ import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 
 const EMPTY: Cast = { entries: [] };
+/* Elements Particl built on the account, and the builds still waiting for the account to name them. */
+type Elements = { available: boolean; elements: ConnectedElement[]; pending?: PendingSoulBuild[] };
 type Model = { id: string; name: string; aspectRatios: string[]; parameters: { name: string; options?: (string | number)[]; default?: unknown; min?: number; max?: number }[]; medias: { roles?: string[] }[] };
 /** An entry's ratio: a character sheet stands 3:4; everything else takes the film's ratio (the model's own list decides). */
 function ratioFor(kind: CastKind, project: Project): string {
@@ -71,7 +73,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const cast = p.production?.cast ?? EMPTY;
   const [connected, setConnected] = useState<boolean | null>(null);
   const [models, setModels] = useState<Record<string, Model> | null>(null);
-  const [elements, setElements] = useState<{ available: boolean; elements: ConnectedElement[] } | null>(null);
+  const [elements, setElements] = useState<Elements | null>(null);
   const [confirmElement, setConfirmElement] = useState<string | null>(null);
   const [souls, setSouls] = useState<ConnectedCharacter[]>([]);
   const [quotes, setQuotes] = useState<Record<string, ConnectedJob>>({});
@@ -92,10 +94,18 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     let alive = true;
     void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then((r) => r.json()).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) setConnected(Boolean(j.connection?.connected)); settleConnectedCapability(scope, j.connection); }).catch(() => { if (alive) setConnected(false); });
     void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModels(Object.fromEntries(j.catalogue.models.map((m) => [m.id, m]))); }).catch(() => { if (alive) setModels({}); });
-    void call<{ available: boolean; elements: ConnectedElement[] }>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
+    void call<Elements>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
     void call<{ characters: ConnectedCharacter[] }>({ action: "characters" }).then((j) => { if (alive) setSouls(j.characters ?? []); }).catch(() => undefined);
     return () => { alive = false; };
   }, [call, scoped, p.id, member, scope]);
+
+  /* An element sent without a named id (or with its answer lost) waits to be matched to the account's list: read it again while one waits. */
+  const waiting = Boolean(elements?.pending?.some((b) => !b.stale));
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => void call<Elements>({ action: "elements" }).then(setElements).catch(() => undefined), 30_000);
+    return () => clearInterval(timer);
+  }, [waiting, call]);
 
   const setCast = useCallback((fn: (c: Cast) => Cast) => editor.change((old) => ({ ...old, production: { ...old.production, cast: fn(old.production?.cast ?? EMPTY) } })), [editor]);
   const setEntry = useCallback((id: string, fn: (e: CastEntry) => CastEntry) => setCast((c) => ({ ...c, entries: c.entries.map((e) => (e.id === id ? fn(e) : e)) })), [setCast]);
@@ -205,8 +215,10 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
       const { build: out } = await call<{ build: { state: string; element?: ConnectedElement | null; reason?: string } }>({ action: "elements-create", name: entry.name.trim().slice(0, 32), category: entryCategory(entry), description: entry.description.slice(0, 1000), sources: [{ genId }], projectId: latest.current.id });
       if (out.state === "refused") throw new Error(`The account refused: ${out.reason}`);
       if (out.element) { setEntry(entry.id, (e) => ({ ...e, elementId: out.element!.elementId })); void editor.ensureSaved(); }
-      toast(out.element ? `${entry.name} is a reference element: ${elementToken(out.element.elementId)}` : "The account accepted the element; it appears below once it lists it.");
-      void call<{ available: boolean; elements: ConnectedElement[] }>({ action: "elements" }).then(setElements).catch(() => undefined);
+      toast(out.element ? `${entry.name} is a reference element: ${elementToken(out.element.elementId)}`
+        : out.state === "uncertain" ? "Sent, but the account’s answer was lost. It is not sent again."
+        : "Accepted without an id yet. Listed once the account shows an element by this name.");
+      void call<Elements>({ action: "elements" }).then(setElements).catch(() => undefined);
     } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The element could not be saved." })); }
     finally { setWorking((w) => ({ ...w, [k]: "" })); }
   };
@@ -295,8 +307,8 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <button type="button" className="gx-hbtn" onClick={() => setCast((c) => ({ ...c, entries: [...c.entries, newEntry("element")].slice(0, CAST_LIMITS.entries) }))} data-testid="cast-add-element">+ Element</button>
         </div>
         {activeCast ? <p className="gx-hint" role="status">{agentLabel(agentFamilyOf(activeCast.model) ?? "claude")} is casting · step {Math.min(activeCast.completedSteps + 1, activeCast.totalSteps)} of {activeCast.totalSteps}</p> : null}
-        <AgentAction id="cast-agent" secondary estimateLabel="Have the agent cast the film" startLabel={(c) => `Cast it · up to ${c} credits`} quote={q} busy={runs.busy} blocked={blocked}
-          describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+        <AgentAction id="cast-agent" secondary estimateLabel="Have the agent cast the film" startLabel={(price) => `Cast it · up to ${price}`} quote={q} busy={runs.busy} blocked={blocked}
+          describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
           onEstimate={() => void runs.estimate({ kind: "cast", model: agentModel!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
       </section>
 
@@ -411,13 +423,16 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         <span className="gx-eyebrow" data-functional-label="">Reference elements · built in Particl</span>
         {elements == null ? <p className="gx-hint">Reading…</p>
           : !elements.available ? <p className="gx-hint">The account does not list its elements through its tools.</p>
-          : elements.elements.length ? (
-            <ul className="gx-soul-list">{elements.elements.map((el) => <li key={el.elementId} className="gx-soul-row" data-testid={`element-row-${el.elementId}`}><span className="gx-soul-name">{el.name}</span><span className="gx-hint">{el.category ?? "element"} · {elementToken(el.elementId)}</span></li>)}</ul>
+          : elements.elements.length || elements.pending?.length ? (
+            <ul className="gx-soul-list">
+              {elements.elements.map((el) => <li key={el.elementId} className="gx-soul-row" data-testid={`element-row-${el.elementId}`}><span className="gx-soul-name">{el.name}</span><span className="gx-hint">{el.category ?? "element"} · {elementToken(el.elementId)}</span></li>)}
+              {(elements.pending ?? []).map((b) => <li key={b.id} className="gx-soul-row" data-testid={`element-pending-${b.id}`}><span className="gx-soul-name">{b.name}</span><span className="gx-hint">{b.stale ? "The account never named it; Particl cannot list it" : "Sent · waiting for the account to name it"}</span></li>)}
+            </ul>
           ) : <p className="gx-hint">None yet. Save a build as a reference element; elements made on higgsfield.ai stay there.</p>}
       </section>}
 
       {member ? null : <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>}
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

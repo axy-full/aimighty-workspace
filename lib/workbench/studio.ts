@@ -10,6 +10,7 @@ import {validateColor, type ColorGrade} from './color';
 import {validateAudio, type AudioClip} from './audio';
 import type {ScriptSource, SceneReview} from './screenplay';
 import {PARTICL_STAGE_ALIASES} from '../suites';
+import {PROJECT_LIMITS, limitText} from './project-limits';
 export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'astra-blender' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
 export type AssetKind = 'image' | 'video' | 'audio' | 'document' | 'link';
 export type AssetStatus = 'Draft' | 'Selected' | 'Continuity note';
@@ -17,7 +18,7 @@ export type Asset = { id:string; name:string; kind:AssetKind; category:string; u
 export type NodeType = 'brief'|'moodboard'|'character'|'element'|'scene'|'note'|'media'|'generate'|'merge'|'grade'|'transform'|'audio'|'switch'|'review'|'output';
 export type NodeOperation = {id:string;kind:'direction'|'grade'|'transform'|'mask'|'mix';enabled:boolean;values:Record<string,number|string|boolean>};
 export type NodeVersion = {id:string;label:string;assetId?:string;text?:string;operations:NodeOperation[];savedAt:string};
-export type CanvasNode = {/** The input image the shot starts on (first_frame). */firstFrameId?:string;/** The agent's condensed render prompt, pinned by key to the exact prompt it came from. */condensed?:{key:string;text:string};/** The storyboard shot this Rig shot was built from. */boardShotId?:string;id:string; title:string; type:NodeType; assetId?:string; text?:string;developmentSource?:{jobId:string;sourceHash:string;sceneId:string;sourceAssetId?:string;sourceStart:number;sourceEnd:number};scriptScene?:{id:string;sourceKey:string;sourceAssetId?:string;pageStart?:number;pageEnd?:number}; x:number; y:number; width:number; linked:string[];operations?:NodeOperation[];bypassed?:boolean;locked?:boolean;collapsed?:boolean;role?:string;mode?:string;status?:'draft'|'review'|'approved';versions?:NodeVersion[];activeInput?:string} & ShotFields;
+export type CanvasNode = {/** The input image the shot starts on (first_frame). */firstFrameId?:string;/** The agent's condensed render prompt, pinned by key to the exact prompt it came from. */condensed?:{key:string;text:string};/** The storyboard shot this Rig shot was built from. */boardShotId?:string;/** The agent's `rig` run this shot last took its wiring from, so a finished run is applied once. */wiredJobId?:string;id:string; title:string; type:NodeType; assetId?:string; text?:string;developmentSource?:{jobId:string;sourceHash:string;sceneId:string;sourceAssetId?:string;sourceStart:number;sourceEnd:number};scriptScene?:{id:string;sourceKey:string;sourceAssetId?:string;pageStart?:number;pageEnd?:number}; x:number; y:number; width:number; linked:string[];operations?:NodeOperation[];bypassed?:boolean;locked?:boolean;collapsed?:boolean;role?:string;mode?:string;status?:'draft'|'review'|'approved';versions?:NodeVersion[];activeInput?:string} & ShotFields;
 /** Optional render settings a Rig shot (a scene or generate node) carries. Absent on every draft saved before them; lib/workspace/shots.ts fills engine defaults on read. */
 export type ShotFields = {/** A look name, or the id of a look board (moodboard) node. */ look?:string; /** A catalogue model id (lib/models.ts). */ engine?:string; /** Seconds; clamped to the engine's catalogue range by lib/workspace. */ durationS?:number; ratio?:string; resolution?:string};
 /** The node types the Rig lists as shots: the graph's Create family (NODE_DEFS), the nodes that render. */
@@ -26,8 +27,10 @@ export type Shot = {id:string; name:string; assetId:string; duration:number; sou
 export type Plan = {astraNative?:AstraNativeProposal;astraBlender?:AstraProposal;referenceAdAnalysis?:import('./reference-ad-analysis').ReferenceAdAnalysis;suiteAgent?:SuiteAgentPlan;id:string; request:string; model:string; depth:string; effort?:string; intent:string; summary:string; steps:string[]; applied:boolean; refs:string[]; role?:string};
 /** Production suite state (owner's brief, 23 September): what the director approved at each gate. */
 export type ScriptApproval = { at: string; source: 'agent' | 'hand'; jobId?: string; sha256: string };
-export type Production = { scriptApproval?: ScriptApproval; beats?: import('../production/beats').BeatSheet; boards?: import('../production/boards').Boards; cast?: import('../production/cast').Cast; environment?: import('../production/environment').Environment; beatSource?: import('../production/beats').BeatSource };
-export type Project = {production?:Production;astraNative?:AstraNativeSource;astraBlender?:AstraScene;moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[]};
+export type Production = { scriptApproval?: ScriptApproval; beats?: import('../production/beats').BeatSheet; boards?: import('../production/boards').Boards; cast?: import('../production/cast').Cast; environment?: import('../production/environment').Environment; beatSource?: import('../production/beats').BeatSource; /** The director's unsent notes to the writer (lib/production/notes.ts); they three-way merge like any other text. */ notes?: import('../production/notes').AgentNotes };
+export type Project = {production?:Production;astraNative?:AstraNativeSource;astraBlender?:AstraScene;moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[];
+ /** Ids of records made from a source every window shares (stableId) that someone took out of this draft, oldest first: a stale window that makes them again leaves them out when it merges (lib/workbench/merge.ts noteTakenOut). */
+ takenOut?:string[]};
 /** The visible production stages, in dock order. Retired IDs stay in `Stage` as aliases (see `normalizeStage`). */
 export const STAGES: {id:Stage; label:string; hint:string}[] = [
  {id:'brief',label:'Brief & Script',hint:'Find the story and the production in it'},
@@ -82,7 +85,7 @@ export function validateSequence(p:Project):void {
  validateColor(p);
  if(![24,25,30].includes(p.fps))throw new Error('Choose 24, 25 or 30 fps for a non-drop-frame EDL.');
  if(!p.shots.length)throw new Error('Add a shot before exporting.');
- if(p.shots.length>999)throw new Error('A CMX3600 EDL supports up to 999 events.');
+ if(p.shots.length>PROJECT_LIMITS.shots)throw new Error('A cut holds up to '+limitText(PROJECT_LIMITS.shots)+' shots. Remove shots before exporting.');
  const assets=new Map<string,Asset>();
  for(const asset of p.assets){if(assets.has(asset.id))throw new Error('Two assets have the same ID. Resolve the duplicate before exporting.');assets.set(asset.id,asset);}
  let record=p.fps*3600;const day=24*3600*p.fps;
@@ -97,8 +100,11 @@ export function validateSequence(p:Project):void {
  if(p.audioAssetId&&assets.get(p.audioAssetId)?.kind!=='audio')throw new Error('The sequence scratch audio is missing or is not an audio file.');
  validateAudio(p);
 }
+/** CMX3600 numbers events 001–999; FCPXML and XMEML carry a longer cut whole. */
+export const EDL_EVENTS=999;
 export function makeEDL(p:Project) {
  validateSequence(p);
+ if(p.shots.length>EDL_EVENTS)throw new Error('A CMX3600 EDL holds up to 999 events; this cut has '+limitText(p.shots.length)+'. Use FCPXML or Premiere XML for the whole cut.');
  let record=p.fps*3600;
  const lines=['TITLE: '+safeName(p.name).toUpperCase(),'FCM: NON-DROP FRAME',''];
  const reelIds=new Map<string,string>();

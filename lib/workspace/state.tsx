@@ -58,8 +58,8 @@ export function reducer(state: AppState, action: Action): AppState {
 type Workspace = {
   state: AppState;
   dispatch: (action: Action) => void;
-  /** The single navigation entry point: repairs selection and pushes the URL. */
-  go: (suite: Suite, page: string) => void;
+  /** The single navigation entry point: repairs selection and pushes the URL (`replace` rewrites the current entry instead, for a landing). */
+  go: (suite: Suite, page: string, opts?: { replace?: boolean }) => void;
   home: (suite?: Suite) => void;
   switchSuite: (suite: Suite) => void;
   selectProject: (projectId: string, opts?: { replace?: boolean }) => void;
@@ -74,7 +74,7 @@ type Workspace = {
   setSheet: (sheet: MobileSheetId | null) => void;
   /** Replaces the URL (no new history entry), e.g. after a selection repair. */
   syncUrl: () => void;
-  /** A confirmation; with an action it carries one button (an Open to where the result is) and stays longer. */
+  /** A confirmation; with an action it carries one button (an Open to where the result is, or an Undo) and stays longer. */
   toast: (text: string, action?: ToastAction) => void;
   /** The action of the toast on screen, for the text it was given with. */
   toastAction: { text: string; action: ToastAction } | null;
@@ -83,7 +83,14 @@ type Workspace = {
   plans: PlanSource;
 };
 
-export type ToastAction = { label: string; run: () => void };
+export type ToastAction = {
+  label: string;
+  run: () => void;
+  /** "undo" is the phone's ⌘Z (lib/shell/state › pushUndo); anything else opens where the result is. */
+  kind?: "open" | "undo";
+  /** Shown only while this holds: an Undo while its step is still the one ⌘Z would undo. */
+  live?: () => boolean;
+};
 const TOAST_MS = 2600;
 const ACTION_TOAST_MS = 6000;
 
@@ -94,6 +101,11 @@ export function useWorkspace(): Workspace {
   const value = useContext(WorkspaceContext);
   if (!value) throw new Error("useWorkspace must be used inside <WorkspaceProvider>.");
   return value;
+}
+
+/** The shell's toast where there is a shell (a draft editor can be mounted outside one): null otherwise. */
+export function useOptionalToast(): ((text: string) => void) | null {
+  return useContext(WorkspaceContext)?.toast ?? null;
 }
 
 /**
@@ -170,7 +182,7 @@ export function WorkspaceProvider({
     if (toastTimer.current) clearTimeout(toastTimer.current);
     const open = action && typeof action.label === "string" && typeof action.run === "function" ? action : null;
     dispatch({ type: "toast", text });
-    setToastAction(open && text ? { text, action: { label: open.label, run: () => { clearToast(); open.run(); } } } : null);
+    setToastAction(open && text ? { text, action: { label: open.label, kind: open.kind, live: open.live, run: () => { clearToast(); open.run(); } } } : null);
     toastTimer.current = setTimeout(clearToast, open ? ACTION_TOAST_MS : TOAST_MS);
   }, [dispatch, clearToast]);
   const holdToast = useCallback((hold: boolean) => {
@@ -199,7 +211,7 @@ export function WorkspaceProvider({
   const value = useMemo<Workspace>(() => ({
     state,
     dispatch,
-    go: (suite, page) => commit(navigate(ref.current, suite, page), "push"),
+    go: (suite, page, opts) => commit(navigate(ref.current, suite, page), opts?.replace ? "replace" : "push"),
     home: (suite) => commit(goHome(ref.current, suite), "push"),
     switchSuite: (suite) => commit(switchSuite(ref.current, suite), "push"),
     selectProject: (projectId, opts) => {

@@ -1,4 +1,6 @@
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
+import { connectedFailureText } from "@/lib/higgsfield-consumer/generation-client";
+import { canProgress, isOpen, resumePhase } from "@/lib/higgsfield-consumer/resume";
 import type { LibraryEntry } from "@/lib/workspace/library";
 
 /**
@@ -114,18 +116,27 @@ export const RUN_STATUS: Record<RunStatus, { label: string; tone: RunTone }> = {
   failed: { label: "Failed · not billed", tone: "failed" },
   completed: { label: "Done", tone: "done" },
 };
-export function runStatus(status: string): { label: string; tone: RunTone } {
+/**
+ * A run's state in words. A failed run says whether it was billed, as Gen and
+ * Business do (lib/higgsfield-consumer/resume.ts): a render the account
+ * refused was not; a result it finished that Particl could not keep may have
+ * been, and its receipt is saved.
+ */
+export function runStatus(status: string, failureCode?: string | null): { label: string; tone: RunTone } {
+  if (status === "failed") return { label: resumePhase({ status, failureCode }).label, tone: "failed" };
   return RUN_STATUS[status as RunStatus] ?? RUN_STATUS.uncertain;
 }
-/** Sent and not settled yet: read again until the account settles it; never sent twice. */
-export const runInFlight = (status: string) => status === "dispatching" || status === "accepted" || status === "uncertain";
+/** A job the account may still settle: never re-sent, only polled until it completes or fails. */
+export const PENDING_STATUSES = ["dispatching", "accepted", "uncertain"] as const;
+/** Sent and not settled yet: read again until the account settles it; never sent twice (the test Gen and Business use). */
+export const runInFlight = (status: string) => isOpen(status);
 /**
  * In flight with nothing that can move it on its own: a dispatch the account
- * never acknowledged, or a check with no receipt to reconcile. Read a few
- * times, then left for the person to check again.
+ * never acknowledged, or a check with no receipt to reconcile — the jobs Gen
+ * and Business stop following too (resume.ts, canProgress). Read a few times,
+ * then left for the person to check again.
  */
-export const runCannotSettle = (job: { status: string; providerReceipt?: unknown }) =>
-  job.status === "dispatching" || (job.status === "uncertain" && job.providerReceipt == null);
+export const runCannotSettle = (job: { status: string; providerReceipt?: unknown }) => runInFlight(job.status) && !canProgress(job);
 /** The one visible line under an in-flight run (never only a tooltip). */
 export const RUN_NOTE: Partial<Record<RunStatus, string>> = { dispatching: "Sending to the account", uncertain: "Confirming · never sent twice" };
 export const STALLED_NOTE = { unconfirmed: "Not confirmed yet · never sent twice", gone: "Could not be read" } as const;
@@ -153,7 +164,59 @@ export function mergeRuns<T extends Run>(fresh: T[], current: T[]): T[] {
   const byId = new Map<string, T>();
   for (const job of current) byId.set(job.id, job);
   for (const job of fresh) { const had = byId.get(job.id); if (!had || fresher(job, had)) byId.set(job.id, job); }
-  return [...byId.values()]
-    .filter((job) => job.status !== "quoted")
+  return listedJobs([...byId.values()])
     .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}
+
+type Listed = { id: string; status: string };
+/** History and Recent list what ran; a read-only estimate (`quoted`) is not a result. */
+export function listedJobs<T extends Listed>(jobs: readonly T[]): T[] {
+  return jobs.filter((job) => job.status !== "quoted");
+}
+/** The jobs to poll: the one submitted here first, then every listed job still pending. */
+export function pendingJobIds(jobs: readonly Listed[], running: string | null): string[] {
+  const ids = jobs.filter((job) => (PENDING_STATUSES as readonly string[]).includes(job.status)).map((job) => job.id);
+  return running && !ids.includes(running) ? [running, ...ids] : ids;
+}
+
+/** The composer's run, as the page tracks it. */
+export type ViralRun<J extends Listed> = { phase: "idle" } | { phase: "submitting"; job: J } | { phase: "running"; job: J } | { phase: "done"; job: J } | { phase: "failed"; job: J | null; error: string };
+/** Why the account's run failed, in the Gen and Business composers' words: a refused render is not billed; a result it finished that could not be kept may have been. */
+export const viralFailure = (job: { failureCode?: string | null }) => connectedFailureText(job);
+/**
+ * Where a status read leaves the composer's run: the job submitted here, and
+ * also one whose submit reply was lost (shown failed) that the list then
+ * shows the account took — it is rendering after all.
+ */
+export function runAfterStatus<J extends Listed & { failureCode?: string | null }>(current: ViralRun<J>, job: J): ViralRun<J> {
+  const mine = (current.phase === "running" || current.phase === "failed") && current.job?.id === job.id;
+  if (!mine) return current;
+  if (job.status === "completed") return { phase: "done", job };
+  if (job.status === "failed") return { phase: "failed", job, error: viralFailure(job) };
+  if ((PENDING_STATUSES as readonly string[]).includes(job.status)) return { phase: "running", job };
+  return current;
+}
+
+/**
+ * Compare's two players on one clock: a seek on one is mirrored onto the
+ * other, and the `seeked` that mirrored seek fires is not mirrored back (that
+ * ping-pong, with frame snapping, kept both players re-seeking). `last` marks
+ * the player seeked on the other's behalf, to which time and when; only a
+ * `seeked` that matches the mark, soon after, is that echo. A mirrored seek
+ * that never fires (a player without its metadata yet) leaves a mark that
+ * expires, so it cannot swallow the viewer's next real seek. True when it
+ * seeked `to`.
+ */
+export type MirrorMark<T> = { player: T; time: number; at: number } | null;
+export const MIRROR_ECHO_MS = 1000;
+export function mirrorSeek<T extends { currentTime: number }>(from: T, to: T | null, last: { current: MirrorMark<T> }, now = Date.now()): boolean {
+  const mark = last.current;
+  if (mark && mark.player === from) {
+    last.current = null;
+    if (now - mark.at <= MIRROR_ECHO_MS && Math.abs(from.currentTime - mark.time) <= 0.1) return false;
+  }
+  if (!to || Math.abs(to.currentTime - from.currentTime) <= 0.05) return false;
+  last.current = { player: to, time: from.currentTime, at: now };
+  to.currentTime = from.currentTime;
+  return true;
 }

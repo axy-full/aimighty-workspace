@@ -239,3 +239,211 @@ test("public job payloads preserve creative parameters without exposing paid-ste
   const result = rowToGeneration({id:"gen_public",kind:"image",model:"mock",params:JSON.stringify({ratio:"16:9",references:[{uploadId:"ref"}],paidClaim:123,producedOutcome:{cost:1.23,storedUrl:"internal-recovery-path"}})});
   expect(result.params).toEqual({ratio:"16:9",references:[{uploadId:"ref"}]});
 });
+
+test("with atomic binding, a request interrupted before its job existed completes its claim instead of pending forever", async () => {
+  const { withGenerationRequest, bindGenerationRequestStatement, generationRequestsReady } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("atomic-claims"), async () => {
+    await ready();
+    await generationRequestsReady();
+    let calls = 0;
+    // A database hiccup before any job row was written (getShot, listCast, checkCap…).
+    const interrupted = await withGenerationRequest(request("atomic-before-row"), "u_test", async () => { calls++; throw new Error("database briefly unavailable"); }, { atomicBinding: true });
+    expect(interrupted.status).toBe(409);
+    expect(interrupted.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await interrupted.json()).error).toContain("Nothing was charged");
+    // The same key replays that answer (complete), so the client clears it and can start a new request.
+    const replay = await withGenerationRequest(request("atomic-before-row"), "u_test", async () => { calls++; return Response.json({}); }, { atomicBinding: true });
+    expect(replay.status).toBe(409);
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await replay.json()).pending).toBeUndefined();
+    expect(calls).toBe(1);
+
+    // Once the row and its binding committed together, the claim is kept for recovery.
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at) VALUES('gen_atomic_bound','video','mock','x','{}','queued',1,1)" });
+    const bound = await withGenerationRequest(request("atomic-after-row"), "u_test", async (claim) => {
+      await db().execute(bindGenerationRequestStatement(claim, "gen_atomic_bound"));
+      throw new Error("lost after the row was written");
+    }, { atomicBinding: true });
+    expect(bound.status).toBe(503);
+    const recovered = await withGenerationRequest(request("atomic-after-row"), "u_test", async () => { throw new Error("must not run again"); }, { atomicBinding: true });
+    expect(await recovered.json()).toMatchObject({ id: "gen_atomic_bound", status: "queued" });
+
+    // Routes whose jobs are not bound atomically keep the conservative pending claim.
+    const legacy = await withGenerationRequest(request("non-atomic"), "u_test", async () => { throw new Error("interrupted"); });
+    expect(legacy.status).toBe(503);
+    const pending = await withGenerationRequest(request("non-atomic"), "u_test", async () => Response.json({}));
+    expect(pending.status).toBe(409);
+    expect((await pending.json()).pending).toBe(true);
+  });
+});
+
+test("a claim whose request died before its catch, or before claims were bound atomically, completes on retry once that request is gone", async () => {
+  const { withGenerationRequest, generationRequestsReady, generationFingerprint, STALE_CLAIM_MS } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  await runInTenant(workspace("stale-claims"), async () => {
+    await ready();
+    await generationRequestsReady();
+    // What a killed function leaves behind: the claim, with no job and no answer.
+    const orphan = async (key: string, age: number) => {
+      const fingerprint = generationFingerprint({ method: "POST", path: "/api/generate", body: { prompt: "A studio test" } });
+      await db().execute({ sql: "INSERT INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES('u_test',?,?,?,?)",
+        args: [key, fingerprint, Date.now() - age, Date.now() - age] });
+    };
+    const never = async () => { throw new Error("a replay never runs the request again"); };
+    await orphan("stale-atomic", STALE_CLAIM_MS + 60_000);
+    const repaired = await withGenerationRequest(request("stale-atomic"), "u_test", never, { atomicBinding: true });
+    expect(repaired.status).toBe(409);
+    expect(repaired.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await repaired.json()).error).toContain("Nothing was charged");
+    const replay = await withGenerationRequest(request("stale-atomic"), "u_test", never, { atomicBinding: true });
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+
+    // A claim young enough that its request may still be running stays pending.
+    await orphan("fresh-atomic", 60_000);
+    const fresh = await withGenerationRequest(request("fresh-atomic"), "u_test", never, { atomicBinding: true });
+    expect(fresh.status).toBe(409);
+    expect((await fresh.json()).pending).toBe(true);
+
+    // A route that does not bind atomically cannot prove there is no job: it stays pending.
+    await orphan("stale-legacy", STALE_CLAIM_MS + 60_000);
+    const legacy = await withGenerationRequest(request("stale-legacy"), "u_test", never);
+    expect((await legacy.json()).pending).toBe(true);
+  });
+});
+
+/* A browser whose paid reply was lost asks what became of the request before it does anything else (POST /api/generate/check). */
+test("a lost request is checked by its key: landed names its job, never arrived is fenced for good, and only the sender's own claim in this workspace is read", async () => {
+  const { withGenerationRequest, checkGenerationRequest, generationFingerprint, bindGenerationRequest } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const sent = { prompt: "Wide. Hold still.", maxCredits: 18 };
+  const fingerprint = generationFingerprint({ method: "POST", path: "/api/generate", body: sent });
+  const check = (key: string, userId = "u_test", print = fingerprint) => checkGenerationRequest({ userId, key, fingerprint: print });
+  await runInTenant(workspace("check"), async () => {
+    /* Landed: the request admitted under the key names its job, with the job's own status. */
+    await withGenerationRequest(request("check-landed", sent), "u_test", async (claim) => {
+      await db().execute(`INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at) VALUES('gen_check','mock','test','{}','running',0,0)`);
+      await bindGenerationRequest(claim, "gen_check");
+      return Response.json({ id: "gen_check", status: "queued" }, { status: 202 });
+    });
+    expect(await check("check-landed")).toEqual({ state: "landed", id: "gen_check", status: "running" });
+
+    /* A refused charge files a failed job: it still landed, and its status says it failed (unbilled). */
+    await withGenerationRequest(request("check-failed", sent), "u_test", async (claim) => {
+      await db().execute(`INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at) VALUES('gen_failed','mock','test','{}','failed',0,0)`);
+      await bindGenerationRequest(claim, "gen_failed");
+      return Response.json({ id: "gen_failed", status: "failed", error: "Not enough credits" }, { status: 402 });
+    });
+    expect(await check("check-failed")).toEqual({ state: "landed", id: "gen_failed", status: "failed" });
+
+    /* Refused before any job: nothing was made. */
+    await withGenerationRequest(request("check-refused", sent), "u_test", async () => Response.json({ error: "Prompt is required" }, { status: 400 }));
+    expect(await check("check-refused")).toEqual({ state: "refused", status: 400, error: "Prompt is required" });
+
+    /* Never arrived: absent, and fenced in the same step — the request turning up afterwards is answered, never admitted. */
+    expect(await check("check-absent")).toEqual({ state: "absent" });
+    let calls = 0;
+    const late = await withGenerationRequest(request("check-absent", sent), "u_test", async () => { calls++; return Response.json({ id: "gen_late" }, { status: 202 }); }, { atomicBinding: true });
+    expect(late.status).toBe(409);
+    expect(late.headers.get("Idempotency-Status")).toBe("complete");
+    expect((await late.json()).error).toContain("Nothing was charged");
+    expect(calls).toBe(0);
+    expect(await check("check-absent")).toEqual({ state: "absent" });
+    expect((await db().execute("SELECT COUNT(*) AS n FROM generations WHERE id='gen_late'")).rows[0].n).toBe(0);
+
+    /* A key is only ever checked against the request it named. */
+    expect(await check("check-landed", "u_test", generationFingerprint({ method: "POST", path: "/api/generate", body: { ...sent, prompt: "Close on her hands." } }))).toEqual({ state: "mismatch" });
+
+    /* Another person's check of the same key reads, and fences, only their own. */
+    expect(await check("check-landed", "u_other")).toEqual({ state: "absent" });
+    expect(await check("check-landed")).toEqual({ state: "landed", id: "gen_check", status: "running" });
+  });
+  /* Another workspace never sees this one's claims. */
+  await runInTenant(workspace("check-elsewhere"), async () => {
+    expect(await check("check-landed")).toEqual({ state: "absent" });
+  });
+  await runInTenant(workspace("check"), async () => {
+    expect(await check("check-landed")).toEqual({ state: "landed", id: "gen_check", status: "running" });
+  });
+});
+
+test("a checked claim still being accepted is pending until no request could still be running it, then settled as never admitted", async () => {
+  const { withGenerationRequest, checkGenerationRequest, generationRequestsReady, generationFingerprint, STALE_CLAIM_MS } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const body = { prompt: "A studio test" };
+  const fingerprint = generationFingerprint({ method: "POST", path: "/api/generate", body });
+  await runInTenant(workspace("check-pending"), async () => {
+    await generationRequestsReady();
+    await db().execute({ sql: "INSERT INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES('u_test','check-inflight',?,?,?)", args: [fingerprint, Date.now(), Date.now()] });
+    expect(await checkGenerationRequest({ userId: "u_test", key: "check-inflight", fingerprint })).toEqual({ state: "pending" });
+    await db().execute({ sql: "UPDATE generation_requests SET created_at=? WHERE request_key='check-inflight'", args: [Date.now() - STALE_CLAIM_MS - 60_000] });
+    const settled = await checkGenerationRequest({ userId: "u_test", key: "check-inflight", fingerprint });
+    expect(settled).toMatchObject({ state: "refused", status: 409 });
+    expect(settled.state === "refused" && settled.error).toContain("Nothing was charged");
+    /* The request itself, arriving now, gets the same final answer. */
+    const replay = await withGenerationRequest(request("check-inflight", body), "u_test", async () => { throw new Error("never admitted"); }, { atomicBinding: true });
+    expect(replay.status).toBe(409);
+    expect(replay.headers.get("Idempotency-Status")).toBe("complete");
+  });
+});
+
+test("POST /api/generate/check fingerprints the request exactly as POST /api/generate did, for the caller's own claims only", async () => {
+  const ts = (await import("typescript")).default;
+  const { readFileSync } = await import("node:fs");
+  const generationRequests = await import("../../lib/generationRequests");
+  const tenant = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { workbenchScopeFor } = await import("../../lib/workbench/request-scope");
+  type Handler = (req: Request) => Promise<Response>;
+  const dependencies: Record<string, unknown> = {
+    "@/lib/auth": { withTenant: (handler: Handler) => handler, requireUser: async () => ({ user: { id: "u_test" } }) },
+    "@/lib/tenant": tenant,
+    "@/lib/generationRequests": generationRequests,
+    "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
+  };
+  const compiled = ts.transpileModule(readFileSync(path.resolve("app/api/generate/check/route.ts"), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const route = { exports: {} as Record<string, Handler> };
+  new Function("require", "module", "exports", compiled)((name: string) => {
+    if (!(name in dependencies)) throw new Error("Unexpected import " + name);
+    return dependencies[name];
+  }, route, route.exports);
+  const ws = workspace("check-route");
+  const scope = workbenchScopeFor(ws.id, "u_test");
+  const ask = (input: unknown, headers: Record<string, string> = { "X-Workbench-Scope": scope }) => route.exports.POST(new Request("http://localhost/api/generate/check", {
+    method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(input),
+  }));
+  const body = { prompt: "Wide. Hold still.", model: "mock", maxCredits: 18, quoteFingerprint: "a".repeat(64) };
+  await tenant.runInTenant(ws, async () => {
+    const admitted = request("route-landed-1", body);
+    admitted.headers.set("X-Workbench-Scope", scope);
+    await generationRequests.withGenerationRequest(admitted, "u_test", async (claim) => {
+      await db().execute(`INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at) VALUES('gen_route','mock','test','{}','queued',0,0)`);
+      await generationRequests.bindGenerationRequest(claim, "gen_route");
+      return Response.json({ id: "gen_route", status: "queued" }, { status: 202 });
+    }, { atomicBinding: true });
+    /* The body as the browser stored and sent it: a JSON string, read back the way the route read it. */
+    const landed = await ask({ key: "route-landed-1", endpoint: "/api/generate", body: JSON.stringify(body) });
+    expect(landed.status).toBe(200);
+    expect(await landed.json()).toEqual({ state: "landed", id: "gen_route", status: "queued" });
+    /* The same key under another route is another request. */
+    expect((await ask({ key: "route-landed-1", endpoint: "/api/audio", body: JSON.stringify(body) })).status).toBe(409);
+    expect(await (await ask({ key: "route-absent-1", endpoint: "/api/generate", body: JSON.stringify(body) })).json()).toEqual({ state: "absent" });
+    /* Only the paid routes that bind their job atomically; a well-formed request only; the tab's own account and workspace only. */
+    for (const bad of [
+      { key: "route-bad-1", endpoint: "/api/prompt/enhance", body: JSON.stringify(body) },
+      { key: "short", endpoint: "/api/generate", body: JSON.stringify(body) },
+      { key: "route-bad-1", endpoint: "/api/generate", body: "{not json" },
+      { key: "route-bad-1", endpoint: "/api/generate", body: "[1]" },
+      { key: "route-bad-1", endpoint: "/api/generate" },
+    ]) expect((await ask(bad)).status).toBe(400);
+    expect((await ask({ key: "route-bad-2", endpoint: "/api/generate", body: JSON.stringify(body) }, {})).status).toBe(409);
+    expect((await ask({ key: "route-bad-2", endpoint: "/api/generate", body: JSON.stringify(body) }, { "X-Workbench-Scope": workbenchScopeFor(ws.id, "u_other") })).status).toBe(409);
+    expect((await db().execute("SELECT COUNT(*) AS n FROM generation_requests WHERE request_key LIKE 'route-bad-%'")).rows[0].n).toBe(0);
+  });
+});

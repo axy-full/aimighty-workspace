@@ -27,7 +27,14 @@
   .bz-setup.gx-enter { animation-name: bz-fade; }
 }
 @keyframes bz-fade { from { opacity: 0; } to { opacity: 1; } }
-@media (max-width: 767px), (pointer: coarse) { .bz-role { height: 28px; min-width: 44px; } .bz .gx-seg--sm .gx-seg-btn { height: auto; min-height: 44px; } .bz-detail-x { width: 44px; height: 44px; margin: -8px -8px -8px 0; } }
+/* The thumb's floors on a phone: a role you can cycle is a 44px target; every label and hint is 12px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .bz-role { height: 28px; min-width: 44px; font-size: 12px; }
+  button.bz-role { height: 44px; }
+  .bz-note, .bz code, .bz-idrow code { font-size: 12px; }
+  .bz .gx-seg--sm .gx-seg-btn { height: auto; min-height: 44px; }
+  .bz-detail-x { width: 44px; height: 44px; margin: -8px -8px -8px 0; }
+}
 
 /* Named slots (Product, Setting): one still from this project — picked, dropped or uploaded. */
 .bz-slot { flex-wrap: nowrap; min-height: 56px; padding: 6px; gap: 10px; }

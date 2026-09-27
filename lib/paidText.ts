@@ -8,6 +8,7 @@ import { paidByPlatform } from "./platformSpend";
 import { atomikReasoningRequest } from "./atomik-reasoning";
 import { withRecoveryActivity } from './recovery';
 import { db, ready, id as newId, now } from "./db";
+import { platformDb, platformReady } from "./platform";
 import { currentTenant, requireTenant } from "./tenant";
 import { findModel, textCostUsd, textQuoteCostUsd, type CatalogModel } from "./catalog";
 import { engineFor } from "./engines";
@@ -148,6 +149,17 @@ export function paidTextQuoteScopeFailure(req: Request): Response | null {
   if (expected && expected.toLowerCase() !== actor?.email.toLowerCase())
     return Response.json({ error: "Sign in with the account that requested this quote." }, { status: 409 });
   return null;
+}
+/** A settled job's credits as the meter wrote them; the same rule computed here if the platform record cannot be read. */
+async function meteredCredits(id: string, fallback: number): Promise<number> {
+  const workspaceId = currentTenant()?.workspace?.id;
+  if (!workspaceId) return fallback;
+  try {
+    await platformReady();
+    const row = (await platformDb().execute({ sql: "SELECT billed_credits FROM meter_events WHERE workspace_id=? AND id=?", args: [workspaceId, id] })).rows[0];
+    if (row?.billed_credits != null) return Number(row.billed_credits);
+  } catch { /* fall back to the meter's own rule */ }
+  return fallback;
 }
 export function requestMaxCredits(value: unknown, required = false): number | undefined {
   if (value === undefined) {
@@ -303,7 +315,12 @@ return await withRecoveryActivity('paid-text', async () => {
           ? (textCostUsd(model, inputTokens, outputTokens) ?? estimate)
           : estimate;
     }
-    const verdict = typeof content === "string" && content && overrides.accept ? overrides.accept(content) : null;
+    /* An empty answer is refused like any other unusable one. It used to
+       settle as a success and bill the workspace in full while the person was
+       told the model returned nothing they could use. */
+    const verdict = typeof content !== "string" || !content.trim()
+      ? { ok: false as const, reason: "The model completed, but returned no usable text." }
+      : overrides.accept ? overrides.accept(content) : null;
     if (verdict && !verdict.ok) {
       /* Paid to the provider, refused by the caller: saved, settled at zero for the workspace. */
       await db().execute({
@@ -323,11 +340,14 @@ return await withRecoveryActivity('paid-text', async () => {
       args: [cost, id],
     });
     await meter({ ...event, status: "succeeded", engineCostUsd: cost });
-    if (typeof content !== "string" || !content)
-      throw new PaidTextError(
-        "The model completed, but returned no usable text. The paid response has been saved.",
-      );
-    return { id, text: content, costUsd: cost };
+    return {
+      id,
+      text: content as string,
+      costUsd: cost,
+      /* What the ledger billed, for the screen that shows it: credits are
+         what a workspace on credits sees, never the vendor's dollars. */
+      credits: await meteredCredits(id, paidByPlatform(textVendor(input.model)) ? billCredits(cost, "text") : 0),
+    };
   } catch (error) {
     const record = (
       await db()

@@ -30,11 +30,14 @@ import { saveDraft, clearDraft } from "@/lib/draft";
 import { useUploadFile } from "@/lib/useUploadFile";
 import type { RefItem } from "@/lib/refs";
 import { referenceKey, selectFirstFrame, videoReferenceProblem } from "@/lib/generationReferences";
+import { GROK_TTS_MODEL } from "@/lib/grokVoiceModel";
+import { audioTaskAvailable, speechVoiceFor, speechVoicesFor, usableAudioTask } from "@/lib/workbench/generation-audio";
 import type { DraggedAsset } from "@/lib/dnd";
 import type { GenerationProject } from "@/lib/generationProject";
 import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useGenAssetInput, inputAsReference, referenceIdentity, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import type { CastMember } from "@/lib/cast";
+import { unknownMentions } from "@/lib/mentions";
 import { appPrompt } from "@/components/dialog";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
@@ -58,6 +61,7 @@ import {
   type GenerationBatch,
 } from "@/lib/useGenerationBatch";
 import { lockedClaim } from "@/lib/usePaidAction";
+import { settleStoredRequest } from "@/lib/workspace/generate-submit";
 import { useLegacyRecovery } from "@/lib/useRecoverySurface";
 import {
   pendingGenerationKey,
@@ -94,10 +98,13 @@ type SpeechModel = {
 };
 type AudioSetup = {
   configured: boolean;
+  vendors?: { elevenlabs: boolean; xai: boolean };
   speechModels: SpeechModel[];
   defaultSpeechModel: string;
   voices: Voice[];
+  grokVoices?: Voice[];
   voicesError: string | null;
+  grokVoicesError?: string | null;
   account: { usdPerCredit: number } | null;
   terms: { sfxCredits: number; musicCreditsPerMinute: number };
 };
@@ -126,9 +133,6 @@ const TRACKS: { id: Track; label: string; placeholder: string }[] = [
 const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
-
-/** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
-const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
 export type ComposerHandle = GenAssetInputHandle & {
   usePrompt: (text: string) => boolean;
@@ -303,7 +307,6 @@ function ScopedComposer({
   );
   const modelId = batchDisplay?.modelId ?? modelChoice;
   const model = getModel(modelId);
-  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs) : null;
   const chooseFirstFrame = (key: string | null) => {
     if (busy || pendingAudio || pendingBatch || uploading) return;
     const next = selectFirstFrame(attachedRefs.current, key);
@@ -331,6 +334,7 @@ function ScopedComposer({
         : model.resolutions[0],
   );
   const resolution = batchDisplay?.resolution ?? resolutionChoice;
+  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs, resolution) : null;
   const [countChoice, setCount] = useState(1);
   const count = batchDisplay?.count ?? countChoice;
   const [audioChoice, setAudio] = useState(true);
@@ -443,24 +447,20 @@ function ScopedComposer({
   }>(signedIn && kind !== "audio" ? "/api/rig/elements" : null, 60_000);
   /* 3b: a name the prompt cites that nobody has made yet. */
   const known = useMemo(
-    () =>
-      new Set([
-        ...cast.map((m) => m.name.toLowerCase()),
-        ...(elsData?.elements ?? []).map((e) => e.name.toLowerCase()),
-      ]),
+    () => [
+      ...cast.map((m) => m.name),
+      ...(elsData?.elements ?? []).map((e) => e.name),
+    ],
     [cast, elsData],
   );
+  /* One word per name unless a known name is longer, and never an address
+     or an engine's own @Image1 (lib/mentions), so a sentence after a name
+     cannot grey out Generate. */
   const unknown = useMemo(
     () =>
       kind === "audio" || !signedIn || !!pendingBatch
         ? []
-        : [
-            ...new Set(
-              [...prompt.matchAll(NAME_RE)]
-                .map((m) => m[1])
-                .filter((n) => !known.has(n.toLowerCase())),
-            ),
-          ],
+        : unknownMentions(prompt, known),
     [prompt, known, kind, signedIn, pendingBatch],
   );
   const [sheetFor, setSheetFor] = useState<string | null>(null);
@@ -508,7 +508,8 @@ function ScopedComposer({
     0,
   );
   const [trackChoice, setTrack] = useState<Track>("speech");
-  const track: Track = recoveredBody?.task ?? trackChoice;
+  /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone lands on a spoken line. */
+  const track: Track = recoveredBody?.task ?? usableAudioTask(audioSetup, trackChoice);
   const [voiceChoice, setVoiceId] = useState("");
   const voiceId: string = recoveredBody?.voiceId ?? voiceChoice;
   const [voiceQuery, setVoiceQuery] = useState("");
@@ -525,10 +526,35 @@ function ScopedComposer({
   const [instrumentalChoice, setInstrumental] = useState(true);
   const instrumental: boolean =
     recoveredBody?.instrumental ?? instrumentalChoice;
+  /** A stored audio request's own settings, kept in the form once it is let go (it is the person's again). */
+  const keepAudioRequest = (sent: Record<string, unknown> | null) => {
+    if (!sent) return;
+    if (typeof sent.text === "string") setPrompt(sent.text);
+    if (sent.task === "speech" || sent.task === "sound" || sent.task === "music") setTrack(sent.task);
+    if (typeof sent.voiceId === "string") setVoiceId(sent.voiceId);
+    if (typeof sent.modelId === "string") setSpeechModel(sent.modelId);
+    if (typeof sent.lengthMs === "number") setLengthS(sent.lengthMs / 1000);
+    if (typeof sent.durationSeconds === "number") setSfxS(sent.durationSeconds);
+    if (typeof sent.instrumental === "boolean") setInstrumental(sent.instrumental);
+  };
   const sample = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
-  const voices = useMemo(() => audioSetup?.voices ?? [], [audioSetup]);
-  const voice = voices.find((v) => v.id === (voiceId || voices[0]?.id)) ?? null;
+  const sModel =
+    (audioSetup?.speechModels ?? []).find(
+      (m) => m.id === (speechModel || audioSetup?.defaultSpeechModel),
+    ) ??
+    audioSetup?.speechModels[0] ??
+    null;
+  /* Each speech model reads in its own vendor's voices: the list swaps with the model. */
+  const voices = useMemo(
+    () => speechVoicesFor(audioSetup, sModel?.id ?? ""),
+    [audioSetup, sModel?.id],
+  );
+  const voice = speechVoiceFor(voices, voiceId);
+  const voicesError =
+    sModel?.id === GROK_TTS_MODEL
+      ? audioSetup?.grokVoicesError
+      : audioSetup?.voicesError;
   const shownVoices = useMemo(() => {
     const q = voiceQuery.trim().toLowerCase();
     return q
@@ -539,12 +565,6 @@ function ScopedComposer({
         )
       : voices;
   }, [voices, voiceQuery]);
-  const sModel =
-    (audioSetup?.speechModels ?? []).find(
-      (m) => m.id === (speechModel || audioSetup?.defaultSpeechModel),
-    ) ??
-    audioSetup?.speechModels[0] ??
-    null;
   const spokenS = Math.max(1, Math.round(words(prompt) / 2.5));
   const audioLen =
     track === "speech"
@@ -704,63 +724,98 @@ function ScopedComposer({
     try {
       if (kind === "audio") {
         if (!pendingAudio && !currentQuote) return;
-        const proposed: PendingAudio = pendingAudio ?? {
-          key: crypto.randomUUID(),
-          body: JSON.stringify({
-            ...JSON.parse(audioBody),
-            maxCredits: currentQuote!.estimatedCredits,
-          }),
-          credits: currentQuote!.estimatedCredits,
-          price: currentQuote!.price,
-          unit: currentQuote!.unit,
-        };
-        const submitted = await lockedClaim(recoveryKey, () => {
-          const saved = readPendingGeneration(localStorage, recoveryKey);
-          if (pendingAudio && (!saved || saved.key !== pendingAudio.key))
+        let submitted: PendingAudio | null = null;
+        if (pendingAudio) {
+          /* A request stored earlier whose reply never came is asked about by its key first, never re-sent
+             blind (settleStoredRequest, the Rig's rule): landed, it is followed; never arrived, it is set aside
+             and re-quoted, and goes again, under a new key, only at the price it was approved at. One tab at a time. */
+          const settled = await lockedClaim(recoveryKey, async () => {
+            const saved = readPendingGeneration(localStorage, recoveryKey) as PendingAudio | null;
+            if (!saved || saved.key !== pendingAudio.key)
+              throw new Error(
+                "This audio request has already been recovered. Refresh before starting another.",
+              );
+            const outcome = await settleStoredRequest({
+              scope: requestScope ?? "", key: saved.key, endpoint: "/api/audio", body: saved.body,
+              approved: { price: saved.price ?? saved.credits, unit: saved.unit ?? "cr" },
+            });
+            if (outcome.state === "landed" || outcome.state === "repriced")
+              clearPendingGeneration(localStorage, recoveryKey, saved.key);
+            if (outcome.state !== "resend") return { outcome, again: null };
+            const again: PendingAudio = { ...saved, key: crypto.randomUUID(), endpoint: "/api/audio" };
+            localStorage.setItem(recoveryKey, JSON.stringify(again));
+            return { outcome, again };
+          });
+          notifyComposerStorage();
+          const { outcome } = settled;
+          if (outcome.state === "unknown") throw new Error(outcome.reason);
+          if (outcome.state === "repriced") {
+            /* Never arrived, and priced differently now: the request is the person's again, at its new price. */
+            keepAudioRequest(recoveredBody);
             throw new Error(
-              "This audio request has already been recovered. Refresh before starting another.",
+              `Your last audio request never reached the server, and its price is now ${audioCostLabel(outcome)}. Nothing was sent; generate it again to approve that price.`,
             );
-          if (saved && saved.body !== proposed.body)
-            throw new Error(
-              "Recover the saved audio request before starting another.",
-            );
-          return claimPendingGeneration(localStorage, recoveryKey, proposed);
-        });
+          }
+          submitted = settled.again;
+        } else {
+          const proposed: PendingAudio = {
+            key: crypto.randomUUID(),
+            body: JSON.stringify({
+              ...JSON.parse(audioBody),
+              maxCredits: currentQuote!.estimatedCredits,
+            }),
+            credits: currentQuote!.estimatedCredits,
+            price: currentQuote!.price,
+            unit: currentQuote!.unit,
+            endpoint: "/api/audio",
+          };
+          submitted = await lockedClaim(recoveryKey, () => {
+            const saved = readPendingGeneration(localStorage, recoveryKey);
+            if (saved && saved.body !== proposed.body)
+              throw new Error(
+                "Recover the saved audio request before starting another.",
+              );
+            return claimPendingGeneration(localStorage, recoveryKey, proposed);
+          });
+        }
         notifyComposerStorage();
         setMenu(null);
-        const r = await fetch("/api/audio", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": submitted.key,
-            "X-Workspace-Id": workspace!.id,
-            "X-Actor-Email": email!,
-          },
-          body: submitted.body,
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          if (r.headers.get("Idempotency-Status") === "complete") {
-            await lockedClaim(recoveryKey, () =>
-              clearPendingGeneration(localStorage, recoveryKey, submitted.key),
+        /* Landed: its job is followed, and nothing is sent. */
+        if (submitted) {
+          const r = await fetch("/api/audio", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": submitted.key,
+              "X-Workspace-Id": workspace!.id,
+              "X-Actor-Email": email!,
+            },
+            body: submitted.body,
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            if (r.headers.get("Idempotency-Status") === "complete") {
+              await lockedClaim(recoveryKey, () =>
+                clearPendingGeneration(localStorage, recoveryKey, submitted.key),
+              );
+              notifyComposerStorage();
+            }
+            throw new Error(
+              j.error ??
+                "Audio submission could not be confirmed. Recover asks what became of it; it is never sent twice.",
             );
-            notifyComposerStorage();
           }
-          throw new Error(
-            j.error ??
-              "Audio submission could not be confirmed. Recover it with the same request.",
+          if (typeof j.id !== "string")
+            throw new Error(
+              "Audio submission could not be confirmed. Recover asks what became of it before anything else is sent.",
+            );
+          await lockedClaim(recoveryKey, () =>
+            clearPendingGeneration(localStorage, recoveryKey, submitted.key),
           );
+          notifyComposerStorage();
+          if (Array.isArray(j.notices) && j.notices.length)
+            toast(j.notices.join(" · "));
         }
-        if (typeof j.id !== "string")
-          throw new Error(
-            "Audio submission could not be confirmed. Recover the submitted audio before starting another.",
-          );
-        await lockedClaim(recoveryKey, () =>
-          clearPendingGeneration(localStorage, recoveryKey, submitted.key),
-        );
-        notifyComposerStorage();
-        if (Array.isArray(j.notices) && j.notices.length)
-          toast(j.notices.join(" · "));
       } else {
         const applied: ShotSpec = { ...detected, ...spec };
         const base = {
@@ -919,7 +974,7 @@ function ScopedComposer({
   const recovery =
     kind === "audio"
       ? pendingAudio
-        ? "Your audio request is saved. Recover it to confirm the same submission."
+        ? "Your audio request is unconfirmed. Recover asks the server what became of it; it is never sent twice."
         : null
       : pendingBatch
         ? `${pendingBatch.cursor} of ${pendingBatch.variants.length} takes submitted. ${pendingBatch.refusal ? pendingBatch.refusal.message + " Retry only the remaining takes." : "Recover to confirm the pending take and finish the remaining requests."}`
@@ -993,6 +1048,10 @@ function ScopedComposer({
                     key={t.id}
                     type="button"
                     aria-pressed={track === t.id}
+                    disabled={
+                      !!audioSetup?.configured &&
+                      !audioTaskAvailable(audioSetup, t.id)
+                    }
                     onClick={() => setTrack(t.id)}
                   >
                     {t.label}
@@ -1128,8 +1187,8 @@ function ScopedComposer({
                   <span>{kind === "video" ? "…or a clip for motion" : "Drop a composition reference"}</span>
                 </button>}
               </div>
-              <div className={styles.referenceHint}>
-                {kind === "video" ? (
+              {kind === "video" && (
+                <div className={styles.referenceHint}>
                   <label>First frame
                     <select aria-label="First frame" value={refs.find(ref => ref.role === "first_frame") ? referenceKey(refs.find(ref => ref.role === "first_frame")!) : ""}
                       disabled={locked} onChange={event => chooseFirstFrame(event.target.value || null)}>
@@ -1138,30 +1197,8 @@ function ScopedComposer({
                     </select>
                     <span> Right-click an image to choose its role. Reference images do not set the opening frame.</span>
                   </label>
-                ) : (
-                  <div
-                    className={styles.trackTabs}
-                    role="group"
-                    aria-label="Reference use"
-                  >
-                    {(
-                      [
-                        { id: "loose", label: "Loose" },
-                        { id: "first", label: "Exact" },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        aria-pressed={useAs === item.id}
-                        onClick={() => setUseAs(item.id)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
               {referenceProblem && <p className={styles.notice} role="alert">{referenceProblem}</p>}
             </div>
           )}
@@ -1206,6 +1243,34 @@ function ScopedComposer({
                   )}
                   {setting("Variations", "count", `×${count}`)}
                 </div>
+                {kind === "image" && (
+                  /* The new still's role on the production (params.useAs, the
+                     takes wall's First frames / Loose filter). An output
+                     setting, not a reference role: it does not change how
+                     closely the engine follows the references. */
+                  <div className={styles.toggle} role="group" aria-label="Save still as" style={{ flexWrap: "wrap" }}>
+                    <span style={{ whiteSpace: "nowrap" }}>Save still as</span>
+                    <div className={styles.trackTabs} style={{ margin: 0, flexWrap: "nowrap" }}>
+                      {(
+                        [
+                          { id: "loose", label: "Loose" },
+                          { id: "first", label: "First frame" },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          aria-pressed={useAs === item.id}
+                          disabled={locked}
+                          onClick={() => setUseAs(item.id)}
+                          style={{ whiteSpace: "nowrap" }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {kind === "video" && model.supportsAudio && (
                   <label className={styles.toggle}>
                     <span>
@@ -1293,7 +1358,7 @@ function ScopedComposer({
                         ))
                       ) : (
                         <p>
-                          {audioSetup?.voicesError ??
+                          {voicesError ??
                             (signedIn
                               ? "No voices available."
                               : "Sign in to choose a voice.")}

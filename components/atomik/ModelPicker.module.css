@@ -97,4 +97,6 @@
  .list{padding:12px 20px 18px}.groupHeading{background:var(--graphite-card)}
  .option{min-height:58px;padding:10px 12px;border-radius:8px}.modelName{font-size:14px}.capabilities{font-size:12px}.optionText{align-items:flex-start}
  .footer{padding:13px 20px;font-size:12px}.effortList{padding:0 20px 20px}.effortOption{min-height:48px;font-size:14px}
+ /* The phone floor: 12px text and 44px targets, in the trigger, its note and the sheet. */
+ .providerMark,.effortNote,.groupHeading,.groupHeading>span:last-child,.heading>span:nth-child(2){font-size:12px}.providers button{min-height:44px}
 }

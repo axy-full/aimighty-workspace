@@ -1,4 +1,5 @@
 import type { DevelopmentScene } from "../workbench/development-types";
+import { stableId } from "../workbench/stable-id";
 
 /**
  * Production › Beats (owner's brief, 23 September): the agent breaks the
@@ -24,14 +25,19 @@ export function newShot(): BeatShot { return { id: id("shot"), description: "", 
 export function newBeat(): Beat { return { id: id("beat"), text: "" }; }
 export function newScene(): BeatScene { return { id: id("scene"), heading: "", summary: "", beats: [newBeat()], shots: [newShot()], characters: [], locations: [], props: [] }; }
 
-/** The agent's breakdown, every section of it, as a beat sheet with its own ids. */
+/**
+ * The agent's breakdown, every section of it, as a beat sheet with its own ids —
+ * ids made from the run (or the source) and the position, so two windows taking
+ * the same breakdown make the same sheet, which a merge holds once.
+ */
 export function beatSheetFrom(scenes: DevelopmentScene[], scriptSha256: string, jobId?: string, upload?: string): BeatSheet {
+  const source = jobId ?? `${scriptSha256}:${upload ?? ""}`;
   return {
     ...(jobId ? { jobId } : {}), scriptSha256, updatedAt: new Date().toISOString(), ...(upload !== undefined ? { source: "upload" as const, sourceName: upload.slice(0, 300) } : {}),
-    scenes: scenes.slice(0, BEAT_LIMITS.scenes).map((scene) => ({
-      id: id("scene"), heading: cut(scene.heading, BEAT_LIMITS.heading), summary: cut(scene.summary, BEAT_LIMITS.summary), ...(scene.act ? { act: scene.act } : {}),
-      beats: scene.beats.slice(0, BEAT_LIMITS.beats).map((text) => ({ id: id("beat"), text: cut(text, BEAT_LIMITS.beat) })),
-      shots: scene.shots.slice(0, BEAT_LIMITS.shots).map((shot) => ({ id: id("shot"), description: cut(shot.description, BEAT_LIMITS.description), framing: cut(shot.framing, BEAT_LIMITS.field), movement: cut(shot.movement, BEAT_LIMITS.field), lighting: cut(shot.lighting, BEAT_LIMITS.field), sound: cut(shot.sound, BEAT_LIMITS.field) })),
+    scenes: scenes.slice(0, BEAT_LIMITS.scenes).map((scene, si) => ({
+      id: stableId("scene", source, si), heading: cut(scene.heading, BEAT_LIMITS.heading), summary: cut(scene.summary, BEAT_LIMITS.summary), ...(scene.act ? { act: scene.act } : {}),
+      beats: scene.beats.slice(0, BEAT_LIMITS.beats).map((text, bi) => ({ id: stableId("beat", source, si, bi), text: cut(text, BEAT_LIMITS.beat) })),
+      shots: scene.shots.slice(0, BEAT_LIMITS.shots).map((shot, hi) => ({ id: stableId("shot", source, si, hi), description: cut(shot.description, BEAT_LIMITS.description), framing: cut(shot.framing, BEAT_LIMITS.field), movement: cut(shot.movement, BEAT_LIMITS.field), lighting: cut(shot.lighting, BEAT_LIMITS.field), sound: cut(shot.sound, BEAT_LIMITS.field) })),
       characters: names(scene.characters, BEAT_LIMITS.names), locations: names(scene.locations, 15), props: names(scene.props, BEAT_LIMITS.names),
     })),
   };
@@ -47,6 +53,90 @@ export function compactBeatSheet(sheet: BeatSheet) {
 
 export function shotCount(sheet: BeatSheet | undefined | null) { return sheet?.scenes.reduce((n, s) => n + s.shots.length, 0) ?? 0; }
 export function beatCount(sheet: BeatSheet | undefined | null) { return sheet?.scenes.reduce((n, s) => n + s.beats.length, 0) ?? 0; }
+
+/**
+ * A delete on the beat sheet, and what it took out — enough to put it back
+ * where it was (⌘Z). Numbers are 1-based, as the board shows them.
+ */
+export type BeatRemoval =
+  /* `others`: the scenes beside it when it went, so it never goes back into a sheet that was since replaced. */
+  | { kind: "scene"; index: number; scene: BeatScene; others: string[] }
+  | { kind: "beat"; sceneId: string; sceneNumber: number; index: number; beat: Beat }
+  | { kind: "shot"; sceneId: string; sceneNumber: number; index: number; shot: BeatShot };
+export type BeatTarget = { kind: "scene"; id: string } | { kind: "beat" | "shot"; sceneId: string; id: string };
+
+/** Takes one scene, beat or shot out of the sheet; null when it is not there. */
+export function removeFromSheet(sheet: BeatSheet, target: BeatTarget): { sheet: BeatSheet; removal: BeatRemoval } | null {
+  if (target.kind === "scene") {
+    const index = sheet.scenes.findIndex((s) => s.id === target.id);
+    if (index < 0) return null;
+    const scenes = sheet.scenes.filter((_, i) => i !== index);
+    return { sheet: { ...sheet, scenes }, removal: { kind: "scene", index, scene: sheet.scenes[index], others: scenes.map((s) => s.id) } };
+  }
+  const si = sheet.scenes.findIndex((s) => s.id === target.sceneId);
+  if (si < 0) return null;
+  const scene = sheet.scenes[si];
+  const list: { id: string }[] = target.kind === "beat" ? scene.beats : scene.shots;
+  const index = list.findIndex((x) => x.id === target.id);
+  if (index < 0) return null;
+  const nextScene = target.kind === "beat" ? { ...scene, beats: scene.beats.filter((_, i) => i !== index) } : { ...scene, shots: scene.shots.filter((_, i) => i !== index) };
+  const next = { ...sheet, scenes: sheet.scenes.map((s, i) => (i === si ? nextScene : s)) };
+  const removal: BeatRemoval = target.kind === "beat"
+    ? { kind: "beat", sceneId: scene.id, sceneNumber: si + 1, index, beat: scene.beats[index] }
+    : { kind: "shot", sceneId: scene.id, sceneNumber: si + 1, index, shot: scene.shots[index] };
+  return { sheet: next, removal };
+}
+
+function insertAt<T>(list: T[], index: number, item: T): T[] { const at = Math.min(Math.max(0, index), list.length); return [...list.slice(0, at), item, ...list.slice(at)]; }
+
+/**
+ * Puts a removed scene, beat or shot back at its place (or the end, if the
+ * list has since shrunk). The sheet unchanged when it is already back; null
+ * when it cannot go back — its scene is gone, or the list is at its limit.
+ */
+export function restoreToSheet(sheet: BeatSheet | null | undefined, removal: BeatRemoval): BeatSheet | null {
+  if (!sheet) return null;
+  if (removal.kind === "scene") {
+    if (sheet.scenes.some((s) => s.id === removal.scene.id)) return sheet;
+    if (replaced(sheet, removal)) return null;
+    if (sheet.scenes.length >= BEAT_LIMITS.scenes) return null;
+    return { ...sheet, scenes: insertAt(sheet.scenes, removal.index, removal.scene) };
+  }
+  const si = sheet.scenes.findIndex((s) => s.id === removal.sceneId);
+  if (si < 0) return null;
+  const scene = sheet.scenes[si];
+  let nextScene: BeatScene;
+  if (removal.kind === "beat") {
+    if (scene.beats.some((b) => b.id === removal.beat.id)) return sheet;
+    if (scene.beats.length >= BEAT_LIMITS.beats) return null;
+    nextScene = { ...scene, beats: insertAt(scene.beats, removal.index, removal.beat) };
+  } else {
+    if (scene.shots.some((s) => s.id === removal.shot.id)) return sheet;
+    if (scene.shots.length >= BEAT_LIMITS.shots) return null;
+    nextScene = { ...scene, shots: insertAt(scene.shots, removal.index, removal.shot) };
+  }
+  return { ...sheet, scenes: sheet.scenes.map((s, i) => (i === si ? nextScene : s)) };
+}
+
+/** A scene's sheet was replaced (a new breakdown): not one of the scenes it sat among is left. */
+function replaced(sheet: BeatSheet, removal: Extract<BeatRemoval, { kind: "scene" }>): boolean {
+  return removal.others.length > 0 && !sheet.scenes.some((s) => removal.others.includes(s.id));
+}
+
+/** Why `restoreToSheet` could not put a removal back, for the toast. */
+export function restoreRefusal(sheet: BeatSheet | null | undefined, removal: BeatRemoval): string {
+  if (!sheet) return "the beat sheet is gone";
+  if (removal.kind === "scene") return replaced(sheet, removal) ? "the beat sheet was replaced since" : `the sheet already has ${BEAT_LIMITS.scenes} scenes`;
+  if (!sheet.scenes.some((s) => s.id === removal.sceneId)) return "its scene is gone";
+  return removal.kind === "beat" ? `its scene already has ${BEAT_LIMITS.beats} beats` : `its scene already has ${BEAT_LIMITS.shots} shots`;
+}
+
+/** How a removal is named in the toast: "Scene 3", "Beat 2 of scene 1", "Shot 1.2". */
+export function removalName(removal: BeatRemoval): string {
+  if (removal.kind === "scene") return `Scene ${removal.index + 1}`;
+  if (removal.kind === "beat") return `Beat ${removal.index + 1} of scene ${removal.sceneNumber}`;
+  return `Shot ${removal.sceneNumber}.${removal.index + 1}`;
+}
 
 /** Moves one item of a list by a step, clamped. */
 export function move<T>(list: T[], index: number, step: -1 | 1): T[] {

@@ -20,7 +20,7 @@ test("a room quotes first, streams propose → challenge → converge, settles o
   const account = await signInLocally(request);
   const me = await request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   const anonymous = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL || "http://localhost:4551" });
   const events = async () => (await platform.execute({ sql: "SELECT id,status,engine,model,engine_cost_usd AS usd,billed_credits AS credits FROM meter_events WHERE workspace_id=? AND engine='xai'", args: [account.workspace.id] })).rows;
   try {
@@ -58,12 +58,14 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(quote.estimateUsd).toBeUndefined();
     expect(await events()).toHaveLength(0);
 
-    /* No price seen, or a lower one: refused before anything is reserved. */
+    /* No price seen, or a lower one, or no round named: refused before anything is reserved. */
     expect((await request.post(rounds, { headers, data: {} })).status()).toBe(409);
-    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits - 1 } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits - 1, round: 1 } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits, round: 2 } })).status()).toBe(409);
     expect(await events()).toHaveLength(0);
 
-    const ran = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits } });
+    const ran = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits, round: 1 } });
     expect(ran.ok(), await ran.text()).toBe(true);
     expect(ran.headers()["content-type"]).toContain("text/event-stream");
     const stream = parseSse(await ran.text());
@@ -93,6 +95,11 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(settled).toHaveLength(1);
     expect(settled[0]).toMatchObject({ status: "succeeded", engine: "xai", model: session.model });
     expect(Number(settled[0].credits)).toBe(Number(done.spendCr));
+    /* The round number is the request's key: round 1 sent again (a second press, or the request arriving late) runs nothing. */
+    const again = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits + 50, round: 1 } });
+    expect(again.status()).toBe(409);
+    expect((await again.json()).error).toBe("Round 1 has already run. Read the room again before running another.");
+    expect(await events()).toHaveLength(1);
 
     /* A note is free and joins the transcript; a pin becomes a solution. */
     const note = await request.post(`/api/crew/sessions/${session.id}/notes`, { headers, data: { text: "Keep the tin out of frame." } });

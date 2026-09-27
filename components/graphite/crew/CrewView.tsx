@@ -1,13 +1,13 @@
 "use client";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PromptAttach, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { readsLabel } from "@/lib/crew/context";
 import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS_MAX } from "@/lib/crew/room";
 import { useCrew, type CrewRoom, type RoomMessage } from "@/lib/crew/use-crew";
 import { CREW_PAGES } from "@/lib/shell/ia";
-import { GEN_PRESET_KEY, type GenPreset } from "@/lib/shell/assets";
 import { CONFIRM, solutionStatusLabel } from "@/lib/shell/confirmations";
 import { useShell } from "@/lib/shell/state";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { useConfirm } from "@/lib/shell/use-confirm";
 import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import type { Project } from "@/lib/workbench/studio";
@@ -40,12 +40,12 @@ export function CrewStrip({ room }: { room: CrewRoom }) {
   );
 }
 
-export function CrewView({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
+export function CrewView({ project, room, scope, projectsError = null, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError?: string | null; onRetry?: () => void }) {
   const shell = useShell();
   const page = CREW_PAGES.find((p) => p.id === shell.crewPage)!;
   return (
     <div className="cw" data-testid="crew-view" data-page={page.id}>
-      {page.id === "room" ? <Room project={project} room={room} scope={scope} /> : null}
+      {page.id === "room" ? <Room project={project} room={room} scope={scope} projectsError={projectsError} onRetry={onRetry} /> : null}
       {page.id === "members" ? <Members room={room} title={page.title} hint={page.hint} /> : null}
       {page.id === "sessions" ? <Sessions room={room} title={page.title} hint={page.hint} /> : null}
     </div>
@@ -54,7 +54,7 @@ export function CrewView({ project, room, scope }: { project: Project | null; ro
 
 /* ── Room ─────────────────────────────────────────────────────────────── */
 
-function Room({ project, room, scope }: { project: Project | null; room: CrewRoom; scope: string }) {
+function Room({ project, room, scope, projectsError, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError: string | null; onRetry?: () => void }) {
   const ws = useWorkspace();
   const { confirm } = useConfirm();
   const [selected, setSelected] = useState<string | null>(null);
@@ -78,10 +78,10 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
     const routed = await room.routeSolution(id, to).finally(() => setRouting(null));
     if (!routed) return;
     if (to === "gen") {
-      let carried = true;
-      try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify({ prompt: routed.prompt ?? "", note: "Crew · solution" } satisfies GenPreset)); } catch { carried = false; }
-      /* Blocked storage: Gen opens empty, and the toast says so; the solution is still in the room. */
-      confirm(carried ? CONFIRM.crewGen() : CONFIRM.notCarried("The solution"), { go: true });
+      /* The solution becomes Gen's prompt, whether Gen is open yet or not: it is handed over in memory (lib/shell/gen-preset),
+         with nothing stored or copied that the browser could refuse, so the toast can say it is there. */
+      sendGenPreset({ prompt: routed.prompt ?? "", note: "Crew · solution" });
+      confirm(CONFIRM.crewGen(), { go: true });
       return;
     }
     if (project) announceDraftWritten(project.id);
@@ -130,7 +130,7 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
       <section className="cw-col cw-main" aria-label="Room">
         <div className="cw-head">
           <div className="cw-head-text">
-            <span className="cw-project"><span className="cw-project-tile" aria-hidden="true">{initials(project?.name ?? "")}</span>{project?.name ?? "No project"}</span>
+            <span className="cw-project"><span className="cw-project-tile" aria-hidden="true">{initials(project?.name ?? "")}</span>{project?.name ?? (projectsError ? "Projects didn’t load" : "No project")}</span>
             <h1 className="gx-h1" data-testid="page-title">{page.title}</h1>
             <span className="gx-hint">{page.hint}</span>
           </div>
@@ -159,6 +159,13 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
           </div>
         </div>
 
+        {/* The project list failed to read: said, with Retry — not "No project", which sent people to make duplicates. */}
+        {projectsError && !project ? (
+          <div className="cw-notice" role="alert" data-testid="crew-projects-error">
+            <span className="gx-gen-error">{projectsError}</span>
+            {onRetry ? <> <button type="button" className="gx-hbtn" style={{ display: "inline-flex" }} onClick={onRetry}>Retry</button></> : null}
+          </div>
+        ) : null}
         {room.notice ? <p className="cw-notice" role="status" data-testid="crew-notice">{room.notice}</p> : null}
 
         <div className="cw-transcript" data-testid="crew-transcript">
@@ -197,7 +204,7 @@ function Room({ project, room, scope }: { project: Project | null; room: CrewRoo
             <span className="gx-eyebrow" data-functional-label="">Session</span>
             <p className="cw-panel-goal">{room.goal.trim() || "No goal yet."}</p>
             <dl className="cw-rows">
-              {[["Members", `${room.active.length} seated`], ["Engine", room.session?.model ?? room.status?.model ?? "—"], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session && room.session.spendUsd > 0 ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]].map(([k, v]) => (
+              {([["Members", `${room.active.length} seated`], ["Engine", <EngineRow key="engine" room={room} />], ["Rounds", `${room.session?.roundsRun ?? 0} of ${ROUNDS_MAX}`], ["Reads", readsLabel(room.context)], ["Spend", room.session?.spendCr != null ? `${cr(room.session.spendCr)} settled` : room.session && room.session.spendUsd > 0 ? `$${room.session.spendUsd.toFixed(4)} settled` : "Nothing yet"]] as [string, ReactNode][]).map(([k, v]) => (
                 <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
               ))}
             </dl>
@@ -331,3 +338,17 @@ function Sessions({ room, title, hint }: { room: CrewRoom; title: string; hint: 
 }
 
 export { useCrew };
+
+/* The room's engine. A room keeps the one it was opened on, so a deployment
+   that has moved on offers the move here — priced again before any round. */
+function EngineRow({ room }: { room: CrewRoom }) {
+  const own = room.session?.model ?? room.status?.model ?? "—";
+  const current = room.status?.connected ? room.status.model : "";
+  if (!room.session || !current || current === room.session.model) return <>{own}</>;
+  return (
+    <span className="cw-engine-move">
+      {own}
+      <button type="button" className="gx-hbtn" disabled={room.running} onClick={() => void room.moveToCurrentEngine()} data-testid="crew-engine-move">Move to {current}</button>
+    </span>
+  );
+}

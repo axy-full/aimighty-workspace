@@ -26,6 +26,9 @@ import {
   reconcileConsumerReceipt,
   completeConsumerJob,
   failConsumerPoll,
+  consumerJobSetAside,
+  fenceConsumerQuotes,
+  CONSUMER_ACTIVE_LIMIT,
   type ConsumerJob,
   type ConsumerJobScope,
   type ConsumerJson,
@@ -56,16 +59,17 @@ import {
   type ConnectedOutputType,
 } from "./catalogue";
 import { loadConnectedCatalogue } from "./catalogue-cache";
-import { describeConsumerGenerationSources, resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
+import { describeConsumerGenerationSources, longestVideoSourceSeconds, resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
 import { requireConnectedTool, type ConnectedToolName } from "./tools";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { sameConsumerValue } from "./video-contract";
-import { collectConsumerVideoOriginal } from "./video-original";
+import { CONSUMER_ORIGINAL_SECONDS, collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
 import { requireConnectedPreset } from "./presets";
 import { setupIdsOfParameters } from "./marketing-records";
 import { refuseForeignMarketingSetup } from "./marketing-setup";
+import { isBatchId } from "@/lib/variations";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 type Snapshot = {
@@ -77,6 +81,10 @@ type Snapshot = {
   tool?: { name: ConnectedToolName; label: string; model: string; suffix: string };
   /** Display names of the request's reference files, in request order. */
   sources?: { role: string; kind: string; name: string }[];
+  /** The page that quoted it, when it asked to pick its jobs back up ("gen"). */
+  composer?: "gen";
+  /** One take of a batch (quoteConsumerGenerationBatch): its siblings share the id, and Takes shows them as one strip. */
+  batch?: { id: string; variation: number };
 };
 function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvailability, observedAt: number) {
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -91,6 +99,8 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     model: snapshot.model,
     tool: snapshot.tool ?? null,
     sources: snapshot.sources ?? [],
+    composer: snapshot.composer === "gen" ? "gen" : null,
+    batch: snapshot.batch ?? null,
     workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId,
     quoteCredits: job.quoteCredits,
@@ -103,6 +113,7 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
 }
@@ -147,15 +158,29 @@ async function requireModel(userId: string, input: ConsumerGenerationInput): Pro
 }
 const sameInput = (a: unknown, b: ConsumerGenerationInput) =>
   sameConsumerValue(parseConsumerGenerationInput(a), b);
+/** A repeated quote key names the same take of the same batch, or no batch at all. */
+const sameBatch = (stored: unknown, wanted: { id: string; variation: number } | null | undefined) => {
+  const saved = stored && typeof stored === "object" ? stored as { id?: unknown; variation?: unknown } : null;
+  return !saved && !wanted ? true : Boolean(saved && wanted && saved.id === wanted.id && saved.variation === wanted.variation);
+};
 const PLACEHOLDER_MEDIA = "00000000-0000-4000-8000-000000000000";
-export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string) {
+export async function quoteConsumerGeneration(
+  userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string,
+  options: {
+    composer?: "gen" | null;
+    /** One take of a batch: stored on the job, so its siblings file into one strip. */
+    batch?: { id: string; variation: number } | null;
+    /** The quote key its reference media are imported under: a batch's takes share the first take's, so each file is imported once. */
+    importKey?: string;
+  } = {},
+) {
   const normalized = parseConsumerGenerationInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
   await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
     const stored = JSON.parse(previous.payloadJson);
-    if (previous.workflow !== "generation" || !sameInput(stored.input, normalized)) throw new ConsumerJobError("idempotency_conflict");
+    if (previous.workflow !== "generation" || !sameInput(stored.input, normalized) || !sameBatch(stored.batch, options.batch)) throw new ConsumerJobError("idempotency_conflict");
     return consumerGenerationView(previous);
   }
   if (!(await readDraft(userId, draftId)))
@@ -163,6 +188,15 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
   const model = await requireModel(userId, normalized);
   // Catalogue validation precedes source resolution, imports and pricing.
   consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
+  // A voice the owner made on the account (voice_type "element") is its own
+  // library, never Particl's: only the account's preset voices are used.
+  if (normalized.parameters.voice_type !== undefined && normalized.parameters.voice_type !== "preset")
+    throw new CatalogueError("parameter_invalid", "Choose one of the account's preset voices.");
+  // A video tool returns a result as long as its source; one longer than
+  // Particl can keep would be paid for and never collected.
+  const longest = await longestVideoSourceSeconds(normalized);
+  if (longest !== null && longest > CONSUMER_ORIGINAL_SECONDS)
+    throw new CatalogueError("tool_source", `Choose a video up to ${CONSUMER_ORIGINAL_SECONDS / 60} minutes long; a longer result cannot be kept.`);
   const access = await connected(userId);
   // A motion preset must be one the connected account lists right now.
   if (normalized.presetId !== undefined) await requireConnectedPreset(userId, access, normalized.presetId);
@@ -172,7 +206,7 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
     resolveMedia: async (index, workspaceId, perform) => {
       await connected(userId, access.generation);
       return resolveConsumerGenerationImport(
-        { userId, draftId, quoteKey: idempotencyKey, sourceIndex: index, request: normalized, workspaceId, connectionGeneration: access.generation },
+        { userId, draftId, quoteKey: options.importKey ?? idempotencyKey, sourceIndex: index, request: normalized, workspaceId, connectionGeneration: access.generation },
         perform,
       );
     },
@@ -184,6 +218,8 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
     workspaceName: quote.workspace.name ?? "Connected wallet",
     model: { id: model.id, name: model.name, outputType: model.outputType },
     sources: described,
+    ...(options.composer === "gen" ? { composer: "gen" as const } : {}),
+    ...(options.batch ? { batch: { id: options.batch.id, variation: options.batch.variation } } : {}),
   };
   if (normalized.tool) {
     const tool = requireConnectedTool(normalized.tool.name);
@@ -207,7 +243,7 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
   } catch (error) {
     if (error instanceof ConsumerJobError && error.code === "idempotency_conflict") {
       const winner = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
-      if (winner?.workflow === "generation" && sameInput(JSON.parse(winner.payloadJson).input, normalized))
+      if (winner?.workflow === "generation" && sameInput(JSON.parse(winner.payloadJson).input, normalized) && sameBatch(JSON.parse(winner.payloadJson).batch, options.batch))
         return consumerGenerationView(winner);
     }
     throw error;
@@ -299,7 +335,16 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
     if (terminal) {
       await connected(scope.userId, claim.job.connectionGeneration);
       const enhancedPrompt = consumerGenerationEnhancedPrompt(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
-      const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt });
+      let original;
+      try {
+        original = await collectConsumerVideoOriginal(claim.job, terminal.url, { enhancedPrompt });
+      } catch (error) {
+        // The same result would be refused on every poll: settle it once, keep
+        // its receipt, and say why, instead of holding a slot forever.
+        if (!uncollectableOriginal(error)) throw error;
+        const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+        return { job: await consumerGenerationView(settled ?? (await ownedGeneration(scope))), collection: { code: error.code, message: error.message }, pollAfterSeconds };
+      }
       const completed = await completeConsumerJob({
         ...scope,
         leaseToken: claim.leaseToken,
@@ -377,4 +422,45 @@ export async function submitConsumerGenerationBatchJobs(
     else await markConsumerUncertain({ ...scope, providerReceipt: { batch_index: i, ...(response === null ? {} : { response }) } });
   }
   return Promise.all(ids.map(async (id) => consumerGenerationView(await ownedGeneration({ userId, draftId, id }))));
+}
+
+/**
+ * Takes 2–4 of one Generate (Gen's takes stepper): the same request quoted
+ * once per take, each its own job under its own key, all carrying one batch
+ * id and their take number, so they file into Takes as one strip. Each quote
+ * reads the account's live price (get_cost); the reference files are imported
+ * once, under the first take's key. Nothing is sent here: the person approves
+ * the exact sum (submitConsumerGenerationBatchJobs). The same keys again
+ * return the same jobs.
+ */
+export async function quoteConsumerGenerationBatch(
+  userId: string,
+  draftId: string,
+  input: ConsumerGenerationInput,
+  keys: string[],
+  options: { batchId: string; composer?: "gen" | null },
+) {
+  if (!Array.isArray(keys) || keys.length < 2 || keys.length > CONSUMER_ACTIVE_LIMIT || new Set(keys).size !== keys.length || !isBatchId(options.batchId))
+    throw new ConsumerVideoServiceError("invalid_batch", "Choose 2 to 4 takes for one batch.", 400);
+  const views: ConsumerGenerationView[] = [];
+  for (const [i, key] of keys.entries())
+    views.push(await quoteConsumerGeneration(userId, draftId, input, key, { composer: options.composer ?? null, batch: { id: options.batchId, variation: i + 1 }, importKey: keys[0] }));
+  return views;
+}
+
+/**
+ * A batch whose submit reply never came back, asked about before anything
+ * else is sent: check, then fence. Every take still quoted is fenced
+ * (fenceConsumerQuotes), so a submit still on its way can no longer claim it
+ * and "absent" is final: nothing was, or will be, charged for it. A batch the
+ * admission took ("landed") is returned to follow: each take is read until it
+ * settles, and a refused one is failed, unbilled. Never a paid call.
+ */
+export async function checkConsumerGenerationBatch(userId: string, draftId: string, ids: string[]) {
+  if (!Array.isArray(ids) || ids.length < 2 || ids.length > CONSUMER_ACTIVE_LIMIT || new Set(ids).size !== ids.length)
+    throw new ConsumerVideoServiceError("invalid_batch", "Choose the takes of one batch.", 400);
+  await Promise.all(ids.map((id) => ownedGeneration({ userId, draftId, id })));
+  const after = await fenceConsumerQuotes(ids.map((id) => ({ userId, draftId, id })));
+  const jobs = await Promise.all(after.map((job) => consumerGenerationView(job)));
+  return { state: after.some((job) => job.status !== "quoted") ? ("landed" as const) : ("absent" as const), jobs };
 }

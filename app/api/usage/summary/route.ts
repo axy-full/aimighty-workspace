@@ -46,13 +46,16 @@ export const GET = withTenant(async function GET() {
   const hit = memoGet<Summary>("usage-summary", TTL_MS);
   if (hit) return NextResponse.json({ ...hit, cached: true });
 
+  /* Spend counts every take, hidden ones included: deleting a take hides it,
+     and the vendor has still charged for it. Only the live count of what is
+     rendering leaves hidden takes out. */
   const [gen, top, byVendor, promptBy] = await Promise.all([
     db().execute(`
-      SELECT COALESCE(SUM(status IN ('queued','running')), 0) AS pending,
+      SELECT COALESCE(SUM(status IN ('queued','running') AND deleted = 0), 0) AS pending,
              COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend,
              ${billedCreditsSum()} AS credits,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)), 0) AS prompt_spend
-      FROM generations WHERE deleted = 0`),
+      FROM generations`),
     db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`),
     db().execute(`SELECT provider, COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend FROM generations GROUP BY provider`),
     db().execute(`
@@ -61,7 +64,7 @@ export const GET = withTenant(async function GET() {
       FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
   ]);
   const added = await db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total, COALESCE(SUM(credits),0) AS credits FROM topups GROUP BY provider`);
-  const audio = await db().execute(`SELECT COALESCE(SUM(total_tokens),0) AS credits FROM generations WHERE provider='elevenlabs' AND deleted = 0`);
+  const audio = await db().execute(`SELECT COALESCE(SUM(total_tokens),0) AS credits FROM generations WHERE provider='elevenlabs'`);
 
   const g: any = gen.rows[0];
   const spentUsd = Number(g?.spend ?? 0);

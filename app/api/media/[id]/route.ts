@@ -2,11 +2,12 @@ import {
   readVideoBytes, readImageBytes, readAudioBytes, readModelBytes, openMediaStream,
   presignedReadUrl, videoPath, imagePath, audioPath, modelPath, usingBlob,
 } from "@/lib/storage";
-import { CONSUMER_ORIGINAL_MIMES } from "@/lib/higgsfield-consumer/original-identity";
+import { originalMediaOf } from "@/lib/originalMedia";
 import { getGeneration } from "@/lib/jobs";
 import { downloadFilename } from "@/lib/downloadName";
 import { requireUser, withTenant } from "@/lib/auth";
 import { attachmentDisposition } from "@/lib/contentDisposition";
+import { DEMO_PREVIEW_URL_PREFIX, isDemoMediaUrl } from "@/lib/demoProduction";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -37,19 +38,18 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
 
   const gen = await getGeneration(id).catch(() => null);
   if (!gen || gen.status !== "succeeded") return new Response("Not found", { status: 404 });
-  const kind: "video" | "image" | "audio" | "model" =
-    gen?.kind === "image" ? "image" : gen?.kind === "audio" ? "audio" : gen?.kind === "model" ? "model" : "video";
+  /* A starter production's demo take (lib/starter.ts) has no original in this workspace's storage: its picture
+     is the platform's neutral preview or the shipped fixture clip, both on this origin. Send the viewer there. */
+  if (isDemoMediaUrl(gen.storedUrl)) {
+    const stream = new URL(req.url).searchParams.get("stream") === "1" && gen.storedUrl!.startsWith(DEMO_PREVIEW_URL_PREFIX);
+    return new Response(null, { status: 302, headers: { Location: gen.storedUrl! + (stream ? "?stream=1" : ""), "Cache-Control": "private, no-store" } });
+  }
+  // A connected-account original keeps the type the provider served (JPEG,
+  // WAV, zip …); lib/originalMedia reads it from the server-written receipt.
+  const { kind, contentType, ext } = originalMediaOf(gen);
   const isImage = kind === "image";
   const isAudio = kind === "audio";
   const isModel = kind === "model";
-  // A connected-account original keeps the type the provider served (JPEG,
-  // WAV, zip …); the server-written receipt is the only source of that value.
-  const originalMime = typeof gen.params.consumerOriginalMime === "string" && CONSUMER_ORIGINAL_MIMES[kind].includes(gen.params.consumerOriginalMime)
-    ? gen.params.consumerOriginalMime : null;
-  const contentType = originalMime ?? (isImage ? "image/png" : isAudio ? "audio/mpeg" : isModel ? "model/gltf-binary" : "video/mp4");
-  const ext = contentType === "application/zip" ? "zip" : contentType === "image/jpeg" ? "jpg" : contentType === "image/webp" ? "webp"
-    : /wav/.test(contentType) ? "wav" : contentType === "audio/ogg" ? "ogg" : contentType === "audio/flac" ? "flac" : contentType === "audio/mp4" || contentType === "audio/aac" ? "m4a"
-    : isImage ? "png" : isAudio ? "mp3" : isModel ? "glb" : "mp4";
   const wantsDownload = new URL(req.url).searchParams.get("download") === "1";
 
   if (wantsDownload) {

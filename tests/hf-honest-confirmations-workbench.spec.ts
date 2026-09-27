@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { GEN_PRESET_KEY } from "../lib/shell/assets";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -13,24 +12,49 @@ import { GEN_PRESET_KEY } from "../lib/shell/assets";
  * shot, selected — on a Rig that has read the saved draft again. → Brief
  * says Brief and opens it; the room stays put for the next solution. Open in
  * Gen goes to Gen with the solution as the prompt, and says only that. Filed
- * minutes open the Library.
+ * minutes open the Library. Review screenshots are written only when
+ * HONEST_SHOTS names a folder; CI takes none.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844"];
 const TOUCH = [...PHONES, "workbench-844x390"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844", "workbench-360x640": "360x640" };
-const SHOTS = "/private/tmp/particl-suites/hf-connected/shots";
+const SHOTS = process.env.HONEST_SHOTS;
 const GOAL = "Open the film without dialogue and still make the product unmistakable inside the first four seconds.";
+
+/* Opt-in: PW_CPU_THROTTLE=4 slows the page's CPU as a CI runner's is (Chrome's Emulation.setCPUThrottlingRate). */
+test.beforeEach(async ({ page }) => {
+  const rate = Number(process.env.PW_CPU_THROTTLE);
+  if (rate > 1) await (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate });
+});
 
 async function shot(page: Page, name: string, project: string) {
   const size = SHOT_AT[project];
-  if (!size) return;
+  if (!SHOTS || !size) return;
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/honest-${name}-${size}.png` });
 }
 /** Wait for the page's enter animations, so a screenshot shows the settled page. */
 async function settle(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => !(a.effect instanceof KeyframeEffect && a.effect.getComputedTiming().iterations === Infinity)).map((a) => a.finished.catch(() => undefined))));
+}
+/**
+ * The target has stopped moving: every finite animation is done, and its place holds for ten frames running
+ * (a scroll that brings it into view included). A frame count, never a sleep.
+ */
+async function stopped(page: Page, target: Locator) {
+  await settle(page);
+  await target.evaluate((el) => new Promise<void>((done, fail) => {
+    let last = Number.NaN, still = 0;
+    const give = setTimeout(() => fail(new Error("still moving after 5 s")), 5_000);
+    const frame = () => {
+      const y = el.getBoundingClientRect().top;
+      still = y === last ? still + 1 : 0;
+      last = y;
+      if (still >= 10) { clearTimeout(give); done(); } else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }));
 }
 /** React has attached to the element: a fill or click before that is lost on a cold server. */
 async function hydrated(target: Locator) {
@@ -40,17 +64,28 @@ async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 
-/** A saved project, the Crew room open on it, one round run: three solutions from the mock chair. */
-async function roomWithSolutions(page: Page) {
+/**
+ * A saved project, the Crew room open on it, one round run: three solutions from the mock chair. `overRig`: the room is
+ * opened from Studio › Rig, so the Rig stays the page underneath it.
+ */
+async function roomWithSolutions(page: Page, overRig = false) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
   const project = { ...newProject("Dune Studies"), brief: "One kitchen, one rainy dawn.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
   expect((await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } })).ok()).toBe(true);
+  /* The Brief page reads this route. On a cold dev server its first read compiles it, and the dev client can then reload the
+     page, dropping the preset Gen holds in memory (lib/shell/gen-preset) mid-test: compile it before the page opens. */
+  expect((await page.request.get(`/api/workbench/development?projectId=${project.id}`, { headers })).ok()).toBe(true);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 200)); });
-  await page.goto(`/suites?project=${project.id}&view=crew`);
+  if (overRig) {
+    await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
+    await expect(page.getByTestId("page-title")).toHaveText("Rig");
+    await expect(page.getByTestId("rig-list")).toBeVisible();
+    await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+  } else await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
   await expect(page.locator(".cw-project")).toContainText("Dune Studies");
   /* The shell writes its own params into the URL once it settles (cp=room); on a cold server that lands after hydration and
@@ -161,11 +196,14 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await expect(row).toContainText("Cut on the drop");
-  /* …in view, and clear of a phone's tab bar. */
-  await settle(page);
+  /* …in view, and, once the page and its scroll have stopped, wholly above what floats over a phone's foot: the tab bar and the Uploads chip. */
+  await stopped(page, row);
   await expect(row).toBeInViewport();
+  const landed = (await row.boundingBox())!;
   const bar = page.locator(".gx-tabbar");
-  if (await bar.isVisible()) expect((await row.boundingBox())!.y + (await row.boundingBox())!.height).toBeLessThanOrEqual((await bar.boundingBox())!.y);
+  if (await bar.isVisible()) expect(landed.y + landed.height, "the row clears the tab bar").toBeLessThanOrEqual((await bar.boundingBox())!.y);
+  const chip = uploadsChip(page);
+  if (PHONES.includes(info.project.name) && await chip.isVisible()) expect(landed.y + landed.height, "the row clears the Uploads chip").toBeLessThanOrEqual((await chip.boundingBox())!.y);
   await noSideScroll(page);
   await shot(page, "rig-opened", info.project.name);
   expect(errors).toEqual([]);
@@ -214,26 +252,51 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   expect(errors).toEqual([]);
 });
 
-test("Crew › Open in Gen when the browser will not store the preset: Gen opens empty and the toast says the solution did not carry", async ({ page }, info) => {
+test("Crew › Open in Gen while the browser refuses to store anything for the session: the solution is still Gen's prompt, as the toast says", async ({ page }, info) => {
   test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "the narrowest phone, one desktop");
   const { errors, solutions } = await roomWithSolutions(page);
-  /* Storage blocked for the preset only (a private window, a full quota): everything else keeps working. */
-  await page.evaluate((key) => {
+  /* A private window or a full quota: every session-storage write is refused. The hand-off to Gen is in memory
+     (lib/shell/gen-preset), so the solution still arrives, and the toast is true. */
+  await page.evaluate(() => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (this: Storage, name: string, value: string) {
-      if (name === key) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      if (this === window.sessionStorage) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
       return set.call(this, name, value);
     };
-  }, GEN_PRESET_KEY);
-  await solutions.nth(2).getByRole("button", { name: "Open in Gen" }).click();
+  });
+  const third = solutions.nth(2);
+  const text = (await third.locator("p").innerText()).replace(/^3/, "").trim();
+  await third.getByRole("button", { name: "Open in Gen" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("toast")).toHaveText("The solution could not be carried to Gen");
-  await expect(page.getByTestId("toast")).not.toContainText("Gen’s prompt");
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("");
-  await expect(page.getByTestId("gen-preset-note")).toHaveCount(0);
+  await expect(page.getByTestId("gen-prompt")).toHaveValue(text);
+  await expect(page.getByTestId("gen-preset-note")).toHaveText("Crew · solution");
+  await expect(page.getByTestId("toast")).toHaveText("The solution is Gen’s prompt");
   await noSideScroll(page);
   await settle(page);
-  await shot(page, "gen-not-carried", info.project.name);
+  await shot(page, "gen-storage-refused", info.project.name);
+  expect(errors).toEqual([]);
+});
+
+test("Crew › Open Rig on a phone whose page head stands taller: the shot still lands wholly above the tab bar", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-360x640", "the smallest phone");
+  const { errors, solutions } = await roomWithSolutions(page);
+  /* The Rig's scroll frame starts at 425px, where CI's fonts put it, whatever this machine's fonts make of the page head:
+     the middle of the frame then falls behind the tab bar, so a shot centred in the frame (not in what can be seen of it) sits under the bar. */
+  await page.addStyleTag({ content: ".gx .gx-stage { position: fixed !important; top: 425px !important; bottom: 0 !important; left: 0 !important; right: 0 !important; }" });
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
+  await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string };
+  await page.getByTestId("toast-open").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await stopped(page, row);
+  expect((await page.locator(".gx-stage").boundingBox())!.y, "the frame is where CI put it").toBe(425);
+  await expect(row).toBeInViewport();
+  const landed = (await row.boundingBox())!;
+  expect(landed.y, "the row is below the frame's top").toBeGreaterThanOrEqual(425);
+  expect(landed.y + landed.height, "the row clears the tab bar").toBeLessThanOrEqual((await page.locator(".gx-tabbar").boundingBox())!.y);
+  await noSideScroll(page);
   expect(errors).toEqual([]);
 });
 
@@ -260,7 +323,27 @@ test("Crew › → Rig with a long pinned line: the shot is named to a word with
   expect(errors).toEqual([]);
 });
 
-test("Crew › → Rig, then an edit on the Rig while it is still reading the saved draft: the edit is never silently replaced", async ({ page }, info) => {
+test("Crew › → Rig over the Rig page: the Rig reads the new shot when it is written, so Open lands on it", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  /* The Rig is the page under Crew, so Open Rig does not arrive at a new page: only the draft-written catch-up
+     (lib/workspace/draft-written, RigProvider) brings the shot the route wrote into the Rig. */
+  const { errors, solutions } = await roomWithSolutions(page, true);
+  expect(new URL(page.url()).searchParams.get("page")).toBe("rig");
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
+  await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string };
+  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await page.getByTestId("toast-open").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
+  await expect(row).toContainText("Cut on the drop");
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await stopped(page, row);
+  await expect(row).toBeInViewport();
+  expect(errors).toEqual([]);
+});
+
+test("Crew › → Rig, then an edit on the Rig while it is still reading the saved draft: the edit is kept, beside the new shot", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one desktop: the Rig's shot list and its Add shot");
   const { errors, project, headers, solutions } = await roomWithSolutions(page);
   /* From here every read of the saved draft is held, so Open Rig lands before the Rig has the new shot. */
@@ -271,25 +354,29 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
     if (route.request().method() === "GET") { reads += 1; await held; }
     return route.fallback();
   });
+  const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
+  const reply = await (await routed).json() as { nodeId: string };
   await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
   await page.getByTestId("toast-open").click();
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
   const rows = page.locator(".pxw-rig-row");
   await expect(rows, "the Rig has not read the new shot yet").toHaveCount(0);
   expect(reads, "the Rig is reading the saved draft again").toBeGreaterThan(0);
-  /* An edit, and the read comes back straight after it — before the edit's own save goes out. */
+  /* An edit while that read is out. */
   await page.getByRole("button", { name: "+ Add shot" }).click();
-  release();
   await expect(rows).toHaveCount(1);
+  const added = (await rows.first().getAttribute("data-shot-id"))!;
+  release();
 
-  /* The read is not taken over the edit. The edit's save meets the newer revision, is refused, and the Rig
-     reloads the saved version — and says so, rather than dropping the edit quietly. */
-  await expect(page.getByTestId("toast")).toHaveText("This project changed elsewhere. Rig reloaded the saved version.", { timeout: 15_000 });
+  /* The read is merged under the edit (lib/workbench/draft-merge): the new shot joins, the edit stays, and both are saved. */
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`)).toContainText("Cut on the drop");
+  await expect(page.locator(`.pxw-rig-row[data-shot-id="${added}"]`)).toBeVisible();
   await page.unroute(`**/api/workbench/projects?id=${project.id}`);
-  const saved = (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as { nodes: { title: string }[] };
-  await expect.poll(() => rows.allInnerTexts().then((all) => all.length)).toBe(saved.nodes.length);
-  await expect(rows.first()).toContainText("Cut on the drop");
+  const savedIds = async () => ((await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as { nodes: { id: string }[] }).nodes.map((n) => n.id).sort();
+  await expect.poll(savedIds, { timeout: 15_000 }).toEqual([reply.nodeId, added].sort());
+  await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved");
   expect(errors).toEqual([]);
 });
 

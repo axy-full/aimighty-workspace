@@ -59,10 +59,10 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   /* Six tiles, verbatim lines, live facts in the suite colour; the Assets row; nothing else. */
   const tiles = home.getByRole("listitem");
   await expect(tiles).toHaveCount(6);
-  await expect(tiles).toContainText(["Brief to delivery, ten stages.", "Video, images, audio, 3D — one composer.", "Marketing Studio: product, presenter, ad.", "Genjutsu: motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department."]);
+  await expect(tiles).toContainText(["Brief to delivery, ten stages.", "Video, images, audio — one composer.", "Marketing Studio: product, presenter, ad.", "Genjutsu: motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department."]);
   /* The brief has words, one take exists and one shot is cut: Brief, Takes and Edit & Sound are done. */
   await expect(page.getByTestId("home-fact-studio")).toHaveText("3 of 10 done");
-  await expect(page.getByTestId("home-fact-gen")).toHaveText("Seedance 2.5 ready");
+  await expect(page.getByTestId("home-fact-gen")).toHaveText("Seedance 2.5 · default");
   await expect(page.getByTestId("home-fact-business")).toHaveText("UGC · 15 s · quoted in Ads");
   await expect(page.getByTestId("home-fact-atomik")).toHaveText("0 awaiting approval");
   await expect(page.getByTestId("home-fact-crew")).toHaveText("3 seats");
@@ -136,9 +136,12 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   await page.getByTestId("home-suite-gen").click();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(page.getByTestId("suite-mark")).toHaveText("GEN");
-  /* The sticky Generate sits above the bar, never over the composer. */
+  /* The sticky Generate sits just above the bar, never over the composer (measured once Gen's entrance,
+     a 6px rise, has settled: the band's resting place is 4px over the bar). */
   const cta = page.locator(".gx-gen-cta");
+  await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
   const ctaBottom = await cta.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(ctaBottom).toBeGreaterThanOrEqual(barTop - 8);
   expect(ctaBottom).toBeLessThanOrEqual(barTop + 0.5);
   await page.getByTestId("gen-model").evaluate((el) => el.scrollIntoView({ block: "start" }));
   await page.getByTestId("gen-model").click();

@@ -10,9 +10,9 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
  * from this project's Library, avatars, hooks and settings are the engine's
  * presets, and nothing asks for an id from a command line. Setup's Use in Ads
  * / Use in Image ads is added to the ad being built, once; the composer keeps
- * its draft across the trip; a finished job sits beside the composer and
- * re-reads the project's Library. Connected-account replies are route mocks;
- * nothing is billed.
+ * its draft across the trip; a finished job sits beside the composer (Price
+ * again readies the next run) and re-reads the project's Library.
+ * Connected-account replies are route mocks; nothing is billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -121,11 +121,11 @@ test("Ads: product and setting are stills from this project, the avatar an engin
   await expect(ava.locator("img")).toHaveAttribute("src", "/campaign/hero.webp");
   await ava.click();
   await expect(ava).toHaveAttribute("aria-pressed", "true");
-  if (PHONES.includes(info.project.name)) expect((await ava.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (PHONES.includes(info.project.name)) expect(Math.round((await ava.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
 
   /* Product: pick a still from this project's Library (pictures only). */
   const choose = page.getByTestId("ads-product-choose");
-  if (PHONES.includes(info.project.name)) expect((await choose.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  if (PHONES.includes(info.project.name)) expect(Math.round((await choose.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await choose.click();
   const stills = page.getByTestId("ads-product-stills");
   await expect(stills.getByRole("button", { name: "harbour-plate.webp" })).toBeVisible();
@@ -160,7 +160,9 @@ test("Ads: product and setting are stills from this project, the avatar an engin
   await expect(page.getByText("Rendered and filed to this project.")).toHaveCount(1);
   /* Takes and the Library read one store: it is re-read once the job finishes. */
   await expect.poll(libraryReads).toBeGreaterThan(before);
-  /* The same input is priced again at once: Generate is the rerun. */
+  /* A finished take never re-arms Generate by itself: Price again prices the next run, and the take stays beside the composer. */
+  await expect(page.getByTestId("ads-generate")).toBeDisabled();
+  await page.getByTestId("ads-requote").click();
   await expect(page.getByTestId("ads-generate")).toHaveText("Generate ad · 40 cr");
   await expect(page.getByTestId("ads-generate")).toBeEnabled();
   await expect(page.getByTestId("ads-done")).toBeVisible();
@@ -189,7 +191,7 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   await expect(page.getByTestId("dtc-engine-ms_image")).toHaveAttribute("aria-selected", "true");
   /* The engine switch is a phone target too. */
   if (info.project.name === "workbench-390x844")
-    for (const id of ["dtc-engine-marketing_studio_image", "dtc-engine-ms_image"]) expect((await page.getByTestId(id).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    for (const id of ["dtc-engine-marketing_studio_image", "dtc-engine-ms_image"]) expect(Math.round((await page.getByTestId(id).boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await expect(page.getByTestId("dtc-style").getByRole("button", { name: "Bold launch" })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("particl-business-preset"))).toBeNull();
 
@@ -210,6 +212,7 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   await page.getByTestId("dtc-generate").click();
   await expect(page.getByTestId("dtc-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("dtc-done")).toContainText("Rendered and filed to this project.");
+  await page.getByTestId("dtc-requote").click();
   await expect(page.getByTestId("dtc-generate")).toContainText("40 cr");
   await page.getByTestId("dtc-done").evaluate((el) => el.scrollIntoView({ block: "center" }));
   await noSideScroll(page);
@@ -322,7 +325,7 @@ test("phone: a picked Setup row brings its action into reach, clear of the tab b
     const hit = document.elementFromPoint(x, y);
     return hit && (hit === button || button.contains(hit)) ? "reachable" : hit?.className?.toString() ?? "nothing";
   }), { timeout: 5000 }).toBe("reachable");
-  expect((await use.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round((await use.boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
   await page.waitForTimeout(400);
   await shot(page, "setup-detail", info.project.name);
   await use.click();

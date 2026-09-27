@@ -11,6 +11,20 @@
 
 import { displayModelName, getModel } from "./models";
 
+/**
+ * The longest wait_for_render may hold its request open. The route ends at
+ * 300 seconds (app/api/mcp/route.ts › maxDuration), and a request killed
+ * there answers with a platform error page instead of a reply the client can
+ * read, so the wait stops well short of it and says "call again".
+ */
+export const WAIT_MAX_SECONDS = 270;
+export const WAIT_DEFAULT_SECONDS = 240;
+/** How long one wait_for_render call waits: what was asked for, within 5 seconds and WAIT_MAX_SECONDS. */
+export function waitSeconds(requested: unknown): number {
+  const asked = Number(requested ?? WAIT_DEFAULT_SECONDS);
+  return Math.min(Math.max(Number.isFinite(asked) ? asked : WAIT_DEFAULT_SECONDS, 5), WAIT_MAX_SECONDS);
+}
+
 export type ToolDef = {
   name: string;
   description: string;
@@ -36,6 +50,7 @@ export const TOOLS: ToolDef[] = [
         ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
         audio: { type: "boolean", description: "Native audio track. Seedance 2.5 only. Default false." },
         seed: { type: "number", description: "Fix the seed to make a shot reproducible." },
+        request_id: { type: "string", description: "Optional: any string unique to this render (a UUID is ideal). If a call is retried with the same request_id after its reply was lost, the render it started is returned instead of starting another. Letters, digits, dots, colons, dashes and underscores; up to 120." },
       },
       required: ["prompt"],
     },
@@ -49,7 +64,7 @@ export const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "The render id from render_shot." },
-        timeout_seconds: { type: "number", description: "How long to wait. Default 240, max 600." },
+        timeout_seconds: { type: "number", description: `How long to wait. Default ${WAIT_DEFAULT_SECONDS}, max ${WAIT_MAX_SECONDS}; if it is still rendering, call again.` },
       },
       required: ["id"],
     },
@@ -118,12 +133,13 @@ function describe(g: Gen): string {
 
 /** Calls the workspace's own API as the caller, so scopes and caps still apply. */
 export function makeCaller(origin: string, authorization: string) {
-  return async function call(pathname: string, init: { method?: string; body?: unknown } = {}) {
+  return async function call(pathname: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
     const res = await fetch(`${origin}${pathname}`, {
       method: init.method ?? "GET",
       headers: {
         Authorization: authorization,
         ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
       },
       body: init.body ? JSON.stringify(init.body) : undefined,
       cache: "no-store",
@@ -140,21 +156,30 @@ export function makeCaller(origin: string, authorization: string) {
 type Call = ReturnType<typeof makeCaller>;
 type Args = Record<string, string | number | boolean | undefined>;
 
-/** Projects are addressed by name — an agent shouldn't have to juggle ids. */
-async function resolveProject(call: Call, nameOrId?: string) {
+/**
+ * Projects are addressed by name — an agent shouldn't have to juggle ids.
+ *
+ * An id or an exact name (any case) is taken as it is. A partial name is only
+ * a guess, so it is taken for reading when it names exactly one project, and
+ * never for a paid render: filing a render under a production nobody named
+ * would spend against the wrong cap. Then the candidates are named instead.
+ */
+async function resolveProject(call: Call, nameOrId: string | undefined, use: "read" | "spend") {
   if (!nameOrId) return null;
   const { projects } = (await call("/api/projects")) as { projects: { id: string; name: string }[] };
   const want = String(nameOrId).trim().toLowerCase();
-  const hit =
-    projects.find((p) => p.id === nameOrId) ??
-    projects.find((p) => p.name.toLowerCase() === want) ??
-    projects.find((p) => p.name.toLowerCase().includes(want));
-  if (!hit) {
-    throw new Error(
-      `No project called "${nameOrId}". Existing: ${projects.map((p) => p.name).join(", ") || "none yet"}.`
-    );
-  }
-  return hit;
+  const byId = projects.find((p) => p.id === nameOrId);
+  if (byId) return byId;
+  const exact = projects.filter((p) => p.name.trim().toLowerCase() === want);
+  if (exact.length === 1) return exact[0];
+  const list = (items: { id: string; name: string }[]) => items.map((p) => `"${p.name}" (${p.id})`).join(", ");
+  if (exact.length > 1) throw new Error(`More than one project is called "${nameOrId}": ${list(exact)}. Give the project id.`);
+  const partial = want ? projects.filter((p) => p.name.toLowerCase().includes(want)) : [];
+  if (partial.length === 1 && use === "read") return partial[0];
+  if (partial.length) throw new Error(`No project is called exactly "${nameOrId}". Did you mean ${list(partial.slice(0, 8))}? Give the exact name or id.`);
+  throw new Error(
+    `No project called "${nameOrId}". Existing: ${projects.map((p) => p.name).join(", ") || "none yet"}.`
+  );
 }
 
 export async function runTool(
@@ -162,7 +187,7 @@ export async function runTool(
 ): Promise<string> {
   switch (name) {
     case "render_shot": {
-      const project = await resolveProject(call, args.project as string | undefined);
+      const project = await resolveProject(call, args.project as string | undefined, "spend");
       const model = String(args.model ?? "2.5").includes("2.0")
         ? "dreamina-seedance-2-0-260128"
         : "dreamina-seedance-2-5-260628";
@@ -170,6 +195,10 @@ export async function runTool(
       // offer; a tool must not then report the value it asked for as if it
       // had been used. Refuse up front, naming the options.
       const def = getModel(model);
+      const requestId = args.request_id;
+      if (requestId !== undefined && (typeof requestId !== "string" || !/^[A-Za-z0-9._:-]{1,120}$/.test(requestId)))
+        throw new Error("request_id must be 1–120 letters, digits, dots, colons, dashes or underscores.");
+      const key = requestId === undefined ? null : `mcp-render:${requestId}`;
       const duration = Number(args.duration ?? 5);
       const resolution = String(args.resolution ?? "1080p");
       const ratio = String(args.ratio ?? "16:9");
@@ -182,33 +211,42 @@ export async function runTool(
       if (!def.ratios.includes(ratio)) {
         throw new Error(`Aspect ratio must be one of ${def.ratios.join(", ")} for ${def.label}.`);
       }
+      const body = {
+        prompt: args.prompt,
+        model,
+        ratio,
+        resolution,
+        duration,
+        generateAudio: Boolean(args.audio),
+        seed: args.seed ?? null,
+        watermark: false,
+        projectId: project?.id ?? null,
+      };
+      /* Priced first, and sent with that price as its ceiling: it can never bill more than it reports.
+         request_id, when given, is its Idempotency-Key, so a retried call gets back the render it started. */
+      const quote = (await call("/api/generate/quote", { method: "POST", body })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown; fingerprint?: unknown };
+      const credits = quote.estimatedCredits, price = quote.price;
+      if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price))
+        throw new Error("This render could not be priced, so nothing was started.");
       const out = (await call("/api/generate", {
         method: "POST",
-        body: {
-          prompt: args.prompt,
-          model,
-          ratio,
-          resolution,
-          duration,
-          generateAudio: Boolean(args.audio),
-          seed: args.seed ?? null,
-          watermark: false,
-          projectId: project?.id ?? null,
-        },
+        body: { ...body, maxCredits: credits, ...(typeof quote.fingerprint === "string" ? { quoteFingerprint: quote.fingerprint } : {}) },
+        headers: key ? { "Idempotency-Key": key } : undefined,
       })) as { id: string };
       return (
         `Rendering started.\n\nid: ${out.id}\nproject: ${project?.name ?? "Unfiled"}\n` +
         `model: ${displayModelName(model)} · ` +
-        `${resolution} · ${ratio} · ${duration}s\n\n` +
+        `${resolution} · ${ratio} · ${duration}s\n` +
+        `price: ${quote.unit === "usd" ? `$${price.toFixed(2)}` : `${credits} cr`}\n\n` +
         `Call wait_for_render with this id to collect it.`
       );
     }
 
     case "wait_for_render": {
-      const timeout = Math.min(Math.max(Number(args.timeout_seconds ?? 240), 5), 600) * 1000;
-      const started = Date.now();
+      const timeout = waitSeconds(args.timeout_seconds) * 1000;
+      const started = Date.now(), deadline = started + timeout;
       let last: Gen | null = null;
-      while (Date.now() - started < timeout) {
+      for (;;) {
         const { generation } = (await call(`/api/jobs/${encodeURIComponent(String(args.id))}`)) as { generation: Gen };
         last = generation;
         if (generation.status === "succeeded") {
@@ -221,7 +259,10 @@ export async function runTool(
         if (generation.status === "failed" || generation.status === "cancelled") {
           return `Render ${generation.status}.\n\n${generation.error ?? "No reason given."}`;
         }
-        await new Promise((r) => setTimeout(r, 5000));
+        /* The last pause never runs past the deadline: the reply has to leave before the route is ended. */
+        const left = deadline - Date.now();
+        if (left <= 0) break;
+        await new Promise((r) => setTimeout(r, Math.min(5000, left)));
       }
       return (
         `Still ${last?.status ?? "rendering"} after ${Math.round(timeout / 1000)}s — it hasn't failed, ` +
@@ -230,7 +271,7 @@ export async function runTool(
     }
 
     case "list_renders": {
-      const project = await resolveProject(call, args.project as string | undefined);
+      const project = await resolveProject(call, args.project as string | undefined, "read");
       const q = new URLSearchParams({
         limit: String(Math.min(Number(args.limit ?? 20), 60)),
         sync: "0",

@@ -1,14 +1,14 @@
-import { db, ready } from "./db";
 import { getSetting } from "./settings";
-import { billedCreditsSum } from "./creditSql";
 import { billCredits } from "./creditTerms";
 import { cleanRule, cleanShotCap, shotCapVerdict } from "./approvalRule";
+import { spentBy } from "./caps";
 
-/** What a shot has been billed so far, in credits, over its live takes. */
+/**
+ * What a shot has been billed so far, in credits: every take, hidden ones
+ * included, as the reservation gate counts it (spentBy in lib/caps.ts).
+ */
 export async function shotCreditsSoFar(shotId: string): Promise<number> {
-  await ready();
-  const rs = await db().execute({ sql: `SELECT ${billedCreditsSum("g")} AS credits FROM generations g WHERE g.shot_id = ? AND g.deleted = 0`, args: [shotId] });
-  return Number((rs.rows[0] as unknown as { credits?: number })?.credits ?? 0);
+  return (await spentBy("shot_id", [shotId])).get(shotId)?.credits ?? 0;
 }
 
 /**

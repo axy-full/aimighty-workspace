@@ -1,5 +1,6 @@
 "use client";
-import { GEN_PRESET_KEY, type GenPreset } from "@/lib/shell/assets";
+import type { GenPreset } from "@/lib/shell/assets";
+import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { OWNER_RUNS, OWNER_RUN_EYEBROW, ownerRunTitle, type OwnerRunSurface } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
@@ -7,7 +8,7 @@ import { Glyph } from "./icons";
 
 /** Gen, opened on an output (and optionally a prompt): its composer is on this workspace's credits by default. */
 export function openGenOn(shell: ReturnType<typeof useShell>, preset: GenPreset) {
-  try { sessionStorage.setItem(GEN_PRESET_KEY, JSON.stringify(preset)); } catch { /* Gen opens on its own default output */ }
+  sendGenPreset(preset);
   shell.goGen();
 }
 

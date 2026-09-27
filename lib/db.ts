@@ -903,6 +903,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("atomik_messages", `effort TEXT`);
       await addColumn("atomik_chats", `effort TEXT`);
       await addColumn("atomik_steps", `refs TEXT`);
+      // Who took a step to render it, and which approval this is: its render's Idempotency-Key is per approval (lib/atomik.ts › stepRequestKey).
+      await addColumn("atomik_steps", `claimed_by TEXT`);
+      await addColumn("atomik_steps", `attempt INTEGER NOT NULL DEFAULT 0`);
       // Who a note called out, so the mention is a record and not only a nudge (brief 2.1).
       await addColumn("notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
       // Consent to train on a face, stored with the identity (brief 1.3).
@@ -1077,8 +1080,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          The LIKE clause matters: deleting a member mangles the address to
          "<email>#deleted-<ts>", so a super admin deleted before this existed
          would otherwise never be found again. This restores the address too. */
-      try {
-        const superEmail = (process.env.SUPER_ADMIN_EMAIL ?? "axy@akshaypanchal.com").trim().toLowerCase();
+      const superEmail = (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
+      if (superEmail) try {
         await c.execute({
           sql: `UPDATE users
                 SET role='admin', disabled=0, deleted_at=NULL,

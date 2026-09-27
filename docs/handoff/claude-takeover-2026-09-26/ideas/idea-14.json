@@ -1,0 +1,17 @@
+{
+ "n": 14,
+ "title": "One-click priced buttons in Storyboards, Environment and Takes re-edit",
+ "area": "Studio stages / smoothness",
+ "gap": "Storyboards (StoryboardStage.tsx:440,505,521), Environment (EnvironmentStage.tsx:214), the Takes re-edit (EditStage.tsx:195) and Transcribe (TranscribePanel.tsx:62) each need a 'Price\u2026' click and then a 'Render \u00b7 N' click, although /api/generate/quote has no side effects (it stops before reservation). In-flight job ids are capped with .slice(-5) (StoryboardStage.tsx:191, EnvironmentStage.tsx:228), so a 6th concurrent paid render is never attached. A frame's take is labelled with boards.style while its request used frame.style.",
+ "target": "Auto-quote with a 400 ms debounce once inputs settle, as Gen does at 260 ms. The primary button then reads 'Render frame \u00b7 N cr', and dispatchGeneration still re-quotes on click. Batches read 'Render N frames \u00b7 X cr'. Keep the explicit Price step on connected paths such as Cast, because consumer quotes create job rows. Keep every pending id until its job is terminal, and label each take with frame.style.",
+ "files": [
+  "components/graphite/production/StoryboardStage.tsx",
+  "components/graphite/production/EnvironmentStage.tsx",
+  "components/graphite/production/EditStage.tsx",
+  "components/graphite/production/TranscribePanel.tsx",
+  "lib/workspace/generate-submit.ts"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "The price is still shown on the button before any spend and re-checked on click. The quote route stays as it is."
+}

@@ -160,7 +160,7 @@ test("stale settings, team and token controls cannot mutate a new workspace or a
     ).toEqual([]);
 
     const code = randomBytes(18).toString("base64url");
-    const db = createClient({ url: localPlatformDbUrl() });
+    const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
     try {
       await db.execute({
         sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
@@ -216,7 +216,7 @@ test("a verified account without a workspace can resume setup and sign out using
   const account = await page.request
     .get("/api/me")
     .then((response) => response.json());
-  const db = createClient({ url: localPlatformDbUrl() });
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
     // Leave this synthetic account authenticated but without a workspace, as
     // happens while verified self-serve provisioning is still incomplete.

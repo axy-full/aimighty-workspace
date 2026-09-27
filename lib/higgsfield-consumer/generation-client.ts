@@ -31,6 +31,10 @@ export type ConnectedJob = {
   model: { id: string; name: string; outputType: ConnectedOutputType };
   tool: ConnectedJobTool | null;
   sources: ConnectedJobSource[];
+  /** Which composer quoted it ("gen": the Gen page), so a page picking jobs back up follows only its own. */
+  composer?: "gen" | null;
+  /** One take of a batch (Gen's takes 2–4): its siblings share the id; `variation` is its take number. */
+  batch?: { id: string; variation: number } | null;
   workspaceId: string;
   workspaceName: string;
   quoteCredits: number;
@@ -42,6 +46,10 @@ export type ConnectedJob = {
   providerReceipt?: unknown;
   originalAvailable?: boolean;
   originalAvailability?: string;
+  /** Why a failed job failed: the account refused it, or it finished but its result could not be kept. */
+  failureCode?: string | null;
+  /** Unsettled but set aside (by its owner, or past the capacity window): it no longer gates new spend. */
+  setAside?: boolean;
   createdAt: number;
 };
 
@@ -61,12 +69,23 @@ export function parseConnectedJob(value: unknown, draftId: string): ConnectedJob
   const sources: ConnectedJobSource[] = Array.isArray(value.sources)
     ? value.sources.flatMap((item) => record(item) && typeof item.role === "string" && typeof item.name === "string" ? [{ role: item.role, kind: String(item.kind), name: item.name.slice(0, 160) }] : []).slice(0, 30)
     : [];
-  return { ...value, tool, sources, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
+  const batch = record(value.batch) && typeof value.batch.id === "string" && /^b_[a-z0-9]{4,20}$/.test(value.batch.id) &&
+    Number.isInteger(value.batch.variation) && Number(value.batch.variation) >= 1 && Number(value.batch.variation) <= 8
+    ? { id: value.batch.id, variation: Number(value.batch.variation) }
+    : null;
+  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, batch, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
 }
 
-/** Request one exact price for this input. The schema parse is the contract. */
-export function connectedQuoteRequest(draftId: string, input: ConsumerGenerationInput) {
-  return { action: "quote" as const, draftId, input: consumerGenerationInputSchema.parse(input), idempotencyKey: crypto.randomUUID() };
+/**
+ * Request one exact price for this input. The schema parse is the contract.
+ * `composer` names the page quoting it, so that page can pick its own jobs
+ * back up after it was left (the Gen composer's takes).
+ */
+export function connectedQuoteRequest(draftId: string, input: ConsumerGenerationInput, options: { composer?: "gen" } = {}) {
+  return {
+    action: "quote" as const, draftId, input: consumerGenerationInputSchema.parse(input), idempotencyKey: crypto.randomUUID(),
+    ...(options.composer ? { composer: options.composer } : {}),
+  };
 }
 
 /**
@@ -81,8 +100,52 @@ export function connectedStatusRequest(draftId: string, id: string) {
   return { action: "status" as const, draftId, id };
 }
 
+/**
+ * Takes 2–4 of one Generate, quoted together: one fresh quote per take, each
+ * under its own key (the same keys again return the same jobs), all carrying
+ * `batchId` and their take number. Nothing is sent.
+ */
+export function connectedBatchQuoteRequest(draftId: string, input: ConsumerGenerationInput, takes: number, batchId: string, options: { composer?: "gen" } = {}) {
+  return {
+    action: "quote-batch" as const, draftId, input: consumerGenerationInputSchema.parse(input),
+    idempotencyKeys: Array.from({ length: takes }, () => crypto.randomUUID()), batchId,
+    ...(options.composer ? { composer: options.composer } : {}),
+  };
+}
+
+/** The exact sum of a batch's quotes, in the account's own credits: the one approval for one paid batch call. */
+export function connectedBatchTotal(jobs: readonly Pick<ConnectedJob, "quoteCredits">[]) {
+  /* Summed in take order exactly as submitConsumerGenerationBatchJobs sums it, so the approval matches to the last digit. */
+  return jobs.reduce((sum, job) => sum + job.quoteCredits, 0);
+}
+
+/** Submit a quoted batch: every take's id, the one wallet, and the exact summed credits that were approved. */
+export function connectedBatchSubmitRequest(draftId: string, jobs: readonly Pick<ConnectedJob, "id" | "workspaceId" | "quoteCredits">[]) {
+  return { action: "submit-batch" as const, draftId, ids: jobs.map((job) => job.id), workspaceId: jobs[0].workspaceId, credits: connectedBatchTotal(jobs) };
+}
+
+/** A batch whose submit reply was lost: did it land? One that never arrived is fenced, so it never can. */
+export function connectedBatchCheckRequest(draftId: string, ids: readonly string[]) {
+  return { action: "check-batch" as const, draftId, ids: [...ids] };
+}
+
+/** What a failed job means for the owner: a refused render is not billed; a
+ * result the account finished but Particl could not keep may have been. */
+export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
+  return job.failureCode === "invalid_result"
+    ? "The account finished this job, but its result could not be kept. Its receipt is saved."
+    : "The connected account reported this job as failed. Failed renders are not billed.";
+}
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);
+/**
+ * The least a page waits between two status reads of one job, in seconds:
+ * the route allows a person 30 status reads a minute across every job and
+ * tab (app/api/higgsfield/consumer/generation/route.ts), so a job is never
+ * asked about more than every 6 s. Pollers pass it as a floor under the
+ * account's own pollAfterSeconds (lib/poll), which jitter never cuts short.
+ */
+export const CONNECTED_READ_FLOOR_S = 6;
 
 /** The preflight refusals that release a held submission so a fresh quote may be taken. */
 export const CONNECTED_PREFLIGHT_CODES = new Set([

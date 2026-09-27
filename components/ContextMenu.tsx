@@ -17,7 +17,8 @@ import { confirmDeleteProject } from "@/lib/deleteProject";
  *                     only — native selection handles fields on touch)
  *  • a clip         → Rename / Copy prompt / Cut clip / Move to project… / Delete
  *  • a project row  → Rename / Paste clip (moves the cut clip into it) / Delete
- *  • anywhere else  → Copy for a text selection, Paste into the focused field
+ *  • a text selection → Copy
+ *  • anywhere else  → the browser's own menu (links, pictures, video)
  */
 
 type Item =
@@ -235,19 +236,22 @@ export default function ContextMenu() {
           });
         }
       } else if (!touch) {
+        /* Anywhere else the browser's own menu is the better one: a link, a
+           picture or a video keeps Open in new tab and Save as. Ours opens
+           only for a text selection, where it adds the desk's Copy (and the
+           reminder of a cut clip). */
         const sel = window.getSelection()?.toString() ?? "";
-        items.push(
-          {
-            kind: "item", label: "Copy", disabled: !sel,
+        if (sel && !t.closest("a[href], img, video, audio, canvas")) {
+          items.push({
+            kind: "item", label: "Copy",
             action: async () => { try { await navigator.clipboard.writeText(sel); } catch { /* blocked */ } },
-          },
-          { kind: "item", label: "Paste", disabled: true, action: () => {} },
-        );
-        if (armedClip) {
-          items.push({ kind: "sep" }, {
-            kind: "item", label: `Clip ${armedClip.label} is cut — right-click a project to paste`,
-            disabled: true, action: () => {},
           });
+          if (armedClip) {
+            items.push({ kind: "sep" }, {
+              kind: "item", label: `Clip ${armedClip.label} is cut — right-click a project to paste`,
+              disabled: true, action: () => {},
+            });
+          }
         }
       }
 
@@ -270,7 +274,8 @@ export default function ContextMenu() {
       // alone so native long-press text selection keeps working.
       const touch = (e as PointerEvent).pointerType === "touch";
       const opened = openFor(e.target as HTMLElement, e.clientX, e.clientY, touch);
-      if (opened || !touch) e.preventDefault();
+      // Nothing of ours to offer: the browser's menu stays.
+      if (opened) e.preventDefault();
     }
 
     // Long-press recognizer for iOS (and any browser without touch

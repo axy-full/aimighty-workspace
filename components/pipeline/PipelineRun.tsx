@@ -3,6 +3,7 @@ import { Check, Film, RefreshCw } from "lucide-react";
 import { AssetPreview } from "@/components/workbench/AssetPreview";
 import type { PublicPipelineRun } from "@/lib/pipeline/service";
 import type { PipelineCatalog } from "@/lib/pipeline/editor";
+import { candidateAttempt, isSelectedCandidate } from "@/lib/pipeline/review";
 import styles from "./pipeline.module.css";
 const money = (amount: number, currency: string) =>
   currency === "cr" ? `${amount.toLocaleString()} cr` : `$${amount.toFixed(2)}`;
@@ -252,17 +253,8 @@ export default function PipelineRun({
               {d.kind === "review" && (
                 <div className={styles.review}>
                   {d.candidates.map((candidate) => {
-                    const a = [...run.attempts]
-                      .reverse()
-                      .find(
-                        (a) =>
-                          a.stageId === candidate.stageId &&
-                          a.unit === candidate.unit &&
-                          a.state === "succeeded",
-                      );
-                    const selected =
-                      run.selections.find((s) => s.stageId === d.id)
-                        ?.generationId === a?.generationId;
+                    const a = candidateAttempt(run.attempts, candidate);
+                    const selected = isSelectedCandidate(run.selections, d.id, a);
                     return (
                       <button
                         key={`${candidate.stageId}:${candidate.unit}`}

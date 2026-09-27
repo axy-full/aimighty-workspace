@@ -1,0 +1,16 @@
+{
+ "n": 17,
+ "title": "Viral Recent and History show real runs only, and Send to Edit lands in Takes",
+ "area": "Viral",
+ "gap": "Each estimate creates a 'quoted' row, and the list returns every row capped at 25 (lib/higgsfield-consumer/jobs.ts:401-405, genjutsu-service.ts:417). Recent and History fill with 'quoted' rows, raw status strings are printed (ViralView.tsx:168), and real results get pushed out of the window. 'Send to Edit' opens studio 'edit' (ViralView.tsx:194), but the take editor that reads selId is on 'takes' (EditStage.tsx:67). The library is not refreshed when a job completes.",
+ "target": "The list excludes status='quoted' and pages by cursor. Statuses map to readable labels (Queued / Rendering / Checking / Failed \u00b7 not billed / Done). Send to Edit calls goSuite('studio','takes'). Call refreshProjectLibrary on completion. Resume polling accepted jobs on mount.",
+ "files": [
+  "lib/higgsfield-consumer/jobs.ts",
+  "lib/higgsfield-consumer/genjutsu-service.ts",
+  "components/graphite/viral/ViralView.tsx",
+  "lib/shell/use-viral.ts"
+ ],
+ "priority": "P1",
+ "effort": "small",
+ "respects_rules": "Quoted rows stay in the database and are only left out of the list, so nothing is deleted."
+}

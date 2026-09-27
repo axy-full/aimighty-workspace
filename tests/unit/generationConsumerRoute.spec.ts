@@ -18,6 +18,7 @@ import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as contract from "../../lib/higgsfield-consumer/generation-contract";
 import * as tools from "../../lib/higgsfield-consumer/tools";
 import * as records from "../../lib/higgsfield-consumer/marketing-records";
+import { BuildInFlightError } from "../../lib/higgsfield-consumer/build-records";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -74,6 +75,9 @@ async function fixture() {
       quoteConsumerGeneration: service("quote", job),
       submitConsumerGenerationJob: service("submit", { ...job, status: "accepted" }),
       pollConsumerGeneration: service("status", { job: { ...job, status: "accepted" } }),
+      quoteConsumerGenerationBatch: service("quote-batch", [job, job]),
+      submitConsumerGenerationBatchJobs: service("submit-batch", [{ ...job, status: "accepted" }, { ...job, status: "accepted" }]),
+      checkConsumerGenerationBatch: service("check-batch", { state: "absent", jobs: [job, job] }),
     },
     "@/lib/higgsfield-consumer/characters": {
       connectedCharacters: service("characters", { connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] }),
@@ -152,7 +156,9 @@ test("owner catalogue, quote, exact approval and status receive server-derived i
   expect(catalogueResponse.status).toBe(200);
   expect(await catalogueResponse.json()).toEqual({ catalogue: f.models });
   expect((await f.request("POST", { ...listing, refresh: true, type: "video" })).status).toBe(200);
-  for (const body of [quote, submit, status]) {
+  /* The Gen composer names itself on its quote, so Gen can pick its own takes back up later. */
+  const marked = { ...quote, composer: "gen" };
+  for (const body of [quote, marked, submit, status]) {
     const response = await f.request("POST", body, { origin: "https://particl.example" });
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
@@ -166,12 +172,13 @@ test("owner catalogue, quote, exact approval and status receive server-derived i
   expect(f.calls).toEqual([
     { name: "catalogue", args: ["owner", { refresh: false }], workspace: "workspace" },
     { name: "catalogue", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", input, key], workspace: "workspace" },
+    { name: "quote", args: ["owner", "draft-1", input, key, { composer: null }], workspace: "workspace" },
+    { name: "quote", args: ["owner", "draft-1", input, key, { composer: "gen" }], workspace: "workspace" },
     { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
     { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
   ]);
-  expect(f.limits).toEqual([listing, { ...listing, refresh: true, type: "video" }, quote, submit, status].map((body) => [`hf-consumer-generation:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "catalogue" ? 12 : 6, 60_000]));
+  expect(f.limits).toEqual([listing, { ...listing, refresh: true, type: "video" }, quote, marked, submit, status].map((body) => [`hf-consumer-generation:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "catalogue" ? 12 : 6, 60_000]));
 });
 
 test("strict generation schemas reject remote URLs, spoofed identities, provider overrides and unknown actions", async () => {
@@ -184,6 +191,7 @@ test("strict generation schemas reject remote URLs, spoofed identities, provider
       { medias: [{ role: "image_references", source: { uploadId: "a" } }, { role: "mask", source: { uploadId: "a" } }] },
       { medias: Array.from({ length: 31 }, (_, i) => ({ role: "image_references", source: { uploadId: `image-${i}` } })) },
       { medias: [{ role: "image_references", source: { uploadId: "../secret" } }] }, { count: 2 }, { use_unlim: true }].map((patch) => ({ ...quote, input: { ...input, ...patch } })),
+    { ...quote, composer: "ads" }, { ...quote, composer: true }, { ...status, composer: "gen" },
     { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "9" }, { ...submit, workspaceId: "bad" }, { ...submit, id: "bad" }, { ...submit, input },
     { ...status, tool: "generate_image" }, { ...status, userId: "other" }, { ...listing, type: "gif" }, { ...listing, refresh: "yes" }, { ...listing, model: "x" },
     { action: "explainer-presets", presetId: "56fc6472-33b7-45dc-83ff-80c71d40aec6" }, { action: "explainer-presets", refresh: "yes" }, { action: "resolve-explainer-preset" }];
@@ -279,6 +287,11 @@ test("the Soul ID build: the plan gate is an owner read; the create needs render
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
   expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
   expect(f.calls).toHaveLength(2);
+  /* The same build already sent (it may be on the account): a plain 409 the card shows, never a second send. */
+  f.fail(new BuildInFlightError());
+  const again = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
+  expect(again.status).toBe(409);
+  expect(await again.json()).toEqual({ code: "build_in_flight", error: "This build was already sent and may have been accepted, so it is not sent again." });
 });
 
 test("reference elements: the list is an owner read; the create needs render, carries name · category · 1–8 sources, and is rate-limited hardest", async () => {
@@ -309,4 +322,42 @@ test("the quote service's standalone refusal answers 409 setup_not_particl with 
   /* The route hands the whole input to the service, which runs the guard before anything is priced. */
   expect(f.calls.map((call) => call.name)).toEqual(["quote"]);
   expect(JSON.stringify(f.calls[0].args)).toContain("acct_p1");
+});
+
+test("takes 2–4: one batch quote, one exact-sum submit behind the render gate, and a check that never spends, each strictly shaped", async () => {
+  const f = await fixture(), original = f.store();
+  const second = "33333333-3333-4333-8333-333333333333";
+  const quoteBatch = { action: "quote-batch", draftId: "draft-1", input, idempotencyKeys: [key, second], batchId: "b_k1abc2", composer: "gen" };
+  const submitBatch = { action: "submit-batch", draftId: "draft-1", ids: [key, second], workspaceId: wallet, credits: 18 };
+  const checkBatch = { action: "check-batch", draftId: "draft-1", ids: [key, second] };
+  for (const [body, answer] of [[quoteBatch, "jobs"], [submitBatch, "jobs"], [checkBatch, "state"]] as const) {
+    const response = await f.request("POST", body, { origin: "https://particl.example" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.json()).toHaveProperty(answer);
+  }
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([
+    ["quote-batch", ["owner", "draft-1", input, [key, second], { batchId: "b_k1abc2", composer: "gen" }]],
+    ["submit-batch", ["owner", "draft-1", [key, second], { workspaceId: wallet, credits: 18 }]],
+    ["check-batch", ["owner", "draft-1", [key, second]]],
+  ]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([
+    ["hf-consumer-generation:workspace:owner:quote-batch", 6], ["hf-consumer-generation:workspace:owner:submit-batch", 6], ["hf-consumer-generation:workspace:owner:check-batch", 30],
+  ]);
+  const three = ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
+  const malformed = [
+    { ...quoteBatch, idempotencyKeys: [key] }, { ...quoteBatch, idempotencyKeys: [key, second, ...three] }, { ...quoteBatch, idempotencyKeys: [key, "bad"] },
+    { ...quoteBatch, batchId: "batch-1" }, { ...quoteBatch, batchId: "b_UPPER1" }, { ...quoteBatch, composer: "ads" }, { ...quoteBatch, ids: [key, second] },
+    { ...submitBatch, ids: [key] }, { ...submitBatch, ids: [key, second, ...three] }, { ...submitBatch, credits: 0 }, { ...submitBatch, credits: -9 }, { ...submitBatch, credits: "18" },
+    { ...submitBatch, credits: 400001 }, { ...submitBatch, workspaceId: "bad" }, { ...submitBatch, id: key }, { ...submitBatch, input },
+    { ...checkBatch, ids: [key] }, { ...checkBatch, ids: ["bad", second] }, { ...checkBatch, credits: 18 },
+  ];
+  for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 160)).toBe(400);
+  expect(f.calls).toHaveLength(3);
+  /* A paused workspace sends nothing, but can still price, and still ask what became of a batch. */
+  f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
+  expect((await f.request("POST", submitBatch)).status).toBe(423);
+  expect((await f.request("POST", checkBatch)).status).toBe(200);
+  expect((await f.request("POST", quoteBatch)).status).toBe(200);
+  expect(f.calls.slice(3).map((call) => call.name)).toEqual(["check-batch", "quote-batch"]);
 });

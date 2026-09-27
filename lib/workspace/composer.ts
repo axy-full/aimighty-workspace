@@ -1,5 +1,6 @@
 import { displayModelName } from "../models";
-import type { NodeAudioSetup, NodeAudioTask } from "../workbench/generation-audio";
+import { audioTaskAvailable, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
+import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -47,6 +48,15 @@ export type ComposerModel = {
   soulId?: boolean;
   /** Connected models: the most references the smallest slot allows, when declared. */
   mediaMax?: number;
+  /** Workspace image/video engines: the most reference images and videos the engine takes. */
+  maxImages?: number;
+  maxVideos?: number;
+  /** Takes carry sound: a Studio engine that always renders it (engines route › audio), or a connected audio parameter that defaults on. */
+  audio?: boolean;
+  /** Workspace image/video engines: the price at the composer's untouched settings (GET /api/workbench/engines › rate). */
+  rate?: EngineRate | null;
+  /** Sizes the engine lists but that were never rendered here (lib/models.ts › untestedResolutions). */
+  untested?: string[];
 };
 
 /** A project file picked as a reference: already saved, so it is cited by id. */
@@ -80,8 +90,10 @@ export type ComposerState = {
   picks: ComposerPicks;
   /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
   enhance: boolean;
-  /** Takes per Generate (the prototype's stepper, 1–4): each take is its own quoted job at the price shown. */
+  /** Takes per Generate (the stepper, 1–4). Two or more go as one batch at the total on the button (lib/workspace/take-batch.ts). */
   count: number;
+  /** Gen's film vocabulary (lib/workspace/film-vocabulary.ts): one camera-bank value per row; a row that is absent is Auto. */
+  shot: Record<string, string>;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
@@ -101,29 +113,74 @@ export const INITIAL_COMPOSER: ComposerState = {
   picks: {},
   enhance: false,
   count: 1,
+  shot: {},
   notice: null,
 };
 
 export const chosenKey = (billing: BillingSource, type: ComposerType) => `${billing}:${type}`;
+
+/**
+ * A take's recipe applied in one step (Recreate, lib/shell/recipe.ts): the
+ * output, the credits, the model and its settings replace the composer's; the
+ * words and references do too unless they are left out (Use settings only).
+ * One take — a recreate is one new take, priced again on the button.
+ */
+export type ComposerRecipe = {
+  type: ComposerType;
+  billing: BillingSource;
+  model?: string;
+  picks: ComposerPicks;
+  prompt?: string;
+  references?: ComposerReference[];
+  sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
+  /** The take's shot setup (params.shotSpec); none puts every chip back to Auto. */
+  shot?: Record<string, string>;
+};
 
 export type ComposerAction =
   | { type: "type"; value: ComposerType }
   | { type: "billing"; value: BillingSource }
   | { type: "model"; value: string }
   | { type: "prompt"; value: string }
-  | { type: "seconds"; value: number }
+  /** `task` is the current model's audio task: the length is held to what that task bills. */
+  | { type: "seconds"; value: number; task?: NodeAudioTask }
   | { type: "instrumental"; value: boolean }
   | { type: "voice"; value: string }
   | { type: "pick"; value: ComposerPicks }
   | { type: "referenceRole"; key: string; role: string }
   | { type: "enhance"; value: boolean }
   | { type: "count"; value: number }
+  | { type: "shot"; value: Record<string, string> }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
+  | { type: "recipe"; value: ComposerRecipe }
+  /** Undo of a recipe: the composer exactly as it was. */
+  | { type: "restore"; value: ComposerState }
   | { type: "reset" };
 
 const SOUND_SECONDS = 10;
+
+/**
+ * The lengths the audio route takes, per task: music has a ten-second floor
+ * and runs to five minutes, a sound effect runs 1–30 s. The composer holds
+ * its seconds inside these, so the length it shows is the length it bills.
+ */
+export const AUDIO_SECONDS: Record<"sound" | "music", { min: number; max: number }> = {
+  sound: { min: 1, max: 30 },
+  music: { min: 10, max: 300 },
+};
+
+/** `value` in whole seconds, inside the task's range (unchanged for a task with no length). */
+export function audioSeconds(task: NodeAudioTask | null | undefined, value: number): number {
+  if (task !== "sound" && task !== "music") return value;
+  const { min, max } = AUDIO_SECONDS[task];
+  const whole = Number.isFinite(value) ? Math.round(value) : min;
+  return Math.min(max, Math.max(min, whole));
+}
+
+/** The workspace's own audio models (workspaceModels below), so choosing one holds the length to its range. */
+const AUDIO_MODEL_TASK: Record<string, NodeAudioTask> = { eleven_sfx: "sound", eleven_music: "music" };
 
 export function composerReducer(state: ComposerState, action: ComposerAction): ComposerState {
   switch (action.type) {
@@ -142,11 +199,16 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       /* The switch changes the model list and the price source. */
       return { ...state, billing: action.value, notice: null };
     case "model":
-      return { ...state, chosen: { ...state.chosen, [chosenKey(state.billing, state.type)]: action.value }, notice: null };
+      return {
+        ...state,
+        chosen: { ...state.chosen, [chosenKey(state.billing, state.type)]: action.value },
+        seconds: audioSeconds(AUDIO_MODEL_TASK[action.value], state.seconds),
+        notice: null,
+      };
     case "prompt":
       return { ...state, prompt: action.value.slice(0, 5000), notice: null };
     case "seconds":
-      return { ...state, seconds: action.value, notice: null };
+      return { ...state, seconds: audioSeconds(action.task, action.value), notice: null };
     case "instrumental":
       return { ...state, instrumental: action.value, notice: null };
     case "voice":
@@ -159,6 +221,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, enhance: action.value };
     case "count":
       return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
+    case "shot":
+      return { ...state, shot: { ...action.value }, notice: null };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -167,12 +231,37 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, references: state.references.filter((r) => r.key !== action.key), notice: null };
     case "notice":
       return { ...state, notice: action.value };
+    case "recipe": {
+      const recipe = action.value;
+      const sound = recipe.type === "audio" ? recipe.sound ?? {} : {};
+      const references = recipe.type === "audio" ? [] : recipe.references ?? state.references;
+      return {
+        ...state,
+        type: recipe.type,
+        billing: recipe.billing,
+        chosen: recipe.model ? { ...state.chosen, [chosenKey(recipe.billing, recipe.type)]: recipe.model } : state.chosen,
+        picks: { ...recipe.picks },
+        prompt: recipe.prompt === undefined ? state.prompt : recipe.prompt.slice(0, 5000),
+        references: references.slice(0, 10),
+        seconds: sound.seconds ?? (recipe.type === "audio" && state.type !== "audio" ? SOUND_SECONDS : state.seconds),
+        instrumental: sound.instrumental ?? state.instrumental,
+        voiceId: sound.voiceId ?? state.voiceId,
+        count: 1,
+        shot: { ...(recipe.shot ?? {}) },
+        notice: null,
+      };
+    }
+    case "restore":
+      return { ...action.value, notice: null };
     case "reset":
       return { ...INITIAL_COMPOSER, billing: state.billing, chosen: state.chosen };
   }
 }
 
 /* ── Model lists ──────────────────────────────────────────────────────── */
+
+/** An engine's price at the settings it names, in credits (lib/workbench/media-quote.ts › workbenchRate). */
+export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null };
 
 /** A row of GET /api/workbench/engines, as the composer reads it. */
 export type EngineRow = {
@@ -183,6 +272,14 @@ export type EngineRow = {
   durations: number[];
   soulIdentity?: boolean;
   marketing?: boolean;
+  maxReferenceImages?: number;
+  maxReferenceVideos?: number;
+  untestedResolutions?: string[];
+  /** One line on what the engine is for, as Gen renders it (lib/workbench/media-quote.ts › workbenchUse). */
+  use?: string;
+  /** A take from this engine carries sound as the workbench renders it (lib/workbench/media-quote.ts › rendersSound). */
+  audio?: boolean;
+  rate?: EngineRate | null;
 };
 
 /** A row of the connected account's catalogue, as the composer reads it (the CLI's `model get` shape). */
@@ -190,7 +287,7 @@ export type ConnectedRow = {
   id: string; name: string; outputType: string; description?: string;
   medias?: { name?: string; roles: string[]; max?: number }[];
   aspectRatios?: string[]; durations?: number[]; durationRange?: { min: number; max: number };
-  parameters?: { name: string; type?: string; options?: (string | number)[]; min?: number; max?: number }[];
+  parameters?: { name: string; type?: string; options?: (string | number)[]; min?: number; max?: number; default?: string | number | boolean | null }[];
 };
 /** Every whole second of a range, for engines whose `durations` is min/max (Seedance 2.5: 4–30 s). */
 export function secondsIn(range: { min: number; max: number }): number[] {
@@ -219,12 +316,21 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ratios: engine.ratios,
       resolutions: engine.resolutions,
       durations: engine.durations,
+      ...(engine.use ? { description: engine.use } : {}),
+      ...(typeof engine.maxReferenceImages === "number" ? { maxImages: engine.maxReferenceImages } : {}),
+      ...(typeof engine.maxReferenceVideos === "number" ? { maxVideos: engine.maxReferenceVideos } : {}),
+      ...(engine.audio ? { audio: true } : {}),
+      ...(engine.rate ? { rate: engine.rate } : {}),
+      ...(engine.untestedResolutions?.length ? { untested: engine.untestedResolutions } : {}),
     }));
   if (audio?.configured) {
     const speech = audio.defaultSpeechModel || audio.speechModels[0]?.id || "";
-    out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound" });
-    out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music" });
-    if (speech && audio.voices.length) out.push({ id: speech, label: displayModelName(speech), type: "audio", audioTask: "speech" });
+    /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone speaks only. */
+    if (audioTaskAvailable(audio, "sound")) {
+      out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound", description: "Sound effects from a description." });
+      out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music", description: "Music from a description, 10 s and up." });
+    }
+    if (speech && audio.voices.length) out.push({ id: speech, label: displayModelName(speech), type: "audio", audioTask: "speech", description: "Your words, read in a chosen voice." });
   }
   return out;
 }
@@ -258,6 +364,8 @@ export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] 
       enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
       soulId: Boolean(row.parameters?.some((p) => p.name === "soul_id")),
       ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
+      /* The composer never sends an audio switch, so a take carries sound only where the account's default is on. */
+      ...(type === "video" && row.parameters?.some((p) => /audio|sound/i.test(p.name) && p.default === true) ? { audio: true } : {}),
     }];
   });
 }
@@ -326,6 +434,8 @@ export type ComposerQuote = {
   credits: number | null;
   state: QuoteState;
   reason: string | null;
+  /** A batch's own fresh per-take figures (a Generate of takes 2–4 re-quoted them and they moved): their sum is the button's total. */
+  takes?: number[];
 };
 
 /** The connected account's readiness, as /api/me and the connection route report it. */
@@ -363,6 +473,31 @@ export function liveCredits(quote: ComposerQuote | null, quoteKey: string): numb
 }
 
 /**
+ * The total for `count` takes: the batch's own fresh per-take figures when the
+ * last Generate re-quoted exactly `count` of them, else `count` times one
+ * take's price. Summed take by take — the arithmetic the fresh total it is
+ * compared with uses — so an unchanged price always compares equal.
+ */
+export function batchTotal(credits: number | null, count: number, takes?: readonly number[] | null): number | null {
+  if (takes && takes.length === count && takes.every((c) => Number.isFinite(c))) return takes.reduce((sum, c) => sum + c, 0);
+  if (credits === null || !Number.isFinite(credits)) return null;
+  let total = 0;
+  for (let i = 0; i < Math.max(1, count); i++) total += credits;
+  return total;
+}
+
+/** The figure on the button, which is what a Generate approves: one take's price, or the batch's total. */
+export function shownTotal(quote: ComposerQuote | null, quoteKey: string, count: number): number | null {
+  const credits = liveCredits(quote, quoteKey);
+  if (credits === null) return null;
+  return count > 1 ? batchTotal(credits, count, quote?.takes) : credits;
+}
+
+/** The two reasons that mean "still loading", not "refused" — the model sheet draws them as a loading list. */
+export const READING_ACCOUNT = "Reading the connected account…";
+export const READING_MODELS = "Reading the available models…";
+
+/**
  * Why Generate cannot run, or null. A missing or stale quote blocks with a
  * visible reason rather than a button that silently does nothing.
  */
@@ -375,19 +510,23 @@ export function composerBlock(input: {
   capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
+  /** The words as sent: with Gen's film vocabulary written in, they can run past what the connected account takes. */
+  sentPrompt?: string;
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
   if (state.billing === "connected") {
-    if (!input.capability) return "Reading the connected account…";
+    if (!input.capability) return READING_ACCOUNT;
     if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
-    if (!input.capability.connected) return "No account is connected. Connect one in Workspace settings, or use this workspace’s credits.";
+    if (!input.capability.connected) return "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
     if (input.capability.suspended) return "Rendering is paused for this workspace.";
   }
   if (input.catalogue.error) return input.catalogue.error;
-  if (input.catalogue.loading && !model) return "Reading the available models…";
+  if (input.catalogue.loading && !model) return READING_MODELS;
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
   if (!state.prompt.trim()) return "Write what to generate.";
+  if (state.billing === "connected" && (input.sentPrompt?.length ?? 0) > PROMPT_LIMIT)
+    return `With the setup written in, the words run past ${PROMPT_LIMIT.toLocaleString("en-US")} characters. Shorten them or set fewer chips.`;
   if (model.audioTask === "speech" && !state.voiceId) return "Choose a voice.";
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
@@ -395,23 +534,34 @@ export function composerBlock(input: {
   return null;
 }
 
-/** "Generate · 18 cr" / "Generate · 18 connected cr" — the exact live figure, or no figure at all. */
-export function composerButtonLabel(input: {
+type ButtonInput = {
   billing: BillingSource;
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
-  /** Takes per Generate; the price shown is the take's price times the count. */
+  /** Takes per Generate; the price shown is the batch's total. */
   count?: number;
-}): string {
-  if (input.submitting) return "Submitting…";
-  const credits = liveCredits(input.quote, input.quoteKey);
+};
+
+/**
+ * The button's label in its two parts: what it does ("Generate 4 takes") and
+ * what it costs ("72 connected cr" — the exact live figure, whole, or none).
+ * Gen draws them apart so the price can take its own line on a narrow button
+ * rather than ever being cut.
+ */
+export function composerButtonParts(input: ButtonInput): { action: string; price: string | null } {
+  if (input.submitting) return { action: "Submitting…", price: null };
   const count = Math.max(1, input.count ?? 1);
-  if (credits === null) return count > 1 ? `Generate ${count} takes` : "Generate";
-  const unit = input.billing === "connected" ? "connected cr" : "cr";
-  return count > 1
-    ? `Generate ${count} takes · ${(credits * count).toLocaleString("en-US")} ${unit}`
-    : `Generate · ${credits.toLocaleString("en-US")} ${unit}`;
+  const total = shownTotal(input.quote, input.quoteKey, count);
+  const action = count > 1 ? `Generate ${count} takes` : "Generate";
+  if (total === null) return { action, price: null };
+  return { action, price: `${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
+}
+
+/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" — the exact live figure, or no figure at all. */
+export function composerButtonLabel(input: ButtonInput): string {
+  const { action, price } = composerButtonParts(input);
+  return price ? `${action} · ${price}` : action;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */

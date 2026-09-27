@@ -15,7 +15,7 @@ function initialsOf(name: string) {
 }
 
 /**
- * 56px. particl trail mark + wordmark → Studio; Studio | Gen | Business | Viral |
+ * 56px. particl trail mark + wordmark → the Studio home; Studio | Gen | Business | Viral |
  * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
  * job runs); the credits pill; the avatar, which opens Workspace. A member
  * sees the key and "Owner" on the suites that run on the owner's Higgsfield
@@ -42,7 +42,8 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
       {back ? (
         <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", back.page)} data-testid="phone-back"><span aria-hidden="true">‹</span> {back.label}</button>
       ) : null}
-      <button type="button" className="gx-brand" onClick={() => (shell.wide ? shell.goSuite("studio") : shell.goSuite("studio", "home"))} aria-label="particl home">
+      {/* The mark goes home: on a desktop the Studio home (recent projects, what is running, the next step); on a phone Home's "Where to?". */}
+      <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio", shell.wide ? "stages" : "home")} aria-label="particl home" data-testid="brand-home">
         <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
           <defs><linearGradient id="gx-mark-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F5F5F7" /><stop offset="1" stopColor="#6EB4FF" /></linearGradient></defs>
           {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
@@ -79,7 +80,8 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
       {state.gen ? (
         <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
           <span className="gx-jobs-dot" aria-hidden="true" />
-          <span>{state.gen.name} · {Math.round(state.gen.pct)}%</span>
+          {/* The job's phase, not a percentage: no engine reports progress, so none is invented. */}
+          <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
         </button>
       ) : null}
       <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>

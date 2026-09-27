@@ -1,0 +1,72 @@
+{
+ "breaks": [
+  {
+   "severity": "major",
+   "title": "After a merge, the Rig re-sends the other save's changes to the team canvas as its own new edit, undoing any canvas edit made since that save. Reopening the Rig then copies the stale canvas into the draft.",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 203,
+   "reproduced": true,
+   "spec": "tests/zz-break-canvas-undo-r2-1-workbench.spec.ts (3 tests, each failed on 2 runs)",
+   "scenario": "flush() calls publishRef(now.project, merged) after every merged save. That is diffForTeam over the fields the OTHER save changed, sent as a fresh PATCH with the server's current stamp. saveDraft's own diff had already put those fields on the canvas, so the re-send only matters when the canvas has moved on since, and then it reverts that newer edit. (a) Rig A has been open since before window B retitled Opening to 'Title from window B'. A teammate then retitles it on the canvas to 'Teammate title'. A edits only Second's note, gets a 409 and merges. The canvas now reads 'Title from window B' and the teammate's later rename is gone. (b) Same user: B renames Opening to 'B first rename', and A merges it in. A's post-merge PATCH is slow, and B renames again to 'B second rename', which its save puts on the canvas. A's PATCH then lands and the canvas reads 'B first rename'. Reloading the Rig copies the canvas into the draft and saves it, so the draft ends at 'B first rename' too. B's latest rename is lost from both, and every window says Saved. (c) B deletes Second, and the canvas removes it. A teammate edits Second's prompt on the canvas, which by design brings it back. A (stale, never touched Second) merges and publishes removeNodes [n2]. Second is taken off the canvas again (canvas.removedIds=['n2'], the teammate's text is no longer live), and the teammate's next join drops it from their draft. origin/main reloaded on a conflict and never published."
+  },
+  {
+   "severity": "major",
+   "title": "Coming back to a project whose background save is still in flight: that save lands later and puts the older note back over the note typed after coming back",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 283,
+   "reproduced": true,
+   "spec": "tests/zz-break-canvas-undo-r2-2-workbench.spec.ts (failed on 2 runs)",
+   "scenario": "Rig on A. The server returns 503, the note 'Note typed before leaving' does not save, and the person switches to B, so A's draft is parked and saved in the background. One parked attempt hangs on a slow connection. The person switches back to A: back.stop=true is set and back.draft becomes the Rig's draft, but the attempt already out keeps going (stop is only checked between attempts, and the parked write and the Rig share one writer). The Rig saves the parked draft (PUT base=1 \u2192 rev 2), then the person types 'Note typed after coming back' (PUT base=2 \u2192 rev 3). The hung parked PUT (base=1) now arrives and gets a 409. writeMergedDraft reads rev 3 and runs mergeDraft(parkBase, parkedMine, latest). Both sides changed the note, so mine (the parked 'before leaving') wins, and it PUTs base=3. Server note: 'Note typed before leaving'. The Rig shows 'Note typed after coming back' and 'Saved'. The Rig's next merge shows the older note, so the newer edit is silently lost. PUT log: 503\u00d79 (base=1), held base=1, pass base=1, pass base=2 (after), released base=1 \u2192 409, pass base=3 (before)."
+  },
+  {
+   "severity": "major",
+   "title": "Generate with an unsaved edit now merges and goes on, but renders from the shot and node it read before the merge: a take paid at the old settings and prompt, while the Rig shows and saves the merged shot",
+   "file": "components/workspace/rig/RigProvider.tsx",
+   "line": 442,
+   "reproduced": true,
+   "spec": "tests/zz-break-canvas-undo-r2-4-workbench.spec.ts (failed on 2 runs; the quote is refused by route.fulfill after its body is recorded, so nothing is billed)",
+   "scenario": "Opening has 'Original prompt: a fox on the ice.' at 5 s. Another window rewrites it to 'Prompt from window B: the harbour at night.' at 10 s. The Rig types a direction note and presses Generate take before the note saves. generate() captures shot/node/refs at line 418. flush() gets a 409, merges and returns true (origin/main refused here with 'Save your latest work before generating'). shotRequestInput(current, node, shot, \u2026) then builds the request from the pre-merge node and shot. The body POSTed to /api/generate/quote is prompt 'Original prompt: a fox on the ice.\\n\\nDirector's notes: Hold on the fox.', duration 5. After the merge, the Inspector shows B's prompt and '10s', and the saved draft has text=B's prompt and durationS=10. The price shown was also for the stale 5 s settings, so the dispatch gate passes and a real render would bill a take that matches neither the screen nor the saved shot."
+  },
+  {
+   "severity": "minor",
+   "title": "\u2318Z on project B can never reach B's own delete while a Rig undo for project A sits above it on the shared undo stack",
+   "file": "lib/shell/state.tsx",
+   "line": 196,
+   "reproduced": true,
+   "spec": "tests/zz-break-canvas-undo-r2-3-workbench.spec.ts (failed on 2 runs)",
+   "scenario": "On B, delete 'Bravo second' (by mistake). Switch to A and delete 'Alpha second'. Back on B, press \u2318Z (twice). Each press pops A's entry. The new home check (RigProvider:589) throws 'Open Alpha \u2026 to bring Alpha second back.', and the entry is pushed back on top (state.tsx:196), so B's older entry is never reached. B's draft stays ['b1']. The only way back is to undo A's intended delete first. No data is lost (the workaround exists), but in the Suites shell, where Delete has no confirmation, \u2318Z is the only way back for a deleted shot."
+  },
+  {
+   "severity": "major",
+   "title": "(Pre-existing on origin/main, not introduced by this diff) A canvas edit to project A that failed to send is later sent to project B's canvas, and B's Rig then copies A's shot into B's draft",
+   "file": "components/workspace/rig/use-team-canvas.ts",
+   "line": 121,
+   "reproduced": true,
+   "spec": "tests/zz-break-canvas-undo-r2-5-workbench.spec.ts",
+   "scenario": "Rig on A, and the team-canvas PATCH returns 503. Edit a-n1's note: the canvas PATCH (productionId A) fails and stays pending, with a retry every 5 s. Switch to B. The pending patch is merged into B's join patch, and send() reads pid = joined.current at send time (now B). PATCH log: A, A, A, then B with upsertNodes [a-n1, b-n1]. B's canvas holds a-n1. Reopening B's Rig copies it into B's draft and saves it, and B's draft becomes [a-n1, b-n1]. The pending patch is not keyed by the production it was made for. This code predates the branch, but it sits squarely in the switch-mid-save / canvas-consistency path the branch relies on."
+  },
+  {
+   "severity": "minor",
+   "title": "A 503 on a draft PUT counts as an uncertain write, so each save attempt sends 4 PUTs and 3 check-writes back to back, with no pause between them",
+   "file": "lib/workbench/draft-request.ts",
+   "line": 372,
+   "reproduced": true,
+   "spec": "observed in the PUT log of tests/zz-break-canvas-undo-r2-2-workbench.spec.ts (timestamped probe: 4 PUTs within 40 ms, then 5 within 100 ms)",
+   "scenario": "While the server answers 503, each writeMergedDraft call runs PUT \u2192 503 (uncertain) \u2192 check-write (not landed) \u2192 merge \u2192 PUT, up to MERGE_TRIES+1 times back to back. The Rig flush and a parked save each do this at the same time. It is bounded, and backoff only applies between calls, but against an overloaded server this multiplies load. Not a correctness break."
+  }
+ ],
+ "checked": [
+  "Re-checked the round-1 Rig-adjacent fixes in the current tree: lost-reply saves now go through check-write (writer/seq fencing), shotPatch direction op uses stableId, mergeDraft.keepLinkedInputs drops dangling links, fitDraft trims lists that grew past the schema limit; existing spec cases 1009 (wire to deleted source), 1042/1079/1096 (canvas after merge, reopen), 1120/1159/1185 (undo/switch), 1215 (Inspector rename) cover them",
+  "Team canvas after a merge: server-side saveDraft diff (field-level, onlyIfShared) plus client publish(now\u2192merged). The client re-publish is redundant and reverts newer canvas edits (break 1: teammate rename, same-user later rename then draft loss via join, teammate-restored shot re-removed)",
+  "Join on reopen: withTeamCanvas replaces draft nodes with canvas nodes, so any stale canvas field overwrites the draft (the amplifier in break 1b); no duplicate joins seen",
+  "Undo across a merge: ancestors map path (restore after another window edited the deleted shot) behaves; restoreShots re-adds a link-holder's whole delete-time linked list (pre-existing, single-window too, not reported)",
+  "Undo across project switches: the refusal/re-push works but blocks the open project's older entries (break 4)",
+  "Selection/Inspector after a merge: the Name field follows merged renames (shown/setName), prompt and note are controlled by node state, a merge dropping the selected shot just clears the Inspector; no stale overwrite found",
+  "Rapid edits while a save is in flight: rebaseProject(sent, local, saved) keeps in-flight edits, clears and multi-line edits; chain.catch keeps later saves running; no loss found outside the parked/Generate paths",
+  "Project switch mid-save: effect awaits flush before loading; park/back hand-off races with an in-flight parked attempt (break 2); publish during switch goes to `early` and is dropped on the next join, but server-side diff covers it",
+  "Generate after a merge uses pre-merge node/shot/refs (break 3); a merge that drops the shot fails at map-shot (no spend)",
+  "Merge-made graph states: two windows can merge a grade to two inputs or two scenes into a cycle (canConnect rules bypassed); graph walks are cycle-safe, so no crash (not reported)",
+  "Pre-existing: team-canvas pending patch retried against whichever production is joined (break 5, flagged pre-existing)",
+  "Specs written (not committed, product code untouched): tests/zz-break-canvas-undo-r2-1..5-workbench.spec.ts in /Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai-curated-remote-4/work/glass"
+ ]
+}

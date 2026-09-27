@@ -1,7 +1,7 @@
 "use client";
-import { rigDeleteHandler, setRigUndoSink } from "@/lib/shell/rig-commands";
+import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
@@ -12,9 +12,13 @@ import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { PAGE_BODIES } from "@/components/workspace/pages/registry";
 import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
-import { inField, parseCtx, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
+import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
+import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
+import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
+import { AtomikGate } from "./AtomikGate";
 import { BusinessView } from "./business/BusinessView";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
@@ -28,7 +32,7 @@ import { Inspector } from "./Inspector";
 import { Library } from "./Library";
 import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
-import { ProjectHead } from "./ProjectHead";
+import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
@@ -43,8 +47,13 @@ import { EnvironmentStage } from "./production/EnvironmentStage";
 import { EditStage } from "./production/EditStage";
 import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
+import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
+import Boundary from "@/components/Boundary";
+import { throwIfArmed } from "@/lib/shell/fault";
+import { FaultAside, PanelFault } from "./PanelFault";
+import { FirstRun, type ProjectActions } from "./FirstRun";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
@@ -55,6 +64,8 @@ import { WorkspaceView } from "./WorkspaceView";
  * provider as the shell it replaces, so every page body works from day one.
  */
 export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
+  /* A throw out here (the chrome itself) is app/suites/error.tsx's; everything below has its own boundary. */
+  throwIfArmed("shell");
   const ws = useWorkspace();
   const shell = useShell();
   const { state, dispatch, selectProject, toast } = ws;
@@ -122,8 +133,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       default: toast(caps.why[cmd] ?? "Not available for this selection.");
     }
   };
+  /* A Rig step undoes only into the draft it was made in. Coming back to a project, the Rig still holds the
+     previous project's draft until the new one loads: the step then refuses and stays on the stack. */
+  const rigProjectId = useRig().project?.id ?? null;
+  const rigProject = useRef(rigProjectId);
+  useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
+  const sinkRigUndo = (entry: RigUndo) =>
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
-  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink((entry) => shell.pushUndo(entry)); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
+  useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
   /* A file dropped where no target took it (components/DragLayer) is kept in this project's Library. */
   const projectId = project?.id ?? null;
@@ -141,6 +159,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     return () => window.removeEventListener(FILES_EVENT, onFiles);
   }, [scope, projectId, toast]);
 
+  /* Where the last press landed: a clicked tile leaves focus on the page in Safari and Firefox on macOS, so the keymap asks this instead. */
+  const pressedInSurface = useRef(false);
+  useEffect(() => {
+    const onPress = (event: PointerEvent) => { pressedInSurface.current = inSelectionSurface(event.target); };
+    window.addEventListener("pointerdown", onPress, true);
+    return () => window.removeEventListener("pointerdown", onPress, true);
+  }, []);
+
   /* One keymap: ⌘K, ⌘J, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -151,16 +177,20 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       if (event.key === "Escape") {
         if (shell.ctx) shell.closeCtx();
         else if (shell.palette) shell.setPalette(false);
+        else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (state.composer) dispatch({ type: "patch", patch: { composer: false } });
+        else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (shell.libOpen || shell.inspOpen) shell.closePanels();
         return;
       }
-      if (shell.palette || state.composer || inField(event.target)) return;
+      if (shell.palette || state.composer || state.agentOpen || inField(event.target)) return;
       const cmd = shortcutCommand(event);
       if (!cmd) return;
       const target = selection();
       if (cmd !== "undo" && cmd !== "paste" && target.kind === "empty") return;
       if (cmd === "paste" && !shell.clip) return;
+      /* A selection lingers after its click: selected text keeps the browser's ⌘C/⌘X, and ⌫/⌘R/⌘D act only from where the selection is shown. */
+      if (!shortcutApplies(cmd, { target: event.target, textSelected: Boolean(window.getSelection()?.toString()), selection: target.kind, pressedInSurface: pressedInSurface.current })) return;
       event.preventDefault();
       command(cmd, target);
     };
@@ -179,11 +209,63 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
 
 
+  /* ⌘K › "Ask Atomik: …": the words land in the Agent's request box (still to be read and planned), not lost on the way.
+     With no project open yet they wait in this tab and land as soon as one resolves. */
+  const ask = (text: string) => {
+    if (project) prefillAgentRequest(session.requestScope, "atomik", project.id, text);
+    else if (holdAgentRequest(session.requestScope, text) && data.status !== "loading") toast("Your request goes into Agent once a project is open.");
+    shell.goSuite("atomik", "agent");
+  };
+  const openProjectId = project?.id ?? null;
+  const requestScope = session.requestScope;
+  useEffect(() => {
+    if (!openProjectId) return;
+    const held = takeHeldAgentRequest(requestScope);
+    if (held) prefillAgentRequest(requestScope, "atomik", openProjectId, held);
+  }, [openProjectId, requestScope]);
+  /* One way to open, start and explore a project, whichever surface asks: the switcher, a stage's first-run card, the Studio home. */
+  const pickProject = (id: string) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
+  const createProject = async (name: string) => {
+    const created = newProject(name.slice(0, PROJECT_NAME_MAX));
+    const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
+    if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
+    pickProject(created.id);
+    toast(`${created.name} is open`);
+    return null;
+  };
+  /* The workspace's starter production, seeded on first use and opened as this person's draft; a second press opens the same one. */
+  const openStarter = async () => {
+    const response = await fetch("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ action: "starter" }) }).catch(() => null);
+    const body = (await response?.json().catch(() => null)) as { project?: { id?: unknown; name?: unknown }; error?: unknown } | null;
+    if (!response?.ok || typeof body?.project?.id !== "string") return typeof body?.error === "string" ? body.error : "The starter production could not be opened. Try again.";
+    pickProject(body.project.id);
+    toast(`${typeof body.project.name === "string" ? body.project.name : "The starter production"} is open. Its takes are samples: nothing was generated or charged.`);
+    return null;
+  };
+  const projectActions: ProjectActions = { projects: data.projects, onPick: pickProject, onCreate: createProject, onStarter: openStarter };
+  /* A Studio stage with no project open: while the list is still being read, say so; then the first-run card. */
+  const noProject = (stage: string, lead: string) => data.status === "loading"
+    ? <p className="gx-empty" role="status" data-testid={`${stage}-opening`}>Opening your projects…</p>
+    : <FirstRun key={`first-run:${stage}`} stage={stage} lead={lead} actions={projectActions} now={now} />;
+  /* The Studio stages whose bodies are tools (Rig, Astra, Edit & Sound, Deliver) keep them, with the same card above. */
+  const firstRunAbove = !project && data.status === "ready" && shell.view === "suite" && shell.suite.id === "studio"
+    ? <FirstRun key={`first-run:${shell.page.id}`} stage={shell.page.id} lead={`Open or create a project to use ${shell.page.title}.`} actions={projectActions} now={now} />
+    : null;
+  /* The project list or this project's library failed to read: said, with Retry, instead of an empty shell. */
+  const projectsError = data.status === "error" ? data.error ?? "Projects could not be loaded." : null;
+  const libraryError = library.state.status === "error" ? library.state.error ?? "The project library could not be loaded." : null;
+
   const overlay = !shell.wide;
   const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
-  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector : shell.inspOpen);
+  /* The desktop Studio home inspects nothing of its own: its Inspector column opens for a take picked there, never for a stage spec it does not show. */
+  const onStudioHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "stages";
+  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
+  /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
+     Moving to another page, project or selection gives it a fresh go. */
+  const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
+  const stageProbe = `stage:${shell.page.id}`;
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
@@ -195,27 +277,34 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <Header account={account} />
         <StageStrip />
-        {shell.view === "crew" ? <><CrewStrip room={crew} /><CrewView project={project} room={crew} scope={scope} /></> : shell.view === "workspace" ? <WorkspaceView account={account} /> : (
+        {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
+        <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
+          <AtomikGate />
+        </Boundary>
+        {shell.view === "crew" ? <><CrewStrip room={crew} />
+          <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
+            <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
+          </Boundary></> : shell.view === "workspace" ? (
+          <Boundary what="Workspace" probe="workspace" resetKey={`workspace:${shell.wsTab}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="workspace" /></div>}>
+            <WorkspaceView account={account} />
+          </Boundary>
+        ) : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
             {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? <Library project={project} items={items} ready={library.state.status === "ready"} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /> : null}
+            {showLibrary ? (
+              <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`}
+                fallback={(fault) => <FaultAside kind="library" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : undefined} />}>
+                <Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
+              </Boundary>
+            ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"}
-                onPick={(id) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); }}
-                onCreate={async (name) => {
-                  const created = newProject(name.slice(0, 120));
-                  const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
-                  if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
-                  try { localStorage.setItem(scope, created.id); } catch { /* the URL still carries it */ }
-                  selectProject(created.id);
-                  toast(`${created.name} is open`);
-                  return null;
-                }} />
+              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
+                onPick={pickProject} onCreate={createProject} />
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
                     <h1 className="gx-h1" data-testid="page-title">Generate</h1>
-                    <span className="gx-hint">Video · Images · Audio · 3D</span>
+                    <span className="gx-hint">Video · Images · Audio</span>
                     <span className="gx-spacer" />
                     {!shell.wide ? (<>
                       <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button>
@@ -224,7 +313,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   </div>
                   {/* Its own scroller: arriving in Gen (Open in Gen from a page scrolled down) starts at the composer's top. */}
                   <div className="gx-stage gx-scroll" data-testid="content" key="gen-stage">
-                    <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
+                      <GenView scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
+                    </Boundary>
                   </div>
                 </>
               ) : (
@@ -232,24 +323,31 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
                   {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
-                    {shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
+                    <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
+                    {projectsError && !project ? (
+                      <div className="gx-empty" role="alert" data-testid="projects-error">
+                        <p className="gx-gen-error">{projectsError}</p>
+                        <button type="button" className="gx-hbtn" onClick={data.retry}>Retry</button>
+                      </div>
+                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
-                      <StudioHome key="stages" project={project} items={items} />
+                      <StudioHome key="stages" project={project} items={items} actions={projectActions} loading={data.status === "loading"} now={now} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "brief" ? (
-                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty" data-testid="brief-no-project">Open or create a project to write its script.</p>
+                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("brief", "Open or create a project to write its script.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
-                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : <p className="gx-empty">Open or create a project to break its script into beats.</p>
+                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : noProject("beats", "Open or create a project to break its script into beats.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
-                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : <p className="gx-empty">Open or create a project to see its takes.</p>
+                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : noProject("takes", "Open or create a project to see its takes.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "environment" ? (
-                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to build its world.</p>
+                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("environment", "Open or create a project to build its world.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
-                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : <p className="gx-empty">Open or create a project to cast it.</p>
+                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("cast", "Open or create a project to cast it.")
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (
-                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : <p className="gx-empty">Open or create a project to storyboard it.</p>
+                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : noProject("boards", "Open or create a project to storyboard it.")
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
+                        {firstRunAbove}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
                             {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
@@ -262,7 +360,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (
+                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <SkillsView /> : (<>
+                      {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
@@ -272,19 +371,51 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
-                    )}
+                    </>)}
+                    </Boundary>
                   </div>
                 </>
               )}
-              <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}><GenerationStrip /></div>
+              <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}>
+                <Boundary what="The run strip" probe="strip" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="strip" variant="inline" /></div>}><GenerationStrip /></Boundary>
+              </div>
             </main>
-            {showInspector ? <Inspector scope={scope} project={project} overlay={overlay} /> : null}
+            {showInspector ? (
+              <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
+                fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
+                <Inspector scope={scope} project={project} overlay={overlay} />
+              </Boundary>
+            ) : null}
           </div>
         )}
-        <Palette items={items} onAsk={() => shell.goSuite("atomik", "agent")} />
+        <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
+          <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
+            <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Search" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="palette" dialog actions={<button type="button" className="gx-hbtn" onClick={() => shell.setPalette(false)}>Close</button>} />
+            </div>
+          </div>
+        )}>
+          <Palette items={items} onAsk={ask} />
+        </Boundary>
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
-          <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
+          {/* Closed, the composer shows nothing, so a failure there shows nothing either until it is opened — like Search and Atomik. */}
+          <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => !state.composer ? null : (
+            <div className="gx-fault-dock"><PanelFault fault={fault} name="composer" variant="inline"
+              actions={<button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { composer: false } })}>Close</button>} /></div>
+          )}>
+            <GenerateComposer scope={scope} project={project} onProject={(id) => selectProject(id, { replace: true })} workspaceName={account?.workspace?.name ?? null} />
+          </Boundary>
         </div>
+        {/* The page's Atomik plan: "Run stage" and the Inspector's Approve open it; its gate approves. */}
+        <Boundary what="Atomik" probe="atomik-sheet" resetKey={state.agentOpen ? "open" : "closed"} fallback={(fault) => !state.agentOpen ? null : (
+          <div className="gx-veil" onClick={() => dispatch({ type: "patch", patch: { agentOpen: false } })} data-testid="atomik-veil">
+            <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Atomik" onClick={(e) => e.stopPropagation()}>
+              <PanelFault fault={fault} name="atomik-sheet" dialog actions={<button type="button" className="gx-hbtn" onClick={() => dispatch({ type: "patch", patch: { agentOpen: false } })}>Close</button>} />
+            </div>
+          </div>
+        )}>
+          <AtomikSheet />
+        </Boundary>
         <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (
           <div className="gx-veil" onClick={() => setMoving(null)} data-testid="move-veil">
@@ -302,16 +433,25 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         ) : null}
         <TabBar />
         {state.toast ? (() => {
-          /* A confirmation with somewhere to go carries its Open; a mouse over it, or keyboard focus on it, holds it on screen.
-             A tap does not: on a phone it sits over the page's bottom actions, so it times out. */
-          const open = ws.toastAction?.text === state.toast ? ws.toastAction.action : null;
+          /* A confirmation with somewhere to go carries its Open (lib/shell/confirmations); one the undo stack can take back
+             carries its Undo, the phone's ⌘Z (lib/shell/state › pushUndo), while that step is still the one ⌘Z would undo.
+             A mouse over it, or keyboard focus on it, holds it on screen. A tap does not: on a phone it sits over the page's
+             bottom actions, so it times out. */
+          const given = ws.toastAction?.text === state.toast ? ws.toastAction.action : null;
+          const action = given && (!given.live || given.live()) ? given : null;
+          const undo = given?.kind === "undo";
+          /* An undo toast's "⌘Z to undo" is for keyboards (hidden on touch screens), and only while ⌘Z would undo that step. */
+          const { lead, hint } = undo ? splitUndoHint(state.toast) : { lead: state.toast, hint: "" };
           return (
-            <div className="gx-toast" role="status" data-testid="toast" data-open={open ? "" : undefined}
-              onPointerEnter={open ? (e) => { if (e.pointerType === "mouse") ws.holdToast(true); } : undefined}
-              onPointerLeave={open ? (e) => { if (e.pointerType === "mouse") ws.holdToast(false); } : undefined}
-              onFocus={open ? (e) => { if (e.target.matches(":focus-visible")) ws.holdToast(true); } : undefined}
-              onBlur={open ? () => ws.holdToast(false) : undefined}>
-              {open ? <><span className="gx-toast-text">{state.toast}</span><button type="button" className="gx-toast-open" onClick={open.run} data-testid="toast-open">{open.label}</button></> : state.toast}
+            <div className="gx-toast" role="status" data-testid="toast" data-open={action ? "" : undefined}
+              onPointerEnter={action ? (e) => { if (e.pointerType === "mouse") ws.holdToast(true); } : undefined}
+              onPointerLeave={action ? (e) => { if (e.pointerType === "mouse") ws.holdToast(false); } : undefined}
+              onFocus={action ? (e) => { if (e.target.matches(":focus-visible")) ws.holdToast(true); } : undefined}
+              onBlur={action ? () => ws.holdToast(false) : undefined}>
+              {action ? <>
+                <span className="gx-toast-text">{lead}{hint ? <span className="gx-toast-kbd">{hint}</span> : null}</span>
+                <button type="button" className={undo ? "gx-toast-undo" : "gx-toast-open"} onClick={(e) => { e.stopPropagation(); action.run(); }} data-testid={undo ? "toast-undo" : "toast-open"}>{action.label}</button>
+              </> : lead}
             </div>
           );
         })() : null}

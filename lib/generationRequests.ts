@@ -1,4 +1,5 @@
 import { acceptRecoveryJobTx } from "./recovery";
+import type { InStatement } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
@@ -16,7 +17,8 @@ import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceE
 import { workbenchScopeProblem } from "./workbench/request-scope";
 
 export class SpendReservationError extends Error {
-  constructor(message: string, public readonly status: number) { super(message); this.name = "SpendReservationError"; }
+  /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
+  constructor(message: string, public readonly status: number, public readonly perJob = false) { super(message); this.name = "SpendReservationError"; }
 }
 
 const bootstrapped = new Map<string, Promise<void>>();
@@ -48,13 +50,47 @@ export function generationFingerprint(value: unknown): string {
 }
 
 export type GenerationRequest = { userId: string; key: string };
+/** The bind as a statement, to commit in the same transaction or batch as the job row it names. */
+export function bindGenerationRequestStatement(claim: GenerationRequest, genId: string): InStatement {
+  return { sql: `UPDATE generation_requests SET generation_id=?, updated_at=? WHERE user_id=? AND request_key=?`, args: [genId, now(), claim.userId, claim.key] };
+}
+/** The bind statements for an admitted row (none without a claim), with the claims table in place. Call before opening the write. */
+export async function claimBinding(claim: GenerationRequest | null | undefined, genId: string): Promise<InStatement[]> {
+  if (!claim) return [];
+  await generationRequestsReady();
+  return [bindGenerationRequestStatement(claim, genId)];
+}
 export async function bindGenerationRequest(claim: GenerationRequest, genId: string): Promise<void> {
   await generationRequestsReady();
-  await db().execute({ sql: `UPDATE generation_requests SET generation_id=?, updated_at=? WHERE user_id=? AND request_key=?`, args: [genId, now(), claim.userId, claim.key] });
+  await db().execute(bindGenerationRequestStatement(claim, genId));
+}
+
+/** `atomicBinding`: every job this request can create binds its claim in the same write as the row. */
+export type GenerationRequestOptions = { atomicBinding?: boolean };
+
+const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
+/** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
+export const STALE_CLAIM_MS = 30 * 60_000;
+
+/**
+ * With atomic binding, a claim that names no job proves no job exists — so
+ * nothing was reserved or sent. The claim is completed with that answer
+ * instead of answering "still being accepted" for ever. Null when a job was
+ * bound after all (its ordinary replay then answers).
+ */
+async function completeUnadmitted(userId: string, key: string): Promise<Response | null> {
+  const json = JSON.stringify({ error: UNADMITTED });
+  const done = await db().execute({
+    sql: `UPDATE generation_requests SET response_json=?,response_status=409,updated_at=?
+          WHERE user_id=? AND request_key=? AND generation_id IS NULL AND response_json IS NULL`,
+    args: [json, now(), userId, key],
+  });
+  if (!done.rowsAffected) return null;
+  return new Response(json, { status: 409, headers: { "Content-Type": "application/json", "Idempotency-Status": "complete" } });
 }
 
 /** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
-export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>): Promise<Response> {
+export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
   const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
   if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
   const expectedActor = req.headers.get("X-Actor-Email");
@@ -67,7 +103,7 @@ export async function withGenerationRequest(req: Request, userId: string, run: (
   }
   const key = supplied ?? randomUUID();
   const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
-  return withGenerationRequestData({ userId, key, fingerprint }, run);
+  return withGenerationRequestData({ userId, key, fingerprint }, run, options);
 }
 
 /** Server-side admission uses the same durable claim without making an HTTP request.
@@ -75,6 +111,7 @@ export async function withGenerationRequest(req: Request, userId: string, run: (
 export async function withGenerationRequestData(
   input: { userId: string; key: string; fingerprint: string },
   run: (claim: GenerationRequest) => Promise<Response>,
+  options: GenerationRequestOptions = {},
 ): Promise<Response> {
   const { userId, key, fingerprint } = input;
   if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
@@ -86,13 +123,30 @@ export async function withGenerationRequestData(
   if (!inserted.rowsAffected) {
     const rows = await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] });
     const row = rows.rows[0];
-    if (row.fingerprint !== fingerprint) return Response.json({ error: "This Idempotency-Key already names a different request." }, { status: 409 });
+    if (row.fingerprint !== fingerprint) {
+      /* A key set aside (fenceGenerationRequest) answers every request that arrives under it the same way, and admits none. */
+      if (setAside(row.response_json)) return new Response(String(row.response_json), { status: Number(row.response_status), headers: { "Content-Type": "application/json", "Idempotency-Status": "complete", "Idempotency-Replayed": "true" } });
+      return Response.json({ error: "This Idempotency-Key already names a different request." }, { status: 409 });
+    }
     const headers = { "Idempotency-Replayed": "true" };
     if (row.response_json) return new Response(String(row.response_json), { status: Number(row.response_status), headers: { ...headers, "Content-Type": "application/json", "Idempotency-Status": "complete" } });
     if (row.generation_id) {
       const jobs = await db().execute({ sql: `SELECT id,status,error FROM generations WHERE id=?`, args: [String(row.generation_id)] });
       const job = jobs.rows[0];
       if (job) return Response.json({ id: job.id, status: job.status, error: job.error ?? undefined }, { status: 202, headers });
+    }
+    /* The request that made this claim died without reaching its catch (the
+       function was killed), or it failed before this version bound claims
+       atomically. Either way it is gone, and it named no job. Every job path
+       binds its claim before any vendor is asked, and a job that was never
+       sent ends at no charge (the janitor refunds it well inside this
+       cutoff). The retry completes the claim instead of waiting for ever. */
+    else if (options.atomicBinding && Number(row.created_at) < now() - STALE_CLAIM_MS) {
+      const settled = await completeUnadmitted(userId, key);
+      if (settled) {
+        settled.headers.set("Idempotency-Replayed", "true");
+        return settled;
+      }
     }
     return Response.json({ error: "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.", pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
   }
@@ -106,8 +160,82 @@ export async function withGenerationRequestData(
   } catch (error) {
     // Keep the durable claim: a provider might have accepted an interrupted request.
     console.error("Generation request interrupted:", (error as Error).message);
+    if (options.atomicBinding) {
+      const settled = await completeUnadmitted(userId, key).catch(() => null);
+      if (settled) return settled;
+    }
     return Response.json({ error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." }, { status: 503 });
   }
+}
+
+/** What a paid request sent under an Idempotency-Key became, from its claim (checkGenerationRequest). */
+export type GenerationRequestCheck =
+  /** It reached the server and made this job. The job's own status says how it went: a refused charge fails it, unbilled. */
+  | { state: "landed"; id: string; status: string }
+  /** It reached the server and was answered without a job: nothing was made or charged. */
+  | { state: "refused"; status: number; error: string }
+  /** It is being accepted right now: ask again in a moment. */
+  | { state: "pending" }
+  /** It never reached the server. Checking set its key aside, so it never will: the answer is final. */
+  | { state: "absent" }
+  /** The key names a different request than the one asked about. */
+  | { state: "mismatch" };
+
+const SET_ASIDE = "This request was set aside: it had not reached the server when it was checked. Nothing was charged.";
+const setAside = (json: unknown) => {
+  try { return Boolean(json) && (JSON.parse(String(json)) as { code?: unknown }).code === "set_aside"; } catch { return false; }
+};
+
+/**
+ * Set a key the server has never seen aside for good: its claim is written
+ * complete, with a reply that refuses it, so a request that arrives under it
+ * later is answered with that reply and admits nothing
+ * (withGenerationRequestData). True only when this call wrote it; false when a
+ * claim for the key already existed, whose own record then says what it
+ * became. The person's own claims, in this workspace's database only.
+ */
+export async function fenceGenerationRequest(input: { userId: string; key: string; fingerprint: string }): Promise<boolean> {
+  await generationRequestsReady();
+  const fenced = await db().execute({
+    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+    args: [input.userId, input.key, input.fingerprint, JSON.stringify({ error: SET_ASIDE, code: "set_aside" }), now(), now()],
+  });
+  return fenced.rowsAffected > 0;
+}
+
+/**
+ * Did the request sent under this key land? Asked for the person who sent it
+ * (the claim is theirs), in this workspace's database only, with the
+ * fingerprint the request itself carries, so a key is only ever checked
+ * against the request it named. For routes that bind their job atomically.
+ *
+ * A key the server has never seen is fenced in the same step: its claim is
+ * written complete, with a reply that refuses it. If the request arrives after
+ * all, withGenerationRequestData answers it with that reply and admits
+ * nothing. So the answer never changes, and a recovery can send what is on
+ * screen now under a new key without paying for anything twice.
+ */
+export async function checkGenerationRequest(input: { userId: string; key: string; fingerprint: string }): Promise<GenerationRequestCheck> {
+  const { userId, key, fingerprint } = input;
+  if (await fenceGenerationRequest({ userId, key, fingerprint })) return { state: "absent" };
+  const read = async () => (await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] })).rows[0];
+  let row = await read();
+  if (!row || row.fingerprint !== fingerprint) return { state: "mismatch" };
+  /* No reply and no job, and no request could still be running it: it died unadmitted, and a claim naming no job proves there is none. */
+  if (!row.response_json && !row.generation_id && Number(row.created_at) < now() - STALE_CLAIM_MS) {
+    if (await completeUnadmitted(userId, key)) return { state: "refused", status: 409, error: UNADMITTED };
+    row = await read();
+  }
+  let reply: { id?: unknown; status?: unknown; error?: unknown; code?: unknown } = {};
+  try { reply = row.response_json ? JSON.parse(String(row.response_json)) : {}; } catch { /* an unreadable reply still names its job below */ }
+  const jobId = row.generation_id ? String(row.generation_id) : typeof reply.id === "string" && reply.id ? reply.id : null;
+  if (jobId) {
+    const job = (await db().execute({ sql: `SELECT status FROM generations WHERE id=?`, args: [jobId] })).rows[0];
+    return { state: "landed", id: jobId, status: job ? String(job.status) : typeof reply.status === "string" ? reply.status : "queued" };
+  }
+  if (!row.response_json) return { state: "pending" };
+  if (reply.code === "set_aside") return { state: "absent" };
+  return { state: "refused", status: Number(row.response_status), error: typeof reply.error === "string" && reply.error ? reply.error : `Refused (${row.response_status})` };
 }
 
 let reservationReady: Promise<void> | undefined;
@@ -125,10 +253,14 @@ type Baseline = { id: string; projectId: string | null; shotId: string | null; t
  * The balance test and meter insert commit together, across server instances.
  * Meter completions update this same row to the actual cost. */
 let reservationTurn: Promise<void> = Promise.resolve();
-export async function reserveGenerationSpend(event: MeterEvent, options: {
+type ReservationOptions = {
   token?: { id: string; capUsd: number | null };
   projectId?: string | null;
-} = {}): Promise<void> {
+  /** Whether the shot's credit cap is skipped. Omitted, the signed-in admin skips it;
+   * a held take's release decides from its author instead of whoever's request released it. */
+  shotCapExempt?: boolean;
+};
+export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
   // The database transaction below also protects requests in other processes.
   const result = reservationTurn.then(() => reserveGenerationSpendLocked(event, options));
@@ -136,21 +268,19 @@ export async function reserveGenerationSpend(event: MeterEvent, options: {
   return result;
 }
 
-async function reserveGenerationSpendLocked(event: MeterEvent, options: {
-  token?: { id: string; capUsd: number | null };
-  projectId?: string | null;
-} = {}): Promise<void> {
+async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   const ws = requireTenant();
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
-  if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400);
+  if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
   const billed = paid ? billCredits(cost, marginKeyOf(event.kind, event.model)) : 0;
   await ready();
   await reservationsReady();
   const cap = projectId ? await projectCap(projectId) : null;
   const limits = await workspaceLimits();
-  const shotCap = event.shotId && currentTenant()?.user?.role !== "admin" && cleanRule(await getSetting("approvalRule")) === "cap"
+  const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
+  const shotCap = event.shotId && !shotCapExempt && cleanRule(await getSetting("approvalRule")) === "cap"
     ? cleanShotCap(await getSetting("shotCapCredits")) : null;
   const ruleRaw = cap ? await getSetting("atCap") : null;
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
@@ -173,8 +303,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
     if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
     await syncBillingLedger(tx, ws.id, ts);
     const own = await tx.execute({ sql: `SELECT workspace_id,status FROM meter_events WHERE id=?`, args: [event.id] });
-    if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409);
-    if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409);
+    if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
+    if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
     try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
@@ -196,18 +326,18 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + billCredits(cost, marginKeyOf(event.kind, event.model)) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403);
+      if (shotCredits + billCredits(cost, marginKeyOf(event.kind, event.model)) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
     if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
       const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? billCredits(cost + (baseline.get(event.id)?.cost ?? 0), marginKeyOf(event.kind, event.model)) : cost + (baseline.get(event.id)?.cost ?? 0),
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
-      if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409);
+      if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }
     if (options.token?.capUsd != null) {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.cost, 0);
-      if (spent + cost + (baseline.get(event.id)?.cost ?? 0) > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429);
+      if (spent + cost + (baseline.get(event.id)?.cost ?? 0) > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at`,

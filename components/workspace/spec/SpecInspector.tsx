@@ -61,15 +61,23 @@ export function SpecInspector({ state }: InspectorBodyProps) {
           <div className="pxw-insp-plan-price">{plan.priceLabel}</div>
           {ownerRun ? (
             <p className="pxw-insp-reason" data-testid="spec-plan-owner">Run by {ownerRunBy(capability.ownerName)} on the Higgsfield account.</p>
-          ) : <Button
-            variant={chip.tone === "waiting" ? "amber" : "primary"}
-            className="pxw-insp-run"
-            disabled={disabled}
-            aria-describedby={reason && disabled ? "pxw-plan-reason" : undefined}
-            onClick={() => atomik.start(page)}
-          >
-            <span>{chip.label}</span>
-          </Button>}
+          ) : (<>
+            <Button
+              variant={chip.tone === "waiting" ? "amber" : "primary"}
+              className="pxw-insp-run"
+              disabled={disabled || Boolean(run?.quoting)}
+              aria-describedby={reason && disabled ? "pxw-plan-reason" : undefined}
+              onClick={() => (chip.tone === "waiting" ? void atomik.approve() : atomik.start(page))}
+            >
+              <span>{chip.label}</span>
+            </Button>
+            {/* "Approve 18 cr" approves (never starts); the gate always has a way out. */}
+            {chip.tone === "waiting" ? (
+              <Button variant="control" className="pxw-insp-run" disabled={run?.approved} onClick={atomik.decline} data-testid="spec-plan-decline">
+                <span>Not now</span>
+              </Button>
+            ) : null}
+          </>)}
           {reason && disabled && !ownerRun ? (
             <p className="pxw-insp-reason" id="pxw-plan-reason" data-testid="spec-plan-reason">{reason}</p>
           ) : null}

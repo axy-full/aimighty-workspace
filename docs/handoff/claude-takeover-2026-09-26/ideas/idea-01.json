@@ -1,0 +1,20 @@
+{
+ "n": 1,
+ "title": "Jobs tray instead of a one-slot pill with a made-up percentage",
+ "area": "Shell / render feedback",
+ "gap": "Header.tsx:61-66 renders one ws.state.gen slot as a percentage. The number comes from fixed phase constants 4/10/50/100 (lib/workspace/rig.ts:151-158, use-composer.ts:108-113), not from the job. Clicking the pill opens Atomik \u203a Runs (Header.tsx:63), which lists pipeline runs and not this job. Every new job overwrites the slot. Jobs started from Business (lib/shell/use-connected-job.ts), Viral (lib/shell/use-viral.ts), Storyboards, Environment and the Takes re-edit never appear in the header at all.",
+ "target": "Header pill reads '3 rendering \u00b7 1 held' and opens a JobsTray popover (phone: bottom sheet). Its rows come from GET /api/jobs?projectId&status=queued|running|held (extend the existing route to accept a comma list) plus the existing GET job lists on /api/higgsfield/consumer/generation, the genjutsu route and the video route. Each row shows the thumbnail or name, a real stage (Queued / Held \u00b7 needs N cr / Rendering / Complete / Failed \u00b7 not billed + reason), time since createdAt, the approved price, and one action: Open in Takes, Release (held), or Recreate (failed). Replace the single state.gen slot with a jobs map keyed by id. Show a percentage ring only when an engine reports real progress; otherwise use an indeterminate stage bar.",
+ "files": [
+  "components/graphite/Header.tsx",
+  "components/graphite/JobsTray.tsx",
+  "lib/workspace/state.tsx",
+  "lib/workspace/rig.ts",
+  "lib/workspace/use-composer.ts",
+  "app/api/jobs/route.ts",
+  "lib/shell/use-connected-job.ts",
+  "lib/shell/use-viral.ts"
+ ],
+ "priority": "P0",
+ "effort": "medium",
+ "respects_rules": "Only reads existing job routes. Release goes through the existing POST /api/jobs/:id/release. Prices shown are the ones already approved."
+}

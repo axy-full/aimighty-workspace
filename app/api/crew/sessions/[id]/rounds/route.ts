@@ -2,9 +2,9 @@ import { withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { NO_STORE, crewCaller, crewFailure, crewProject } from "@/lib/crew/http";
 import { ROUNDS_MAX } from "@/lib/crew/room";
-import { quoteRound, runRound, type RoundEvent } from "@/lib/crew/round";
+import { quoteRound, roomRate, runRound, type RoundEvent } from "@/lib/crew/round";
 import { CrewError, claimRound, listMembers, listMessages, readSession, releaseRound } from "@/lib/crew/store";
-import { xaiConnected, xaiRate } from "@/lib/crew/xai";
+import { xaiConnected } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,13 @@ type Ctx = { params: Promise<{ id: string }> };
  * The ceiling is reserved before the first request; what settles is the
  * tokens the provider reported, and a round that did not converge settles
  * at zero.
+ *
+ * The run also names the round it approves (`round`: the rounds run + 1).
+ * That number is its key: claimRound takes only that round, so a round is
+ * billed at most once however often it is sent (a second press after a lost
+ * reply, or the lost request arriving late). This route is not one that
+ * POST /api/generate/check can answer: it files no job and binds no
+ * Idempotency-Key, so the room itself (rounds run, running) is its record.
  */
 export const POST = withTenant(async (req: Request, { params }: Ctx) => {
   const caller = await crewCaller(req, true);
@@ -36,8 +43,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     const project = await crewProject(caller.userId, session.projectId);
     const active = (await listMembers(caller.userId, session.projectId)).filter((m) => m.active);
     if (!active.length) throw new CrewError("Seat at least one member.", 400);
-    const rate = await xaiRate(session.model);
-    if (!rate) throw new CrewError("This engine cannot be priced right now, so the room will not run.", 503);
+    const rate = await roomRate(session.model);
     const transcriptChars = (await listMessages(session.id)).reduce((n, m) => n + m.text.length + m.name.length + 8, 0);
     const quote = quoteRound({ session, project, active, transcriptChars, rate });
     const credits = creditsApply(currentTenant()?.workspace);
@@ -46,8 +52,13 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
       return Response.json({ model: quote.model, calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(credits ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
 
     if (typeof body.maxCredits !== "number" || !Number.isInteger(body.maxCredits) || body.maxCredits < 0) throw new CrewError("Review the round's price before running it.", 409);
+    if (typeof body.round !== "number" || !Number.isInteger(body.round) || body.round < 1) throw new CrewError("Reload the room before running a round.", 409);
+    if (body.round !== session.roundsRun + 1) throw new CrewError(body.round <= session.roundsRun ? `Round ${body.round} has already run. Read the room again before running another.` : "Reload the room before running a round.", 409);
     if (quote.estimateCredits > body.maxCredits) throw new CrewError("The round's price changed. Review the new price before running.", 409);
-    if (!(await claimRound(caller.userId, session.id))) throw new CrewError("This room is already running a round.", 409);
+    if (!(await claimRound(caller.userId, session.id, body.round))) {
+      const now = await readSession(caller.userId, session.id);
+      throw new CrewError(now && now.roundsRun >= body.round ? `Round ${body.round} has already run. Read the room again before running another.` : "This room is already running a round.", 409);
+    }
 
     const encoder = new TextEncoder();
     const userId = caller.userId;

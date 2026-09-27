@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { CONFIRM, destinationName, isHere, landingPage, openLabel, solutionStatusLabel, type Confirmation, type Destination, type Here } from "../../lib/shell/confirmations";
-import { SAY, retryPreset } from "../../lib/shell/assets";
-import { CAST_LIMITS, mergeAgentCast, newEntry, type CastProposal } from "../../lib/production/cast";
-import { generationPhase, heldLabel } from "../../lib/workspace/rig";
+import { SAY, type GenPreset } from "../../lib/shell/assets";
+import { readGenPresets, sendGenPreset } from "../../lib/shell/gen-preset";
+import { CAST_LIMITS, mergeAgentCast, newEntry, sourcedCastId, type CastProposal } from "../../lib/production/cast";
+import { generationPhase } from "../../lib/workspace/rig";
 import { SHOT_TITLE_MAX, solutionShot } from "../../lib/crew/room";
 
 /**
@@ -25,8 +26,6 @@ const EVERY: [string, Confirmation][] = [
   ["plate built, unnamed", CONFIRM.plateBuilt("")],
   ["breakdown to Rig", CONFIRM.breakdownToRig()],
   ["scene nodes to Rig", CONFIRM.breakdownToRig(4)],
-  ["retry", CONFIRM.retry("Wide on the water")],
-  ["not carried to Gen", CONFIRM.notCarried("The solution")],
 ];
 
 test("every confirmation opens a real place, the one its words name, under that place's own label", () => {
@@ -58,14 +57,14 @@ test("a destination that is not a stage is refused rather than quietly landing o
   expect(landingPage({ to: "page", suite: "studio", page: "frames" }).id).toBe("brief");
 });
 
-test("Open in Gen and Retry never claim Gen holds what the browser would not store", () => {
-  const missed = CONFIRM.notCarried("The solution");
-  expect(missed.text).toBe("The solution could not be carried to Gen");
-  expect(missed.text).not.toBe(CONFIRM.crewGen().text);
-  expect(missed.open).toEqual({ to: "gen" });
-  /* Retry names the take it could not carry, never "loaded". */
-  expect(CONFIRM.notCarried("Wide on the water").text).toBe("Wide on the water could not be carried to Gen");
-  expect(CONFIRM.notCarried("Wide on the water").text).not.toBe(CONFIRM.retry("Wide on the water").text);
+test("Open in Gen and Retry hand Gen what they carry in memory, so their toasts never rest on the browser storing it", () => {
+  /* Nothing is written to storage (lib/shell/gen-preset): a Gen that opens after the toast still gets it. */
+  sendGenPreset({ prompt: "Locked dawn frame", note: "Crew · solution" });
+  const got: GenPreset[] = [];
+  const stop = readGenPresets((p) => got.push(p));
+  stop();
+  expect(got).toEqual([{ prompt: "Locked dawn frame", note: "Crew · solution" }]);
+  expect(CONFIRM.crewGen().text).toBe("The solution is Gen’s prompt");
 });
 
 test("a Crew solution becomes a shot named by its words before the dash, cut at a word with an ellipsis", () => {
@@ -129,6 +128,10 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
   expect(merged.cast.agentJobId).toBe("job-1");
   expect(merged.cast.entries.map((e) => e.name)).toEqual(["Mira", "Chrome sphere", "Idris", "Kettle"]);
   expect(merged.cast.entries[2]).toMatchObject({ kind: "character", prompt: "Idris, reference" });
+  /* Each entry's id comes from the run and its name: another tab taking the same run holds it once, even renamed since. */
+  expect(merged.cast.entries[2].id).toBe(sourcedCastId("job-1", "Idris"));
+  const elsewhere = mergeAgentCast({ entries: [newEntry("character", "Idris Varga", "", "", {}, sourcedCastId("job-1", "Idris"))] }, [p("Idris")], "job-1");
+  expect(elsewhere).toMatchObject({ added: 0, known: 1, overLimit: 0 });
   /* Seven proposals, two added: the toast says two. */
   expect(CONFIRM.castTaken(merged).text).toBe("The agent added 2 entries to Cast · 2 already listed");
   expect(CONFIRM.castTaken({ added: 1, known: 0, overLimit: 0 }).text).toBe("The agent added 1 entry to Cast");
@@ -142,21 +145,20 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
   expect(CONFIRM.castTaken(capped).text).toBe("The agent added 1 entry to Cast · 2 left out · the list is full");
 });
 
-test("Retry says what it carries — the prompt and the model — and never 'same inputs'", () => {
-  expect("retry" in SAY).toBe(false);
-  const retry = CONFIRM.retry("Fox");
-  /* One line: Gen's note says what was carried, and its Generate button carries the price. */
-  expect(retry.text).toBe("Retry · Fox loaded in Gen");
-  expect(retry.text).not.toMatch(/same inputs|seed/i);
-  const preset = retryPreset({ prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox", ratio: "16:9" }, title: "Fox" });
-  expect(preset).toEqual({ prompt: "a fox", model: "seedance-2.5", type: "video", note: "Retry · Fox · same prompt and model" });
+test("Recreate's toasts say what reached Gen, in one line, naming Gen, where they land", () => {
+  /* Recreate goes to Gen (lib/shell/use-asset-actions › useRecreate), so its toast carries no Open; Gen shows the recipe, and its Generate button the price. */
+  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Gen.");
+  expect(SAY.settingsOnly("Fox")).toBe("Fox’s model and settings are in Gen.");
+  for (const text of [SAY.recreate("Fox"), SAY.settingsOnly("Fox")]) {
+    expect(text).toContain(destinationName({ to: "gen" }));
+    expect(text).not.toMatch(/seed|quoted|price/i);
+  }
 });
 
 test("a held take says why it waits — out of credits, or no free slot — never 'for approval'", () => {
-  expect(heldLabel({ params: { held: { why: "credits" } } })).toBe("Held · top up to release");
-  expect(heldLabel({ params: { held: { why: "slots" } } })).toBe("Waiting for a slot");
-  expect(heldLabel({})).toBe("Held · top up to release");
-  expect(heldLabel(null)).toBe("Held · top up to release");
+  /* The Rig's own words (lib/workspace/rig). */
+  expect(generationPhase({ status: "held", params: { held: { why: "credits" } } }).label).toBe("Held · needs credits");
+  expect(generationPhase({ status: "held", params: { held: { why: "slots" } } }).label).toBe("Held · waiting for a slot");
   for (const why of ["credits", "slots", undefined]) {
     const phase = generationPhase({ status: "held", params: { held: { why } } });
     expect(phase.label).not.toMatch(/approval/i);

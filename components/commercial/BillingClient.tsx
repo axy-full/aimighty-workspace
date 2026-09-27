@@ -9,6 +9,8 @@ import ManagementPage, {
 } from "@/components/management/ManagementPage";
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
+import { PlanReach, ReachPair, ReachTile, leftAt } from "./MediaReach";
+import { leftFrom, type WorkspaceReach } from "@/lib/mediaReach";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRateLine } from "@/lib/creditTerms";
 
@@ -74,6 +76,8 @@ type Billing = {
     otherBalance?: number;
     nextExpiryAt: number | null;
   } | null;
+  /** The balance as takes at this workspace's usual settings (credit workspaces only). */
+  reach?: WorkspaceReach | null;
   invoiceUrl?: string;
 };
 const date = (value: number | null | undefined) =>
@@ -207,6 +211,8 @@ export default function BillingClient({
       actionLock.current = false;
     }
   }
+  /* What a plan's credits come to as takes: carried by /api/plans only. */
+  const reachOf = (id: string) => plans?.plans.find((plan) => plan.id === id)?.reach;
   const availablePlans = (data?.plans || plans?.plans || []).filter(
       (plan) => plan.id !== "invite",
     ),
@@ -414,6 +420,13 @@ export default function BillingClient({
                   </>
                 )}
               </div>
+              {!direct && data.reach ? (
+                <ReachPair
+                  testId="billing-balance-reach"
+                  video={data.reach.video ? <ReachTile kind="video" count={leftFrom(creditBalance, data.reach.video)} take={data.reach.video} suffix={leftAt(data.reach.video.basis)} /> : null}
+                  image={data.reach.image ? <ReachTile kind="image" count={leftFrom(creditBalance, data.reach.image)} take={data.reach.image} suffix={leftAt(data.reach.image.basis)} /> : null}
+                />
+              ) : null}
               {!direct && (
                 <div className="management-grid three management-credit-breakdown">
                   <div>
@@ -585,6 +598,12 @@ export default function BillingClient({
                   <strong className="management-amount">
                     {plan.includedCredits.toLocaleString()} credits / month
                   </strong>
+                  <PlanReach
+                    videos={reachOf(plan.id)?.videos}
+                    images={reachOf(plan.id)?.images}
+                    reference={plans?.reference}
+                    testId={`billing-plan-reach-${plan.id}`}
+                  />
                   <p>
                     {cadence === "annual"
                       ? `${formatUsd(annual)} billed annually`

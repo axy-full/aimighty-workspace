@@ -5,6 +5,7 @@ import { vendorStill } from "../vendorImages";
 import { pollXaiVideo, submitXaiVideo } from "../xaiVideo";
 import { grokSpeech, grokSpeechUsd } from "../xaiVoice";
 import { fetchBytes } from "../mockFs";
+import { PreflightError } from "../preflight";
 
 /**
  * xAI's Grok: Imagine stills (synchronous, on the xAI key or through the
@@ -27,7 +28,7 @@ export const xai: EngineAdapter = {
       return { handle: { provider: "xai", ref, model: req.model.id } };
     }
     if (req.kind === "audio") {
-      if (req.task !== "speech") throw new Error("Grok Voice speaks lines; other sound is ElevenLabs'.");
+      if (req.task !== "speech") throw new PreflightError("Grok Voice speaks lines; other sound is ElevenLabs'.");
       const p = req.params;
       const out = await grokSpeech({ text: req.text, voiceId: String(p.voiceId), language: typeof p.language === "string" ? p.language : undefined, speed: typeof p.speed === "number" ? p.speed : undefined });
       return { produced: { bytes: out.bytes, mime: out.mime, costUsd: out.costUsd, totalTokens: null, credits: null, requestId: null } };
