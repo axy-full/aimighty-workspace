@@ -24,6 +24,8 @@ import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { useWorkspace } from "@/lib/workspace/state";
+import { CONFIRM } from "@/lib/shell/confirmations";
+import { useConfirm } from "@/lib/shell/use-confirm";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
 import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
@@ -53,6 +55,7 @@ export function EnvironmentStage({ projectId, scope, items, onBeats }: { project
 function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof useDraftEditor>; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const p = editor.project!;
   const { toast } = useWorkspace();
+  const { confirm } = useConfirm();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   /* Attached to the world: the agent sees it when it builds the world and its places. */
   const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
@@ -125,7 +128,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
             return { ...old, assets, production: { ...old.production, environment: { ...e, entries: e.entries.map((x) => (x.id === entry.id ? next : x)) } } };
           });
           if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.failure ? failureLine(generation.failure).text : generation.error || "This plate did not render." }));
-          void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); toast(`${entry.name || "The plate"} is in the library as Environment`); } });
+          void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.plateBuilt(entry.name)); } });
         } catch { /* the next tick reads it again */ }
       }
     };

@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   activeModel,
   billingWording,
+  COMPOSER_TYPES,
   composerBlock,
   composerButtonLabel,
   composerReducer,
@@ -18,7 +19,13 @@ import {
   type EngineRow,
   secondsIn,
   audioSeconds,
+  composerVoices,
+  stepAudioSeconds,
 } from "../../lib/workspace/composer";
+import { nodeAudioBody, speechVoiceFor } from "../../lib/workbench/generation-audio";
+import { readFileSync } from "node:fs";
+import { SITE_SUITES } from "../../lib/marketing/site";
+import { suiteTiles } from "../../lib/shell/studio-home";
 import { INITIAL_STATE, generateTarget } from "../../lib/workspace/navigation";
 import { WORKSPACE_BINDINGS, inKeyboardOverlay, keyContextFor, resolveKey } from "../../lib/workspace/keys";
 import { filterPalette, paletteCommands } from "../../lib/workspace/palette";
@@ -191,12 +198,14 @@ test("the connected source blocks with its own reasons until it can pay", () => 
     .toBe("No image model is available on this account.");
 });
 
-test("sound needs a voice for speech, and a model's own settings are what it renders with", () => {
+test("a line needs a voice to be read in, and a model's own settings are what it renders with", () => {
   const models = workspaceModels(engines, audio);
   const speech = models.find((m) => m.audioTask === "speech")!;
   const state: ComposerState = { ...INITIAL_COMPOSER, type: "audio", prompt: "Read this line." };
   const key = keyOf(state, speech);
-  expect(composerBlock({ state, model: speech, quote: ready(key, 2), quoteKey: key, submitting: false, capability: null, catalogue })).toBe("Choose a voice.");
+  /* The composer hands in the voice the line is read in (the pick, else the model's first): none at all blocks, and says what to do. */
+  expect(composerBlock({ state, model: speech, quote: ready(key, 2), quoteKey: key, submitting: false, capability: null, catalogue }))
+    .toBe(`${speech.label} has no voice to read in here. Choose another model.`);
   const voiced = composerReducer(state, { type: "voice", value: "v1" });
   const voicedKey = keyOf(voiced, speech);
   expect(composerBlock({ state: voiced, model: speech, quote: ready(voicedKey, 2), quoteKey: voicedKey, submitting: false, capability: null, catalogue })).toBeNull();
@@ -246,6 +255,79 @@ test("the sound and music length is held to what the audio route bills, so the s
   expect(audioSeconds("speech", 3)).toBe(3);
   expect(audioSeconds(undefined, 3)).toBe(3);
   expect(audioSeconds("music", Number.NaN)).toBe(10);
+});
+
+/* Test fixtures: a workspace on both sound vendors, in GET /api/audio's shape. */
+const both = {
+  configured: true, vendors: { elevenlabs: true, xai: true },
+  speechModels: [
+    { id: "eleven_multilingual_v2", label: "Multilingual v2", note: "The dependable studio voice." },
+    { id: "eleven_flash_v2_5", label: "Flash v2.5" },
+    { id: "grok-tts", label: "Grok Voice", note: "Speech tags in the text." },
+  ],
+  defaultSpeechModel: "eleven_multilingual_v2",
+  voices: [{ id: "voiceRachel01", name: "Rachel" }, { id: "voiceSarah002", name: "Sarah" }],
+  grokVoices: [{ id: "eve", name: "Eve" }, { id: "ara", name: "Ara" }],
+  voicesError: null,
+};
+
+test("every speech model with voices is offered, the default first, and each reads in its own vendor's voices", () => {
+  const speech = workspaceModels(engines, both).filter((m) => m.audioTask === "speech");
+  expect(speech.map((m) => [m.id, m.label, m.description])).toEqual([
+    ["eleven_multilingual_v2", displayModelName("eleven_multilingual_v2"), "The dependable studio voice."],
+    ["eleven_flash_v2_5", displayModelName("eleven_flash_v2_5"), "Your words, read in a chosen voice."],
+    ["grok-tts", "Grok Voice", "Speech tags in the text."],
+  ]);
+  /* Picking the model swaps the list: Grok Voice never lists an ElevenLabs voice, nor the reverse. */
+  expect(composerVoices(both, "grok-tts").map((v) => v.id)).toEqual(["eve", "ara"]);
+  expect(composerVoices(both, "eleven_flash_v2_5").map((v) => v.id)).toEqual(["voiceRachel01", "voiceSarah002"]);
+  /* A voice picked on one vendor's model falls to the other's first, so a line is never priced in a voice its model cannot read. */
+  expect(speechVoiceFor(composerVoices(both, "grok-tts"), "voiceSarah002")?.id).toBe("eve");
+  expect(speechVoiceFor(composerVoices(both, "grok-tts"), "ara")?.id).toBe("ara");
+  /* Grok's own list could not be read: its model is not offered, rather than offered with no voice. */
+  expect(workspaceModels(engines, { ...both, grokVoices: [] }).some((m) => m.id === "grok-tts")).toBe(false);
+  /* An older reply on a Grok-only workspace, without Grok's own list: `voices` are the default model's, so Grok's. */
+  const older = { configured: true, speechModels: [{ id: "grok-tts", label: "Grok Voice" }], defaultSpeechModel: "grok-tts", voices: [{ id: "eve", name: "Eve" }], voicesError: null };
+  expect(composerVoices(older, "grok-tts").map((v) => v.id)).toEqual(["eve"]);
+  expect(composerVoices(null, "grok-tts")).toEqual([]);
+});
+
+test("the length stepper moves a second for an effect and five for music, never past the range the route bills", () => {
+  expect(stepAudioSeconds("sound", 10, 1)).toBe(11);
+  expect(stepAudioSeconds("sound", 1, -1)).toBe(1);
+  expect(stepAudioSeconds("sound", 30, 1)).toBe(30);
+  expect(stepAudioSeconds("music", 10, 1)).toBe(15);
+  expect(stepAudioSeconds("music", 10, -1)).toBe(10);
+  /* A length off the step (a recreated take's) lands on the next step either way. */
+  expect(stepAudioSeconds("music", 12, 1)).toBe(15);
+  expect(stepAudioSeconds("music", 12, -1)).toBe(10);
+  expect(stepAudioSeconds("music", 298, 1)).toBe(300);
+  expect(stepAudioSeconds("music", 300, 1)).toBe(300);
+});
+
+test("the voice, the length and Instrumental are each in the price's key, whose shape recovery records keep", () => {
+  const base = { billing: "workspace" as const, type: "audio" as const, modelId: "eleven_music", settings, references: [], prompt: "a slow cello", seconds: 30, instrumental: true, voiceId: "" };
+  const key = quoteKeyFor(base);
+  expect(quoteKeyFor({ ...base, seconds: 35 })).not.toBe(key);
+  expect(quoteKeyFor({ ...base, instrumental: false })).not.toBe(key);
+  expect(quoteKeyFor({ ...base, modelId: "grok-tts", voiceId: "eve" })).not.toBe(quoteKeyFor({ ...base, modelId: "grok-tts", voiceId: "ara" }));
+  /* The key also names a take in this browser's recovery records (a lost reply's claim, a batch left part way): a take
+     left unconfirmed before a release is found by the same key after it, so its shape does not move. */
+  expect(key).toBe('["workspace","audio","eleven_music","16:9","720p",5,"",[],"a slow cello",30,true,""]');
+  /* What is priced is what is sent: the body carries the length and the switch the key names. */
+  expect(nodeAudioBody({ task: "music", text: "a slow cello", seconds: audioSeconds("music", 35), instrumental: false, voiceId: "", modelId: "eleven_music" }))
+    .toEqual({ task: "music", text: "a slow cello", lengthMs: 35_000, instrumental: false });
+  expect(nodeAudioBody({ task: "sound", text: "a door", seconds: audioSeconds("sound", 45), instrumental: true, voiceId: "", modelId: "eleven_sfx" }))
+    .toEqual({ task: "sound", text: "a door", durationSeconds: 30 });
+});
+
+test("Gen's copy promises only the outputs its composer makes: no 3D while the composer has none", () => {
+  expect(COMPOSER_TYPES).not.toContain("3d");
+  const gen = SITE_SUITES.find((suite) => suite.id === "gen")!;
+  expect(`${gen.blurb} · ${gen.pages.join(" · ")}`).not.toMatch(/3D/i);
+  expect(readFileSync("app/(marketing)/site/_pages/gen/index.tsx", "utf8")).not.toMatch(/3D/i);
+  /* In the app: the Home tile's line (lib/shell/studio-home.ts). */
+  expect(suiteTiles([], { rendering: 0, videoEngine: "", adMode: "", adSeconds: 0, viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
 });
 
 /* ── The keymap and the palette ─────────────────────────────────────────── */

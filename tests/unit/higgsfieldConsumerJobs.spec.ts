@@ -619,20 +619,28 @@ test("provider polling backoff survives fresh reads and refuses early multi-wind
     const { job } = await accepted(jobs),
       lease = (await jobs.claimConsumerPoll(key(job)))!;
     const nextPollAt = Date.now() + 120_000;
-    expect(() =>
-      jobs.releaseConsumerPoll({
-        ...key(job),
-        leaseToken: lease.leaseToken,
-        nextPollAt: Date.now() - 1,
-      }),
-    ).toThrow("invalid_input");
-    expect(() =>
-      jobs.releaseConsumerPoll({
-        ...key(job),
-        leaseToken: lease.leaseToken,
-        nextPollAt: Date.now() + 3_600_001,
-      }),
-    ).toThrow("invalid_input");
+    // The check reads its own clock; pin it so each bound is missed by exactly 1 ms.
+    const realNow = Date.now,
+      now = realNow();
+    Date.now = () => now;
+    try {
+      expect(() =>
+        jobs.releaseConsumerPoll({
+          ...key(job),
+          leaseToken: lease.leaseToken,
+          nextPollAt: now - 1,
+        }),
+      ).toThrow("invalid_input");
+      expect(() =>
+        jobs.releaseConsumerPoll({
+          ...key(job),
+          leaseToken: lease.leaseToken,
+          nextPollAt: now + 3_600_001,
+        }),
+      ).toThrow("invalid_input");
+    } finally {
+      Date.now = realNow;
+    }
     expect(
       (
         await jobs.releaseConsumerPoll({
@@ -644,7 +652,6 @@ test("provider polling backoff survives fresh reads and refuses early multi-wind
     ).toBe("accepted");
     expect((await jobs.getConsumerJob(key(job)))?.status).toBe("accepted");
     expect(await jobs.claimConsumerPoll(key(job))).toBeNull();
-    const realNow = Date.now;
     Date.now = () => nextPollAt - 1;
     try {
       expect(await jobs.claimConsumerPoll(key(job))).toBeNull();
