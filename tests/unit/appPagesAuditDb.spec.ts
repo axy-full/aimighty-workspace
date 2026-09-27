@@ -49,22 +49,24 @@ test("a finished text run on credits reports the credits the ledger billed; on o
   const { textRunCost } = await import("../../lib/textRunCost");
   const { billCredits } = await import("../../lib/creditTerms");
   const { runInTenant } = await import("../../lib/tenant");
+  /* The unit files share one platform database (lib/platform.ts keeps its first client), so these
+     meter rows carry ids no other spec uses: statementMetered.spec.ts meters its own "text_1". */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const credits = workspace("ws_text") as any, own = { ...workspace("ws_text_own", true), usesPlatformKeys: false } as any;
-  await runInTenant(credits, () => meter({ id: "text_1", kind: "text", engine: "vercel", model: "anthropic/claude-sonnet-4.5", status: "succeeded", engineCostUsd: 0.12 }));
-  const billed = await runInTenant(credits, () => textRunCost({ id: "text_1", costUsd: 0.12 }));
+  await runInTenant(credits, () => meter({ id: "app_pages_text_1", kind: "text", engine: "vercel", model: "anthropic/claude-sonnet-4.5", status: "succeeded", engineCostUsd: 0.12 }));
+  const billed = await runInTenant(credits, () => textRunCost({ id: "app_pages_text_1", costUsd: 0.12 }));
   expect(billed).toEqual({ credits: billCredits(0.12, "text") });
   /* Not settled on the ledger: nothing is claimed. */
-  expect(await runInTenant(credits, () => textRunCost({ id: "text_unmetered", costUsd: 0.12 }))).toEqual({ credits: null });
+  expect(await runInTenant(credits, () => textRunCost({ id: "app_pages_text_unmetered", costUsd: 0.12 }))).toEqual({ credits: null });
   /* Still the reservation (the settling write was lost): its figure is an estimate, not a bill. */
   const { platformDb } = await import("../../lib/platform");
   await platformDb().execute({
     sql: `INSERT INTO meter_events (id, workspace_id, kind, engine, model, status, engine_cost_usd, billed_credits, paid_by_platform, created_by, created_at, updated_at)
-          VALUES ('text_reserved', 'ws_text', 'text', 'vercel', 'anthropic/claude-sonnet-4.5', 'running', 0.12, 2, 1, 'u', 1, 1)`,
+          VALUES ('app_pages_text_reserved', 'ws_text', 'text', 'vercel', 'anthropic/claude-sonnet-4.5', 'running', 0.12, 2, 1, 'u', 1, 1)`,
     args: [],
   });
-  expect(await runInTenant(credits, () => textRunCost({ id: "text_reserved", costUsd: 0.12 }))).toEqual({ credits: null });
-  expect(await runInTenant(own, () => textRunCost({ id: "text_2", costUsd: 0.12 }))).toEqual({ costUsd: 0.12 });
+  expect(await runInTenant(credits, () => textRunCost({ id: "app_pages_text_reserved", costUsd: 0.12 }))).toEqual({ credits: null });
+  expect(await runInTenant(own, () => textRunCost({ id: "app_pages_text_2", costUsd: 0.12 }))).toEqual({ costUsd: 0.12 });
 });
 
 /* ── The list routes, run for real against the throwaway database ─────────── */
