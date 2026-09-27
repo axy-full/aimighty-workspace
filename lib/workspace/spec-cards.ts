@@ -39,7 +39,7 @@ export type SpecFacts = {
   /** Atomik: this production's pipeline runs. */
   runs: RunLite[] | null;
   /** Atomik Budget: settled project spend and cap, in credits. */
-  budget: { credits: number; capCredits: number | null } | null;
+  budget: { credits: number | null; capCredits: number | null } | null;
   /** The page's Atomik plan in this session. */
   planRun: PlanRunLite;
   planCompleted: boolean;
@@ -419,7 +419,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
     intro: "Settled accounting, not estimates. Each generation snapshots the rate it was charged at, so changing a rate never rewrites history.",
     tools: [{ id: "budget", label: "Budget" }],
     facts: (f) => [
-      ["Project spend", f.budget ? `${n(f.budget.credits)} cr` : "—"],
+      ["Project spend", f.budget?.credits != null ? `${n(f.budget.credits)} cr` : "—"],
       ["Cap", f.budget ? (f.budget.capCredits == null ? "Not set" : `${n(f.budget.capCredits)} cr`) : "—"],
       ["Failed renders", "Not billed"],
       ["Ledger", "Settled only"],
@@ -427,7 +427,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
     ],
     groups: [
       { title: "ACCOUNTING", note: "", cards: [
-        { name: "Settled cost", desc: "Recorded from the billed token count the engine returns.", chips: ["actual"], live: (f) => (f.budget ? [`${n(f.budget.credits)} cr`] : []), owner: "Finance", plan: true, state: (f) => when((f.budget?.credits ?? 0) > 0, "ACTIVE"), tool: "budget" },
+        { name: "Settled cost", desc: "Recorded from the billed token count the engine returns.", chips: ["actual"], live: (f) => (f.budget?.credits != null ? [`${n(f.budget.credits)} cr`] : []), owner: "Finance", plan: true, state: (f) => when((f.budget?.credits ?? 0) > 0, "ACTIVE"), tool: "budget" },
         { name: "Rate snapshot", desc: "Every render keeps the rate it was charged at.", chips: ["immutable"], owner: "Finance", state: (f) => when((f.budget?.credits ?? 0) > 0, "ACTIVE"), tool: "budget" },
         { name: "Caps", desc: "Per-project ceilings enforced before dispatch.", chips: [], live: (f) => [f.budget?.capCredits != null ? `${n(f.budget.capCredits)} cr` : "no cap"], owner: "Admin", state: (f) => when(f.budget?.capCredits != null, "ACTIVE"), tool: "budget" },
         { name: "Attribution", desc: "Spend by person, project, engine and month.", chips: ["per person"], owner: "Finance", tool: "budget" },

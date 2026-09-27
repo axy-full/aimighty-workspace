@@ -9,8 +9,7 @@ import type {
 } from "./admissionTypes";
 import { currentTenant, requireTenant } from "./tenant";
 import { db } from "./db";
-import { creditsApply } from "./credits";
-import { billCredits } from "./creditTerms";
+import { creditsApply, quotedCredits } from "./credits";
 import { billedTo } from "./providers";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
 import {
@@ -102,7 +101,9 @@ export function admissionCheckpoint(
         ? { genId: reference.id }
         : { uploadId: reference.id }),
     }));
-  const estimatedCredits = billCredits(usd, margin);
+  /* In what this workspace approves in: its bill in credits, or on its own keys the dollars counted
+     in credits at no margin (quotedCredits), since those dollars are beside it in `price`. */
+  const estimatedCredits = quotedCredits(usd, margin);
   const unit = creditsApply(requireTenant()) ? "cr" : "usd";
   const quote = {
     estimatedCredits,

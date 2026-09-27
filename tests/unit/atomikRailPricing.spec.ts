@@ -185,10 +185,14 @@ test("a credit workspace gets each estimate as admission bills it, and planning 
     // The shot: credits at the engine's margin, rounded up per job — not the dollars rounded up.
     expect(by("astp_video").estCredits).toBe(billCredits(usd, video.id));
     expect(by("astp_video").estCredits).toBeGreaterThan(Math.ceil(usd));
-    // The old audio row is priced exactly as /api/audio prices a sound effect.
+    // The old audio row is priced exactly as /api/audio prices a sound effect, and only in credits:
+    // the vendor's dollars are never sent beside them.
     const soundUsd = usdForCredits(sfxCredits(), null);
-    expect(by("astp_audio").estCostUsd).toBe(soundUsd);
+    expect(by("astp_audio").estCostUsd).toBeNull();
     expect(by("astp_audio").estCredits).toBe(billCredits(soundUsd, "elevenlabs"));
+    expect(loaded.steps.every((s) => s.estCostUsd == null)).toBe(true);
+    expect(loaded.chat.textCostUsd).toBeUndefined();
+    expect(loaded.messages.every((m) => m.costUsd === undefined)).toBe(true);
     // What ran reads what the ledger billed it, never "1 cr".
     expect(by("astp_done").billedCredits).toBe(14);
     expect(by("astp_video").billedCredits).toBeNull();

@@ -12,6 +12,8 @@ import { withRetry } from "./providers";
 import { meter, assertMeterFunding } from "./meter";
 import { fetchBytes } from "./mockFs";
 import { currentTenant, requireTenant } from "./tenant";
+import { creditsApply } from "./credits";
+import { billCredits } from "./creditTerms";
 import { reserveGenerationSpend } from "./generationRequests";
 import { claimRender } from "./renderWork";
 import {
@@ -98,6 +100,21 @@ export const RENDER_CEILING_MS = 30 * 60_000;
  *  render fal may have finished and billed. */
 export const RENDER_UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
 
+
+/**
+ * An identity as a workspace may read it: never the trainer's files, and its
+ * training cost in the unit the workspace pays in. `costUsd` is what the
+ * trainer's vendor charged; on the platform's keys the workspace reads the
+ * credits it was billed instead (as the queue strip always has), and the
+ * dollars stay on the server.
+ */
+export function identityForBrowser(i: Identity): Omit<Identity, "loraUrl" | "configUrl"> & { trained: boolean; creditsBilled?: number | null } {
+  const { loraUrl, configUrl: _config, ...rest } = i;
+  void _config;
+  const view = { ...rest, trained: Boolean(loraUrl) };
+  if (!creditsApply(currentTenant()?.workspace)) return view;
+  return { ...view, costUsd: null, creditsBilled: i.costUsd != null ? billCredits(i.costUsd, "identity-training") : null };
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function rowToIdentity(r: any): Identity {

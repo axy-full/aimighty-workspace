@@ -7,7 +7,8 @@ import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
-import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
+import { billCredits, billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { creditsApply } from "./credits";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
@@ -341,8 +342,15 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }
     if (options.token?.capUsd != null) {
-      const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.cost, 0);
-      if (spent + cost + (baseline.get(event.id)?.cost ?? 0) > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
+      /* In what the workspace pays, as the admission check reads it (tokenSpendThisMonth): a
+         workspace on credits by the credits billed at the price of a credit, never the vendors'
+         dollars, which a ceiling tripping on them would give away. */
+      const mine = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since);
+      const job = cost + (baseline.get(event.id)?.cost ?? 0);
+      const spending = creditsApply(ws)
+        ? (mine.reduce((sum, r) => sum + r.credits, 0) + billCredits(job, marginKeyOf(event.kind, event.model))) * creditUsd()
+        : mine.reduce((sum, r) => sum + r.cost, 0) + job;
+      if (spending > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,

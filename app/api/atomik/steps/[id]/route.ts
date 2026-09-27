@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { getStep, patchStep, StepEditError, type StepStatus } from "@/lib/atomik";
+import { getStep, patchStep, stepForBrowser, StepEditError, type StepStatus } from "@/lib/atomik";
 import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const step = await getStep(id);
   if (!step) return NextResponse.json({ error: "That step is gone." }, { status: 404 });
-  return NextResponse.json(step);
+  return NextResponse.json(stepForBrowser(step));
 });
 
 /**
@@ -62,7 +62,7 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
       genId: b.genId === undefined ? undefined : (b.genId || null),
       error: b.error === undefined ? undefined : (b.error || null),
     });
-    return NextResponse.json(step);
+    return NextResponse.json(step && stepForBrowser(step));
   } catch (error) {
     if (error instanceof StepEditError) return NextResponse.json({ error: error.message }, { status: error.status });
     throw error;

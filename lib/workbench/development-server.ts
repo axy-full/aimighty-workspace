@@ -367,7 +367,11 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   }));
   const estimateUsd = estimates.reduce((sum, step) => sum + step.cost, 0);
   const limit = Math.min(1000, Math.max(1, Number(process.env.WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD) || DEVELOPMENT_REQUEST_CEILING_USD));
-  if (estimateUsd > limit) throw new DevelopmentError(`The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
+  /* The dollars are the model vendor's. They are stated only to a workspace that pays that vendor
+     itself; one on the platform's keys is told the same without them. */
+  if (estimateUsd > limit) throw new DevelopmentError(paidByPlatform(textVendor(input.model))
+    ? `The full development workflow is more than one request may spend: ${estimates.length} agent steps with ${model.name}. Choose a less expensive model or lower effort.`
+    : `The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
   const sourceHash = developmentSourceHash(canonical);
   const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, model };
@@ -460,7 +464,10 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   const compiled = await compile(input, owner, deps);
   await deps.auth(input.model);
   if (input.sourceHash !== compiled.sourceHash) throw new DevelopmentError('The source changed after the quote. Save the current project and review a new quote.', 409);
-  if (compiled.estimateCredits > input.maxCredits || (input.maxUsd != null && compiled.estimateUsd > input.maxUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
+  /* A dollar approval counts only where the workspace pays the vendor itself: on the platform's keys a
+     refusal that turned on it would tell, one guess at a time, what the vendor charges. */
+  const approvedUsd = paidByPlatform(textVendor(input.model)) ? null : input.maxUsd ?? null;
+  if (compiled.estimateCredits > input.maxCredits || (approvedUsd != null && compiled.estimateUsd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
   const allowance = await deps.allowance(textVendor(input.model), compiled.estimateUsd, input.model);
   if (!allowance.ok) throw new DevelopmentError(allowance.error, allowance.status);
   const id = 'wb_development_' + randomUUID(), ts = now();
