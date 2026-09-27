@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { dispatchGeneration, settlePendingGeneration } from "../../lib/workspace/generate-submit";
+import { dispatchGeneration, sendClaimedGeneration, settlePendingGeneration } from "../../lib/workspace/generate-submit";
 import { claimPendingGeneration, pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import type { GenerationBodyInput } from "../../lib/workbench/generation-request";
 
@@ -28,7 +28,7 @@ const edited = (): GenerationBodyInput => ({
 });
 
 type Call = { path: string; key: string | null; body: Record<string, unknown> };
-type Answer = { status?: number; json: unknown } | "network";
+type Answer = { status?: number; json: unknown; headers?: Record<string, string> } | "network";
 /** A stub server for one test: each route answers from `routes`, and every call is recorded. */
 async function withServer(routes: Record<string, (body: Record<string, unknown>) => Answer>, run: (calls: Call[]) => Promise<void>) {
   const calls: Call[] = [];
@@ -41,7 +41,7 @@ async function withServer(routes: Record<string, (body: Record<string, unknown>)
     const answer = routes[path]?.(body);
     if (!answer) throw new Error(`Unexpected request: ${path}`);
     if (answer === "network") throw new TypeError("Failed to fetch");
-    return new Response(JSON.stringify(answer.json), { status: answer.status ?? 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify(answer.json), { status: answer.status ?? 200, headers: { "Content-Type": "application/json", ...answer.headers } });
   }) as typeof fetch;
   try { await run(calls); } finally { globalThis.fetch = original; }
 }
@@ -163,4 +163,70 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
     expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote", "/api/generate/quote", "/api/generate"]);
     expect(readPendingGeneration(storage, STORAGE_ID)).toBeNull();
   });
+});
+
+/* The rate-table Rig (the phone board's Apply, the canvas's Run node) prices its own request and sends
+   that price as its ceiling, under a stored Idempotency-Key (sendClaimedGeneration). */
+const RERENDER = { prompt: "Iver crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
+const SLOT = pendingGenerationKey(SCOPE, "prj_1", "rig-apply:sh1");
+const LOST_SEND = { key: "lost-send-00001", body: JSON.stringify(RERENDER), credits: 19, endpoint: "/api/generate" as const };
+
+test("a claimed send stores its key before it posts, with the workspace scope, and a lost reply keeps the claim for the next press", async () => {
+  const storage = memory();
+  await withServer({ "/api/generate": () => "network" }, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage })).toMatchObject({ state: "unknown", lost: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ path: "/api/generate", body: RERENDER });
+    expect(calls[0].key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(readPendingGeneration(storage, SLOT)).toEqual({ key: calls[0].key, body: JSON.stringify(RERENDER), credits: 19, endpoint: "/api/generate" });
+  });
+  /* Answered: the claim goes, and the job is the caller's to follow. */
+  const fresh = memory();
+  await withServer({ "/api/generate": () => ({ status: 202, json: { id: "gen_new", status: "queued" } }) }, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: fresh }))
+      .toEqual({ state: "queued", jobId: "gen_new", status: "queued", credits: 19, followed: false });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate"]);
+    expect(readPendingGeneration(fresh, SLOT)).toBeNull();
+  });
+});
+
+test("the next press asks about a lost send first: landed is followed and nothing is posted, never arrived posts once under a new key, not known posts nothing", async () => {
+  const landed = memory();
+  claimPendingGeneration(landed, SLOT, LOST_SEND);
+  await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_lost", status: "running" } }) }, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: landed }))
+      .toEqual({ state: "queued", jobId: "gen_lost", status: "running", credits: 19, followed: true });
+    expect(calls).toEqual([{ path: "/api/generate/check", key: null, body: { key: LOST_SEND.key, endpoint: "/api/generate", body: LOST_SEND.body } }]);
+    expect(readPendingGeneration(landed, SLOT)).toBeNull();
+  });
+  const absent = memory();
+  claimPendingGeneration(absent, SLOT, LOST_SEND);
+  await withServer({ "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate": () => ({ status: 202, json: { id: "gen_new" } }) }, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: absent })).toMatchObject({ state: "queued", jobId: "gen_new", followed: false });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/check", "/api/generate"]);
+    expect(calls[1].key).not.toBe(LOST_SEND.key);
+  });
+  const pending = memory();
+  claimPendingGeneration(pending, SLOT, LOST_SEND);
+  await withServer({ "/api/generate/check": () => ({ json: { state: "pending" } }) }, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: pending })).toMatchObject({ state: "unknown", lost: false });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/check"]);
+    expect(readPendingGeneration(pending, SLOT)?.key).toBe(LOST_SEND.key);
+  });
+});
+
+test("a final refusal lets a claimed send go; one that is not final keeps it; a server error is not known", async () => {
+  const cases: [Answer, { state: string }, boolean][] = [
+    [{ status: 409, json: { error: "The generation estimate changed." }, headers: { "Idempotency-Status": "complete" } }, { state: "refused" }, false],
+    [{ status: 402, json: { id: "gen_failed", status: "failed", error: "Not enough credits" } }, { state: "refused" }, false],
+    [{ status: 409, json: { error: "Your account or workspace changed." } }, { state: "refused" }, true],
+    [{ status: 503, json: { error: "The request was interrupted." } }, { state: "unknown" }, true],
+  ];
+  for (const [answer, outcome, kept] of cases) {
+    const storage = memory();
+    await withServer({ "/api/generate": () => answer }, async () => {
+      expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage })).toMatchObject(outcome);
+      expect(Boolean(readPendingGeneration(storage, SLOT)), JSON.stringify(answer)).toBe(kept);
+    });
+  }
 });

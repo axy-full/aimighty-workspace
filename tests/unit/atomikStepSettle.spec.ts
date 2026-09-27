@@ -43,6 +43,16 @@ async function step(fields: { id: string; chat: string; kind?: string; model?: s
   });
 }
 
+async function chat(id: string, owner: string) {
+  const { db, ready } = await import("../../lib/db");
+  await ready();
+  await db().execute({
+    sql: `INSERT INTO atomik_chats (id, project_id, title, model, agent_mode, status, text_cost_usd, created_by, created_at, updated_at, deleted) VALUES (?,NULL,'Chat','auto','ask','waiting',0,?,0,0,0)`,
+    args: [id, owner],
+  });
+}
+const render = (key: string, body: unknown) => new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) });
+
 test("an engine's settings are snapped to the nearest thing it offers", async () => {
   const { fitStepParams } = await import("../../lib/atomik");
   const { getModel } = await import("../../lib/models");
@@ -113,6 +123,7 @@ test("a claimed step the browser never reported back on is settled from the rend
     const { db } = await import("../../lib/db");
     const at = Date.now();
     const old = at - STRANDED_CLAIM_MS - 1000;
+    await chat("c", "u");
     await step({ id: "made", chat: "c", status: "running", updatedAt: old });
     await step({ id: "held", chat: "c", status: "running", updatedAt: old });
     await step({ id: "refused", chat: "c", status: "running", updatedAt: old });
@@ -175,6 +186,50 @@ test("a claimed step the browser never reported back on is settled from the rend
     // The lookup by the step's key alone is indexed, not a scan of every request.
     const plan = await db().execute({ sql: `EXPLAIN QUERY PLAN SELECT generation_id FROM generation_requests WHERE request_key = ? ORDER BY created_at DESC LIMIT 1`, args: [stepRequestKey("made")] });
     expect(plan.rows.map((r) => String(r.detail)).join(" ")).toContain("generation_requests_request_key");
+  });
+});
+
+/* A render that was only delayed, not lost, must not land after its step went back to proposed. */
+test("a stranded step's render key is fenced before the step is proposed again: the late render admits nothing, and approving again renders under a key of its own", async () => {
+  await inTenant(async () => {
+    const { reconcileRunningSteps, getStep, claimStep, stepRequestKey, STRANDED_CLAIM_MS } = await import("../../lib/atomik");
+    const { withGenerationRequest } = await import("../../lib/generationRequests");
+    const { db } = await import("../../lib/db");
+    await chat("c2", "u_owner");
+    await step({ id: "late", chat: "c2" });
+    expect(await claimStep("late", "u_taker")).toMatchObject({ status: "running" });
+    /* Two minutes on, no render has arrived: the step goes back to proposed, and nothing was sent. */
+    expect(await reconcileRunningSteps("c2", Date.now() + STRANDED_CLAIM_MS + 1000)).toBe(1);
+    expect(await getStep("late")).toMatchObject({ status: "proposed", genId: null });
+    /* The render was only delayed, and arrives now: answered, never admitted; nothing is made or charged. */
+    let ran = 0;
+    const body = { prompt: "A slow push-in on a kitchen table.", model: SEEDANCE, projectId: null, maxCredits: 14 };
+    const admit = (key: string, user: string) => withGenerationRequest(render(key, body), user, async () => { ran++; return Response.json({ id: `gen_${ran}`, status: "queued" }, { status: 202 }); }, { atomicBinding: true });
+    const late = await admit(stepRequestKey("late"), "u_taker");
+    expect({ status: late.status, complete: late.headers.get("Idempotency-Status"), admitted: ran }).toEqual({ status: 409, complete: "complete", admitted: 0 });
+    expect(await late.json()).toMatchObject({ code: "set_aside" });
+    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(0);
+    expect(await getStep("late")).toMatchObject({ status: "proposed" });
+    /* Approving again takes a key of its own; its render is admitted, once. */
+    const again = (await claimStep("late", "u_taker"))!;
+    expect(again.requestKey).toBe("atomik-step:late:2");
+    expect((await admit(again.requestKey!, "u_taker")).status).toBe(202);
+    expect(ran).toBe(1);
+    /* A step taken before takers were recorded is fenced for its chat's owner. */
+    await chat("c3", "u_owner");
+    await step({ id: "older", chat: "c3", status: "running", updatedAt: Date.now() - STRANDED_CLAIM_MS - 1000 });
+    expect(await reconcileRunningSteps("c3")).toBe(1);
+    expect((await admit(stepRequestKey("older"), "u_owner")).status).toBe(409);
+    expect(ran).toBe(1);
+    /* A render that did arrive is never fenced over: its own record decides, and the step waits for it. */
+    await step({ id: "racing", chat: "c3", status: "running", updatedAt: Date.now() - STRANDED_CLAIM_MS - 1000 });
+    expect(await claimStep("racing", "u_taker")).toBeNull();
+    await db().execute({ sql: "UPDATE atomik_steps SET claimed_by='u_taker' WHERE id='racing'" });
+    const { fenceGenerationRequest } = await import("../../lib/generationRequests");
+    await db().execute({ sql: "INSERT INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES('u_taker',?, 'f', ?, ?)", args: [stepRequestKey("racing"), Date.now(), Date.now()] });
+    expect(await fenceGenerationRequest({ userId: "u_taker", key: stepRequestKey("racing"), fingerprint: "x" })).toBe(false);
+    expect(await reconcileRunningSteps("c3")).toBe(0);
+    expect(await getStep("racing")).toMatchObject({ status: "running" });
   });
 });
 

@@ -83,8 +83,10 @@ jobs:
     # server now compiles every route, paced, before any spec runs (about 5
     # min), and the later two restore them (about 75 s each); source maps are
     # off (env below). On 26 Sep one job's specs alone took 28 minutes and a
-    # 30-minute job was cancelled mid-run, hence 45.
-    timeout-minutes: 45
+    # 30-minute job was cancelled mid-run, hence 45. On 27 Sep, with the
+    # warm-up in, workbench job 9 ran past 45 minutes on a PR that added
+    # specs (#388), cancelled in its third sub-shard at 2.8 GB: hence 60.
+    timeout-minutes: 60
     env:
       ENGINE_MOCK: '1'
       APP_ORIGIN: http://localhost:4551

@@ -1,3 +1,5 @@
+import type { ClaimedSend } from "./workspace/generate-submit";
+
 /**
  * The phone Rig's "Apply vN" (components/rig/PhoneBoard): one new take per
  * shot that cites the asset. Pure, so what it prices and what it reports are
@@ -47,25 +49,41 @@ export function rerenderBody(
   };
 }
 
+/** What one take's send became: started, refused (with why), or not known yet (`unsure`: it may have started). */
+export type TakeResult = { started: true } | { started: false; reason: string; unsure?: boolean };
+
+/**
+ * One take's claimed send (lib/workspace/generate-submit › sendClaimedGeneration),
+ * as Apply reports it. A take an earlier press sent, whose reply was lost and
+ * which landed after all, is rendering: it counts as started, and nothing new
+ * was sent for it.
+ */
+export function takeOf(sent: ClaimedSend): TakeResult {
+  if (sent.state === "queued")
+    return sent.status === "failed" || sent.status === "cancelled" ? { started: false, reason: sent.followed ? "its last take did not render" : "it did not render" } : { started: true };
+  if (sent.state === "refused") return { started: false, reason: sent.reason };
+  return { started: false, unsure: true, reason: sent.lost ? "the connection dropped" : "its last take could not be checked yet; press Apply again in a moment" };
+}
+
 /**
  * Sends one take per shot, in order, and stops at the first that does not
- * start. A request that throws (a dropped connection) stops the run the same
+ * start. A send that throws (a dropped connection) stops the run the same
  * way, so the takes that already started are still reported, and still
  * rebind the slot, instead of the error escaping past both.
  */
 export async function sendTakes<T extends { code: string }>(
-  targets: T[], send: (s: T) => Promise<Response>,
+  targets: T[], send: (s: T) => Promise<TakeResult>,
 ): Promise<{ started: T[]; failure: string | null }> {
   const started: T[] = [];
   for (const s of targets) {
+    let result: TakeResult;
     try {
-      const r = await send(s);
-      if (r.ok) { started.push(s); continue; }
-      const j = await r.json().catch(() => ({}));
-      return { started, failure: `${s.code} didn't start: ${String(j.error ?? "try again").replace(/\.$/, "")}` };
+      result = await send(s);
     } catch {
-      return { started, failure: `${s.code} may not have started: the connection dropped` };
+      result = { started: false, unsure: true, reason: "the connection dropped" };
     }
+    if (result.started) { started.push(s); continue; }
+    return { started, failure: `${s.code} ${result.unsure ? "may not have started" : "didn't start"}: ${result.reason.replace(/\.$/, "")}` };
   }
   return { started, failure: null };
 }
