@@ -19,6 +19,8 @@ import { REASON_LABELS } from "@/lib/reports";
 import { getModel, MODELS } from "@/lib/models";
 import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, textModelFor, RULE_SCOPES, RULE_SCOPE_LABELS } from "@/lib/platformLayer";
 import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -708,6 +710,7 @@ type PreviewsView = {
 };
 
 function PreviewsCard() {
+  const { requestScope } = useSession();
   const [model, setModel] = useState<string>(PREVIEW_MODELS[0]);
   const [resolution, setResolution] = useState<string>(PREVIEW_RESOLUTIONS[0]);
   const [duration, setDuration] = useState<number>(PREVIEW_DURATIONS[0]);
@@ -730,16 +733,22 @@ function PreviewsCard() {
       { confirmLabel: `Spend $${plan.totalUsd.toFixed(2)}`, danger: true },
     );
     if (!ok) return;
+    if (!requestScope) { await appAlert("Not rendered", "Reload this page in the intended account and workspace first."); return; }
     setBusy("generate"); setProgress({ done: 0, failed: 0 });
     let done = 0, failed = 0;
     for (const item of plan.items) {
-      try {
-        const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      /* Each clip at the per-clip price the confirmation stated (its ceiling), under a key stored before it
+         is sent: pressed again after a lost reply, a clip that landed is followed, never rendered twice. */
+      const sent = await sendClaimedGeneration({
+        scope: requestScope,
+        storageId: pendingGenerationKey(requestScope, "admin-previews", item.key),
+        body: {
           prompt: data!.scene, model: plan.modelId, resolution: plan.resolution, ratio: "16:9", duration: plan.duration, generateAudio: false,
-          shotSpec: { [item.kind]: item.key.split(":")[1] }, previewFor: item.key, projectId: null,
-        }) });
-        if (!res.ok) failed++; else done++;
-      } catch { failed++; }
+          shotSpec: { [item.kind]: item.key.split(":")[1] }, previewFor: item.key, projectId: null, maxCredits: plan.perClipCredits,
+        },
+        credits: plan.perClipCredits,
+      }).catch(() => null);
+      if (sent?.state === "queued" && sent.status !== "failed") done++; else failed++;
       setProgress({ done, failed });
     }
     setBusy(null); refresh();
