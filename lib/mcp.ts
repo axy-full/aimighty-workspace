@@ -310,12 +310,13 @@ export async function runTool(
     }
 
     case "list_projects": {
-      const { projects } = (await call("/api/projects")) as {
-        projects: { name: string; genCount: number; spend: number; credits?: number }[];
+      /* In the workspace's unit: a workspace on credits is told credits, never the vendor's dollars. */
+      const { projects, unit } = (await call("/api/projects")) as {
+        projects: { name: string; genCount: number; spend: number; credits?: number }[]; unit?: "cr" | "usd";
       };
       if (!projects.length) return "No projects yet.";
       return projects
-        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${options.credits ? cr(p.credits ?? 0) : usd(p.spend)}`)
+        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${options.credits || unit === "cr" ? cr(p.credits ?? 0) : usd(p.spend)}`)
         .join("\n");
     }
 

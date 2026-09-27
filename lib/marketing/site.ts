@@ -26,8 +26,8 @@ const COUNT: Record<number, string> = { 8: "Eight", 9: "Nine", 10: "Ten", 11: "E
 
 export const SITE_SUITES: SiteSuite[] = [
   { id: "gen", href: "/", tab: "Gen", tag: "01 Gen", name: "Gen",
-    blurb: "Video, images, audio and 3D from one composer, reachable from every suite.",
-    pages: ["Video", "Images", "Audio", "3D", "Results"] },
+    blurb: "Video, images and audio from one composer, reachable from every suite.",
+    pages: ["Video", "Images", "Audio", "Results"] },
   { id: "studio", href: "/studio", tab: "Studio", tag: "02 Studio", name: "Production Studio",
     blurb: `The production studio. ${COUNT[STUDIO_PAGES.length] ?? STUDIO_PAGES.length} stages from brief to delivery.`,
     pages: STUDIO_PAGES },

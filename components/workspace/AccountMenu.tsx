@@ -32,6 +32,8 @@ const ACCOUNT: { href: string; label: string }[] = [
   { href: "/team", label: "Team" },
   { href: "/billing", label: "Credits & plan" },
   { href: "/usage", label: "Usage" },
+  /* Tokens for assistants, scripts and MCP clients: made, capped and revoked there. */
+  { href: "/connect", label: "Assistants & API tokens" },
 ];
 
 export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
@@ -103,6 +105,7 @@ export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
         {ACCOUNT.map((item) => (
           <a key={item.href} className="pxw-account-item" role="menuitem" href={item.href}>{item.label}</a>
         ))}
+        {session.superAdmin ? <a className="pxw-account-item" role="menuitem" href="/admin">Platform desk</a> : null}
 
         <p className="pxw-account-kicker">ELSEWHERE IN PARTICL</p>
         {ELSEWHERE.map((item) => (

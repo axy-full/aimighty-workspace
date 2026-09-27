@@ -1,7 +1,10 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { currentContext } from "@/lib/auth";
 import {
   legacyShellRequested,
   searchStringOf,
+  serverSwitchTarget,
   SHELL_COOKIE,
   workspaceUrlFor,
   type RawSearch,
@@ -25,4 +28,24 @@ export async function switchoverTargetFor(
   const cookie = (await cookies()).get(SHELL_COOKIE)?.value ?? null;
   if (legacyShellRequested(search, cookie)) return { target: null, search };
   return { target: workspaceUrlFor(pathname, search), search };
+}
+
+/**
+ * switchoverTargetFor, and when the server can already decide
+ * (serverSwitchTarget) the redirect itself. `hasWorkspace` is passed by a page
+ * that has read the session already; otherwise it is read here, and only when
+ * there is a target to go to.
+ */
+export async function switchNowOrGate(
+  pathname: string,
+  params: RawSearch,
+  hasWorkspace?: boolean,
+): Promise<{ target: string | null; search: string }> {
+  const found = await switchoverTargetFor(pathname, params);
+  if (serverSwitchTarget(found.target, found.search, true)) {
+    const scoped = hasWorkspace ?? Boolean((await currentContext())?.workspace);
+    const now = serverSwitchTarget(found.target, found.search, scoped);
+    if (now) redirect(now);
+  }
+  return found;
 }

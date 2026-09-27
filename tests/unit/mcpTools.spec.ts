@@ -87,5 +87,9 @@ test("costs reach the assistant in the unit the workspace pays in, and a missing
   const listed = caller(projects as never);
   expect(await runTool("list_projects", {}, listed.call as never, "", { credits: true })).toBe("Coastal light study — 2 renders · 90 cr");
   expect(await runTool("list_projects", {}, listed.call as never, "")).toBe("Coastal light study — 2 renders · $3.10");
+  /* The projects response also carries the unit, including callers that do not pass workspace options. */
+  const creditProjects = async () => ({ projects, unit: "cr" });
+  expect(await runTool("list_projects", {}, creditProjects as never, "")).toBe("Coastal light study — 2 renders · 90 cr");
+  expect(await runTool("list_projects", {}, creditProjects as never, "", { credits: false })).not.toContain("$");
   expect(readFileSync("app/api/mcp/route.ts", "utf8")).toContain("{ credits: creditsApply(currentTenant()?.workspace) }");
 });

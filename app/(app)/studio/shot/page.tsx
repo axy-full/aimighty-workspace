@@ -11,13 +11,15 @@
  * cleared: subtitles are the one thing the engine reliably takes a NO for).
  *
  * The rail is the prompt, assembling itself on every pick, with the twelve
- * rows summarised under it. Nothing is rendered here: Take it to Video
- * hands the subject line, the setup and the shot to the composer, which
- * keeps the model, the duration and the references.
+ * rows summarised under it. Nothing is rendered here: Open in Generate hands
+ * the subject line and the setup, as words, to Generate's video composer
+ * (lib/composeHandoff.ts), which keeps the model, the duration and the
+ * references. The picks stay here as drafts; the hand-off never erases them.
  */
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { appAlert } from "@/components/dialog";
+import { generateHrefFor, handoffPrompt, writeComposeHandoff } from "@/lib/composeHandoff";
 import { liftLocalSetup } from "@/lib/setupLocal";
 import PaneDivider from "@/components/PaneDivider";
 import { PANES, usePaneWidth } from "@/lib/panes";
@@ -49,14 +51,14 @@ function ShotBuilder() {
   usePageTitle("Studio · Setup");
   const router = useRouter();
   const search = useSearchParams();
-  const { signedIn, workspace, email, setup: platformSetup } = useSession();
+  const { signedIn, workspace, email, requestScope, setup: platformSetup } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: shotData } = useApi<{ shots: ShotRow[] }>(signedIn && scoped ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
   const { data: recent } = useApi<{ generations: Gen[] }>(signedIn ? `/api/jobs?limit=200&sync=0${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}` : null, 0);
 
   /* Both halves of the builder are drafts: the picks and the subject line
-     come back after a detour to the wall, and go when they are taken to Video. */
+     come back after a detour to the wall, and stay after they are carried to Generate. */
   const specDraft = useDraft<ShotSpec>(`studio-spec:${bin}`, {});
   const proseDraft = useDraft(`studio-prose:${bin}`, "");
   const spec = specDraft.value, setSpec = specDraft.set;
@@ -99,7 +101,7 @@ function ShotBuilder() {
      persisted as a draft 400ms later and then counted as unfinished work
      for ever: a producer who changed the production's Setup afterwards
      found the artist's builder still opening on the old one, with nothing
-     to clear it but a trip through "Take it to Video". What the app
+     to clear it but a hand-off that erased the picks. What the app
      stamped is remembered here, and a draft still equal to it is not
      something anybody typed. */
   const stamped = useRef<string | null>(null);
@@ -162,15 +164,25 @@ function ShotBuilder() {
     return cat?.options.find((o) => o.value === spec[key])?.label ?? null;
   };
 
-  function takeToVideo() {
-    try {
-      if (prose.trim()) window.localStorage.setItem("aw_compose_seed", prose.trim());
-      window.localStorage.setItem("aw_compose_spec", JSON.stringify(spec));
-      if (shot) window.localStorage.setItem("aw_compose_shot", shot.id);
-      else window.localStorage.removeItem("aw_compose_shot");
-    } catch { /* private mode — the composer just opens empty */ }
-    proseDraft.clear(); specDraft.clear();
-    router.push("/");
+  /* Generate reads this hand-off and nothing else: the three localStorage keys
+     this used to write had no reader, and clearing the drafts before anyone
+     took them is how a person's picks were lost. */
+  async function openInGenerate() {
+    let store: Storage | null = null;
+    try { store = window.sessionStorage; } catch { /* blocked below */ }
+    /* Scoped to a production, the words belong to it: Generate opens on this
+       person's Studio project for it and composes them into nothing else. */
+    const production = scoped ? bin : null;
+    if (!writeComposeHandoff(store, workspace?.id, email, { prompt: handoffPrompt(prose, phrase), kind: "video", productionProjectId: production })) {
+      await appAlert("Not carried to Generate", "This browser blocked the hand-off. Your picks are still here.");
+      return;
+    }
+    let studioProject: string | null = null;
+    if (production && requestScope) {
+      const res = await fetch(`/api/workbench/projects?production=${encodeURIComponent(production)}`, { cache: "no-store", headers: { "X-Workbench-Scope": requestScope } }).catch(() => null);
+      studioProject = res?.ok ? (((await res.json().catch(() => null)) as { id?: string | null } | null)?.id ?? null) : null;
+    }
+    router.push(generateHrefFor("video", studioProject));
   }
   /* Saving a Setup is now something the whole team gets, not something this
      browser remembers. `aw_last_spec` stays local on purpose — that one is
@@ -232,7 +244,7 @@ function ShotBuilder() {
   return (
     <>
       <nav className="subnav !px-6" aria-label="Studio">
-        <Link href="/studio" className="subnav-item">Cast</Link>
+        <Link href="/suites?suite=particl&page=cast" className="subnav-item">Cast</Link>
         <span className="subnav-item is-on" aria-current="page">Setup</span>
         <span className="subnav-note">
           {shot
@@ -329,10 +341,9 @@ function ShotBuilder() {
           <div className="ws-rail-foot">
             {/* On a phone the rows scroll away from the prompt; the bar keeps the line and the count in view. */}
             <span className="st-foot-line">{n} OF {CATEGORIES.length} ROWS SET{phrase ? ` · ${phrase}` : ""}</span>
-            <button type="button" className="btn-primary !h-[46px] !px-4 !text-[14px]" onClick={takeToVideo} disabled={!signedIn || (!prose.trim() && n === 0)}
+            <button type="button" className="btn-primary !h-[46px] !px-4 !text-[14px]" onClick={() => void openInGenerate()} disabled={!signedIn || (!prose.trim() && n === 0)}
               title={signedIn ? undefined : "Sign in to generate"}>
-              <span>Take it to Video</span>
-              <span className="btn-primary-cost">{shot ? `${shot.code} · V${(shot.takes ?? 0) + 1}` : "UNFILED"}</span>
+              <span>Open in Generate</span>
             </button>
             <button type="button" className="btn-secondary !h-[38px] justify-center" onClick={saveSetup} disabled={n === 0 || (!unsaved && savedCount > 0)}>
               {saved ? "Saved" : !unsaved && savedCount > 0 ? "Saved" : `Save as ${setupName} setup`}
