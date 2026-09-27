@@ -121,6 +121,8 @@ function heldForBrowser(held: Record<string, unknown>, inCredits: boolean, kind:
   const out: Record<string, unknown> = {};
   if (typeof held.why === "string") out.why = held.why;
   const needs = heldPriceNow(held, kind, model);
+  /* A changed quote needs approval even if the take originally waited only for a slot. */
+  if (inCredits && held.why === "slots" && Number(held.needs) > 0 && needs !== Math.ceil(Number(held.needs))) out.why = "credits";
   if (inCredits && needs > 0) out.needs = needs;
   if (!inCredits && typeof held.estUsd === "number") out.estUsd = held.estUsd;
   return out;
