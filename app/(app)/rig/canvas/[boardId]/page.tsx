@@ -841,7 +841,7 @@ function Stuck({ line, onRetry }: { line: string; onRetry?: () => void }) {
   return (
     <div role="alert" className="flex flex-col items-start gap-[12px] p-[24px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>
       <span>{line}</span>
-      {onRetry && <button type="button" onClick={onRetry} className="tap44 h-[44px] rounded-pill border border-border-mid px-[16px] text-[13px] font-medium leading-none text-ink">Retry</button>}
+      {onRetry && <button type="button" onClick={onRetry} className="tap44 h-[44px] rounded-pill border border-border-mid px-[16px] text-[13px] font-medium leading-none text-ink">Try again</button>}
     </div>
   );
 }
@@ -853,7 +853,7 @@ function SaveBanner({ state, onRetry, onReload }: { state: SaveState; onRetry: (
       <span className="min-w-0 flex-1">{state.kind === "conflict" ? "Someone else changed this board. Reloading keeps the nodes you added; your other edits here are not saved." : `Not saved · ${state.message}`}</span>
       {state.kind === "conflict"
         ? <button type="button" onClick={onReload} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Reload the board</button>
-        : <button type="button" onClick={onRetry} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Retry</button>}
+        : <button type="button" onClick={onRetry} className="tap44 h-[36px] rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink">Try again</button>}
     </div>
   );
 }

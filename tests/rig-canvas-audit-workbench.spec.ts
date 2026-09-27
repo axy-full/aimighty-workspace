@@ -35,7 +35,7 @@ test("the Rig canvas opens, carries a Library reference, offers only runnable no
   await page.goto(`/rig/canvas/new?project=${project.id}&ref=${ref}`);
   await expect(page.getByText("Couldn’t open the board. The database is busy.")).toBeVisible();
   failList = false;
-  await page.getByRole("button", { name: "Retry" }).click();
+  await page.getByRole("button", { name: "Try again" }).click();
   await expect(page).toHaveURL(new RegExp(`/rig/canvas/brd_[^?]+\\?ref=${ref}$`));
   /* The reference lands as a note on the board, named for the upload, and the board saves. */
   await expect(page.getByRole("article", { name: "Note node" })).toHaveCount(1);
@@ -62,7 +62,7 @@ test("the Rig canvas opens, carries a Library reference, offers only runnable no
   await page.getByRole("menu").getByRole("menuitem", { name: /^Prompt/ }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Not saved · The database is busy." })).toBeVisible();
   failSave = false;
-  await page.getByRole("button", { name: "Retry" }).click();
+  await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Not saved" })).toHaveCount(0);
 
   /* A teammate saved first: the board says so and does not overwrite them. */
