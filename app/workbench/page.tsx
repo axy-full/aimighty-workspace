@@ -1,6 +1,6 @@
 import Studio from '@/components/workbench/Studio';
 import SwitchoverGate from '@/components/switchover/SwitchoverGate';
-import {switchoverTargetFor,type RawSearch} from '@/lib/workspace/switchover.server';
+import {switchNowOrGate,type RawSearch} from '@/lib/workspace/switchover.server';
 import {redirect} from 'next/navigation';
 import {currentContext} from '@/lib/auth';
 import {creditStateFor} from '@/lib/credits';
@@ -21,11 +21,12 @@ export const metadata={title:'Particl — Production Studio'};
 export default async function Workbench({searchParams}:{searchParams:Promise<RawSearch>}){
  const ctx=await currentContext();
  if(ctx?.mfaRequired)redirect('/account/security');
+ /* The switch-over. Signed-out visitors are never switched: /workspace sends
+    anyone without a workspace back here, so the two would bounce forever. With
+    a workspace, the server redirects before anything else is read. */
+ const {target,search}=await switchNowOrGate('/workbench',await searchParams,Boolean(ctx?.workspace));
  const initialAccount=ctx?{name:ctx.user.name,workspace:ctx.workspace?{id:ctx.workspace.id,name:ctx.workspace.name}:null,workspaces:ctx.workspaces,credits:ctx.workspace?await creditStateFor(ctx.workspace).catch(()=>null):null}:null;
  const scope=ctx?ctx.workspace?workbenchScopeFor(ctx.workspace.id,ctx.user.id):accountScopeFor(ctx.user.id):'particl-visitor';
- /* The switch-over. Signed-out visitors are never switched: /workspace sends
-    anyone without a workspace back here, so the two would bounce forever. */
- const {target,search}=await switchoverTargetFor('/workbench',await searchParams);
  return <SwitchoverGate target={target} search={search} hasWorkspace={Boolean(ctx?.workspace)}>
   <Studio key={scope} initialAccount={initialAccount} apiBase="/api/workbench" sourceMode signedIn={!!ctx?.workspace} storageKey={scope}/>
  </SwitchoverGate>;
