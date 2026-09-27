@@ -45,6 +45,8 @@ export function db(): Client {
 }
 
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS credit_receipts (event_id TEXT PRIMARY KEY, credits REAL NOT NULL, revision INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS credit_receipt_cursor (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL)`,
   ...SECURITY_AUDIT_SCHEMA,
   /* Workbench redesign: private drafts inside the resolved tenant database.
      Shared bible versions and node/shot mappings are added by workbenchReady. */

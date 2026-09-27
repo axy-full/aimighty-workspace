@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { startTraining, trainCostUsd } from "@/lib/identities";
+import { startTraining, trainCostUsd, identityForBrowser } from "@/lib/identities";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { billCredits } from "@/lib/creditTerms";
+import { creditsApply } from "@/lib/credits";
+import { currentTenant } from "@/lib/tenant";
 import { trainApprovalProblem } from "@/lib/identityTraining";
 
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
@@ -29,7 +31,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * one of them, `checkLimits` from three and not this one either. `meter()`
  * only records — it has never refused anything. So a member of any workspace,
  * holding zero credits and past the monthly allowance, could press this in a
- * loop at $3.60 of the platform's fal money a press, with no rate limit in
+ * loop, spending the platform's fal money on every press, with no rate limit in
  * front of it. Both sibling identity routes already checked; ground rule 1
  * is "other people's money", and this was the one door with no lock.
  */
@@ -50,7 +52,10 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   /* The price the sheet showed comes back as the approval (`maxCredits`, or
      `maxUsd` for a workspace on its own keys); a run that now costs more is
      refused rather than charged. */
-  const approval = trainApprovalProblem(body, { credits: billCredits(usd, "identity-training"), usd });
+  /* A dollar approval is read only from a workspace that pays fal itself: on the platform's keys a
+     refusal that turned on it would tell, one guess at a time, what the vendor charges. */
+  const approval = trainApprovalProblem(creditsApply(currentTenant()?.workspace) ? { maxCredits: body.maxCredits } : body,
+    { credits: billCredits(usd, "identity-training"), usd });
   if (approval) return NextResponse.json({ error: approval }, { status: 409 });
   const wall = await allowanceCheck("fal", usd, "identity-training");
   if (!wall.ok) {
@@ -63,7 +68,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
 
   try {
     const identity = await startTraining(id, { by: got.user.id });
-    return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined, trained: false } }, { status: 202 });
+    return NextResponse.json({ identity: identity && { ...identityForBrowser(identity), trained: false } }, { status: 202 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 400 });
   }

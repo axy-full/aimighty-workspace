@@ -1,3 +1,5 @@
+import { handleCrewMcp, isCrewMcpRequest } from "@/lib/crew/mcp";
+import { recoveryRoute } from "@/lib/recovery";
 import { requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
@@ -26,7 +28,7 @@ const ok = (id: unknown, result: unknown) =>
 const fail = (id: unknown, code: number, message: string) =>
   Response.json({ jsonrpc: "2.0", id, error: { code, message } });
 
-export const POST = withTenant(async function POST(req: Request) {
+const workspacePost = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) {
     // Answer in the shape MCP clients understand, not just a bare 401 body.
@@ -87,3 +89,9 @@ export const GET = withTenant(async function GET() {
     tools: TOOLS.map((t) => t.name),
   });
 });
+
+/** Crew credentials are strictly narrower than a workspace API token. */
+const crewPost = recoveryRoute(handleCrewMcp);
+export async function POST(req: Request, ctx: unknown) {
+  return isCrewMcpRequest(req) ? crewPost(req) : workspacePost(req, ctx);
+}

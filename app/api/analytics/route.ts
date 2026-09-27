@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { modelLabel } from "@/lib/models";
@@ -6,7 +7,7 @@ import { billedCreditsSum } from "@/lib/creditSql";
 import { maskEmail } from "@/lib/maskEmail";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
-import { withoutVendorCost } from "@/lib/analyticsRedact";
+import { withoutVendorCost, withoutMarginCredits } from "@/lib/analyticsRedact";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,6 +29,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
+  await syncCreditReceipts();
   /* A workspace billed in credits reads credits: vendor dollars beside them are the margin. */
   const inCredits = creditsApply(requireTenant());
 
@@ -236,5 +238,5 @@ export const GET = withTenant(async function GET(req: Request) {
       takesPerShot: shots ? filed / shots : 0,
     },
   };
-  return NextResponse.json(inCredits ? withoutVendorCost(payload) : payload);
+  return NextResponse.json(inCredits ? withoutVendorCost(payload) : withoutMarginCredits(payload));
 });

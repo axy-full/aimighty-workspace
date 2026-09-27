@@ -9,7 +9,6 @@ import {
   generatedReferenceSeconds,
   videoReferenceSeconds,
 } from "@/lib/referenceDuration";
-import { billCredits } from "@/lib/creditTerms";
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
@@ -63,7 +62,7 @@ import {
   notifyHeld,
   HELD_LIMIT,
 } from "@/lib/held";
-import { creditState, creditsApply } from "@/lib/credits";
+import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
@@ -209,7 +208,7 @@ export async function executeGenerationAdmission(
     const pastCeiling = "Make a new token in Atomik › Tools & connections, or wait for the 1st.";
     if (got.token?.capUsd != null) {
       const spent = await tokenSpendThisMonth(got.token.id);
-      if (spent >= got.token.capUsd) {
+      if (spent.usd >= got.token.capUsd) {
         return admissionReply(
           {
             /* A dollar ceiling set before the workspace moved to credits is
@@ -217,7 +216,7 @@ export async function executeGenerationAdmission(
             error: creditsApply(requireTenant())
               ? `The token "${got.token.name}" has reached the monthly ceiling it was made with. ${pastCeiling}`
               : `The token "${got.token.name}" has reached its $${got.token.capUsd.toFixed(2)} monthly ceiling ` +
-                `($${spent.toFixed(2)} spent). ${pastCeiling}`,
+                `($${spent.usd.toFixed(2)} spent). ${pastCeiling}`,
           },
           { status: 429 },
         );
@@ -1094,7 +1093,7 @@ export async function executeGenerationAdmission(
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
       if (
         body.maxCredits != null &&
-        billCredits(estStillUsd, modelId) > body.maxCredits
+        quotedCredits(estStillUsd, modelId) > body.maxCredits
       ) {
         return admissionReply(
           {
@@ -1698,7 +1697,7 @@ export async function executeGenerationAdmission(
       )?.net ?? 0;
     if (
       body.maxCredits != null &&
-      billCredits(estUsd, modelId) > body.maxCredits
+      quotedCredits(estUsd, modelId) > body.maxCredits
     ) {
       return admissionReply(
         {

@@ -49,9 +49,9 @@ type Handler = (req: Request) => Promise<Response>;
 const nextServer = { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) } };
 
 /**
- * Two of everything. H cost the vendor more ($1.00 against $0.98); L was
- * billed more (16 cr against 15), because credits round up per job: H is one
- * $1.00 take (15 cr) and a failed one, L is two $0.49 takes (8 cr each).
+ * Two of everything. H cost the vendor more; L was billed more, because
+ * credits round up per job: H is one take and a failed one, L is two
+ * cheaper takes that each round up on their own.
  * Every take went through the owner's token.
  */
 async function seed(ws: TenantWorkspace) {
@@ -92,6 +92,7 @@ async function routes(ws: TenantWorkspace) {
     },
     "@/lib/db": await import("../../lib/db"),
     "@/lib/models": await import("../../lib/models"),
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/maskEmail": await import("../../lib/maskEmail"),

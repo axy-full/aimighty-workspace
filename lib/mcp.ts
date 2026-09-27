@@ -115,31 +115,26 @@ export const TOOLS: ToolDef[] = [
 ];
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
+const cr = (n: number | null | undefined) => `${Math.round(Number(n ?? 0)).toLocaleString("en-US")} cr`;
 
-const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
-
+/* A take arrives in the one unit its workspace pays in (lib/jobs.ts rowToGeneration): credits billed
+   on the platform's keys, its own vendors' dollars otherwise. The tools print whichever came. */
 type Gen = {
   id: string; status: string; prompt: string; title?: string | null; kind?: string;
   params?: Record<string, unknown>;
-  costUsd?: number | null; refineCostUsd?: number | null;
-  /** A workspace that pays in credits is sent this, and never the engine's dollars (lib/jobs.ts). */
-  creditsBilled?: number | null;
+  costUsd?: number | null; refineCostUsd?: number | null; creditsBilled?: number | null;
   authorName?: string | null; error?: string | null;
 };
-
-/** What a take cost, in the unit the workspace pays in; null when the jobs API names no figure. */
-function costOf(g: Gen): string | null {
-  if (g.creditsBilled != null) return cr(g.creditsBilled);
-  if (g.costUsd != null) return usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0));
-  return null;
-}
+const takeCost = (g: Gen): string | null =>
+  g.creditsBilled != null ? cr(g.creditsBilled) : g.costUsd != null ? usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0)) : null;
 
 function describe(g: Gen): string {
   const p = (g.params ?? {}) as { resolution?: string; ratio?: string; duration?: number };
   const spec = [p.resolution, p.ratio, p.duration ? `${p.duration}s` : null].filter(Boolean).join(" · ");
-  const cost = costOf(g);
+  const priced = takeCost(g);
+  const cost = priced == null ? "" : ` · ${priced}`;
   const name = g.title ? `${g.title} · ` : "";
-  return `${name}${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost ? ` · ${cost}` : ""}\n  ${g.prompt}`;
+  return `${name}${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost}\n  ${g.prompt}`;
 }
 
 /** Calls the workspace's own API as the caller, so scopes and caps still apply. */
@@ -265,10 +260,9 @@ export async function runTool(
         const { generation } = (await call(`/api/jobs/${encodeURIComponent(String(args.id))}`)) as { generation: Gen };
         last = generation;
         if (generation.status === "succeeded") {
-          const cost = costOf(generation);
           return (
             `Done in ${Math.round((Date.now() - started) / 1000)}s.\n\n${describe(generation)}\n\n` +
-            (cost ? `Cost ${cost}. ` : "") +
+            `${takeCost(generation) ? `Cost ${takeCost(generation)}. ` : ""}` +
             `Watch or download: ${origin}/api/media/${generation.id}`
           );
         }
@@ -310,13 +304,12 @@ export async function runTool(
     }
 
     case "list_projects": {
-      /* In the workspace's unit: a workspace on credits is told credits, never the vendor's dollars. */
       const { projects, unit } = (await call("/api/projects")) as {
-        projects: { name: string; genCount: number; spend: number; credits?: number }[]; unit?: "cr" | "usd";
+        projects: { name: string; genCount: number; spend?: number; credits?: number }[]; unit?: "cr" | "usd";
       };
       if (!projects.length) return "No projects yet.";
       return projects
-        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${options.credits || unit === "cr" ? cr(p.credits ?? 0) : usd(p.spend)}`)
+        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${options.credits || unit === "cr" || p.spend == null ? cr(p.credits) : usd(p.spend)}`)
         .join("\n");
     }
 

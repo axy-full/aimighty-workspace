@@ -5,7 +5,9 @@ import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { db, ready, now } from "./db";
+import { creditsApply } from "./credits";
 import { billedCreditsSum } from "./creditSql";
+import { creditUsd } from "./creditTerms";
 import { tokenMonthStart } from "./cycle";
 import {
   platformDb, platformReady, sessionLookup, createPlatformSession, destroyPlatformSession,
@@ -328,9 +330,7 @@ export async function requireRender(): Promise<
   return got;
 }
 
-/** What a token has billed this month, in whole credits — the same rounding
- *  per job the ledger uses. The ceiling a credits workspace sets is read
- *  against this, never against the engine's dollars. */
+/** The token's billed month in whole credits, as used by a credit ceiling. */
 export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
   const rs = await db().execute({
     sql: `SELECT ${billedCreditsSum()} AS spend FROM generations WHERE token_id = ? AND created_at >= ?`,
@@ -339,14 +339,24 @@ export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
   return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
 }
 
-/** Month-to-date spend charged to one token in the engine's dollars, for a dollar ceiling. */
-export async function tokenSpendThisMonth(tokenId: string): Promise<number> {
+/**
+ * Month-to-date spend charged to one token, for its optional ceiling, in the
+ * dollars that left the workspace. A workspace on the platform's keys pays in
+ * credits, so its tokens are measured by the credits they were billed, at the
+ * price of a credit (`credits` is that count) — never by what the vendors
+ * charged, which beside the credits is the margin, and which a ceiling that
+ * trips on it would give away one refusal at a time. A workspace on its own
+ * keys is measured in its vendors' dollars (`credits` is null).
+ */
+export async function tokenSpendThisMonth(tokenId: string): Promise<{ usd: number; credits: number | null }> {
+  const inCredits = creditsApply(currentTenant()?.workspace);
   const rs = await db().execute({
-    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
+    sql: `SELECT ${inCredits ? billedCreditsSum() : "COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0)"} AS spend
           FROM generations WHERE token_id = ? AND created_at >= ?`,
     args: [tokenId, tokenMonthStart()],
   });
-  return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
+  const spend = Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
+  return inCredits ? { usd: spend * creditUsd(), credits: spend } : { usd: spend, credits: null };
 }
 
 export async function requireAdmin(): Promise<

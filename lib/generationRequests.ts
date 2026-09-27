@@ -7,7 +7,9 @@ import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCredits, billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { creditsApply } from "./credits";
+import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
 import { workspaceLimits } from "./limits";
@@ -276,7 +278,6 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
-  const billed = paid ? billCredits(cost, marginKeyOf(event.kind, event.model)) : 0;
   await ready();
   await reservationsReady();
   const cap = projectId ? await projectCap(projectId) : null;
@@ -295,7 +296,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const baseline = new Map<string, Baseline>(rows.rows.map((r) => [String(r.id), {
     id: String(r.id), projectId: r.project_id == null ? null : String(r.project_id), shotId: r.shot_id == null ? null : String(r.shot_id),
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
-    credits: billCredits(Number(r.cost), marginKeyOf(String(r.kind), String(r.model))), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
+    credits: billCreditsWith(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
@@ -304,9 +305,14 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);
     if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
     await syncBillingLedger(tx, ws.id, ts);
-    const own = await tx.execute({ sql: `SELECT workspace_id,status FROM meter_events WHERE id=?`, args: [event.id] });
+    const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
     if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
+    const prior = own.rows[0];
+    if (prior && (Boolean(prior.paid_by_platform) !== paid || prior.engine !== event.engine || prior.kind !== event.kind || prior.model !== event.model))
+      throw new SpendReservationError("This job's funding or engine changed. Request a new quote.", 409, true);
+    const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
+    const billed = paid ? creditsAtTerms(cost, terms) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
     try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
@@ -318,7 +324,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const prior = merged.get(String(r.id));
       merged.set(String(r.id), { id: String(r.id), projectId: r.project_id == null ? prior?.projectId ?? null : String(r.project_id), shotId: r.shot_id == null ? prior?.shotId ?? null : String(r.shot_id),
         tokenId: r.reservation_token == null ? prior?.tokenId ?? null : String(r.reservation_token),
-        cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Math.max(prior?.credits ?? 0, Number(r.billed_credits ?? 0)), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
+        cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Number(r.billed_credits ?? 0), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
       else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
     }
@@ -328,18 +334,25 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + billCredits(cost, marginKeyOf(event.kind, event.model)) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+      if (shotCredits + creditsAtTerms(cost, terms) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
     if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
-      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? billCredits(cost + (baseline.get(event.id)?.cost ?? 0), marginKeyOf(event.kind, event.model)) : cost + (baseline.get(event.id)?.cost ?? 0),
+      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms) : cost + (baseline.get(event.id)?.cost ?? 0),
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }
     if (options.token?.capUsd != null) {
-      const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.cost, 0);
-      if (spent + cost + (baseline.get(event.id)?.cost ?? 0) > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
+      /* In what the workspace pays, as the admission check reads it (tokenSpendThisMonth): a
+         workspace on credits by the credits billed at the price of a credit, never the vendors'
+         dollars, which a ceiling tripping on them would give away. */
+      const mine = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since);
+      const job = cost + (baseline.get(event.id)?.cost ?? 0);
+      const spending = creditsApply(ws)
+        ? (mine.reduce((sum, r) => sum + r.credits, 0) + billCredits(job, marginKeyOf(event.kind, event.model))) * creditUsd()
+        : mine.reduce((sum, r) => sum + r.cost, 0) + job;
+      if (spending > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
     /* The same wall in credits, reckoned like the production cap above: what the
        token's jobs this month billed or reserved, plus this job at the engine's margin. */
@@ -348,9 +361,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const needs = billCredits(cost + (baseline.get(event.id)?.cost ?? 0), marginKeyOf(event.kind, event.model));
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
-    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts] });
+    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, args: [event.id, ws.id, options.token?.id ?? null] });
   });
 }

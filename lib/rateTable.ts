@@ -7,16 +7,15 @@ import type { TaskId } from "./tasks";
  *
  * This exists because the composer prices a duration change without a round
  * trip, which means the rates have to be in the bundle, which meant the
- * VENDOR's rates were in the bundle. With the margin table beside them —
- * also a literal — anyone could compute the platform's markup, and §2 of the
- * scope of work says margin is never shown.
+ * VENDOR's rates were in the bundle, with the margin table beside them —
+ * also a literal — and §2 of the scope of work says margin is never shown.
  *
  * The fix is not to stop shipping rates; it is to ship the right ones. A
  * workspace on the platform's keys is handed credits per second, credits per
  * still; one on its own keys is handed dollars, because dollars are what it
  * actually pays its vendors and it is entitled to them. Same shape either
- * way, so the estimator does not care which it is holding — and `credits ×
- * 0.10 ÷ margin` gives nothing away when there is no dollar figure to divide.
+ * way, so the estimator does not care which it is holding — and a table in
+ * credits holds no vendor dollar for anyone to work back from.
  *
  * Built on the server by lib/rateTable.server.ts and carried in the session.
  */

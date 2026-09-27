@@ -30,8 +30,8 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture" }) },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
-    /* Dollar ceilings are a workspace on its own keys: a credit workspace sets its ceiling in credits (the test below). */
     "@/lib/credits": { creditsApply: () => false },
+    "@/lib/creditReceipts": { syncCreditReceipts: async () => {} },
     "@/lib/creditSql": { billedCreditsExpr: () => "0" },
     "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/db": {
@@ -102,6 +102,7 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture", legacy: false, usesPlatformKeys: true }) },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/credits": await import("../../lib/credits").then((m) => ({ creditsApply: m.creditsApply })),
+    "@/lib/creditReceipts": { syncCreditReceipts: async () => {} },
     "@/lib/creditSql": { billedCreditsExpr: () => "0" },
     "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/db": {

@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncActive } from "@/lib/jobs";
@@ -14,7 +15,7 @@ import {creditUsage} from "@/lib/creditUsage";
 import {creditsApply} from "@/lib/credits";
 import {requireTenant} from "@/lib/tenant";
 import { billCredits, marginKeyOf } from "@/lib/creditTerms";
-import { usageLedgerResponse } from "@/lib/usageLedger";
+import { nameFor, spendByPerson, usageLedgerResponse, type LedgerViewer } from "@/lib/usageLedger";
 import { visibleUsageParams } from "@/lib/usageParams";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +28,12 @@ export const maxDuration = 60;
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
-  if (new URL(req.url).searchParams.has("rows")) return usageLedgerResponse(req, { id: got.user.id, admin: got.user.role === "admin" || got.user.owner });
-  if(creditsApply(requireTenant()))return NextResponse.json(await creditUsage(),{headers:{"Cache-Control":"no-store"}});
+  /* Everyone's spend by person is the owners' and admins'; a member reads their own name and "Teammate" (lib/usageLedger.ts). */
+  const viewer: LedgerViewer = { id: got.user.id, admin: got.user.role === "admin" || got.user.owner };
+  if (new URL(req.url).searchParams.has("rows")) return usageLedgerResponse(req, viewer);
+  if(creditsApply(requireTenant()))return NextResponse.json(await creditUsage(viewer),{headers:{"Cache-Control":"no-store"}});
   await ready();
+  await syncCreditReceipts();
   try { await syncActive(); } catch { /* report on what we have */ }
 
   const label = (m: string) => modelLabel(m);
@@ -72,10 +76,10 @@ export const GET = withTenant(async function GET(req: Request) {
       FROM generations g LEFT JOIN projects p ON p.id = g.project_id
       GROUP BY g.project_id HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
-      SELECT COALESCE(u.name,'Unknown') AS name, SUM(g.status='succeeded') AS n,
+      SELECT g.created_by AS author, SUM(g.status='succeeded') AS n,
              COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend,
              ${billedCreditsSum("g")} AS credits
-      FROM generations g LEFT JOIN users u ON u.id = g.created_by
+      FROM generations g
       GROUP BY g.created_by HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
       SELECT strftime('%Y-%m', datetime(created_at/1000,'unixepoch')) AS month,
@@ -143,6 +147,7 @@ export const GET = withTenant(async function GET(req: Request) {
      the ledger reports THEIR number plus what we have computed since, so it
      agrees with the console instead of quietly diverging from it. */
   const checks = await listChecks();
+  const checkedBy = new Map(checks.flatMap((c) => (c.createdBy && c.authorName ? [[c.createdBy, c.authorName] as const] : [])));
   const latestCheck = new Map<string, (typeof checks)[number]>();
   for (const c of checks) if (!latestCheck.has(c.provider)) latestCheck.set(c.provider, c);
   const anchors = new Map<string, {
@@ -227,7 +232,7 @@ export const GET = withTenant(async function GET(req: Request) {
         balanceCredits: anchor.check.balanceCredits,
         spendCredits: anchor.check.spendCredits,
         note: anchor.check.note,
-        authorName: anchor.check.authorName,
+        authorName: nameFor(viewer, anchor.check.createdBy ?? "", checkedBy),
         sinceUsd: anchor.sinceUsd,
         sinceCredits: anchor.sinceCredits,
         sinceRenders: anchor.sinceRenders,
@@ -263,6 +268,10 @@ export const GET = withTenant(async function GET(req: Request) {
     };
   });
 
+  const people = await spendByPerson(byPerson.rows.map((r: any) => ({
+    author: r.author == null ? "" : String(r.author), n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
+  })), viewer);
+
   const t: any = totals.rows[0];
   const spend = Number(t.spend);
   const purchased = Number((topups.rows[0] as any).total);
@@ -293,9 +302,7 @@ export const GET = withTenant(async function GET(req: Request) {
     byProject: byProject.rows.map((r: any) => ({
       name: r.name, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),
-    byPerson: byPerson.rows.map((r: any) => ({
-      name: r.name, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
-    })),
+    byPerson: people,
     byMonth: byMonth.rows.map((r: any) => ({
       month: r.month, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),

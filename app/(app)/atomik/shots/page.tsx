@@ -25,8 +25,8 @@ import type { Shot } from "@/lib/shots";
 import type { Treatment } from "@/lib/atomikDocs";
 import { useMoney } from "@/lib/price";
 
-type Row = Shot & { takes: number; ok: number; failed: number; spend: number; credits?: number; state: string; master: { id: string; version: number | null; url: string | null } | null };
-type Proj = { id: string; name: string; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null };
+type Row = Shot & { takes: number; ok: number; failed: number; spend?: number; credits?: number; state: string; master: { id: string; version: number | null; url: string | null } | null };
+type Proj = { id: string; name: string; spend?: number; credits?: number; capUsd?: number | null; capCredits?: number | null };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -59,8 +59,8 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
   /* Every figure in the workspace's unit: estimates off its rate table, spend
      off the ledger's credits (or its dollars, for a workspace on its own keys). */
   const estimate = listEstimate(rates, billable);
-  const spent = { spend: shots.reduce((a, s) => a + s.spend, 0), credits: shots.reduce((a, s) => a + (s.credits ?? 0), 0) };
-  const spentOf = (s: Row) => (money.inCredits ? s.credits ?? 0 : s.spend);
+  const spent = { spend: shots.reduce((a, s) => a + (s.spend ?? 0), 0), credits: shots.reduce((a, s) => a + (s.credits ?? 0), 0) };
+  const spentOf = (s: Row) => (money.inCredits ? s.credits ?? 0 : s.spend ?? 0);
   const n = (st: string) => shots.filter((s) => s.state === st).length;
   const open = shots.filter((s) => !["approved", "picked", "type"].includes(s.state)).length;
   const takesPerApproval = n("approved") ? shots.filter((s) => s.state === "approved").reduce((a, s) => a + s.takes, 0) / n("approved") : null;

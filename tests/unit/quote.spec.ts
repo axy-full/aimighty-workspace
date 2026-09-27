@@ -114,8 +114,10 @@ test("the monthly ceiling on the platform's engines refuses, and counts only wha
   const q = quoteOf([{ ...shot("a", 40), platformPays: true }], TERMS);
   const v = verdictOf(q, { ...CTX, allowance: { cap: 50, spent: 20 } });
   expect(v).toMatchObject({ allow: false, gate: "allowance" });
-  expect(v.line).toContain("$20.00");
-  expect(v.line).toContain("$50.00");
+  /* The cap and its spend are the vendors' dollars, and the line is read by a workspace billed in
+     credits: it says what happened without either figure. */
+  expect(v.line).toContain("monthly cap on the platform's engines");
+  expect(v.line).not.toMatch(/\$|20|50/);
 
   // A vendor the workspace holds its own key for is not the platform's money.
   const own = quoteOf([{ ...shot("a", 40), platformPays: false }], TERMS);

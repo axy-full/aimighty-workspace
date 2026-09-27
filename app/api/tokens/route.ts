@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { securityAuditStatement } from "@/lib/securityAudit";
 import { requireTenant } from "@/lib/tenant";
 import { tokenCeiling } from "@/lib/tokenCeiling";
@@ -42,6 +43,8 @@ export const GET = withTenant(async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
   await ready();
+  await syncCreditReceipts();
+  /* A credit workspace reads each token's month in credits billed, never the vendor's dollars (see /api/analytics). */
   const inCredits = creditsApply(requireTenant());
 
   const rs = await db().execute({

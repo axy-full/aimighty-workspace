@@ -94,8 +94,8 @@ export function useMoney(): Money {
        billed. So this rounds and formats, and that is all it does.
 
        It used to convert — `billCreditsWith(usd, marginFor(engine, margins), per)`
-       — which meant the browser held both the vendor's dollars and the margin,
-       and `credits × 0.10 ÷ margin` gave up the markup exactly. */
+       — which meant the browser held both the vendor's dollars and the margin
+       table, the two things that must never leave the server. */
     const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
     const takeCredits = (g: Priced) => providerCreditQuote(g.providerCreditQuote) ? 0 : Math.round(g.creditsBilled ?? 0);
     const ofCredits = (v: Amount) => v.credits ?? 0;
