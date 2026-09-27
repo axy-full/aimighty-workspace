@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "./creditReceipts";
 import { db, ready, id as newId, now } from "./db";
 import { billedCreditsSum } from "./creditSql";
 import { creditsApply } from "./credits";
@@ -76,6 +77,7 @@ export function withoutVendorSpend(list: ProductionRow[]): ProductionRow[] {
 /** Board 7a in one read: productions, their projects, counts and money. */
 export async function listProductions(): Promise<ProductionRow[]> {
   await ready();
+  await syncCreditReceipts();
   const dollars = !creditsApply(currentTenant()?.workspace);
   const [prods, projs] = await Promise.all([
     db().execute(`SELECT * FROM productions ORDER BY created_at DESC`),

@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncActive } from "@/lib/jobs";
@@ -32,6 +33,7 @@ export const GET = withTenant(async function GET(req: Request) {
   if (new URL(req.url).searchParams.has("rows")) return usageLedgerResponse(req, viewer);
   if(creditsApply(requireTenant()))return NextResponse.json(await creditUsage(viewer),{headers:{"Cache-Control":"no-store"}});
   await ready();
+  await syncCreditReceipts();
   try { await syncActive(); } catch { /* report on what we have */ }
 
   const label = (m: string) => modelLabel(m);

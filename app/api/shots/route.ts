@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { billedCreditsSum } from "@/lib/creditSql";
 import { db, ready } from "@/lib/db";
@@ -30,6 +31,7 @@ export const GET = withTenant(async function GET(req: Request) {
    * `spend` (the vendors' dollars) on the workspace's own. Side by side they
    * are the margin. */
   await ready();
+  await syncCreditReceipts();
   const inCredits = creditsApply(requireTenant());
   const stats = new Map<string, { takes: number; ok: number; failed: number; spend?: number; credits?: number }>();
   if (shots.length) {

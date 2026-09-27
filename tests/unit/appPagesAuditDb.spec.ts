@@ -98,6 +98,7 @@ async function listRoutes(ws: { current: unknown }) {
     "@/lib/tenant": tenant,
     "@/lib/db": await import("../../lib/db"),
     "@/lib/credits": await import("../../lib/credits"),
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/shots": await import("../../lib/shots"),
     "@/lib/productions": await import("../../lib/productions"),
