@@ -671,6 +671,9 @@
 .gx-stepper button:disabled { opacity: .4; cursor: default; }
 .gx-stepper span { min-width: 22px; text-align: center; font-family: var(--gx-mono); font-weight: 600; color: var(--gx-text); }
 @media (max-width: 767px), (pointer: coarse) { .gx-stepper button { width: 44px; height: 44px; } }
+/* Gen › Audio: the length stepper and music's Instrumental switch share a row, and wrap on a narrow phone. */
+.gx-gen-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx-gen-sound .gx-stepper span { min-width: 52px; padding: 0 4px; white-space: nowrap; }
 
 /* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
 .gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }
