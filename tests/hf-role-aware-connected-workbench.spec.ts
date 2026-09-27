@@ -1,8 +1,9 @@
 import { test, expect, type Locator, type Page, type PlaywrightWorkerArgs } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { reachFromTools } from "../lib/higgsfield-consumer/reach";
 import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
@@ -24,6 +25,13 @@ const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
 const SHOTS = process.env.CONNECTED_ROLE_SHOTS;
 const CONSUMER = /\/api\/higgsfield\/consumer\//;
+const TOOLS_PAGE = "/suites?suite=atomik&page=skills&sp=skills";
+/** The connected account's answer to Tools' reach check, from a recorded tools/list: 13 of 14 rows (analysis is switched off). */
+function reachChecked() {
+  const names = (JSON.parse(readFileSync("tests/fixtures/connected-tools-98.json", "utf8")) as { tools: { name: string }[] }).tools.map((tool) => tool.name);
+  const reach = reachFromTools(names, { off: ["analysis"] });
+  return { status: "checked", checkedAt: Date.now(), reach, available: reach.filter((row) => row.available).length, total: reach.length };
+}
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 async function settle(page: Page) {
@@ -370,4 +378,113 @@ test("the previous workspace Atomik panel never offers a member an owner-account
   await expect(page.getByRole("button", { name: /Run this page/ })).toHaveCount(0);
   expect(writes).toEqual([]);
   await noSideScroll(page);
+});
+
+test("Tools: a reach check that set out before the owner disconnects never comes back — the page checks again, and no surface is told the account is connected", async ({ page }, info) => {
+  test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "one wide, one phone");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  const { errors } = watch(page);
+  /* The owner's account is connected until Engines disconnects it. */
+  let linked = true;
+  await page.route("**/api/higgsfield/consumer/connection", (route) => {
+    const method = route.request().method();
+    if (method === "DELETE") { linked = false; return route.fulfill({ json: { ok: true } }); }
+    if (method !== "GET") return route.fallback();
+    return route.fulfill({ json: { connected: linked, requiresReconnect: false } });
+  });
+  /* The first check is held until after the disconnect, then answers with the account's old tools; later checks find no account. */
+  let checks = 0;
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/higgsfield/consumer/capabilities", async (route) => {
+    checks++;
+    if (checks === 1) { await held; return route.fulfill({ json: reachChecked() }); }
+    return route.fulfill({ status: 409, json: { status: "unavailable", code: "not_connected", error: "Connect the owner’s account in Workspace › Engines." } });
+  });
+  try {
+    await page.goto(TOOLS_PAGE);
+    await expect(page.getByTestId("reach-summary")).toHaveText("Checking the connected account…");
+    await expect.poll(() => checks).toBe(1);
+
+    /* Engines, in the same page: the owner disconnects while the check is still out. */
+    const avatar = page.getByTestId("workspace-avatar");
+    const toWorkspace = (await avatar.isVisible()) ? avatar : page.getByTestId("tabbar-more");
+    await hydrated(toWorkspace);
+    await toWorkspace.click();
+    await page.getByRole("tablist", { name: "Workspace sections" }).getByRole("tab", { name: "Engines" }).click();
+    const account = page.getByTestId("engine-connected-account");
+    const disconnect = account.getByTestId("connected-account-disconnect");
+    await expect(disconnect).toBeVisible();
+    await disconnect.click();
+    await expect(page.getByTestId("connected-account-note")).toHaveText("Account disconnected.");
+    await expect(account.locator(".cw-engine").first()).toHaveText("Not connected");
+
+    /* The old check lands now, with the account's old tools. */
+    const landed = page.waitForEvent("requestfinished", (request) => request.url().includes("/api/higgsfield/consumer/capabilities"));
+    release();
+    await landed;
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
+
+    /* Business is not told the account is connected: it says connect, from the answer Engines shared. */
+    await page.locator('[data-suite-tab="business"]').click();
+    await expect(page.getByTestId("ads-connect")).toHaveText(/Connect the account in Workspace › Engines\./);
+
+    /* Back on Tools within the minute: the late answer is not reused; the page checks again and says connect first. */
+    await page.locator('[data-suite-tab="atomik"]').click();
+    await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Tools$/ }).click();
+    await expect(page.getByTestId("reach-summary")).toHaveText("Connect the account in Workspace › Engines");
+    expect(checks).toBe(2);
+    for (const pill of await page.getByTestId("reach-connected").getByTestId("reach-status").all()) await expect(pill).toHaveText("Connect first");
+    await expect(page.getByTestId("reach-engines")).toBeVisible();
+    await expect(page.getByText(/of 14 available/)).toHaveCount(0);
+    await noSideScroll(page);
+    expect(errors).toEqual([]);
+  } finally { release(); }
+});
+
+test("Tools: each workspace gets its own reach answer — back in a workspace where they are a member, none of the other's shows and nothing is asked", async ({ page, playwright }, info) => {
+  test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "one wide, one phone");
+  const ownerApi = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
+  const { workspace: joined } = await joinLocallyAsMember(ownerApi, page.request);
+  await ownerApi.dispose();
+  const me = await page.request.get("/api/me").then((r) => r.json()) as { owner: boolean; workspaces: { id: string }[] };
+  expect(me.owner, "the page holds a member's session in the workspace they joined").toBe(false);
+  const own = me.workspaces.find((w) => w.id !== joined.id);
+  expect(own, "the member owns a workspace of their own").toBeTruthy();
+  await forbidPaidWork(page);
+  const { errors } = watch(page);
+  let checks = 0;
+  await page.route("**/api/higgsfield/consumer/capabilities", (route) => { checks++; return route.fulfill({ json: reachChecked() }); });
+  /* Switching workspace is the app's own route; the app then loads the shell again. */
+  const switchTo = async (id: string) => {
+    const switched = await page.request.post("/api/workspaces/switch", { data: { id } });
+    expect(switched.ok(), await switched.text()).toBe(true);
+    await page.goto(TOOLS_PAGE);
+  };
+  const memberSees = async () => {
+    await expect(page.getByTestId("reach-summary")).toHaveText("Only the workspace owner uses the connected account");
+    for (const pill of await page.getByTestId("reach-connected").getByTestId("reach-status").all()) await expect(pill).toHaveText("Owner only");
+    await expect(page.getByTestId("reach-check")).toHaveCount(0);
+  };
+
+  /* In the workspace they joined, a member: the page says who uses the account, and asks nothing. */
+  await page.goto(TOOLS_PAGE);
+  await memberSees();
+  expect(checks).toBe(0);
+  /* In their own workspace they are the owner: the account is checked for that workspace. */
+  await switchTo(own!.id);
+  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available · checked");
+  expect(checks).toBe(1);
+  /* Back in the joined workspace: none of that answer, and still nothing asked. */
+  await switchTo(joined.id);
+  await memberSees();
+  await expect(page.getByText(/of 14 available/)).toHaveCount(0);
+  expect(checks).toBe(1);
+  /* Returning to their own workspace reads it again, for that workspace. */
+  await switchTo(own!.id);
+  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available · checked");
+  expect(checks).toBe(2);
+  await noSideScroll(page);
+  expect(errors).toEqual([]);
 });
