@@ -14,8 +14,9 @@ import { composePrompt, craftModules } from "../lib/studio";
  * preload none, playing only while in view) or a drawing of what it does; `#`
  * in the words opens the bank as a typeahead. A pick is written into the words
  * the way the bank composes it, sent as `shotSpec`, and Recreate brings it
- * back onto the chips. Nothing here submits: the one press stops at the price
- * check, and every paid route fails the test.
+ * back onto the chips. Nothing here reaches a paid route: a press stops at the
+ * price check (a batch, at a mocked admission), and every paid route without a
+ * mock fails the test.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -458,5 +459,54 @@ test("a connected take's setup, kept only in its words, comes back onto the chip
   expect(priced[0]).toMatchObject({ prompt: composePrompt(`${GULL}.`, { move: "pull", light: "soft" }), shotSpec: { move: "pull", light: "soft" } });
   expect(String(priced[0].prompt)).not.toMatch(/travels forward/);
   expect(await noOverflow(page)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+/* Takes 2–4 of one Generate go as one batch (lib/workspace/take-batch.ts): every take is priced and sent in the words as sent. */
+test("a batch of four takes carries the chips' setup in every take it prices and sends", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors } = await open(page);
+  /* This workspace's batch, mocked: every take priced at 31 and admitted as running; nothing runs. */
+  const quotes: Record<string, unknown>[] = [], sends: Record<string, unknown>[] = [];
+  await page.route("**/api/generate/quote", (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    quotes.push(body);
+    return route.fulfill({ json: { estimatedCredits: 31, fingerprint: String(body.variation).repeat(64).slice(0, 64), unit: "cr" } });
+  });
+  await page.route(/\/api\/generate$/, (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    sends.push(body);
+    return route.fulfill({ json: { id: `gen_fv_take_${body.variation}`, status: "running" }, headers: { "Idempotency-Status": "complete" } });
+  });
+  await page.route(/\/api\/jobs\/gen_fv_take_\d+(\?.*)?$/, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").pop()!;
+    return route.fulfill({ json: { generation: generation({ id, kind: "video", status: "running", prompt: WORDS }) } });
+  });
+  await page.getByTestId("gen-prompt").fill(WORDS);
+  const sheet = page.getByTestId("gen-film-sheet");
+  await chip(page, "shot").click();
+  await sheet.locator("[data-option='shot:cu']").click();
+  await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Close-up");
+  await chip(page, "camera").click();
+  await sheet.locator("[data-option='move:push']").click();
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Push in");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  const stepper = page.getByRole("group", { name: "Takes per generate" });
+  for (let n = 1; n < 4; n++) await stepper.getByRole("button", { name: "More" }).click();
+  await expect(page.getByTestId("gen-takes-count")).toHaveText("4");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 124 cr");
+  await page.getByTestId("gen-generate").click();
+
+  /* Four quotes, then four sends, each with the setup written in once and kept as data; one batch. */
+  await expect.poll(() => sends.length).toBe(4);
+  const spec = { shot: "cu", move: "push" };
+  for (const body of [...quotes, ...sends]) expect(body).toMatchObject({ prompt: composePrompt(WORDS, spec), shotSpec: spec });
+  expect(quotes.map((q) => q.variation)).toEqual([1, 2, 3, 4]);
+  expect(sends.map((s) => s.variation)).toEqual([1, 2, 3, 4]);
+  expect(new Set(sends.map((s) => s.batchId)).size).toBe(1);
+  await expect(page.getByRole("status").filter({ hasText: "4 takes sent at 124 cr." })).toBeVisible();
+  /* The box still holds the person's words. */
+  await expect(page.getByTestId("gen-prompt")).toHaveValue(WORDS);
   expect(errors).toEqual([]);
 });
