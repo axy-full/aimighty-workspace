@@ -1119,8 +1119,6 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_billed ON generations(billed_to)`,
-        /* The jobs tray's read: one person's takes, by when they settled. */
-        `CREATE INDEX IF NOT EXISTS idx_gen_settled ON generations(created_by, settled_at)`,
       ]) {
         await addIndex(c, stmt);
       }
@@ -1129,10 +1127,13 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          change into the settled set stamps it (the writer's updated_at when it
          moved one, else the database's clock); one out of it clears it; and a
          change within it (a late success after a timeout) stamps it again. Writes
-         that leave the status alone never touch it. Only the tray reads it, so a
-         database that refuses a trigger still boots; the tray then shows no
-         recently finished takes there. */
-      for (const stmt of [
+         that leave the status alone never touch it. The jobs tray reads it by
+         person (the index). One round trip on every boot; only the tray reads
+         any of it, so a database that refuses it still boots, and the tray then
+         shows no recently finished takes there. */
+      try {
+        await c.batch([
+        `CREATE INDEX IF NOT EXISTS idx_gen_settled ON generations(created_by, settled_at)`,
         `CREATE TRIGGER IF NOT EXISTS gen_settled_on_insert AFTER INSERT ON generations
           WHEN NEW.status IN ('succeeded','failed','cancelled') AND NEW.settled_at IS NULL
           BEGIN UPDATE generations SET settled_at = COALESCE(NEW.updated_at, NEW.created_at) WHERE id = NEW.id; END`,
@@ -1143,9 +1144,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
             WHEN NEW.updated_at > OLD.updated_at THEN NEW.updated_at
             ELSE CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) END
           WHERE id = NEW.id; END`,
-      ]) {
-        try { await c.execute(stmt); } catch (e) { console.error("settled_at trigger not installed:", (e as Error).message); }
-      }
+        ], "write");
+      } catch (e) { console.error("settled_at index and triggers not installed:", (e as Error).message); }
 
       /* One-time correction: stills already made were billed to Google.
          They were not. Every one of them went through the Vercel AI Gateway
