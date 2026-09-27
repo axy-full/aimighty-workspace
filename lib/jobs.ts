@@ -189,11 +189,11 @@ export function rowToGeneration(r: any): Generation {
     totalTokens: vendorUnits ? null : r.total_tokens ?? null,
     /* The unit this workspace pays in, and only that one.
        A workspace on the platform's keys is sent `creditsBilled` — the
-       ledger's own figure, computed here where the margin lives — and NOT
-       `cost_usd`, which is what the vendor charged the platform. Sending both
-       was how the markup came to be a subtraction away on any take card. A
-       workspace on its own keys gets the dollars, because those are the
-       dollars that left its account. */
+       ledger's own figure, computed here on the server — and NOT `cost_usd`,
+       which is what the vendor charged the platform. Sending both put a vendor
+       cost beside our price on every take card. A workspace on its own keys
+       gets the dollars, because those are the dollars that left its
+       account. */
     costUsd: inCredits || providerCreditQuote ? null : (r.cost_usd ?? null),
     refineCostUsd: inCredits || providerCreditQuote ? null : (r.refine_cost_usd ?? null),
     providerCreditQuote,

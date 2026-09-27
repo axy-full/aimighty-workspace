@@ -4,6 +4,7 @@ import { platformDb } from "./platform";
 import { billingStateFor } from "./billingLedger";
 import { modelLabel } from "./models";
 import { PROVIDERS } from "./providers";
+import { spendByPerson, type LedgerViewer } from "./usageLedger";
 import { visibleUsageParams } from "./usageParams";
 
 type Row = Record<string, unknown>;
@@ -44,7 +45,8 @@ export async function creditUsageSummary() {
   };
 }
 
-export async function creditUsage() {
+/** `viewer` decides whose names `byPerson` carries (lib/usageLedger.ts). */
+export async function creditUsage(viewer: LedgerViewer) {
   await ready();
   const ws = requireTenant(),
     summary = await creditUsageSummary(),
@@ -57,7 +59,6 @@ export async function creditUsage() {
     months,
     recent,
     projectNames,
-    personNames,
     stages,
   ] = await Promise.all([
     p.execute({
@@ -85,7 +86,6 @@ export async function creditUsage() {
       args: [ws.id],
     }),
     db().execute("SELECT id,name FROM projects"),
-    db().execute("SELECT id,name FROM users"),
     db().execute(
       "SELECT kind,queue_ms,refine_ms,submit_ms,engine_ms,notice_ms,store_ms,duration_ms+COALESCE(refine_ms,0) AS wait_ms FROM generations WHERE status='succeeded' AND deleted=0 AND (engine_ms IS NOT NULL OR store_ms IS NOT NULL OR refine_ms IS NOT NULL) ORDER BY created_at DESC LIMIT 400",
     ),
@@ -93,8 +93,12 @@ export async function creditUsage() {
   const projectLabel = new Map(
     projectNames.rows.map((r) => [String(r.id), String(r.name)]),
   );
-  const personLabel = new Map(
-    personNames.rows.map((r) => [String(r.id), String(r.name)]),
+  const byPerson = await spendByPerson(
+    people.rows.map((r) => ({
+      author: r.created_by == null ? "" : String(r.created_by),
+      ...amount(r),
+    })),
+    viewer,
   );
   const ids = recent.rows.map((r) => String(r.id));
   // Whitelist metadata from this tenant. Never serialize a generation row or
@@ -159,10 +163,7 @@ export async function creditUsage() {
           : (projectLabel.get(String(r.project_id)) ?? "Deleted production"),
       ...amount(r),
     })),
-    byPerson: people.rows.map((r) => ({
-      name: personLabel.get(String(r.created_by)) ?? "Unknown",
-      ...amount(r),
-    })),
+    byPerson,
     byMonth: months.rows.map((r) => ({ month: String(r.month), ...amount(r) })),
     recent: recent.rows.map((r) => {
       const detail = descriptionsById.get(String(r.id));

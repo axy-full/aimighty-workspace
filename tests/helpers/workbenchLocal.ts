@@ -11,8 +11,8 @@ export function localPlatformDbUrl() {
   return url;
 }
 
-/** Create an isolated local account through the real invitation and signup routes. */
-export async function signInLocally(api: APIRequestContext) {
+/** Create an isolated local account through the real invitation and signup routes. `name` tells two accounts apart. */
+export async function signInLocally(api: APIRequestContext, name = "Workbench Tester") {
   const base = process.env.PW_BASE_URL || "http://localhost:4551";
   test.skip(
     !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(base),
@@ -33,7 +33,7 @@ export async function signInLocally(api: APIRequestContext) {
       args: [
         code,
         email,
-        "Workbench Tester",
+        name,
         "Local browser test",
         "test",
         Date.now(),
@@ -46,7 +46,7 @@ export async function signInLocally(api: APIRequestContext) {
   const signup = await api.post("/api/auth/signup", {
     data: {
       code,
-      name: "Workbench Tester",
+      name,
       email,
       workspace: `Browser ${code}`,
       password: "a local browser test passphrase 42",

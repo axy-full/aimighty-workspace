@@ -223,9 +223,8 @@ export async function getChat(chatId: string): Promise<{
  * (lib/price.ts: "every figure that reaches this hook is ALREADY in credits").
  *
  * The stored estimates are the engines' dollars, and the browser has no
- * margin to convert them with — which is how an estimate of $0.90 used to
- * read "1 cr" on a button that then billed 14. A workspace that pays in
- * credits gets, in their place: each step's estimate as admission bills it
+ * margin to convert them with. A workspace that pays in credits gets,
+ * in their place: each step's estimate as admission bills it
  * (the same `billCredits` at the same margin key that the /api/generate and
  * /api/audio ceilings check), what the ledger billed for each step that ran,
  * and what its planning turns were billed. The dollars themselves are left

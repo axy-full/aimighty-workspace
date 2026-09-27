@@ -16,47 +16,46 @@ Copied verbatim from docs/particl-sow.md, section 3. The scope of work is the so
 
 # Pricing
 
-Copied verbatim from docs/particl-sow.md, section 7A. Decided for launch. Anything that spends real money stops and asks first (SOW §13.8); anything that changes what a workspace is charged changes this document too.
+Copied verbatim from docs/particl-sow.md, section 7A. Decided for launch. Anything that spends real money stops and asks first (SOW §13.8); a change to what customers see (plans, packs, the rate card) changes this document too.
 
-The governing rule: **every tier is profitable even if the customer uses everything included.** Cost every inclusion at full use, at engine cost plus 3% payment fees. Typical usage (40–60% of inclusions) is where the margin lives; worst case is the floor.
+Pricing policy (multipliers, margins, floor guard, volume phases) is kept privately by the owner; it is not in this repo. What follows is what customers see and what the code must guarantee. Anything that changes what a workspace is charged needs the owner's approval.
 
 ### Credits
-- **1 credit = US$0.10, fixed.** Sell price = engine cost × 1.5, rounded up to the next whole credit per job. Batches multiply before rounding.
-- The ledger stores `engine_cost_usd`, `billed_credits` and `margin_pct` per job. The rate card is generated from the adapter registry, never hand-edited.
-- **Floor guard:** if any engine's rolling 7-day margin drops under 10%, its sell multiplier auto-raises to restore 1.5× and the platform admin is alerted. This runs in the metering layer, not in a spreadsheet.
-- **The aimighty workspace is billed at cost.** For now, the aimighty workspace (and any other workspace flagged `internal: true` in the admin console) has its sell multiplier set to 1.0 — credits are charged at exact engine cost plus payment fees, with no platform margin, and no platform fee. It sits on the same ledger, the same metering, the same statements as every other workspace; the only difference is the multiplier. This is a per-workspace override on the same field that Phase B tunes per engine, so it costs nothing to build and nothing to remove. The admin console shows internal workspaces separately in spend and margin reporting so they never distort the platform's numbers.
-- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe. This is how a production stays competitive while per-clip prices sit above aggregators with volume rates.
+- **1 credit = US$0.10, fixed**, the public price. A credit's price is `creditUsd()` (`lib/creditTerms.ts`, overridable by `CREDIT_USD`).
+- Every job is priced from engine cost through the margin table (`margins()` in `lib/creditTerms.ts`, overridable by the `CREDIT_MARGINS` env var) and rounded up to the next whole credit per job. Batches multiply before rounding. The table is keyed by engine, so pricing one engine differently is a config change, not a refactor.
+- The ledger stores `engine_cost_usd` and `billed_credits` per job. The rate card is generated from the adapter registry, never hand-edited.
+- Customers never receive vendor costs for work on the platform's keys: no engine cost or margin reaches anyone but a platform admin, and a vendor cost is never shown next to our price. A workspace on its own keys sees its own vendors' dollars.
+- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe.
 
-Reference rate card at launch (regenerate from live engine costs before publishing):
+Reference rate card at launch, in credits (regenerate from the code before publishing):
 
 **CORRECTED 10 September 2026, from `lib/vendorRates.ts`.** The card below was
 written from costs that did not match the code, and it was wrong in both
-directions — Kling 3.0 Pro read $1.68 for what the rates say is $0.84 (the
-per-second figure doubled), and Topaz read $0.40 for what is really $1.50.
-Published, it would have over-quoted one row twofold and under-quoted another
-fourfold. The app has always billed from the real rates; it was the card that
-lied. Two rows named engines that do not exist and are gone.
+directions. Published, it would have over-quoted one row twofold and
+under-quoted another fourfold. The app has always billed from the real rates;
+it was the card that lied. Two rows named engines that do not exist and are
+gone.
 
 Every figure is computed, not asserted: per-second engines are
 `rate x seconds` (`secondRateOf`), Seedance is token-priced off the billed
 frame (`billedFrame` rounds each side up to a multiple of 16, which is why
 1080p is metered at 1088), stills come from `imagePricing`, and every "sells
-at" is `ceil(cost x 1.5 / 0.10)`.
+at" goes through `billCredits`.
 
-| Action | Engine cost | Sells at |
-|---|---|---|
-| Standard still (Nano Banana 2, 512) | ~$0.045 | 1 cr |
-| Keyframe still (Nano Banana Pro, 1K) | ~$0.134 | 3 cr |
-| Kling 3.0 Standard, 5s 1080p | ~$0.42 | 7 cr |
-| Kling 3.0 Standard, 5s 1080p, audio | ~$0.63 | 10 cr |
-| Kling 3.0 Pro, 5s 1080p, audio | ~$0.84 | 13 cr |
-| Seedance 2.0, 5s 1080p | ~$1.88 | 29 cr |
-| Seedance 2.5, 5s 720p | ~$1.16 | 18 cr |
-| Seedance 2.5, 5s 1080p | ~$2.86 | 43 cr |
-| Topaz upscale, 5s 1080p | ~$1.50 | 23 cr |
-| Topaz upscale, 5s 4K | ~$2.50 | 38 cr |
-| Identity training (1,500 steps) | ~$3.60 | 54 cr |
-| Prompt enhancement | ~$0.01 | 1 cr |
+| Action | Sells at |
+|---|---|
+| Standard still (Nano Banana 2, 512) | 1 cr |
+| Keyframe still (Nano Banana Pro, 1K) | 3 cr |
+| Kling 3.0 Standard, 5s 1080p | 7 cr |
+| Kling 3.0 Standard, 5s 1080p, audio | 10 cr |
+| Kling 3.0 Pro, 5s 1080p, audio | 13 cr |
+| Seedance 2.0, 5s 1080p | 29 cr |
+| Seedance 2.5, 5s 720p | 18 cr |
+| Seedance 2.5, 5s 1080p | 43 cr |
+| Topaz upscale, 5s 1080p | 23 cr |
+| Topaz upscale, 5s 4K | 38 cr |
+| Identity training (1,500 steps) | 54 cr |
+| Prompt enhancement | 1 cr |
 
 Gone from the card, because the engine is not in the product: **Wan 2.6** —
 `alibaba/wan-v3.0-video` appears only in the gateway shortlist and gateway
@@ -65,8 +64,8 @@ video is explicitly unrunnable — and **Veo 3.1**, which is in neither
 ElevenLabs rather than per call, so it has no single figure and is not a card
 row; see the audio terms.
 
-Identity training is $3.60, not $2.00: 1,500 steps at $0.0024 (`TRAIN_STEPS`,
-`TRAIN_USD_PER_STEP` in `lib/identities.ts`), with a 1,000-step floor.
+Identity training is priced per step (`TRAIN_STEPS`, `TRAIN_USD_PER_STEP` in
+`lib/identities.ts`), with a 1,000-step floor.
 
 ### Tiers
 
@@ -92,14 +91,14 @@ region of UI (`--color-panel`). Rule 5 says one vocabulary, decided once, so
 the tier work uses **plan** for the subscription and keeps `tier` meaning what
 it already means.
 
-| Tier | Price | Included | Members | Worst-case cost | Worst-case gross |
-|---|---|---|---|---|---|
-| **Invite** | $0 | 250 cr once, 1 production | 3 | $3.50 | marketing cost |
-| **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited | $38 | $11 · 22% |
-| **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
-| **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited | $750 | $249 · 25% |
+| Tier | Price | Included | Members |
+|---|---|---|---|
+| **Invite** | $0 | 250 cr once, 1 production | 3 |
+| **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited |
+| **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited |
+| **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited |
 
-- **Included credits expire at cycle end. No rollover.** Breakage is real margin. (Panels struck, 10 September — see the amendment above.)
+- **Included credits expire at cycle end. No rollover.** (Panels struck, 10 September — see the amendment above.)
 - **No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.
 - **Annual: 20% off.** Auto-cancel: if a workspace has generated nothing in the 60 days before renewal, don't renew — let it lapse and say so.
 - ~~Panel inclusions are on the standard engine only.~~ Struck 10 September with the panel rows. Pro stills and all video draw credits regardless of plan — which, with panels gone, is simply: everything draws credits.
@@ -138,21 +137,9 @@ nothing can leave a plan, and the two differ only for someone who has.
 | Agency | $2,000 | 20,000 + 4,000 | $0.083 |
 
 ### Guardrails in code
-1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`); each approval costs ~$3.50.
+1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`).
 2. Bonus credits never exceed 20% of a pack.
 3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
 4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
 5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
-6. Workspaces flagged `internal: true` bill at multiplier 1.0 and pay no platform fee. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
-
-### What changes at volume (do not build now — flags only)
-- **Phase B (~$20–50k/mo engine spend):** volume rates from ModelArk, Kling and fal at committed spend, target 20–30% off. **Hold sell prices flat**; margin rises to ~50%. Move standard panels to GPU-hour open weights (panel cost under 1¢). Per-engine multipliers tuned from the ledger: premium 1.7×, commodity 1.4×.
-- **Phase C (300+ workspaces):** own GPU pool for open-weight draft video, enterprise contracts, BYOK for large studios on a higher platform fee, recipe marketplace with revenue share.
-
-Build the adapter so the multiplier is per engine from day one, even though it launches at a flat 1.5×. That's a config change later, not a refactor.
-
-### Milestones
-Hard fixed costs ≈ $300/mo. Typical contribution: Studio ~$32, Agency ~$110, Production ~$550.
-- Break-even on hard costs: ~10 Studio or 3 Agency.
-- One salary (~$4k/mo): ~15 Agency + 30 Studio, or 4 Production + 10 Agency.
-- ~$25k/mo contribution: ~40 Agency + 100 Studio + 8 Production — roughly where Phase B rates lift every number by ~15 points.
+6. Workspaces flagged `internal: true` carry a pricing override set by the private policy. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
