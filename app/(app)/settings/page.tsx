@@ -589,8 +589,9 @@ function SettingsContent() {
                             )}
                           </Row>
                         )}
-                        <Link className="management-link" href="/workbench">
-                          Open Atomik in the studio <ArrowUpRight size={13} />
+                        {/* /workbench switches to the Studio home now; Atomik has its own suite. */}
+                        <Link className="management-link" href="/suites?suite=atomik&page=agent">
+                          Open Atomik <ArrowUpRight size={13} />
                         </Link>
                       </ManagementCard>
                     </>
@@ -648,6 +649,9 @@ function SettingsContent() {
                             <span>Kept indefinitely</span>
                           </Row>
                         </div>
+                        <Link className="management-link" href="/platform">
+                          How files, vendors and access are handled <ArrowUpRight size={13} />
+                        </Link>
                       </ManagementCard>
                       <ManagementCard title="Asset controls">
                         <Row

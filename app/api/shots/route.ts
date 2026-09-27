@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { billedCreditsSum } from "@/lib/creditSql";
-import { creditsApply } from "@/lib/credits";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { listShots, createShot, codeProblem } from "@/lib/shots";
 import { requireTenant } from "@/lib/tenant";
+import { creditsApply } from "@/lib/credits";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 export const dynamic = "force-dynamic";

@@ -15,6 +15,7 @@ import {creditsApply} from "@/lib/credits";
 import {requireTenant} from "@/lib/tenant";
 import { billCredits, marginKeyOf } from "@/lib/creditTerms";
 import { usageLedgerResponse } from "@/lib/usageLedger";
+import { visibleUsageParams } from "@/lib/usageParams";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -311,7 +312,7 @@ export const GET = withTenant(async function GET(req: Request) {
       refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
       refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
       totalTokens: Number(r.total_tokens),
-      params: JSON.parse(r.params || "{}"),
+      params: visibleUsageParams(r.params),
       createdAt: Number(r.created_at),
     })),
     /* Median, not mean: a single render that waited on a dead cron would

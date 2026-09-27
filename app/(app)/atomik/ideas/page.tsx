@@ -29,7 +29,7 @@ import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import { useProject } from "@/lib/projectContext";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useDraft } from "@/lib/useDraft";
-import { usd } from "@/lib/format";
+import { textCostLabel } from "@/lib/textCostLabel";
 import { useMoney } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
@@ -82,7 +82,8 @@ export default function IdeasPage() {
   }
   async function remove(i: Row) {
     if (!(await appConfirm(`Delete idea #${String(i.num).padStart(2, "0")}?`, "Its project, if it has one, stays.", { confirmLabel: "Delete", danger: true }))) return;
-    await fetch(`/api/atomik/ideas/${i.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/atomik/ideas/${i.id}`, { method: "DELETE" });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); await appAlert("Not deleted", j.error ?? `The server answered ${res.status}.`); return; }
     refresh();
   }
   /* Writing the treatment is what makes a production: the idea gets a
@@ -94,12 +95,20 @@ export default function IdeasPage() {
     const res = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.id) { await appAlert("Couldn't create the project", json.error); return; }
-    await fetch(`/api/atomik/ideas/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: json.id, state: "pinned" }) });
-    await fetch("/api/atomik/treatment", {
+    /* The project exists from here on. If linking the card or seeding the
+       treatment fails, say which, and stay on the card: the project is kept
+       and the treatment can be written by hand. */
+    const failed = async (res: Response) => (res.ok ? null : ((await res.json().catch(() => ({}))).error as string | undefined) ?? `The server answered ${res.status}.`);
+    const linked = await failed(await fetch(`/api/atomik/ideas/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: json.id, state: "pinned" }) }));
+    const seeded = linked ? null : await failed(await fetch("/api/atomik/treatment", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId: json.id, ideaId: i.id, title: name.trim(), logline: i.logline, setup: {}, scenes: [{ n: 1, title: "", secs: 5, prose: "" }], notes: [] }),
-    });
+    }));
     refreshProjects(); refresh();
+    if (linked || seeded) {
+      await appAlert(linked ? `${name.trim()} was made, but this card isn't linked to it` : `${name.trim()} was made, but its treatment wasn't started`, linked ?? seeded ?? "");
+      return;
+    }
     setSelection(json.id);
     router.push("/atomik/treatment");
   }
@@ -201,10 +210,9 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
   const pendingBody=paid.pending?JSON.parse(paid.pending.body):null;
   const d:IdeaDraft=pendingBody?{...currentDraft,logline:pendingBody.brief,tone:pendingBody.tone,model:pendingBody.model,effort:pendingBody.effort??"auto"}:currentDraft;
   const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");
+  /* What the model replaced, so one click brings the person's own words back. */
+  const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; cost: string | null } | null>(null);
   const money = useMoney();
-  /* What the model replaced, so one click brings the person's own words back, and what the writing
-     cost in this workspace's unit: the credits billed, or its own dollars on its own keys. */
-  const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; cost: string } | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const patch = (p: Partial<IdeaDraft>) => set((x) => ({ ...x, ...p }));
 
@@ -224,9 +232,10 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
     onWriting();
     setBusy("write");
     try {
-      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number;writingCredits?:number}>("/api/atomik/ideas/draft",pendingBody ?? {brief:d.logline,tone:d.tone,model:quote!.model,effort:d.effort??"auto",maxCredits:quote!.estimateCredits});
-      setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model),
-        cost: money.inCredits ? (typeof j.writingCredits === "number" ? money.price(j.writingCredits) : "") : usd(Number(j.costUsd ?? 0), 3) });
+      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number;credits?:number|null}>("/api/atomik/ideas/draft",pendingBody ?? {brief:d.logline,tone:d.tone,model:quote!.model,effort:d.effort??"auto",maxCredits:quote!.estimateCredits});
+      /* What the ledger billed, in credits; dollars only for a workspace on its own keys. */
+      const cost = textCostLabel(money, j);
+      setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model), cost });
       patch({
         logline: typeof j.logline === "string" && j.logline ? j.logline : d.logline,
         tone: Array.isArray(j.tone) && j.tone.length ? j.tone.join(", ") : d.tone,

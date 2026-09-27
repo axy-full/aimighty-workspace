@@ -7,6 +7,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import {
@@ -73,10 +74,25 @@ type Workspace = {
   setSheet: (sheet: MobileSheetId | null) => void;
   /** Replaces the URL (no new history entry), e.g. after a selection repair. */
   syncUrl: () => void;
-  /** Shows a line for 2.6 s, or `ms` — longer for a toast that carries its own action (an Undo). */
-  toast: (text: string, ms?: number) => void;
+  /** A confirmation; with an action it carries one button (an Open to where the result is, or an Undo) and stays longer. */
+  toast: (text: string, action?: ToastAction) => void;
+  /** The action of the toast on screen, for the text it was given with. */
+  toastAction: { text: string; action: ToastAction } | null;
+  /** Hovering or focusing an actionable toast holds it on screen; leaving lets it go. */
+  holdToast: (hold: boolean) => void;
   plans: PlanSource;
 };
+
+export type ToastAction = {
+  label: string;
+  run: () => void;
+  /** "undo" is the phone's ⌘Z (lib/shell/state › pushUndo); anything else opens where the result is. */
+  kind?: "open" | "undo";
+  /** Shown only while this holds: an Undo while its step is still the one ⌘Z would undo. */
+  live?: () => boolean;
+};
+const TOAST_MS = 2600;
+const ACTION_TOAST_MS = 6000;
 
 const NO_KEEP: readonly string[] = [];
 const WorkspaceContext = createContext<Workspace | null>(null);
@@ -160,11 +176,20 @@ export function WorkspaceProvider({
   }, [target]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toast = useCallback((text: string, ms = 2600) => {
+  const [toastAction, setToastAction] = useState<{ text: string; action: ToastAction } | null>(null);
+  const clearToast = useCallback(() => { dispatch({ type: "toast", text: "" }); setToastAction(null); }, [dispatch]);
+  const toast = useCallback((text: string, action?: ToastAction) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
+    const open = action && typeof action.label === "string" && typeof action.run === "function" ? action : null;
     dispatch({ type: "toast", text });
-    toastTimer.current = setTimeout(() => dispatch({ type: "toast", text: "" }), ms);
-  }, [dispatch]);
+    setToastAction(open && text ? { text, action: { label: open.label, kind: open.kind, live: open.live, run: () => { clearToast(); open.run(); } } } : null);
+    toastTimer.current = setTimeout(clearToast, open ? ACTION_TOAST_MS : TOAST_MS);
+  }, [dispatch, clearToast]);
+  const holdToast = useCallback((hold: boolean) => {
+    if (!ref.current.toast) return;
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = hold ? null : setTimeout(clearToast, TOAST_MS);
+  }, [clearToast]);
 
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -208,8 +233,10 @@ export function WorkspaceProvider({
     setSheet: (sheet) => dispatch({ type: "patch", patch: { sheet } }),
     syncUrl: () => writeUrl(ref.current, "replace", target),
     toast,
+    toastAction,
+    holdToast,
     plans,
-  }), [state, dispatch, commit, toast, plans, target]);
+  }), [state, dispatch, commit, toast, toastAction, holdToast, plans, target]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

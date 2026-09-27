@@ -91,7 +91,12 @@ export const GET = withTenant(async function GET() {
       : r.status === "queued" || r.status === "running" ? "rendering" : r.status === "failed" ? "failed on" : "rendered";
     lastBy.set(String(r.project_id), { at: Number(r.updated_at), who: r.who ?? null, what: `${verb} ${what}` });
   }
+  /* A workspace on credits is shown credits. The vendor's dollars beside them
+     would give the margin away, so `spend` is withheld (0) there, as in
+     /api/shots and lib/jobs.ts; `unit` says which figure is the workspace's. */
+  const inCredits = creditsApply(requireTenant());
   const body = {
+    unit: inCredits ? "cr" : "usd",
     projects: rs.rows.map((r: any) => ({
       id: r.id,
       name: r.name,
