@@ -10,6 +10,7 @@ test("the SQL rounding agrees with the meter", async () => {
   const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
   const dir = mkdtempSync(path.join(tmpdir(), "particl-sql-"));
   const c = createClient({ url: `file:${path.join(dir, "t.db")}` });
+  await c.execute(`CREATE TABLE credit_receipts(event_id TEXT PRIMARY KEY, credits REAL, revision INTEGER)`);
   await c.execute(`CREATE TABLE generations (id TEXT, kind TEXT, model TEXT, cost_usd REAL, refine_cost_usd REAL)`);
   const rows: [string, string, string, number, number | null][] = [
     ["a", "video", "dreamina-seedance-2-5-260628", 2.864, 0.002],

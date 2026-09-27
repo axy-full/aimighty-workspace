@@ -59,7 +59,7 @@ export default function ProductionsPage() {
   const totals = useMemo(() => {
     const projects = all.reduce((a, p) => a + p.projects.length, 0);
     const need = all.reduce((a, p) => a + p.needYou, 0);
-    const spent = all.reduce((a, p) => a + (money.inCredits ? p.spentCredits : p.spentUsd), 0);
+    const spent = all.reduce((a, p) => a + ((money.inCredits ? p.spentCredits : p.spentUsd) ?? 0), 0);
     const cap = all.reduce((a, p) => a + (money.inCredits ? (p.capCredits ?? 0) : (p.capUsd ?? 0)), 0);
     return { productions: all.length, projects, need, spent, cap };
   }, [all, money.inCredits]);
@@ -134,8 +134,9 @@ export default function ProductionsPage() {
 }
 
 function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = false }: { production: ProductionRow; fmt: (n: number) => string; inCredits: boolean; onNewProject: () => void; phone?: boolean }) {
-  const spent = inCredits ? p.spentCredits : p.spentUsd;
-  const cap = inCredits ? p.capCredits : p.capUsd;
+  /* Each workspace is sent its own unit alone (lib/productions.ts). */
+  const spent = (inCredits ? p.spentCredits : p.spentUsd) ?? 0;
+  const cap = inCredits ? p.capCredits : (p.capUsd ?? null);
   if (phone) return (
     <section className="legacy-project-group legacy-project-group-phone flex flex-col gap-[12px] rounded-mobile border border-border bg-card py-[14px]">
       <div className="flex items-center gap-[10px] px-[14px]">
@@ -184,8 +185,8 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
 }
 
 function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: { production: ProductionRow; project: ProjectRow; fmt: (n: number) => string; inCredits: boolean; phone?: boolean }) {
-  const spent = inCredits ? j.spentCredits : j.spentUsd;
-  const cap = inCredits ? j.capCredits : j.capUsd;
+  const spent = (inCredits ? j.spentCredits : j.spentUsd) ?? 0;
+  const cap = inCredits ? j.capCredits : (j.capUsd ?? null);
   const line = [j.format || null, j.runtimeSecs ? clock(j.runtimeSecs) : null].filter(Boolean).join(" · ");
   if (phone) return (
     <Link href={`/productions/${production.id}/${j.id}/media`} style={{ scrollSnapAlign: "start" }}

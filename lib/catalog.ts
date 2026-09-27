@@ -355,28 +355,3 @@ export function textQuoteCostUsd(m: CatalogModel, inTokens: number, outTokens: n
   }
   return Math.max(...costs);
 }
-
-/** A short, honest price label for a menu row. */
-export function priceLabel(m: CatalogModel): string {
-  const p = m.pricing;
-  if (!p) return "";
-  if (m.type === "video") {
-    const tiers = p.video_duration_pricing as DurationTier[] | undefined;
-    if (Array.isArray(tiers) && tiers.length) {
-      const rates = tiers.map((t) => num(t.cost_per_second)).filter((n): n is number => n != null);
-      if (rates.length) {
-        const lo = Math.min(...rates);
-        return `from $${lo.toFixed(3)}/s`;
-      }
-    }
-    if (p.video_token_pricing) return "priced by token";
-    return "";
-  }
-  if (m.type === "image") {
-    const flat = num(p.image);
-    return flat != null ? `$${flat.toFixed(3)}/image` : "priced by token";
-  }
-  const i = num(p.input), o = num(p.output);
-  if (i == null && o == null) return "";
-  return `$${((i ?? 0) * 1e6).toFixed(2)}/$${((o ?? 0) * 1e6).toFixed(2)} per Mtok`;
-}

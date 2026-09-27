@@ -155,8 +155,8 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       /* `needs` is re-derived, not read back.
          The snapshot written when the take was held is what the PERSON was
          told; it is not what the take will cost. Those came apart the moment
-         the margin moved to a flat 1.5 (§7A): a take held at 40 credits would
-         be released as soon as the balance covered 40, then bill 43 — a
+         the margin table changed (§7A): a take held at the old price would be
+         released as soon as the balance covered it, then bill the new one — a
          workspace pushed negative by a price change it never saw. Whatever is
          released has to be measured against what it costs NOW.
          The snapshot is still the fallback, for a row old enough to have no

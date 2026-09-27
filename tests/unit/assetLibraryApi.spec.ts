@@ -110,6 +110,7 @@ async function routes(initial: TenantWorkspace) {
       ...productions,
       listProductions: (...args: Parameters<typeof productions.listProductions>) => { reads++; return productions.listProductions(...args); },
     },
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/push": {},
   };
