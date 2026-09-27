@@ -8,28 +8,29 @@
 import { compactTokens, hours, dur, pct } from "@/lib/format";
 import { useMoney } from "@/lib/price";
 
+/* `spend`, `promptSpend` and `credit` are vendor dollars: /api/analytics sends them only to a workspace on its own keys. */
 export type Analytics = {
   scope: { projectId: string; days: number };
   totals: {
     generations: number; succeeded: number; failed: number; pending: number;
-    binned: number; spend: number; credits: number; promptSpend: number; prompts: number;
+    binned: number; spend?: number; credits: number; promptSpend?: number; prompts: number;
     tokens: number; renderMs: number;
     people: number; shots: number; successRate: number;
   };
-  credit: { toppedUp: number; spentAllTime: number };
-  byProject: { id: string | null; name: string; n: number; spend: number; credits: number;
+  credit?: { toppedUp: number; spentAllTime: number };
+  byProject: { id: string | null; name: string; n: number; spend?: number; credits: number;
                failed: number; people: number; renderMs: number }[];
-  byPerson: { id: string; name: string; n: number; spend: number; credits: number;
+  byPerson: { id: string; name: string; n: number; spend?: number; credits: number;
               failed: number; projects: number }[];
-  byModel: { model: string; label: string; n: number; spend: number; credits: number;
+  byModel: { model: string; label: string; n: number; spend?: number; credits: number;
              failed: number; avgMs: number | null }[];
   byShot: { id: string; code: string; scene: string; title: string; status: string;
-            takes: number; spend: number; credits?: number; ok: number; failed: number; latest: number }[];
+            takes: number; spend?: number; credits?: number; ok: number; failed: number; latest: number }[];
   byStatus: { status: string; n: number }[];
-  byDay: { day: number; n: number; spend: number; credits: number }[];
+  byDay: { day: number; n: number; spend?: number; credits: number }[];
   stuck: { model: string; resolution: string; n: number; avgMs: number | null;
            maxMs: number; failed: number; retried: number }[];
-  byCategory: { category: string; n: number; spend: number; credits: number; failed: number;
+  byCategory: { category: string; n: number; spend?: number; credits: number; failed: number;
                 avgMs: number | null; projects: number; shots: number }[];
   patterns: {
     avgPromptLength: number; refined: number; withCast: number;
@@ -52,7 +53,7 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
 
 /** A labelled bar list — the same shape for projects, people and models. */
 export function BarList({ rows, empty }: {
-  rows: { key: string; label: string; value: number; credits?: number; note?: string }[];
+  rows: { key: string; label: string; value?: number; credits?: number; note?: string }[];
   empty: string;
 }) {
   const money = useMoney();

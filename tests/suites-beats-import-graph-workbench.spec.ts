@@ -54,6 +54,8 @@ test("a Final Draft beat sheet PDF is read, priced, and summarised by the agent 
 
   await page.getByTestId("beats-import-file").setInputFiles({ name: "The Crossing - Beat Board.pdf", mimeType: "application/pdf", buffer: screenplayPdf(SHEET) });
   await expect(page.getByTestId("beats-import-source")).toContainText(/The Crossing - Beat Board\.pdf · 2 pages · [\d,]+ characters read/);
+  /* The page shows the source at once; the draft's autosave writes it a moment later. */
+  await expect.poll(async () => (await read()).production?.beatSource?.name, { timeout: 15_000 }).toBe("The Crossing - Beat Board.pdf");
   const source = (await read()).production.beatSource;
   expect(source).toMatchObject({ name: "The Crossing - Beat Board.pdf", pages: 2 });
   expect(source.text).toContain("Mara lets the fox go.");
@@ -72,6 +74,7 @@ test("a Final Draft beat sheet PDF is read, priced, and summarised by the agent 
   await expect(board.locator('.pd-act[data-act="2"] [data-testid="beat-scene"]')).toHaveCount(1);
   await expect(board.locator('.pd-act[data-act="3"] [data-testid="beat-scene"]')).toHaveCount(1);
   await expect(page.getByTestId("beats-breakdown")).toContainText("these beats came from The Crossing - Beat Board.pdf");
+  await expect.poll(async () => (await read()).production?.beats?.sourceName, { timeout: 15_000 }).toBe("The Crossing - Beat Board.pdf");
   const beats = (await read()).production.beats;
   expect(beats).toMatchObject({ source: "upload", sourceName: "The Crossing - Beat Board.pdf" });
   expect(beats.scenes.map((s: BeatScene) => [s.heading, s.act])).toEqual([

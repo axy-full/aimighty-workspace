@@ -1,6 +1,7 @@
 import { audioClips, type AudioClip } from "./audio";
 import { nodeAudioBody, type NodeAudioTask } from "./generation-audio";
 import { uid, type Asset, type CanvasNode, type Project } from "./studio";
+import { stableId } from "./stable-id";
 
 /**
  * Edit & Sound: generating straight into the timeline lanes.
@@ -63,8 +64,10 @@ export function createSoundNode(project: Project, task: SoundJobTask): CanvasNod
   const index = isSoundTool(task)
     ? SOUND_TASKS.length + SOUND_TOOLS.findIndex((t) => t.id === task)
     : SOUND_TASKS.findIndex((t) => t.id === task);
+  /* One lane per sound task: made in two windows at once, it is still one node (one id). A locked lane keeps its id; a new one beside it gets its own. */
+  const id = stableId("node", soundNodeRole(task));
   return {
-    id: uid("node"),
+    id: project.nodes.some((n) => n.id === id) ? uid("node") : id,
     type: "audio",
     mode: "Audio",
     role: soundNodeRole(task),
