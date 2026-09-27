@@ -1,5 +1,6 @@
 import { libraryId, libraryName, type LibraryAsset } from "../genLibrary";
 import { engineLabel } from "./engines";
+import { DRAFT_RESOLUTION, FINAL_RESOLUTION, finalOf, isDraft } from "../draftFinal";
 
 /**
  * The Takes page: the project library (GET /api/workbench/library →
@@ -37,6 +38,8 @@ export type Take = {
   usd: number | null;
   status: TakeStatus;
   failedUnbilled?: true;
+  /** Draft mode (lib/draftFinal.ts): a 480p draft, or the 1080p final made from the draft `of`. */
+  pair?: { role: "draft" } | { role: "final"; of: string };
   sha256: string | null;
   createdAt: number;
 };
@@ -71,12 +74,14 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
       : g.reviewState === "approved" ? "approved" : g.reviewState === "picked" ? "picked" : g.reviewState === "changes" ? "changes" : "review";
     const unbilled = failed && !((billedCredits ?? 0) > 0) && !((g.costUsd ?? 0) > 0);
     const sha = typeof g.params.originalSha256 === "string" && SHA.test(g.params.originalSha256) ? g.params.originalSha256 : null;
+    const of = finalOf(g.params);
+    const pair = isDraft(g.params) ? { role: "draft" as const } : of ? { role: "final" as const, of } : null;
     return {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
-      meta: [label, detail].filter(Boolean).join(" · "),
+      meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : billedCredits ?? null,
       usd: !settled ? null : unbilled ? (g.costUsd == null ? null : 0) : g.costUsd ?? null,
-      status, ...(unbilled ? { failedUnbilled: true as const } : {}), sha256: sha, createdAt: g.createdAt,
+      status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(pair ? { pair } : {}), sha256: sha, createdAt: g.createdAt,
     };
   });
 }

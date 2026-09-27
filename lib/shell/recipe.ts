@@ -83,6 +83,8 @@ export function recreateBlock(g: Pick<Generation, "kind" | "model" | "params" | 
   const p = g.params ?? {};
   if (p.task === "dialogue" || Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
   if (p.sourceGenId || p.sourceUploadId || SOURCE_TASKS.has(p.task)) return "This take was made from a source clip. Run that tool again from Takes.";
+  /* A final has no recipe of its own: its words, references and settings are its draft's (lib/draftFinal.ts). */
+  if (typeof p.finalOf === "string") return "A 1080p final is made from its draft. Recreate the draft instead.";
   if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Gen. Run that tool again.";
   if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business, with its product and setup. Make it again from Ads.";
   /* Anything else Gen did not make itself. Every original the connected account delivered is receipted
@@ -113,6 +115,8 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
   if (resolution) picks.resolution = resolution;
   if (duration) picks.duration = duration;
   if (soulId) picks.soulId = soulId;
+  /* A draft comes back as a draft: 480p first, its final after (lib/draftFinal.ts). */
+  if (params.draft === true) picks.draft = true;
 
   const references: RecipeReference[] = [];
   if (type !== "audio" && Array.isArray(params.references)) {
@@ -231,7 +235,7 @@ export function nearestSetting<T extends string | number>(want: T, offered: read
 /* ── What Gen holds against what the take was made with ──────────────── */
 
 export type RecipeChip = {
-  key: "model" | "ratio" | "resolution" | "duration" | "identity" | "length";
+  key: "model" | "ratio" | "resolution" | "duration" | "draft" | "identity" | "length";
   label: string;
   /** "16:9", or "21:9 → 16:9" when Gen now holds something else. */
   value: string;
@@ -293,6 +297,9 @@ export function recipeChips(input: {
   compare("ratio", "Aspect", picks.ratio, settings.ratio, model.ratios, String);
   compare("resolution", "Resolution", picks.resolution, settings.resolution, model.resolutions, String);
   compare("duration", "Length", picks.duration, settings.duration, model.durations, (v) => `${v} s`);
+  if (picks.draft)
+    chips.push(settings.draft ? { key: "draft", label: "Draft", value: "Draft first", state: "kept" }
+      : { key: "draft", label: "Draft", value: "Draft → full take", state: "changed", why: `${model.label} has no draft mode` });
 
   if (picks.soulId) {
     const found = input.identities?.find((c) => c.soulId === picks.soulId && c.status !== "training" && c.status !== "failed");

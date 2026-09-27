@@ -15,9 +15,10 @@ import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { entryBatch, findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
-import { groupSiblings, isVariation, stripLabel, takeLabel } from "@/lib/variations";
+import { entryBatch, entryDraft, findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { groupTakes, isVariation, stripLabel, takeLabel } from "@/lib/variations";
 import { TakeStrip } from "../TakeStrip";
+import { DraftStrip } from "../DraftFinal";
 import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -73,8 +74,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   useStageFacts("takes", project);
   /* Every generation first; then every asset, each in one group — its production category, else its kind. */
   const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
-  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
-  const generationCells = useMemo(() => groupSiblings(generations, entryBatch), [generations]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order; a draft and its final as another (lib/variations.ts). */
+  const generationCells = useMemo(() => groupTakes(generations, entryBatch, entryDraft), [generations]);
   const groups = useMemo(() => assetGroups(items, project), [items, project]);
   /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
@@ -214,7 +215,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         </div>
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
-            {generationCells.map((cell) => cell.kind === "one" ? takeButton(cell.take) : (
+            {generationCells.map((cell) => cell.kind === "one" ? takeButton(cell.take) : cell.kind === "draft" ? (
+              /* The pair and where it stands; the final itself is made from Gen or the Inspector. */
+              <DraftStrip key={`draft:${cell.draftId}`} scope={scope} projectId={projectId} draft={cell.draft} finals={cell.finals} plain actions={false} testId="takes-draft"
+                tile={(e, label) => takeButton(e, label)} />
+            ) : (
               <TakeStrip key={`batch:${cell.batchId}`} batchId={cell.batchId} testId="takes-batch" state="done" plain name={cell.takes[0].take.name}
                 label={stripLabel(cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return isVariation(v) ? v : i + 1; }))}>
                 {cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return takeButton(e, takeLabel(isVariation(v) ? v : i + 1)); })}

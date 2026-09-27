@@ -667,7 +667,8 @@ export function useComposer(options: {
     if (!now.model) return;
     const model = now.model, composer = now.state;
     /* Two to four takes go as ONE batch at the total on the button (lib/workspace/take-batch.ts). */
-    const count = Math.max(1, composer.count);
+    /* A draft goes one at a time (lib/draftFinal.ts): its final is made from it, take by take. */
+    const count = now.settings.draft ? 1 : Math.max(1, composer.count);
     /* What the button shows is what this press approves: one take's price, or the batch's total. */
     const shown = count > 1 ? shownTotal(now.quote, now.quoteKey, count) : now.credits;
     busy.current = true;
@@ -953,6 +954,7 @@ export function useComposer(options: {
                   references,
                   firstFrameAssetId: "",
                   shotSpec: now.sent.shotSpec,
+                  ...(settings.draft ? { draft: true } : {}),
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null, projectId: project.id }),
@@ -1141,8 +1143,8 @@ export function useComposer(options: {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
     /** What the account says it rendered for the last connected take, once it completed. */
     connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
-    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
-    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
+    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
     audio, capability, project: target, projectNotice, generate, retryEngines, scope,

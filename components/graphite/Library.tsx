@@ -5,7 +5,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { pairOrder, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useSession } from "@/lib/session";
 import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
@@ -64,7 +64,8 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
   const live = usePublishedProject();
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
-  const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  /* A draft sits beside the 1080p final made from it (lib/draftFinal.ts): a linked pair in the flat grid. */
+  const shown = useMemo(() => pairOrder(filterAssets(items, filter, query, filed)), [items, filter, query, filed]);
   /* A read that failed is said first, with Retry, where it is seen: on a short phone, behind a search and three rows
      of filters, it sat under the tab bar. With nothing read at all, there is nothing to search or filter either. */
   const failed = Boolean(error && !ready);
@@ -140,6 +141,7 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
                     {entry.url && (entry.media === "image" || entry.media === "video") ? <LazyMedia url={entry.url} kind={entry.media} alt="" name={entry.take.name} /> : null}
                     <span className="gx-badge">{entry.media === "video" ? "VIDEO" : entry.media === "audio" ? "AUDIO" : entry.media === "image" ? "IMAGE" : "FILE"}</span>
                     {fresh ? <span className="gx-badge gx-badge--new">NEW</span> : null}
+                    {entry.take.pair ? <span className="gx-badge gx-badge--pair" data-testid="library-pair">{entry.take.pair.role === "draft" ? "DRAFT" : "FINAL"}</span> : null}
                   </button>
                   <div className="gx-asset-row">
                     <span className="gx-asset-name">{entry.take.name}</span>

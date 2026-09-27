@@ -21,9 +21,20 @@ import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import {
   getModel,
   DEFAULT_MODEL_ID,
+  MODELS,
   dimensionsFor,
   billedFrame,
 } from "@/lib/models";
+import {
+  DRAFT_RESOLUTION,
+  FINAL_RESOLUTION,
+  draftDate,
+  draftExpired,
+  draftExpiresAt,
+  draftSentAt,
+  finalHoldsDraft,
+  isDraft,
+} from "@/lib/draftFinal";
 import { estimateCostUsd, estimateImageCostUsd } from "@/lib/vendorPricing";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
@@ -185,6 +196,99 @@ function validateReferences(
   return null;
 }
 
+/** What a draft's final is made from: the draft's own row, never the request (lib/draftFinal.ts). */
+type FinalSource = {
+  draftId: string;
+  modelId: string;
+  /** The words the draft rendered, kept on the final's row; the vendor reuses them, nothing sends them. */
+  prompt: string;
+  projectId: string | null;
+  shotId: string | null;
+  params: VideoParams;
+  expiresAt: number;
+  inputSeconds: number;
+  hasVideoInput: boolean;
+  /** The final the draft named when it was read ("" for none): the claim only lands if it still names it. */
+  heldBy: string;
+  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string> };
+};
+type FinalRefusal = { error: string; status: number; finalId?: string };
+/** The keys a final's request may carry. Everything else about it is its draft's; where it files
+ *  (`projectId`, `shotId`) is read from the draft and replaces whatever the request said. */
+const FINAL_KEYS = new Set(["finalOf", "model", "refine", "maxCredits", "reason", "projectId", "shotId"]);
+/** A second final lost the race for its draft: the transaction is rolled back and nothing is reserved. */
+class DraftClaimedError extends Error {}
+
+async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSource | FinalRefusal> {
+  const draftId = typeof body.finalOf === "string" ? body.finalOf : "";
+  if (!/^[A-Za-z0-9_-]{1,160}$/.test(draftId)) return { error: "Name the draft to make the final from.", status: 400 };
+  if (Object.keys(body).some((key) => !FINAL_KEYS.has(key) && body[key] != null))
+    return { error: "A final is made from its draft alone: its words, references, length and shape are the draft's.", status: 400 };
+  const row = (await db().execute({
+    sql: `SELECT id, kind, model, prompt, params, status, ark_task_id, project_id, shot_id, created_at
+          FROM generations WHERE id = ? AND deleted = 0 LIMIT 1`,
+    args: [draftId],
+  })).rows[0];
+  if (!row) return { error: "That draft is no longer in this workspace.", status: 404 };
+  let params: Record<string, unknown> = {};
+  try { params = JSON.parse(String(row.params || "{}")); } catch { /* unreadable: not a draft */ }
+  const model = MODELS.find((m) => m.id === String(row.model));
+  if (String(row.kind || "video") !== "video" || !isDraft(params) || !model?.supportsDraft)
+    return { error: "That take is not a draft, so it has no final to make.", status: 400 };
+  if (body.model != null && body.model !== model.id) return { error: "A final renders on its draft's engine.", status: 400 };
+  if (row.status === "failed" || row.status === "cancelled") return { error: "That draft did not render, so it has no final to make.", status: 409 };
+  if (row.status !== "succeeded" || !row.ark_task_id) return { error: "The draft is still rendering. Make its final once it lands.", status: 409 };
+  const expiresAt = draftExpiresAt(draftSentAt(Number(row.created_at), (params.producedOutcome as { queueMs?: unknown } | undefined)?.queueMs));
+  if (draftExpired(expiresAt))
+    return { error: `This draft expired on ${draftDate(expiresAt)}. A final can only be made within seven days of its draft.`, status: 409 };
+  /* One final per draft. A final that failed without a charge lets the draft go again; any other holds it. */
+  const heldBy = typeof params.finalGenId === "string" ? params.finalGenId : "";
+  if (heldBy) {
+    const prior = (await db().execute({ sql: `SELECT status, cost_usd FROM generations WHERE id = ? LIMIT 1`, args: [heldBy] })).rows[0];
+    if (prior && finalHoldsDraft({ status: String(prior.status), charged: Number(prior.cost_usd ?? 0) > 0 }))
+      return { error: "This draft already has its final.", status: 409, finalId: heldBy };
+  }
+  const ratio = typeof params.ratio === "string" ? params.ratio : "";
+  const duration = Number(params.duration);
+  if (ratio === "adaptive" || !model.ratios.includes(ratio) || !model.durations.includes(duration))
+    return { error: "The draft's length or shape cannot be read, so its final cannot be priced.", status: 409 };
+  const hasVideoInput = params.hasVideoInput === true;
+  const inputSeconds = hasVideoInput ? Number(params.inputSeconds) : 0;
+  if (!Number.isFinite(inputSeconds) || inputSeconds < 0)
+    return { error: "The draft's reference video length cannot be read, so its final cannot be priced.", status: 409 };
+  const shotSpec = shotSpecOf(params.shotSpec);
+  /* Filed where the draft is: its shot, as its next take, while the shot and project are still there. */
+  const shot = row.shot_id == null ? null : await getShot(String(row.shot_id));
+  const project = row.project_id == null ? null
+    : (await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [String(row.project_id)] })).rows[0];
+  return {
+    draftId,
+    modelId: model.id,
+    prompt: String(row.prompt ?? ""),
+    projectId: project ? String(row.project_id) : shot?.projectId ?? null,
+    shotId: shot ? shot.id : null,
+    /* The final's own settings are the ones the vendor lets it set; the rest is recorded so the
+       take reads true and prices right, and is never sent (lib/ark.ts › buildFinalRequestBody). */
+    params: {
+      ratio, resolution: FINAL_RESOLUTION, duration, watermark: false,
+      seed: typeof params.seed === "number" ? params.seed : null,
+      cameraFixed: false,
+      generateAudio: model.supportsAudio && params.generateAudio === true,
+      task: "generate", outputFormat: "mp4", characterOrientation: "video", fps60: false,
+      draftTaskId: String(row.ark_task_id),
+    },
+    expiresAt,
+    inputSeconds,
+    hasVideoInput,
+    heldBy,
+    carried: {
+      ...(typeof params.rawPrompt === "string" ? { rawPrompt: params.rawPrompt } : {}),
+      ...(Array.isArray(params.cast) ? { cast: params.cast.filter((c): c is string => typeof c === "string").slice(0, 20) } : {}),
+      ...(shotSpec ? { shotSpec } : {}),
+    },
+  };
+}
+
 /** Shared admission preserves the composer's validation, compilation and spending checks.
  * Preparation stops at the final checkpoint; only admission writes a generation. */
 export async function executeGenerationAdmission(
@@ -218,6 +322,20 @@ export async function executeGenerationAdmission(
       }
     }
 
+    /* A draft's 1080p final (lib/draftFinal.ts) is made from the draft's row alone: it files where the
+       draft is, on the draft's engine, and every setting the vendor reuses comes from there. */
+    const final = body.finalOf != null ? await draftFinalSource(body) : null;
+    if (final && "error" in final)
+      return admissionReply(
+        { error: final.error, ...(final.finalId ? { finalId: final.finalId } : {}) },
+        { status: final.status },
+      );
+    if (final) {
+      body.model = final.modelId;
+      body.projectId = final.projectId ?? undefined;
+      body.shotId = final.shotId ?? undefined;
+    }
+
     if (body.projectId) {
       const project = await db().execute({
         sql: `SELECT id FROM projects WHERE id=?`,
@@ -237,8 +355,10 @@ export async function executeGenerationAdmission(
         );
       body.projectId = shot.projectId;
     }
-    const prompt = String(body.prompt ?? "").trim();
+    /* A final sends no words: the vendor reuses the draft's. */
+    const prompt = final ? "" : String(body.prompt ?? "").trim();
     if (
+      !final &&
       !prompt &&
       !getTask(String(body.task ?? "generate")).promptOptional &&
       !stillToolFor(String(body.model ?? ""))
@@ -351,6 +471,19 @@ export async function executeGenerationAdmission(
      * ------------------------------------------------------------------ */
     const notices: string[] = [];
     const task = getTask(String(body.task ?? "generate"));
+    /* A draft (lib/draftFinal.ts): a new take at 480p with the watermark on, on an engine with draft
+       mode and on its own route. Priced as any 480p take; the vendor meters it as one. */
+    if (body.draft != null && typeof body.draft !== "boolean")
+      return admissionReply({ error: "Say whether this take is a draft." }, { status: 400 });
+    const draft = body.draft === true;
+    if (draft) {
+      if (!model.supportsDraft)
+        return admissionReply({ error: `${model.label} has no draft mode.` }, { status: 400 });
+      if (task.id !== "generate" || body.sourceGenId || body.sourceUploadId)
+        return admissionReply({ error: "A draft is a new take; edits and extensions have no draft here." }, { status: 400 });
+      if (body.resolution != null && body.resolution !== DRAFT_RESOLUTION)
+        return admissionReply({ error: `A draft renders at ${DRAFT_RESOLUTION}.` }, { status: 400 });
+    }
     const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
     /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
     const sourceUploadId =
@@ -604,18 +737,22 @@ export async function executeGenerationAdmission(
       }
     }
 
-    const params: VideoParams = {
+    const params: VideoParams = final ? { ...final.params } : {
       ratio: model.ratios.includes(body.ratio) ? body.ratio : model.ratios[0],
-      resolution: model.resolutions.includes(body.resolution)
-        ? body.resolution
-        : model.resolutions[0],
+      resolution: draft
+        ? DRAFT_RESOLUTION
+        : model.resolutions.includes(body.resolution)
+          ? body.resolution
+          : model.resolutions[0],
       duration:
         task.forceDuration === "source"
           ? (sourceSeconds ?? model.durations[0] ?? 5)
           : model.durations.includes(Number(body.duration))
             ? Number(body.duration)
             : (model.durations[0] ?? 5),
-      watermark: Boolean(body.watermark ?? false),
+      /* Drafts carry the engine's watermark; nothing else does unless asked for. */
+      watermark: draft || Boolean(body.watermark ?? false),
+      ...(draft ? { draft: true } : {}),
       seed: body.seed === "" || body.seed == null ? null : Number(body.seed),
       cameraFixed: Boolean(body.cameraFixed ?? false),
       generateAudio: model.supportsAudio
@@ -859,7 +996,8 @@ export async function executeGenerationAdmission(
         },
         { status: 400 },
       );
-    inputSeconds = knownInputSeconds;
+    /* A final is metered on its draft's input video seconds (never the draft's own clip). */
+    inputSeconds = final ? final.inputSeconds : knownInputSeconds;
     if (model.kind === "video") {
       const refProblem = validateReferences(referenceDurations, model);
       if (refProblem)
@@ -1400,9 +1538,11 @@ export async function executeGenerationAdmission(
      * The stored prompt is what actually generated the video; the original
      * idea is kept alongside it in params.rawPrompt.
      * ------------------------------------------------------------------ */
-    let finalPrompt = castPrompt;
-    let rawPrompt: string | undefined =
-      castPrompt !== prompt ? prompt : undefined;
+    /* A final keeps the words its draft rendered, as they were recorded; nothing below rewrites them. */
+    let finalPrompt = final ? final.prompt : castPrompt;
+    let rawPrompt: string | undefined = final
+      ? final.carried.rawPrompt
+      : castPrompt !== prompt ? prompt : undefined;
     let refineModel: string | null = null;
     let refineIn = 0,
       refineOut = 0;
@@ -1435,12 +1575,13 @@ export async function executeGenerationAdmission(
     const refineCall = shouldRefine(castPrompt, detectedAxes);
     const writer = await activeWriter();
     if (
+      final ||
       genjutsu ||
       task.id === "motion" ||
       task.id === "upscale" ||
       task.id === "reframe"
     ) {
-      // The clip is the brief: nothing here for a prompt writer to improve.
+      // The clip is the brief (or, for a final, the draft is): nothing here for a prompt writer to improve.
     } else if (/^raw:/i.test(castPrompt)) {
       finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
     } else if (
@@ -1550,7 +1691,7 @@ export async function executeGenerationAdmission(
      * move that serves the action. A prompt that already carries a full module
      * (composed in the Studio) is left alone.
      * ------------------------------------------------------------------ */
-    if (!task.locked && !/^raw:/i.test(castPrompt)) {
+    if (!final && !task.locked && !/^raw:/i.test(castPrompt)) {
       /* Expand only where the library's wording is materially more precise
        * than the author's. Detection found these terms BY reading them, so
        * restating "35mm" as "shot on a 35mm lens" adds a duplicate and no
@@ -1600,6 +1741,7 @@ export async function executeGenerationAdmission(
     /* The platform's rules in scope, as plain sentences at the end — never on
      a raw: prompt, never on a clip that is itself the brief. */
     if (
+      !final &&
       !genjutsu &&
       !/^raw:/i.test(castPrompt) &&
       task.id !== "motion" &&
@@ -1666,6 +1808,9 @@ export async function executeGenerationAdmission(
       params.higgsfieldVendorCostUsd = await estimateGenjutsuInput(modelId,
         await genjutsuInput(modelId, finalPrompt, params.resolution, sourceRef, references.filter(r => r.kind === "image")));
     }
+    /* Whether the input includes video decides the token rate. A final sends no input of its own:
+       its rate, and its input seconds, are its draft's (lib/draftFinal.ts). */
+    const hasVideoInput = final ? final.hasVideoInput : references.some((r) => r.kind === "video");
     const estUsd = params.higgsfieldVendorCostUsd ??
       estimateCostUsd(
         modelId,
@@ -1673,7 +1818,7 @@ export async function executeGenerationAdmission(
         params.ratio,
         params.duration,
         inputSeconds,
-        references.some((r) => r.kind === "video"),
+        hasVideoInput,
         { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
       )?.net ?? 0;
     if (
@@ -1725,13 +1870,24 @@ export async function executeGenerationAdmission(
 
     const genId = id("gen");
     const ts = now();
-    const hasVideoInput = references.some((r) => r.kind === "video");
-    const shotSpec = shotSpecOf(body.shotSpec);
+    const shotSpec = final ? final.carried.shotSpec ?? null : shotSpecOf(body.shotSpec);
     /* The words as they came, whenever what renders differs from them (a camera move chosen for an Auto
        camera, the platform's rules), so Recreate hands back the person's words and never the server's. */
-    if (rawPrompt === undefined && finalPrompt !== prompt) rawPrompt = prompt;
+    if (!final && rawPrompt === undefined && finalPrompt !== prompt) rawPrompt = prompt;
 
-    const storedParams = {
+    /* A final records what it is and where it came from; its references stay the draft's (they are
+       never sent again), so none is listed here to be read, bound or hydrated. */
+    const storedParams: Record<string, unknown> = final ? {
+      ...params,
+      finalOf: final.draftId,
+      draftExpiresAt: final.expiresAt,
+      hasVideoInput,
+      inputSeconds: hasVideoInput ? inputSeconds : undefined,
+      rawPrompt,
+      cast: final.carried.cast,
+      reason: reason ?? undefined,
+      shotSpec: shotSpec ?? undefined,
+    } : {
       ...params,
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
@@ -1815,6 +1971,16 @@ export async function executeGenerationAdmission(
     // The claim is bound in the same write: a claim naming no job proves there is none.
     const binding = await claimBinding(requestClaim, genId);
     await withMediaSources(storedParams, async (tx) => {
+      /* One final per draft: the draft is claimed in the same write as the final's row, and only from
+         the final it named when it was read. Two presses, two tabs or a replay cannot both land. */
+      if (final) {
+        const claimed = await tx.execute({
+          sql: `UPDATE generations SET params=json_set(params,'$.finalGenId',?), updated_at=?
+                WHERE id=? AND deleted=0 AND COALESCE(json_extract(params,'$.finalGenId'),'')=?`,
+          args: [genId, ts, final.draftId, final.heldBy],
+        });
+        if (!claimed.rowsAffected) throw new DraftClaimedError();
+      }
       await tx.execute({
         sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
@@ -1978,6 +2144,8 @@ export async function executeGenerationAdmission(
     if (error instanceof MarketingError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof MediaSourceError)
       return admissionReply({ error: error.message }, { status: 409 });
+    if (error instanceof DraftClaimedError)
+      return admissionReply({ error: "This draft already has its final." }, { status: 409 });
     throw error;
   }
 }
