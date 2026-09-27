@@ -522,3 +522,7 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
     upload: useCallback((files: File[]) => (projectId ? uploadToProject(scope, projectId, files) : Promise.reject(new Error("Open a saved project first."))), [scope, projectId]),
   };
 }
+
+/** Which batch a library entry's take belongs to (Gen's takes 2–4), for lib/variations.ts's strips: a generation's own params. */
+export const entryBatch = (entry: LibraryEntry): { batchId?: unknown; variation?: unknown } | undefined =>
+  entry.asset.origin === "generation" ? (entry.asset.value.params as { batchId?: unknown; variation?: unknown } | undefined) : undefined;

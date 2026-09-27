@@ -215,7 +215,16 @@
 .gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); }
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
-.gx-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+.gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+/* Centred by its margins (#388's line, as it is): gx-pop animates `transform`, which undid the old translate. */
+/* An undo toast carries its own Undo — the phone's ⌘Z; the "⌘Z to undo" half is for keyboards only. */
+.gx-toast[data-undo] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
+.gx-toast-text { min-width: 0; }
+.gx-toast-undo { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(10, 132, 255, .45); background: rgba(10, 132, 255, .16); color: var(--gx-accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+.gx-toast-undo:hover { background: rgba(10, 132, 255, .26); }
+@media (hover: none), (pointer: coarse) { .gx-toast-kbd { display: none; } .gx-toast-undo { height: 44px; min-width: 72px; } }
+/* On a phone the toast sits above the floating tab bar, never over it. */
+@media (max-width: 767px) { .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); } }
 
 /* ── Workspace view ────────────────────────────────────────────────────── */
 .gx-ws { flex: 1; min-height: 0; overflow: auto; background: var(--gx-panel); }
@@ -293,12 +302,44 @@
 .gx-select { height: 36px; width: 100%; padding: 0 34px 0 12px; border-radius: 6px; font-size: 13px; background-color: #1B1B1F; border: 1px solid var(--gx-hair); appearance: none; -webkit-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23A1A1A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
 .gx-gen-go { width: 100%; height: 40px; justify-content: center; }
+/* Generate's label is what it does, then what it costs, and the price is never cut: when a narrow button or a wide
+   font leaves no room, the price wraps whole onto a second line and the button grows with it (never under its
+   usual height). On a phone a priced label always takes two lines, the price under the action. */
+.gx .gx-gen-go.gx-primary { height: auto; min-height: 44px; flex-wrap: wrap; align-content: center; column-gap: 0; row-gap: 2px; padding-top: 4px; padding-bottom: 4px; text-align: center; }
+.gx-go-act, .gx-go-price { white-space: nowrap; }
+.gx-go-sep { white-space: pre; }
+@media (max-width: 767px) {
+  .gx .gx-gen-go.gx-primary { min-height: 52px; }
+  .gx .gx-gen-go.gx-primary[data-priced] { flex-direction: column; flex-wrap: nowrap; row-gap: 1px; line-height: 1.15; }
+  .gx .gx-gen-go[data-priced] .gx-go-sep { display: none; }
+  .gx .gx-gen-go[data-priced] .gx-go-price { font-size: 13px; font-weight: 600; }
+}
 .gx-gen-foot { margin: 0; font-size: 12px; color: var(--gx-text-2); text-align: center; }
 .gx-gen-note { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
 .gx-gen-error { margin: 0; font-size: 12.5px; color: var(--gx-failed, #FF6B6B); }
+/* Where focus waits after a Try again whose row went away (BusinessView ReadProblem); the row itself is main's .gx-retry. */
+[data-focus-home]:focus { outline: none; }
 .gx-gen-results { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx-gen-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .gx-gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+/* Takes 2–4 of one Generate: one strip across the grid, the takes side by side (components/graphite/TakeStrip.tsx).
+   Its words sit on --gx-text-2 or a tone, never dimmer. */
+.gx-batch { grid-column: 1 / -1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-batch-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.gx-batch-label { flex: none; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: var(--gx-text); }
+.gx-batch-name { flex: 1 1 120px; min-width: 0; font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-batch-meta { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-batch-takes { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; min-width: 0; }
+.gx-batch .gx-batch-take { padding: 4px; background: var(--gx-input); }
+.gx-batch .gx-batch-take > .gx-asset-name { font-family: var(--gx-mono); }
+/* A take that has settled (made, refused, never sent) holds still: only one still being followed pulses. */
+.gx-batch .gx-batch-take[data-done="true"] .gx-ring { animation: none; }
+.gx-batch .gx-batch-take > .gx-asset-meta { color: var(--gx-text-2); }
+.gx-batch .gx-batch-take[data-tone="blue"] > .gx-asset-meta { color: var(--gx-accent-text); }
+.gx-batch .gx-batch-take[data-tone="green"] > .gx-asset-meta { color: var(--gx-done); }
+/* The danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
+.gx-batch .gx-batch-take[data-tone="red"] > .gx-asset-meta { color: #FF6961; }
+.gx-batch .gx-batch-take[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
 .gx-running { display: grid; place-items: center; }
 .gx-ring { width: 44px; height: 44px; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); animation: gx-pulse 1.6s ease-in-out infinite; }
 .gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(6px); }
@@ -469,10 +510,12 @@
 .gx .pxw-rig-row[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: -2px; background: var(--gx-tint); }
 /* The same on a Rig canvas node: the shot that will take the asset. */
 .gx .pxw-graph-node[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: 2px; background: var(--gx-tint); }
-.gx-hbtn:disabled { opacity: .4; cursor: default; }
+.gx-hbtn:disabled, .gx-hbtn[aria-disabled="true"] { opacity: .4; cursor: default; }
 
 /* ── Skills · Workspace (FINAL_SPEC §5) ─────────────────────────────── */
 .sk, .wsx { display: flex; flex-direction: column; gap: 14px; padding: 20px; max-width: 1040px; }
+/* The Workspace view is the shell's pane under the header: it scrolls itself (.gx clips), as .cw-page does. */
+.gx-workspace { flex: 1; min-height: 0; overflow-y: auto; }
 .sk-list { display: flex; flex-direction: column; gap: 8px; }
 .sk-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); flex-wrap: wrap; }
 .sk-name { display: block; font-weight: 600; font-family: var(--gx-mono); font-size: 13px; }
@@ -506,8 +549,40 @@
 .wsx-bar { display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12.5px; min-height: 28px; }
 .wsx-bar > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wsx-bar-track { height: 8px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }
-.wsx-bar-fill { height: 100%; border-radius: 999px; background: var(--gx-accent); }
+.wsx-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--gx-accent); }
 .wsx-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* Usage › Ledger (idea 25): one job per row under the bars — what it was and its amount, then when, who and its state. */
+.wsx-ledger, .wsx-ledger-connected { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.wsx-ledger { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--gx-hair); }
+.wsx-ledger-connected { margin-top: 8px; }
+.wsx-ledger-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.wsx-ledger-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--gx-text); }
+.wsx-ledger-month.cw-select { width: auto; max-width: 100%; }
+.wsx-ledger-line { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
+.wsx-ledger-rows { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.wsx-ledger-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "what amt" "meta state"; column-gap: 12px; row-gap: 2px; padding: 9px 0; border-top: 1px solid var(--gx-hair); }
+.wsx-ledger-row:first-child { border-top: 0; }
+.wsx-ledger-what { grid-area: what; font-weight: 600; }
+.wsx-ledger-meta { grid-area: meta; }
+.wsx-ledger-what, .wsx-ledger-meta, .wsx-ledger-when, .wsx-ledger-who { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsx-ledger-who::before { content: " · "; }
+.wsx-ledger-amt { grid-area: amt; font-family: var(--gx-mono); font-size: 12.5px; text-align: right; white-space: nowrap; }
+.wsx-ledger-meta, .wsx-ledger-state { font-size: 12px; color: var(--gx-text-2); }
+.wsx-ledger-state { grid-area: state; text-align: right; white-space: nowrap; }
+/* Wide: a ledger's columns — when, what, who, state, amount. */
+@media (min-width: 768px) {
+  .wsx-ledger-row { grid-template-columns: 124px minmax(0, 1fr) minmax(0, 180px) 150px 96px; grid-template-areas: "when what who state amt"; align-items: baseline; }
+  .wsx-ledger-rows--connected .wsx-ledger-row { grid-template-columns: 124px minmax(0, 1fr) 110px minmax(150px, max-content); grid-template-areas: "when what state amt"; }
+  .wsx-ledger-meta { display: contents; }
+  .wsx-ledger-when { grid-area: when; }
+  .wsx-ledger-who { grid-area: who; }
+  .wsx-ledger-who::before { content: none; }
+  .wsx-ledger-when, .wsx-ledger-who { font-size: 12px; color: var(--gx-text-2); }
+  .wsx-ledger-state { text-align: left; }
+}
+.wsx-ledger-state[data-state="held"], .wsx-ledger-state[data-state="pending"], .wsx-ledger-state[data-state="uncertain"] { color: var(--gx-waiting); }
+.wsx-ledger-state[data-state="failed-charged"] { color: #FF6961; }
+.wsx-ledger-more { align-self: flex-start; }
 @media (max-width: 767px) { .sk, .wsx { padding: 12px; } .sk-cmd { display: none; } }
 
 /* Narrow layout: the header wraps and the segment takes its own row. */

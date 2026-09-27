@@ -45,8 +45,13 @@ test("the project list and the library say they failed and recover on Try again"
   if (!(await page.getByTestId("library").isVisible())) await page.getByTestId("toggle-library").click();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
   await expect(page.getByTestId("library-error")).toContainText("The library is unavailable right now.");
+  /* Said where it is seen: nothing covers its Try again, the phone's tab bar included (it once sat under it on a 360×640 phone,
+     behind the search and the filters, and the library's own retry took it away before a click could land). "Try again" is a
+     read failure's word; "Retry" is a take's own action (⌘R). */
+  const retry = page.getByTestId("library-error").getByRole("button", { name: "Try again" });
+  expect(await retry.evaluate((el) => { const r = el.getBoundingClientRect(), at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Boolean(at && el.contains(at)) && r.bottom <= innerHeight; })).toBe(true);
   libraryFail = false;
-  await page.getByTestId("library-error").getByRole("button", { name: "Try again" }).click();
+  await retry.click();
   await expect(page.getByTestId("library-error")).toHaveCount(0);
   await expect(page.getByTestId("library")).toContainText("Nothing made or uploaded in this project yet.");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

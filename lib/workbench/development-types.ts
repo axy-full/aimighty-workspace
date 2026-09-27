@@ -71,6 +71,8 @@ export type DevelopmentJob = {
   completedChunks: number; totalChunks: number; currentStage: DevelopmentStage | 'complete';
   completedSteps: number; totalSteps: number;
   estimateCredits: number; estimateUsd?: number; credits: number | null; costUsd?: number | null;
+  /** Paid on the workspace's own key for this vendor, not in credits. A failed run on credits is never billed (`credits` 0). */
+  ownKey?: boolean;
   result: DevelopmentResult | null; error: string | null; createdAt: number; updatedAt: number;
   resultPage?: { offset: number; totalChunks: number; hasMore: boolean };
 };

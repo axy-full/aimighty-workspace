@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
+import { POLL, pollDelay, presentTimeout, type PollRate } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { ESTIMATE_LIFETIME_MS, mergeRuns, pendingJobIds, runAfterStatus, runCannotSettle, runInFlight, viralFailure, type ViralRun } from "./viral";
@@ -14,7 +15,9 @@ import { ESTIMATE_LIFETIME_MS, mergeRuns, pendingJobIds, runAfterStatus, runCann
  * page's variant), a read-only quote for exactly the current input (the
  * *live estimate* the primary requires), submit at that exact price, and
  * reading every run still in flight — including ones sent before this page
- * opened — until the account settles it, at the pace the account asks for.
+ * opened — until the account settles it, at the pace the account asks for
+ * (never inside it), with lib/poll's jitter so runs and tabs do not ask in
+ * step, and nothing while the tab is hidden.
  * A status read that fails for a run still on the account is said plainly
  * on its row (reconnect, storage, an outage) while it keeps being asked
  * after, less often; one that would fail the same way every time (the run is
@@ -47,6 +50,8 @@ const ENDPOINT = "/api/higgsfield/consumer/genjutsu";
 const POLL_MS = 4000;
 /** The longest a run in flight waits between reads, and how many reads a run that cannot move on its own gets. */
 const POLL_MAX_MS = 60_000, STALL_READS = 3;
+/** A run's pace, by lib/poll's rules: 4 s, doubling while it is unchanged, up to a minute, ±20%; while it renders, the account's pollAfterSeconds (up to a minute) instead, never inside it. */
+const VIRAL_PACE: PollRate = { ...POLL, startMs: POLL_MS, factor: 2, capMs: POLL_MAX_MS, hintCapMs: POLL_MAX_MS, missCapMs: POLL_MAX_MS };
 type Watch = { at: number; reads: number; status: string };
 /** Why a run is no longer read on its own: nothing can move it, or a read would fail the same way every time (gone, or an earlier account connection). */
 export type Stall = "unconfirmed" | "gone";
@@ -194,7 +199,12 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
   }), []);
   const problemOf = useCallback((job: { id: string; status: string }): string | null => (runInFlight(job.status) ? problems[job.id] ?? null : null), [problems]);
   const watch = useRef(new Map<string, Watch>());
-  /** When a run is read next: at the account's own pace while it renders, backing off while it is unchanged; a run that cannot move on its own, or whose read would fail the same way again, stops. */
+  /**
+   * When a run is read next: at the account's own pace while it renders (a
+   * half second past its window, jittered upward only, so the read never lands
+   * inside it), backing off while it is unchanged (jittered ±20%); a run that
+   * cannot move on its own, or whose read would fail the same way again, stops.
+   */
   const schedule = useCallback((id: string, job: GenjutsuJob | null, pollAfterSeconds?: number) => {
     const prev = watch.current.get(id);
     if (job && !runInFlight(job.status)) { watch.current.delete(id); return; }
@@ -206,14 +216,14 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
       setStalled((prior) => new Map(prior).set(id, { status, why: job ? "unconfirmed" : "gone" }));
       return;
     }
-    const backoff = Math.min(POLL_MS * 2 ** (reads - 1), POLL_MAX_MS);
-    const wait = job.status === "accepted" && pollAfterSeconds ? Math.min(pollAfterSeconds * 1000, POLL_MAX_MS) : backoff;
+    const hint = job.status === "accepted" && pollAfterSeconds ? pollAfterSeconds : null;
+    const wait = pollDelay(hint ? 0 : reads - 1, { rate: VIRAL_PACE, hintSeconds: hint });
     watch.current.set(id, { at: Date.now() + wait, reads, status });
   }, []);
   /** Unreadable for now (the network, an outage, a reconnect, full storage, the route's budget): said on the run, and read again later, less often. */
   const later = useCallback((id: string, problem: string) => {
     const prev = watch.current.get(id);
-    watch.current.set(id, { at: Date.now() + Math.min(POLL_MS * 2 ** (prev?.reads ?? 0), POLL_MAX_MS), reads: (prev?.reads ?? 0) + 1, status: prev?.status ?? "" });
+    watch.current.set(id, { at: Date.now() + pollDelay(prev?.reads ?? 0, { rate: VIRAL_PACE }), reads: (prev?.reads ?? 0) + 1, status: prev?.status ?? "" });
     say(id, problem);
   }, [say]);
   const readRun = useCallback(async (id: string) => {
@@ -236,8 +246,10 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
   }, [draftId, scoped, land, schedule, later, say]);
   /*
    * Every run in flight is read until it settles — the one just sent and any
-   * the list found still rendering — one per tick at most, in turn, each when
-   * it is due, so four at once cost no more requests than one. A hidden tab waits.
+   * the list found still rendering — one at a time, in turn, each when it is
+   * due and never within a tick of the read before it, so four at once cost no
+   * more requests than one. A hidden or offline tab asks nothing; the read that
+   * fell due is made the moment it is back (lib/poll's presentTimeout).
    */
   const pollKey = pendingJobIds(
     jobs.filter((j) => !stalledAs(j)),
@@ -246,17 +258,27 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
   useEffect(() => {
     if (!draftId || !pollKey) return;
     const ids = pollKey.split(",");
-    let turn = 0, busy = false;
-    const timer = setInterval(() => {
-      if (busy || document.hidden) return;
+    let turn = 0, busy = false, stopped = false, last = Date.now();
+    let cancel: (() => void) | null = null;
+    const plan = () => {
+      if (stopped || busy) return;
+      cancel?.();
+      const due = Math.min(...ids.map((id) => watch.current.get(id)?.at ?? 0));
+      cancel = presentTimeout(fire, Math.max(0, Math.max(due, last + POLL_MS) - Date.now()));
+    };
+    function fire() {
+      cancel = null;
+      if (stopped || busy) return;
       const now = Date.now();
       const next = ids.map((_, k) => (turn + k) % ids.length).find((i) => (watch.current.get(ids[i])?.at ?? 0) <= now);
-      if (next === undefined) return;
+      if (next === undefined) { plan(); return; }
       turn = next + 1;
       busy = true;
-      readRun(ids[next]).catch(() => undefined).finally(() => { busy = false; });
-    }, POLL_MS);
-    return () => clearInterval(timer);
+      last = now;
+      readRun(ids[next]).catch(() => undefined).finally(() => { busy = false; plan(); });
+    }
+    plan();
+    return () => { stopped = true; cancel?.(); };
   }, [draftId, pollKey, readRun]);
   /** A run left alone is read again, from the start. */
   const recheck = useCallback((id: string) => {

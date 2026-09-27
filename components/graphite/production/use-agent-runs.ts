@@ -88,12 +88,14 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
 
   /**
    * Starts the quoted request, or recovers the unconfirmed one — never both,
-   * never twice. True once the server holds the request (a refusal, a no-op
-   * or an unconfirmed start is false), so a caller clears its notes only then.
+   * never twice. True once the server holds the run (a refusal, a no-op, a
+   * run that failed on arrival or an unconfirmed start is false), so a caller
+   * clears what went with it — the director's notes — only then.
    */
   const start = useCallback(async (): Promise<boolean> => {
     if (!loaded || (!pending && !quote)) return false;
     let held = false;
+    const take = (record: PendingDevelopment, job: DevelopmentJob) => { accept(record, job); held = !job.error && job.status !== "failed" && job.status !== "uncertain"; };
     epoch.current++;
     setBusy(pending ? "Recovering…" : "Starting…"); setError("");
     try {
@@ -102,17 +104,16 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
         if (active.current) setPending(record);
         if (pending) {
           const known = (await lookup(record)).jobs.find((job) => job.requestId === developmentInput(record).requestId);
-          if (known) { accept(record, known); held = !known.error; return; }
+          if (known) { take(record, known); return; }
         }
         try {
           const next = await studioRequest<{ job: DevelopmentJob }>(ENDPOINT, { method: "POST", headers: headers(), body: record.body });
-          accept(record, next.job);
-          held = !next.job.error;
+          take(record, next.job);
         } catch (cause) {
           let absent = false;
           try {
             const known = (await lookup(record)).jobs.find((job) => job.requestId === developmentInput(record).requestId);
-            if (known) { accept(record, known); held = !known.error; return; }
+            if (known) { take(record, known); return; }
             absent = true;
           } catch { /* an ambiguous failure keeps the exact request for recovery */ }
           const status = Number((cause as { status?: number })?.status);

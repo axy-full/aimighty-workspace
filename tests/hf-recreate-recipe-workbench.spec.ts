@@ -136,6 +136,9 @@ async function hiddenRows(page: Page) {
 
 /** The card lands clear of the band: every row, or on the shortest phone every row but the setup's. */
 async function landsClear(page: Page, info: TestInfo) {
+  /* The confirmation toast is centred at the page's foot for a moment (at 844×390 over the card's lower rows): it has to time
+     out, and the card is judged against what stays — the sticky Generate band, the tab bar. */
+  await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 10_000 });
   const hidden = await hiddenRows(page);
   expect(info.project.name === SHORT ? hidden.filter((row) => !row.startsWith("gx-recipe-setup")) : hidden, "card rows hidden").toEqual([]);
 }
