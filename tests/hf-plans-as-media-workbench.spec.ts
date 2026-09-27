@@ -18,6 +18,9 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.PLANS_MEDIA_SHOTS;
 
+// A background read can outlive the assertions; dispose its routes before the request context closes.
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
+
 type Take = { kind: "video" | "image"; engine: string; label: string; resolution: string; ratio: string; durationS: number | null; audio: boolean; credits: number };
 type WorkspaceTake = Take & { basis: "usual" | "default"; left: number };
 type Group = { kind: "video" | "image"; axis: string; seconds: number | null; rows: { engine: string; label: string; audio: boolean; cells: { option: string; credits: number }[] }[] };
