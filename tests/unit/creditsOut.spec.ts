@@ -352,6 +352,38 @@ test("a legacy held take without an estimate is kept without a reservation or su
   } finally { engine.restore(); }
 });
 
+test("automatic release requires a valid saved approval; an unpriced slot-held take can be approved manually", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { getGeneration } = await import("../../lib/jobs");
+  const release = releaseRoute(() => MEMBER);
+  const engine = await standInEngine();
+  try {
+    await runInTenant(await setup("missing-approval", 100), async () => {
+      const invalid = [null, "15", -1, 14.5];
+      for (const [i, needs] of invalid.entries()) {
+        const id = `gen_co_missing_approval_${i}`;
+        await held(id, MEMBER.id);
+        await db().execute({
+          sql: "UPDATE generations SET params=json_set(params,'$.held.needs',?,'$.held.why','slots') WHERE id=?",
+          args: [needs, id],
+        });
+      }
+      expect((await releaseHeldJobs({ defer: async () => {} })).released).toEqual([]);
+      for (const [i] of invalid.entries()) {
+        const id = `gen_co_missing_approval_${i}`;
+        expect(await debited(id)).toBe(0);
+        expect(await row(id)).toMatchObject({ status: "held" });
+        expect((await getGeneration(id))?.params.held).toEqual({ why: "credits", needs: 15 });
+      }
+      expect((await release("gen_co_missing_approval_0", { credits: 15 })).status).toBe(200);
+      expect(await debited("gen_co_missing_approval_0")).toBe(15);
+    });
+    expect(engine.submits).toHaveLength(1);
+  } finally { engine.restore(); }
+});
+
 function topupsRoute(user: () => Person, sent: unknown[]) {
   const mail = createRequire(path.resolve("app/api/workspaces/topups/route.ts"))("@/lib/mail") as typeof import("../../lib/mail");
   const platform = createRequire(path.resolve("app/api/workspaces/topups/route.ts"))("@/lib/platform") as typeof import("../../lib/platform");
