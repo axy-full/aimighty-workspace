@@ -94,3 +94,17 @@ export function resumeProblem(error: unknown, message?: string | null): string {
   const text = typeof message === "string" ? message.trim() : error instanceof Error ? error.message.trim() : "";
   return text && text.length <= 200 ? text : "The account could not be reached. Trying again.";
 }
+
+/**
+ * A failed status read on a job the page is still following, as one line on
+ * the job: a reconnect or full storage says what to do; anything else (a
+ * dropped connection, a busy or failing server) says the check did not go
+ * through — never the raw error — and that it is asked again.
+ */
+export function checkingProblem(error: unknown, what = "this take"): string {
+  const code = codeOf(error);
+  const status = error && typeof error === "object" ? (error as Failure).status : null;
+  const said = code === "reconnect_required" || code === "original_quota" ? resumeProblem(error)
+    : typeof status === "number" ? `Could not check ${what}.` : "The connection dropped.";
+  return `${said} Checking again shortly.`;
+}

@@ -64,13 +64,18 @@ export function ColorPreview({
                 ? source.videoHeight
                 : source?.naturalHeight;
             const signature = `${width}:${height}:${source instanceof HTMLVideoElement ? source.currentTime : 0}:${JSON.stringify(currentGrade.current)}`;
+            // A still has its size from its first bytes, but drawImage paints
+            // nothing until it is complete, and a still's signature never
+            // changes to redraw it: drawn early, the preview stays black.
             if (
               !document.hidden &&
               signature !== lastFrame &&
               source &&
               width &&
               height &&
-              (!(source instanceof HTMLVideoElement) || source.readyState >= 2)
+              (source instanceof HTMLVideoElement
+                ? source.readyState >= 2
+                : source.complete)
             ) {
               const scale = Math.min(1, 1280 / Math.max(width, height));
               if (

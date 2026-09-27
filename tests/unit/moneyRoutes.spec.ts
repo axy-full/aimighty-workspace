@@ -79,6 +79,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/creditTerms": await import("../../lib/creditTerms"),
     "@/lib/memo": { memoGet: () => null, memoPut: () => {} },
+    "@/lib/usageLedger": await import("../../lib/usageLedger"),
   };
   const usage = load<{ GET: Handler }>("app/api/usage/route.ts", modules).GET;
   const summary = load<{ GET: Handler }>("app/api/usage/summary/route.ts", modules).GET;

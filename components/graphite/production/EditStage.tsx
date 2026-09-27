@@ -4,17 +4,21 @@ import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/compon
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { dragAttrs } from "@/lib/drop";
-import { studioRequest } from "@/components/workbench/GenerationDialog";
+import { StudioRequestError, studioRequest } from "@/components/workbench/GenerationDialog";
 import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boards";
 import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
+import { movedOn, poll } from "@/lib/poll";
 import { useShell } from "@/lib/shell/state";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryBatch, findProjectTake, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { groupSiblings, isVariation, stripLabel, takeLabel } from "@/lib/variations";
+import { TakeStrip } from "../TakeStrip";
+import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
@@ -56,6 +60,9 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  * re-edited from an instruction with the take as its reference, priced before
  * it renders; any take goes to the Timeline in one press.
  */
+/** A re-edit the page can no longer read: where it goes if it renders, and that a failed one costs nothing. */
+const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.";
+
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
   /* The same store the shell reads `items` from: Load more and Try again here fill Takes and the Library together. */
@@ -66,6 +73,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   useStageFacts("takes", project);
   /* Every generation first; then every asset, each in one group — its production category, else its kind. */
   const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
+  const generationCells = useMemo(() => groupSiblings(generations, entryBatch), [generations]);
   const groups = useMemo(() => assetGroups(items, project), [items, project]);
   /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
@@ -116,22 +125,42 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<{ jobId: string; from: string } | null>(null);
+  /** The last status read of the re-edit in flight failed; cleared by the next good one. */
+  const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
-  /* A re-edit in flight: read until it lands, then the Library shows it. */
+  /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {
     if (!pending) return;
-    const timer = setInterval(() => {
-      void studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { headers: { "X-Workbench-Scope": scope } }).then(({ generation }) => {
-        if (!alive.current || !["succeeded", "failed", "cancelled"].includes(generation.status)) return;
+    const moved = movedOn();
+    const poller = poll({
+      read: (signal) => studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pending.jobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      moved: ({ generation }) => moved(pending.jobId, generation.status),
+      done: ({ generation }) => !activeMediaJob(generation),
+      onValue: ({ generation }) => {
+        if (!alive.current) return;
+        setChecking("");
+        if (activeMediaJob(generation)) return;
         setPending(null);
         if (generation.status === "succeeded") { setMade({ genId: generation.id, from: pending.from }); void refreshProjectLibrary(scope, projectId); toast("The re-edit is in the library"); }
         else setError(generation.error || "The re-edit did not render. A failed render is not billed.");
-      }).catch(() => undefined);
-    }, 3000);
-    return () => clearInterval(timer);
+      },
+      /* No longer on record for this person: asking again cannot help, and whether it was billed follows
+         from whether it rendered. Anything else is said while it is asked again, later. */
+      onError: (cause) => {
+        if (!alive.current) return;
+        if (!(cause instanceof StudioRequestError) || (cause.status !== 404 && cause.status !== 403)) {
+          setChecking(cause instanceof StudioRequestError ? "Could not check this re-edit. Checking again shortly." : "The connection dropped. Checking again shortly.");
+          return;
+        }
+        setPending(null); setChecking("");
+        setError(REEDIT_LOST);
+        return "stop";
+      },
+    });
+    return () => poller.stop();
   }, [pending, scope, projectId, toast]);
 
   if (!project) return <p className="gx-empty" role="status">{draft.state.error ?? "Opening the takes…"}</p>;
@@ -162,6 +191,17 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     catch (cause) { toast(cause instanceof Error ? cause.message : "It could not go on the timeline."); }
   };
   const sourceKey = entry ? `${entry.asset.origin === "generation" ? "generation" : "upload"}:${entry.take.sourceId}` : null;
+  /* A take of a batch is named by its number too: the strip's siblings share one prompt. */
+  const selectedBatch = entry ? entryBatch(entry) : undefined;
+  const selectedTake = selectedBatch && typeof selectedBatch.batchId === "string" && isVariation(selectedBatch.variation) ? selectedBatch.variation : null;
+  /* One generation to pick; inside a strip it is named by its take number, the strip carries the prompt. */
+  const takeButton = (e: LibraryEntry, label?: string) => (
+    <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} aria-label={label ? `${label} · ${e.take.name}` : undefined} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
+      {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
+      <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
+      <span className="pd-take-name">{label ?? e.take.name}</span>
+    </button>
+  );
   const blocked = !entry ? "Choose a take." : !project.productionProjectId ? "Save the project first." : !instruction.trim() ? "Write what should change." : null;
 
   return (
@@ -174,12 +214,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         </div>
         {generations.length ? (
           <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
-            {generations.map((e: LibraryEntry) => (
-              <button key={e.take.id} type="button" role="radio" aria-checked={entry?.take.id === e.take.id} className="pd-take" onClick={() => pick(e)} data-testid="edit-take" data-media={e.media ?? "file"} {...previewAttrs(entryPreview(e))} {...dragAttrs(e.take.id, { name: e.take.name, kind: e.media ?? "file" })}>
-                {e.url && (e.media === "image" || e.media === "video") ? <LazyMedia url={e.url} kind={e.media} alt="" name={e.take.name} className="gx-lazy" /> : <span className="pd-take-file" aria-hidden="true">{e.media === "audio" ? "♪" : "▤"}</span>}
-                <span className="gx-badge">{(e.media ?? "file").toUpperCase()}</span>
-                <span className="pd-take-name">{e.take.name}</span>
-              </button>
+            {generationCells.map((cell) => cell.kind === "one" ? takeButton(cell.take) : (
+              <TakeStrip key={`batch:${cell.batchId}`} batchId={cell.batchId} testId="takes-batch" state="done" plain name={cell.takes[0].take.name}
+                label={stripLabel(cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return isVariation(v) ? v : i + 1; }))}>
+                {cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return takeButton(e, takeLabel(isVariation(v) ? v : i + 1)); })}
+              </TakeStrip>
             ))}
           </div>
         ) : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
@@ -187,7 +226,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
 
       {entry ? (
         <>
-          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {entry.take.name}</span></div>
+          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {selectedTake ? `${takeLabel(selectedTake)} · ` : ""}{entry.take.name}</span></div>
           <div className="gx-gen-enhance">
             {entry.media === "audio" ? null : <>
               <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
@@ -226,6 +265,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
                 )}
                 {blocked && !shown ? <span className="gx-reason" data-testid="edit-blocked">{blocked}</span> : null}
               </div>
+              {pending && checking ? <p className="gx-reason" role="status" data-testid="edit-checking">{checking}</p> : null}
               {made && made.from === entry.take.id ? (
                 <div className="pd-sketch" data-testid="edit-result">
                   <LazyMedia url={`/api/media/${made.genId}`} kind="image" alt="The re-edit" className="gx-lazy" />
