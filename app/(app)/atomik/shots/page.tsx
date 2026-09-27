@@ -15,17 +15,17 @@ import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { usd, timeAgo, downloadHref } from "@/lib/format";
+import { timeAgo, downloadHref } from "@/lib/format";
 import { CATEGORIES } from "@/lib/studio";
 import { appAlert } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
 import PickProduction from "@/components/atomik/PickProduction";
-import { takeCost } from "@/lib/breakdownCost";
+import { listEstimate, moneyColumns, takeEstimate } from "@/lib/shotListCost";
 import type { Shot } from "@/lib/shots";
 import type { Treatment } from "@/lib/atomikDocs";
 import { useMoney } from "@/lib/price";
 
-type Row = Shot & { takes: number; ok: number; failed: number; spend: number; state: string; master: { id: string; version: number | null; url: string | null } | null };
+type Row = Shot & { takes: number; ok: number; failed: number; spend: number; credits?: number; state: string; master: { id: string; version: number | null; url: string | null } | null };
 type Proj = { id: string; name: string; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
@@ -56,8 +56,11 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
 
   const billable = shots.filter((s) => s.kind !== "type");
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
-  const estimate = billable.reduce((a, s) => a + takeCost(rates, s.planned), 0);
-  const spent = shots.reduce((a, s) => a + s.spend, 0);
+  /* Every figure in the workspace's unit: estimates off its rate table, spend
+     off the ledger's credits (or its dollars, for a workspace on its own keys). */
+  const estimate = listEstimate(rates, billable);
+  const spent = { spend: shots.reduce((a, s) => a + s.spend, 0), credits: shots.reduce((a, s) => a + (s.credits ?? 0), 0) };
+  const spentOf = (s: Row) => (money.inCredits ? s.credits ?? 0 : s.spend);
   const n = (st: string) => shots.filter((s) => s.state === st).length;
   const open = shots.filter((s) => !["approved", "picked", "type"].includes(s.state)).length;
   const takesPerApproval = n("approved") ? shots.filter((s) => s.state === "approved").reduce((a, s) => a + s.takes, 0) / n("approved") : null;
@@ -74,9 +77,11 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
     finally { setSending(false); }
   }
   function exportCsv() {
-    const rows = [["#", "shot", "scene", "cast", "size", "angle", "move", "lens", "planned_s", "estimate_usd", "state", "takes", "spent_usd", "master"],
+    const cols = moneyColumns(rates);
+    const figure = (n: number) => (money.inCredits ? String(Math.round(n)) : n.toFixed(2));
+    const rows = [["#", "shot", "scene", "cast", "size", "angle", "move", "lens", "planned_s", cols.estimate, "state", "takes", cols.spent, "master"],
       ...shots.map((s) => [s.code, s.description || s.title, s.scene, s.cast.join(" "), labelOf("shot", s.setup.shot) ?? "", labelOf("angle", s.setup.angle) ?? "", labelOf("move", s.setup.move) ?? "", labelOf("lens", s.setup.lens) ?? "",
-        s.planned ?? "", s.kind === "type" ? 0 : takeCost(rates, s.planned).toFixed(2), s.state, s.takes, s.spend.toFixed(2), s.master?.url ?? ""])];
+        s.planned ?? "", figure(takeEstimate(rates, s)), s.state, s.takes, figure(spentOf(s)), s.master?.url ?? ""])];
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -111,8 +116,8 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
 
       <div className="ak-tiles">
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SHOTS · RUNTIME</span><span className="ak-tile-v">{shots.length} · {mmss(runtime)}</span></div>
-        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">ESTIMATE · ONE TAKE EACH</span><span className="ak-tile-v">{money.inCredits ? money.approx(estimate) : usd(estimate, 2)}</span></div>
-        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SPENT · FROM PARTICL</span><span className="ak-tile-v">{project ? money.of(project) : usd(spent, 2)} <span className="text-[13px] font-normal text-dim">{money.inCredits ? (project?.capCredits ? `of ${project.capCredits.toLocaleString("en-US")} cr` : "no cap") : project?.capUsd ? `of $${Math.round(project.capUsd)}` : "no cap"}</span></span></div>
+        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">ESTIMATE · ONE TAKE EACH</span><span className="ak-tile-v">≈ {money.price(estimate)}</span></div>
+        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SPENT · FROM PARTICL</span><span className="ak-tile-v">{money.of(project ?? spent)} <span className="text-[13px] font-normal text-dim">{money.inCredits ? (project?.capCredits ? `of ${project.capCredits.toLocaleString("en-US")} cr` : "no cap") : project?.capUsd ? `of $${Math.round(project.capUsd)}` : "no cap"}</span></span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">APPROVED · PICKED · OPEN</span><span className="ak-tile-v">{n("approved")} · {n("picked")} · {open}</span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">TAKES PER APPROVAL</span><span className="ak-tile-v">{takesPerApproval != null ? takesPerApproval.toFixed(1) : "—"}</span></div>
       </div>
@@ -140,14 +145,14 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
                 <span className="flex flex-wrap gap-[3px]">{s.cast.map((c) => <span key={c} className="ak-tag !text-[10.5px]">@{c}</span>)}</span>
                 <span className="text-[12px] leading-[1.35]">{setup}</span>
                 <span className="mono-v !text-[11px]">{s.planned != null ? `${s.planned}s` : "—"}</span>
-                <span className="mono-s !text-[11px] !font-medium">{st === "type" ? "$0" : usd(takeCost(rates, s.planned), 2)}</span>
+                <span className="mono-s !text-[11px] !font-medium">{money.price(takeEstimate(rates, s))}</span>
                 <span className="ak-vrule" />
                 <span className={`ak-state !text-[12px] !tracking-normal !font-medium ${st === "approved" ? "is-approved" : st === "none" || st === "type" ? "is-muted" : "is-ink"}`}>
                   <span className={`dot ${st === "approved" ? "dot-approved" : st === "picked" ? "dot-picked" : st === "draft" ? "dot-draft" : st === "rendering" ? "dot-rendering" : "dot-none"}`} />
                   {word}
                 </span>
                 <span className="mono-v text-right !text-[11px]">{s.takes || "—"}</span>
-                <span className="mono-v text-right !text-[11px]">{s.spend ? usd(s.spend, 2) : "—"}</span>
+                <span className="mono-v text-right !text-[11px]">{spentOf(s) ? money.of(s) : "—"}</span>
                 <span className="text-right">
                   {s.master?.url
                     ? <a href={downloadHref(s.master.url)} download className="ak-master">V{s.master.version ?? 1} ↓</a>
@@ -159,7 +164,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
           {shots.length === 0 && <div className="p-4"><span className="ak-sub !text-[12.5px]">No shots yet — break the treatment down first.</span></div>}
           <div className="ak-table-foot">
             <span>A sent-back take returns its shot to <span className="font-medium text-ink">Draft</span> with the director&rsquo;s note attached. Type-only shots never generate and never cost.</span>
-            <span className="mono-v !text-[10.5px]">{shots.length} SHOTS · {mmss(runtime)} · EST. {usd(estimate, 2)} · SPENT {usd(spent, 2)}</span>
+            <span className="mono-v !text-[10.5px]">{shots.length} SHOTS · {mmss(runtime)} · EST. {money.price(estimate).toUpperCase()} · SPENT {money.of(spent).toUpperCase()}</span>
           </div>
         </div>
       </div>

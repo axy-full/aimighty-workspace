@@ -9,7 +9,7 @@ import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -86,6 +86,8 @@ export type Generation = {
   sourceGenId: string | null;
   createdAt: number;
   updatedAt: number;
+  /** When it succeeded, failed or was cancelled (generations.settled_at); null while it runs, and on takes settled before that was kept. */
+  settledAt?: number | null;
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -109,15 +111,17 @@ function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 /**
  * What a held take's snapshot (lib/held.ts heldInfo) may tell the browser:
  * why it waits, and its price in the one unit this workspace pays in — the
- * credits it `needs`, or, on its own keys, `estUsd`, the dollars that would
- * leave its own account. Never both, for the reason costUsd and
- * creditsBilled are never both: side by side they are the margin.
- * Releasing reads the raw row (heldRows), not this.
+ * credits it `needs` to start now (creditTerms heldPriceNow: what Release
+ * charges), or, on its own keys, `estUsd`, the dollars that would leave its
+ * own account. Never both, for the reason costUsd and creditsBilled are never
+ * both: side by side they are the margin. Releasing reads the raw row
+ * (heldRows), not this.
  */
-function heldForBrowser(held: Record<string, unknown>, inCredits: boolean): Record<string, unknown> {
+function heldForBrowser(held: Record<string, unknown>, inCredits: boolean, kind: string, model: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (typeof held.why === "string") out.why = held.why;
-  if (inCredits && typeof held.needs === "number") out.needs = held.needs;
+  const needs = heldPriceNow(held, kind, model);
+  if (inCredits && needs > 0) out.needs = needs;
   if (!inCredits && typeof held.estUsd === "number") out.estUsd = held.estUsd;
   return out;
 }
@@ -151,7 +155,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
-  if (params.held && typeof params.held === "object") params.held = heldForBrowser(params.held, inCredits);
+  if (params.held && typeof params.held === "object")
+    params.held = heldForBrowser(params.held, inCredits, r.kind === "image" || r.kind === "audio" ? r.kind : "video", String(r.model ?? ""));
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -206,6 +211,7 @@ export function rowToGeneration(r: any): Generation {
     sourceGenId: r.source_gen_id ?? null,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
+    settledAt: r.settled_at == null ? null : Number(r.settled_at),
   };
 }
 
@@ -226,6 +232,12 @@ export async function listGenerations(opts: {
   limit?: number;
   search?: string;
   status?: string;
+  /** Any of these statuses (GET /api/jobs?status=queued,running,held); used in place of `status`. */
+  statuses?: readonly string[];
+  /** Only takes that settled at or after this time (ms), latest first: what just finished, for the jobs tray. */
+  settledSince?: number | null;
+  /** Leave out the starter production's demo takes and the connected account's filed originals: only renders this person set going here. */
+  ownRenders?: boolean;
   kind?: string;
   /** Only renders made with this identity. */
   identityId?: string | null;
@@ -267,10 +279,19 @@ export async function listGenerations(opts: {
     const needle = `%${opts.search.toLowerCase()}%`;
     args.push(needle, needle);
   }
-  if (opts.status && opts.status !== "all") {
+  if (opts.statuses?.length) {
+    where.push(`g.status IN (${opts.statuses.map(() => "?").join(",")})`);
+    args.push(...opts.statuses);
+  } else if (opts.status && opts.status !== "all") {
     where.push("g.status = ?");
     args.push(opts.status);
   }
+  if (opts.settledSince) {
+    where.push("g.settled_at >= ?");
+    args.push(opts.settledSince);
+  }
+  if (opts.ownRenders)
+    where.push(`g.id NOT GLOB 'gen_hfc_*' AND NOT (json_valid(g.params) AND COALESCE(json_extract(g.params,'$.demo'),0)<>0)`);
   if (opts.kind === "image" || opts.kind === "video" || opts.kind === "audio") {
     where.push(opts.kind === "image" ? "g.kind = 'image'" : opts.kind === "audio" ? "g.kind = 'audio'" : "g.kind NOT IN ('image','audio','model')");
   }
@@ -298,7 +319,7 @@ export async function listGenerations(opts: {
   where.push("g.deleted = 0");
   const sql = `${SELECT}
     WHERE ${where.join(" AND ")}
-    ORDER BY g.created_at DESC, g.id DESC
+    ORDER BY ${opts.settledSince ? "g.settled_at DESC, g.id DESC" : "g.created_at DESC, g.id DESC"}
     LIMIT ?`;
   args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500) + (opts.includeNext ? 1 : 0));
 

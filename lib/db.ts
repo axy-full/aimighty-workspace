@@ -1031,6 +1031,14 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       ]) {
         await addColumn("generations", col);
       }
+      /* WHEN A TAKE SETTLED (succeeded, failed or cancelled), stamped by the
+         status change itself (the triggers below), for the header's jobs
+         tray: what finished in the last few hours, latest first. updated_at
+         cannot say it — a rename, an approval, a size backfill or a late
+         cost write all move it on takes that finished days ago. Null on rows
+         that settled before the column existed, which the tray then leaves
+         out rather than guess. */
+      await addColumn("generations", `settled_at INTEGER`);
       /* Indexes for columns added above — created AFTER the ALTERs, since on
          an existing database the column doesn't exist until they've run.
          Every shot query (take counts, next version, revisions per shot)
@@ -1117,6 +1125,30 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       ]) {
         await addIndex(c, stmt);
       }
+      /* settled_at is written by the status change itself, so no write path can
+         forget it: a take written already settled keeps its writer's own time; a
+         change into the settled set stamps it (the writer's updated_at when it
+         moved one, else the database's clock); one out of it clears it; and a
+         change within it (a late success after a timeout) stamps it again. Writes
+         that leave the status alone never touch it. The jobs tray reads it by
+         person (the index). One round trip on every boot; only the tray reads
+         any of it, so a database that refuses it still boots, and the tray then
+         shows no recently finished takes there. */
+      try {
+        await c.batch([
+        `CREATE INDEX IF NOT EXISTS idx_gen_settled ON generations(created_by, settled_at)`,
+        `CREATE TRIGGER IF NOT EXISTS gen_settled_on_insert AFTER INSERT ON generations
+          WHEN NEW.status IN ('succeeded','failed','cancelled') AND NEW.settled_at IS NULL
+          BEGIN UPDATE generations SET settled_at = COALESCE(NEW.updated_at, NEW.created_at) WHERE id = NEW.id; END`,
+        `CREATE TRIGGER IF NOT EXISTS gen_settled_on_status AFTER UPDATE OF status ON generations
+          WHEN NEW.status IS NOT OLD.status
+          BEGIN UPDATE generations SET settled_at = CASE
+            WHEN NEW.status NOT IN ('succeeded','failed','cancelled') THEN NULL
+            WHEN NEW.updated_at > OLD.updated_at THEN NEW.updated_at
+            ELSE CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) END
+          WHERE id = NEW.id; END`,
+        ], "write");
+      } catch (e) { console.error("settled_at index and triggers not installed:", (e as Error).message); }
 
       /* One-time correction: stills already made were billed to Google.
          They were not. Every one of them went through the Vercel AI Gateway

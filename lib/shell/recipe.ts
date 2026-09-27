@@ -1,6 +1,6 @@
 import type { Generation } from "../jobs";
 import { displayModelName } from "../models";
-import type { BillingSource, ComposerModel, ComposerPicks, ComposerSettings, ComposerType } from "../workspace/composer";
+import { AUDIO_SECONDS, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
 
 /**
  * Recreate (README › Interactions, the asset's "Retry"): a take's whole
@@ -231,7 +231,7 @@ export function nearestSetting<T extends string | number>(want: T, offered: read
 /* ── What Gen holds against what the take was made with ──────────────── */
 
 export type RecipeChip = {
-  key: "model" | "ratio" | "resolution" | "duration" | "identity" | "length";
+  key: "model" | "ratio" | "resolution" | "duration" | "identity" | "length" | "voice" | "instrumental";
   label: string;
   /** "16:9", or "21:9 → 16:9" when Gen now holds something else. */
   value: string;
@@ -260,6 +260,8 @@ export function recipeChips(input: {
   owner: boolean;
   /** The account's identities, once read (null until then). */
   identities: readonly { soulId: string; name: string; status: string | null }[] | null;
+  /** Sound as Gen holds it now: the length billed, the Instrumental switch, the voice a line is read in and the model's voices. */
+  sound?: { seconds: number; instrumental: boolean; voice: { id: string; name: string } | null; voices: readonly { id: string; name: string }[] };
 }): RecipeChip[] {
   const { preset, model, settings } = input;
   if (!preset.model) return [];
@@ -302,7 +304,25 @@ export function recipeChips(input: {
     else if (settings.soulId === picks.soulId) chips.push({ key: "identity", label: "Identity", value: found.name, state: "kept" });
     else chips.push({ key: "identity", label: "Identity", value: `${found.name} → none`, state: "changed", why: "Changed here" });
   }
-  if (preset.sound?.seconds && model.audioTask && model.audioTask !== "speech")
-    chips.push({ key: "length", label: "Length", value: `${Math.round(preset.sound.seconds * 10) / 10} s`, state: "kept" });
+  /* Sound: what the take was made with against what Gen's length, Instrumental and voice now hold. */
+  const task = model.audioTask, sound = input.sound;
+  if (preset.sound?.seconds && (task === "sound" || task === "music")) {
+    const want = Math.round(preset.sound.seconds * 10) / 10, now = sound?.seconds ?? want;
+    const { min, max } = AUDIO_SECONDS[task];
+    chips.push(want === now ? { key: "length", label: "Length", value: `${want} s`, state: "kept" }
+      : { key: "length", label: "Length", value: `${want} s → ${now} s`, state: "changed",
+          why: want < min || want > max ? `${model.label} runs ${min}–${max} s` : Number.isInteger(want) ? "Changed here" : "Whole seconds here" });
+  }
+  if (preset.sound?.instrumental !== undefined && task === "music") {
+    const word = (on: boolean) => (on ? "Instrumental" : "With vocals");
+    const now = sound?.instrumental ?? preset.sound.instrumental;
+    chips.push(now === preset.sound.instrumental ? { key: "instrumental", label: "Vocals", value: word(now), state: "kept" }
+      : { key: "instrumental", label: "Vocals", value: `${word(preset.sound.instrumental)} → ${word(now)}`, state: "changed", why: "Changed here" });
+  }
+  if (preset.sound?.voiceId && task === "speech") {
+    const was = sound?.voices.find((v) => v.id === preset.sound!.voiceId), now = sound?.voice ?? null;
+    chips.push(now?.id === preset.sound.voiceId ? { key: "voice", label: "Voice", value: now.name, state: "kept" }
+      : { key: "voice", label: "Voice", value: `${was?.name ?? "Voice"} → ${now?.name ?? "none"}`, state: "changed", why: was ? "Changed here" : `Not one of ${model.label}’s voices here` });
+  }
   return chips;
 }

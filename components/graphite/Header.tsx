@@ -6,8 +6,10 @@ import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
-import { useWorkspace } from "@/lib/workspace/state";
+import { lowBalance, useLastQuote } from "@/lib/workspace/last-quote";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import Boundary from "@/components/Boundary";
+import { JobsFault, JobsPill } from "./JobsTray";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -15,8 +17,9 @@ function initialsOf(name: string) {
 
 /**
  * 56px. particl trail mark + wordmark → the Studio home; Studio | Gen | Business | Viral |
- * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
- * job runs); the credits pill; the avatar, which opens Workspace.
+ * Atomik; the search field that opens ⌘K; the jobs pill (while something
+ * renders, is held, or finished unseen), which opens the jobs tray; the
+ * credits pill; the avatar, which opens Workspace.
  *
  * On a phone (app/phone-chrome.css) the context badge is a button: the Suites
  * and Search open under it, one tap away. `bar` is the top bar's second row
@@ -24,9 +27,12 @@ function initialsOf(name: string) {
  */
 export function Header({ account, bar = null }: { account: WorkspaceAccount | null; bar?: ReactNode }) {
   const shell = useShell();
-  const { state } = useWorkspace();
-  const { rates, name } = useSession();
-  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
+  const { rates, name, requestScope } = useSession();
+  const balance = account?.credits?.balance ?? null;
+  const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
+  /* Amber when the balance cannot pay for the last price a Generate showed here; it reads that quote, never asks for one. */
+  const lastQuote = useLastQuote(requestScope);
+  const low = rates.unit !== "usd" && lowBalance(balance, lastQuote);
   const selected = shell.view === "gen" ? "gen" : shell.view === "crew" ? "crew" : shell.view === "suite" ? shell.suite.id : null;
   /* The context badge: the phone's Home and its Library read HOME and ASSETS; every other view names itself. */
   const studioPage = shell.view === "suite" && shell.suite.id === "studio" ? shell.page.id : null;
@@ -85,14 +91,11 @@ export function Header({ account, bar = null }: { account: WorkspaceAccount | nu
         <span className="gx-key">⌘K</span>
       </button>
       <span className="gx-spacer" />
-      {state.gen ? (
-        <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
-          <span className="gx-jobs-dot" aria-hidden="true" />
-          {/* The job's phase, not a percentage: no engine reports progress, so none is invented. */}
-          <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
-        </button>
-      ) : null}
-      <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>
+      {/* The tray draws rows the server sent: one that cannot be drawn costs the pill, never the header. */}
+      <Boundary what="Jobs" probe="jobs" fallback={(fault) => <JobsFault fault={fault} />}><JobsPill /></Boundary>
+      <button type="button" className="gx-hbtn gx-credits" data-low={low || undefined} onClick={() => shell.goWorkspace("credits")} data-testid="workspace-credits"
+        title={low ? `${credits.title} · below the last price quoted (${lastQuote!.credits.toLocaleString("en-US")} cr) · Plans & credits` : credits.title}
+        aria-label={low ? `Credits: ${credits.text}, below the last price quoted, ${lastQuote!.credits.toLocaleString("en-US")} cr. Open Plans & credits` : `Credits: ${credits.text}`}>
         <span className="gx-credits-n">{credits.text.replace(/\s*cr$/i, "")}</span>
         {/cr$/i.test(credits.text) ? <span className="gx-credits-u">cr</span> : null}
       </button>

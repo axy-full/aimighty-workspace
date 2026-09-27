@@ -6,7 +6,8 @@ export type NodeAudioSetup = {
   /** Which sound engines this workspace reaches: ElevenLabs makes every
    *  task, xAI only Grok Voice lines. Absent from older replies: both. */
   vendors?: { elevenlabs: boolean; xai: boolean };
-  speechModels: { id: string; label: string }[];
+  /** `note`: the route's one line on what the model is for (lib/elevenlabs.ts SPEECH_MODELS, lib/xaiVoice.ts). */
+  speechModels: { id: string; label: string; note?: string }[];
   defaultSpeechModel: string;
   /** The default speech model's voices. */
   voices: { id: string; name: string }[];

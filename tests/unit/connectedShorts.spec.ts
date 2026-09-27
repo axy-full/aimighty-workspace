@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { getConsumerShortsQuote, submitConsumerShorts, readConsumerShortsSession, readConsumerShortsClips, readShortsPresets, CONSUMER_MCP_URL } from "../../lib/higgsfield-consumer/mcp";
 import { parseConsumerCreditsForParams } from "../../lib/higgsfield-consumer/video-contract";
 import type { QualificationValue } from "../../lib/higgsfield-consumer/qualification";
+import { resetConnectedToolsetCache } from "../../lib/higgsfield-consumer/toolset";
 import {
   consumerShortsAcknowledgement,
   consumerShortsInputSchema,
@@ -23,6 +24,14 @@ const capture = JSON.parse(readFileSync("tests/fixtures/connected-shorts-studio.
   costReplies: { arguments: { duration_seconds: number; get_cost: true }; reply: { cost: { credits: number; credits_exact: number } } }[];
 };
 const recorded = capture.costReplies;
+/* The Shorts capture is product-specific. Advertise the recorded status tool
+   explicitly rather than borrowing a cached toolset from another spec. */
+const fullCapture = JSON.parse(readFileSync("tests/fixtures/connected-tools-98.json", "utf8")) as Pick<typeof capture, "tools">;
+const statusTool = fullCapture.tools.find((tool) => tool.name === "job_status");
+if (!statusTool) throw new Error("The recorded status fixture is missing job_status");
+const tools = [...capture.tools, statusTool];
+test.beforeEach(() => resetConnectedToolsetCache());
+test.afterEach(() => resetConnectedToolsetCache());
 const schema = (name: string) => capture.tools.find((tool) => tool.name === name)!.inputSchema;
 const wallet = randomUUID(), sessionId = randomUUID(), media = randomUUID(), clipA = randomUUID(), clipB = randomUUID();
 const preset = "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f";
@@ -38,7 +47,7 @@ function fixture(options: { tools?: typeof capture.tools; change?: (p: Packet) =
     if (p.method === "initialize")
       return Response.json({ jsonrpc: "2.0", id: p.id, result: { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } } });
     if (p.method === "notifications/initialized") return new Response(null, { status: 202 });
-    if (p.method === "tools/list") return Response.json({ jsonrpc: "2.0", id: p.id, result: { tools: options.tools ?? capture.tools } });
+    if (p.method === "tools/list") return Response.json({ jsonrpc: "2.0", id: p.id, result: { tools: options.tools ?? tools } });
     const changed = options.change?.(p);
     if (changed instanceof Error) throw changed;
     const args = p.params.arguments;
@@ -163,6 +172,14 @@ test("submission re-prices, admits once and sends exactly one paid create; sessi
   const wrong = fixture({ change: (p) => (p.params.name === "job_status" ? { generation: { id: randomUUID(), type: "video", status: "completed" } } : undefined) });
   await expect(readConsumerShortsClips("fixture-private-access", [clipA], wallet, { fetch: wrong.fetch })).rejects.toMatchObject({ code: "invalid_job" });
   expect([...r.tools(), ...c.tools()].filter((name) => name === "shorts_studio_create")).toEqual([]);
+});
+
+test("clip reads refuse when the connection advertises no status tool", async () => {
+  const f = fixture({ tools: capture.tools });
+  await expect(readConsumerShortsClips("fixture-private-access", [clipA], wallet, { fetch: f.fetch }))
+    .rejects.toMatchObject({ code: "status_unavailable" });
+  expect(f.named("job_status")).toEqual([]);
+  expect(f.paid()).toEqual([]);
 });
 
 test("the production cost replies qualify and yield the charged integer; a range, a missing or ambiguous figure still refuses", async () => {

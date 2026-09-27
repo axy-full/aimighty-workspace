@@ -164,10 +164,11 @@ test("New project on the card is the switcher's own create: a double press makes
   const name = `Harbour ${Date.now().toString(36)} — the long lens series, shot at dusk on the frozen water with the crew`.slice(0, 100);
   await page.getByTestId("first-run-new-name").fill(name);
   await page.getByTestId("first-run-new-create").dblclick();
+  /* The toast shows for 2.6 s from the create; the project and Brief load after it, seconds later on a busy server. */
+  await expect(page.getByTestId("toast")).toContainText(`${name} is open`, { timeout: 30_000 });
   await expect(page.getByTestId("project-name")).toHaveText(name, { timeout: 30_000 });
   await expect(page.getByTestId("first-run")).toHaveCount(0);
   await expect(page.getByTestId("brief-stage")).toBeVisible();
-  await expect(page.getByTestId("toast")).toContainText(`${name} is open`);
   expect(creates, "one press of Create, one project").toHaveLength(1);
   const pill = (await page.getByTestId("project-switcher").boundingBox())!;
   const label = (await page.getByTestId("project-name").boundingBox())!;
@@ -191,8 +192,9 @@ test("Explore the starter production opens it with its sample takes, charges not
   });
   /* A double press sends one request: the button holds until the starter replaces the card. */
   await starter.dblclick();
+  /* As above: read the 2.6 s toast before waiting for the production to load. */
+  await expect(page.getByTestId("toast")).toContainText("Its takes are samples: nothing was generated or charged.", { timeout: 60_000 });
   await expect(page.getByTestId("project-name")).toHaveText("Starter production", { timeout: 60_000 });
-  await expect(page.getByTestId("toast")).toContainText("Its takes are samples: nothing was generated or charged.");
   expect(presses).toHaveLength(1);
   await expect(page.getByTestId("first-run")).toHaveCount(0);
   await expect(page.getByTestId("brief-stage")).toBeVisible();
