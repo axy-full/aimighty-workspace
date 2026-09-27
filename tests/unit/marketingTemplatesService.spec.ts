@@ -130,7 +130,7 @@ async function serviceFixture() {
 }
 const scoped = (id: string) => ({ ...identity, id });
 
-test("the catalogue and cost table are read once per connection, browsed with prices, and every quote is validated against them first", async () =>
+test("the private catalogue cost table is cached and validates legacy quotes without exposing wallet prices in browsing", async () =>
   fixtureRun(async (f) => {
     const listing = await f.service.connectedMarketingTemplateCatalogue(identity.userId);
     expect(listing.templates).toHaveLength(6);
@@ -142,7 +142,7 @@ test("the catalogue and cost table are read once per connection, browsed with pr
     await f.service.connectedMarketingTemplateCatalogue(identity.userId, { refresh: true });
     expect(f.state.catalogueReads).toBe(2);
     const view = f.service.presentMarketingTemplates(listing, costs, { category: "product-shot" });
-    expect(view.templates).toEqual([expect.objectContaining({ id: "tpl_product_shot_studio", credits: 40, priceSource: "cost_table", outputKind: "image" })]);
+    expect(view.templates).toEqual([expect.objectContaining({ id: "tpl_product_shot_studio", credits: null, priceSource: null, outputKind: "image" })]);
     expect(view).toMatchObject({ matched: 1, total: 6, loaded: 6, complete: true, costsVersion: "2026-09-18" });
     expect(JSON.stringify(view).toLowerCase()).not.toContain("higgsfield");
     await expect(f.service.quoteConsumerMarketingTemplate(identity.userId, identity.draftId, { ...request, presetId: "not_in_catalogue" }, randomUUID())).rejects.toMatchObject({ code: "template_unknown" });

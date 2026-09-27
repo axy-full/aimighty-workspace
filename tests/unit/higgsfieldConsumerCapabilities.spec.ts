@@ -27,10 +27,11 @@ const discovered = {
   summary: { brandExtraction: ["brand_kit_fetch"] },
 };
 
-/** Executes the real route, withTenant and requireOwner; only identity resolution,
- * rate storage, OAuth refresh and outbound discovery are isolated fixtures. */
+/** Executes the real route and tenant wrapper with isolated platform identity,
+ * rate storage, OAuth refresh and outbound discovery. Browser tests exercise
+ * the platform-management restriction through real sessions. */
 async function fixture(
-  kind: "capabilities" | "qualification" = "capabilities",
+  kind: "capabilities" | "qualification" | "analysis-qualification" = "capabilities",
 ) {
   const auth = await import("../../lib/auth");
   const tenant = await import("../../lib/tenant");
@@ -93,8 +94,13 @@ async function fixture(
   let failure: unknown;
   let tokenFailure: unknown;
   let limited = false;
+  let platformOwner = true;
   const deps: Record<string, unknown> = {
-    "@/lib/auth": { ...auth, withTenant: wrapperExports.withTenant },
+    "@/lib/auth": { ...auth, withTenant: wrapperExports.withTenant, requireSuperAdmin: async () => {
+      const session = await auth.requireOwner();
+      if (session.response) return session;
+      return platformOwner ? session : { response: Response.json({ error: "The platform owner only." }, { status: 403 }) };
+    } },
     "@/lib/tenant": tenant,
     "@/lib/accountDb": {
       AccountError,
@@ -114,6 +120,11 @@ async function fixture(
     "@/lib/higgsfield-consumer/mcp": {
       ConsumerDiscoveryError,
       readConsumerQualification: async (value: string) => {
+        discoveries.push(value);
+        if (failure) throw failure;
+        return { readOnly: true, results: [] };
+      },
+      readConsumerAnalysisQualification: async (value: string) => {
         discoveries.push(value);
         if (failure) throw failure;
         return { readOnly: true, results: [] };
@@ -155,6 +166,7 @@ async function fixture(
     tokenRequests,
     discoveries,
     limits,
+    ordinaryOwner: () => { platformOwner = false; },
     disconnect: () => {
       token = null;
     },
@@ -190,6 +202,17 @@ async function fixture(
       ),
   };
 }
+
+test("workspace ownership alone cannot expose provider diagnostics or pricing", async () => {
+  for (const kind of ["capabilities", "qualification", "analysis-qualification"] as const) {
+    const f = await fixture(kind);
+    f.ordinaryOwner();
+    expect((await f.post()).status).toBe(403);
+    expect(f.tokenRequests).toEqual([]);
+    expect(f.discoveries).toEqual([]);
+    expect(f.limits).toEqual([]);
+  }
+});
 
 test("capabilities route rejects unauthenticated, nonowner, bearer and stale browser scopes before any token/provider access", async () => {
   const f = await fixture();

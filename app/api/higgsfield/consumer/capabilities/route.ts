@@ -1,4 +1,4 @@
-import { requireOwner, withTenant } from "@/lib/auth";
+import { requireSuperAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import {
@@ -16,10 +16,10 @@ const headers = {
   "X-Content-Type-Options": "nosniff",
 };
 
-/** Owner review only: this endpoint never calls any discovered tool. */
+/** Platform review only: this endpoint never calls any discovered tool. */
 export const POST = withTenant(
   async (req: Request) => {
-    const owner = await requireOwner();
+    const owner = await requireSuperAdmin();
     if (owner.response) return owner.response;
     const workspace = requireTenant();
     try {

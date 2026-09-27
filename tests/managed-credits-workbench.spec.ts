@@ -10,6 +10,13 @@ test("an old workspace flag cannot authorize provider-wallet spending after migr
     await platform.execute({ sql: "UPDATE workspaces SET uses_platform_keys=0 WHERE id=?", args: [workspace.id] });
     const me = await page.request.get("/api/me").then(r => r.json());
     expect(me.rates.unit).toBe("cr");
+    for (const action of ["capabilities", "qualification", "analysis-qualification"]) {
+      const diagnostics = await page.request.post(`/api/higgsfield/consumer/${action}`, {
+        headers: { "X-Workbench-Scope": `particl-active-${workspace.id}-${me.id}` }, data: {},
+      });
+      expect(diagnostics.status(), await diagnostics.text()).toBe(403);
+      expect(await diagnostics.json()).toMatchObject({ error: "The platform owner only." });
+    }
     const response = await page.request.post("/api/higgsfield/consumer/video", {
       headers: { "X-Workbench-Scope": `particl-active-${workspace.id}-${me.id}` },
       data: { action: "quote", draftId: "not-created", idempotencyKey: randomUUID(), input: {

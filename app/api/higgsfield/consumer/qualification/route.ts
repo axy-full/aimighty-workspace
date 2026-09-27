@@ -1,4 +1,4 @@
-import { requireOwner, withTenant } from "@/lib/auth";
+import { requireSuperAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import {
@@ -23,7 +23,7 @@ const headers = {
  * including generate_video with immutable get_cost:true (never a submission). */
 export const POST = withTenant(
   async (req: Request) => {
-    const owner = await requireOwner();
+    const owner = await requireSuperAdmin();
     if (owner.response) return owner.response;
     const workspace = requireTenant();
     try {
