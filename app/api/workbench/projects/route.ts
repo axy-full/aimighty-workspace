@@ -8,6 +8,7 @@ import { newProject, type Project } from '@/lib/workbench/studio';
 import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkDraftWrite, DraftConflictError } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
+import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -63,6 +64,16 @@ export const POST=withTenant(async(req:Request)=>{
   if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   if(originProblem(req))return Response.json({error:'Invalid request origin'},{status:403});
   const body=await req.json().catch(()=>null);
+  /* Studio's first run: the workspace's starter production, seeded once and opened as this person's draft.
+     Sample takes on the platform's own previews: no engine is called and nothing is charged (lib/starter.ts). */
+  if(body?.action==='starter'){
+    try{return projectResponse(req,await openStarterDraft(auth.user.id));}
+    catch(error){
+      if(error instanceof StarterUnavailableError)return Response.json({error:error.message},{status:409,headers:noStore});
+      console.error('The starter production could not be opened:',error);
+      return Response.json({error:'The starter production could not be opened. Try again.'},{status:500,headers:noStore});
+    }
+  }
   if(!body || typeof body.projectId!=='string')return Response.json({error:'Choose a project.'},{status:400});
   await workbenchReady();
   if(body.action==='open'){
