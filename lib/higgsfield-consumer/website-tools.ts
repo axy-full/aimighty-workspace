@@ -99,7 +99,12 @@ export const COMMERCIAL_API_ROUTES: Readonly<Partial<Record<ConsumerWorkflow | W
   // Motion Transfer and Object Swap run on the commercial API in the Studio
   // engines (lib/genjutsu.ts), with its own estimate, reservation and receipt.
   genjutsu: "studio-engines",
+  // New identities are trained on the commercial API (custom references) from
+  // Cast › Build identity (lib/soulIdentities.ts), never on the website account.
+  "soul-build": "studio-identities",
 });
+/** Whether the commercial API serves this tool, so the website account never does. */
+export const servedByCommercialApi = (tool: WebsiteToolId) => COMMERCIAL_API_ROUTES[tool] !== undefined;
 export type WebsiteToolTransport =
   | { kind: "commercial_api"; route: string }
   | { kind: "website_account"; tool: WebsiteToolId }

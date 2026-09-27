@@ -26,7 +26,7 @@ import {
   fenceConsumerAuthorizationsTx,
   type ConsumerIdentity,
 } from "./store";
-import { WEBSITE_TOOLS, isWebsiteToolId, websiteTool, type WebsiteToolId, type WebsiteToolPricing } from "./website-tools";
+import { WEBSITE_TOOLS, isWebsiteToolId, servedByCommercialApi, websiteTool, type WebsiteToolId, type WebsiteToolPricing } from "./website-tools";
 import { websiteJobsInFlightTx, websiteJobsReady } from "./platform-jobs";
 
 type Tx = Pick<Transaction, "execute">;
@@ -91,6 +91,7 @@ export type PlatformAccountErrorCode =
   | "not_designated"
   | "tool_unknown"
   | "tool_unpriced"
+  | "tool_on_api"
   | "jobs_in_flight"
   | "platform_account_locked";
 export class PlatformAccountError extends Error {
@@ -186,7 +187,8 @@ export type WebsiteAccountStatus = {
   candidate: { eligible: boolean; reason: string | null } | null;
   /** Whether the private credit rate is configured (never its value). */
   rateSet: boolean;
-  tools: { id: WebsiteToolId; label: string; pricing: WebsiteToolPricing; enabled: boolean; priceSet: boolean }[];
+  /** `onApi`: the commercial API serves it, so the website account never does and it cannot be switched on here. */
+  tools: { id: WebsiteToolId; label: string; pricing: WebsiteToolPricing; enabled: boolean; priceSet: boolean; onApi: boolean }[];
 };
 const REASON_TEXT: Record<WebsiteAccountReason, string | null> = {
   unset: null,
@@ -236,6 +238,7 @@ export async function platformAccountStatus(caller: ConsumerIdentity | null): Pr
         pricing: tool.pricing,
         enabled: Boolean(designation?.enabledTools.includes(tool.id)),
         priceSet: tool.pricing === "get_cost" || fixed[tool.id] !== undefined,
+        onApi: servedByCommercialApi(tool.id),
       })),
     };
   });
@@ -336,6 +339,8 @@ export const setPlatformAccountTools = async (tools: readonly unknown[], actorId
     throw new PlatformAccountError("tool_unknown", "Choose tools from the list.", 400);
   for (const tool of tools) if (!isWebsiteToolId(tool)) throw new PlatformAccountError("tool_unknown", "Choose tools from the list.", 400);
   const wanted = new Set(tools as WebsiteToolId[]);
+  const onApi = WEBSITE_TOOLS.find((tool) => wanted.has(tool.id) && servedByCommercialApi(tool.id));
+  if (onApi) throw new PlatformAccountError("tool_on_api", `${onApi.label} runs on the API for every workspace, never on this account.`);
   const unpriced = WEBSITE_TOOLS.find((tool) => wanted.has(tool.id) && !websiteToolPriced(tool.id, tool.pricing));
   if (unpriced) throw new PlatformAccountError("tool_unpriced", `${unpriced.label} needs its private price before it can be switched on.`);
   const ordered = WEBSITE_TOOLS.map((tool) => tool.id).filter((id) => wanted.has(id));

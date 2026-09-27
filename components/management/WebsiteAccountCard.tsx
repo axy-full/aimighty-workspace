@@ -12,7 +12,7 @@ import { appConfirm } from "@/components/dialog";
  * work, and which tools are on. The server answers with no token, account
  * identifier, wallet, balance or price; the rate is reported as set or not.
  */
-type Tool = { id: string; label: string; pricing: "get_cost" | "fixed"; enabled: boolean; priceSet: boolean };
+type Tool = { id: string; label: string; pricing: "get_cost" | "fixed"; enabled: boolean; priceSet: boolean; onApi?: boolean };
 type Status = {
   state: "unset" | "ready" | "paused" | "unavailable";
   reason: string | null;
@@ -101,9 +101,9 @@ export function WebsiteAccountCard() {
         <div className="wacct-tools" role="group" aria-label="Tools clients may run">
           {status.tools.map((tool) => (
             <button key={tool.id} type="button" className={`wacct-tool${tool.enabled ? " is-on" : ""}`} aria-pressed={tool.enabled}
-              disabled={busy != null || (!tool.enabled && !tool.priceSet)} onClick={() => toggle(tool)} data-testid={`website-tool-${tool.id}`}>
+              disabled={busy != null || (!tool.enabled && (!tool.priceSet || tool.onApi === true))} onClick={() => toggle(tool)} data-testid={`website-tool-${tool.id}`}>
               <span className="wacct-tool-name">{tool.label}</span>
-              <span className="wacct-tool-note">{tool.enabled ? "On" : tool.priceSet ? "Off" : "Needs a price"}</span>
+              <span className="wacct-tool-note">{tool.enabled ? "On" : tool.onApi ? "Runs on the API" : tool.priceSet ? "Off" : "Needs a price"}</span>
             </button>
           ))}
         </div>

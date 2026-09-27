@@ -196,11 +196,13 @@ test("the allowlist refuses unknown tools, and a fixed-price tool needs its priv
     await expect(account.setPlatformAccountTools(["voice-change"], owner.userId)).rejects.toEqual(refusal("tool_unpriced"));
     expect((await account.readPlatformDesignation())!.enabledTools).toEqual([]);
   });
-  await withEnv({ HF_ACCOUNT_FIXED_CREDITS: JSON.stringify({ "voice-change": 12, dubbing: -1, "soul-build": "9" }) }, async () => {
+  await withEnv({ HF_ACCOUNT_FIXED_CREDITS: JSON.stringify({ "voice-change": 12, dubbing: -1, "element-build": "9", "soul-build": 9 }) }, async () => {
     await account.setPlatformAccountTools(["voice-change", "reframe"], owner.userId);
     expect((await account.readPlatformDesignation())!.enabledTools).toEqual(["reframe", "voice-change"]);
     await expect(account.setPlatformAccountTools(["dubbing"], owner.userId)).rejects.toEqual(refusal("tool_unpriced"));
-    await expect(account.setPlatformAccountTools(["soul-build"], owner.userId)).rejects.toEqual(refusal("tool_unpriced"));
+    await expect(account.setPlatformAccountTools(["element-build"], owner.userId)).rejects.toEqual(refusal("tool_unpriced"));
+    // Priced or not, a tool the commercial API serves never runs on the website account.
+    await expect(account.setPlatformAccountTools(["soul-build"], owner.userId)).rejects.toEqual(refusal("tool_on_api"));
   });
 });
 
@@ -213,7 +215,9 @@ test("the desk's view names states and tools, never a token, grant, account hash
   await withEnv({ HF_ACCOUNT_CREDIT_USD: "0.0123", HF_ACCOUNT_FIXED_CREDITS: JSON.stringify({ dubbing: 40 }) }, async () => {
     const mine = await account.platformAccountStatus(owner);
     expect(mine).toMatchObject({ state: "ready", reason: null, host: { workspaceName: expect.stringMatching(/^Host studio/), yours: true }, candidate: { eligible: true }, rateSet: true });
-    expect(mine.tools.find((tool) => tool.id === "dubbing")).toEqual({ id: "dubbing", label: "Dub", pricing: "fixed", enabled: false, priceSet: true });
+    expect(mine.tools.find((tool) => tool.id === "dubbing")).toEqual({ id: "dubbing", label: "Dub", pricing: "fixed", enabled: false, priceSet: true, onApi: false });
+    // Identity builds run on the commercial API for every workspace: never switchable here.
+    expect(mine.tools.find((tool) => tool.id === "soul-build")).toMatchObject({ onApi: true });
     expect(mine.tools.find((tool) => tool.id === "voice-change")).toMatchObject({ priceSet: false });
     const theirs = await account.platformAccountStatus(visitor);
     expect(theirs).toMatchObject({ host: { yours: false }, candidate: { eligible: true } });

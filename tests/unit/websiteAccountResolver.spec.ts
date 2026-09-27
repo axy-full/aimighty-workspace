@@ -119,6 +119,8 @@ async function admit(entry: WebsiteJobEntry, job: { id: string; meterId: string 
 test("the commercial API is always preferred, and a managed workspace refuses every website tool until its billing is built", async () => {
   const { tools, funding, account, jobs } = await modules();
   expect(tools.websiteToolTransport({ workflow: "genjutsu" })).toEqual({ kind: "commercial_api", route: "studio-engines" });
+  expect(tools.websiteToolTransport({ tool: "soul-build" })).toEqual({ kind: "commercial_api", route: "studio-identities" });
+  expect(tools.websiteToolTransport({ tool: "element-build" })).toEqual({ kind: "website_account", tool: "element-build" });
   expect(tools.websiteToolTransport({ workflow: "marketing-video" })).toEqual({ kind: "website_account", tool: "marketing-video" });
   expect(tools.websiteToolTransport({ workflow: "voice-tool", voiceTool: "reframe" })).toEqual({ kind: "website_account", tool: "reframe" });
   expect(tools.websiteToolTransport({ workflow: "voice-tool", voiceTool: null })).toEqual({ kind: "none" });
@@ -127,7 +129,7 @@ test("the commercial API is always preferred, and a managed workspace refuses ev
   // Even designated, every tool switched on, priced, and the private rate set.
   const host = await designatedHost();
   await withEnv({ HF_ACCOUNT_CREDIT_USD: "0.02", HF_ACCOUNT_FIXED_CREDITS: JSON.stringify(Object.fromEntries(tools.WEBSITE_TOOL_IDS.map((id) => [id, 5]))) }, async () => {
-    await account.setPlatformAccountTools([...tools.WEBSITE_TOOL_IDS], host.userId);
+    await account.setPlatformAccountTools(tools.WEBSITE_TOOL_IDS.filter((id) => !tools.servedByCommercialApi(id)), host.userId);
     await inClient(client(), async () => {
       for (const target of [
         ...(["marketing-video", "shorts", "marketing-template", "generation", "virality", "genjutsu", "reference-match"] as const).map((workflow) => ({ workflow })),
