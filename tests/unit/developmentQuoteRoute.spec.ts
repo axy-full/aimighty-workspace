@@ -78,14 +78,14 @@ test("a credit workspace's own-key model keeps its dollar ceiling in the quote; 
   expect((await quoteFor(workspace({ usesPlatformKeys: false, keys: { gateway: "test-only-never-sent" } }), "anthropic/claude-sonnet-4.6")).estimateUsd).toBe(0.42);
 });
 
-test("an own-key quote reads as its dollar ceiling on the button and the line, never \"up to 0 credits\"", async () => {
-  const { pricedAgentText } = await import("../../components/graphite/production/agent-price");
+test("an own-key quote reads as its dollar ceiling, never \"0 credits\"; a credit quote is credits only, never both units", async () => {
+  const { agentPrice } = await import("../../components/graphite/production/agent-price");
   const ownKey = { estimateCredits: 0, estimateUsd: 0.01234 };
-  expect(pricedAgentText("Wire it · up to 0 credits", ownKey)).toBe("Wire it · up to $0.0123 on your key");
-  expect(pricedAgentText("3 agent steps · Claude · up to 0 credits", ownKey, true)).toBe("3 agent steps · Claude · up to $0.0123 on your key");
-  expect(pricedAgentText("2 shots · 3 agent steps", ownKey, true)).toBe("2 shots · 3 agent steps · $0.0123 on your key");
-  /* Credits stay credits; a quote that also shows dollars adds the ceiling to its line only. */
-  expect(pricedAgentText("Wire it · up to 4 credits", { estimateCredits: 4 })).toBe("Wire it · up to 4 credits");
-  expect(pricedAgentText("Wire it · up to 4 credits", { estimateCredits: 4, estimateUsd: 0.2 })).toBe("Wire it · up to 4 credits");
-  expect(pricedAgentText("3 agent steps · up to 4 credits", { estimateCredits: 4, estimateUsd: 0.2 }, true)).toBe("3 agent steps · up to 4 credits · $0.2000 ceiling");
+  expect(agentPrice(ownKey, true)).toBe("$0.0123 on your key");
+  /* Credits stay credits: even a quote that arrived with dollars never shows them beside its credits (#372). */
+  expect(agentPrice({ estimateCredits: 4 }, true)).toBe("4 credits");
+  expect(agentPrice({ estimateCredits: 4, estimateUsd: 0.2 }, true)).toBe("4 credits");
+  expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
+  /* A workspace that pays its vendors in dollars sees its dollars, never a credit figure. */
+  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.2 }, false)).toBe("$0.2000");
 });

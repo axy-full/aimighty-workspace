@@ -135,6 +135,9 @@ async function hiddenRows(page: Page) {
 
 /** The card lands clear of the band: every row. */
 async function landsClear(page: Page) {
+  /* The confirmation toast is centred at the page's foot for a moment (at 844×390 over the card's lower rows): it has to time
+     out, and the card is judged against what stays — the sticky Generate band, the tab bar. */
+  await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 10_000 });
   expect(await hiddenRows(page), "card rows hidden").toEqual([]);
 }
 

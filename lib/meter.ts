@@ -41,6 +41,11 @@ export type MeterEvent = {
   createdBy?: string | null;
   /** Defaults to the current tenant's workspace. */
   workspaceId?: string;
+  /**
+   * Work the workspace is not charged for although the vendor was paid — a
+   * failed agent run: the vendor's cost is recorded, the bill is zero.
+   */
+  unbilled?: boolean;
 };
 
 export class FundingSourceChangedError extends Error {
@@ -112,7 +117,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         if (row?.status === "succeeded" && e.status === "failed") return;
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
-        const billed = cost == null ? null : fundedByPlatform ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
+        const billed = cost == null ? null : fundedByPlatform && !e.unbilled ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
         await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
         await tx.execute({
         sql: `INSERT INTO meter_events
