@@ -420,6 +420,16 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, takesReferences ? "references are pictures and video." : `${model?.label ?? "this model"} takes a prompt only.`) ?? ""].filter(Boolean).join(" ") || null;
   };
   const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
+  /* One take's tile, walled off so a take that throws costs only its own tile — in a strip, `label` names it "take N". */
+  const tile = (entry: LibraryEntry, label?: string) => (
+    <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
+      <div className={label ? "gx-asset gx-batch-take" : "gx-asset"} data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} {...(label ? { role: "listitem", "data-testid": "gen-batch-take" } : {})}>
+        {thumb(entry)}
+        <span className="gx-asset-name">{label ?? entry.take.name}</span>
+        <span className="gx-asset-meta">{entry.take.meta}</span>
+      </div>
+    </Boundary>
+  );
   /* A take's picture: opens it in the Inspector, and drags anywhere a take is taken. */
   const thumb = (entry: LibraryEntry) => (
     <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
@@ -712,30 +722,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             <p className="gx-gen-note" role="status" data-testid="gen-enhanced-on-account"><span className="gx-eyebrow">Enhanced on the account</span> {composer.connectedEnhanced.slice(0, 400)}</p>
           ) : null}
           </>}
-          renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? (
-            <Boundary what="This take" probe={`take:${cell.take.take.id}`} resetKey={cell.take.take.id} fallback={(fault) => <TileFault fault={fault} name={cell.take.take.name} />}>
-            <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === cell.take.take.id}>
-              {thumb(cell.take)}
-              <span className="gx-asset-name">{cell.take.take.name}</span>
-              <span className="gx-asset-meta">{cell.take.take.meta}</span>
-            </div>
-            </Boundary>
-          ) : (
+          renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : (
             <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
               label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
-              {cell.takes.map((entry, i) => {
-                const v = entryBatch(entry)?.variation;
-                /* Inside a strip too, one bad take costs only its own tile. */
-                return (
-                  <Boundary key={entry.take.id} what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />}>
-                  <div className="gx-asset gx-batch-take" role="listitem" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} data-testid="gen-batch-take">
-                    {thumb(entry)}
-                    <span className="gx-asset-name">{takeLabel(isVariation(v) ? v : i + 1)}</span>
-                    <span className="gx-asset-meta">{entry.take.meta}</span>
-                  </div>
-                  </Boundary>
-                );
-              })}
+              {cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return tile(entry, takeLabel(isVariation(v) ? v : i + 1)); })}
             </TakeStrip>
           )}
         />
