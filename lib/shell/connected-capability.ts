@@ -84,9 +84,9 @@ export function createCapabilityStore(read: (scope: string) => Promise<Connectio
       const job: Promise<void> = Promise.resolve()
         .then(() => read(scope))
         .then(
-          (reply) => { if (epochOf(scope) === epoch) put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() }); },
+          (reply) => { if (epochOf(scope) === epoch && inflight.get(scope)?.job === job) put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() }); },
           (error: unknown) => {
-            if (epochOf(scope) !== epoch) return;
+            if (epochOf(scope) !== epoch || inflight.get(scope)?.job !== job) return;
             put(scope, { status: "error", connected: false, reconnect: false, error: error instanceof Error && error.message ? error.message : CAPABILITY_UNREADABLE, at: clock() });
           },
         )
@@ -98,7 +98,6 @@ export function createCapabilityStore(read: (scope: string) => Promise<Connectio
     settle(scope: string, reply: ConnectionReply, since?: number) {
       if (since !== undefined && since !== epochOf(scope)) return false;
       // This answer supersedes any earlier connection read still in flight.
-      epochs.set(scope, epochOf(scope) + 1);
       inflight.delete(scope);
       put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() });
       return true;

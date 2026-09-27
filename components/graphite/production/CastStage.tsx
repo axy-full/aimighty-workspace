@@ -14,7 +14,7 @@ import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
 import { CONFIRM } from "@/lib/shell/confirmations";
-import { castStillPrompt } from "@/lib/shell/connected-capability";
+import { CAPABILITY_UNREADABLE, castStillPrompt } from "@/lib/shell/connected-capability";
 import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useConfirm } from "@/lib/shell/use-confirm";
@@ -274,7 +274,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activeCast ? "The agent is working." : !agentModel ? "Choose an agent above." : !p.production?.beats?.scenes.length && !(p.script ?? "").trim() ? "Write the script or break it into beats first." : null;
   const readySouls = souls.filter((s) => s.status === "ready");
-  const accountBlocked = connected === false ? "Connect the Higgsfield account in Workspace › Engines." : connected === null || models === null ? "Reading the connected account…" : null;
+  const accountBlocked = capability.status === "error" ? capability.error ?? CAPABILITY_UNREADABLE : connected === false ? `${capability.reconnect ? "Reconnect" : "Connect"} the Higgsfield account in Workspace › Engines.` : connected === null || models === null ? "Reading the connected account…" : null;
   const characters = cast.entries.filter((e) => e.kind === "character").length;
 
   return (
@@ -287,9 +287,14 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
-      {member ? <OwnerRunCard surface="cast" scope={scope} aspect={p.aspect} /> : connected === false ? (
+      {member ? <OwnerRunCard surface="cast" scope={scope} aspect={p.aspect} /> : capability.status === "error" ? (
+        <section className="gx-gen-card pd-recover" data-testid="cast-connect" role="alert">
+          <p className="gx-gen-error">{capability.error ?? CAPABILITY_UNREADABLE}</p>
+          <button type="button" className="gx-hbtn" onClick={refreshConnection}>Try again</button>
+        </section>
+      ) : connected === false ? (
         <section className="gx-gen-card pd-recover" data-testid="cast-connect">
-          <p className="gx-hint">Soul Cinema runs on your connected Higgsfield account. Connect it once and every character and element here can be built.</p>
+          <p className="gx-hint">{capability.reconnect ? "Reconnect the Higgsfield account to build characters and elements." : "Soul Cinema runs on your connected Higgsfield account. Connect it once and every character and element here can be built."}</p>
           <button type="button" className="gx-primary" onClick={() => shell.goWorkspace("engines")}>Open Workspace › Engines</button>
         </section>
       ) : null}

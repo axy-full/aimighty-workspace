@@ -68,7 +68,7 @@ function OwnerWorkflow({ surface, scope, project }: { surface: WorkflowSurface; 
   }, [scoped, draftId, scope]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
 
-  const reason = workflowReason(surface, { hasProject: Boolean(project), capability, capabilities, error });
+  const reason = workflowReason(surface, { hasProject: Boolean(project), capability, capabilities, error: error ?? (shared.status === "error" ? shared.error : null) });
   const refreshProject = useCallback(async () => { if (draftId) await refreshProjectLibrary(scope, draftId); }, [scope, draftId]);
   return (
     <section className="gx-gen-card gx-workflow" aria-label={surface.title} data-testid={`workflow-${surface.tool}`}>

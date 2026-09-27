@@ -140,7 +140,6 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const [sheet, setSheet] = useState(false);
   /* The connected catalogue is the owner's (composerBlock refuses anyone else): members are not shown the switch at all. */
   const groups = owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
-  useEffect(() => { if (!owner && state.billing === "connected") dispatchComposer({ type: "billing", value: "workspace" }); }, [owner, state.billing, dispatchComposer]);
   /* What this browser remembers for the sheet (recent picks, last connected quotes), read fresh each time it opens. */
   const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
   const modelButton = useRef<HTMLButtonElement>(null);

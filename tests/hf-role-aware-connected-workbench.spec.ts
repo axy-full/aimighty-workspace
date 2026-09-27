@@ -24,6 +24,7 @@ const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
 const SHOTS = process.env.CONNECTED_ROLE_SHOTS;
 const CONSUMER = /\/api\/higgsfield\/consumer\//;
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 async function settle(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => !(a.effect instanceof KeyframeEffect && a.effect.getComputedTiming().iterations === Infinity)).map((a) => a.finished.catch(() => undefined))));
@@ -41,6 +42,7 @@ async function hydrated(target: Locator) {
 }
 async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
+  for (const card of await page.locator(".gx-owner-run").all()) expect(await card.evaluate((el) => el.scrollWidth - el.clientWidth), "owner card keeps its content inside").toBeLessThanOrEqual(1);
 }
 /** On a phone every button in `scope` is a whole 44px target. */
 async function fingerSized(scope: Locator, project: string) {
