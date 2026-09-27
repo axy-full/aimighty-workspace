@@ -216,15 +216,30 @@
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
 .gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
-/* Centred by its margins (#388's line, as it is): gx-pop animates `transform`, which undid the old translate. */
-/* An undo toast carries its own Undo — the phone's ⌘Z; the "⌘Z to undo" half is for keyboards only. */
-.gx-toast[data-undo] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
-.gx-toast-text { min-width: 0; }
+
+/* A confirmation with somewhere to go, or one the undo stack can take back: the words, then one Open (lib/shell/confirmations) or
+   Undo (lib/shell/state › pushUndo). Centred by margin, since the pop animation owns transform. */
+.gx-toast[data-open] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
+/* Two lines at most: the Open says where the rest is. */
+.gx-toast-text { min-width: 0; line-height: 18px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.gx-toast-open { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; font: inherit; font-weight: 600; white-space: nowrap; color: var(--gx-text); background: var(--gx-input-hover); border: 1px solid var(--gx-hair); cursor: pointer; }
+.gx-toast-open:hover { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+/* An Undo is the phone's ⌘Z; the "⌘Z to undo" half is for keyboards only. */
 .gx-toast-undo { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(10, 132, 255, .45); background: rgba(10, 132, 255, .16); color: var(--gx-accent-text); font: inherit; font-weight: 600; cursor: pointer; }
 .gx-toast-undo:hover { background: rgba(10, 132, 255, .26); }
 @media (hover: none), (pointer: coarse) { .gx-toast-kbd { display: none; } .gx-toast-undo { height: 44px; min-width: 72px; } }
-/* On a phone the toast sits above the floating tab bar, never over it. */
-@media (max-width: 767px) { .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); } }
+/* Phone: above the floating tab bar (66px at 22px) and the home indicator. Any touch screen: the Open is a full 44px target. */
+@media (max-width: 767px) {
+  .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); }
+  /* The Uploads chip (components/UploadRecovery) floats just above the tab bar once anything was uploaded: the toast goes above it. */
+  body:has(section[aria-label="Upload recovery"]) .gx-toast { bottom: calc(122px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Wherever that chip floats (up to 900px), a confirmation is above it (z-index 90), so no part of its Open is the chip's. */
+@media (max-width: 900px) { body:has(section[aria-label="Upload recovery"]) .gx-toast { z-index: 91; } }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-toast[data-open] { padding: 4px 4px 4px 16px; }
+  .gx-toast-open { height: 44px; min-width: 44px; padding: 0 16px; }
+}
 
 /* ── Workspace view ────────────────────────────────────────────────────── */
 .gx-ws { flex: 1; min-height: 0; overflow: auto; background: var(--gx-panel); }
@@ -687,6 +702,9 @@
 .gx-stepper button:disabled { opacity: .4; cursor: default; }
 .gx-stepper span { min-width: 22px; text-align: center; font-family: var(--gx-mono); font-weight: 600; color: var(--gx-text); }
 @media (max-width: 767px), (pointer: coarse) { .gx-stepper button { width: 44px; height: 44px; } }
+/* Gen › Audio: the length stepper and music's Instrumental switch share a row, and wrap on a narrow phone. */
+.gx-gen-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx-gen-sound .gx-stepper span { min-width: 52px; padding: 0 4px; white-space: nowrap; }
 
 /* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
 .gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }

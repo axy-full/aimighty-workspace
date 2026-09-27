@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import DeviceProbe from "@/components/switchover/DeviceProbe";
 import PreviewLayer from "@/components/PreviewLayer";
 import DragLayer from "@/components/DragLayer";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteOrigin } from "@/lib/site";
 import "./fonts.css";
 import "./globals.css";
 import "./four-suites.css";
@@ -11,13 +12,26 @@ import "./preview.css";
    and declared in app/fonts.css. Graphite interface typography is defined by the
    shared system-font tokens in globals.css. */
 
+/* Absolute URLs for link previews (Slack, X, iMessage) are built on this. Next
+   falls back to localhost in development; the fallback here only keeps a
+   relative image legal when no origin is configured at all. */
+const origin = siteOrigin() ?? `http://localhost:${process.env.PORT || 3000}`;
+
 export const metadata: Metadata = {
-  title: "Particl Production Studio",
-  description: "particl studio — the studio's own room for making shots, and for knowing what they cost",
+  metadataBase: new URL(origin),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    type: "website", siteName: SITE_NAME, title: SITE_TITLE, description: SITE_DESCRIPTION,
+    images: [{ url: "/icon.png?v=3", width: 1024, height: 1024, alt: SITE_NAME }],
+  },
+  twitter: { card: "summary", title: SITE_TITLE, description: SITE_DESCRIPTION, images: ["/icon.png?v=3"] },
   manifest: "/manifest.json",
   // iOS ignores the manifest for home-screen icons — declare one explicitly.
   // Versioned so a browser or home screen that cached an older mark is
-  // forced to fetch this one: v3 is the trail.
+  // forced to fetch this one: v3 is the trail. These are the only icons: the
+  // old ring-of-dots app/icon.png and app/favicon.ico, which Next served at
+  // the same URLs and put first in <head>, are gone.
   icons: {
     icon: [
       { url: "/favicon.svg?v=3", type: "image/svg+xml" },

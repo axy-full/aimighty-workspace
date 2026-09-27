@@ -11,7 +11,7 @@ import { creditsApply, creditState } from "./credits";
 import { projectCapSpent, spentBy } from "./caps";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import { shotCreditsSoFar } from "./shotCap";
-import { quoteOf, verdictOf, liveTerms, stampOf, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
+import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
 /**
  * What changing something costs, before it is changed (brief 3, surface 1b).
@@ -44,7 +44,8 @@ export type Choice = {
   key: ChoiceKey;
   label: string;
   shots: number;
-  quote: Quote;
+  /* Sent to the browser (/api/rig/quote), so in credits alone. */
+  quote: PublicQuote;
   verdict: Verdict;
   consequence: string;
 };
@@ -60,7 +61,6 @@ export type Impact = {
   /** Which choice is offered first: the one that changes least that still moves. */
   defaultKey: ChoiceKey;
   pricedAt: number;
-  stamp: string;
 };
 
 /**
@@ -113,21 +113,21 @@ export async function impactOf(
   const choices: Choice[] = [
     {
       key: "all", label: `Re-render all ${all.length}`, shots: all.length,
-      quote: everything.q, verdict: everything.v,
+      quote: publicQuote(everything.q), verdict: everything.v,
       consequence: approved
         ? `The ${approved} approved take${approved === 1 ? "" : "s"} return to draft for re-approval.`
         : "Every shot using this is rendered again.",
     },
     {
       key: "approved", label: `Re-render approved only`, shots: approved,
-      quote: justApproved.q, verdict: justApproved.v,
+      quote: publicQuote(justApproved.q), verdict: justApproved.v,
       consequence: draft
         ? `The ${draft} draft${draft === 1 ? "" : "s"} keep the old version until you render them.`
         : "Only the approved takes are made again.",
     },
     {
       key: "none", label: "Leave existing takes", shots: 0,
-      quote: nothing.q, verdict: nothing.v,
+      quote: publicQuote(nothing.q), verdict: nothing.v,
       consequence: "Nothing already made changes; only new renders use it.",
     },
   ];
@@ -144,7 +144,8 @@ export async function impactOf(
        honest default rather than spending on every draft. */
     defaultKey: approved ? "approved" : "none",
     pricedAt: opts.at,
-    stamp: stampOf(described.map(unitOf), terms),
+    /* No stamp: stampOf spells out the vendor cost of every shot and the
+       margin table, and nothing in the browser checks one. */
   };
 }
 

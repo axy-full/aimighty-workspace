@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { EMPTY_TABLE, type RateTable } from "./rateTable";
+import { signInHrefFor } from "./signIn";
 
 /**
  * Who is looking, and what that means for the rest of the app.
@@ -24,10 +25,9 @@ import { EMPTY_TABLE, type RateTable } from "./rateTable";
 
 export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
-/* No `margins`. It used to be here, and with `creditUsd` beside it a customer
-   could divide the markup back out of any price on the screen — §2 says margin
-   is never shown, and shipping it counts. What the browser gets instead is
-   `rates`, already converted, in lib/rateTable.ts. */
+/* No `margins`. It used to be here, beside `creditUsd`, where any customer
+   could read it — §2 says margin is never shown, and shipping it counts. What
+   the browser gets instead is `rates`, already converted, in lib/rateTable.ts. */
 export type SessionCredits = { creditUsd: number; granted: number; used: number; balance: number };
 export type Session = {
   signedIn: boolean;
@@ -88,7 +88,7 @@ export function clearPrivateLocal(): void {
     for (const k of doomed) localStorage.removeItem(k);
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const key = sessionStorage.key(i);
-      if (key?.startsWith("particl-movie-private:")) sessionStorage.removeItem(key);
+      if (key?.startsWith("particl-movie-private:") || key?.startsWith("particl:compose-handoff:")) sessionStorage.removeItem(key);
     }
   } catch { /* private mode, or storage disabled — nothing to clear */ }
 }
@@ -111,23 +111,25 @@ export function useSession(): Session {
 }
 
 /**
- * Where a visitor goes to get in, carrying where they were.
+ * Where a visitor goes to get in, carrying where they were — the path AND its
+ * query, so /generate?mode=images&task=upscale comes back as itself rather
+ * than as a bare /generate.
  *
- * A hook, and built on usePathname rather than window.location, because the
- * server has no window and rendered a bare "/login" while the client then
- * rendered "/login?next=/team" — a different attribute on the same anchor,
- * which React reports as a hydration mismatch on every screen a visitor can
- * see. usePathname answers identically on both sides.
+ * A hook, and built on usePathname and useSearchParams rather than
+ * window.location, because the server has no window and rendered a bare
+ * "/login" while the client then rendered "/login?next=/team" — a different
+ * attribute on the same anchor, which React reports as a hydration mismatch
+ * on every screen a visitor can see. Both hooks answer identically on both
+ * sides of a dynamically rendered route, which every caller is in.
  */
 export function useSignInHref(): string {
   const path = usePathname();
-  return signInHrefFor(path);
+  const query = useSearchParams();
+  return signInHrefFor(path, query?.toString() ?? "");
 }
 
-/** The pure form, for anything that is not a component. */
-export function signInHrefFor(path: string | null): string {
-  return path && path !== "/" ? `/login?next=${encodeURIComponent(path)}` : "/login";
-}
+/** The pure form, for anything that is not a component (lib/signIn.ts). */
+export { signInHrefFor };
 
 /* There is deliberately no contact address in this file, or in any other
    file that reaches a browser. Asking for an invitation goes through

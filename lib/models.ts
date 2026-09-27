@@ -333,7 +333,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 0,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
-    note: "Luma's Ray 2 Flash reframe — a finished clip re-cut to another aspect, the new frame's edges painted in. $0.06 a second.",
+    note: "Luma's Ray 2 Flash reframe — a finished clip re-cut to another aspect, the new frame's edges painted in.",
   },
   {
     id: "fal-ai/topaz/upscale/image", billing: "image", use: "Enhance an original image with Topaz precision models.",
@@ -369,7 +369,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 1,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "Bria Expand — a still extended to another aspect, the new frame painted in. $0.04 an image.",
+    note: "Bria Expand — a still extended to another aspect, the new frame painted in.",
   },
   {
     id: "fal-ai/bria/background/remove",
@@ -392,7 +392,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 1,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "Bria RMBG 2.0 — the subject lifted off its background, transparent behind it. $0.018 an image.",
+    note: "Bria RMBG 2.0 — the subject lifted off its background, transparent behind it.",
   },
   {
     // Google's Nano Banana Pro — stills, on the Gemini API (its own key).

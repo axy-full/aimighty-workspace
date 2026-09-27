@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
-import { nodeAudioBody, type NodeAudioSetup } from "../workbench/generation-audio";
+import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "../workbench/generation-audio";
 import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media-reference-input";
 import { pendingGenerationKey } from "../workbench/pending-generation";
 import { createSoundNode, findSoundNode } from "../workbench/sound-generate";
@@ -23,8 +23,10 @@ import {
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
 import {
   activeModel,
+  audioSeconds,
   billingWording,
   composerBlock,
+  composerVoices,
   composerButtonLabel,
   composerButtonParts,
   composerReducer,
@@ -325,6 +327,11 @@ export type ComposerHost = {
   wording: string;
   /** The audio setup, for the voice row. */
   audio: NodeAudioSetup | null;
+  /** A speech model's voices (each model its own vendor's, composerVoices), and the one the line is read in: the pick, else the first. */
+  voices: { id: string; name: string }[];
+  voice: { id: string; name: string } | null;
+  /** A sound effect's or music's length as billed: the seconds held to the model's range. */
+  seconds: number;
   capability: ConnectedCapability | null;
   /** The project the composer files into; null until one is open or created. */
   project: Project | null;
@@ -472,23 +479,23 @@ export function useComposer(options: {
   const compose = options.compose;
   const sent = useMemo(() => (compose ? compose(state.prompt, state.shot, state.type) : { prompt: state.prompt, shotSpec: null }), [compose, state.prompt, state.shot, state.type]);
 
+  /* Sound as it is billed: the length held to the model's range, and the voice a line is read in — the one picked
+     while this model has it, else the model's first (each speech model reads in its own vendor's voices). The picker,
+     the price on the button and the request all read these, so what is shown is what is sent. */
+  const seconds = audioSeconds(model?.audioTask, state.seconds);
+  const voices = useMemo(() => (model?.audioTask === "speech" ? composerVoices(audio, model.id) : []), [audio, model]);
+  const voice = speechVoiceFor(voices, state.voiceId);
+  const voiceId = voice?.id ?? "";
+
   const quoteKey = quoteKeyFor({
     billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
-    references: state.references, prompt: sent.prompt.trim(), seconds: state.seconds,
-    instrumental: state.instrumental, voiceId: state.voiceId,
+    references: state.references, prompt: sent.prompt.trim(), seconds,
+    instrumental: state.instrumental, voiceId,
   });
 
   /* ── The live price on the button ───────────────────────────────────── */
   const audioBody = model?.audioTask
-    ? nodeAudioBody({
-        task: model.audioTask,
-        text: state.prompt,
-        /* Music has a ten-second floor in the audio route; sound has none. */
-        seconds: model.audioTask === "music" ? Math.max(10, state.seconds) : state.seconds,
-        instrumental: state.instrumental,
-        voiceId: state.voiceId || audio?.voices[0]?.id || "",
-        modelId: model.id,
-      })
+    ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
   /* The connected quote body, when it can be built at all. */
@@ -578,7 +585,7 @@ export function useComposer(options: {
 
   const credits = liveCredits(quote, quoteKey);
   const blocked = composerBlock({
-    state, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
+    state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
       : { loading: engines.loading, error: engines.error },
@@ -1147,7 +1154,7 @@ export function useComposer(options: {
     buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, capability, project: target, projectNotice, generate, retryEngines, scope,
+    audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, scope,
     batches: batchViews,
     batchJobIds: batches.flatMap((run) => (run.source === "connected" ? run.takes.flatMap((take) => (take.jobId ? [take.jobId] : [])) : [])),
   };

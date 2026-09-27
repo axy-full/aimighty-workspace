@@ -14,7 +14,7 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, draftOffered, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { AUDIO_SECONDS, COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, draftOffered, stepAudioSeconds, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useSession } from "@/lib/session";
 import { ModelSheet } from "./ModelSheet";
@@ -145,10 +145,10 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const pickModel = (m: ComposerModel) => { used(m.id); composer.dispatch({ type: "model", value: m.id }); closeSheet(); };
   const recent = useMemo(() => recentModels(memory.recent, state.billing, state.type, offered), [memory.recent, state.billing, state.type, offered]);
   /* Every Studio row is priced where the composer stands (its picks, the project's aspect, its references,
-     one take): the list's own rates cover the untouched composer; anything else is one read of the engines
+     one take, a sound's length in the whole seconds it bills): the list's own rates cover the untouched composer; anything else is one read of the engines
      route's list, priced there, while the sheet is open. It quotes nothing and reserves nothing. */
   const draftTakes = settings.draft ? 1 : state.count;
-  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: state.seconds, takes: draftTakes }),
+  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: Math.round(state.seconds), takes: draftTakes }),
     [composer.project?.aspect, state.picks, state.references, state.seconds, draftTakes]);
   const priceKey = rateQuery(priceAt);
   const [sheetRates, setSheetRates] = useState<SheetRates | null>(null);
@@ -423,7 +423,11 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
     }
     return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, takesReferences ? "references are pictures and video." : `${model?.label ?? "this model"} takes a prompt only.`) ?? ""].filter(Boolean).join(" ") || null;
   };
-  const footer = [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"].filter(Boolean).join(" · ");
+  /* Sound says what it will be: the voice a line is read in, or the length and, for music, whether it has vocals. */
+  const soundTask = model?.audioTask === "sound" || model?.audioTask === "music" ? model.audioTask : null;
+  const footer = (state.type === "audio"
+    ? [model?.audioTask === "speech" ? composer.voice?.name : null, soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null, soundTask === "music" ? (state.instrumental ? "Instrumental" : "With vocals") : null, "Saved to your takes"]
+    : [settings.ratio, model?.durations?.length ? `${settings.duration} s` : null, "Saved to your takes"]).filter(Boolean).join(" · ");
   /* One take's tile, walled off so a take that throws costs only its own tile — in a strip, `label` names it "take N". */
   const tile = (entry: LibraryEntry, label?: string) => (
     <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
@@ -457,6 +461,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
   const chips = recipe ? recipeChips({
     preset: recipe.preset, type: state.type, billing: state.billing, model, models: composer.models, settings, owner: Boolean(owner),
     reading: blocked === READING_MODELS || blocked === READING_ACCOUNT, blocked: model ? null : blocked, identities: characters.list,
+    sound: { seconds: composer.seconds, instrumental: state.instrumental, voice: composer.voice, voices: composer.voices },
   }) : [];
   const refs = recipe?.refs ?? null;
   /* The setup the take carried, and whether the chips still hold it for this output (a still has no camera travel). */
@@ -664,6 +669,33 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             <select id="gx-length" className="gx-select" value={settings.duration} onChange={(e) => composer.dispatch({ type: "pick", value: { duration: Number(e.target.value) } })} data-testid="gen-length">
               {model.durations.map((d) => <option key={d} value={d}>{d} s</option>)}
             </select>
+          </div>
+        ) : null}
+        {/* Sound: a line's voice (the model's own vendor's, so the list swaps with the model), a length for effects and
+            music, and music's Instrumental. Each is in the price's key: a change is priced again before Generate. */}
+        {model?.audioTask === "speech" ? (
+          <div className="gx-gen-row">
+            <label className="gx-eyebrow" htmlFor="gx-voice" data-functional-label="">Voice</label>
+            <select id="gx-voice" className="gx-select" value={composer.voice?.id ?? ""} onChange={(e) => composer.dispatch({ type: "voice", value: e.target.value })} data-testid="gen-voice">
+              {composer.voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+        ) : null}
+        {soundTask ? (
+          <div className="gx-gen-row">
+            <span className="gx-eyebrow" id="gx-seconds-label" data-functional-label="">Length</span>
+            <div className="gx-gen-sound">
+              <div className="gx-stepper" role="group" aria-labelledby="gx-seconds-label" data-testid="gen-seconds">
+                <button type="button" aria-label="Shorter" disabled={composer.seconds <= AUDIO_SECONDS[soundTask].min} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, -1), task: soundTask })}>–</button>
+                <span aria-live="polite" data-testid="gen-seconds-value">{composer.seconds} s</span>
+                <button type="button" aria-label="Longer" disabled={composer.seconds >= AUDIO_SECONDS[soundTask].max} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, 1), task: soundTask })}>+</button>
+              </div>
+              {soundTask === "music" ? (
+                <button type="button" className="gx-toggle" role="switch" aria-checked={state.instrumental} onClick={() => composer.dispatch({ type: "instrumental", value: !state.instrumental })} data-testid="gen-instrumental">
+                  <span className="gx-toggle-dot" aria-hidden="true" /><span>Instrumental</span>
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

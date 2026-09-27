@@ -113,7 +113,7 @@ export function useCrew(projectId: string | null) {
   }, [call, projectId, openRoom]);
 
   const active = useMemo(() => members.filter((m) => m.active), [members]);
-  const blockedBy = roundBlock({ goal, seated: active.length, running, roundsRun: session?.roundsRun ?? 0, keyConnected: status?.connected ?? true, hasProject: Boolean(projectId) });
+  const blockedBy = session?.needsReview ? "This round needs an engine outcome review before another can run." : roundBlock({ goal, seated: active.length, running, roundsRun: session?.roundsRun ?? 0, keyConnected: status?.connected ?? true, hasProject: Boolean(projectId) });
 
   /* The live price: what the next round can cost at most, for exactly this goal, context and roster. */
   const quoteKey = JSON.stringify([projectId, session?.id ?? null, session?.model ?? null, session?.roundsRun ?? 0, messages.length, goal.trim(), context, active.map((m) => [m.id, m.stance.length, m.name, m.department])]);
@@ -262,9 +262,10 @@ export function useCrew(projectId: string | null) {
     say: (text: string) => guard(async () => { const room = await ensureRoom(); const { message } = await call<{ message: RoomMessage }>(`/api/crew/sessions/${room.id}/notes`, { method: "POST", body: JSON.stringify({ text }) }); setMessages((all) => [...all, message]); }),
     pin: (messageId: string) => guard(async () => { const { solution } = await call<{ solution: CrewSolution }>("/api/crew/solutions", { method: "POST", body: JSON.stringify({ messageId }) }); setSolutions((all) => [...all, solution]); }),
     dropSolution: (id: string) => guard(async () => { await call(`/api/crew/solutions?id=${encodeURIComponent(id)}`, { method: "DELETE" }); setSolutions((all) => all.filter((s) => s.id !== id)); }),
-    routeSolution: async (id: string, to: "brief" | "boards" | "gen"): Promise<{ status: CrewSolution["status"]; prompt?: string } | null> => {
+    /** Where it went: the Rig route also names the draft shot it wrote (`nodeId`, `title`), so the confirmation can open it. */
+    routeSolution: async (id: string, to: "brief" | "boards" | "gen"): Promise<{ status: CrewSolution["status"]; prompt?: string; nodeId?: string; title?: string } | null> => {
       try {
-        const routed = await call<{ status: CrewSolution["status"]; prompt?: string }>(`/api/crew/solutions/${encodeURIComponent(id)}/route`, { method: "POST", body: JSON.stringify({ to }) });
+        const routed = await call<{ status: CrewSolution["status"]; prompt?: string; nodeId?: string; title?: string }>(`/api/crew/solutions/${encodeURIComponent(id)}/route`, { method: "POST", body: JSON.stringify({ to }) });
         setSolutions((all) => all.map((s) => (s.id === id ? { ...s, status: routed.status } : s)));
         return routed;
       } catch (error) { setNotice(error instanceof Error ? error.message : "Crew could not send that."); return null; }

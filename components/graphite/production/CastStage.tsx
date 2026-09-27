@@ -8,12 +8,14 @@ import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, sourcedCastId, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
+import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, mergeAgentCast, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
 import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
 import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
+import { CONFIRM } from "@/lib/shell/confirmations";
 import { useShell } from "@/lib/shell/state";
+import { useConfirm } from "@/lib/shell/use-confirm";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
@@ -55,6 +57,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const p = editor.project!;
   const shell = useShell();
   const { toast } = useWorkspace();
+  const { confirm } = useConfirm();
   const scoped = useScopedFetch(scope);
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
@@ -107,20 +110,11 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     if (!done?.result?.cast || cast.agentJobId === done.id || taken.current.has(done.id)) return;
     taken.current.add(done.id);
     const proposals = done.result.cast;
-    setCast((c) => {
-      const names = new Set(c.entries.map((e) => e.name.trim().toLowerCase()));
-      /* Each entry takes an id from this run and its name: another tab taking the same run makes the same entries, which the merge of the two saves holds once. */
-      const ids = new Set(c.entries.map((e) => e.id));
-      const fresh = proposals.filter((e) => {
-        const id = sourcedCastId(done.id, e.name);
-        if (names.has(e.name.trim().toLowerCase()) || ids.has(id)) return false;
-        ids.add(id);
-        return true;
-      }).map((e) => newEntry(e.kind, e.name, e.description, e.prompt, { model: e.model, category: e.category }, sourcedCastId(done.id, e.name)));
-      return { ...c, entries: [...c.entries, ...fresh].slice(0, CAST_LIMITS.entries), agentJobId: done.id };
-    });
-    void editor.ensureSaved().then(() => toast(`The agent cast ${proposals.length} characters and elements`));
-  }, [castRuns, cast.agentJobId, setCast, editor, toast]);
+    /* The confirmation counts what was added, not what was proposed. */
+    let counts = { added: 0, known: 0, overLimit: 0 };
+    setCast((c) => { const merged = mergeAgentCast(c, proposals, done.id); counts = merged; return merged.cast; });
+    void editor.ensureSaved().then(() => confirm(CONFIRM.castTaken(counts)));
+  }, [castRuns, cast.agentJobId, setCast, editor, confirm]);
 
   /* ── Builds in flight: followed until the account returns the original, then filed as Cast or Elements. ── */
   const followKey = cast.entries.filter((e) => e.job?.status === "submitted").map((e) => `${e.id}:${e.job!.id}`).join(",");
@@ -146,7 +140,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
             const next: CastEntry = { ...e, job: undefined, takes: [{ genId: original.generationId, at: new Date().toISOString() }, ...e.takes].slice(0, CAST_LIMITS.takes), selected: original.generationId };
             return { ...old, assets: old.assets.some((a) => a.id === asset.id) || old.assets.length >= PROJECT_LIMITS.assets ? old.assets : [...old.assets, asset], production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
           });
-          void editor.ensureSaved().then(() => { void refreshProjectLibrary(scope, latest.current.id); toast(`${entry.name || "The build"} is in the library as ${entry.kind === "character" ? "Cast" : "Elements"}`); });
+          void editor.ensureSaved().then(() => { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.castBuilt(entry.name, entry.kind)); });
         } catch { /* read again next tick */ }
       }
       if (alive) timer = setTimeout(() => void tick(), wait * 1000);
