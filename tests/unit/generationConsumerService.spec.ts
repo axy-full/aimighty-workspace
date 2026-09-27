@@ -50,6 +50,10 @@ async function serviceFixture() {
     pollRaw: undefined as unknown, collectorError: undefined as unknown, submitBarrier: undefined as (() => Promise<void>) | undefined,
     originals: new Map<string, ConsumerVideoOriginal>(),
     batchPaid: 0, batchItems: [] as unknown[], batchResult: null as null | { state: string; providerJobId?: string }[], presetChecks: [] as string[],
+    /** Runs inside the batch call's preflight, before its admission: where a lost reply's check can land. */
+    beforeBatchAdmit: undefined as (() => Promise<void>) | undefined,
+    /** Runs after the batch's admission, before the paid call returns. */
+    afterBatchAdmit: undefined as (() => Promise<void>) | undefined,
     guardCalls: 0, presetReads: [] as string[][],
   };
   const records = await import("../../lib/higgsfield-consumer/marketing-records");
@@ -72,6 +76,7 @@ async function serviceFixture() {
     } },
     "./video-contract": contract,
     "./marketing-records": records,
+    "@/lib/variations": await import("../../lib/variations"),
     /* The standalone guard with the account's presets faked: a preset avatar, hook and setting are listed. */
     "./marketing-setup": {
       refuseForeignMarketingSetup: (userId: string, wanted: Parameters<typeof records.refuseForeignSetup>[1]) => {
@@ -142,7 +147,9 @@ async function serviceFixture() {
       submitConsumerGenerationBatch: async (_token: string, entries: { credits: number; params: unknown }[], wallet: string, options: { admit: () => Promise<void> }) => {
         if (wallet !== state.wallet) throw new contract.ConsumerVideoError("workspace_changed");
         state.batchItems = entries.map((entry) => entry.params);
+        if (state.beforeBatchAdmit) await state.beforeBatchAdmit();
         await options.admit();
+        if (state.afterBatchAdmit) await state.afterBatchAdmit();
         state.batchPaid++;
         return { raw: { jobs: [] }, items: state.batchResult ?? entries.map(() => ({ state: "uncertain" })) };
       },
@@ -440,4 +447,80 @@ test("A4: one approval for the exact sum, one atomic durable claim per item, one
     await expect(f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, more, { workspaceId: f.state.wallet, credits: 27 })).rejects.toMatchObject({ code: "capacity" });
     for (const id of more) expect((await f.jobs.getConsumerJob(scoped(id)))!.status).toBe("quoted");
     expect(f.state.batchPaid).toBe(1);
+  }));
+
+test("takes 2–4: one fresh quote per take under its own key, one batch id and take number each, the reference imported once", async () =>
+  fixture(async (f) => {
+    const keys = [randomUUID(), randomUUID(), randomUUID()];
+    const views = await f.service.quoteConsumerGenerationBatch(identity.userId, identity.draftId, request, keys, { batchId: "b_takes01", composer: "gen" });
+    expect(views.map((view) => view.batch)).toEqual([{ id: "b_takes01", variation: 1 }, { id: "b_takes01", variation: 2 }, { id: "b_takes01", variation: 3 }]);
+    expect(views.every((view) => view.status === "quoted" && view.composer === "gen" && view.quoteCredits === 9)).toBe(true);
+    expect(new Set(views.map((view) => view.id)).size).toBe(3);
+    /* Three live prices, one import of the one reference, nothing sent. */
+    expect([f.state.quoteCount, f.state.importCount, f.state.paidCount, f.state.batchPaid]).toEqual([3, 1, 0, 0]);
+    /* The same keys again are the same takes: no new price is asked. */
+    const again = await f.service.quoteConsumerGenerationBatch(identity.userId, identity.draftId, request, keys, { batchId: "b_takes01", composer: "gen" });
+    expect(again.map((view) => view.id)).toEqual(views.map((view) => view.id));
+    expect(f.state.quoteCount).toBe(3);
+    /* A key reused for another batch, or another take, names a different request. */
+    await expect(f.service.quoteConsumerGenerationBatch(identity.userId, identity.draftId, request, keys, { batchId: "b_other001" })).rejects.toMatchObject({ code: "idempotency_conflict" });
+    await expect(f.service.quoteConsumerGenerationBatch(identity.userId, identity.draftId, request, [keys[1], keys[0], keys[2]], { batchId: "b_takes01" })).rejects.toMatchObject({ code: "idempotency_conflict" });
+    for (const [bad, batchId] of [[[randomUUID()], "b_takes02"], [[1, 2, 3, 4, 5].map(() => randomUUID()), "b_takes02"], [[keys[0], keys[0]], "b_takes02"], [[randomUUID(), randomUUID()], "gen_nope"]] as const)
+      await expect(f.service.quoteConsumerGenerationBatch(identity.userId, identity.draftId, request, [...bad], { batchId })).rejects.toMatchObject({ code: "invalid_batch", status: 400 });
+    expect(f.state.quoteCount).toBe(3);
+    /* One approval of the exact sum, one paid call for all three. */
+    f.state.batchResult = views.map(() => ({ state: "accepted", providerJobId: randomUUID() }));
+    const sent = await f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, views.map((view) => view.id), { workspaceId: f.state.wallet, credits: 27 });
+    expect(sent.map((view) => [view.status, view.batch?.variation])).toEqual([["accepted", 1], ["accepted", 2], ["accepted", 3]]);
+    expect([f.state.batchPaid, f.state.paidCount]).toEqual([1, 0]);
+  }));
+
+test("a lost batch reply is checked, then fenced: one that never arrived can never be sent, even by the submit still on its way", async () =>
+  fixture(async (f) => {
+    const quote = () => f.service.quoteConsumerGenerationBatch(identity.userId, identity.draftId, request, [randomUUID(), randomUUID()], { batchId: "b_lostreply", composer: "gen" });
+    const ids = (await quote()).map((view) => view.id);
+    /* The submit is on its way (reading prices before its admission) when the browser, its reply lost, asks. */
+    let resume!: () => void;
+    const paused = new Promise<void>((done) => { resume = done; });
+    let reached!: () => void;
+    const atAdmission = new Promise<void>((done) => { reached = done; });
+    f.state.beforeBatchAdmit = async () => { reached(); await paused; };
+    const onItsWay = f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, ids, { workspaceId: f.state.wallet, credits: 18 });
+    await atAdmission;
+    const checked = await f.service.checkConsumerGenerationBatch(identity.userId, identity.draftId, ids);
+    expect(checked.state).toBe("absent");
+    expect(checked.jobs.map((job) => [job.status, job.quoteExpired])).toEqual([["quoted", true], ["quoted", true]]);
+    resume();
+    /* The fenced quotes refuse the admission: nothing was paid, and the answer "absent" stays true. */
+    await expect(onItsWay).rejects.toMatchObject({ code: "quote_expired" });
+    expect([f.state.batchPaid, f.state.paidCount]).toEqual([0, 0]);
+    await expect(f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, ids, { workspaceId: f.state.wallet, credits: 18 })).rejects.toMatchObject({ code: "quote_expired" });
+    await expect(f.service.submitConsumerGenerationJob(scoped(ids[0]), { workspaceId: f.state.wallet, credits: 9 })).rejects.toMatchObject({ code: "quote_expired" });
+    expect((await f.service.checkConsumerGenerationBatch(identity.userId, identity.draftId, ids)).state).toBe("absent");
+    expect([f.state.batchPaid, f.state.paidCount]).toEqual([0, 0]);
+    f.state.beforeBatchAdmit = undefined;
+
+    /* The other order: the admission took the batch first. The check finds it landed and changes nothing; the paid call is made once. */
+    const landed = (await quote()).map((view) => view.id);
+    let finish!: () => void;
+    const paying = new Promise<void>((done) => { finish = done; });
+    let admitted!: () => void;
+    const claimed = new Promise<void>((done) => { admitted = done; });
+    f.state.afterBatchAdmit = async () => { admitted(); await paying; };
+    f.state.batchResult = [{ state: "accepted", providerJobId: randomUUID() }, { state: "rejected" }];
+    const sending = f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, landed, { workspaceId: f.state.wallet, credits: 18 });
+    await claimed;
+    const found = await f.service.checkConsumerGenerationBatch(identity.userId, identity.draftId, landed);
+    expect(found.state).toBe("landed");
+    expect(found.jobs.map((job) => job.status)).toEqual(["dispatching", "dispatching"]);
+    finish();
+    expect((await sending).map((job) => job.status)).toEqual(["accepted", "failed"]);
+    expect(f.state.batchPaid).toBe(1);
+    /* Checked again afterwards: still landed, each take as it settled — the refused one failed, unbilled. */
+    const after = await f.service.checkConsumerGenerationBatch(identity.userId, identity.draftId, landed);
+    expect([after.state, after.jobs.map((job) => [job.status, job.failureCode])]).toEqual(["landed", [["accepted", null], ["failed", "submission_rejected"]]]);
+    expect(f.state.batchPaid).toBe(1);
+    /* Someone else's takes, or no batch at all, are never fenced or shown. */
+    await expect(f.service.checkConsumerGenerationBatch(identity.userId, identity.draftId, [landed[0], randomUUID()])).rejects.toMatchObject({ status: 404 });
+    await expect(f.service.checkConsumerGenerationBatch(identity.userId, identity.draftId, [landed[0]])).rejects.toMatchObject({ code: "invalid_batch" });
   }));

@@ -77,6 +77,13 @@ jobs:
     # runs sub-shards 3i-2, 3i-1 and 3i of 36, each on a fresh server, so no
     # server lives long enough to grow that far. A server is ready in 2-5 s,
     # and the longest job has taken 20 of the 30 minutes.
+    # The jumps still came, 10-14 GB, whenever specs opened many routes the
+    # server had not compiled yet: Turbopack frees what a compile holds only at
+    # a cache snapshot, and it snapshots only when idle. So each job's first
+    # server now compiles every route, paced, before any spec runs (about 5
+    # min), and the later two restore them (about 75 s each); source maps are
+    # off (env below). On 26 Sep one job's specs alone took 28 minutes and a
+    # 30-minute job was cancelled mid-run, hence 45.
     timeout-minutes: 45
     env:
       ENGINE_MOCK: '1'
@@ -89,6 +96,9 @@ jobs:
       # address lets the platform-desk spec sign in as the owner; unset, the
       # desk is shut to everyone.
       SUPER_ADMIN_EMAIL: platform-owner@example.test
+      # next.config.ts turns Turbopack's source maps off for these dev
+      # servers: they are half the native memory a compiled route holds.
+      CI_DEV_SOURCE_MAPS: 'off'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -118,33 +128,27 @@ jobs:
               sleep 5
             done
           }
-          failed=()
-          for k in $((3 * SHARD - 2)) $((3 * SHARD - 1)) $((3 * SHARD)); do
+          start_server() {
             # Its own process group, so stopping the server by its PID also
-            # stops the next dev and next-server processes behind npm.
+            # stops the next dev and next-server processes behind npm. The
+            # preload keeps idle keep-alive sockets open for 10 minutes, not
+            # Node's 5 s (`next dev` has no --keepAliveTimeout): spec reads on
+            # reused sockets hit ECONNRESET as the server closed them.
             started=$SECONDS
-            setsid npm run dev -- -p 4551 > "dev-ci-$k-of-36.log" 2>&1 &
+            NODE_OPTIONS="--import $PWD/scripts/ci-keep-alive.mjs" setsid npm run dev -- -p 4551 > "dev-ci-$k-of-36.log" 2>&1 &
             server=$!
-            ready=
             for attempt in {1..90}; do
-              if curl --fail --silent http://localhost:4551/api/health >/dev/null; then ready=1; break; fi
+              if curl --fail --silent http://localhost:4551/api/health >/dev/null; then
+                echo "[sub-shard] $k/36 dev server ready in $((SECONDS - started)) s, process group $server"
+                return 0
+              fi
               if ! kill -0 "$server" 2>/dev/null; then break; fi
               sleep 2
             done
-            if [ -n "$ready" ]; then
-              echo "[sub-shard] $k/36 dev server ready in $((SECONDS - started)) s, process group $server"
-              samples="$RUNNER_TEMP/resources-$k.txt"
-              : > "$samples"
-              monitor "$k/36" "$samples" &
-              monitor_pid=$!
-              npx playwright test --config="playwright.$SUITE.config.ts" --shard="$k/36" --output="ci-results/$SUITE/$k-of-36" || failed+=("$k/36")
-              kill "$monitor_pid" 2>/dev/null || true
-              wait "$monitor_pid" 2>/dev/null || true
-              awk -v k="$k/36" -v total="$(free -m | awk '/Mem:/{print $2}')" 'BEGIN {mem = 0; srv = 0; at = "-"} $2 > mem {mem = $2} $3 > srv {srv = $3; at = $1} END {printf "[resources] %s peak: next-server %d MB at %s, mem %d/%d MB (5 s samples)\n", k, srv, at, mem, total}' "$samples"
-            else
-              cat "dev-ci-$k-of-36.log"
-              failed+=("$k/36 (dev server not ready)")
-            fi
+            cat "dev-ci-$k-of-36.log"
+            return 1
+          }
+          stop_server() {
             # The next server needs port 4551 and the .next/dev lock, so wait
             # until every process in the group has gone.
             stopping=$SECONDS
@@ -156,13 +160,44 @@ jobs:
             done
             wait "$server" 2>/dev/null || true
             echo "[sub-shard] $k/36 dev server stopped in $((SECONDS - stopping)) s"
+          }
+          failed=()
+          for k in $((3 * SHARD - 2)) $((3 * SHARD - 1)) $((3 * SHARD)); do
+            samples="$RUNNER_TEMP/resources-$k.txt"
+            : > "$samples"
+            monitor "$k/36" "$samples" &
+            monitor_pid=$!
+            # Every server answers every route before any spec runs
+            # (scripts/warm-dev-routes.mjs). The job's first compiles them,
+            # paced, so no spec compiles a burst of new routes; the next two
+            # restore them from .next. A restored server has sometimes lost
+            # part of its route table (sign-up, then dozens of routes, answered
+            # 404), so one that does not know an API route starts again on an
+            # empty .next.
+            ready=
+            for try in 1 2; do
+              if start_server && node scripts/warm-dev-routes.mjs http://localhost:4551; then ready=1; break; fi
+              stop_server
+              mv .next "$RUNNER_TEMP/next-$k-$try" 2>/dev/null || true
+            done
+            specs_from=$(date -u +%T)
+            if [ -n "$ready" ]; then
+              npx playwright test --config="playwright.$SUITE.config.ts" --shard="$k/36" --output="ci-results/$SUITE/$k-of-36" || failed+=("$k/36")
+            else
+              failed+=("$k/36 (dev server not ready)")
+            fi
+            kill "$monitor_pid" 2>/dev/null || true
+            wait "$monitor_pid" 2>/dev/null || true
+            awk -v k="$k/36" -v total="$(free -m | awk '/Mem:/{print $2}')" -v from="$specs_from" 'BEGIN {mem = 0; srv = 0; warm = 0; specs = 0; at = "-"} $2 > mem {mem = $2} $3 > srv {srv = $3; at = $1} $1 < from && $3 > warm {warm = $3} $1 >= from && $3 > specs {specs = $3} END {printf "[resources] %s peak: next-server %d MB at %s, mem %d/%d MB (5 s samples; warm-up %d MB, specs %d MB)\n", k, srv, at, mem, total, warm, specs}' "$samples"
+            [ -n "$ready" ] && stop_server
           done
           if [ ${#failed[@]} -gt 0 ]; then
             echo "::error::Failed sub-shards: ${failed[*]}"
             exit 1
           fi
+      # Also when the job times out: a cancelled job left nothing to read.
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: browser-failure-${{ matrix.suite }}-${{ matrix.shard }}
           path: |
