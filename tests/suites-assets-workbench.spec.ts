@@ -75,9 +75,9 @@ test("right-click: every command works or says exactly why not; delete is soft a
   const wideTile = library.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']");
   await wideTile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
-  await expect(menu.getByRole("menuitem", { name: "Retry generation" })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
-  await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Use Retry generation for a new take with the same inputs.");
+  await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Recreate makes a new take from the same recipe.");
   await expect(menu.getByRole("menuitem", { name: /^Move to/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await menu.getByRole("menuitem", { name: /^Delete/ }).click();
@@ -87,12 +87,12 @@ test("right-click: every command works or says exactly why not; delete is soft a
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: false } });
 
-  /* Retry opens Gen with the render's own inputs. */
+  /* Recreate opens Gen with the render's own recipe. */
   await wideTile.click({ button: "right" });
-  await menu.getByRole("menuitem", { name: "Retry generation" }).click();
+  await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("Retry · Wide on the water · same inputs · new seed");
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
   expect(errors).toEqual([]);
 });
 
@@ -146,7 +146,7 @@ test("the Inspector shows provenance and hides three ways", async ({ page }, inf
   await expect(page.getByTestId("asset-facts")).toContainText("Wide on the water");
   /* The prompt the account rendered sits beside the prompt that was sent. */
   await expect(page.getByTestId("asset-facts")).toContainText("Wide on the water at dusk, 35mm, low sun · on the account");
-  await expect(page.getByTestId("asset-inspector").getByRole("button", { name: "Retry generation" })).toBeVisible();
+  await expect(page.getByTestId("asset-inspector").getByRole("button", { name: "Recreate" })).toBeVisible();
 
   await page.getByTestId("close-inspector").click();
   await expect(inspector).toHaveCount(0);

@@ -563,7 +563,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         })}
       </section>
       {onRig ? <div className="pd-next"><button type="button" className="gx-primary" disabled={!rendered} onClick={onRig} data-testid="boards-to-rig">Take the frames to Rig ›</button></div> : null}
-      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}</p>
+      <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }

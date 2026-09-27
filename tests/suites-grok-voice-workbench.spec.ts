@@ -51,6 +51,8 @@ test("Grok Voice speaks a line in its own voice, billed as xAI", async ({ page }
   const { id } = await sent.json();
   await expect.poll(async () => (await row(id))?.status, { timeout: 60_000 }).toBe("succeeded");
   expect(await row(id)).toMatchObject({ provider: "xai", billed_to: "xai" });
+  /* The job row turns succeeded first; the meter event settles in its own write a moment later. */
+  await expect.poll(async () => (await meterRow("grok-tts"))?.status, { timeout: 15_000 }).toBe("succeeded");
   expect(await meterRow("grok-tts")).toMatchObject({ engine: "xai", status: "succeeded" });
   /* A voice id that is not a Grok voice is refused before anything is priced. */
   const bad = await page.request.post("/api/audio", { headers, data: { ...line, voiceId: "!", quoteOnly: true } });
@@ -95,5 +97,6 @@ test("Grok transcribes a take: priced by its length, words and speakers, subtitl
   const download = page.waitForEvent("download");
   await panel.getByTestId("transcribe-srt").click();
   expect((await download).suggestedFilename()).toMatch(/\.srt$/);
+  await expect.poll(async () => (await meterRow("grok-stt"))?.status, { timeout: 15_000 }).toBe("succeeded");
   expect(await meterRow("grok-stt")).toMatchObject({ engine: "xai", status: "succeeded" });
 });

@@ -145,6 +145,15 @@ async function ledger(tenantUrl: string, workspaceId: string, productionShotId: 
   }
 }
 
+/** The ledger once the shot has `jobs` jobs and each is on the meter: admission writes a job's row, then reserves its charge. */
+async function settledLedger(tenantUrl: string, workspaceId: string, productionShotId: string, jobs: number) {
+  await expect.poll(async () => {
+    const books = await ledger(tenantUrl, workspaceId, productionShotId);
+    return [books.jobs.length, books.charges.length];
+  }, { timeout: 60_000 }).toEqual([jobs, jobs]);
+  return ledger(tenantUrl, workspaceId, productionShotId);
+}
+
 /** Press Generate once and lose the paid request: before it reaches the server, or after (its reply dropped). */
 async function loseFirstTake(page: Page, body: Locator, sent: Sent[], how: "before" | "after") {
   const landed: { id?: string }[] = [];
@@ -185,8 +194,7 @@ test("a Rig take that never reached the server is not sent again after the shot 
   /* One request goes. What it made and billed is the shot as it is now, at the price on the button — never the stale request. */
   await expect.poll(() => sent.slice(mark).filter((s) => s.path === "/api/generate").length, { timeout: 60_000 }).toBe(1);
   const productionShot = await mappedShot(page, scope, project);
-  await expect.poll(async () => (await ledger(tenantUrl, workspaceId, productionShot)).jobs.length, { timeout: 60_000 }).toBe(1);
-  const { jobs, charges } = await ledger(tenantUrl, workspaceId, productionShot);
+  const { jobs, charges } = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   const made = (prompt: string) => (prompt.includes(AFTER) ? "the edited shot" : prompt.includes(BEFORE) ? "the stale shot" : prompt);
   expect({ made: made(jobs[0].prompt), billed: charges.map((c) => c.credits) }).toEqual({ made: "the edited shot", billed: [shown] });
   expect(charges[0].id).toBe(jobs[0].id);
@@ -241,7 +249,7 @@ test("a Rig take that reached the server with its reply dropped is followed afte
   await expect(page.getByRole("status").filter({ hasText: /Opening wide rendered/ })).toBeVisible({ timeout: 90_000 });
   expect(sent.slice(mark).map((s) => s.path)).toEqual(["/api/generate/check"]);
   const productionShot = await mappedShot(page, scope, project);
-  let books = await ledger(tenantUrl, workspaceId, productionShot);
+  let books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   expect(books.jobs.map((j) => j.id)).toEqual([landedId]);
   expect(books.jobs[0].prompt).toContain(BEFORE);
   expect(books.charges.map((c) => c.credits)).toEqual([credits]);
@@ -257,8 +265,7 @@ test("a Rig take that reached the server with its reply dropped is followed afte
   expect(posted.key).not.toBe(first.key);
   expect(String(posted.body.prompt)).toContain(AFTER);
   expect(posted.body.maxCredits).toBe(shown);
-  await expect.poll(async () => (await ledger(tenantUrl, workspaceId, productionShot)).jobs.length, { timeout: 30_000 }).toBe(2);
-  books = await ledger(tenantUrl, workspaceId, productionShot);
+  books = await settledLedger(tenantUrl, workspaceId, productionShot, 2);
   expect(books.jobs[1].prompt).toContain(AFTER);
   expect(books.charges.map((c) => c.credits)).toEqual([credits, shown]);
   expect(errors).toEqual([]);
@@ -298,8 +305,7 @@ test("a lost Rig take whose fate cannot be read yet sends nothing, keeps its cla
   expect(String(posted.body.prompt)).toContain(AFTER);
   expect(posted.body.maxCredits).toBe(shown);
   const productionShot = await mappedShot(page, scope, project);
-  await expect.poll(async () => (await ledger(tenantUrl, workspaceId, productionShot)).jobs.length, { timeout: 60_000 }).toBe(1);
-  const { jobs, charges } = await ledger(tenantUrl, workspaceId, productionShot);
+  const { jobs, charges } = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
   expect(jobs[0].prompt).toContain(AFTER);
   expect(charges.map((c) => c.credits)).toEqual([shown]);
   expect(errors).toEqual([]);
