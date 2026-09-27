@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
@@ -42,7 +44,7 @@ export function assetGroups(items: readonly LibraryEntry[], project: Project | n
   }
   return GROUP_ORDER.filter((g) => out.has(g)).map((label) => ({ label, items: out.get(label)! }));
 }
-type Generation = { id: string; status: string; error?: string | null };
+type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 
 /** The re-edit request for a still: the take as the reference, the instruction, and the order to change nothing else. */
 export function reEditRequest(entry: LibraryEntry, instruction: string, model: BoardModel, productionProjectId: string, ratio: string, extras: ({ genId: string } | { uploadId: string })[] = []): GenerationBodyInput {
@@ -61,7 +63,7 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  * it renders; any take goes to the Timeline in one press.
  */
 /** A re-edit the page can no longer read: where it goes if it renders, and that a failed one costs nothing. */
-const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.";
+const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library.";
 
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
@@ -145,7 +147,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         if (activeMediaJob(generation)) return;
         setPending(null);
         if (generation.status === "succeeded") { setMade({ genId: generation.id, from: pending.from }); void refreshProjectLibrary(scope, projectId); toast("The re-edit is in the library"); }
-        else setError(generation.error || "The re-edit did not render. A failed render is not billed.");
+        else setError(generation.failure ? failureLine(generation.failure).text : generation.error || "The re-edit did not render.");
       },
       /* No longer on record for this person: asking again cannot help, and whether it was billed follows
          from whether it rendered. Anything else is said while it is asked again, later. */

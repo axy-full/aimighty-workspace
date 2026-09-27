@@ -18,6 +18,7 @@
  * owner's own connection is ever used.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { connectedFailureText } from "./generation-client";
 import { db, ready } from "@/lib/db";
 import { requireTenant } from "@/lib/tenant";
 import { claimStep, getStep, patchStep, type Step } from "@/lib/atomik";
@@ -212,8 +213,9 @@ async function settle(stepId: string, view: ConsumerGenerationView) {
   const original = view.result && typeof view.result === "object" && !Array.isArray(view.result) ? (view.result as Record<string, unknown>).original : null;
   const genId = original && typeof original === "object" && typeof (original as { generationId?: unknown }).generationId === "string" ? (original as { generationId: string }).generationId : null;
   if (view.status === "completed" && genId) return { step: await patchStep(stepId, { status: "done", genId, error: null }), job: view };
+  /* Why, and what the account's own ledger shows for the charge — never a blanket "not billed". */
   if (view.status === "failed")
-    return { step: await patchStep(stepId, { status: "failed", error: view.failureCode === "provider_failed" ? "The connected account could not make it. Failed runs are not billed." : view.failureCode === "invalid_result" ? "The account finished it, but its result could not be kept. Its receipt is saved." : "It did not run. Failed runs are not billed." }), job: view };
+    return { step: await patchStep(stepId, { status: "failed", error: connectedFailureText(view) }), job: view };
   if (view.status === "uncertain")
     return { step: await patchStep(stepId, { error: "The connected account may have accepted this run. It is kept and never sent again; check its status." }), job: view };
   return { step: await getStep(stepId), job: view };

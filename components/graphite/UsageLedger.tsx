@@ -144,6 +144,7 @@ export function UsageLedger() {
               <span className="wsx-ledger-meta"><span className="wsx-ledger-when">{at(r.at)}</span>{r.who ? <span className="wsx-ledger-who">{r.who}</span> : null}</span>
               <span className="wsx-ledger-state" data-state={r.state}>{LEDGER_LABEL[r.state]}</span>
               <span className="wsx-ledger-amt">{ledgerAmount(r)}</span>
+              {r.why ? <span className="wsx-ledger-why" data-testid="ws-ledger-why">{[r.why, "provider" in r ? r.provider : null].filter(Boolean).join(" · ")}</span> : null}
             </li>
           ))}
         </ul>
@@ -182,6 +183,7 @@ export function UsageLedger() {
                   <span className="wsx-ledger-meta"><span className="wsx-ledger-when">{at(r.at)}</span></span>
                   <span className="wsx-ledger-state" data-state={r.state}>{CONNECTED_LABEL[r.state]}</span>
                   <span className="wsx-ledger-amt">{fmtConnectedCredits(r.quotedCredits)}</span>
+                  {r.why ? <span className="wsx-ledger-why" data-testid="ws-ledger-why">{[r.why, r.provider].filter(Boolean).join(" · ")}</span> : null}
                 </li>
               ))}
             </ul>

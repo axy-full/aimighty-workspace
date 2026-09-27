@@ -1,4 +1,6 @@
 import { libraryId, libraryName, type LibraryAsset } from "../genLibrary";
+import { failureLine, failureUncharged } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 import { engineLabel } from "./engines";
 
 /**
@@ -6,11 +8,15 @@ import { engineLabel } from "./engines";
  * listProjectLibrary) as cards. Uploads and generations together.
  *
  * Money: `credits` is the ledger's billed figure (Generation.creditsBilled),
- * never an estimate. A failed or cancelled render is not billed and says so.
- * A render still in flight has not settled and carries no figure. Uploads
- * cost nothing and show none. A workspace on its own keys is billed in
- * dollars (Generation.costUsd); that figure is carried as `usd` and the
- * credits stay null — the subtitle counts credits only.
+ * never an estimate. A failed or cancelled render says "not billed" only when
+ * that is confirmed — Particl's own ledger holds nothing for it (credit
+ * workspaces), or its provider said it refunded or did not charge it (a
+ * workspace's own keys) — and otherwise just "failed", with why and what the
+ * provider said on its line (lib/errors.ts failureLine). A render still in
+ * flight has not settled and carries no figure. Uploads cost nothing and show
+ * none. A workspace on its own keys is billed in dollars (Generation.costUsd);
+ * that figure is carried as `usd` and the credits stay null — the subtitle
+ * counts credits only.
  *
  * Integrity: uploads always carry their stored sha256. A generation carries
  * one only when its original was stored byte-for-byte and hashed
@@ -36,7 +42,11 @@ export type Take = {
   /** Billed dollars, only for a workspace billed in dollars. */
   usd: number | null;
   status: TakeStatus;
+  /** Confirmed: the ledger holds nothing for it, or its provider refunded or did not charge it. */
   failedUnbilled?: true;
+  /** A failed take: what happened, what the provider did with the charge, the next step (lib/errors.ts). */
+  failure?: TakeFailure;
+  failureLine?: string;
   sha256: string | null;
   createdAt: number;
 };
@@ -69,14 +79,20 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const billedCredits = g.providerCreditQuote ? null : g.creditsBilled;
     const status: TakeStatus = failed ? "failed" : g.status !== "succeeded" ? "rendering"
       : g.reviewState === "approved" ? "approved" : g.reviewState === "picked" ? "picked" : g.reviewState === "changes" ? "changes" : "review";
-    const unbilled = failed && !((billedCredits ?? 0) > 0) && !((g.costUsd ?? 0) > 0);
+    /* "Not billed" only when confirmed: the ledger holds nothing for it, or its provider said so. */
+    const failure = failed ? g.failure ?? null : null;
+    const unbilled = failed && failureUncharged(failure);
+    /* What the ledger holds for a failed take, when the route read it; else the take's own settled figure. */
+    const charged = failure?.charge?.settled ? failure.charge.credits : null;
     const sha = typeof g.params.originalSha256 === "string" && SHA.test(g.params.originalSha256) ? g.params.originalSha256 : null;
     return {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
       meta: [label, detail].filter(Boolean).join(" · "),
-      credits: !settled ? null : unbilled ? 0 : billedCredits ?? null,
-      usd: !settled ? null : unbilled ? (g.costUsd == null ? null : 0) : g.costUsd ?? null,
-      status, ...(unbilled ? { failedUnbilled: true as const } : {}), sha256: sha, createdAt: g.createdAt,
+      credits: !settled ? null : unbilled ? 0 : charged ?? billedCredits ?? null,
+      usd: !settled ? null : g.costUsd ?? null,
+      status, ...(unbilled ? { failedUnbilled: true as const } : {}),
+      ...(failure ? { failure, failureLine: failureLine(failure, { cancelled: g.status === "cancelled" }).text } : {}),
+      sha256: sha, createdAt: g.createdAt,
     };
   });
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { failedChip } from "@/lib/errors";
 import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import LazyMedia from "@/components/LazyMedia";
 import { entryPreview, previewAttrs } from "@/lib/preview";
@@ -147,6 +148,8 @@ export function Library({ project = null, items, ready, error = null, onRetry, o
                     <button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
                       disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>
                   </div>
+                  {/* A failed take says so, and whether it was charged; the whole line is the Inspector's. */}
+                  {entry.take.failure ? <span className="gx-asset-fail" title={entry.take.failureLine} data-testid="library-take-failure">{failedChip(entry.take.failure)}</span> : null}
                 </div>
               );
             }}

@@ -129,6 +129,7 @@ async function plannerService() {
   const deps: Record<string, unknown> = {
     "node:crypto": { createHash, randomUUID },
     "@/lib/db": { db: () => ({ execute: async () => ({ rows: [{ project_id: "draft" }] }) }), ready: async () => {} },
+    "./generation-client": await import("../../lib/higgsfield-consumer/generation-client"),
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant" }) },
     "@/lib/atomik": {
       getStep: async (id: string) => (state.steps.has(id) ? { ...state.steps.get(id)! } : null),
@@ -220,7 +221,7 @@ test("A2: a priced proposal is approved at its exact credits, claimed once, subm
   expect((await f.service.pollConnectedStep("owner", step.id)).step).toMatchObject({ status: "done", genId: "gen_collected" });
 });
 
-test("A2: an expired quote is re-priced for a fresh approval, a refusal before sending is unbilled, a failed run is shown as not billed", async () => {
+test("A2: an expired quote is re-priced for a fresh approval, a refusal before sending is unbilled, a failed run says what the account's ledger shows", async () => {
   const f = await plannerService();
   const { step, meta } = await proposedStep(f);
   f.state.jobs.get(meta.jobId)!.quoteExpiresAt = Date.now() - 1;
@@ -237,8 +238,11 @@ test("A2: an expired quote is re-priced for a fresh approval, a refusal before s
   expect(f.state.steps.get(step.id)!.error).toMatch(/^Not sent, not billed/);
   f.state.submitError = null;
   await f.service.approveConnectedStep("owner", step.id, { credits: 45, workspaceId: f.wallet });
+  /* Failed, and the account's ledger has not named it yet: never a blanket "not billed". */
   f.state.pollView = { status: "failed", failureCode: "provider_failed" };
-  expect((await f.service.pollConnectedStep("owner", step.id)).step).toMatchObject({ status: "failed", error: expect.stringMatching(/not billed/) });
+  const unconfirmed = (await f.service.pollConnectedStep("owner", step.id)).step;
+  expect(unconfirmed).toMatchObject({ status: "failed", error: expect.stringMatching(/didn't say if it charged/) });
+  expect(unconfirmed!.error).not.toMatch(/not billed/);
   // Without a saved project to file into, nothing is quoted.
   const g = await plannerService();
   const planner = (await g.service.connectedPlanner("owner", null))!;
@@ -257,7 +261,7 @@ test("A2: a proposal naming an account avatar or product is refused by the quote
   expect(f.state.steps.size).toBe(0);
 });
 
-test("A4: a batch is ONE approval for the exact sum of its waiting steps; each step settles on its own and a refused item is not billed", async () => {
+test("A4: a batch is ONE approval for the exact sum of its waiting steps; each step settles on its own and a refused item says what the account said", async () => {
   const f = await plannerService();
   const planner = (await f.service.connectedPlanner("owner", "production"))!;
   const ids: string[] = [];
@@ -281,7 +285,7 @@ test("A4: a batch is ONE approval for the exact sum of its waiting steps; each s
   expect(f.state.batchSubmits).toHaveLength(1);
   expect(f.state.batchSubmits[0].approval).toEqual({ credits: 126, workspaceId: f.wallet });
   expect(result.steps.map((s) => s?.status)).toEqual(["running", "failed", "running"]);
-  expect(f.state.steps.get(ids[1])!.error).toMatch(/not billed/);
+  expect(f.state.steps.get(ids[1])!.error).toMatch(/didn't say if it charged/);
   expect(f.state.steps.get(ids[2])!.error).toMatch(/never sent again/);
   await expect(f.service.approveConnectedBatch("owner", ids, { credits: 126, workspaceId: f.wallet })).rejects.toMatchObject({ code: "already_claimed" });
   expect(f.state.batchSubmits).toHaveLength(1);

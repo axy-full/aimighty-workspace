@@ -17,11 +17,18 @@ export type LedgerState =
   | "charged" | "held" | "running" | "not-billed" | "own-key"
   | "failed-not-billed" | "failed-charged" | "waiting" | "unpriced";
 
-export type CreditLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; credits: number; state: LedgerState };
-export type DollarLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; usd: number | null; state: LedgerState };
+/**
+ * A failed job's row also says why, in the product's words (`why`, lib/errors.ts),
+ * and — only where the money was the workspace's own (its own keys, or its
+ * connected account) — what the provider did with the charge, in the
+ * provider's own unit (`provider`). A credit row never carries the provider's
+ * side: what Particl charged is the row's own amount.
+ */
+export type CreditLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; credits: number; state: LedgerState; why?: string | null };
+export type DollarLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; usd: number | null; state: LedgerState; why?: string | null; provider?: string | null };
 
 export type ConnectedState = "completed" | "pending" | "uncertain" | "failed";
-export type ConnectedLedgerRow = { id: string; at: number; workflow: string; project: string | null; quotedCredits: number; state: ConnectedState };
+export type ConnectedLedgerRow = { id: string; at: number; workflow: string; project: string | null; quotedCredits: number; state: ConnectedState; why?: string | null; provider?: string | null };
 
 type Page<Unit, Row, Totals> = { unit: Unit; month: string | null; months?: string[]; totals?: Totals; rows: Row[]; next: string | null };
 export type CreditLedgerPage = Page<"credits", CreditLedgerRow, { jobs: number; charged: number; held: number; notBilled: number }>;

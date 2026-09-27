@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { failedChip } from "../errors";
 import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
 import { nodeAudioBody, type NodeAudioSetup } from "../workbench/generation-audio";
@@ -296,7 +297,8 @@ function referenceAsset(reference: ComposerReference): Asset {
 function connectedPhase(job: ConnectedJob | null): { label: string; pct: number; tone: "blue" | "green" | "red"; done: boolean } {
   if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
   if (job.status === "completed") return { label: "Complete", pct: 100, tone: "green", done: true };
-  if (job.status === "failed") return { label: "Failed · not billed", pct: 100, tone: "red", done: true };
+  /* Refunded or charged only once the account's own ledger names the job; just "Failed" until then. */
+  if (job.status === "failed") return { label: job.failureCode === "invalid_result" ? "Finished · not kept" : failedChip(job.failure), pct: 100, tone: "red", done: true };
   if (job.status === "accepted") return { label: "Rendering", pct: 50, tone: "blue", done: false };
   return { label: "Queued", pct: 10, tone: "blue", done: false };
 }

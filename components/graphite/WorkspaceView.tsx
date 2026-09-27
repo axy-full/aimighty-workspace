@@ -486,7 +486,7 @@ function Usage() {
   return (
     <div className="wsx-card" data-testid="ws-usage">
       <span className="gx-eyebrow">Usage</span>
-      <span className="cw-dim">Settled spend · {money(total)} · failed renders not billed</span>
+      <span className="cw-dim">Settled spend · {money(total)}</span>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
       {shown.map((r) => (
         <div className="wsx-bar" key={r.id} data-testid="ws-usage-bar">

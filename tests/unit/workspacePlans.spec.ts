@@ -559,7 +559,10 @@ test("activity merges real sources with this session's runs, newest first, with 
   const jobs = activityFromJobs(
     [
       { id: "g1", title: "Opening", kind: "video", status: "succeeded", creditsBilled: 18, createdAt: now - 7 * 60_000, updatedAt: now - 6 * 60_000 },
-      { id: "g2", title: null, prompt: "close on the turn", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 3_600_000, updatedAt: now - 3_600_000 },
+      { id: "g2", title: null, prompt: "close on the turn", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 3_600_000, updatedAt: now - 3_600_000,
+        failure: { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } },
+      /* Failed with nothing confirmed: no claim either way. */
+      { id: "g3", title: "Pier", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 2 * 3_600_000, updatedAt: now - 2 * 3_600_000 },
     ],
     now,
   );
@@ -568,6 +571,7 @@ test("activity merges real sources with this session's runs, newest first, with 
     ["Board 2 sent", "just now"],
     ["Rendered Opening", "6 min · 18 cr"],
     ["close on the turn failed", "1 hr · not billed"],
+    ["Pier failed", "2 hr"],
   ]);
 
   const { fetcher } = backend();

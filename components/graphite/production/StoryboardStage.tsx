@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { resolveGenInput, type GenInputAsset } from "@/lib/genAssetInput";
@@ -25,7 +27,7 @@ import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 
 type Quote = { key: string; credits: number };
-type Generation = { id: string; status: string; error?: string | null };
+type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
 
 /** The request one frame sends: its prompt in the chosen look, the project's ratio, and its drawing as the reference. */
@@ -152,7 +154,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
             const assets = ok && !old.assets.some((a) => a.id === asset.id) && old.assets.length < PROJECT_LIMITS.assets ? [...old.assets, asset] : old.assets;
             return { ...old, assets, production: { ...old.production, boards: { ...b, frames: { ...b.frames, [shot.id]: frame } } } };
           });
-          if (!ok) setErrors((e) => ({ ...e, [shot.id]: generation.error || "This frame did not render. Nothing was billed for a failed render." }));
+          if (!ok) setErrors((e) => ({ ...e, [shot.id]: generation.failure ? failureLine(generation.failure).text : generation.error || "This frame did not render." }));
           void editor.ensureSaved().then(() => { if (ok) void refreshProjectLibrary(scope, latest.current.id); });
         } catch { /* the next tick reads it again */ }
       }

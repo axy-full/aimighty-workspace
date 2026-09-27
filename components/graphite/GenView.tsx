@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { failureLine } from "@/lib/errors";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import { createPortal } from "react-dom";
@@ -429,6 +430,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
         {thumb(entry)}
         <span className="gx-asset-name">{label ?? entry.take.name}</span>
         <span className="gx-asset-meta">{entry.take.meta}</span>
+        {entry.take.failureLine ? <span className="gx-asset-fail" data-testid="take-failure">{entry.take.failureLine}</span> : null}
       </div>
     </Boundary>
   );
@@ -699,6 +701,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
                 <span className="gx-asset-name" title={job.input.prompt}>{job.batch ? `${takeLabel(job.batch.variation)} · ${takeName(job)}` : takeName(job)}</span>
                 <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
+                {/* A failed take: why, what the account's own ledger shows for the charge, and what to do. */}
+                {job.status === "failed" && job.failure ? <span className="gx-asset-fail" data-testid="take-failure">{failureLine(job.failure).text}</span> : null}
                 {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
                 {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
               </div>

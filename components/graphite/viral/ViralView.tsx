@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { failureLine } from "@/lib/errors";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { findProjectTake, uploadFilesToProject } from "@/lib/workspace/library";
@@ -254,7 +255,7 @@ const brief = (job: GenjutsuJob) => job.input.prompt.trim() || VARIANT_NAME[job.
 const runCredits = (job: GenjutsuJob) => (job.status === "completed" ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? null : cr(job.quoteCredits));
 
 function RunRow({ job, now, stalled, problem, onRecheck, send }: { job: GenjutsuJob; now: number; stalled: Stall | null; problem: string | null; onRecheck: (id: string) => void; send: Send }) {
-  const status = runStatus(job.status, job.failureCode);
+  const status = runStatus(job.status, job.failureCode, job.failure);
   const done = job.status === "completed", url = done && job.originalAvailable ? job.result?.original?.asset?.url : null;
   const note = runNote(job, stalled);
   return (
@@ -265,6 +266,8 @@ function RunRow({ job, now, stalled, problem, onRecheck, send }: { job: Genjutsu
       <span className="vr-status" data-tone={status.tone} data-testid="viral-run-status">{status.label}</span>
       <span className="cw-dim vr-job-meta">{[job.input.resolution, refs(job.input.references.length), runCredits(job), when(job.createdAt, now)].filter(Boolean).join(" · ")}</span>
       {note ? <span className="cw-dim vr-job-note" data-testid="viral-run-note">{note}</span> : null}
+      {/* A failed run: why, what the account's ledger shows for the charge, and what to do. */}
+      {job.status === "failed" && job.failure ? <span className="vr-job-note vr-job-fail" data-testid="viral-run-failure">{failureLine(job.failure).text}</span> : null}
       {/* A read that failed, in plain words and who can fix it; it goes once a read succeeds. */}
       {problem ? <p className="gx-resumed-problem vr-job-problem" role="status" data-testid="viral-run-problem">{problem}</p> : null}
       {done ? (
@@ -339,7 +342,7 @@ function HistoryView({ scope, project, viral, items }: { scope: string; project:
 
 /** One run: the result and its next steps once it lands; until then, where it stands. */
 function RunCard({ job, now, url, stalled, problem, opening, onRecheck, onRecreate, onCompare, onSend }: { job: GenjutsuJob; now: number; url: string | null; stalled: Stall | null; problem: string | null; opening: boolean; onRecheck: (id: string) => void; onRecreate: (job: GenjutsuJob) => void; onCompare: (job: GenjutsuJob) => void; onSend: (job: GenjutsuJob) => void }) {
-  const status = runStatus(job.status, job.failureCode);
+  const status = runStatus(job.status, job.failureCode, job.failure);
   const done = job.status === "completed", flying = runInFlight(job.status) && !stalled && !setAsideUnconfirmed(job);
   const meta = [runCredits(job), when(job.createdAt, now)].filter(Boolean).join(" · ");
   const missing = done && !url ? originalNote(job) : null;
@@ -357,6 +360,7 @@ function RunCard({ job, now, url, stalled, problem, opening, onRecheck, onRecrea
       {/* What sets one run apart from the next: its references and its direction. */}
       <span className="gx-asset-meta" title={job.input.prompt || undefined}>{[refs(job.input.references.length), job.input.prompt.trim()].filter(Boolean).join(" · ")}</span>
       <span className="gx-asset-meta" title={new Date(job.createdAt).toLocaleString()}>{meta}</span>
+      {job.status === "failed" && job.failure ? <span className="gx-asset-fail" data-testid="history-run-failure">{failureLine(job.failure).text}</span> : null}
       {problem ? <span className="gx-resumed-note" role="status" data-testid="history-run-problem">{problem}</span> : null}
       {done ? (
         <div className="cw-sol-actions">

@@ -40,6 +40,8 @@
 .pxw .pxw-take-meta > span:last-child { flex: none; }
 .pxw .pxw-take-status { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-dimmer); }
 .pxw .pxw-take-status > .pxw-dot { width: 5px; height: 5px; }
+/* A failed take: what happened · what the provider did with the charge · the next step. Wraps; never cut. */
+.pxw .pxw-take-why { display: block; margin-top: 6px; font-size: 12px; line-height: 1.35; color: var(--pxw-body); overflow-wrap: anywhere; white-space: normal; }
 
 /* ── Inspector bodies ──────────────────────────────────────────────── */
 

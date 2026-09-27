@@ -260,6 +260,14 @@ export function mockTokensFor(taskId: string): number {
   return estimateTokens(res, (ratio ?? "16x9").replace("x", ":"), Number(dur) || 0, Number(inp) || 0) ?? LEGACY_MOCK_TOKENS;
 }
 
+/** ModelArk answered the submit with an error: its status and a bounded copy of its body (`{error:{code,message}}`). */
+export class ArkHttpError extends Error {
+  constructor(public readonly status: number, message: string, public readonly body: string) {
+    super(message);
+    this.name = "ArkHttpError";
+  }
+}
+
 export async function submitTask(
   modelId: string,
   prompt: string,
@@ -293,7 +301,7 @@ export async function submitTask(
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Ark submit failed (${res.status}): ${text.slice(0, 600)}`);
+    throw new ArkHttpError(res.status, `Ark submit failed (${res.status}): ${text.slice(0, 600)}`, text.slice(0, 8192));
   }
   const json = parseArk<{ id?: string }>(text, "submit");
   if (!json.id) throw new Error(`Ark returned no task id: ${text.slice(0, 300)}`);

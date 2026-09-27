@@ -47,9 +47,12 @@ import {
   consumerGenerationEnhancedPrompt,
   consumerGenerationOriginalResult,
   consumerGenerationFailureResult,
+  consumerGenerationFailureWords,
+  consumerBatchRefusal,
   type ConsumerGenerationInput,
   type ConsumerGenerationParams,
 } from "./generation-contract";
+import { accountFailure, higgsfieldAccountOutcome, outcomeCode } from "@/lib/providerOutcome";
 import {
   CatalogueError,
   findCatalogueModel,
@@ -113,6 +116,8 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    /* What the account said, and what its own ledger shows for the charge (its credits, never converted). */
+    failure: job.status === "failed" ? accountFailure(job.providerOutcome, job.failureCode) : null,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
@@ -323,13 +328,19 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
       claim.job.higgsfieldWorkspaceId!,
       snapshot.params.model,
       snapshot.input.type,
+      { ledgerOnFailure: true },
     );
     pollAfterSeconds = Math.max(15, response.pollAfterSeconds ?? 30);
     const terminal = consumerGenerationOriginalResult(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
     const failed = consumerGenerationFailureResult(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
     if (failed) {
       await connected(scope.userId, claim.job.connectionGeneration);
-      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
+      /* The account's own status (nsfw, ip_detected, canceled, failed) and words; the charge from its ledger, or unknown. */
+      const outcome = higgsfieldAccountOutcome(failed, {
+        message: consumerGenerationFailureWords(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type),
+        ledger: response.ledger ?? null,
+      });
+      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed", outcome });
       return { job: await consumerGenerationView(settled ?? (await ownedGeneration(scope))), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (terminal) {
@@ -418,7 +429,11 @@ export async function submitConsumerGenerationBatchJobs(
   for (const [i, item] of result.items.entries()) {
     const scope = { userId, draftId, id: ids[i], claimToken: held[i].claimToken };
     if (item.state === "accepted") await markConsumerAccepted({ ...scope, providerJobId: item.providerJobId });
-    else if (item.state === "rejected") await markConsumerFailed(scope);
+    else if (item.state === "rejected") {
+      /* Refused at the door, with no job id: its own words; whether anything was charged stays its ledger's to say. */
+      const refusal = consumerBatchRefusal(result.raw, i);
+      await markConsumerFailed({ ...scope, outcome: higgsfieldAccountOutcome(outcomeCode(refusal?.code) ?? "rejected", { message: refusal?.message, stage: "submit" }) });
+    }
     else await markConsumerUncertain({ ...scope, providerReceipt: { batch_index: i, ...(response === null ? {} : { response }) } });
   }
   return Promise.all(ids.map(async (id) => consumerGenerationView(await ownedGeneration({ userId, draftId, id }))));

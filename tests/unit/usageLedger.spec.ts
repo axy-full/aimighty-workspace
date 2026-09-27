@@ -199,7 +199,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
 
     /* The file: the same rows, in credits. */
     const csv = ledgerCsv(all);
-    expect(csv.split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,credits");
+    expect(csv.split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,credits,failure");
     expect(csv.split("\r\n").filter(Boolean)).toHaveLength(9);
     expect(csv).toContain("Failed · not billed");
     expect(csv).not.toMatch(/usd|\$/i);
@@ -250,7 +250,7 @@ test("a dollar workspace reads its takes in dollars; the connected account's and
     expect(page.rows[0]).toMatchObject({ usd: 1.3, who: "Producer" });
     expect(page.totals).toEqual({ jobs: 6, charged: 1.3, notBilled: 2 });
     expect(JSON.stringify(page)).not.toContain("credits");
-    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd");
+    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd,failure,provider_charge");
   });
 });
 
@@ -284,6 +284,6 @@ test("the connected account is the viewer's own jobs, in the provider's credits 
     expect(page.rows[0]).toMatchObject({ workflow: "Generation", project: "Bottle campaign" });
     expect(page.totals).toEqual({ jobs: 3, quoted: 265.5 });
     expect(JSON.stringify(page)).not.toMatch(/usd|\$/i);
-    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,workflow,project,status,connected_credits_quoted");
+    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,workflow,project,status,connected_credits_quoted,failure,provider_charge");
   });
 });

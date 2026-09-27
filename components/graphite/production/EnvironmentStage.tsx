@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { useAgentAttachments } from "./use-agent-attachments";
 import { PromptAttach, attachedAsset, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
@@ -29,7 +31,7 @@ import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 
 type Quote = { key: string; credits: number };
-type Generation = { id: string; status: string; error?: string | null };
+type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
 /** Library pictures an entry can use: renders and uploads, images only. */
 const isPicture = (e: LibraryEntry) => e.media === "image" && Boolean(e.url);
@@ -122,7 +124,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
             const assets = ok && !old.assets.some((a) => a.id === asset.id) && old.assets.length < PROJECT_LIMITS.assets ? [...old.assets, asset] : old.assets;
             return { ...old, assets, production: { ...old.production, environment: { ...e, entries: e.entries.map((x) => (x.id === entry.id ? next : x)) } } };
           });
-          if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.error || "This plate did not render. Nothing was billed for a failed render." }));
+          if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.failure ? failureLine(generation.failure).text : generation.error || "This plate did not render." }));
           void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); toast(`${entry.name || "The plate"} is in the library as Environment`); } });
         } catch { /* the next tick reads it again */ }
       }

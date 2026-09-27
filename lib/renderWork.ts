@@ -24,6 +24,8 @@ import { higgsfieldSubmissionRejected } from "./higgsfield";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 import { inspectAudioBuffer } from "./mediaSource.server";
+import { fundedOutcome, outcomeOfError } from "./providerFailure";
+import { higgsfieldRequestOutcome, serializeOutcome, type ProviderOutcome } from "./providerOutcome";
 
 /**
  * The work of a still or a piece of audio, lifted out of the route that
@@ -366,13 +368,18 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     }
     // A synchronous vendor may have charged before the connection failed.
     // Leave the claim intact: automatic retries must never buy it again.
-    // A refusal the vendor sent, or a request that never left, charged nothing.
+    // A refusal the vendor sent, or a request that never left, is released
+    // here; what the vendor itself did with the charge is its own to say,
+    // and travels with the take (lib/providerOutcome.ts).
+    const provider = job.kind === "audio" ? audioVendor(job.modelId) : getModel(job.modelId).provider;
+    const said = await fundedOutcome(outcomeOfError(error, { provider, stage: "submit" }), job.genId, provider).catch(() => null);
     await failJob(
       job.genId,
       (error as Error).message,
       error instanceof FundingSourceChangedError || error instanceof PreflightError || falSubmissionRejected(error) ||
         higgsfieldSubmissionRejected(error) || (error instanceof ElevenLabsError && error.rejectedBeforeGeneration) ||
         xaiSubmissionRejected(error),
+      said,
     );
     throw error;
   }
@@ -473,8 +480,10 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       const vendorCostUsd = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd;
       const state = await engine.poll!({ ...saved, credentialFingerprint });
       if (state.status === "failed" || state.status === "cancelled") {
-        // Higgsfield documents failed, NSFW and canceled requests as uncharged.
-        await failJob(genId, state.error ?? "The connected-account request was canceled.", true);
+        // Its own status and words; its FAQ: failed and NSFW requests are
+        // refunded, and only successful completions are billed.
+        const said = await fundedOutcome(higgsfieldRequestOutcome(state.raw), genId, "higgsfield").catch(() => null);
+        await failJob(genId, state.error ?? "The connected-account request was canceled.", true, said);
         await settleHiggsfieldGenerationReceipt(genId);
         return;
       }
@@ -593,7 +602,8 @@ export async function reconcileTopazImage(genId: string): Promise<void> {
     } catch (error) {
       // A refused result is terminal; a transport/storage failure keeps the
       // known handle and reservation so the same render can be collected later.
-      if (error instanceof FalHttpError && [400, 422].includes(error.status)) await failJob(genId, error.message, true);
+      if (error instanceof FalHttpError && [400, 422].includes(error.status))
+        await failJob(genId, error.message, true, await fundedOutcome(outcomeOfError(error, { provider: "fal", stage: "run" }), genId, "fal").catch(() => null));
       else {
         await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running')", args: [(error as Error).message.slice(0,600), now(), genId] });
         throw error;
@@ -768,6 +778,8 @@ export async function failJob(
   genId: string,
   message: string,
   rejectedBeforeGeneration = false,
+  /** What the provider said, when the request reached one (lib/providerOutcome.ts). */
+  outcome: ProviderOutcome | null = null,
 ): Promise<void> {
 return await withRecoveryJob(requireTenant().id, genId, async () => {
 
@@ -814,10 +826,11 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
       // An unsent refund holds only while nothing has claimed the paid step since.
       sql: `UPDATE generations
       SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?),
-          cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?), updated_at=?
+          cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?),
+          provider_outcome=COALESCE(?, provider_outcome), updated_at=?
       WHERE id=? AND status NOT IN ('succeeded','cancelled')${unsent && !rejectedBeforeGeneration
         ? " AND json_extract(params,'$.paidClaim') IS NULL AND json_extract(params,'$.producedOutcome') IS NULL" : ""}`,
-      args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
+      args: [message.slice(0, 600), ms, spentUsd, spentCredits, outcome ? serializeOutcome(outcome) : null, now(), genId],
     },
     {
       id: genId,
@@ -828,6 +841,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
       // Retain the original reservation for an ambiguous provider/storage failure.
       engineCostUsd: free ? 0 : null,
       durationMs: ms,
+      ...(outcome ? { providerOutcome: outcome } : {}),
     },
   );
   await deliverGenerationSettlement(genId);

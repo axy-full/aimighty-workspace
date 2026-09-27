@@ -85,7 +85,7 @@ function Row({ shot, selected, onSelect, asset }: { shot: RigShot; selected: boo
       <span className="pxw-rig-look">{shot.look}</span>
       <span className="pxw-rig-engine">{shot.engine ? engineLabel(shot.engine).short : "—"}</span>
       <span className="pxw-rig-dur">{shot.durationS != null ? `${shot.durationS}s` : "—"}</span>
-      <span className="pxw-rig-status"><StatusPill status={PILL[shot.status]} /></span>
+      <span className="pxw-rig-status"><StatusPill status={PILL[shot.status]} label={shot.status === "failed" && shot.failedUnbilled ? "Failed · not billed" : undefined} /></span>
     </button>
   );
 }

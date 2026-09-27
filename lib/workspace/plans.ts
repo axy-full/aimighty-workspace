@@ -43,6 +43,7 @@ import type {
   WorkspaceSuite,
 } from "./plan-types";
 import { WORKSPACE_PLAN_PAGES } from "./plan-types";
+import { connectedFailureText } from "../higgsfield-consumer/generation-client";
 
 /** Same lifetime the product already gives a Particl quote (lib/quote.ts QUOTE_TTL_MS). */
 export const PARTICL_QUOTE_TTL_MS = 120_000;
@@ -242,7 +243,7 @@ const audioGate: GateExecutor = {
       unit: "cr",
       parts,
       expiresAt: Date.now() + PARTICL_QUOTE_TTL_MS,
-      line: `${parts.map((part) => String(part.meta?.name ?? "Stem")).join(", ")}. Priced per generation; failed generations are not billed.`,
+      line: `${parts.map((part) => String(part.meta?.name ?? "Stem")).join(", ")}. Priced per generation.`,
     };
   },
 };
@@ -276,6 +277,9 @@ type ConsumerJob = {
   input?: Record<string, unknown>;
   result?: { original?: { asset?: { url?: string } } } | null;
   originalAvailable?: boolean;
+  /** Why a failed job failed, and what the account's own ledger shows for the charge. */
+  failureCode?: string | null;
+  failure?: import("../providerOutcome").TakeFailure | null;
 };
 
 function connectedGate(
@@ -329,7 +333,7 @@ function connectedDispatch(route: string, noun: string): DispatchExecutor {
           credits: part.credits,
         },
       });
-      if (job.status === "failed") throw new Error(`The ${noun} was refused. Failed jobs are not billed.`);
+      if (job.status === "failed") throw new Error(`The ${noun} was refused. ${connectedFailureText(job)}`);
       return { detail: job.status, io: { job } };
     },
   };
@@ -584,7 +588,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         "Approval gate",
         "gate",
         "live quote",
-        generationGate(boards, (parts) => partsLine(parts, "board", "Settled on completion; failed renders are not billed.")),
+        generationGate(boards, (parts) => partsLine(parts, "board", "Settled on completion.")),
       ),
       step("Render the boards", "dispatch", (ctx) => plural(boards(ctx).length, "board"), generationDispatch("ws-boards", "board")),
       step("File to Boards", "file", "→ Boards", fileJobs("board")),
@@ -731,7 +735,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         "Approval gate",
         "gate",
         "live quote",
-        generationGate(shots, (parts) => partsLine(parts, "shot", "Failed renders are not billed.")),
+        generationGate(shots, (parts) => partsLine(parts, "shot", "Settled on completion.")),
       ),
       step("Render", "dispatch", (ctx) => plural(shots(ctx).length, "shot"), generationDispatch("ws-rig", "shot")),
       step("File the takes", "file", "→ Takes", fileJobs("take")),

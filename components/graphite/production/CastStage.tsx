@@ -11,7 +11,7 @@ import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, newEntry, soulParameters, sourcedCastId, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
 import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
 import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
-import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
 import { useShell } from "@/lib/shell/state";
 import type { Asset, Project } from "@/lib/workbench/studio";
@@ -135,7 +135,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           const job = parseConnectedJob(reply.job, latest.current.id);
           wait = Math.min(wait, Math.max(3, Number(reply.pollAfterSeconds) || 10));
           if (!alive) return;
-          if (job.status === "failed") { setEntry(entry.id, (e) => ({ ...e, job: undefined })); setErrors((x) => ({ ...x, [entry.id]: "Soul Cinema did not finish this one. A failed render is not billed." })); void editor.ensureSaved(); continue; }
+          if (job.status === "failed") { setEntry(entry.id, (e) => ({ ...e, job: undefined })); setErrors((x) => ({ ...x, [entry.id]: `Soul Cinema did not finish this one. ${connectedFailureText(job)}` })); void editor.ensureSaved(); continue; }
           const original = connectedOriginal(job);
           if (job.status !== "completed" || !original) continue;
           editor.change((old) => {
@@ -405,7 +405,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                     ) : <button type="button" className="gx-hbtn" disabled={Boolean(accountBlocked) || !entry.name.trim() || Boolean(working[key(entry, "build") + ":element"])} onClick={() => setConfirmElement(entry.id)} data-testid="cast-element-save">{working[key(entry, "build") + ":element"] || "Save as a reference element"}</button>}
                 </div>
               ) : null}
-              {quote ? <span className="gx-hint">Priced on {quote.workspaceName}: billed by the connected account; a failed render is not billed.</span> : null}
+              {quote ? <span className="gx-hint">Priced on {quote.workspaceName}: billed by the connected account.</span> : null}
               {errors[entry.id] ? <p className="gx-gen-error" role="alert">{errors[entry.id]}</p> : null}
             </article>
           );

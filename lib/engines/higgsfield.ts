@@ -9,7 +9,7 @@ import { recoveryFetch } from "../recovery";
 import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId } from "../mock";
 import { fixtureBytes } from "../mockFs";
 import {
-  HiggsfieldHttpError, higgsfieldConfigured, higgsfieldCredentials,
+  HiggsfieldHttpError, boundedBody, higgsfieldConfigured, higgsfieldCredentials,
   higgsfieldCredentialFingerprint,
 } from "../higgsfield";
 
@@ -68,8 +68,10 @@ async function call(url: string, method: "POST" | "GET", body?: unknown): Promis
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!response.ok) {
-    await response.body?.cancel();
-    throw new HiggsfieldHttpError(response.status, `The identity account ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`);
+    // A bounded copy of the provider's own reason (its FastAPI detail[] or
+    // concurrency message) travels with the error; the rest is cancelled.
+    const body = await boundedBody(response);
+    throw new HiggsfieldHttpError(response.status, `The identity account ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`, body);
   }
   const data: unknown = await marketingJson(response);
   if (!data || typeof data !== "object" || Array.isArray(data))

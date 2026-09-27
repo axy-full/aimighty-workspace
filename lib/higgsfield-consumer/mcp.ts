@@ -114,6 +114,8 @@ import {
   type ShortsPresets,
 } from "./shorts-studio";
 import { EXPLAINER_PRESETS_TOOL, parseExplainerPresets, type ExplainerPresets } from "./explainer-presets";
+import { LEDGER_PAGE, accountLedgerFor } from "./ledger";
+import type { AccountLedger } from "../providerOutcome";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -315,6 +317,8 @@ type ConsumerSession = {
   charactersCall: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
   /** Only `show_reference_elements` (list, and the one create Cast & Elements sends). */
   elementsCall: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
+  /** The account's own credit ledger, newest first (`transactions`, read-only and free): one page. */
+  creditTransactions: (size: number) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -785,6 +789,7 @@ async function withConsumerSession<T>(
       explainerPresets: async () => (await post("tools/call", { name: EXPLAINER_PRESETS_TOOL, arguments: {} }))!,
       charactersCall: async (args, sending) => (await post("tools/call", { name: CHARACTERS_TOOL, arguments: args }, sending, args.action === "create" ? QUALIFICATION_LIMITS.createCallTimeoutMs : undefined))!,
       elementsCall: async (args, sending) => (await post("tools/call", { name: ELEMENTS_TOOL, arguments: args }, sending, args.action === "create" ? QUALIFICATION_LIMITS.createCallTimeoutMs : undefined))!,
+      creditTransactions: async (size) => (await post("tools/call", { name: LEDGER_TOOL, arguments: { size } }))!,
     });
   } catch (error) {
     if (
@@ -1673,14 +1678,16 @@ export async function submitConsumerGeneration(
     return videoPreflightError(error);
   }
 }
-/** Read-only status of one acknowledged generation job (normalized envelope). */
+/** Read-only status of one acknowledged generation job (normalized envelope).
+ * `ledgerOnFailure`: when the account reports the job ended without a result,
+ * read one page of its credit ledger in the same session (see ledger.ts). */
 export async function readConsumerGenerationJob(
   accessToken: string,
   jobId: string,
   expectedWorkspaceId: string,
   model: string,
   type: ConnectedOutputType,
-  options: Options = {},
+  options: Options & { ledgerOnFailure?: boolean } = {},
 ) {
   consumerVideoJobId(jobId);
   const expected = videoWorkspaceId(expectedWorkspaceId);
@@ -1696,10 +1703,52 @@ export async function readConsumerGenerationJob(
             ("type" in generation && generation.type !== type))
           throw new ConsumerVideoError("invalid_job");
       }
-      return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId, model, type) };
+      const status = object(raw) && object(raw.generation) ? String(raw.generation.status ?? "") : "";
+      const ledger = options.ledgerOnFailure && FAILED_STATUSES.has(status) ? await sessionLedger(session, jobId) : undefined;
+      return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId, model, type), ...(ledger === undefined ? {} : { ledger }) };
     });
   } catch (error) {
     return videoPreflightError(error);
+  }
+}
+
+/* ── The account's own credit ledger ─────────────────────────────────── */
+
+const LEDGER_TOOL = "transactions";
+const FAILED_STATUSES = new Set(["failed", "canceled", "cancelled", "nsfw", "ip_detected"]);
+/**
+ * What one page of the account's ledger says about one job, inside a session
+ * already open. Null when the tool is not advertised with our arguments, the
+ * read fails, or no entry names the job: the charge then stays unknown. Never
+ * throws — a failure is already settled before its charge is looked up.
+ */
+async function sessionLedger(session: ConsumerSession, providerJobId: string): Promise<AccountLedger | null> {
+  try {
+    const args = { size: LEDGER_PAGE };
+    const toolset = (await connectedToolset(session)).toolset;
+    if (checkTool(toolset, LEDGER_TOOL, args) !== "ok" || !session.active()) return null;
+    return accountLedgerFor(videoReadResult(session, await session.creditTransactions(LEDGER_PAGE)), providerJobId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read-only and free: what the account's own credit ledger says about one
+ * acknowledged job (a refund or a spend naming it), or null. Only the one
+ * job is kept from the page; nothing else the ledger lists leaves this call.
+ */
+export async function readConsumerJobLedger(accessToken: string, providerJobId: string, expectedWorkspaceId: string, options: Options = {}): Promise<AccountLedger | null> {
+  consumerVideoJobId(providerJobId);
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) return null;
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      return sessionLedger(session, providerJobId);
+    });
+  } catch {
+    return null;
   }
 }
 

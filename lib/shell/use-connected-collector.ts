@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
+import { connectedFailureText, connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { ConnectedCollector, announceCollected, listConnectedJobs, setSharedCollector, showConnectedJob } from "./connected-collector";
 
@@ -10,7 +10,7 @@ const FOCUS_LIST_MS = 30_000;
 /** What the toast says once a job the collector followed settles. */
 export function settledToast(job: ConnectedJob): string {
   const name = job.model.name || "The connected render";
-  if (job.status === "failed") return `${name} failed on the connected account. Failed renders are not billed.`;
+  if (job.status === "failed") return `${name} failed on the connected account. ${connectedFailureText(job)}`;
   return connectedOriginal(job) ? `${name} rendered on the connected account. It is in Takes.` : `${name} finished on the connected account.`;
 }
 

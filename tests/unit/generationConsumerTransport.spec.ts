@@ -166,6 +166,37 @@ test("submission re-checks wallet and price, admits once, sends exactly one paid
   expect((await submitConsumerGeneration("fixture-private-access", kling, input, params, wallet, 42, { fetch: lost.fetch, admit: async () => {} })).state).toBe("uncertain");
 });
 
+test("a failed status brings one read-only page of the account's own ledger in the same session; nothing else is kept or asked", async () => {
+  const other = randomUUID();
+  const page = { items: [
+    { id: "tx_3", type: "refund", amount: 42, job_id: jobId, created_at: 3 },
+    { id: "tx_2", type: "spend", amount: -42, job_id: jobId, created_at: 2 },
+    { id: "tx_1", type: "spend", amount: -90, job_id: other, created_at: 1 },
+  ], next_cursor: null };
+  const nsfw = { generation: { id: jobId, model: "kling3_0", type: "video", status: "nsfw", params, results: null } };
+  const f = fixture((p) => (p.params.name === "job_status" ? nsfw : p.params.name === "transactions" ? page : undefined));
+  const status = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: f.fetch, ledgerOnFailure: true });
+  expect(status.ledger).toEqual({ refund: true, spend: true, refunded: 42, spent: 42 });
+  expect(f.calls.filter((p) => p.params?.name === "transactions").map((p) => p.params.arguments)).toEqual([{ size: 50 }]);
+  expect(f.paid()).toEqual([]);
+  /* Only this job's entries: nothing of the other job travels back. */
+  expect(JSON.stringify(status.ledger)).not.toContain("90");
+  /* A job still rendering, or a read that did not ask, never reads the ledger. */
+  const rendering = fixture((p) => (p.params.name === "job_status" ? { generation: { ...nsfw.generation, status: "processing" } } : p.params.name === "transactions" ? page : undefined));
+  expect((await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: rendering.fetch, ledgerOnFailure: true })).ledger).toBeUndefined();
+  expect(rendering.calls.some((p) => p.params?.name === "transactions")).toBe(false);
+  const unasked = fixture((p) => (p.params.name === "job_status" ? nsfw : undefined));
+  expect((await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: unasked.fetch })).ledger).toBeUndefined();
+  expect(unasked.calls.some((p) => p.params?.name === "transactions")).toBe(false);
+  /* A ledger read that fails, or names nothing, leaves the charge unknown and never fails the status read. */
+  const broken = fixture((p) => (p.params.name === "job_status" ? nsfw : p.params.name === "transactions" ? new Error("socket closed") : undefined));
+  const read = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: broken.fetch, ledgerOnFailure: true }).catch((e) => e);
+  expect(read).not.toBeInstanceOf(Error);
+  expect(read.ledger).toBeNull();
+  const silent = fixture((p) => (p.params.name === "job_status" ? nsfw : p.params.name === "transactions" ? { items: [{ type: "grant", amount: 100 }] } : undefined));
+  expect((await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: silent.fetch, ledgerOnFailure: true })).ledger).toBeNull();
+});
+
 test("status reads use the normalized job_status envelope and reject other jobs, models or output types", async () => {
   const f = fixture((p) => (p.params.name === "job_status" ? { generation: { id: jobId, model: "kling3_0", type: "video", status: "processing", params }, poll_after_seconds: 25 } : undefined));
   const status = await readConsumerGenerationJob("fixture-private-access", jobId, wallet, "kling3_0", "video", { fetch: f.fetch });

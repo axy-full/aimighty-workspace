@@ -2,6 +2,7 @@ import type { Client } from '@libsql/client';
 import { db, now } from '@/lib/db';
 import { assetCursor, assetPageQuery, AssetQueryError } from '@/lib/assetPagination';
 import { listGenerations } from '@/lib/jobs';
+import { withLedgerCharges } from '@/lib/usageLedger';
 import { listLibraryUploads } from '@/lib/uploadLibrary';
 import { referencedMedia } from '@/lib/mediaBindings';
 import { readDraft, workbenchReady } from './records';
@@ -61,7 +62,7 @@ export async function listProjectLibrary(owner: string, params: URLSearchParams)
     return {...result,uploads:result.uploads.map(upload=>({...upload,...(derived.has(upload.id)?{librarySource:'generation' as const}:{})}))};
   }
   const rows = await listGenerations({projectLibrary:scope,limit:page.limit,search:page.search,cursor:page.cursor,includeNext:true});
-  const generations = rows.slice(0,page.limit), last = generations.at(-1);
+  const generations = await withLedgerCharges(rows.slice(0,page.limit)), last = generations.at(-1);
   return {generations,nextPageCursor:rows.length>page.limit&&last?assetCursor({createdAt:last.createdAt,id:last.id}):null};
 }
 

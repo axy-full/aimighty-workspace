@@ -40,6 +40,8 @@ import { billCredits, marginKeyOf } from "./creditTerms";
 import { getProvider } from "./providers";
 import { engineFor } from "./engines";
 import { videoReferenceProblem } from "./generationReferences";
+import { fundedOutcome, outcomeOfError } from "./providerFailure";
+import { noAnswerOutcome, serializeOutcome, silentOutcome, type ProviderOutcome } from "./providerOutcome";
 
 /** A render still "running" past this has been abandoned by the vendor. */
 const CEILING_MS = 60 * 60_000;
@@ -172,14 +174,18 @@ async function fail(
   gen: Generation,
   message: string,
   confirmed = false,
+  /** What fal said, when it answered (its detail[] type), or that it never did. */
+  said: ProviderOutcome | null = null,
 ): Promise<Generation> {
   const ts = now();
+  const outcome = await fundedOutcome(said, gen.id, "fal").catch(() => said);
   await writeGenerationOutcome(
     {
-      sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), provider_outcome=COALESCE(?, provider_outcome), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
       args: [
         message.slice(0, 600),
         Math.max(0, ts - gen.createdAt),
+        outcome ? serializeOutcome(outcome) : null,
         ts,
         gen.id,
       ],
@@ -194,6 +200,7 @@ async function fail(
       durationMs: Math.max(0, ts - gen.createdAt),
       projectId: gen.projectId,
       shotId: gen.shotId,
+      ...(outcome ? { providerOutcome: outcome } : {}),
     },
   );
   await deliverGenerationSettlement(gen.id);
@@ -241,14 +248,16 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
   } catch (e) {
     const msg = (e as Error).message;
     if (/\b404\b|not found/i.test(msg))
-      return fail(gen, "The render service no longer has this job. Render again.");
+      return fail(gen, "The render service no longer has this job. Render again.", false, outcomeOfError(e, { provider: "fal", stage: "run" }));
     // A refusal (422) is final; anything else gets another pass, until the ceiling.
     if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg))
-      return fail(gen, msg, true);
+      return fail(gen, msg, true, outcomeOfError(e, { provider: "fal", stage: "run" }));
     if (now() - gen.createdAt > UNREACHABLE_CEILING_MS) {
       return fail(
         gen,
         `Could not reach the render service to find out how this render went: ${msg} If it did complete, the render service will still have charged for it.`,
+        false,
+        noAnswerOutcome("fal", "run"),
       );
     }
     if (options.strict) throw e;
@@ -259,10 +268,12 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
       gen,
       polled.error ?? "The render service could not finish this render.",
       true,
+      /* fal reported it complete with no video: it said nothing of a charge. */
+      silentOutcome("fal", "run", "no_output", polled.error),
     );
   if (polled.status !== "succeeded") {
     if (now() - gen.createdAt > CEILING_MS)
-      return fail(gen, "The render never came back from the render service. Render again.");
+      return fail(gen, "The render never came back from the render service. Render again.", false, noAnswerOutcome("fal", "run"));
     return gen;
   }
   const url = polled.videoUrl!;

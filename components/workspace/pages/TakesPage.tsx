@@ -6,21 +6,25 @@ import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { usePageAction } from "@/lib/workspace/page-actions";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Take } from "@/lib/workspace/takes";
+import { failedChip } from "@/lib/errors";
 import type { LibFilter } from "@/lib/workspace/types";
 import { Button } from "../ui";
 import type { PageBodyProps } from "./registry";
 import "@/app/workspace-assets.css";
 import { VirtualItems } from "../VirtualItems";
 
-/** Status dot + label under each card. Failed renders are not billed and say so. */
-export function takeStatus(take: Pick<Take, "status" | "failedUnbilled">): { label: string; dot: string } {
+/**
+ * Status dot + label under each card. A failed take says "not billed" only
+ * when the ledger (or, on the workspace's own keys, its provider) confirms it.
+ */
+export function takeStatus(take: Pick<Take, "status" | "failedUnbilled" | "failure">): { label: string; dot: string } {
   switch (take.status) {
     case "approved": return { label: "Approved", dot: "var(--pxw-green)" };
     case "picked": return { label: "Picked", dot: "var(--pxw-blue)" };
     case "changes": return { label: "Changes requested", dot: "var(--pxw-amber)" };
     case "review": return { label: "Review", dot: "var(--pxw-amber)" };
     case "rendering": return { label: "Rendering", dot: "var(--pxw-blue)" };
-    case "failed": return { label: take.failedUnbilled ? "Failed · not billed" : "Failed", dot: "var(--pxw-red)" };
+    case "failed": return { label: take.failure ? failedChip(take.failure) : take.failedUnbilled ? "Failed · not billed" : "Failed", dot: "var(--pxw-red)" };
     default: return { label: "Source", dot: "var(--pxw-neutral-state)" };
   }
 }
@@ -170,6 +174,7 @@ export function TakesPage({ project, scope }: PageBodyProps) {
                     <span className="pxw-dot" style={{ background: s.dot }} aria-hidden="true" />
                     <span>{s.label}</span>
                   </span>
+                  {take.failureLine ? <span className="pxw-take-why" data-testid="take-failure">{take.failureLine}</span> : null}
                 </span>
               </button>
             );

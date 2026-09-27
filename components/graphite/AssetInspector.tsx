@@ -9,6 +9,8 @@ import { useLedgerEntry } from "./UsageLedger";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
 import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { billingSentence, failedChip, failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { openPreview } from "@/components/PreviewLayer";
@@ -52,7 +54,9 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
     ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
-    ["Status", take.status],
+    ["Status", take.failure ? failedChip(take.failure, generation?.status === "cancelled") : take.status],
+    /* Why it failed, what its provider did with the charge (its own unit, or Particl's ledger), and what to do. */
+    ...(take.failure ? failureFacts(take.failure, generation?.status === "cancelled") : []),
   ];
   const download = generation ? `/api/media/${encodeURIComponent(generation.id)}?download=1` : `/api/uploads/${encodeURIComponent(upload!.id)}?download=1`;
   const downloadable = upload || (generation?.status === "succeeded" && generation.storedUrl);
@@ -93,6 +97,22 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       </div>
     </div>
   );
+}
+
+/**
+ * A failed take's facts: what happened, the provider's own words when they
+ * say more, what the provider did with the charge (only where it billed the
+ * workspace's own key or account — Particl's own charge is "Settled" above),
+ * and the next step.
+ */
+function failureFacts(failure: TakeFailure, cancelled: boolean): [string, string][] {
+  const line = failureLine({ ...failure, charge: null }, { cancelled });
+  return [
+    ["Failed", line.what],
+    ...(line.detail ? [["Engine said", line.detail] as [string, string]] : []),
+    ...(failure.billing ? [["Provider", billingSentence(failure.billing, failure.provider)] as [string, string]] : []),
+    ["Next", line.next],
+  ];
 }
 
 /** A fixed 180px card (an aspect-ratio box collapsed inside the flex column). Play/pause for anything with time. */

@@ -9,6 +9,7 @@ import { validateConsumerMarketingTemplateSources } from "./marketing-template-s
 import { validateConsumerVoiceToolSources } from "./voice-tool-sources";
 import { validateConsumerShortsSources } from "./shorts-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
+import { parseOutcome, serializeOutcome, type ProviderBilling, type ProviderOutcome } from "@/lib/providerOutcome";
 
 export type ConsumerWorkflow =
   "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template" | "voice-tool" | "shorts";
@@ -43,6 +44,8 @@ export type ConsumerJob = ConsumerJobScope & {
   providerReceipt: { [key: string]: ConsumerJson } | null;
   resultManifest: { [key: string]: ConsumerJson } | null;
   failureCode: ConsumerFailureCode | null;
+  /** What the account said when it failed the job, and what its ledger shows for the charge; null on older rows. */
+  providerOutcome: ProviderOutcome | null;
   /** Set when the owner set this unsettled job aside; it no longer holds capacity. */
   releasedAt: number | null;
   createdAt: number;
@@ -216,6 +219,13 @@ export async function consumerJobsReady() {
           await add("higgsfield_consumer_jobs", "released_at INTEGER");
           // When the background heartbeat last took the job for a read. Additive.
           await add("higgsfield_consumer_jobs", "swept_at INTEGER");
+          // What the account said when the job failed — its own status, its
+          // words and, from its own credit ledger, what happened to the
+          // charge (lib/providerOutcome.ts). Null reads as "didn't say". Additive.
+          await add("higgsfield_consumer_jobs", "provider_outcome TEXT");
+          // When that charge was last looked up in the account's ledger, and how often.
+          await add("higgsfield_consumer_jobs", "billing_checked_at INTEGER");
+          await add("higgsfield_consumer_jobs", "billing_checks INTEGER NOT NULL DEFAULT 0");
         })
         .catch((error) => {
           initialized.delete(client);
@@ -256,6 +266,7 @@ function asJob(row: Row): ConsumerJob {
         ? null
         : JSON.parse(String(row.result_manifest)),
     failureCode: row.failure_code as ConsumerFailureCode | null,
+    providerOutcome: row.provider_outcome == null ? null : parseOutcome(String(row.provider_outcome)),
     releasedAt: row.released_at == null ? null : Number(row.released_at),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -780,6 +791,7 @@ async function finishDispatch(
   status: "uncertain" | "failed",
   failureCode: ConsumerFailureCode | null,
   providerReceipt: string | null = null,
+  providerOutcome: ProviderOutcome | null = null,
 ): Promise<ConsumerJob | null> {
   dispatchInput(input);
   await consumerJobsReady();
@@ -797,11 +809,12 @@ async function finishDispatch(
     if (replay && (providerReceipt === null || row.provider_receipt != null))
       return asJob(row);
     await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,failure_code=?,provider_receipt=COALESCE(provider_receipt,?),updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status IN ('dispatching',?) AND dispatch_claim_hash=?",
+      sql: "UPDATE higgsfield_consumer_jobs SET status=?,failure_code=?,provider_receipt=COALESCE(provider_receipt,?),provider_outcome=COALESCE(provider_outcome,?),updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status IN ('dispatching',?) AND dispatch_claim_hash=?",
       args: [
         status,
         failureCode,
         providerReceipt,
+        providerOutcome ? serializeOutcome(providerOutcome) : null,
         Date.now(),
         input.id,
         input.userId,
@@ -853,9 +866,10 @@ export const markConsumerUncertain = (
       ? null
       : canonicalObject(input.providerReceipt, 65_536),
   );
-/** Only for a definitive rejection before provider acceptance; never for a timeout. */
-export const markConsumerFailed = (input: DispatchInput) =>
-  finishDispatch(input, "failed", "submission_rejected");
+/** Only for a definitive rejection before provider acceptance; never for a timeout.
+ * `outcome`: what the account said when it refused (its words; its charge is whatever its ledger says). */
+export const markConsumerFailed = (input: DispatchInput & { outcome?: ProviderOutcome | null }) =>
+  finishDispatch(input, "failed", "submission_rejected", null, input.outcome ?? null);
 
 type PollInput = ConsumerJobScope & { leaseToken: string };
 /** Grants permission to GET the stored provider job, never to submit a generation. */
@@ -898,7 +912,7 @@ async function finishPoll(
   input: PollInput,
   outcome:
     | { status: "completed"; manifest: string }
-    | { status: "failed"; failureCode: ConsumerFailureCode }
+    | { status: "failed"; failureCode: ConsumerFailureCode; providerOutcome?: ProviderOutcome | null }
     | { status: "accepted"; nextPollAt?: number },
 ): Promise<ConsumerJob | null> {
   jobScope(input);
@@ -914,11 +928,12 @@ async function finishPoll(
     )
       return null;
     const changed = await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,result_manifest=?,failure_code=?,poll_lease_hash=NULL,poll_lease_until=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='accepted' AND poll_lease_hash=? AND poll_lease_until>?",
+      sql: "UPDATE higgsfield_consumer_jobs SET status=?,result_manifest=?,failure_code=?,provider_outcome=COALESCE(?,provider_outcome),poll_lease_hash=NULL,poll_lease_until=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='accepted' AND poll_lease_hash=? AND poll_lease_until>?",
       args: [
         outcome.status,
         outcome.status === "completed" ? outcome.manifest : null,
         outcome.status === "failed" ? outcome.failureCode : null,
+        outcome.status === "failed" && outcome.providerOutcome ? serializeOutcome(outcome.providerOutcome) : null,
         outcome.status === "accepted" ? (outcome.nextPollAt ?? null) : null,
         now,
         input.id,
@@ -943,14 +958,78 @@ export const completeConsumerJob = (
     status: "completed",
     manifest: canonicalObject(input.resultManifest, 262_144),
   });
+/** `outcome`: what the account said — its own status (nsfw, ip_detected, …) and words; see lib/providerOutcome.ts. */
 export function failConsumerPoll(
-  input: PollInput & { failureCode: "provider_failed" | "invalid_result" },
+  input: PollInput & { failureCode: "provider_failed" | "invalid_result"; outcome?: ProviderOutcome | null },
 ) {
   if (!["provider_failed", "invalid_result"].includes(input.failureCode))
     invalid();
   return finishPoll(input, {
     status: "failed",
     failureCode: input.failureCode,
+    providerOutcome: input.outcome ?? null,
+  });
+}
+
+/* ── The account's ledger, after a failure ──────────────────────────── */
+
+/** A failed job's charge is looked up this long after it failed, no more often than this, at most this many times. */
+export const CONSUMER_BILLING_WINDOW_MS = 2 * 3_600_000;
+export const CONSUMER_BILLING_INTERVAL_MS = 4 * 60_000;
+export const CONSUMER_BILLING_CHECKS = 6;
+
+/**
+ * What the account's own ledger said about a failed job's charge. Only a
+ * failed job with a provider id and an outcome still reading unknown is
+ * updated; a settled charge (refunded, billed) is never overwritten, and a
+ * lookup that found nothing only counts the look.
+ */
+export async function recordConsumerBilling(
+  input: ConsumerJobScope & { billing: ProviderBilling | null },
+  now = Date.now(),
+): Promise<ConsumerJob | null> {
+  jobScope(input);
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const row = await requiredRow(tx, input);
+    if (row.status !== "failed" || !row.provider_job_id) return asJob(row);
+    const current = row.provider_outcome == null ? null : parseOutcome(String(row.provider_outcome));
+    const settled = current && current.billing.state !== "unknown";
+    const next = input.billing && input.billing.state !== "unknown" && current && !settled ? serializeOutcome({ ...current, billing: input.billing }) : null;
+    await tx.execute({
+      sql: `UPDATE higgsfield_consumer_jobs SET provider_outcome=COALESCE(?,provider_outcome),billing_checked_at=?,billing_checks=billing_checks+1
+        WHERE id=? AND user_id=? AND draft_id=? AND status='failed'`,
+      args: [next, now, input.id, input.userId, input.draftId],
+    });
+    return asJob(await requiredRow(tx, input));
+  });
+}
+
+/**
+ * The next failed job whose charge the account has not settled yet: failed
+ * inside the window, looked up fewer than the most times, and not in the last
+ * interval. Stamped as looked-at before it is read, like claimConsumerSweep.
+ */
+export async function claimConsumerBillingCheck(
+  workflows: readonly ConsumerWorkflow[],
+  now = Date.now(),
+): Promise<(ConsumerJobScope & { workflow: ConsumerWorkflow }) | null> {
+  if (!workflows.length || workflows.some((workflow) => !CONSUMER_WORKFLOWS.includes(workflow))) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const row = (
+      await tx.execute({
+        sql: `SELECT id,user_id,draft_id,workflow FROM higgsfield_consumer_jobs
+          WHERE status='failed' AND provider_job_id IS NOT NULL AND workflow IN (${workflows.map(() => "?").join(",")})
+            AND provider_outcome IS NOT NULL AND json_extract(provider_outcome,'$.billing.state')='unknown'
+            AND updated_at>? AND billing_checks<? AND (billing_checked_at IS NULL OR billing_checked_at<=?)
+          ORDER BY COALESCE(billing_checked_at,0) ASC,updated_at ASC,id ASC LIMIT 1`,
+        args: [...workflows, now - CONSUMER_BILLING_WINDOW_MS, CONSUMER_BILLING_CHECKS, now - CONSUMER_BILLING_INTERVAL_MS],
+      })
+    ).rows[0];
+    if (!row) return null;
+    await tx.execute({ sql: "UPDATE higgsfield_consumer_jobs SET billing_checked_at=? WHERE id=?", args: [now, row.id] });
+    return { id: String(row.id), userId: String(row.user_id), draftId: String(row.draft_id), workflow: row.workflow as ConsumerWorkflow };
   });
 }
 export function releaseConsumerPoll(

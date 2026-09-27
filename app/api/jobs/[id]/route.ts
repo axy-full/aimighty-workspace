@@ -12,6 +12,7 @@ import { notify } from "@/lib/push";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { discardHeldJob } from "@/lib/held";
+import { withLedgerCharges } from "@/lib/usageLedger";
 import type { Transaction } from "@libsql/client";
 
 const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
@@ -41,8 +42,9 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
   if (!gen) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Drag resolution only needs persisted metadata. It must not poll a provider,
   // copy a master or advance accounting merely because someone selected a take.
-  const generation = new URL(req.url).searchParams.get("sync") === "0"
+  const synced = new URL(req.url).searchParams.get("sync") === "0"
     ? gen : await syncGeneration(gen);
+  const [generation] = await withLedgerCharges([synced]);
   return NextResponse.json({ generation }, {
     headers: { "Cache-Control": "private, no-store" },
   });

@@ -155,7 +155,8 @@ test("the dispatch gate sends only the price that was shown", () => {
 
 test("engine labels in messages become neutral names; other vendor names fall back", () => {
   expect(neutralCopy("Seedance 2.5 accepts at most 30 image references.")).toBe("Seedance 2.5 accepts at most 30 image references.");
-  expect(neutralCopy("Review a live Genjutsu quote before submitting this take.")).toBe("The engine could not take this request. Nothing was charged.");
+  /* The fallback never claims a charge it cannot see (idea 15). */
+  expect(neutralCopy("Review a live Genjutsu quote before submitting this take.")).toBe("The engine could not take this request.");
   expect(neutralCopy("Insufficient credits.", "x")).toBe("Insufficient credits.");
 });
 

@@ -1,5 +1,7 @@
 import type { Client } from "@libsql/client";
 import { randomUUID } from "node:crypto";
+import { fundedOutcome } from "./providerFailure";
+import { elevenLabsErrorOutcome, serializeOutcome, silentOutcome, type ProviderOutcome } from "./providerOutcome";
 import { db, ready, now, id as newId } from "./db";
 import { allowanceCheck } from "./allowance";
 import { invalidate, PROJECTS_KEY } from "./cache";
@@ -258,10 +260,12 @@ async function setStatus(row: DubbingJobRow, status: DubbingJobStatus, extra: { 
 export async function settleDubbing(
   jobId: string,
   status: "dubbed" | "failed",
-  outcome: { message?: string; costUsd: number | null; storedUrl?: string; bytes?: number; seconds?: number | null },
+  outcome: { message?: string; costUsd: number | null; storedUrl?: string; bytes?: number; seconds?: number | null; said?: ProviderOutcome | null },
 ) {
   const row = await dubbingJob(jobId);
   if (!row || row.settled) return;
+  /* What ElevenLabs said when it refused or failed the dub (lib/providerOutcome.ts). */
+  const said = status === "failed" && outcome.said ? await fundedOutcome(outcome.said, row.generation_id, "elevenlabs").catch(() => outcome.said ?? null) : null;
   const ms = Math.max(0, now() - Number(row.created_at));
   const write = status === "dubbed"
     ? {
@@ -272,14 +276,15 @@ export async function settleDubbing(
       }
     : {
         sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=COALESCE(cost_usd,?),
-                params=json_set(params,'$.dubbingStatus','failed'), updated_at=?
+                provider_outcome=COALESCE(?,provider_outcome), params=json_set(params,'$.dubbingStatus','failed'), updated_at=?
               WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
-        args: [(outcome.message ?? "The dub failed.").slice(0, 600), ms, outcome.costUsd, now(), row.generation_id],
+        args: [(outcome.message ?? "The dub failed.").slice(0, 600), ms, outcome.costUsd, said ? serializeOutcome(said) : null, now(), row.generation_id],
       };
   await writeGenerationOutcome(write, {
     id: row.generation_id, kind: "audio", engine: "elevenlabs", model: DUBBING_MODEL,
     status: status === "dubbed" ? "succeeded" : "failed", engineCostUsd: outcome.costUsd, durationMs: ms,
     projectId: row.project_id, shotId: row.shot_id, createdBy: row.owner,
+    ...(said ? { providerOutcome: said } : {}),
   });
   await db().execute({
     sql: "UPDATE dubbing_jobs SET status=?, settled=1, error=?, updated_at=? WHERE id=?",
@@ -332,7 +337,7 @@ export async function advanceDubbingJob(jobId: string, deps: DubbingDeps = {}): 
       } catch (error) {
         if (error instanceof ElevenLabsError && error.rejectedBeforeGeneration) {
           // Refused before any work: the whole reservation comes back.
-          await settleDubbing(jobId, "failed", { message: error.message, costUsd: 0 });
+          await settleDubbing(jobId, "failed", { message: error.message, costUsd: 0, said: elevenLabsErrorOutcome(error.status, error.body) });
           return dubbingJob(jobId);
         }
         // A timeout or a dropped connection: the vendor may hold a charged project under an id we never saw.
@@ -356,7 +361,7 @@ export async function advanceDubbingJob(jobId: string, deps: DubbingDeps = {}): 
       const state = await (deps.status ?? dubbingStatus)(row.dubbing_id);
       if (state.status === "failed") {
         // The vendor ended it after submission. Whether the up-front charge came back is not stated anywhere we can read.
-        await settleDubbing(jobId, "failed", { message: `The dub failed at the vendor${state.error ? `: ${state.error}` : "."} Its reservation stays pending reconciliation.`, costUsd: null });
+        await settleDubbing(jobId, "failed", { message: `The dub failed at the vendor${state.error ? `: ${state.error}` : "."} Its reservation stays pending reconciliation.`, costUsd: null, said: silentOutcome("elevenlabs", "run", "failed", state.error) });
         return dubbingJob(jobId);
       }
       if (state.status === "dubbing") {

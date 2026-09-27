@@ -22,6 +22,7 @@ import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
 import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
+import { sweepConsumerBilling } from "@/lib/higgsfield-consumer/billing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -121,6 +122,12 @@ export async function GET(req: Request) {
             // due ones (free reads, one-time collection, never a re-send).
             await stage("connected_jobs", async () => {
               const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
+              deferred ||= report.deferred;
+            });
+            // A failed connected job's charge: its account's own ledger says
+            // whether it was refunded (free reads, a few times, then stops).
+            await stage("connected_billing", async () => {
+              const report = await sweepConsumerBilling({ limit: 2, deadlineAt });
               deferred ||= report.deferred;
             });
             await stage("storage_sizes", () => backfillSizes(8));

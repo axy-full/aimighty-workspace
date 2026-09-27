@@ -50,6 +50,7 @@ async function serviceFixture(options: { analysis?: boolean }) {
   };
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
+    "@/lib/providerOutcome": await import("../../lib/providerOutcome"),
     "@/lib/tenant": tenant,
     "@/lib/workbench/records": await import("../../lib/workbench/records"),
     "./jobs": jobs,

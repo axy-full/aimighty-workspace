@@ -254,8 +254,11 @@ test("a job a view lets go of is first read one pace after the view's own last r
   expect(readAt()).toEqual([33.55]);
 });
 
-test("the toast says where a finished render went, and that a failed one was not billed", () => {
+test("the toast says where a finished render went, and what the account's own ledger shows for a failed one", () => {
   const done = { ...job(1, "completed"), originalAvailable: true, originalAvailability: "available" } as unknown as ConnectedJob;
   expect(settledToast(done)).toBe("Kling 3.0 finished on the connected account.");
-  expect(settledToast({ ...job(1, "failed") } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. Failed renders are not billed.");
+  /* Nothing confirmed yet: never a blanket "not billed". */
+  expect(settledToast({ ...job(1, "failed") } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. The connected account reported this job as failed. Higgsfield didn't say if it charged.");
+  const refunded = { provider: "higgsfield_account", stage: "run", code: "nsfw", kind: "content_filter", message: null, payer: "account", billing: { state: "refunded", amount: 12, unit: "higgsfield_credits", basis: "hf-ledger" } };
+  expect(settledToast({ ...job(1, "failed"), failure: refunded } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. Blocked by the content filter. Higgsfield refunded 12 credits. Change the prompt or reference.");
 });

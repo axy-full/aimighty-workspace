@@ -5,6 +5,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { assetCursor, assetPageQuery, AssetQueryError } from "@/lib/assetPagination";
+import { withLedgerCharges } from "@/lib/usageLedger";
 
 export const dynamic = "force-dynamic";
 /* The list answers at once; this is the budget for the reconciliation it
@@ -65,7 +66,8 @@ export const GET = withTenant(async function GET(req: Request) {
     includeNext: stable,
     limit,
   });
-  const generations = stable ? rows.slice(0, limit) : rows;
+  /* A failed take carries what Particl's own ledger holds for it (credit workspaces). */
+  const generations = await withLedgerCharges(stable ? rows.slice(0, limit) : rows);
 
   // Keyset cursor: the oldest row we just returned. Null once a page comes
   // back short, which is how the client knows it has reached the end.
