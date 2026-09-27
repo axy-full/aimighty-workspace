@@ -242,6 +242,7 @@ export function useGenerationBatch(surface: string, active: boolean) {
           headers: {
             "Content-Type": "application/json",
             "Idempotency-Key": variant.key,
+            "X-Workbench-Scope": requestScope ?? "",
             "X-Workspace-Id": workspace!.id,
             "X-Actor-Email": email!,
           },
