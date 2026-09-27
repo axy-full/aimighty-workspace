@@ -12,6 +12,7 @@ import type { TenantWorkspace } from "../../lib/tenant";
 import type { ProductFetchDependencies } from "../../lib/workbench/product-fetch";
 import type { ConsumerShortsInput, ConsumerShortsParams } from "../../lib/higgsfield-consumer/shorts-studio";
 import type * as Service from "../../lib/higgsfield-consumer/shorts-service";
+import { consumerFundingModules } from "../helpers/consumerFunding";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-shorts-service-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -125,6 +126,8 @@ async function serviceFixture() {
   };
   const loaded = { exports: {} as typeof Service };
   const source = ts.transpileModule(readFileSync("lib/higgsfield-consumer/shorts-service.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  // The real funding decision and grant resolver, over this fixture's tenant, ledger and grant.
+  Object.assign(deps, await consumerFundingModules({ tenant: deps["@/lib/tenant"], jobs: deps["./jobs"], oauth: deps["./oauth"] }));
   new Function("require", "module", "exports", source)((name: string) => { if (!(name in deps)) throw new Error(`Unexpected dependency: ${name}`); return deps[name]; }, loaded, loaded.exports);
   return { service: loaded.exports, state, workspace, tenant, database, jobs, originals, net };
 }

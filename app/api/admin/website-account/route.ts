@@ -54,7 +54,9 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     return NextResponse.json({ code: "MFA_REQUIRED", error: "This workspace requires two-step sign-in. Set up your authenticator to continue.", securityUrl: "/account/security" }, { status: 428, headers });
   if (workbenchScopeProblem(req, ctx.workspace.id, ctx.user.id, true))
     return NextResponse.json({ error: "Your account or workspace changed. Reload this page before continuing." }, { status: 409, headers });
-  const body = (await req.json().catch(() => null)) as { action?: unknown; tools?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { action?: unknown; tools?: unknown; acknowledge?: unknown } | null;
+  // Moving or releasing while its jobs are still in flight needs this, said once by the person.
+  const acknowledgeInFlight = body?.acknowledge === true;
   const action = body?.action;
   if (!["designate", "pause", "resume", "release", "tools"].includes(String(action)) || (action === "tools" && !Array.isArray(body?.tools)))
     return NextResponse.json({ error: "Review the request." }, { status: 400, headers });
@@ -64,9 +66,9 @@ export const POST = recoveryRoute(async function POST(req: Request) {
       if (!identity) return NextResponse.json({ error: "Designate from a workspace you own." }, { status: 403, headers });
       // A grant that never recorded its account learns it with one free read first.
       await backfillConsumerSubject(identity);
-      await designatePlatformAccount(identity, ctx.user.id);
+      await designatePlatformAccount(identity, ctx.user.id, Date.now(), { acknowledgeInFlight });
     } else if (action === "pause" || action === "resume") await setPlatformAccountPaused(action === "pause", ctx.user.id);
-    else if (action === "release") await releasePlatformAccount(ctx.user.id);
+    else if (action === "release") await releasePlatformAccount(ctx.user.id, { acknowledgeInFlight });
     else await setPlatformAccountTools(body!.tools as unknown[], ctx.user.id);
     return NextResponse.json(await platformAccountStatus(identity), { headers });
   } catch (error) {

@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft, saveDraft } from "@/lib/workbench/records";
 import { newProject } from "@/lib/workbench/studio";
-import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
+import { accessForJob, accessForNewWork } from "./access";
+import { websiteFunding } from "./funding";
 import {
-  requireConsumerFunding,
+  ownsConsumerJob,
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerRecoveryJobs, readConsumerJobAfterAdmissions,
   claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
@@ -73,13 +74,8 @@ export async function consumerVideoView(job: ConsumerJob) {
   const availability = await consumerOriginalAvailability([job]);
   return presentVideo(job, availability.get(job.id)!, observedAt);
 }
-async function connected(userId: string, expectedGeneration?: string) {
-  const access = await getConsumerAccess(requireTenant().id, userId, { expectedGeneration });
-  if (!access) throw new ConsumerOAuthError("reconnect_required");
-  return access;
-}
 export async function quoteConsumerMarketingVideo(userId: string, draftId: string, input: ConsumerVideoInput, idempotencyKey: string) {
-  requireConsumerFunding();
+  const funding = await websiteFunding({ workflow: "marketing-video" });
   const normalized = parseConsumerVideoInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else.
   await refuseForeignMarketingSetup(userId, setupIdsOfVideoInput(normalized));
@@ -92,12 +88,12 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
   }
   if (!await readDraft(userId, draftId))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
-  const access = await connected(userId);
+  const access = await accessForNewWork(userId, funding);
   const quote = await getConsumerVideoQuote(access.accessToken, normalized);
   // Reconnection during the quote cannot bind its result to a replacement grant.
-  await connected(userId, access.generation);
+  await accessForNewWork(userId, funding, access.generation);
   try {
-    const { job } = await createConsumerJob({ userId, draftId, connectedOwnerId: userId,
+    const { job } = await createConsumerJob({ userId, draftId, funding: funding.kind, connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation, higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "marketing-video", idempotencyKey,
       payload: { input: { ...quote.input }, workspaceName: quote.workspace.name ?? "connected workspace" },
@@ -115,7 +111,7 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
 }
 async function ownedVideo(input: ConsumerJobScope) {
   const job = await getConsumerJob(input);
-  if (!job || job.workflow !== "marketing-video" || job.connectedOwnerId !== input.userId)
+  if (!job || job.workflow !== "marketing-video" || !ownsConsumerJob(job, input.userId))
     throw new ConsumerVideoServiceError("not_found", "This marketing job is not available.", 404);
   return job;
 }
@@ -126,13 +122,13 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const input = parseConsumerVideoInput(JSON.parse(job.payloadJson).input);
-  const access = await connected(scope.userId, job.connectionGeneration);
+  const access = await accessForJob(job);
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
     const result = await submitConsumerVideo(access.accessToken, input, approval.workspaceId, approval.credits, {
       admit: async () => {
-        await connected(scope.userId, job.connectionGeneration);
+        await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
         if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
         claimToken = claim.claimToken;
@@ -169,12 +165,12 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
     // identifiers must agree if both are present; never scrape its preview.
     const providerJobId = savedId && responseId && savedId !== responseId ? null : savedId ?? responseId;
     if (providerJobId) {
-      await connected(scope.userId, prior.connectionGeneration);
+      await accessForJob(prior);
       prior = await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt }) ?? await ownedVideo(scope);
     }
   }
   if (prior.status !== "accepted") return { job: await consumerVideoView(prior) };
-  const access = await connected(scope.userId, prior.connectionGeneration);
+  const access = await accessForJob(prior);
   const claim = await claimConsumerPoll(scope);
   if (!claim) return { job: await consumerVideoView(await ownedVideo(scope)), pollAfterSeconds: 30 };
   let pollAfterSeconds = 15;
@@ -190,14 +186,14 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
     // stays accepted: a later poll, or a parser fix, may still collect it.
     const failed = consumerVideoFailureResult(response.raw, claim.job.providerJobId!);
     if (failed) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
       return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (terminal) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
       // authorize collection under a replacement connection.
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const providerResult = consumerVideoProviderResult(response.raw, input);
       let original;
       try {

@@ -9,6 +9,7 @@ import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerVideoInput } from "../../lib/higgsfield-consumer/video-contract";
 import type * as Service from "../../lib/higgsfield-consumer/video-service";
 import { ConsumerOriginalError, type ConsumerVideoOriginal } from "../../lib/higgsfield-consumer/video-original";
+import { consumerFundingModules } from "../helpers/consumerFunding";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-service-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -259,6 +260,8 @@ async function serviceFixture() {
       },
     },
   ).outputText;
+  // The real funding decision and grant resolver, over this fixture's tenant, ledger and grant.
+  Object.assign(deps, await consumerFundingModules({ tenant: deps["@/lib/tenant"], jobs: deps["./jobs"], oauth: deps["./oauth"] }));
   new Function("require", "module", "exports", source)(
     (name: string) => {
       if (!(name in deps)) throw new Error(`Unexpected dependency: ${name}`);

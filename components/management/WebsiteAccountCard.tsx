@@ -36,10 +36,16 @@ export function WebsiteAccountCard() {
     if (!requestScope) { setProblem("Reload this page in the intended account and workspace first."); return; }
     setBusy(key); setProblem(null);
     try {
-      const res = await fetch("/api/admin/website-account", {
-        method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope }, body: JSON.stringify(body),
+      const send = (extra: Record<string, unknown> = {}) => fetch("/api/admin/website-account", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope }, body: JSON.stringify({ ...body, ...extra }),
       });
-      const json = await res.json().catch(() => ({})) as { error?: string };
+      let res = await send();
+      let json = await res.json().catch(() => ({})) as { error?: string; code?: string };
+      // Jobs still running on the current account: said once, then confirmed by the person.
+      if (res.status === 409 && json.code === "jobs_in_flight" && await appConfirm("Jobs are still running", json.error, { confirmLabel: "Continue", danger: true })) {
+        res = await send({ acknowledge: true });
+        json = await res.json().catch(() => ({})) as { error?: string; code?: string };
+      } else if (res.status === 409 && json.code === "jobs_in_flight") return;
       if (!res.ok) throw new Error(json.error ?? `The server answered ${res.status}.`);
       await refresh();
     } catch (e) { setProblem((e as Error).message); }

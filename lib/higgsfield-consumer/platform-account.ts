@@ -27,6 +27,7 @@ import {
   type ConsumerIdentity,
 } from "./store";
 import { WEBSITE_TOOLS, isWebsiteToolId, websiteTool, type WebsiteToolId, type WebsiteToolPricing } from "./website-tools";
+import { websiteJobsInFlightTx, websiteJobsReady } from "./platform-jobs";
 
 type Tx = Pick<Transaction, "execute">;
 let ready: Promise<void> | undefined;
@@ -90,6 +91,7 @@ export type PlatformAccountErrorCode =
   | "not_designated"
   | "tool_unknown"
   | "tool_unpriced"
+  | "jobs_in_flight"
   | "platform_account_locked";
 export class PlatformAccountError extends Error {
   readonly paidAttempted = false;
@@ -240,15 +242,32 @@ export async function platformAccountStatus(caller: ConsumerIdentity | null): Pr
 }
 
 /**
+ * Jobs admitted on the current designation keep collecting only while its
+ * connection stays connected. Moving or releasing the designation unlocks that
+ * connection, so while any of them is still in flight it needs an explicit
+ * acknowledgement.
+ */
+async function refuseWhileInFlight(tx: Tx, current: PlatformDesignation | null, acknowledged: boolean) {
+  if (!current || acknowledged) return;
+  const running = await websiteJobsInFlightTx(tx, current);
+  if (running > 0)
+    throw new PlatformAccountError(
+      "jobs_in_flight",
+      `${running} job${running === 1 ? " is" : "s are"} still running on the current account. They keep collecting only while it stays connected. Confirm to continue.`,
+    );
+}
+
+/**
  * Designate the caller's OWN connection in a workspace they own. It must be
  * connected and its account known; that account is pinned here. Sign-ins
  * started earlier for this connection are fenced, so none can replace its
  * grant after this. The same connection again keeps its tools and pause;
  * another one starts with every tool off.
  */
-export async function designatePlatformAccount(identity: ConsumerIdentity, actorId: string, at = Date.now()) {
+export async function designatePlatformAccount(identity: ConsumerIdentity, actorId: string, at = Date.now(), options: { acknowledgeInFlight?: boolean } = {}) {
   if (identity.userId !== actorId) throw new PlatformAccountError("not_owner", "Designate your own connection.", 403);
   await platformAccountReady();
+  await websiteJobsReady();
   await accountTransaction(async (tx) => {
     if (!(await hostStandingTx(tx, identity)))
       throw new PlatformAccountError("not_owner", "Designate from a workspace you own.", 403);
@@ -261,6 +280,7 @@ export async function designatePlatformAccount(identity: ConsumerIdentity, actor
     const same = Boolean(
       current && current.workspaceId === identity.workspaceId && current.userId === identity.userId && current.subjectHash === connection.subjectHash,
     );
+    if (!same) await refuseWhileInFlight(tx, current, options.acknowledgeInFlight === true);
     await fenceConsumerAuthorizationsTx(tx, identity, at);
     await tx.execute({
       sql: `INSERT INTO higgsfield_platform_account(id,workspace_id,user_id,subject_hash,enabled_tools,paused_at,released_at,designated_by,designated_at,updated_at)
@@ -331,14 +351,17 @@ export const setPlatformAccountTools = async (tools: readonly unknown[], actorId
   );
 };
 /** Stop designating: new work closes, and the connection and its workspace are unlocked. Nothing is deleted. */
-export const releasePlatformAccount = (actorId: string) =>
-  changeDesignation(
+export const releasePlatformAccount = async (actorId: string, options: { acknowledgeInFlight?: boolean } = {}) => {
+  await websiteJobsReady();
+  return changeDesignation(
     actorId,
-    async (tx, _designation, at) => {
+    async (tx, designation, at) => {
+      await refuseWhileInFlight(tx, designation, options.acknowledgeInFlight === true);
       await tx.execute({ sql: "UPDATE higgsfield_platform_account SET released_at=?,updated_at=? WHERE id=1 AND released_at IS NULL", args: [at, at] });
     },
     "website_account.released",
   );
+};
 
 /**
  * Server-only access for NEW work through the designation: the designation

@@ -15,7 +15,7 @@ import {
   fetchPublicConsumerOriginalBytes,
   type ProductFetchDependencies,
 } from "../workbench/product-fetch";
-import { consumerJobsReady, type ConsumerJob } from "./jobs";
+import { consumerJobMeterId, consumerJobsReady, type ConsumerJob } from "./jobs";
 import { consumerVideoIdentity, type ConsumerOriginalKind } from "./original-identity";
 
 export const CONSUMER_ORIGINAL_LEASE_MS = 180_000;
@@ -101,14 +101,13 @@ const digest = (bytes: Uint8Array) =>
  * each clip is its own retained original, keyed apart from its parent job. */
 export const consumerClipKey = (jobId: string, index: number) => `${jobId}.clip-${index}`;
 export type ConsumerClip = { index: number; providerJobId: string };
+/** The collected original's generation id — the same identity as a platform
+ * job's meter id (lib/higgsfield-consumer/jobs.ts › consumerJobMeterId). */
 export function consumerOriginalGenerationId(
   workspaceId: string,
   jobId: string,
 ) {
-  return `gen_hfc_${createHash("sha256")
-    .update(JSON.stringify([workspaceId, jobId]))
-    .digest("hex")
-    .slice(0, 40)}`;
+  return consumerJobMeterId(workspaceId, jobId);
 }
 
 /** Metadata/packet inspection only, never transcoding or fetching references. */

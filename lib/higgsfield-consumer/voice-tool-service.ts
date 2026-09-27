@@ -9,11 +9,11 @@
  * semantics as the Generate service; no automatic retries of paid calls.
  */
 import { createHash } from "node:crypto";
-import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
-import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
+import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
+import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
 import {
-  requireConsumerFunding,
+  ownsConsumerJob,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -112,17 +112,12 @@ export async function consumerVoiceToolView(job: ConsumerJob) {
   const availability = await consumerOriginalAvailability([job]);
   return presentVoiceTool(job, availability.get(job.id)!, observedAt);
 }
-async function connected(userId: string, expectedGeneration?: string) {
-  const access = await getConsumerAccess(requireTenant().id, userId, { expectedGeneration });
-  if (!access) throw new ConsumerOAuthError("reconnect_required");
-  return access;
-}
-const fingerprintFor = (userId: string, generation: string) =>
-  createHash("sha256").update(`${requireTenant().id}:${userId}:${generation}:voices`).digest("hex").slice(0, 48);
-export async function connectedVoices(userId: string, options: { refresh?: boolean } = {}): Promise<ConnectedVoices> {
-  const access = await connected(userId);
+const fingerprintFor = (userId: string, access: ResolvedAccess) =>
+  createHash("sha256").update(`${consumerCacheScope(userId, access)}:voices`).digest("hex").slice(0, 48);
+export async function connectedVoices(userId: string, options: { refresh?: boolean; funding?: ConsumerFunding } = {}): Promise<ConnectedVoices> {
+  const access = await accessForNewWork(userId, options.funding ?? OWN_ACCOUNT);
   return loadConnectedVoices({
-    fingerprint: fingerprintFor(userId, access.generation),
+    fingerprint: fingerprintFor(userId, access),
     refresh: options.refresh,
     read: () => readConnectedVoices(access.accessToken),
   });
@@ -133,7 +128,8 @@ export function assertVoiceToolEnabled(input: Pick<ConsumerVoiceToolInput, "tool
     throw new VoiceToolError("analysis_disabled", "Analyse video is not available: the connected account advertises no price for it and its report format is unverified.");
 }
 export async function quoteConsumerVoiceTool(userId: string, draftId: string, input: ConsumerVoiceToolInput, idempotencyKey: string) {
-  requireConsumerFunding();
+  // Decided before the input is parsed: which tool it names only picks the funding.
+  const funding = await websiteFunding({ workflow: "voice-tool", voiceTool: typeof (input as { tool?: unknown } | null)?.tool === "string" ? (input as { tool: string }).tool : null });
   const normalized = parseConsumerVoiceToolInput(input);
   assertVoiceToolEnabled(normalized);
   // A voice the owner made on the account is its own library, never Particl's.
@@ -149,7 +145,7 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
   // Argument validation precedes source resolution, imports and pricing.
   consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000", normalized.tool === "reframe" ? { durationSeconds: 1 } : {});
-  const access = await connected(userId);
+  const access = await accessForNewWork(userId, funding);
   const described = await describeConsumerVoiceToolSource(normalized);
   const source = await resolveConsumerVoiceToolSource(normalized);
   // A voice change or dub is as long as its source; one longer than Particl
@@ -160,14 +156,14 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
   if (normalized.tool === "reframe") consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000", { durationSeconds: source.durationSeconds });
   const quote = await getConsumerVoiceToolQuote(access.accessToken, normalized, source, {
     resolveMedia: async (workspaceId, perform) => {
-      await connected(userId, access.generation);
+      await accessForNewWork(userId, funding, access.generation);
       return resolveConsumerVoiceToolImport(
         { userId, draftId, quoteKey: idempotencyKey, request: normalized, workspaceId, connectionGeneration: access.generation },
         perform,
       );
     },
   });
-  await connected(userId, access.generation);
+  await accessForNewWork(userId, funding, access.generation);
   const tool = requireVoiceTool(normalized.tool);
   const payload: Snapshot = {
     input: quote.input,
@@ -182,7 +178,8 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
     const { job } = await createConsumerJob({
       userId,
       draftId,
-      connectedOwnerId: userId,
+      funding: funding.kind,
+      connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation,
       higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "voice-tool",
@@ -203,7 +200,7 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
 }
 async function ownedJob(input: ConsumerJobScope) {
   const job = await getConsumerJob(input);
-  if (!job || job.workflow !== "voice-tool" || job.connectedOwnerId !== input.userId)
+  if (!job || job.workflow !== "voice-tool" || !ownsConsumerJob(job, input.userId))
     throw new ConsumerVideoServiceError("not_found", "This voice job is not available.", 404);
   return job;
 }
@@ -216,13 +213,13 @@ export async function submitConsumerVoiceToolJob(scope: ConsumerJobScope, approv
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
   const input = parseConsumerVoiceToolInput(snapshot.input);
   assertVoiceToolEnabled(input);
-  const access = await connected(scope.userId, job.connectionGeneration);
+  const access = await accessForJob(job);
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
     const result = await submitConsumerVoiceTool(access.accessToken, input, snapshot.params, snapshot.shape, approval.workspaceId, approval.credits, {
       admit: async () => {
-        await connected(scope.userId, job.connectionGeneration);
+        await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
         if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
         claimToken = claim.claimToken;
@@ -257,12 +254,12 @@ export async function pollConsumerVoiceTool(scope: ConsumerJobScope) {
     const responseId = consumerVoiceToolAcknowledgement(prior.providerReceipt.response);
     const providerJobId = savedId && responseId && savedId !== responseId ? null : (savedId ?? responseId);
     if (providerJobId) {
-      await connected(scope.userId, prior.connectionGeneration);
+      await accessForJob(prior);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedJob(scope));
     }
   }
   if (prior.status !== "accepted") return { job: await consumerVoiceToolView(prior) };
-  const access = await connected(scope.userId, prior.connectionGeneration);
+  const access = await accessForJob(prior);
   const claim = await claimConsumerPoll(scope);
   if (!claim) return { job: await consumerVoiceToolView(await ownedJob(scope)), pollAfterSeconds: 30 };
   let pollAfterSeconds = 15;
@@ -274,14 +271,14 @@ export async function pollConsumerVoiceTool(scope: ConsumerJobScope) {
     const report = snapshot.tool.output === "report";
     const failed = report ? consumerVideoAnalysisFailure(response.raw, providerJobId) : consumerVoiceToolFailureResult(response.raw, providerJobId);
     if (failed) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
       return { job: await consumerVoiceToolView(settled ?? (await ownedJob(scope))), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (report) {
       const analysis = consumerVideoAnalysisReport(response.raw, providerJobId);
       if (analysis) {
-        await connected(scope.userId, claim.job.connectionGeneration);
+        await accessForJob(claim.job);
         const completed = await completeConsumerJob({
           ...scope,
           leaseToken: claim.leaseToken,
@@ -292,7 +289,7 @@ export async function pollConsumerVoiceTool(scope: ConsumerJobScope) {
     } else {
       const terminal = consumerVoiceToolOriginalResult(response.raw, providerJobId);
       if (terminal) {
-        await connected(scope.userId, claim.job.connectionGeneration);
+        await accessForJob(claim.job);
         let original;
         try {
           original = await collectConsumerVideoOriginal(claim.job, terminal.url);

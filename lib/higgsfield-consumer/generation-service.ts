@@ -6,11 +6,11 @@
  * semantics as the Genjutsu service; no automatic retries of paid calls.
  */
 import { createHash } from "node:crypto";
-import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
-import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
+import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
+import { OWN_ACCOUNT, jobFunding, websiteFunding, type ConsumerFunding } from "./funding";
 import {
-  requireConsumerFunding,
+  ownsConsumerJob,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -129,18 +129,14 @@ export async function consumerGenerationView(job: ConsumerJob) {
   const availability = await consumerOriginalAvailability([job]);
   return presentGeneration(job, availability.get(job.id)!, observedAt);
 }
-async function connected(userId: string, expectedGeneration?: string) {
-  const access = await getConsumerAccess(requireTenant().id, userId, { expectedGeneration });
-  if (!access) throw new ConsumerOAuthError("reconnect_required");
-  return access;
-}
-/** Cache scope: this tenant, this owner, this authorization generation. */
-const fingerprintFor = (userId: string, generation: string) =>
-  createHash("sha256").update(`${requireTenant().id}:${userId}:${generation}`).digest("hex").slice(0, 48);
-export async function connectedGenerationCatalogue(userId: string, options: { refresh?: boolean } = {}): Promise<ConnectedCatalogue> {
-  const access = await connected(userId);
+/** Cache scope: this tenant, the connection it reads with, and its authorization generation. */
+const fingerprintFor = (userId: string, access: ResolvedAccess) =>
+  createHash("sha256").update(consumerCacheScope(userId, access)).digest("hex").slice(0, 48);
+/** The catalogue a request is checked against: read with the same grant that will quote it. */
+export async function connectedGenerationCatalogue(userId: string, options: { refresh?: boolean; funding?: ConsumerFunding } = {}): Promise<ConnectedCatalogue> {
+  const access = await accessForNewWork(userId, options.funding ?? OWN_ACCOUNT);
   return loadConnectedCatalogue({
-    fingerprint: fingerprintFor(userId, access.generation),
+    fingerprint: fingerprintFor(userId, access),
     refresh: options.refresh,
     read: () => readConnectedCatalogue(access.accessToken),
   });
@@ -151,8 +147,8 @@ export const presentCatalogue = (catalogue: ConnectedCatalogue, type?: Connected
   complete: catalogue.complete,
   fetchedAt: catalogue.fetchedAt,
 });
-async function requireModel(userId: string, input: ConsumerGenerationInput): Promise<ConnectedModel> {
-  const catalogue = await connectedGenerationCatalogue(userId);
+async function requireModel(userId: string, input: ConsumerGenerationInput, funding: ConsumerFunding = OWN_ACCOUNT): Promise<ConnectedModel> {
+  const catalogue = await connectedGenerationCatalogue(userId, { funding });
   const model = findCatalogueModel(catalogue, input.model);
   if (!model) throw new CatalogueError("model_unknown", "Choose a model from the connected catalogue.");
   return model;
@@ -175,7 +171,7 @@ export async function quoteConsumerGeneration(
     importKey?: string;
   } = {},
 ) {
-  requireConsumerFunding();
+  const funding = await websiteFunding({ workflow: "generation" });
   const normalized = parseConsumerGenerationInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else — for every caller (Business, Atomik's planner, the route).
   await refuseForeignMarketingSetup(userId, setupIdsOfParameters(normalized.parameters, normalized.model));
@@ -187,7 +183,7 @@ export async function quoteConsumerGeneration(
   }
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
-  const model = await requireModel(userId, normalized);
+  const model = await requireModel(userId, normalized, funding);
   // Catalogue validation precedes source resolution, imports and pricing.
   consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
   // A voice the owner made on the account (voice_type "element") is its own
@@ -199,21 +195,21 @@ export async function quoteConsumerGeneration(
   const longest = await longestVideoSourceSeconds(normalized);
   if (longest !== null && longest > CONSUMER_ORIGINAL_SECONDS)
     throw new CatalogueError("tool_source", `Choose a video up to ${CONSUMER_ORIGINAL_SECONDS / 60} minutes long; a longer result cannot be kept.`);
-  const access = await connected(userId);
+  const access = await accessForNewWork(userId, funding);
   // A motion preset must be one the connected account lists right now.
   if (normalized.presetId !== undefined) await requireConnectedPreset(userId, access, normalized.presetId);
   const described = await describeConsumerGenerationSources(normalized);
   const sources = await resolveConsumerGenerationSources(normalized);
   const quote = await getConsumerGenerationQuote(access.accessToken, model, normalized, sources, {
     resolveMedia: async (index, workspaceId, perform) => {
-      await connected(userId, access.generation);
+      await accessForNewWork(userId, funding, access.generation);
       return resolveConsumerGenerationImport(
         { userId, draftId, quoteKey: options.importKey ?? idempotencyKey, sourceIndex: index, request: normalized, workspaceId, connectionGeneration: access.generation },
         perform,
       );
     },
   });
-  await connected(userId, access.generation);
+  await accessForNewWork(userId, funding, access.generation);
   const payload: Snapshot = {
     input: quote.input,
     params: quote.params,
@@ -231,7 +227,8 @@ export async function quoteConsumerGeneration(
     const { job } = await createConsumerJob({
       userId,
       draftId,
-      connectedOwnerId: userId,
+      funding: funding.kind,
+      connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation,
       higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "generation",
@@ -253,7 +250,7 @@ export async function quoteConsumerGeneration(
 }
 async function ownedGeneration(input: ConsumerJobScope) {
   const job = await getConsumerJob(input);
-  if (!job || job.workflow !== "generation" || job.connectedOwnerId !== input.userId)
+  if (!job || job.workflow !== "generation" || !ownsConsumerJob(job, input.userId))
     throw new ConsumerVideoServiceError("not_found", "This generation job is not available.", 404);
   return job;
 }
@@ -265,14 +262,14 @@ export async function submitConsumerGenerationJob(scope: ConsumerJobScope, appro
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
   const input = parseConsumerGenerationInput(snapshot.input);
-  const model = await requireModel(scope.userId, input);
-  const access = await connected(scope.userId, job.connectionGeneration);
+  const model = await requireModel(scope.userId, input, jobFunding(job));
+  const access = await accessForJob(job);
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
     const result = await submitConsumerGeneration(access.accessToken, model, input, snapshot.params, approval.workspaceId, approval.credits, {
       admit: async () => {
-        await connected(scope.userId, job.connectionGeneration);
+        await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
         if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
         claimToken = claim.claimToken;
@@ -308,12 +305,12 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
     const responseId = consumerGenerationAcknowledgement(prior.providerReceipt.response, snapshot.params.model, snapshot.input.type);
     const providerJobId = savedId && responseId && savedId !== responseId ? null : (savedId ?? responseId);
     if (providerJobId) {
-      await connected(scope.userId, prior.connectionGeneration);
+      await accessForJob(prior);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedGeneration(scope));
     }
   }
   if (prior.status !== "accepted") return { job: await consumerGenerationView(prior) };
-  const access = await connected(scope.userId, prior.connectionGeneration);
+  const access = await accessForJob(prior);
   const claim = await claimConsumerPoll(scope);
   if (!claim) return { job: await consumerGenerationView(await ownedGeneration(scope)), pollAfterSeconds: 30 };
   let pollAfterSeconds = 15;
@@ -330,12 +327,12 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
     const terminal = consumerGenerationOriginalResult(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
     const failed = consumerGenerationFailureResult(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
     if (failed) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
       return { job: await consumerGenerationView(settled ?? (await ownedGeneration(scope))), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (terminal) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const enhancedPrompt = consumerGenerationEnhancedPrompt(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
       let original;
       try {
@@ -395,13 +392,13 @@ export async function submitConsumerGenerationBatchJobs(
     const input = parseConsumerGenerationInput(snapshots[i].input);
     return { model: await requireModel(userId, input), input, params: snapshots[i].params, credits: job.quoteCredits! };
   }));
-  const access = await connected(userId, jobs[0].connectionGeneration);
+  const access = await accessForJob(jobs[0]);
   let claims: { job: ConsumerJob; claimToken: string }[] | null = null;
   let result: Awaited<ReturnType<typeof submitConsumerGenerationBatch>>;
   try {
     result = await submitConsumerGenerationBatch(access.accessToken, entries, approval.workspaceId, {
       admit: async () => {
-        await connected(userId, jobs[0].connectionGeneration);
+        await accessForJob(jobs[0]);
         claims = await claimConsumerDispatchBatch(ids.map((id) => ({ userId, draftId, id })));
         if (!claims) throw new ConsumerVideoServiceError("already_submitted", "A step in this batch already has a submission. Refresh its status.");
       },
@@ -442,7 +439,8 @@ export async function quoteConsumerGenerationBatch(
   keys: string[],
   options: { batchId: string; composer?: "gen" | null },
 ) {
-  requireConsumerFunding();
+  // The batch transport is the own-account path only; platform funding runs single takes.
+  if ((await websiteFunding({ workflow: "generation" })).kind !== "own_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
   if (!Array.isArray(keys) || keys.length < 2 || keys.length > CONSUMER_ACTIVE_LIMIT || new Set(keys).size !== keys.length || !isBatchId(options.batchId))
     throw new ConsumerVideoServiceError("invalid_batch", "Choose 2 to 4 takes for one batch.", 400);
   const views: ConsumerGenerationView[] = [];

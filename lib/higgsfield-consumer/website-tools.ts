@@ -83,3 +83,37 @@ export function websiteToolFor(workflow: ConsumerWorkflow, voiceTool?: string | 
       return null;
   }
 }
+
+/**
+ * Where a tool runs for a managed workspace — ONE seam for every website
+ * tool. The platform's commercial API key is always preferred: a feature the
+ * key can serve never goes through the website account (owner, 27
+ * September), and it is priced by that API's own dollar estimate through the
+ * existing retail credit policy, with no website-credit conversion. The map
+ * names the existing Particl route that serves a feature with the key; a tool
+ * with no entry has no key-served equivalent yet and may fall back to the
+ * designated website account, whose website credits are converted with the
+ * private rate (lib/vendorRates.ts › websiteAccountCreditUsd).
+ */
+export const COMMERCIAL_API_ROUTES: Readonly<Partial<Record<ConsumerWorkflow | WebsiteToolId, string>>> = Object.freeze({
+  // Motion Transfer and Object Swap run on the commercial API in the Studio
+  // engines (lib/genjutsu.ts), with its own estimate, reservation and receipt.
+  genjutsu: "studio-engines",
+});
+export type WebsiteToolTransport =
+  | { kind: "commercial_api"; route: string }
+  | { kind: "website_account"; tool: WebsiteToolId }
+  | { kind: "none" };
+export function websiteToolTransport(target: { workflow: ConsumerWorkflow; voiceTool?: string | null } | { tool: WebsiteToolId }): WebsiteToolTransport {
+  const tool = "tool" in target ? target.tool : websiteToolFor(target.workflow, target.voiceTool);
+  const route = ("workflow" in target ? COMMERCIAL_API_ROUTES[target.workflow] : undefined) ?? (tool ? COMMERCIAL_API_ROUTES[tool] : undefined);
+  if (route) return { kind: "commercial_api", route };
+  return tool ? { kind: "website_account", tool } : { kind: "none" };
+}
+
+/**
+ * Website tools whose client quote, reservation and settlement are built
+ * (step W3 onwards adds them one at a time). Until a tool is listed here it
+ * refuses for every managed workspace, whatever the platform desk says.
+ */
+export const WEBSITE_BILLING_READY: ReadonlySet<WebsiteToolId> = new Set<WebsiteToolId>([]);

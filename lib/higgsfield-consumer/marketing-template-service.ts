@@ -9,11 +9,11 @@
  * calls.
  */
 import { createHash } from "node:crypto";
-import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
-import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
+import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
+import { OWN_ACCOUNT, jobFunding, websiteFunding, type ConsumerFunding } from "./funding";
 import {
-  requireConsumerFunding,
+  ownsConsumerJob,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -119,26 +119,21 @@ export async function consumerMarketingTemplateView(job: ConsumerJob) {
   const availability = await consumerOriginalAvailability([job]);
   return presentTemplateJob(job, availability.get(job.id)!, observedAt);
 }
-async function connected(userId: string, expectedGeneration?: string) {
-  const access = await getConsumerAccess(requireTenant().id, userId, { expectedGeneration });
-  if (!access) throw new ConsumerOAuthError("reconnect_required");
-  return access;
-}
-/** Cache scope: this tenant, this owner, this authorization generation. */
-const fingerprintFor = (userId: string, generation: string) =>
-  createHash("sha256").update(`marketing-templates:${requireTenant().id}:${userId}:${generation}`).digest("hex").slice(0, 48);
-export async function connectedMarketingTemplateCatalogue(userId: string, options: { refresh?: boolean } = {}): Promise<MarketingTemplateCatalogue> {
-  const access = await connected(userId);
+/** Cache scope: this tenant, the connection it reads with, and its authorization generation. */
+const fingerprintFor = (userId: string, access: ResolvedAccess) =>
+  createHash("sha256").update(`marketing-templates:${consumerCacheScope(userId, access)}`).digest("hex").slice(0, 48);
+export async function connectedMarketingTemplateCatalogue(userId: string, options: { refresh?: boolean; funding?: ConsumerFunding } = {}): Promise<MarketingTemplateCatalogue> {
+  const access = await accessForNewWork(userId, options.funding ?? OWN_ACCOUNT);
   return loadMarketingTemplateCatalogue({
-    fingerprint: fingerprintFor(userId, access.generation),
+    fingerprint: fingerprintFor(userId, access),
     refresh: options.refresh,
     read: () => readMarketingTemplateCatalogue(access.accessToken, "all"),
   });
 }
-export async function connectedMarketingTemplateCosts(userId: string, options: { refresh?: boolean } = {}): Promise<MarketingTemplateCosts> {
-  const access = await connected(userId);
+export async function connectedMarketingTemplateCosts(userId: string, options: { refresh?: boolean; funding?: ConsumerFunding } = {}): Promise<MarketingTemplateCosts> {
+  const access = await accessForNewWork(userId, options.funding ?? OWN_ACCOUNT);
   return loadMarketingTemplateCosts({
-    fingerprint: fingerprintFor(userId, access.generation),
+    fingerprint: fingerprintFor(userId, access),
     refresh: options.refresh,
     read: () => readMarketingTemplateCosts(access.accessToken),
   });
@@ -174,13 +169,13 @@ export function presentMarketingTemplates(
     costsVersion: costs?.version ?? null,
   };
 }
-async function requireTemplate(userId: string, presetId: string): Promise<{ template: MarketingTemplate; costs: MarketingTemplateCosts | null }> {
-  const catalogue = await connectedMarketingTemplateCatalogue(userId);
+async function requireTemplate(userId: string, presetId: string, funding: ConsumerFunding = OWN_ACCOUNT): Promise<{ template: MarketingTemplate; costs: MarketingTemplateCosts | null }> {
+  const catalogue = await connectedMarketingTemplateCatalogue(userId, { funding });
   const template = findMarketingTemplate(catalogue, presetId);
   if (!template) throw new MarketingTemplateError("template_unknown", "Choose a template from the connected catalogue.");
   let costs: MarketingTemplateCosts | null = null;
   try {
-    costs = await connectedMarketingTemplateCosts(userId);
+    costs = await connectedMarketingTemplateCosts(userId, { funding });
   } catch (error) {
     // A missing cost table is not fatal when the create tool prices itself; pricing decides below.
     if (!(error instanceof MarketingTemplateError)) throw error;
@@ -189,7 +184,7 @@ async function requireTemplate(userId: string, presetId: string): Promise<{ temp
 }
 const sameInput = (a: unknown, b: ConsumerMarketingTemplateInput) => sameConsumerValue(parseConsumerMarketingTemplateInput(a), b);
 export async function quoteConsumerMarketingTemplate(userId: string, draftId: string, value: ConsumerMarketingTemplateInput, idempotencyKey: string) {
-  requireConsumerFunding();
+  const funding = await websiteFunding({ workflow: "marketing-template" });
   const input = parseConsumerMarketingTemplateInput(value);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {
@@ -199,19 +194,19 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
   }
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
-  const { template, costs } = await requireTemplate(userId, input.presetId);
-  const access = await connected(userId);
+  const { template, costs } = await requireTemplate(userId, input.presetId, funding);
+  const access = await accessForNewWork(userId, funding);
   const source = await resolveConsumerMarketingTemplateSource(input);
   const quote = await getConsumerMarketingTemplateQuote(access.accessToken, template, costs, input, source, {
     resolveMedia: async (workspaceId, perform) => {
-      await connected(userId, access.generation);
+      await accessForNewWork(userId, funding, access.generation);
       return resolveConsumerMarketingTemplateImport(
         { userId, draftId, quoteKey: idempotencyKey, request: input, workspaceId, connectionGeneration: access.generation },
         perform,
       );
     },
   });
-  await connected(userId, access.generation);
+  await accessForNewWork(userId, funding, access.generation);
   const payload: Snapshot = {
     input: quote.input,
     params: quote.params,
@@ -226,7 +221,8 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
     const { job } = await createConsumerJob({
       userId,
       draftId,
-      connectedOwnerId: userId,
+      funding: funding.kind,
+      connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation,
       higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "marketing-template",
@@ -248,7 +244,7 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
 }
 async function ownedTemplateJob(input: ConsumerJobScope) {
   const job = await getConsumerJob(input);
-  if (!job || job.workflow !== "marketing-template" || job.connectedOwnerId !== input.userId)
+  if (!job || job.workflow !== "marketing-template" || !ownsConsumerJob(job, input.userId))
     throw new ConsumerVideoServiceError("not_found", "This template job is not available.", 404);
   return job;
 }
@@ -261,8 +257,8 @@ export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
   const input = parseConsumerMarketingTemplateInput(snapshot.input);
   consumerMarketingTemplateParams(input, snapshot.params.product_image ?? null);
-  const { template, costs } = await requireTemplate(scope.userId, input.presetId);
-  const access = await connected(scope.userId, job.connectionGeneration);
+  const { template, costs } = await requireTemplate(scope.userId, input.presetId, jobFunding(job));
+  const access = await accessForJob(job);
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
@@ -270,7 +266,7 @@ export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope
       access.accessToken, template, costs, input, snapshot.params, snapshot.shape, approval.workspaceId, approval.credits,
       {
         admit: async () => {
-          await connected(scope.userId, job.connectionGeneration);
+          await accessForJob(job);
           const claim = await claimConsumerDispatch(scope);
           if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
           claimToken = claim.claimToken;
@@ -306,12 +302,12 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
     const responseId = consumerMarketingTemplateAcknowledgement(prior.providerReceipt.response);
     const providerJobId = savedId && responseId && savedId !== responseId ? null : (savedId ?? responseId);
     if (providerJobId) {
-      await connected(scope.userId, prior.connectionGeneration);
+      await accessForJob(prior);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedTemplateJob(scope));
     }
   }
   if (prior.status !== "accepted") return { job: await consumerMarketingTemplateView(prior) };
-  const access = await connected(scope.userId, prior.connectionGeneration);
+  const access = await accessForJob(prior);
   const claim = await claimConsumerPoll(scope);
   if (!claim) return { job: await consumerMarketingTemplateView(await ownedTemplateJob(scope)), pollAfterSeconds: 30 };
   let pollAfterSeconds = 15;
@@ -322,12 +318,12 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
     const terminal = consumerMarketingTemplateOriginalResult(response.raw, providerJobId);
     const failed = consumerMarketingTemplateFailureResult(response.raw, providerJobId);
     if (failed) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
       return { job: await consumerMarketingTemplateView(settled ?? (await ownedTemplateJob(scope))), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (terminal) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const snapshot = JSON.parse(claim.job.payloadJson) as Snapshot;
       let original;
       try {

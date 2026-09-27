@@ -27,8 +27,20 @@ export type ConsumerJson =
   | { [key: string]: ConsumerJson };
 export type ConsumerScope = { userId: string; draftId: string };
 export type ConsumerJobScope = ConsumerScope & { id: string };
+/** Who pays: the job owner's own connected account (every job before managed
+ * funding), or the platform's designated website account, which a client
+ * workspace reaches only through Particl credits (lib/higgsfield-consumer/funding.ts). */
+export type ConsumerJobFunding = "own_account" | "platform_account";
+/** The connected owner recorded on a platform-funded job. Never a person: the
+ * account behind it is pinned on the platform registry, not in tenant rows. */
+export const PLATFORM_CONNECTED_OWNER = "platform";
 export type ConsumerJob = ConsumerJobScope & {
   workflow: ConsumerWorkflow;
+  funding: ConsumerJobFunding;
+  /** The exact Particl-credit price a client approves (platform funding only). */
+  particlCredits: number | null;
+  /** The reservation and collected-original id of a platform job (platform funding only). */
+  meterId: string | null;
   connectedOwnerId: string;
   connectionGeneration: string;
   higgsfieldWorkspaceId: string | null;
@@ -51,6 +63,9 @@ export type ConsumerJob = ConsumerJobScope & {
 };
 export type CreateConsumerJob = ConsumerScope & {
   workflow: ConsumerWorkflow;
+  /** Absent: the owner's own account, as every job before managed funding. */
+  funding?: ConsumerJobFunding;
+  particlCredits?: number;
   connectedOwnerId: string;
   connectionGeneration: string;
   higgsfieldWorkspaceId?: string | null;
@@ -85,10 +100,28 @@ export class ConsumerJobError extends Error {
 
 /** A provider-wallet quote cannot authorize a managed studio's spend. Platform
  * workspaces need a retail quote and ledger reservation before this transport
- * can be enabled for new work. Existing receipts and collections remain valid. */
+ * can be enabled for new work. Existing receipts and collections remain valid.
+ * This is the own-account guard; platform-funded work is decided by
+ * lib/higgsfield-consumer/funding.ts and admitted only with a reservation. */
 export function requireConsumerFunding(): void {
   if (requireTenant().usesPlatformKeys)
     throw new ConsumerJobError("particl_quote_unavailable", 409);
+}
+/**
+ * A platform job's meter id: the id of its credit reservation and of the
+ * original it collects (lib/higgsfield-consumer/video-original.ts), so its
+ * reservation, receipt and registry entry are one identity. Derived from the
+ * workspace and the job, never chosen by a caller.
+ */
+export function consumerJobMeterId(workspaceId: string, jobId: string) {
+  return `gen_hfc_${hash(JSON.stringify([workspaceId, jobId])).slice(0, 40)}`;
+}
+/** The job's owner in this workspace may act on it: their own-account job, or
+ * a platform-funded job they quoted (its connection is the platform's). */
+export function ownsConsumerJob(job: Pick<ConsumerJob, "userId" | "connectedOwnerId" | "funding">, userId: string): boolean {
+  return job.funding === "platform_account"
+    ? job.connectedOwnerId === PLATFORM_CONNECTED_OWNER && job.userId === userId
+    : job.connectedOwnerId === userId;
 }
 export const CONSUMER_ACTIVE_LIMIT = 4;
 /**
@@ -228,6 +261,11 @@ export async function consumerJobsReady() {
           await add("higgsfield_consumer_jobs", "released_at INTEGER");
           // When the background heartbeat last took the job for a read. Additive.
           await add("higgsfield_consumer_jobs", "swept_at INTEGER");
+          // Who pays, the client's exact Particl price and the reservation's id
+          // (platform-funded website work). Absent on every earlier row. Additive.
+          await add("higgsfield_consumer_jobs", "funding TEXT");
+          await add("higgsfield_consumer_jobs", "particl_credits INTEGER");
+          await add("higgsfield_consumer_jobs", "meter_id TEXT");
         })
         .catch((error) => {
           initialized.delete(client);
@@ -242,6 +280,9 @@ function asJob(row: Row): ConsumerJob {
     id: String(row.id),
     userId: String(row.user_id),
     draftId: String(row.draft_id),
+    funding: row.funding === "platform_account" ? "platform_account" : "own_account",
+    particlCredits: row.particl_credits == null ? null : Number(row.particl_credits),
+    meterId: row.meter_id == null ? null : String(row.meter_id),
     connectedOwnerId: String(row.connected_owner_id),
     connectionGeneration: String(row.connection_generation),
     higgsfieldWorkspaceId:
@@ -308,7 +349,15 @@ async function requiredRow(
 export async function createConsumerJob(
   input: CreateConsumerJob,
 ): Promise<{ job: ConsumerJob; replayed: boolean }> {
-  requireConsumerFunding();
+  const platform = input.funding === "platform_account";
+  if (input.funding !== undefined && input.funding !== "own_account" && !platform) invalid();
+  // A platform job belongs to a managed workspace, names no person as its
+  // connection, and carries the exact client price.
+  if (platform) {
+    if (!requireTenant().usesPlatformKeys || input.connectedOwnerId !== PLATFORM_CONNECTED_OWNER ||
+        !Number.isSafeInteger(input.particlCredits) || input.particlCredits! < 1)
+      invalid();
+  } else requireConsumerFunding();
   scope(input);
   identifier(input.connectedOwnerId);
   identifier(input.connectionGeneration);
@@ -347,6 +396,8 @@ export async function createConsumerJob(
         quoteCredits: input.quoteCredits,
         quoteExpiresAt: input.quoteExpiresAt,
         originalAssetIds: input.originalAssetIds,
+        // Earlier jobs hashed without these, so a replayed own-account quote still matches.
+        ...(platform ? { funding: "platform_account", particlCredits: input.particlCredits! } : {}),
       },
       131_072,
     ),
@@ -376,8 +427,8 @@ export async function createConsumerJob(
       throw new ConsumerJobError("quote_expired");
     await tx.execute({
       sql: `INSERT INTO higgsfield_consumer_jobs
-      (id,user_id,draft_id,connected_owner_id,connection_generation,higgsfield_workspace_id,workflow,idempotency_key,payload_json,payload_hash,immutable_hash,quote_credits,quote_expires_at,original_asset_ids,status,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'quoted',?,?)`,
+      (id,user_id,draft_id,connected_owner_id,connection_generation,higgsfield_workspace_id,workflow,idempotency_key,payload_json,payload_hash,immutable_hash,quote_credits,quote_expires_at,original_asset_ids,status,created_at,updated_at,funding,particl_credits,meter_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'quoted',?,?,?,?,?)`,
       args: [
         id,
         input.userId,
@@ -395,6 +446,9 @@ export async function createConsumerJob(
         JSON.stringify(input.originalAssetIds),
         now,
         now,
+        platform ? "platform_account" : null,
+        platform ? input.particlCredits! : null,
+        platform ? consumerJobMeterId(requireTenant().id, id) : null,
       ],
     });
     return {
@@ -627,16 +681,22 @@ export async function setAsideConsumerJob(
 
 /** A durable dispatch claim has no expiry/reclaim path: a crash may have submitted.
  * It holds capacity until it settles, its owner sets it aside, or the capacity
- * window passes; none of those ever makes it dispatchable again. */
+ * window passes; none of those ever makes it dispatchable again.
+ * A platform-funded job is claimed only by the admission that reserved its
+ * exact Particl credits under its meter id; nothing else can claim it. */
 export async function claimConsumerDispatch(
   input: ConsumerJobScope,
+  admission?: { meterId: string },
 ): Promise<{ job: ConsumerJob; claimToken: string } | null> {
   jobScope(input);
   await consumerJobsReady();
   return workbenchTransaction(async (tx) => {
     const row = await requiredRow(tx, input);
     if (row.status !== "quoted") return null;
-    requireConsumerFunding();
+    if (row.funding === "platform_account") {
+      if (!admission || row.meter_id == null || admission.meterId !== row.meter_id)
+        throw new ConsumerJobError("particl_quote_unavailable", 409);
+    } else requireConsumerFunding();
     // Deletion may not initiate new spend, but already dispatched receipts
     // remain accessible to their immutable owner for reconciliation.
     await requireDraft(tx, input);
@@ -687,6 +747,8 @@ export async function claimConsumerDispatchBatch(
     const now = Date.now();
     for (const input of inputs) {
       const row = await requiredRow(tx, input);
+      // The batch transport never carries platform-funded work.
+      if (row.funding === "platform_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
       if (row.status !== "quoted" || row.workflow !== "generation") return null;
       await requireDraft(tx, input);
       await validateConsumerGenerationSources(tx, JSON.parse(String(row.payload_json)).input);

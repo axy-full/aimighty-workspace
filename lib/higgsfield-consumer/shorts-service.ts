@@ -17,9 +17,11 @@ import { db } from "@/lib/db";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { uploadReservationsReady } from "@/lib/uploadReservations";
-import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
+import { ConsumerOAuthError } from "./oauth";
+import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
+import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
 import {
-  requireConsumerFunding,
+  ownsConsumerJob,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -154,18 +156,13 @@ export async function consumerShortsView(job: ConsumerJob, progress?: { clips: n
   }
   return presentShorts(job, observedAt, progress);
 }
-async function connected(userId: string, expectedGeneration?: string) {
-  const access = await getConsumerAccess(requireTenant().id, userId, { expectedGeneration });
-  if (!access) throw new ConsumerOAuthError("reconnect_required");
-  return access;
-}
-const fingerprintFor = (userId: string, generation: string) =>
-  createHash("sha256").update(`${requireTenant().id}:${userId}:${generation}:shorts-presets`).digest("hex").slice(0, 48);
+const fingerprintFor = (userId: string, access: ResolvedAccess) =>
+  createHash("sha256").update(`${consumerCacheScope(userId, access)}:shorts-presets`).digest("hex").slice(0, 48);
 const presetCache = new Map<string, ShortsPresets>();
-/** The style presets, read at most once an hour per connection (memory cache). */
-export async function connectedShortsPresets(userId: string, options: { refresh?: boolean } = {}): Promise<ShortsPresets> {
-  const access = await connected(userId);
-  const key = fingerprintFor(userId, access.generation), cached = presetCache.get(key), now = Date.now();
+/** The style presets, read at most once an hour per connection (memory cache), with the grant that will quote. */
+export async function connectedShortsPresets(userId: string, options: { refresh?: boolean; funding?: ConsumerFunding } = {}): Promise<ShortsPresets> {
+  const access = await accessForNewWork(userId, options.funding ?? OWN_ACCOUNT);
+  const key = fingerprintFor(userId, access), cached = presetCache.get(key), now = Date.now();
   if (!options.refresh && cached && cached.fetchedAt > now - PRESETS_TTL_MS && cached.fetchedAt <= now) return cached;
   const presets = await readShortsPresets(access.accessToken);
   presetCache.set(key, presets);
@@ -177,7 +174,7 @@ export function forgetShortsPresets() {
 const sameInput = (a: unknown, b: ConsumerShortsInput) => sameConsumerValue(parseConsumerShortsInput(a), b);
 const PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 export async function quoteConsumerShorts(userId: string, draftId: string, input: ConsumerShortsInput, idempotencyKey: string) {
-  requireConsumerFunding();
+  const funding = await websiteFunding({ workflow: "shorts" });
   const normalized = parseConsumerShortsInput(input);
   // A style the owner saved on the account is its own library, never Particl's.
   if (!SHORTS_LISTED_SOURCES.includes(normalized.preset.source))
@@ -192,7 +189,7 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
   // The style must be one the account lists as a library style now, not one
   // the request merely labels "cms": the standalone rule is enforced here,
   // not only by what the page lists (hourly cached, free read).
-  const listed = await connectedShortsPresets(userId);
+  const listed = await connectedShortsPresets(userId, { funding });
   const presetId = normalized.preset.id.toLowerCase();
   if (!listed.presets.some((preset) => preset.id === presetId && SHORTS_LISTED_SOURCES.includes(preset.source)))
     throw new ShortsStudioError("invalid_input", "Choose one of the listed styles.");
@@ -200,23 +197,24 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
   const source = await resolveConsumerShortsSource(normalized);
   // The stored duration prices the session; an unknown or out-of-range one stops here.
   consumerShortsParams(normalized, PLACEHOLDER, source.durationSeconds);
-  const access = await connected(userId);
+  const access = await accessForNewWork(userId, funding);
   const quote = await getConsumerShortsQuote(access.accessToken, normalized, source, {
     resolveMedia: async (workspaceId, perform) => {
-      await connected(userId, access.generation);
+      await accessForNewWork(userId, funding, access.generation);
       return resolveConsumerShortsImport(
         { userId, draftId, quoteKey: idempotencyKey, request: normalized, workspaceId, connectionGeneration: access.generation },
         perform,
       );
     },
   });
-  await connected(userId, access.generation);
+  await accessForNewWork(userId, funding, access.generation);
   const payload: Snapshot = { input: quote.input, params: quote.params, workspaceName: quote.workspace.name ?? "Connected wallet", source: described };
   try {
     const { job } = await createConsumerJob({
       userId,
       draftId,
-      connectedOwnerId: userId,
+      funding: funding.kind,
+      connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation,
       higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "shorts",
@@ -237,7 +235,7 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
 }
 async function ownedJob(input: ConsumerJobScope) {
   const job = await getConsumerJob(input);
-  if (!job || job.workflow !== "shorts" || job.connectedOwnerId !== input.userId)
+  if (!job || job.workflow !== "shorts" || !ownsConsumerJob(job, input.userId))
     throw new ConsumerVideoServiceError("not_found", "This Shorts session is not available.", 404);
   return job;
 }
@@ -249,13 +247,13 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
   const input = parseConsumerShortsInput(snapshot.input);
-  const access = await connected(scope.userId, job.connectionGeneration);
+  const access = await accessForJob(job);
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
     const result = await submitConsumerShorts(access.accessToken, input, snapshot.params, approval.workspaceId, approval.credits, {
       admit: async () => {
-        await connected(scope.userId, job.connectionGeneration);
+        await accessForJob(job);
         const claim = await claimConsumerDispatch(scope);
         if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This session already has a submission. Refresh its status.");
         claimToken = claim.claimToken;
@@ -294,12 +292,12 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
     const response = consumerShortsAcknowledgement(prior.providerReceipt.response);
     const providerJobId = saved && response && saved !== response ? null : (saved ?? response);
     if (providerJobId) {
-      await connected(scope.userId, prior.connectionGeneration);
+      await accessForJob(prior);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedJob(scope));
     }
   }
   if (prior.status !== "accepted") return { job: await consumerShortsView(prior) };
-  const access = await connected(scope.userId, prior.connectionGeneration);
+  const access = await accessForJob(prior);
   const claim = await claimConsumerPoll(scope);
   if (!claim) return { job: await consumerShortsView(await ownedJob(scope)), pollAfterSeconds: 30 };
   let pollAfterSeconds = 30;
@@ -316,7 +314,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
     const progress = { clips: session.jobIds.length, collected: 0, status: session.status };
     if (!session.terminal) return { job: await consumerShortsView(await ownedJob(scope), progress), pollAfterSeconds };
     if (!session.jobIds.length) {
-      await connected(scope.userId, claim.job.connectionGeneration);
+      await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
       return { job: await consumerShortsView(settled ?? (await ownedJob(scope))), providerStatus: { status: session.status } };
     }
@@ -331,7 +329,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
       const terminal = consumerVoiceToolOriginalResult(raw, jobId);
       if (!terminal || Date.now() - started > COLLECT_BUDGET_MS) { pending = true; continue; }
       try {
-        await connected(scope.userId, claim.job.connectionGeneration);
+        await accessForJob(claim.job);
         const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { clip: { index, providerJobId: jobId } });
         outcomes.push({ index, providerJobId: jobId, state: "collected", original: original as unknown as Record<string, unknown> });
       } catch (error) {
@@ -354,7 +352,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
       pollAfterSeconds = 15;
       return { job: await consumerShortsView(await ownedJob(scope), progress), ...(collection ? { collection } : {}), pollAfterSeconds };
     }
-    await connected(scope.userId, claim.job.connectionGeneration);
+    await accessForJob(claim.job);
     const settlement = shortsSettlement(outcomes);
     const done = settlement.collected
       ? await completeConsumerJob({
