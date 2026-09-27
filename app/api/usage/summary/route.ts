@@ -6,7 +6,6 @@ import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
 import { memoGet, memoPut } from "@/lib/memo";
-import { billedCreditsSum } from "@/lib/creditSql";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -26,8 +25,11 @@ export const maxDuration = 30;
  * so several open tabs collapse into one read.
  */
 
+/* This answer is only ever a workspace's that pays its vendors itself (one billed in credits reads
+   creditUsageSummary), so it is in its vendors' dollars and carries no credit count: those same
+   dollars at the platform's rate, beside them, would state the margin. */
 type Summary = {
-  pending: number; spentUsd: number; spentCredits: number; purchasedUsd: number; remainingUsd: number;
+  pending: number; spentUsd: number; purchasedUsd: number; remainingUsd: number;
   credits: CreditState | null;
   /** The writer's share of spentUsd. */
   promptSpendUsd: number;
@@ -53,7 +55,6 @@ export const GET = withTenant(async function GET() {
     db().execute(`
       SELECT COALESCE(SUM(status IN ('queued','running') AND deleted = 0), 0) AS pending,
              COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend,
-             ${billedCreditsSum()} AS credits,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)), 0) AS prompt_spend
       FROM generations`),
     db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`),
@@ -86,7 +87,6 @@ export const GET = withTenant(async function GET() {
   const value: Summary = {
     pending: Number(g?.pending ?? 0),
     spentUsd,
-    spentCredits: Number(g?.credits ?? 0),
     purchasedUsd,
     remainingUsd: purchasedUsd - spentUsd,
     promptSpendUsd: Number(g?.prompt_spend ?? 0),

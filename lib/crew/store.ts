@@ -19,7 +19,11 @@ export type CrewMember = {
 export type CrewSession = {
   id: string; projectId: string; goal: string; context: CrewContext; model: string; roundsRun: number;
   /** Settled credits; null on a workspace that bills none. */
-  spendCr: number | null; spendUsd: number; createdBy: string; createdAt: number;
+  spendCr: number | null;
+  /** The model vendor's dollars, only where no round was billed in credits: a workspace paying the
+   *  vendor itself reads its own dollars, and one billed in credits never reads the vendor's. */
+  spendUsd?: number;
+  createdBy: string; createdAt: number;
   /** A round is being run right now (claimRound), so a press whose reply was lost waits for it rather than sending another. */
   running?: boolean;
 };
@@ -63,7 +67,8 @@ const member = (r: Row): CrewMember => ({
 });
 const session = (r: Row): CrewSession => ({
   id: String(r.id), projectId: String(r.project_id), goal: String(r.goal), context: { ...DEFAULT_CONTEXT, ...(JSON.parse(String(r.context || "{}")) as Partial<CrewContext>) },
-  model: String(r.model), roundsRun: Number(r.rounds_run), spendCr: r.spend_cr == null ? null : Number(r.spend_cr), spendUsd: Number(r.spend_usd ?? 0),
+  model: String(r.model), roundsRun: Number(r.rounds_run), spendCr: r.spend_cr == null ? null : Number(r.spend_cr),
+  ...(r.spend_cr == null ? { spendUsd: Number(r.spend_usd ?? 0) } : {}),
   createdBy: String(r.created_by), createdAt: Number(r.created_at),
   running: r.running_since != null && Number(r.running_since) >= now() - STALE_MS,
 });

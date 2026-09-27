@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Stepper, CapBar, Chip, Mono, Segmented, STEPS } from "@/components/ui";
 import { usePhone } from "@/lib/usePhone";
+import { useMoney } from "@/lib/price";
 import type { ProductionRow, ProjectRow } from "@/lib/productions";
 
 /**
@@ -28,7 +29,12 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
   production: ProductionRow; project: ProjectRow; runtime?: string; phoneLine?: string; phoneStepper?: boolean;
 }) {
   const format = [project.format || null, runtime ?? (project.runtimeSecs ? clock(project.runtimeSecs) : null), `${project.shots} shots`].filter(Boolean).join(" · ");
-  const cap = project.capCredits ?? project.capUsd;
+  /* The cap and what it has spent, in the unit this workspace pays in, as the Productions list reads
+     them: a credit cap was never a dollar one, and each workspace is sent its own unit alone
+     (lib/productions.ts). */
+  const inCredits = useMoney().inCredits;
+  const cap = inCredits ? project.capCredits : (project.capUsd ?? null);
+  const spent = (inCredits ? project.spentCredits : project.spentUsd) ?? 0;
   const phone = usePhone();
   const path = usePathname();
   const router = useRouter();
@@ -42,7 +48,7 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
             <span className="truncate text-[18px] font-semibold leading-[1.1] text-ink">{project.name}</span>
             <Mono className="truncate">{phoneLine ?? format}</Mono>
           </span>
-          {cap !== null && cap !== undefined && <CapBar spent={project.capCredits !== null ? project.spentCredits : project.spentUsd} cap={cap} placement="phone" className="flex-none" />}
+          {cap !== null && cap !== undefined && <CapBar spent={spent} cap={cap} placement="phone" className="flex-none" />}
         </div>
         {(phoneStepper || project.needYou > 0) && (
           <div className="flex items-center">
@@ -76,7 +82,7 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
       </span>
       <Stepper current={project.step} />
       <span className="ml-auto">
-        {cap !== null && cap !== undefined && <CapBar spent={project.capCredits !== null ? project.spentCredits : project.spentUsd} cap={cap} placement="header" />}
+        {cap !== null && cap !== undefined && <CapBar spent={spent} cap={cap} placement="header" />}
       </span>
       {project.needYou > 0 && <Chip variant="needHeader">{project.needYou} need you</Chip>}
     </div>

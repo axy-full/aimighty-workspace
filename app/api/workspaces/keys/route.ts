@@ -4,8 +4,8 @@ import { requireTenant } from "@/lib/tenant";
 import { updateWorkspaceVendorKey, setWorkspaceMode, platformKeysByDefault } from "@/lib/platform";
 import { VENDOR_KEYS, type VendorKeyName } from "@/lib/vendorKeys";
 import { mask, keyringConfigured } from "@/lib/keyring";
-import { allowanceUsd, platformSpendThisMonth } from "@/lib/allowance";
 import { creditState } from "@/lib/credits";
+import { hasPlatformFundedWork } from "@/lib/platformSpend";
 
 export const dynamic = "force-dynamic";
 const NAMES = new Set<string>(VENDOR_KEYS.map((k) => k.name));
@@ -20,20 +20,22 @@ const NAMES = new Set<string>(VENDOR_KEYS.map((k) => k.name));
  * PLATFORM's keys with a monthly allowance, and any key it adds of its own
  * takes over for that vendor. A workspace on its OWN keys reaches only
  * what it has added.
+ *
+ * The monthly allowance is not in this answer. It is a ceiling in the
+ * vendors' dollars, and only a workspace on the platform's keys has one —
+ * the one workspace that is billed in credits, beside which the vendors'
+ * dollars spent are the margin. Its wall speaks for itself when it is hit.
  */
 export const GET = withTenant(async function GET() {
   const got = await requireOwner();
   if (got.response) return got.response;
   const ws = requireTenant();
   const mode = ws.legacy ? "legacy" : ws.usesPlatformKeys ? "platform" : "own";
-  const cap = allowanceUsd();
-  const spent = cap != null ? await platformSpendThisMonth() : 0;
   return NextResponse.json({
     usesPlatformKeys: ws.usesPlatformKeys,
     mode,
     canPlatform: platformKeysByDefault(),
     keyring: keyringConfigured(),
-    allowance: cap != null ? { usd: cap, spentUsd: spent } : null,
     credits: await creditState().catch(() => null),
     gatewayMinted: Boolean(ws.gatewayKeyId),
     keys: VENDOR_KEYS.map((k) => ({
@@ -83,6 +85,13 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   if (!mode) return NextResponse.json({ error: "mode must be platform or own." }, { status: 400 });
   if (mode === "platform" && !platformKeysByDefault()) {
     return NextResponse.json({ error: "The platform doesn't lend its keys on this deployment." }, { status: 400 });
+  }
+  /* A workspace reads money in the unit of its current keys, and its takes keep what the vendors
+     charged. Moved to its own keys, the work the platform paid for would read in those vendors'
+     dollars — the other side of the credits it was billed. So that move is the platform desk's
+     (/api/admin/workspaces/[id]), not a request the workspace makes of itself. */
+  if (mode === "own" && ws.usesPlatformKeys && (await hasPlatformFundedWork(ws.id))) {
+    return NextResponse.json({ error: "This workspace has work billed in credits. Ask the platform to move it to its own keys." }, { status: 409 });
   }
   await setWorkspaceMode(ws.id, mode === "platform", got.user.id);
   return NextResponse.json({ ok: true, mode });

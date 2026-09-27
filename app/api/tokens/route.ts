@@ -57,7 +57,7 @@ export const GET = withTenant(async function GET() {
       name: r.name,
       scope: r.scope,
       capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
-      /** In `unit`. The ceiling is still set and enforced in dollars. */
+      /** In `unit`. The ceiling is set in dollars; a credit workspace's is enforced at the price of a credit. */
       spendThisMonth: Number(r.spend),
       lastUsed: r.last_used == null ? null : Number(r.last_used),
       createdAt: Number(r.created_at),

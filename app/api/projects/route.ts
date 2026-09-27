@@ -15,7 +15,15 @@ export const dynamic = "force-dynamic";
    grows. Two correlated subqueries PER PROJECT became one grouped pass over
    generations, memoised briefly so several open tabs share a single read.
    Counts still exclude deleted clips while spend still includes them — the
-   ledger records money spent, not files kept. */
+   ledger records money spent, not files kept.
+
+   One unit per workspace, never both. A workspace on the platform's keys is
+   answered in credits alone: `spend` is what the vendors charged the platform
+   and `capUsd` a cap in those same dollars. A workspace on its own keys is
+   answered in the dollars its vendors charged it, without `credits`, which
+   are those dollars at the platform's rate. Side by side, either pair hands
+   the margin to anyone who can divide. The memo is per workspace, and so is
+   the unit. */
 const TTL_MS = 15_000;
 
 export const GET = withTenant(async function GET() {
@@ -24,6 +32,7 @@ export const GET = withTenant(async function GET() {
   await ready();
   const hit = cached<unknown>(PROJECTS_KEY, TTL_MS);
   if (hit) return NextResponse.json(hit);
+  const inCredits = creditsApply(requireTenant());
 
   /* One grouped pass over generations for the counts and the money, then a
      handful of correlated subqueries for the shot-level facts the Projects
@@ -91,10 +100,8 @@ export const GET = withTenant(async function GET() {
       description: r.description,
       createdAt: Number(r.created_at),
       genCount: Number(r.gen_count),
-      spend: Number(r.spend),
-      credits: Number(r.credits ?? 0),
-      capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
       capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      ...(inCredits ? { credits: Number(r.credits ?? 0) } : { spend: Number(r.spend), capUsd: r.cap_usd == null ? null : Number(r.cap_usd) }),
       starter: Number(r.starter ?? 0) === 1,
       capUnlocked: Number(r.cap_unlocked ?? 0) === 1,
       kind: r.kind ?? null,

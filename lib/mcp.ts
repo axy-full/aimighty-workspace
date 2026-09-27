@@ -115,18 +115,24 @@ export const TOOLS: ToolDef[] = [
 ];
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
+const cr = (n: number | null | undefined) => `${Math.round(Number(n ?? 0)).toLocaleString("en-US")} cr`;
 
+/* A take arrives in the one unit its workspace pays in (lib/jobs.ts rowToGeneration): credits billed
+   on the platform's keys, its own vendors' dollars otherwise. The tools print whichever came. */
 type Gen = {
   id: string; status: string; prompt: string; title?: string | null; kind?: string;
   params?: Record<string, unknown>;
-  costUsd?: number | null; refineCostUsd?: number | null;
+  costUsd?: number | null; refineCostUsd?: number | null; creditsBilled?: number | null;
   authorName?: string | null; error?: string | null;
 };
+const takeCost = (g: Gen): string | null =>
+  g.creditsBilled != null ? cr(g.creditsBilled) : g.costUsd != null ? usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0)) : null;
 
 function describe(g: Gen): string {
   const p = (g.params ?? {}) as { resolution?: string; ratio?: string; duration?: number };
   const spec = [p.resolution, p.ratio, p.duration ? `${p.duration}s` : null].filter(Boolean).join(" · ");
-  const cost = g.costUsd == null ? "" : ` · ${usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0))}`;
+  const priced = takeCost(g);
+  const cost = priced == null ? "" : ` · ${priced}`;
   const name = g.title ? `${g.title} · ` : "";
   return `${name}${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost}\n  ${g.prompt}`;
 }
@@ -252,7 +258,7 @@ export async function runTool(
         if (generation.status === "succeeded") {
           return (
             `Done in ${Math.round((Date.now() - started) / 1000)}s.\n\n${describe(generation)}\n\n` +
-            `Cost ${usd((generation.costUsd ?? 0) + (generation.refineCostUsd ?? 0))}. ` +
+            `${takeCost(generation) ? `Cost ${takeCost(generation)}. ` : ""}` +
             `Watch or download: ${origin}/api/media/${generation.id}`
           );
         }
@@ -294,12 +300,13 @@ export async function runTool(
     }
 
     case "list_projects": {
+      /* `spend` comes only to a workspace that pays its vendors in dollars; one on credits reads `credits`. */
       const { projects } = (await call("/api/projects")) as {
-        projects: { name: string; genCount: number; spend: number }[];
+        projects: { name: string; genCount: number; spend?: number; credits?: number }[];
       };
       if (!projects.length) return "No projects yet.";
       return projects
-        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${usd(p.spend)}`)
+        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${p.spend != null ? usd(p.spend) : cr(p.credits)}`)
         .join("\n");
     }
 

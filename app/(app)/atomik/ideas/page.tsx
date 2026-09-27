@@ -30,6 +30,7 @@ import { useProject } from "@/lib/projectContext";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useDraft } from "@/lib/useDraft";
 import { usd } from "@/lib/format";
+import { useMoney } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { EffortPicker } from "@/components/atomik/ModelPicker";
@@ -200,8 +201,10 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
   const pendingBody=paid.pending?JSON.parse(paid.pending.body):null;
   const d:IdeaDraft=pendingBody?{...currentDraft,logline:pendingBody.brief,tone:pendingBody.tone,model:pendingBody.model,effort:pendingBody.effort??"auto"}:currentDraft;
   const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");
-  /* What the model replaced, so one click brings the person's own words back. */
-  const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; costUsd: number } | null>(null);
+  const money = useMoney();
+  /* What the model replaced, so one click brings the person's own words back, and what the writing
+     cost in this workspace's unit: the credits billed, or its own dollars on its own keys. */
+  const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; cost: string } | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const patch = (p: Partial<IdeaDraft>) => set((x) => ({ ...x, ...p }));
 
@@ -221,8 +224,9 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
     onWriting();
     setBusy("write");
     try {
-      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number}>("/api/atomik/ideas/draft",pendingBody ?? {brief:d.logline,tone:d.tone,model:quote!.model,effort:d.effort??"auto",maxCredits:quote!.estimateCredits});
-      setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model), costUsd: Number(j.costUsd ?? 0) });
+      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number;writingCredits?:number}>("/api/atomik/ideas/draft",pendingBody ?? {brief:d.logline,tone:d.tone,model:quote!.model,effort:d.effort??"auto",maxCredits:quote!.estimateCredits});
+      setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model),
+        cost: money.inCredits ? (typeof j.writingCredits === "number" ? money.price(j.writingCredits) : "") : usd(Number(j.costUsd ?? 0), 3) });
       patch({
         logline: typeof j.logline === "string" && j.logline ? j.logline : d.logline,
         tone: Array.isArray(j.tone) && j.tone.length ? j.tone.join(", ") : d.tone,
@@ -271,7 +275,7 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
         </button>
         {written && (
           <span className="ak-sub !text-[11px] inline-flex items-center gap-2">
-            {modelTail(written.model)} · {usd(written.costUsd, 3)}
+            {modelTail(written.model)}{written.cost ? ` · ${written.cost}` : ""}
             <button type="button" className="ak-act is-muted" onClick={restore}>MY WORDS</button>
           </span>
         )}

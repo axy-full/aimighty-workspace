@@ -76,6 +76,58 @@ export function vendorCostFindings(body: unknown, options: ScanOptions = {}): Fi
 }
 
 /**
+ * Job internals and credentials a customer's JSON must never carry, from the
+ * take's params or anywhere else: the paid-attempt claim and outcome, the
+ * connected account's credential fingerprints, a provider's poll handles and
+ * tokens, secrets and keys.
+ */
+const SECRET_KEY = /paidClaim|producedOutcome|credentialFingerprint|pollToken|pollUntil|stillHandle|videoHandle|stillCollection|genjutsuOriginal|soulReferenceId|secret|password|apiKey|api_key|accessToken|access_token|refreshToken|refresh_token|tokenHash|token_hash/i;
+const SECRET_TEXT = /\b(sk|rk|pk)-[A-Za-z0-9_-]{12,}|\bBearer\s+[A-Za-z0-9._-]{12,}/;
+
+export function secretFindings(body: unknown): Finding[] {
+  const found: Finding[] = [];
+  const walk = (value: unknown, at: string) => {
+    if (value == null) return;
+    if (typeof value === "string") {
+      if (SECRET_TEXT.test(value)) found.push({ at, why: "credential-like text" });
+      return;
+    }
+    if (Array.isArray(value)) { value.forEach((item, i) => walk(item, `${at}[${i}]`)); return; }
+    if (typeof value === "object") {
+      for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+        if (SECRET_KEY.test(key) && item != null) found.push({ at: `${at}.${key}`, why: "job internal or credential" });
+        walk(item, `${at}.${key}`);
+      }
+    }
+  };
+  walk(body, "$");
+  return found;
+}
+
+/**
+ * The other half of the rule, for a workspace on its own keys: its vendors'
+ * dollars are its own to read, and a credit figure beside them — those same
+ * dollars at the platform's rate — would state the margin. Any credit count
+ * above zero is reported, except inside a take's `params` or a `vendors`
+ * ledger line: those hold its own voice vendor's credits, which are that
+ * workspace's own figures in that vendor's unit.
+ */
+const MARGIN_CREDIT_KEY = /^(credits|spentCredits|creditsBilled|billedCredits|estCredits|estimateCredits|estimatedCredits|textCredits|writingCredits|spendCr)$/;
+export function marginCreditFindings(body: unknown): Finding[] {
+  const found: Finding[] = [];
+  const walk = (value: unknown, at: string, inParams: boolean) => {
+    if (value == null || typeof value !== "object") return;
+    if (Array.isArray(value)) { value.forEach((item, i) => walk(item, `${at}[${i}]`, inParams)); return; }
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (!inParams && MARGIN_CREDIT_KEY.test(key) && typeof item === "number" && item > 0) found.push({ at: `${at}.${key}`, why: "credits beside the workspace's own dollars" });
+      walk(item, `${at}.${key}`, inParams || key === "params" || key === "vendors");
+    }
+  };
+  walk(body, "$", false);
+  return found;
+}
+
+/**
  * Every sum of a non-empty subset of the seeded vendor costs. A route may add
  * any of them up — by project, by person, by month — and each total is still
  * what vendors charged. Each cost must end in a sixth decimal of 1 (see

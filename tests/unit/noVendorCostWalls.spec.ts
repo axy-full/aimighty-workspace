@@ -1,0 +1,141 @@
+import { test, expect } from "@playwright/test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
+import { loadRouteModule } from "../helpers/vendorCostScan";
+
+/* The walls a customer can walk into say nothing about what the vendors
+   charge: a token's monthly ceiling trips on what the workspace pays, the
+   monthly cap on the platform's engines is refused without its figures, a
+   quote never carries the margin beside a workspace's own dollars, and a
+   workspace billed in credits cannot move itself to its own keys and read its
+   history in the vendors' dollars. */
+const dir = mkdtempSync(path.join(tmpdir(), "particl-vendor-walls-"));
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
+process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
+process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
+process.env.CREDIT_USD = "0.10";
+process.env.ENGINE_MOCK = "1";
+
+const run = randomUUID().slice(0, 8);
+function workspace(name: string, credits: boolean, allowanceUsd: number | null = null): TenantWorkspace {
+  return {
+    id: `ws_walls_${name}_${run}`, slug: `walls-${name}-${run}`, name, legacy: false,
+    dbUrl: `file:${path.join(dir, `${name}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: credits,
+    allowanceUsd, gatewayKeyId: null, ownerId: "u_owner", createdAt: 0, suspendedAt: null, suspendedReason: null,
+    flaggedAt: null, flagNote: null, concurrency: 10, rendersPerHour: 1000, storageQuotaBytes: null, deletedAt: null,
+  };
+}
+const owner: TenantUser = { id: "u_owner", email: "owner@example.test", name: "Owner", role: "admin", owner: true, disabled: false, lastSeen: null, createdAt: 0 };
+const SEEDANCE = "dreamina-seedance-2-5-260628";
+
+async function granted(ws: TenantWorkspace, credits = 500) {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_at) VALUES(?,?,?,'unit','manual',0)", args: [`grant_${ws.id}`, ws.id, credits] });
+}
+
+test("a token's monthly ceiling trips on the credits the workspace pays, never on the vendors' dollars", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+  const { tokenSpendThisMonth } = await import("../../lib/auth");
+  const { billCredits, creditUsd } = await import("../../lib/creditTerms");
+  const ws = workspace("token", true);
+  /* A ceiling two jobs fit in the vendors' dollars, but not in what the workspace pays for them. */
+  const perJob = billCredits(1, SEEDANCE);
+  const cap = (2 + 2 * perJob * creditUsd()) / 2;
+  await granted(ws);
+  await runInTenant(ws, async () => {
+    await ready();
+    await db().batch([
+      "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_owner','owner@example.test','Owner','x','admin',0)",
+      { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_usd,created_at) VALUES('tok_walls','hash_walls','Agent','u_owner','render',?,0)", args: [cap] },
+    ], "write");
+    const token = { id: "tok_walls", capUsd: cap };
+    const job = (id: string) => ({ id, kind: "video" as const, engine: "byteplus", model: SEEDANCE, status: "running" as const, engineCostUsd: 1, createdBy: "u_owner" });
+    await reserveGenerationSpend(job("gen_walls_1"), { token });
+    await db().execute({ sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,cost_usd,token_id) VALUES('gen_walls_1',?,'one','{}','running',?,?,'video',1,'tok_walls')`, args: [SEEDANCE, Date.now(), Date.now()] });
+    /* The second would fit in the vendors' dollars; in what the workspace pays, it does not. */
+    const refused = await reserveGenerationSpend(job("gen_walls_2"), { token }).then(() => null, (e: unknown) => e);
+    expect(refused).toBeInstanceOf(SpendReservationError);
+    expect((refused as InstanceType<typeof SpendReservationError>).status).toBe(429);
+    expect((refused as Error).message).toContain("token's monthly spending ceiling");
+    /* What the admission check reads, and what a refusal says: credits, and their price. */
+    expect(await tokenSpendThisMonth("tok_walls")).toEqual({ usd: perJob * creditUsd(), credits: perJob });
+  });
+});
+
+test("the monthly cap on the platform's engines refuses without a figure", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { allowanceCheck, ALLOWANCE_REACHED } = await import("../../lib/allowance");
+  const ws = workspace("allowance", true, 0.5);
+  await granted(ws);
+  await runInTenant(ws, async () => {
+    await ready();
+    await db().execute({ sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd) VALUES('gen_cap',?,'p','{}','succeeded',?,?,'video','byteplus',0.731301)`, args: [SEEDANCE, Date.now(), Date.now()] });
+    const verdict = await allowanceCheck("ark", 0.1, SEEDANCE);
+    expect(verdict).toEqual({ ok: false, status: 429, error: ALLOWANCE_REACHED });
+    expect(ALLOWANCE_REACHED).not.toMatch(/\$|\d/);
+  });
+});
+
+test("a quote's approval credits carry the margin only where credits are billed", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { quotedCredits } = await import("../../lib/credits");
+  const { billCredits } = await import("../../lib/creditTerms");
+  const { publicQuote, quoteOf, liveTerms } = await import("../../lib/quote");
+  expect(await runInTenant(workspace("quote_cr", true), async () => quotedCredits(1.339101, SEEDANCE))).toBe(billCredits(1.339101, SEEDANCE));
+  /* On its own keys the workspace reads its vendor's dollars in `price`: the approval counts the same
+     dollars in credits at the price of a credit, so the two side by side say nothing more. */
+  expect(await runInTenant(workspace("quote_usd", false), async () => quotedCredits(1.339101, SEEDANCE))).toBe(14);
+  /* A quote leaves the server in credits alone (/api/rig/quote). */
+  const q = quoteOf([{ key: "s1", usd: 1.339101, engine: SEEDANCE }, { key: "s2", usd: 0.512901, engine: SEEDANCE }], liveTerms());
+  const shown = publicQuote(q);
+  expect(JSON.stringify(shown)).not.toMatch(/usd/i);
+  expect(shown.totalCredits).toBe(q.totalCredits);
+  expect(shown.lines.map((l) => l.credits)).toEqual(q.lines.map((l) => l.credits));
+});
+
+test("a workspace billed in credits cannot move itself to its own keys once the platform has paid for its work", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const platform = await import("../../lib/platform");
+  const { platformDb } = platform;
+  const auth = await import("../../lib/auth");
+  type Patch = { PATCH: (req: Request) => Promise<Response> };
+  const as = (ws: TenantWorkspace) => loadRouteModule<Patch>("app/api/workspaces/keys/route.ts", {
+    "@/lib/auth": { ...auth, withTenant: (fn: (req: Request) => Promise<Response>) => (req: Request) => runInTenant(ws, () => fn(req), { user: owner }) },
+    /* The mode itself is the platform record's; this asks only whether the route lets it change. */
+    "@/lib/platform": { ...platform, setWorkspaceMode: async () => {} },
+  });
+  const patch = (ws: TenantWorkspace) => as(ws).PATCH(new Request("https://studio.test/api/workspaces/keys", {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "own" }),
+  }));
+  const fresh = workspace("mode_fresh", true);
+  expect((await patch(fresh)).status).toBe(200);
+  const billed = workspace("mode_billed", true);
+  await platformDb().execute({
+    sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,'video','byteplus',?,'succeeded',1,15,1,0,0)`,
+    args: [`gen_mode_${run}`, billed.id, SEEDANCE],
+  });
+  const refused = await patch(billed);
+  expect(refused.status).toBe(409);
+  expect(JSON.stringify(await refused.json())).not.toMatch(/\$/);
+});
+
+test("the MCP tools print a credit workspace's takes and projects in credits", async () => {
+  const { runTool } = await import("../../lib/mcp");
+  const call = async (pathname: string) => {
+    if (pathname === "/api/projects") return { projects: [{ id: "p1", name: "Harbour", genCount: 2, credits: 36 }] };
+    if (pathname.startsWith("/api/jobs/")) return { generation: { id: "g1", status: "succeeded", prompt: "A harbour", costUsd: null, creditsBilled: 21 } };
+    throw new Error(`unexpected ${pathname}`);
+  };
+  const projects = await runTool("list_projects", {}, call as never, "https://example.invalid");
+  expect(projects).toBe("Harbour — 2 renders · 36 cr");
+  const done = await runTool("wait_for_render", { id: "g1", timeout_seconds: 5 }, call as never, "https://example.invalid");
+  expect(done).toContain("Cost 21 cr.");
+  expect(done).not.toContain("$");
+});

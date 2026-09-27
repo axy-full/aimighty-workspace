@@ -6,7 +6,7 @@ import { billedCreditsSum } from "@/lib/creditSql";
 import { maskEmail } from "@/lib/maskEmail";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
-import { withoutVendorCost } from "@/lib/analyticsRedact";
+import { withoutVendorCost, withoutMarginCredits } from "@/lib/analyticsRedact";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -236,5 +236,5 @@ export const GET = withTenant(async function GET(req: Request) {
       takesPerShot: shots ? filed / shots : 0,
     },
   };
-  return NextResponse.json(inCredits ? withoutVendorCost(payload) : payload);
+  return NextResponse.json(inCredits ? withoutVendorCost(payload) : withoutMarginCredits(payload));
 });

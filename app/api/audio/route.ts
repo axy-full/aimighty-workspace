@@ -69,11 +69,15 @@ export const GET = withTenant(async function GET() {
       : Promise.resolve(null),
   ]);
   const voices = eleven ? elevenVoices : grokVoices;
+  /* The voice vendor's own rates — credits a character, a sound, a minute of music — go only to a
+     workspace that pays that vendor itself; one billed in credits is quoted in credits. */
+  const inCredits = creditsApply(requireTenant());
+  const models = [...(eleven || !grok ? SPEECH_MODELS : []), ...(grok ? [GROK_SPEECH_MODEL] : [])];
   return NextResponse.json({
     configured,
     vendors: { elevenlabs: eleven, xai: grok },
     envKey: "ELEVENLABS_API_KEY",
-    speechModels: [...(eleven || !grok ? SPEECH_MODELS : []), ...(grok ? [GROK_SPEECH_MODEL] : [])],
+    speechModels: inCredits ? models.map(({ creditsPerChar: _rate, ...model }) => { void _rate; return model; }) : models,
     defaultSpeechModel: eleven || !grok ? DEFAULT_SPEECH_MODEL : GROK_TTS_MODEL,
     voices: Array.isArray(voices) ? voices : [],
     grokVoices: Array.isArray(grokVoices) ? grokVoices : [],
@@ -89,9 +93,6 @@ export const GET = withTenant(async function GET() {
       !creditsApply(requireTenant()) && account && "error" in account
         ? account.error
         : null,
-    terms: {
-      sfxCredits: SFX_CREDITS,
-      musicCreditsPerMinute: MUSIC_CREDITS_PER_MINUTE,
-    },
+    ...(inCredits ? {} : { terms: { sfxCredits: SFX_CREDITS, musicCreditsPerMinute: MUSIC_CREDITS_PER_MINUTE } }),
   });
 });
