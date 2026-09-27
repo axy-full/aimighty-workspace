@@ -3,6 +3,9 @@ import { useRef, useState } from "react";
 import { SAY, referenceRole } from "@/lib/shell/assets";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
+import { formatProviderCreditQuote, providerCreditQuote } from "@/lib/providerCreditQuote";
+import { settledFact } from "@/lib/usageLedgerTerms";
+import { useLedgerEntry } from "./UsageLedger";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
 import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
@@ -25,6 +28,10 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const recreate = useRecreate();
   const library = useProjectLibrary(scope, project?.id ?? null);
   const entry = library.items.find((item) => item.take.id === id) ?? null;
+  /* "Settled" is the usage ledger's own row for the take, in the unit the route says this workspace pays in (idea 25). */
+  const made = entry?.asset.origin === "generation" ? entry.asset.value : null;
+  const quote = made ? providerCreditQuote(made.providerCreditQuote) : null;
+  const settled = useLedgerEntry(made && !quote ? made.id : null, entry?.take.status);
   if (!entry) {
     const failed = library.state.status === "error";
     return (
@@ -41,7 +48,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const role = referenceRole(entry.media);
   const facts: [string, string][] = [
     ["Kind", generation ? "Generation" : "Upload"],
-    ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "rendering" ? "Not settled" : take.failedUnbilled ? "Not billed" : take.credits != null ? `${take.credits.toLocaleString("en-US")} cr` : generation.costUsd != null ? `$${generation.costUsd.toFixed(3)}` : "—"] as [string, string]] : []),
+    ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
     ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
@@ -66,6 +73,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       <dl className="gx-facts" data-testid="asset-facts">
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
+      {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
       <span className="gx-eyebrow">Actions</span>
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
