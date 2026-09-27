@@ -110,9 +110,13 @@ test('Gen image actions distinguish ordinary reference and first frame in scoped
  await page.screenshot({path:info.outputPath('gen-explicit-frame.png')});
 });
 
-test('project Gen recovers older unfiled audio requests without changing their destination or idempotency key',async({page},info)=>{
+test('project Gen recovers older unfiled audio requests by their key first, keeping their destination',async({page},info)=>{
  test.skip(info.project.name!=='workbench-1440x900','bounded migration check');
  const f=await fixture(page);
+ /* Recover asks what became of a request by its key before anything goes (POST /api/generate/check). */
+ const checks:string[]=[];
+ await page.route('**/api/generate/check',route=>{const asked=route.request().postDataJSON();checks.push(asked.key);expect(asked.endpoint).toBe('/api/audio');
+  return route.fulfill({json:f.submissions.some(s=>s.key===asked.key)?{state:'landed',id:'audio-fixture',status:'running'}:{state:'absent'}});});
  const oldScope=JSON.stringify([f.me.workspace.id,f.me.email,'audio']),surface=`make:${oldScope}`;
  const key=`particl:pending-generation:${JSON.stringify([oldScope,'unfiled',surface])}`;
  const saved={key:'legacy-audio-key',body:JSON.stringify({task:'sound',text:'Old rain',durationSeconds:5,projectId:null,shotId:null,maxCredits:3}),credits:3,price:3,unit:'cr'};
@@ -120,8 +124,14 @@ test('project Gen recovers older unfiled audio requests without changing their d
  await page.goto('/generate?mode=audio&project=generation-fixture');
  await expect(page.getByText('Its original destination and settings are preserved.',{exact:false})).toBeVisible();
  const recover=page.getByRole('button',{name:/^Recover submitted audio/});
- await recover.click();await expect(recover).toBeEnabled();await recover.click();
- await expect.poll(()=>f.submissions.length).toBe(2);
- for(const sent of f.submissions){expect(sent.body).toBe(saved.body);expect(sent.key).toBe(saved.key);}
+ /* It never arrived: set aside, re-quoted at the price it was approved at, and sent once under a new key (whose answer is lost here). */
+ await recover.click();await expect.poll(()=>f.submissions.length).toBe(1);await expect(recover).toBeEnabled();
+ /* The next press finds that one landed, and follows it: nothing is sent again. */
+ await recover.click();
+ await expect(page.getByText('Rendering · 3 cr · saved to your takes')).toBeVisible();
  await expect(recover).not.toBeVisible();
+ expect(f.submissions).toHaveLength(1);
+ expect(f.submissions[0].body).toBe(saved.body);
+ expect(f.submissions[0].key).not.toBe(saved.key);
+ expect(checks).toEqual([saved.key,f.submissions[0].key]);
 });
