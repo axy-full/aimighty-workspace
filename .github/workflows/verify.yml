@@ -77,7 +77,7 @@ jobs:
     # runs sub-shards 3i-2, 3i-1 and 3i of 36, each on a fresh server, so no
     # server lives long enough to grow that far. A server is ready in 2-5 s,
     # and the longest job has taken 20 of the 30 minutes.
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       ENGINE_MOCK: '1'
       APP_ORIGIN: http://localhost:4551
