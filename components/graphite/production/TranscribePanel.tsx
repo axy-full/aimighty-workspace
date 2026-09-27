@@ -57,7 +57,7 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
       </div>
       <div className="gx-gen-enhance">
         <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(result) || quote?.credits == null} onClick={() => void run()} data-testid="transcribe-run">
-          {busy || (result ? "Transcribed" : quote?.credits != null ? `Transcribe · ${quote.credits.toLocaleString()} credit${quote.credits === 1 ? "" : "s"}` : "Pricing transcript…")}
+          {busy || (result ? "Transcribed" : quote?.credits != null ? `Transcribe · ${quote.credits.toLocaleString()} credit${quote.credits === 1 ? "" : "s"}` : quote?.error ? "Price unavailable" : "Pricing transcript…")}
         </button>
         {quote?.error ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain("transcript")}>Try again</button> : null}
         {result ? (

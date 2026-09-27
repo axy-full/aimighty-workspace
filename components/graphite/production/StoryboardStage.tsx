@@ -188,6 +188,11 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
     ? list.reduce((sum, shot) => sum + pricing.quotes[shot.id]!.credits!, 0) : null;
   const missingPrice = batchPrice(missing);
   const pickedPrice = batchPrice(pickedShots);
+  /* A batch whose frame's price could not be read says so and reads just those frames again. */
+  const unpriced = (list: NumberedShot[]) => list.filter((shot) => pricing.quotes[shot.id]?.error);
+  const missingUnpriced = unpriced(missing);
+  const pickedUnpriced = unpriced(pickedShots);
+  const tryAgainAll = (list: NumberedShot[]) => { for (const shot of list) pricing.tryAgain(shot.id); };
   const togglePick = (id: string) => setPicked((all) => all.includes(id) ? all.filter((x) => x !== id) : [...all, id]);
 
   const render = async (shot: NumberedShot, shown: number, frame = frameOf(shot.id), quoteId = shot.id) => {
@@ -362,8 +367,9 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
           onEstimate={() => void runs.estimate({ kind: "frames", model: model!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
         <div className="gx-gen-enhance">
           <button type="button" className="gx-primary" disabled={!missing.length || batchWorking || missingPrice == null} onClick={() => void renderAll(missing)} data-testid="boards-render-all">
-            {batchWorking ? "Sending frames…" : missingPrice != null ? `Render ${missing.length} frames · ${missingPrice.toLocaleString()} credits` : missing.length ? "Pricing frames…" : "No missing frames"}
+            {batchWorking ? "Sending frames…" : missingPrice != null ? `Render ${missing.length} frames · ${missingPrice.toLocaleString()} credits` : missingUnpriced.length ? "Price unavailable" : missing.length ? "Pricing frames…" : "No missing frames"}
           </button>
+          {missingUnpriced.length && !batchWorking ? <button type="button" className="gx-hbtn" onClick={() => tryAgainAll(missingUnpriced)} data-testid="boards-render-all-retry">Try again</button> : null}
         </div>
       </section>
 
@@ -417,7 +423,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                         onEstimate={() => void runs.estimate({ kind: "sketch", model: model!.id, effort: agent.effort, shotId: shot.id, sketchAssetId: drawing.id })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
                       <div className="gx-gen-enhance">
                         <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || batchWorking || !frame.reading || quote?.credits == null} title={!frame.reading ? "Have the agent read the drawing first." : undefined} onClick={() => { if (quote?.credits != null) void render(shot, quote.credits); }} data-testid="drawing-render">
-                          {working[shot.id] || (quote?.credits != null ? `2 · Convert · ${quote.credits.toLocaleString()} credits` : "Pricing conversion…")}
+                          {working[shot.id] || (quote?.credits != null ? `2 · Convert · ${quote.credits.toLocaleString()} credits` : quote?.error ? "Price unavailable" : "Pricing conversion…")}
                         </button>
                         {quote?.error ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain(shot.id)}>Try again</button> : null}
                       </div>
@@ -436,8 +442,9 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         <span className="gx-spacer" />
         <button type="button" className="gx-hbtn" onClick={() => setPicked(picked.length === shots.length ? [] : shots.map((s) => s.id))} data-testid="boards-select-all">{picked.length === shots.length ? "Clear" : "Select all"}</button>
         <button type="button" className="gx-primary" disabled={!picked.length || batchWorking || pickedPrice == null} onClick={() => void renderAll(pickedShots)} data-testid="boards-render-selected">
-          {batchWorking ? "Sending frames…" : pickedPrice != null ? `Storyboard ${picked.length} frames · ${pickedPrice.toLocaleString()} credits` : picked.length ? "Pricing selected frames…" : "Storyboard selected (0)"}
+          {batchWorking ? "Sending frames…" : pickedPrice != null ? `Storyboard ${picked.length} frames · ${pickedPrice.toLocaleString()} credits` : pickedUnpriced.length ? "Price unavailable" : picked.length ? "Pricing selected frames…" : "Storyboard selected (0)"}
         </button>
+        {pickedUnpriced.length && !batchWorking ? <button type="button" className="gx-hbtn" onClick={() => tryAgainAll(pickedUnpriced)} data-testid="boards-render-selected-retry">Try again</button> : null}
         <button type="button" className="gx-hbtn" disabled={!pickedShots.some((s) => frameOf(s.id).takes.length)} title="Write a fresh prompt for each selected frame that has a picture." onClick={() => reviseAll(pickedShots)} data-testid="boards-revise-selected">Revise selected</button>
       </div>
 
@@ -494,7 +501,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                       onChange={(e) => { const v = e.target.value; setRevising((r) => ({ ...r, [shot.id]: v })); }} data-testid="frame-revise-prompt" /></PromptAttach>
                   </label>
                   <div className="gx-gen-enhance">
-                    <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || batchWorking || revisionQuote?.credits == null} onClick={() => { if (revisionQuote?.credits != null) void revise(shot, revisionQuote.credits); }} data-testid="frame-revise-render">{working[shot.id] || (revisionQuote?.credits != null ? `Render revision · ${revisionQuote.credits.toLocaleString()} credits` : "Pricing revision…")}</button>
+                    <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || batchWorking || revisionQuote?.credits == null} onClick={() => { if (revisionQuote?.credits != null) void revise(shot, revisionQuote.credits); }} data-testid="frame-revise-render">{working[shot.id] || (revisionQuote?.credits != null ? `Render revision · ${revisionQuote.credits.toLocaleString()} credits` : revisionQuote?.error ? "Price unavailable" : "Pricing revision…")}</button>
                     {revisionQuote?.error ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain(`revision-${shot.id}`)}>Try again</button> : null}
                     <button type="button" className="gx-hbtn" onClick={() => setRevising((r) => ({ ...r, [shot.id]: frame.prompt }))}>Start from the current prompt</button>
                     <button type="button" className="gx-hbtn" onClick={() => setRevising((r) => { const next = { ...r }; delete next[shot.id]; return next; })}>Cancel</button>
@@ -535,7 +542,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                   </div>
                 </div>
               ) : null}
-              {errors[shot.id] ? <p className="gx-gen-error" role="alert" data-testid="frame-error">{errors[shot.id]}</p> : null}
+              {errors[shot.id] || quote?.error ? <p className="gx-gen-error" role="alert" data-testid="frame-error">{errors[shot.id] || quote?.error}</p> : null}
             </article>
           );
         })}

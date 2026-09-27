@@ -70,6 +70,37 @@ test("frames quote automatically, reject a moved price, and submit only after th
   expect(store.current.production!.boards!.frames.shot.pending![0].style).toBe("bw-sketch");
 });
 
+test("a frame whose price cannot be read says why, offers Try again and sends nothing", async ({ page }) => {
+  await signInLocally(page.request);
+  const store = { current: fixture() };
+  await mockProjects(page, store);
+  await mockMedia(page);
+  let failQuote = true, submitted = 0;
+  await page.route(/\/api\/generate(\/quote)?$/, (route) => {
+    if (!route.request().url().endsWith("/quote")) { submitted++; return route.fulfill({ json: { id: "gen_never", status: "queued" } }); }
+    if (failQuote) return route.fulfill({ status: 503, json: { error: "The price is unavailable. Try again." } });
+    return route.fulfill({ json: { estimatedCredits: 5, fingerprint: "a".repeat(64) } });
+  });
+  await page.goto(`/suites?suite=studio&page=boards&project=${store.current.id}`);
+  const frame = page.getByTestId("board-frame").first();
+  const action = frame.getByTestId("frame-render");
+  await expect(frame.getByTestId("frame-error")).toHaveText("The price is unavailable. Try again.");
+  await expect(action).toHaveText("Price unavailable");
+  await expect(action).toBeDisabled();
+  await expect(page.getByTestId("boards-render-all")).toHaveText("Price unavailable");
+  await expect(page.getByTestId("boards-render-all-retry")).toBeVisible();
+  const retry = frame.getByRole("button", { name: "Try again", exact: true });
+  await fit(page, retry);
+  failQuote = false;
+  await retry.click();
+  await expect(action).toHaveText("Render frame · 5 credits");
+  await expect(page.getByTestId("boards-render-all")).toHaveText("Render 1 frames · 5 credits");
+  await expect(frame.getByTestId("frame-error")).toHaveCount(0);
+  await expect(retry).toHaveCount(0);
+  await expect(page.getByTestId("boards-render-all-retry")).toHaveCount(0);
+  expect(submitted).toBe(0);
+});
+
 test("a changed plate discards the old quote, reads again on request failure, and never submits automatically", async ({ page }) => {
   await signInLocally(page.request);
   const store = { current: fixture() };
@@ -177,6 +208,34 @@ test("transcription reads its quote on selection and waits for the priced action
   expect(posted).toHaveLength(1);
   expect(posted[0]).toMatchObject({ sourceGenId: "gen_dialogue", maxCredits: 3 });
   expect(posted[0]).not.toHaveProperty("quoteOnly");
+});
+
+test("a transcript whose price cannot be read says so, offers Try again and sends nothing", async ({ page }) => {
+  await signInLocally(page.request);
+  const store = { current: fixture() };
+  await mockProjects(page, store);
+  await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_dialogue", title: "Dialogue source", prompt: "Dialogue source", kind: "audio", projectId: "prod-stage" })] });
+  let failQuote = true, posted = 0;
+  await page.route("**/api/audio/transcribe", (route) => {
+    const body = route.request().postDataJSON();
+    if (body.quoteOnly !== true) { posted++; return route.fulfill({ status: 500, json: { error: "Nothing paid is sent in this test." } }); }
+    if (failQuote) return route.fulfill({ status: 503, json: { error: "The price is unavailable. Try again." } });
+    return route.fulfill({ json: { estimatedCredits: 3 } });
+  });
+  await page.goto(`/suites?suite=studio&page=takes&project=${store.current.id}`);
+  await page.getByTestId("edit-takes").getByText("Dialogue source", { exact: true }).click();
+  const panel = page.getByTestId("transcribe");
+  const action = panel.getByTestId("transcribe-run");
+  await expect(panel.getByRole("alert")).toHaveText("The price is unavailable. Try again.");
+  await expect(action).toHaveText("Price unavailable");
+  await expect(action).toBeDisabled();
+  const retry = panel.getByRole("button", { name: "Try again", exact: true });
+  await fit(page, retry);
+  failQuote = false;
+  await retry.click();
+  await expect(action).toHaveText("Transcribe · 3 credits");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  expect(posted).toBe(0);
 });
 
 test("a still re-edit quotes its current source and instruction without an extra price action", async ({ page }) => {
