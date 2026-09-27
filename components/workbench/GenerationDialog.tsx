@@ -24,6 +24,7 @@ import {
   clearPendingGeneration,
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
+import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
 
 type Model = {
   id: string;
@@ -78,15 +79,7 @@ function validMapping(value: unknown): value is { shotId: string; productionProj
   const mapping = value as Record<string, unknown>;
   return [mapping.shotId, mapping.productionProjectId].every(item => typeof item === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(item));
 }
-export function GenerationDialog({
-  target,
-  project,
-  scope,
-  onClose,
-  onSave,
-  onQueued,
-  onAsset,
-}: {
+type GenerationDialogProps = {
   scope: string;
   target: GenerationTarget;
   project: Project;
@@ -94,7 +87,30 @@ export function GenerationDialog({
   onSave: () => Promise<boolean>;
   onQueued: (id: string, kind?: "image" | "video" | "audio", accepted?: { prompt: string; options: MoleculrGenerationOptions }) => void;
   onAsset: (id: string, fields: Partial<Asset>) => void;
-}) {
+};
+/**
+ * A take claimed earlier whose reply was lost is never sent again (it shares
+ * its recovery key with the Rig's take of the same node). Recover asks the
+ * server what became of it (settlePendingGeneration): landed, that job is
+ * followed; never arrived or refused, it is let go and the dialog starts again
+ * from the node as it is now, so nothing goes until its fresh price is on the
+ * button and that button is pressed.
+ */
+export function GenerationDialog(props: GenerationDialogProps) {
+  const [fresh, setFresh] = useState({ round: 0, notice: "" });
+  return <TakeDialog key={fresh.round} {...props} notice={fresh.notice} onLetGo={(notice) => setFresh((f) => ({ round: f.round + 1, notice }))} />;
+}
+function TakeDialog({
+  target,
+  project,
+  scope,
+  onClose,
+  onSave,
+  onQueued,
+  onAsset,
+  notice,
+  onLetGo,
+}: GenerationDialogProps & { notice: string; onLetGo: (notice: string) => void }) {
   const callbacks = useRef({ onSave });
   useEffect(() => { callbacks.current = { onSave }; }, [onSave]);
   const [preparationRevision, setPreparationRevision] = useState(0);
@@ -287,50 +303,58 @@ export function GenerationDialog({
     setError("");
     let attempt: PendingGeneration | null = null;
     try {
-      // Recover before saving/mapping/uploading: retries cannot alter the accepted payload.
-      attempt = readPendingGeneration(window.localStorage, storageId);
-      if (!attempt) {
-        if (!(await onSave()))
-          throw new Error("Save your latest work before generating.");
-        const mapping = await studioRequest<{
-          shotId: string;
-          productionProjectId: string;
-        }>("/api/workbench/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-          body: JSON.stringify({
-            action: "map-shot",
-            projectId: project.id,
-            nodeId: target.node.id,
-          }),
-        });
-        if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
-        const references = await resolveGenerationReferences(refs, roleFor, { scope, onAsset });
-        const body = JSON.stringify(kind === "audio" ? {
-          ...JSON.parse(audioBody), projectId: mapping.productionProjectId, shotId: mapping.shotId, maxCredits: cost!,
-        } : generationRequestBody({
-          prompt,
-          kind,
-          model: model!,
-          mapping,
-          ratio,
-          resolution,
-          duration,
-          maxCredits: cost!,
-          references,
-          marketing,
-          quoteFingerprint: quote?.fingerprint,
-          firstFrameAssetId: firstFrameId,
-          soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
-        }));
-        attempt = claimPendingGeneration(window.localStorage, storageId, {
-          key: crypto.randomUUID(),
-          body,
-          credits: cost!,
-          endpoint: kind === "audio" ? "/api/audio" : "/api/generate",
-        });
-        setPending(attempt);
+      /* Whatever is claimed for this node is asked about first, by its own key, and never sent again. */
+      let claimed: PendingGeneration | null = null;
+      try { claimed = readPendingGeneration(window.localStorage, storageId); } catch { /* settled below as unreadable */ }
+      const settled = await settlePendingGeneration({ scope, storageId });
+      if (settled.state === "unknown") { setError(settled.reason); return; }
+      if (settled.state === "landed") {
+        /* It reached the server: that take is followed, at the price approved for it, and nothing is sent. */
+        onQueued(settled.jobId, claimed?.endpoint === "/api/audio" ? "audio" : model?.kind, claimed ? acceptedSettings(claimed) : undefined);
+        onClose();
+        return;
       }
+      /* Recover never spends. Let go, the node as it is now is priced afresh before anything can go. */
+      if (pending) { onLetGo(settled.state === "lost" ? settled.reason : ""); return; }
+      if (!(await onSave()))
+        throw new Error("Save your latest work before generating.");
+      const mapping = await studioRequest<{
+        shotId: string;
+        productionProjectId: string;
+      }>("/api/workbench/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+        body: JSON.stringify({
+          action: "map-shot",
+          projectId: project.id,
+          nodeId: target.node.id,
+        }),
+      });
+      if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
+      const references = await resolveGenerationReferences(refs, roleFor, { scope, onAsset });
+      const body = JSON.stringify(kind === "audio" ? {
+        ...JSON.parse(audioBody), projectId: mapping.productionProjectId, shotId: mapping.shotId, maxCredits: cost!,
+      } : generationRequestBody({
+        prompt,
+        kind,
+        model: model!,
+        mapping,
+        ratio,
+        resolution,
+        duration,
+        maxCredits: cost!,
+        references,
+        marketing,
+        quoteFingerprint: quote?.fingerprint,
+        firstFrameAssetId: firstFrameId,
+        soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
+      }));
+      const proposed: PendingGeneration = { key: crypto.randomUUID(), body, credits: cost!, endpoint: kind === "audio" ? "/api/audio" : "/api/generate" };
+      const claim = claimPendingGeneration(window.localStorage, storageId, proposed);
+      setPending(claim);
+      /* Another window claimed this node meanwhile: that request is its own to send, never this one's. */
+      if (claim.key !== proposed.key) throw new Error("Another Generate of this is already on its way. Nothing new was sent.");
+      attempt = claim;
       const result = await studioRequest<{ id: string }>(attempt.endpoint ?? "/api/generate", {
         method: "POST",
         headers: {
@@ -342,7 +366,7 @@ export function GenerationDialog({
       });
       if (!result.id)
         throw new Error(
-          "The server has not confirmed a job yet. Retry to recover this same request.",
+          "The server has not confirmed a job yet. Recover asks what became of it; nothing is sent again.",
         );
       clearPendingGeneration(window.localStorage, storageId, attempt.key);
       onQueued(result.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind, acceptedSettings(attempt));
@@ -513,10 +537,11 @@ export function GenerationDialog({
             )}
           </div>}
           {kind === "audio" && <p className="muted small-copy">Audio uses your written direction or script. The node’s visual references remain attached to the node.</p>}
+          {notice && <p role="status" className="muted small-copy">{notice}</p>}
           {pending && (
             <p role="status" className="muted small-copy">
-              A previous submission is awaiting confirmation. Retry recovers the
-              same take using its saved settings.
+              Your last Generate of this node is unconfirmed. Recover asks the
+              server what became of it; nothing is sent again.
             </p>
           )}
           {error && (

@@ -13,11 +13,21 @@ export const UNDO_DEPTH = 20;
 export type UndoEntry = {
   /** What the toast says once it is undone — "Deleted take restored". */
   label: string;
-  /** Puts things back. May be async (a server restore). */
-  undo: () => void | Promise<void>;
+  /**
+   * Puts things back. May be async (a server restore). Throwing means "not
+   * now": the shell puts the step back on the stack and says why. Returning a
+   * string means the step is spent but could not do all it meant to; the
+   * toast says that string instead of `label`.
+   */
+  undo: () => void | string | Promise<void | string>;
   /** The project the step was made in; the shell stamps it when the step is pushed. Absent: any project. */
   projectId?: string | null;
 };
+
+/** What the toast says once an entry is undone. */
+export function undoneLabel(entry: UndoEntry, said: void | string): string {
+  return typeof said === "string" && said.trim() ? said : entry.label;
+}
 
 export function pushUndo(stack: readonly UndoEntry[], entry: UndoEntry, depth = UNDO_DEPTH): UndoEntry[] {
   const next = [...stack, entry];
@@ -58,4 +68,13 @@ export function boundUndo(entry: UndoEntry, made: string | null, current: () => 
       return entry.undo();
     },
   };
+}
+
+/** The keyboard half of an undo toast; a phone, with no ⌘Z, gets the toast's Undo button instead. */
+export const UNDO_HINT = " · ⌘Z to undo";
+export function withUndoHint(text: string): string {
+  return text + UNDO_HINT;
+}
+export function splitUndoHint(text: string): { lead: string; hint: string } {
+  return text.endsWith(UNDO_HINT) ? { lead: text.slice(0, -UNDO_HINT.length), hint: UNDO_HINT } : { lead: text, hint: "" };
 }
