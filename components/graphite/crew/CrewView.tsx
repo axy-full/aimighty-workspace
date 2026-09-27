@@ -5,8 +5,11 @@ import { readsLabel } from "@/lib/crew/context";
 import { CONTEXT_LABELS, CREW_EFFORTS, CREW_PRESETS, PHASES, PHASE_LABEL, ROUNDS_MAX } from "@/lib/crew/room";
 import { useCrew, type CrewRoom, type RoomMessage } from "@/lib/crew/use-crew";
 import { CREW_PAGES } from "@/lib/shell/ia";
+import { CONFIRM, solutionStatusLabel } from "@/lib/shell/confirmations";
 import { useShell } from "@/lib/shell/state";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
+import { useConfirm } from "@/lib/shell/use-confirm";
+import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import type { Project } from "@/lib/workbench/studio";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uploadToProject } from "@/lib/workspace/library";
@@ -52,8 +55,8 @@ export function CrewView({ project, room, scope, projectsError = null, onRetry }
 /* ── Room ─────────────────────────────────────────────────────────────── */
 
 function Room({ project, room, scope, projectsError, onRetry }: { project: Project | null; room: CrewRoom; scope: string; projectsError: string | null; onRetry?: () => void }) {
-  const shell = useShell();
   const ws = useWorkspace();
+  const { confirm } = useConfirm();
   const [selected, setSelected] = useState<string | null>(null);
   const [pick, setPick] = useState("");
   const [say, setSay] = useState("");
@@ -67,17 +70,22 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
 
   const run = async () => { setSelected(null); const outcome = await room.runRound(); if (outcome) ws.toast(outcome); };
   const send = () => { const text = say.trim(); if (!text) return; setSay(""); void room.say(text); };
+  const [routing, setRouting] = useState<string | null>(null);
+  /* → Brief and → Rig write the saved project and say so, with an Open to it; the room stays put so the next solution can go too.
+     Open in Gen goes: the solution is Gen's prompt when it gets there. */
   const route = async (id: string, to: "brief" | "boards" | "gen") => {
-    const routed = await room.routeSolution(id, to);
+    setRouting(`${id}:${to}`);
+    const routed = await room.routeSolution(id, to).finally(() => setRouting(null));
     if (!routed) return;
-    if (to === "brief") { ws.toast("Added to the Brief."); shell.goSuite("studio", "brief"); }
-    else if (to === "boards") { ws.toast("A draft frame is on Boards."); shell.goSuite("studio", "boards"); }
-    else {
-      /* The solution becomes Gen's prompt, whether Gen is open yet or not. */
-      sendGenPreset({ prompt: routed.prompt ?? "" });
-      ws.toast("The solution is the prompt in Gen.");
-      shell.goGen();
+    if (to === "gen") {
+      /* The solution becomes Gen's prompt, whether Gen is open yet or not: it is handed over in memory (lib/shell/gen-preset),
+         with nothing stored or copied that the browser could refuse, so the toast can say it is there. */
+      sendGenPreset({ prompt: routed.prompt ?? "", note: "Crew · solution" });
+      confirm(CONFIRM.crewGen(), { go: true });
+      return;
     }
+    if (project) announceDraftWritten(project.id);
+    confirm(to === "brief" ? CONFIRM.crewBrief() : CONFIRM.crewRig(routed.title ?? "Crew solution", routed.nodeId));
   };
 
   /* A round header sits above the first message of each round's phase; notes never open one. */
@@ -206,11 +214,12 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
               {room.solutions.map((s, i) => (
                 <div className="cw-solution" key={s.id}>
                   <p><span className="cw-sol-n">{i + 1}</span>{s.text}</p>
-                  {s.status !== "open" ? <span className="cw-dim">{s.status === "sent_to_brief" ? "Sent to Brief" : s.status === "boarded" ? "On Boards" : "Opened in Gen"}</span> : null}
+                  {solutionStatusLabel(s.status) ? <span className="cw-dim" data-testid="crew-solution-status">{solutionStatusLabel(s.status)}</span> : null}
                   <div className="cw-sol-actions">
-                    <button type="button" className="gx-hbtn" onClick={() => void route(s.id, "brief")}>→ Brief</button>
-                    <button type="button" className="gx-hbtn" onClick={() => void route(s.id, "boards")}>Board it</button>
-                    <button type="button" className="gx-hbtn cw-go" onClick={() => void route(s.id, "gen")}>Open in Gen</button>
+                    {/* Once it went there, a second press adds it a second time, and says so. */}
+                    <button type="button" className="gx-hbtn" disabled={routing !== null} onClick={() => void route(s.id, "brief")}>{routing === `${s.id}:brief` ? "Adding…" : s.status === "sent_to_brief" ? "→ Brief again" : "→ Brief"}</button>
+                    <button type="button" className="gx-hbtn" disabled={routing !== null} title="A draft shot on the Rig" onClick={() => void route(s.id, "boards")}>{routing === `${s.id}:boards` ? "Adding…" : s.status === "boarded" ? "→ Rig again" : "→ Rig"}</button>
+                    <button type="button" className="gx-hbtn cw-go" disabled={routing !== null} onClick={() => void route(s.id, "gen")}>Open in Gen</button>
                     <button type="button" className="cw-link" aria-label="Remove solution" onClick={() => void room.dropSolution(s.id)}>Remove</button>
                   </div>
                 </div>
@@ -220,8 +229,8 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
             {room.session ? <button type="button" className="gx-hbtn cw-wide" onClick={room.newRoom} disabled={room.running}>New session</button> : null}
             <button type="button" className="gx-hbtn cw-wide" disabled={!room.session || !room.messages.length} onClick={() => void room.minutes()}>Export minutes · free</button>
             <button type="button" className="gx-hbtn cw-wide" disabled={!room.session || !room.messages.length || !project || filing} data-testid="crew-file-minutes"
-              onClick={() => { if (!project) return; setFiling(true); void room.minutesAsFile().then((file) => uploadToProject(scope, project.id, [file])).then(() => toast("Minutes filed in Assets · byte-identical, this project.")).catch((error: unknown) => toast(error instanceof Error ? error.message : "The minutes could not be filed.")).finally(() => setFiling(false)); }}>
-              File minutes in Assets · free
+              onClick={() => { if (!project) return; setFiling(true); void room.minutesAsFile().then((file) => uploadToProject(scope, project.id, [file])).then(() => confirm(CONFIRM.minutesFiled())).catch((error: unknown) => toast(error instanceof Error ? error.message : "The minutes could not be filed.")).finally(() => setFiling(false)); }}>
+              File minutes in the Library · free
             </button>
           </>
         )}

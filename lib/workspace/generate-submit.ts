@@ -78,7 +78,11 @@ const UNREADABLE = "The saved generation request cannot be read. Check Activity 
  * here; one still being accepted, or a question that got no answer, leaves
  * the claim in place. It is never re-sent.
  */
-export async function settlePendingGeneration(options: { scope: string; storageId: string; storage?: Storage }): Promise<SettledAttempt> {
+export async function settlePendingGeneration(options: {
+  scope: string; storageId: string; storage?: Storage;
+  /** The route the claim was sent to, for a claim stored without one (the Make composer's audio). */
+  endpoint?: "/api/generate" | "/api/audio" | "/api/audio/dub";
+}): Promise<SettledAttempt> {
   const storage = options.storage ?? window.localStorage;
   let attempt: PendingGeneration | null;
   try {
@@ -93,7 +97,7 @@ export async function settlePendingGeneration(options: { scope: string; storageI
     found = await studioRequest<{ state?: unknown; id?: unknown; status?: unknown }>("/api/generate/check", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Workbench-Scope": options.scope },
-      body: JSON.stringify({ key: attempt.key, endpoint: attempt.endpoint ?? "/api/generate", body: attempt.body }),
+      body: JSON.stringify({ key: attempt.key, endpoint: attempt.endpoint ?? options.endpoint ?? "/api/generate", body: attempt.body }),
     });
   } catch {
     return { state: "unknown", reason: UNCHECKED };
@@ -274,4 +278,60 @@ export async function sendClaimedGeneration(options: {
     if (final) clearPendingGeneration(storage, storageId, attempt.key);
     return { state: "refused", reason: neutralCopy(error.message) };
   }
+}
+
+/** What a stored request (a key and the exact body sent under it) became, and whether it may go again (settleStoredRequest). */
+export type StoredSettle =
+  /** It reached the server and made this job: follow it; nothing is sent again. */
+  | { state: "landed"; jobId: string; status: string }
+  /** It made nothing and never will (never arrived, now set aside; or refused), and the same request is quoted now at exactly the price approved for it: it may go again, under a new key. */
+  | { state: "resend" }
+  /** It made nothing and never will, but the same request is quoted now at another price: nothing may go until that price is shown and approved. */
+  | { state: "repriced"; price: number; unit: "cr" | "usd"; credits: number }
+  /** Not known yet, or not priced: nothing is sent, and the stored request stays. */
+  | { state: "unknown"; reason: string };
+
+const sameAmount = (a: number, b: number, unit: "cr" | "usd") => (unit === "cr" ? a === b : Math.abs(a - b) < 0.005);
+
+/**
+ * For a stored request that is not a PendingGeneration claim (a Make composer
+ * batch take, or its audio claim): the key it was sent under is asked about
+ * first (POST /api/generate/check). Landed, its job is followed. Never arrived
+ * or refused, its key is set aside there, and the same request is quoted again:
+ * it may go under a new key only at exactly the price approved for it. With
+ * `ask: false` (a key already known to have been refused) only the quote is taken.
+ */
+export async function settleStoredRequest(options: {
+  scope: string; key: string; endpoint: "/api/generate" | "/api/audio"; body: string;
+  /** The price shown and approved for this one request, in the workspace's unit. */
+  approved: { price: number; unit: "cr" | "usd" };
+  ask?: boolean;
+}): Promise<StoredSettle> {
+  const headers = { "Content-Type": "application/json", "X-Workbench-Scope": options.scope };
+  if (options.ask !== false) {
+    let found: { state?: unknown; id?: unknown; status?: unknown };
+    try {
+      found = await studioRequest("/api/generate/check", { method: "POST", headers, body: JSON.stringify({ key: options.key, endpoint: options.endpoint, body: options.body }) });
+    } catch {
+      return { state: "unknown", reason: UNCHECKED };
+    }
+    if (found.state === "landed" && typeof found.id === "string" && found.id)
+      return { state: "landed", jobId: found.id, status: typeof found.status === "string" ? found.status : "queued" };
+    if (found.state !== "absent" && found.state !== "refused")
+      return { state: "unknown", reason: found.state === "pending" ? STILL_ACCEPTING : UNCHECKED };
+  }
+  let fresh: { estimatedCredits?: unknown; price?: unknown; unit?: unknown };
+  try {
+    const sent = JSON.parse(options.body) as Record<string, unknown>;
+    fresh = options.endpoint === "/api/generate"
+      ? await studioRequest("/api/generate/quote", { method: "POST", headers, body: options.body })
+      : await studioRequest("/api/audio", { method: "POST", headers, body: JSON.stringify({ ...sent, quoteOnly: true }) });
+  } catch {
+    return { state: "unknown", reason: "The price could not be checked. Nothing was sent; try again in a moment." };
+  }
+  const credits = fresh.estimatedCredits, price = fresh.price, unit = fresh.unit;
+  if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price) || price < 0 || (unit !== "cr" && unit !== "usd"))
+    return { state: "unknown", reason: "The price could not be checked. Nothing was sent; try again in a moment." };
+  if (unit === options.approved.unit && sameAmount(price, options.approved.price, unit)) return { state: "resend" };
+  return { state: "repriced", price, unit, credits };
 }
