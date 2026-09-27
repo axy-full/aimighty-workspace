@@ -209,3 +209,68 @@ export async function dispatchGeneration(options: {
     return { state: "refused", reason: neutralCopy(error instanceof Error ? error.message : "Generation could not be submitted.") };
   }
 }
+
+/** What a claimed send became (sendClaimedGeneration). */
+export type ClaimedSend =
+  /** Accepted: a job to follow. `followed`: an earlier press's request had landed, and nothing new was sent. `status` is the job's own (a refused charge fails it, unbilled). */
+  | { state: "queued"; jobId: string; status: string; credits: number; followed: boolean }
+  /** Answered without a job: nothing was made or charged. A final answer lets the claim go; one that is not final keeps it, so the next press asks first. */
+  | { state: "refused"; reason: string }
+  /** Not known yet: this press's reply was lost (`lost`), or an earlier request could not be settled. The claim stays and nothing more was sent. */
+  | { state: "unknown"; reason: string; lost: boolean };
+
+const LOST_REPLY = "The connection dropped before the server answered. Press again to check what became of it; it is never sent twice.";
+
+/**
+ * A paid POST /api/generate for a caller that prices its own request (the
+ * rate-table Rig: the phone board's Apply and the canvas's Run node) and sends
+ * the price shown as the ceiling (`maxCredits`). Its Idempotency-Key is
+ * claimed in recovery storage before it is sent, so a second press after a
+ * lost reply is never a second paid job: that press settles the earlier one
+ * first (settlePendingGeneration). Landed, its job is followed and nothing is
+ * sent; never arrived or refused, it is fenced there and this press's body goes
+ * under a new key; not known yet, nothing is sent.
+ */
+export async function sendClaimedGeneration(options: {
+  scope: string;
+  /** Recovery-storage key for this one request's slot (pendingGenerationKey). */
+  storageId: string;
+  /** The exact body to send, its ceiling included. */
+  body: Record<string, unknown>;
+  /** The credits shown for it, kept with the claim. */
+  credits: number;
+  /** Injected only by tests; the browser's own storage otherwise. */
+  storage?: Storage;
+}): Promise<ClaimedSend> {
+  const { scope, storageId, body, credits } = options;
+  const storage = options.storage ?? window.localStorage;
+  const settled = await settlePendingGeneration({ scope, storageId, storage });
+  if (settled.state === "landed") return { state: "queued", jobId: settled.jobId, status: settled.status, credits: settled.credits, followed: true };
+  if (settled.state === "unknown") return { state: "unknown", reason: settled.reason, lost: false };
+  let attempt: PendingGeneration;
+  try {
+    const proposed = { key: crypto.randomUUID(), body: JSON.stringify(body), credits, endpoint: "/api/generate" as const };
+    attempt = claimPendingGeneration(storage, storageId, proposed);
+    /* Another window claimed this one meanwhile: its request is its own to send, never this one's to replay. */
+    if (attempt.key !== proposed.key) return { state: "unknown", reason: "Another Generate of this is already on its way. Nothing new was sent.", lost: false };
+  } catch (error) {
+    /* No recovery storage, no paid request: a lost reply could not be told from a new press. */
+    return { state: "refused", reason: error instanceof Error ? error.message : "Enable local storage to safely recover this generation." };
+  }
+  try {
+    const result = await studioRequest<{ id?: unknown; status?: unknown }>("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope, "Idempotency-Key": attempt.key },
+      body: attempt.body,
+    });
+    if (typeof result.id !== "string" || !result.id) return { state: "unknown", reason: "The server has not confirmed a job yet. Press again to check what became of it; it is never sent twice.", lost: true };
+    clearPendingGeneration(storage, storageId, attempt.key);
+    return { state: "queued", jobId: result.id, status: typeof result.status === "string" ? result.status : "queued", credits, followed: false };
+  } catch (error) {
+    if (!(error instanceof StudioRequestError) || error.status >= 500) return { state: "unknown", reason: LOST_REPLY, lost: true };
+    /* A refused charge files a failed job: answered, nothing billed. */
+    const final = error.resolved || typeof error.data.id === "string";
+    if (final) clearPendingGeneration(storage, storageId, attempt.key);
+    return { state: "refused", reason: neutralCopy(error.message) };
+  }
+}

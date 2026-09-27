@@ -359,13 +359,17 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       /* The quoted request, capped at the quoted credits; a step that changed
          since it was priced is refused by the route rather than charged more. */
       const render = stepRender(step, loaded?.chat.projectId ?? null);
-      const res = await fetch(render.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `atomik-step:${step.id}` },
+      /* This approval's own key: a step proposed again after a render that never arrived renders under a new one. */
+      const res = await fetch(render.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": step.requestKey ?? `atomik-step:${step.id}` },
         body: JSON.stringify(approvedBody(render, again.quote)) });
       const j = await res.json().catch(() => ({}));
       /* Still being accepted under this step's key: not a failure. The step
          stays running and is settled from the request's record when the plan
          is next read (lib/atomik.ts › reconcileRunningSteps). */
       if (res.status === 409 && j.pending) { setError("That render is still being accepted. It will show here once it has started."); return; }
+      /* It arrived after the plan had given up on it: its key was set aside and nothing was made or
+         charged. The step is proposed again, and is not this reply's to mark failed. */
+      if (res.status === 409 && j.code === "set_aside") { setError(j.error ?? "That render arrived too late to run. Nothing was charged."); return; }
       await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(res.ok ? { status: "done", genId: j.id ?? null } : { status: "failed", error: j.error ?? `Failed (${res.status})` }) });
       if (!res.ok) setError(j.error ?? "That render didn't start.");

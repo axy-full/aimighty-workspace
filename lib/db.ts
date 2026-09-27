@@ -903,6 +903,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("atomik_messages", `effort TEXT`);
       await addColumn("atomik_chats", `effort TEXT`);
       await addColumn("atomik_steps", `refs TEXT`);
+      // Who took a step to render it, and which approval this is: its render's Idempotency-Key is per approval (lib/atomik.ts › stepRequestKey).
+      await addColumn("atomik_steps", `claimed_by TEXT`);
+      await addColumn("atomik_steps", `attempt INTEGER NOT NULL DEFAULT 0`);
       // Who a note called out, so the mention is a record and not only a nudge (brief 2.1).
       await addColumn("notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
       // Consent to train on a face, stored with the identity (brief 1.3).
