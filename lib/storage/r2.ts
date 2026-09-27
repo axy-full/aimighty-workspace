@@ -13,9 +13,8 @@ import {
 } from "./types";
 
 /**
- * Cloudflare R2 over the S3 REST API, signed with AWS Signature Version 4
- * from node:crypto and sent with fetch. No SDK: the production bundle stays
- * private and small, and every byte on the wire is visible here.
+ * Cloudflare R2 over the S3 REST API. Server requests use SigV4 and fetch;
+ * private download links use the AWS SDK presigner, loaded only for R2.
  *
  * Path-style addressing (https://<account>.r2.cloudflarestorage.com/<bucket>/<key>),
  * region "auto", service "s3". Conditional writes use If-None-Match: * and a
@@ -44,6 +43,7 @@ export const R2_PART_SIZE = 8 * 1024 * 1024;
 export const R2_MAX_PARTS = 10_000;
 const DELETE_BATCH = 1000;
 const PRESIGN_MAX_SECONDS = 7 * 24 * 3600;
+const PRIVATE_CACHE_CONTROL = "private, no-store";
 
 /* ── SigV4 ─────────────────────────────────────────────────────────────── */
 
@@ -205,6 +205,7 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
   const fetchImpl: typeof fetch = deps.fetch ?? ((input, init) => fetch(input, init));
   const now = deps.now ?? (() => new Date());
   const credentials = { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey };
+  let signingClient: import("@aws-sdk/client-s3").S3Client | undefined;
   const base = config.endpoint.replace(/\/+$/, "");
   const bucketUrl = (key: string | null) => new URL(`${base}/${rfc3986(config.bucket)}${key === null ? "" : `/${encodeKey(key)}`}`);
 
@@ -244,7 +245,7 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
 
   async function putObject(key: string, body: Buffer, options: StoragePutOptions): Promise<void> {
     const response = await request("PUT", key, {
-      headers: { "content-type": options.contentType, ...(options.overwrite ? {} : { "if-none-match": "*" }) },
+      headers: { "content-type": options.contentType, "cache-control": PRIVATE_CACHE_CONTROL, ...(options.overwrite ? {} : { "if-none-match": "*" }) },
       body,
       signal: options.signal,
       allow: options.overwrite ? [] : [412],
@@ -260,7 +261,7 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
   async function putMultipart(key: string, body: AsyncIterable<Buffer | Uint8Array>, options: StoragePutOptions): Promise<void> {
     const created = await request("POST", key, {
       query: { uploads: "" },
-      headers: { "content-type": options.contentType },
+      headers: { "content-type": options.contentType, "cache-control": PRIVATE_CACHE_CONTROL },
       signal: options.signal,
       operation: "CreateMultipartUpload",
     });
@@ -418,19 +419,27 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
 
     async presignGet(key: string, validUntilMs: number, options: StoragePresignOptions = {}): Promise<string> {
       const date = now();
-      const expiresSeconds = Math.max(1, Math.min(PRESIGN_MAX_SECONDS, Math.ceil((validUntilMs - date.getTime()) / 1000)));
-      return presignRequest({
-        method: "GET",
-        url: bucketUrl(key),
-        query: {
-          ...(options.contentDisposition ? { "response-content-disposition": options.contentDisposition } : {}),
-          ...(options.contentType ? { "response-content-type": options.contentType } : {}),
-        },
-        credentials,
+      if (!Number.isFinite(validUntilMs) || validUntilMs <= date.getTime()) throw new Error("The storage download expiry must be in the future.");
+      const expiresSeconds = Math.min(PRESIGN_MAX_SECONDS, Math.ceil((validUntilMs - date.getTime()) / 1000));
+      const [{ S3Client, GetObjectCommand }, { getSignedUrl }] = await Promise.all([
+        import("@aws-sdk/client-s3"),
+        import("@aws-sdk/s3-request-presigner"),
+      ]);
+      signingClient ??= new S3Client({
         region: R2_REGION,
-        date,
-        expiresSeconds,
-      }).url;
+        endpoint: base,
+        forcePathStyle: true,
+        credentials,
+        requestChecksumCalculation: "WHEN_REQUIRED",
+        responseChecksumValidation: "WHEN_REQUIRED",
+      });
+      return getSignedUrl(signingClient, new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        ResponseCacheControl: PRIVATE_CACHE_CONTROL,
+        ...(options.contentDisposition ? { ResponseContentDisposition: options.contentDisposition } : {}),
+        ...(options.contentType ? { ResponseContentType: options.contentType } : {}),
+      }), { expiresIn: expiresSeconds, signingDate: date });
     },
   };
 }

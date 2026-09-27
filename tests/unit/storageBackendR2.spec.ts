@@ -263,7 +263,7 @@ test("PutObject with If-None-Match maps 412 to ObjectExistsError and storeVideoB
   const backend = backendFor(fake);
   const first = Buffer.from("first original bytes");
   await backend.put("generations/one.mp4", first, { contentType: "video/mp4", overwrite: false });
-  expect(fake.calls.at(-1)).toMatchObject({ method: "PUT", path: `/${CONFIG.bucket}/generations/one.mp4`, headers: { "if-none-match": "*", "content-type": "video/mp4" } });
+  expect(fake.calls.at(-1)).toMatchObject({ method: "PUT", path: `/${CONFIG.bucket}/generations/one.mp4`, headers: { "if-none-match": "*", "content-type": "video/mp4", "cache-control": "private, no-store" } });
   const again = backend.put("generations/one.mp4", Buffer.from("other bytes"), { contentType: "video/mp4", overwrite: false });
   await expect(again).rejects.toBeInstanceOf(ObjectExistsError);
   await again.catch((error) => expect(isObjectExistsError(error)).toBe(true));
@@ -322,6 +322,7 @@ test("multipart uploads assemble 3.5 MB chunks into 8 MiB parts and abort on a f
     "POST uploads", "PUT partNumber,uploadId", "PUT partNumber,uploadId", "PUT partNumber,uploadId", "POST uploadId",
   ]);
   expect(fake.calls[0].headers["content-type"]).toBe("application/octet-stream");
+  expect(fake.calls[0].headers["cache-control"]).toBe("private, no-store");
   const stored = fake.objects.get("uploads/big.bin")!;
   expect(stored.bytes.length).toBe(CHUNK * COUNT);
   expect(createHash("sha256").update(stored.bytes).digest("hex")).toBe(hash.digest("hex"));
@@ -449,6 +450,8 @@ test("presigned GET URLs carry the signature and response headers and read back 
   expect(parsed.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
   expect(parsed.searchParams.get("response-content-disposition")).toBe("attachment; filename=\"movie (1).mp4\"");
   expect(parsed.searchParams.get("response-content-type")).toBe("video/mp4");
+  expect(parsed.searchParams.get("response-cache-control")).toBe("private, no-store");
+  expect(fake.calls).toHaveLength(0);
   expect(url).not.toContain(CONFIG.secretAccessKey);
   expect(url).toContain("response-content-disposition=attachment%3B%20filename%3D%22movie%20%281%29.mp4%22");
 
@@ -457,10 +460,13 @@ test("presigned GET URLs carry the signature and response headers and read back 
   expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from("movie bytes"));
   const tampered = await fake.fetch(url.replace("response-content-type=video%2Fmp4", "response-content-type=text%2Fhtml"));
   expect(tampered.status).toBe(403);
+  expect((await fake.fetch(url.replace("/ws/x/", "/ws/other/"))).status).toBe(403);
+  expect((await fake.fetch(url.replace("response-cache-control=private%2C%20no-store", "response-cache-control=public"))).status).toBe(403);
 
   // Expiry is bounded to what S3 accepts.
   const far = new URL(await backend.presignGet("k", now.getTime() + 30 * 24 * 3600_000));
   expect(far.searchParams.get("X-Amz-Expires")).toBe(String(7 * 24 * 3600));
-  const past = new URL(await backend.presignGet("k", now.getTime() - 1));
-  expect(past.searchParams.get("X-Amz-Expires")).toBe("1");
+  for (const invalid of [now.getTime() - 1, now.getTime(), NaN, Infinity]) {
+    await expect(backend.presignGet("k", invalid)).rejects.toThrow(/expiry must be in the future/);
+  }
 });
