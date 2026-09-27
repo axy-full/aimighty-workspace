@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
+import { randomBytes } from "node:crypto";
 import type { GenerationBatch } from "../lib/useGenerationBatch";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
@@ -29,6 +31,7 @@ test("an interrupted batch checks only the pending variant by its key after relo
     body: string;
     workspace?: string;
     actor?: string;
+    scope?: string;
   }[] = [];
   /* A take whose acknowledgement was lost reached the server: Recover asks by its key and follows it. */
   const landed = new Map<string, string>();
@@ -45,6 +48,7 @@ test("an interrupted batch checks only the pending variant by its key after relo
         body: JSON.stringify(value),
       });
     if (path === "/api/generate/check" && request.method() === "POST") {
+      expect(request.headers()["x-workbench-scope"]).toBe(workbenchScopeFor(me.workspace.id, me.id));
       const key = String(request.postDataJSON().key);
       checks.push(key);
       return json(landed.has(key) ? { state: "landed", id: landed.get(key), status: "running" } : { state: "absent" });
@@ -56,6 +60,7 @@ test("an interrupted batch checks only the pending variant by its key after relo
         body: request.postData()!,
         workspace: headers["x-workspace-id"],
         actor: headers["x-actor-email"],
+        scope: headers["x-workbench-scope"],
       });
       const body = request.postDataJSON();
       if (body.variation === 2 || body.variation === 4) landed.set(headers["idempotency-key"]!, `mock-image-${body.variation}`);
@@ -170,6 +175,7 @@ test("an interrupted batch checks only the pending variant by its key after relo
     expect(request.body).toBe(variant.body);
     expect(request.workspace).toBe(account.workspace.id);
     expect(request.actor).toBe(me.email);
+    expect(request.scope).toBe(workbenchScopeFor(me.workspace.id, me.id));
     expect(JSON.parse(request.body).projectId).toBe(productionProjectId);
   }
   expect(
@@ -178,6 +184,70 @@ test("an interrupted batch checks only the pending variant by its key after relo
   await page.screenshot({ path: testInfo.outputPath("batch-recovered.png") });
   expect(errors).toEqual([]);
 });
+
+for (const boundary of ["workspace", "account"] as const) {
+  test(`a stale batch cannot submit after the active ${boundary} changes`, async ({ page }) => {
+    const original = await signInLocally(page.request);
+    const owner = await page.request.get("/api/me").then((response) => response.json());
+    const captured = workbenchScopeFor(owner.workspace.id, owner.id);
+    const draft = newProject("Scoped batch project");
+    const saved = await page.request.put("/api/workbench/projects", {
+      headers: { "X-Workbench-Scope": captured },
+      data: { project: draft, revision: 0 },
+    });
+    expect(saved.ok(), await saved.text()).toBe(true);
+    await page.goto(`/make/images?project=${draft.id}`);
+    const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+    await prompt.fill("A still life of a brass key in warm light.");
+    await page.getByRole("button", { name: /×1/ }).click();
+    await page.getByRole("menuitem", { name: "×2", exact: true }).click();
+    const render = page.locator("[data-render]").filter({ visible: true }).last();
+    await expect(render).toBeEnabled();
+
+    // Change the cookie without replacing the document that approved the batch.
+    await signInLocally(page.request);
+    const member = await page.request.get("/api/me").then((response) => response.json());
+    expect(member.workspace.id).not.toBe(original.workspace.id);
+    if (boundary === "account") {
+      const code = randomBytes(18).toString("base64url");
+      const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+      try {
+        await db.execute({
+          sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+          args: [code, original.workspace.id, member.email, "Another crew member", "member", owner.id, Date.now(), Date.now() + 3_600_000],
+        });
+      } finally { db.close(); }
+      const accepted = await page.request.post("/api/auth/accept", { data: { code } });
+      expect(accepted.ok(), await accepted.text()).toBe(true);
+    }
+    const current = await page.request.get("/api/me").then((response) => response.json());
+    expect(current.id).not.toBe(owner.id);
+    if (boundary === "account") expect(current.workspace.id).toBe(original.workspace.id);
+    else expect(current.workspace.id).not.toBe(original.workspace.id);
+
+    const posted = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/generate" && response.request().method() === "POST");
+    await render.click();
+    const rejected = await posted;
+    expect(rejected.request().headers()["x-workbench-scope"]).toBe(captured);
+    expect(rejected.status()).toBe(409);
+    const error = "Your account or workspace changed. Reload this page before continuing.";
+    expect(await rejected.json()).toEqual({ error });
+    // Rejection happens before the paid claim, without discarding the saved batch.
+    expect(rejected.headers()["idempotency-status"]).toBeUndefined();
+    await expect(render).toContainText("Recover batch");
+    await expect(page.getByText(error, { exact: true }).first()).toBeVisible();
+    const pending = await page.evaluate(() => Object.entries(localStorage)
+      .filter(([key]) => key.startsWith("particl:generation-batch:"))
+      .map(([key, value]) => ({ key, batch: JSON.parse(value) })));
+    expect(pending).toHaveLength(1);
+    expect(pending[0].key).toContain(original.workspace.id);
+    expect(pending[0].batch.cursor).toBe(0);
+    expect(pending[0].batch.variants).toHaveLength(2);
+    expect(pending[0].batch.variants.every((variant: { resultId?: string }) => !variant.resultId)).toBe(true);
+    const jobs = await page.request.get("/api/jobs").then((response) => response.json());
+    expect(jobs.generations).toEqual([]);
+  });
+}
 
 /* A batch's pending take is asked about by its key before the batch goes on (POST /api/generate/check), never
    re-sent blind: one that never arrived is set aside and re-quoted, and goes only at the price the batch showed. */
