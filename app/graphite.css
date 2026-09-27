@@ -302,6 +302,18 @@
 .gx-select { height: 36px; width: 100%; padding: 0 34px 0 12px; border-radius: 6px; font-size: 13px; background-color: #1B1B1F; border: 1px solid var(--gx-hair); appearance: none; -webkit-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23A1A1A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
 .gx-gen-go { width: 100%; height: 40px; justify-content: center; }
+/* Generate's label is what it does, then what it costs, and the price is never cut: when a narrow button or a wide
+   font leaves no room, the price wraps whole onto a second line and the button grows with it (never under its
+   usual height). On a phone a priced label always takes two lines, the price under the action. */
+.gx .gx-gen-go.gx-primary { height: auto; min-height: 44px; flex-wrap: wrap; align-content: center; column-gap: 0; row-gap: 2px; padding-top: 4px; padding-bottom: 4px; text-align: center; }
+.gx-go-act, .gx-go-price { white-space: nowrap; }
+.gx-go-sep { white-space: pre; }
+@media (max-width: 767px) {
+  .gx .gx-gen-go.gx-primary { min-height: 52px; }
+  .gx .gx-gen-go.gx-primary[data-priced] { flex-direction: column; flex-wrap: nowrap; row-gap: 1px; line-height: 1.15; }
+  .gx .gx-gen-go[data-priced] .gx-go-sep { display: none; }
+  .gx .gx-gen-go[data-priced] .gx-go-price { font-size: 13px; font-weight: 600; }
+}
 .gx-gen-foot { margin: 0; font-size: 12px; color: var(--gx-text-2); text-align: center; }
 .gx-gen-note { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
 .gx-gen-error { margin: 0; font-size: 12.5px; color: var(--gx-failed, #FF6B6B); }
@@ -310,6 +322,24 @@
 .gx-gen-results { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx-gen-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .gx-gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+/* Takes 2–4 of one Generate: one strip across the grid, the takes side by side (components/graphite/TakeStrip.tsx).
+   Its words sit on --gx-text-2 or a tone, never dimmer. */
+.gx-batch { grid-column: 1 / -1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-batch-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.gx-batch-label { flex: none; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: var(--gx-text); }
+.gx-batch-name { flex: 1 1 120px; min-width: 0; font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-batch-meta { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-batch-takes { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; min-width: 0; }
+.gx-batch .gx-batch-take { padding: 4px; background: var(--gx-input); }
+.gx-batch .gx-batch-take > .gx-asset-name { font-family: var(--gx-mono); }
+/* A take that has settled (made, refused, never sent) holds still: only one still being followed pulses. */
+.gx-batch .gx-batch-take[data-done="true"] .gx-ring { animation: none; }
+.gx-batch .gx-batch-take > .gx-asset-meta { color: var(--gx-text-2); }
+.gx-batch .gx-batch-take[data-tone="blue"] > .gx-asset-meta { color: var(--gx-accent-text); }
+.gx-batch .gx-batch-take[data-tone="green"] > .gx-asset-meta { color: var(--gx-done); }
+/* The danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
+.gx-batch .gx-batch-take[data-tone="red"] > .gx-asset-meta { color: #FF6961; }
+.gx-batch .gx-batch-take[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
 .gx-running { display: grid; place-items: center; }
 .gx-ring { width: 44px; height: 44px; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); animation: gx-pulse 1.6s ease-in-out infinite; }
 .gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(6px); }
