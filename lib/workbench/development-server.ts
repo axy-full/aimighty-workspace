@@ -403,6 +403,7 @@ async function publicJob(row: Row, offset = 0, withResult = true, preloaded?: Pr
     currentStage: next ? String(next.stage) as DevelopmentStage : 'complete',
     estimateCredits: Number(row.estimate_credits), estimateUsd: Number(row.estimate_usd),
     credits: row.credits == null ? null : Number(row.credits), costUsd: row.cost_usd == null ? null : Number(row.cost_usd),
+    ownKey: !Number(row.funded_by_platform),
     result: result?.result ? JSON.parse(String(result.result)) : null,
     ...(result?.result ? { resultPage: { offset, totalChunks, hasMore: offset + 1 < totalChunks } } : {}), error: row.error ? String(row.error) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) };
@@ -685,13 +686,14 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       const notSubmitted = (error as { providerSubmitted?: boolean }).providerSubmitted === false;
       const uncertain = submitted && !returned && !rejection && !notSubmitted;
       if (!submitted || rejection || notSubmitted) cost = 0;
+      /* A failed run is never billed: the vendor's cost is kept on the steps and in the meter, the workspace's bill is zero. */
       const message = uncertain ? 'This provider attempt could not be confirmed. It will never be submitted again automatically. The approved estimate remains reserved for review.' :
-        'This development phase could not complete: ' + ((error as Error).message || 'Invalid response').slice(0, 750) + ' The paid attempt is saved; no automatic resubmission will occur.';
+        'This development phase could not complete: ' + ((error as Error).message || 'Invalid response').slice(0, 750) + (Number(row.funded_by_platform) ? ' It was not billed, and it is never sent again on its own.' : ' It is never sent again on its own.');
       const stopped = await db().execute({ sql: "UPDATE workbench_development_steps SET status=?,error=?,cost_usd=?,updated_at=? WHERE job_id=? AND step_index=? AND status='running'", args: [uncertain ? 'uncertain' : 'failed', message, uncertain ? null : cost, now(), id, Number(next.step_index)] });
       if (!stopped.rowsAffected) return { done: false, waiting: true };
       const sum = (await db().execute({ sql: 'SELECT COALESCE(SUM(cost_usd),0) AS cost FROM workbench_development_steps WHERE job_id=?', args: [id] })).rows[0];
       const total = uncertain ? Number(row.estimate_usd) : Number(sum.cost);
-      const stoppedJob = await db().execute({ sql: "UPDATE workbench_development_jobs SET status=?,error=?,cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [uncertain ? 'uncertain' : 'failed', message, uncertain ? null : total, uncertain ? null : Number(row.funded_by_platform) ? billCredits(total, 'text') : 0, now(), id] });
+      const stoppedJob = await db().execute({ sql: "UPDATE workbench_development_jobs SET status=?,error=?,cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [uncertain ? 'uncertain' : 'failed', message, uncertain ? null : total, uncertain ? null : 0, now(), id] });
       if (!stoppedJob.rowsAffected) return { done: false, waiting: true };
       const settled = await settleDevelopment({ ...row, status: uncertain ? 'uncertain' : 'failed', cost_usd: uncertain ? null : total }, deps);
       return { done: settled, waiting: false, settlementPending: !settled };
@@ -715,7 +717,8 @@ async function settleDevelopment(row: Row, deps: DevelopmentDependencies): Promi
       await db().execute({ sql: 'UPDATE workbench_development_jobs SET settled=1 WHERE id=?', args: [String(row.id)] });
       return true;
     }
-    await deps.meter(eventFor(row, row.status === 'succeeded' ? 'succeeded' : 'failed', row.status === 'uncertain' ? Number(row.estimate_usd) : Number(row.cost_usd ?? 0)), { critical: true });
+    /* A failed run settles at zero for the workspace; an unconfirmed one keeps its approved estimate for review. */
+    await deps.meter({ ...eventFor(row, row.status === 'succeeded' ? 'succeeded' : 'failed', row.status === 'uncertain' ? Number(row.estimate_usd) : Number(row.cost_usd ?? 0)), ...(row.status === 'failed' ? { unbilled: true } : {}) }, { critical: true });
     // A returned but structurally invalid answer is still a definitive paid
     // result. It must not keep recovery fenced as if the provider were unknown.
     if (row.status === 'failed' && Number(row.cost_usd ?? 0) > 0) await billingTransaction(tx => resolveRecoveryJobTx(tx, requireTenant().id, String(row.id)));

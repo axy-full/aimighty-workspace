@@ -73,7 +73,8 @@ type Workspace = {
   setSheet: (sheet: MobileSheetId | null) => void;
   /** Replaces the URL (no new history entry), e.g. after a selection repair. */
   syncUrl: () => void;
-  toast: (text: string) => void;
+  /** Shows a line for 2.6 s, or `ms` — longer for a toast that carries its own action (an Undo). */
+  toast: (text: string, ms?: number) => void;
   plans: PlanSource;
 };
 
@@ -159,10 +160,10 @@ export function WorkspaceProvider({
   }, [target]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toast = useCallback((text: string) => {
+  const toast = useCallback((text: string, ms = 2600) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     dispatch({ type: "toast", text });
-    toastTimer.current = setTimeout(() => dispatch({ type: "toast", text: "" }), 2600);
+    toastTimer.current = setTimeout(() => dispatch({ type: "toast", text: "" }), ms);
   }, [dispatch]);
 
   useEffect(() => () => {

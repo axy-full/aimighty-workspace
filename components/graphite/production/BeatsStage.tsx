@@ -1,11 +1,15 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentAttachments } from "./use-agent-attachments";
 import { PromptAttach } from "@/components/PromptAttach";
 import { hasFiles } from "@/lib/drop";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { BEAT_LIMITS, BEAT_SOURCE_CHARS, beatCount, beatSheetFrom, move, newBeat, newScene, newShot, shotCount, type BeatScene, type BeatSheet, type BeatShot, type BeatSource } from "@/lib/production/beats";
+import { BEAT_LIMITS, BEAT_SOURCE_CHARS, beatCount, beatSheetFrom, move, newBeat, newScene, newShot, removalName, removeFromSheet, restoreRefusal, restoreToSheet, shotCount, type BeatRemoval, type BeatScene, type BeatSheet, type BeatShot, type BeatSource, type BeatTarget } from "@/lib/production/beats";
+import { attachBeatsStage, undoBeatRemoval } from "@/lib/production/beats-undo";
+import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, withNotes } from "@/lib/production/notes";
+import { useShell } from "@/lib/shell/state";
+import { withUndoHint } from "@/lib/shell/undo";
 import { sha256Hex } from "@/lib/production/hash";
 import type { DevelopmentJob, DevelopmentScene } from "@/lib/workbench/development-types";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
@@ -43,12 +47,22 @@ export function BeatsStage({ projectId, scope, onBrief, onBoards }: { projectId:
 function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<typeof useDraftEditor>; scope: string; onBrief: () => void; onBoards?: () => void }) {
   const p = editor.project!;
   const { toast } = useWorkspace();
+  const shell = useShell();
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   const attach = useAgentAttachments({ scope, project: p, change: editor.change, save: editor.ensureSaved, onChange: runs.clearQuote });
   useStageFacts("brief", p);
   const [scriptSha, setScriptSha] = useState<string | null>(null);
-  const [notes, setNotes] = useState("");
+  /* The notes live on the project draft, so a reload keeps them (lib/production/notes.ts). */
+  const notes = notesOf(p, "beats");
+  const setNotes = (text: string) => editor.change((old) => withNotes(old, "beats", text));
+  /* A start answers after a round trip; a stage closed by then never writes again (its draft's revision is old). */
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  /* Notes leave the box only once the server holds the redraft they went with, and only while they are still what was sent. */
+  const clearSent = (sent: { kind?: string; fromBeats?: boolean; instructions?: string } | null | undefined) => (held: boolean) => {
+    if (held && mounted.current && sent?.kind === "write" && sent.fromBeats) editor.change((old) => clearSentNotes(old, "beats", sent));
+  };
   const [offered, setOffered] = useState<{ job: DevelopmentJob; scenes: DevelopmentScene[]; upload?: string } | null>(null);
   const [openScene, setOpenScene] = useState<string | null>(null);
   /* Board or graph, remembered on this device. The stage renders only after the project loads, never on the server. */
@@ -104,6 +118,49 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   const setShot = (sceneId: string, shotId: string, patch: Partial<BeatShot>) => setScene(sceneId, (scene) => ({ ...scene, shots: scene.shots.map((shot) => (shot.id === shotId ? { ...shot, ...patch } : shot)) }));
   const startSheet = () => { if (!scriptSha) return; editor.change((old) => ({ ...old, production: { ...old.production, beats: { scriptSha256: scriptSha, updatedAt: new Date().toISOString(), scenes: [newScene()] } } })); };
 
+  /* A delete goes on the shell's undo stack: ⌘Z, or the toast's Undo on a phone, puts it back where it was. */
+  const change = editor.change;
+  const restore = useCallback((removal: BeatRemoval): string | null => {
+    const out: { why: string | null } = { why: "the project is not open" };
+    change((old) => {
+      const next = restoreToSheet(old.production?.beats, removal);
+      if (!next) { out.why = restoreRefusal(old.production?.beats, removal); return old; }
+      out.why = null;
+      return next === old.production?.beats ? old : { ...old, production: { ...old.production, beats: { ...next, updatedAt: new Date().toISOString() } } };
+    });
+    return out.why;
+  }, [change]);
+  const projectId = p.id;
+  useEffect(() => {
+    /* What ⌘Z asked for while Beats was closed goes back now, and the toast says how it went. */
+    const { restored, missed, detach } = attachBeatsStage(scope, projectId, restore);
+    if (missed.length) toast(`${removalName(missed[0].removal)} could not go back: ${missed[0].why}.`);
+    else if (restored.length) toast(`${restored.map(removalName).join(", ")} ${restored.length === 1 ? "is" : "are"} back`);
+    return detach;
+  }, [scope, projectId, restore, toast]);
+  const remove = (target: BeatTarget) => {
+    const out: { removal?: BeatRemoval } = {};
+    change((old) => {
+      const taken = old.production?.beats ? removeFromSheet(old.production.beats, target) : null;
+      if (!taken) return old;
+      out.removal = taken.removal;
+      return { ...old, production: { ...old.production, beats: { ...taken.sheet, updatedAt: new Date().toISOString() } } };
+    });
+    const removal = out.removal;
+    if (!removal) return;
+    if (removal.kind === "scene" && openScene === removal.scene.id) setOpenScene(null);
+    const name = removalName(removal);
+    shell.pushUndo({
+      label: `${name} is back`,
+      undo: () => {
+        const result = undoBeatRemoval(scope, projectId, removal);
+        if (result.done === "missed") return `${name} could not go back: ${result.why}.`;
+        /* The Beats stage has closed since: open it, and it puts the delete back as it opens (and says so). */
+        if (result.done === "held") { shell.goSuite("studio", "beats"); return `${name} goes back as Beats opens.`; }
+      },
+    }, withUndoHint(`${name} deleted`));
+  };
+
   const model = agent.model;
   const kind = p.scriptFormat === "adfilm" ? "adfilm" : "screenplay";
   const q = runs.quote && runs.quote.input.model === model?.id && runs.quote.input.effort === agent.effort ? runs.quote : null;
@@ -133,6 +190,9 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
   };
   /* The newest draft came from these beats and is not the approved script yet: send the director to review it. */
   const lastRedraft = newestWrite && newestWrite.source === "beats" && newestWrite.status === "succeeded" && approval?.jobId !== newestWrite.id ? newestWrite : null;
+  /* …or it could not finish: said here, with what the director wrote for it offered back. */
+  const failedRedraft = newestWrite && newestWrite.source === "beats" && (newestWrite.status === "failed" || newestWrite.status === "uncertain") ? newestWrite : null;
+  const notesAgain = failedRedraft ? notesBack(notes, failedRedraft.instructions) : null;
 
   /* One scene opened to edit: its heading, act, summary, beats and shots. The board opens it in place; the graph beside the graph. */
   const sceneEditor = (scene: BeatScene, si: number) => (
@@ -147,7 +207,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
                 <div className="pd-order">
                   <button type="button" className="gx-hbtn" aria-label={`Move scene ${si + 1} up`} disabled={si === 0} onClick={() => setSheet((s) => ({ ...s, scenes: move(s.scenes, si, -1) }))}>↑</button>
                   <button type="button" className="gx-hbtn" aria-label={`Move scene ${si + 1} down`} disabled={si === count - 1} onClick={() => setSheet((s) => ({ ...s, scenes: move(s.scenes, si, 1) }))}>↓</button>
-                  <button type="button" className="gx-hbtn" aria-label={`Delete scene ${si + 1}`} onClick={() => setSheet((s) => ({ ...s, scenes: s.scenes.filter((x) => x.id !== scene.id) }))}>Delete</button>
+                  <button type="button" className="gx-hbtn" aria-label={`Delete scene ${si + 1}`} onClick={() => remove({ kind: "scene", id: scene.id })}>Delete</button>
                 </div>
               </div>
               <textarea className="gx-textarea pd-small" aria-label={`Scene ${si + 1} summary`} value={scene.summary} maxLength={BEAT_LIMITS.summary} placeholder="What this scene is for" onChange={(e) => { const v = e.target.value; setScene(scene.id, (s) => ({ ...s, summary: v })); }} />
@@ -161,7 +221,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
                     <textarea className="gx-textarea pd-beat-text" aria-label={`Scene ${si + 1} beat ${bi + 1}`} value={beat.text} maxLength={BEAT_LIMITS.beat} rows={2} onChange={(e) => { const v = e.target.value; setScene(scene.id, (s) => ({ ...s, beats: s.beats.map((b) => (b.id === beat.id ? { ...b, text: v } : b)) })); }} />
                     <div className="pd-order">
                       <button type="button" className="gx-hbtn" aria-label={`Move beat ${bi + 1} up`} disabled={bi === 0} onClick={() => setScene(scene.id, (s) => ({ ...s, beats: move(s.beats, bi, -1) }))}>↑</button>
-                      <button type="button" className="gx-hbtn" aria-label={`Delete beat ${bi + 1}`} onClick={() => setScene(scene.id, (s) => ({ ...s, beats: s.beats.filter((b) => b.id !== beat.id) }))}>×</button>
+                      <button type="button" className="gx-hbtn" aria-label={`Delete beat ${bi + 1}`} onClick={() => remove({ kind: "beat", sceneId: scene.id, id: beat.id })}>×</button>
                     </div>
                   </div>
                 ))}
@@ -178,7 +238,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
                       <label className="pd-seconds"><span className="gx-hint">Seconds</span><input className="gx-field" type="number" min={0.5} max={600} step={0.5} aria-label={`Shot ${si + 1}.${ti + 1} seconds`} value={shot.duration ?? ""} onChange={(e) => { const n = Number(e.target.value); setShot(scene.id, shot.id, { duration: e.target.value === "" || !Number.isFinite(n) ? undefined : Math.min(600, Math.max(0.5, n)) }); }} /></label>
                       <div className="pd-order">
                         <button type="button" className="gx-hbtn" aria-label={`Move shot ${si + 1}.${ti + 1} up`} disabled={ti === 0} onClick={() => setScene(scene.id, (s) => ({ ...s, shots: move(s.shots, ti, -1) }))}>↑</button>
-                        <button type="button" className="gx-hbtn" aria-label={`Delete shot ${si + 1}.${ti + 1}`} onClick={() => setScene(scene.id, (s) => ({ ...s, shots: s.shots.filter((x) => x.id !== shot.id) }))}>×</button>
+                        <button type="button" className="gx-hbtn" aria-label={`Delete shot ${si + 1}.${ti + 1}`} onClick={() => remove({ kind: "shot", sceneId: scene.id, id: shot.id })}>×</button>
                       </div>
                     </div>
                     <textarea className="gx-textarea pd-beat-text" aria-label={`Shot ${si + 1}.${ti + 1} description`} value={shot.description} maxLength={BEAT_LIMITS.description} rows={2} placeholder="What the camera sees" onChange={(e) => setShot(scene.id, shot.id, { description: e.target.value })} />
@@ -202,7 +262,7 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
       {runs.pending ? (
         <div className="gx-gen-card pd-recover" role="alert">
           <p className="gx-hint">An earlier agent request was sent but not confirmed. Recovering it re-reads that exact request; it is never sent twice.</p>
-          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => void runs.start()}>{runs.busy || "Recover the request"}</button>
+          <button type="button" className="gx-primary" disabled={Boolean(runs.busy)} onClick={() => { const sent = runs.pendingInput; void runs.start().then(clearSent(sent)); }}>{runs.busy || "Recover the request"}</button>
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
@@ -240,9 +300,9 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
           </div>
         ) : null}
         {script.trim() && (!sheet || stale || !activeBreakdown) ? (
-          <AgentAction id="beats-breakdown" estimateLabel={sheet ? "Estimate a new breakdown" : "Estimate the breakdown"} startLabel={(c) => `Break it into beats · up to ${c} credits`}
+          <AgentAction id="beats-breakdown" estimateLabel={sheet ? "Estimate a new breakdown" : "Estimate the breakdown"} startLabel={(price) => `Break it into beats · up to ${price}`}
             quote={breakdownQuote} busy={runs.busy} blocked={blocked} secondary={Boolean(sheet && !stale)}
-            describe={(qq) => `${qq.value.chunks} ${qq.value.chunks === 1 ? "section" : "sections"} · ${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+            describe={(qq, price) => `${qq.value.chunks} ${qq.value.chunks === 1 ? "section" : "sections"} · ${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
             onEstimate={() => void runs.estimate({ kind, model: model!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
         ) : null}
         {!sheet ? <button type="button" className="gx-hbtn" onClick={startSheet} data-testid="beats-by-hand">Or write the beats by hand</button> : null}
@@ -262,9 +322,9 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
           </div>
           {importError ? <p className="gx-gen-error" role="alert" data-testid="beats-import-error">{importError}</p> : null}
           {source ? (
-            <AgentAction id="beats-import" estimateLabel="Estimate the summary" startLabel={(c) => `Summarise into beats · up to ${c} credits`}
+            <AgentAction id="beats-import" estimateLabel="Estimate the summary" startLabel={(price) => `Summarise into beats · up to ${price}`}
               quote={importQuote} busy={runs.busy} blocked={importBlocked} secondary={Boolean(sheet)}
-              describe={(qq) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${qq.value.estimateCredits.toLocaleString()} credits`}
+              describe={(qq, price) => `${qq.value.calls} agent steps · ${thinkingModelName(qq.input.model)} · up to ${price}`}
               onEstimate={() => void runs.estimate({ kind: "beatsheet", model: model!.id, effort: agent.effort })} onStart={() => void runs.start()} onChange={runs.clearQuote} />
           ) : null}
         </div>
@@ -323,12 +383,18 @@ function BeatsBody({ editor, scope, onBrief, onBoards }: { editor: ReturnType<ty
         <section className="gx-gen-card" aria-label="Redraft the script" data-testid="beats-redraft" data-section="redraft">
           <span className="gx-eyebrow" data-functional-label="">Redraft the script from these beats</span>
           <p className="gx-hint">The agent rewrites the script so it plays this beat sheet — your edits, in this order — and the new draft goes to Brief & Script for your review.</p>
-          <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="beats-notes-attach"><textarea className="gx-textarea pd-small" maxLength={5000} value={notes} placeholder="Anything else for the writer (optional)" onChange={(e) => setNotes(e.target.value)} data-testid="beats-notes" />{attach.chips}</PromptAttach>
+          <PromptAttach scope={scope} projectId={p.id} onAttach={attach.onAttach} label="Attach for the writer" testId="beats-notes-attach"><textarea className="gx-textarea pd-small" maxLength={NOTES_LIMIT} value={notes} placeholder="Anything else for the writer (optional)" onChange={(e) => setNotes(e.target.value)} data-testid="beats-notes" />{attach.chips}</PromptAttach>
           {activeWrite ? <p className="gx-hint" role="status" data-testid="beats-redraft-progress">{agentLabel(agentFamilyOf(activeWrite.model) ?? "claude")} is redrafting · step {Math.min(activeWrite.completedSteps + 1, activeWrite.totalSteps)} of {activeWrite.totalSteps}</p> : null}
-          <AgentAction id="beats-redraft" estimateLabel="Estimate the redraft" startLabel={(c) => `Redraft the script · up to ${c} credits`} quote={redraftQuote} busy={runs.busy}
+          {failedRedraft && !activeWrite ? (
+            <div className="pd-failed" role="alert" data-testid="beats-redraft-failed">
+              <p className="gx-gen-error">{failedRedraft.error ?? "The redraft could not finish."}</p>
+              {notesAgain ? <button type="button" className="gx-hbtn" onClick={() => setNotes(notesAgain)} data-testid="beats-notes-restore">{notes.trim() ? "Add those notes again" : "Use those notes again"}</button> : null}
+            </div>
+          ) : null}
+          <AgentAction id="beats-redraft" estimateLabel="Estimate the redraft" startLabel={(price) => `Redraft the script · up to ${price}`} quote={redraftQuote} busy={runs.busy}
             blocked={blocked ?? (stale ? "Break the current script down first, or it is redrafted from beats of an older draft." : null)} secondary
             onEstimate={() => void runs.estimate({ kind: "write", model: model!.id, effort: agent.effort, fromBeats: true, ...(notes.trim() ? { instructions: notes.trim() } : {}), ...attach.input })}
-            onStart={() => void runs.start().then((held) => { if (held) setNotes(""); })} onChange={runs.clearQuote} />
+            onStart={() => void runs.start().then(clearSent(redraftQuote?.input))} onChange={runs.clearQuote} />
           {lastRedraft && !activeWrite ? <button type="button" className="gx-hbtn" onClick={onBrief} data-testid="beats-review-redraft">A new draft is ready · review it in Brief & Script ›</button> : null}
         </section>
       ) : null}
