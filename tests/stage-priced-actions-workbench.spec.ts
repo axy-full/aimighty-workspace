@@ -178,3 +178,39 @@ test("transcription reads its quote on selection and waits for the priced action
   expect(posted[0]).toMatchObject({ sourceGenId: "gen_dialogue", maxCredits: 3 });
   expect(posted[0]).not.toHaveProperty("quoteOnly");
 });
+
+test("a still re-edit quotes its current source and instruction without an extra price action", async ({ page }) => {
+  await signInLocally(page.request);
+  const store = { current: fixture() };
+  await mockProjects(page, store);
+  await mockMedia(page);
+  await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_still", title: "Window still", prompt: "Window still", projectId: "prod-stage" })] });
+  const posted: Record<string, unknown>[] = [];
+  const quoted: Record<string, unknown>[] = [];
+  await page.route(/\/api\/generate(\/quote)?$/, (route) => {
+    const body = route.request().postDataJSON();
+    if (route.request().url().endsWith("/quote")) {
+      quoted.push(body);
+      return route.fulfill({ json: { estimatedCredits: 6, fingerprint: "a".repeat(64) } });
+    }
+    posted.push(body);
+    return route.fulfill({ json: { id: "gen_reedit", status: "queued" } });
+  });
+  await page.route(/\/api\/jobs\/gen_reedit$/, (route) => route.fulfill({ json: { generation: generation({ id: "gen_reedit", status: "running" }) } }));
+  await page.goto(`/suites?suite=studio&page=takes&project=${store.current.id}`);
+  await page.getByTestId("edit-takes").getByText("Window still", { exact: true }).click();
+  const action = page.getByTestId("edit-render");
+  await expect(action).toBeDisabled();
+  expect(quoted).toHaveLength(0);
+  await page.getByTestId("edit-instruction").fill("Rain on the window, preserve the camera position");
+  await expect(action).toHaveText("Re-edit · 6 credits");
+  expect(quoted.at(-1)).toMatchObject({ references: [{ genId: "gen_still", role: "reference_image" }] });
+  expect(String(quoted.at(-1)!.prompt)).toContain("Rain on the window");
+  expect(posted).toHaveLength(0);
+  await fit(page, action);
+  await action.click();
+  await expect(action).toHaveText("Rendering…");
+  await expect(action).toBeDisabled();
+  expect(posted).toHaveLength(1);
+  expect(posted[0]).toMatchObject({ maxCredits: 6, references: [{ genId: "gen_still", role: "reference_image" }] });
+});
