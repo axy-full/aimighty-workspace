@@ -265,6 +265,7 @@ export async function sendClaimedGeneration(options: {
     });
     if (typeof result.id !== "string" || !result.id) return { state: "unknown", reason: "The server has not confirmed a job yet. Press again to check what became of it; it is never sent twice.", lost: true };
     clearPendingGeneration(storage, storageId, attempt.key);
+    announceJob(result.id);
     return { state: "queued", jobId: result.id, status: typeof result.status === "string" ? result.status : "queued", credits, followed: false };
   } catch (error) {
     if (!(error instanceof StudioRequestError) || error.status >= 500) return { state: "unknown", reason: LOST_REPLY, lost: true };
