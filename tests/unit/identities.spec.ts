@@ -13,7 +13,7 @@ test("a cited name becomes the identity's trigger, and training and a Flux still
   expect(trainCostUsd(TRAIN_STEPS)).toBeGreaterThan(0);
   expect(billCredits(trainCostUsd(TRAIN_STEPS), "identity-training")).toBeGreaterThanOrEqual(1);
   expect(estimateImageCostUsd("fal-ai/flux-lora", "1K", 0)?.net).toBe(RENDER_USD_PER_MP);
-  expect(billCredits(RENDER_USD_PER_MP, "fal-ai/flux-lora")).toBe(1); // 0.035 × 1.5 / 0.10 = 0.525 → 1 whole credit
+  expect(billCredits(RENDER_USD_PER_MP, "fal-ai/flux-lora")).toBe(1); // under one credit, rounded up to one whole credit
 });
 
 /* fal bills the renderer per megapixel, rounded up: a size just over one is two. The quote,

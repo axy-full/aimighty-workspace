@@ -8,8 +8,8 @@ import type { TaskId } from "./tasks";
  * Server-side only, and structurally so: it reads lib/vendorRates.ts, which
  * is the file the browser must never be given. Every one of these used to
  * live in lib/models.ts beside the catalogue — which the composer imports —
- * so the engines' real per-second rates went into a public static chunk and
- * the platform's markup was one division away.
+ * so the engines' real per-second rates went into a public static chunk,
+ * beside the prices the browser showed.
  *
  * The browser is served lib/rateTable.ts instead: the same arithmetic over a
  * table the server already converted into the unit that workspace pays in.
