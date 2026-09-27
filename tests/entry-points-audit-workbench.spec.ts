@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { DESKTOP } from "./helpers/appPagesAudit";
+import { siteOrigin } from "../lib/site";
 
 /**
  * Part of the app-pages audit, in a real browser against a local ENGINE_MOCK=1
@@ -55,21 +56,25 @@ test("Suites Workspace › Engines links the token page; the platform desk is fo
   await expect(page.getByTestId("platform-desk")).toHaveCount(0);
 });
 
-test("public metadata: robots, sitemap, one icon per URL, and client review pages without Particl's install card", async ({ page }, info) => {
+test("public metadata: robots, sitemap, one icon per URL, and client review pages without Particl's install card", async ({ page, baseURL }, info) => {
   test.skip(info.project.name !== DESKTOP, "Metadata, once.");
+  /* The server builds these URLs with siteOrigin() from its APP_ORIGIN (CI gives the
+     runner the same env); a local run without it falls back to the server it is testing. */
+  const origin = siteOrigin() ?? new URL(baseURL!).origin;
   const robots = await (await page.request.get("/robots.txt")).text();
   for (const path of ["/api/", "/invite/", "/reset/"]) expect(robots).toContain(`Disallow: ${path}`);
   /* A review link may be fetched for its preview card; noindex (meta and header) keeps it out of every index. */
   expect(robots).not.toContain("Disallow: /review/");
   expect((await page.request.get("/review/not-a-real-token")).headers()["x-robots-tag"]).toBe("noindex, nofollow");
   expect((await page.request.get("/terms")).headers()["x-robots-tag"]).toBeUndefined();
-  expect(robots).toContain("Sitemap: http://localhost:4803/sitemap.xml");
-  expect(await (await page.request.get("/sitemap.xml")).text()).toContain("<loc>http://localhost:4803/terms</loc>");
+  expect(robots).toContain(`Sitemap: ${origin}/sitemap.xml`);
+  expect(await (await page.request.get("/sitemap.xml")).text()).toContain(`<loc>${origin}/terms</loc>`);
   const icon = await page.request.get("/icon.png");
   expect(createHash("sha1").update(await icon.body()).digest("hex")).toBe(createHash("sha1").update(readFileSync("public/icon.png")).digest("hex"));
 
   await page.goto("/terms");
-  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /^http:\/\/localhost:4803\/icon\.png/);
+  const literal = origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", new RegExp(`^${literal}/icon\\.png`));
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", "Terms · Particl");
   expect(await page.title()).toBe("Terms · Particl");
 
