@@ -1,3 +1,4 @@
+import { CREW_MCP_SCHEMA } from "./crew/mcp-schema";
 import { fenceDatabase } from "./recoveryDatabaseClient";
 import { columnInstaller } from "./schemaInitialization";
 import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
@@ -52,6 +53,7 @@ export const isSuperAdmin = (email: string | null | undefined) => {
 };
 
 const SCHEMA = [
+  ...CREW_MCP_SCHEMA,
   ...SECURITY_AUDIT_SCHEMA,
   ...ACCOUNT_SECURITY_SCHEMA,
   `CREATE TABLE IF NOT EXISTS accounts (
