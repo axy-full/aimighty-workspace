@@ -35,7 +35,7 @@ export const BASIS = {
   /* docs.higgsfield.ai/docs/help/faq */
   "hf-refund": "Higgsfield API FAQ: failed and NSFW-flagged requests are not charged; their credits are automatically refunded.",
   "hf-success-only": "Higgsfield API FAQ: you are only billed for successful completions.",
-  /* The connected account's own credit ledger (its MCP `transactions`: spend/refund/grant/deduct). */
+  /* An explicitly verified receipt for one connected-account job. No transaction parser is enabled. */
   "hf-ledger": "The account's own credit ledger lists this job.",
   /* higgsfield.ai help centre: failed generations "usually" refund, "specific models might not", Grok is charged at start. */
   "hf-account-silent": "The account's reply names no charge or refund for this job.",
@@ -43,7 +43,6 @@ export const BASIS = {
   "ark-success-only": "ModelArk pricing: only successfully generated videos are charged; a failed generation is not.",
   /* ai.google.dev/gemini-api/docs/billing */
   "google-errors": "Gemini API billing: a request that fails with a 400 or 500 error is not charged.",
-  "google-usage": "The reply's usage states the tokens.",
   /* The AI Gateway's reply (`usage.cost`). */
   "gateway-cost": "The gateway's reply states its cost.",
   /* docs.x.ai/developers/cost-tracking */
@@ -126,7 +125,7 @@ export function outcomeCode(value: unknown): string | null {
   if (typeof value === "number" && Number.isInteger(value)) return String(value);
   if (typeof value !== "string") return null;
   const code = value.trim();
-  return /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/.test(code) ? code : null;
+  return /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/.test(code) && providerText(code) === code ? code : null;
 }
 
 const amountOf = (value: unknown): number | null =>
@@ -226,7 +225,7 @@ export function fieldMessage(detail: unknown): string | null {
 
 /* ── Higgsfield: the person's connected account (MCP) ─────────────────── */
 
-/** The account's credit ledger for one job, as lib/higgsfield-consumer/ledger.ts reads it. */
+/** A verified receipt for one job. No connected-account transaction reader is enabled. */
 export type AccountLedger = { refunded: number | null; spent: number | null; refund: boolean; spend: boolean };
 
 /**
@@ -281,38 +280,20 @@ export function arkRefusalOutcome(status: number, body: unknown): ProviderOutcom
 
 /* ── Google (Nano Banana), direct ────────────────────────────────────── */
 
-/** Google answered 4xx/5xx: its billing page says a 400 or 500 error is not charged. */
+/** Only the error statuses expressly covered by Google's billing documentation. */
 export function googleErrorOutcome(status: number, body: unknown): ProviderOutcome {
   const parsed = parseBody(body);
   const error = record(parsed) && record(parsed.error) ? parsed.error : null;
   const code = outcomeCode(error?.status ?? error?.code) ?? httpCode(status);
   const message = providerText(error?.message ?? (typeof parsed === "string" ? parsed : null));
-  const billing = status >= 400 && status < 600 ? said("google-errors", "not_charged") : unknown();
+  const billing = (status === 400 || status === 500) ? said("google-errors", "not_charged") : unknown();
   return outcome("google", "submit", code, message, billing, { status });
 }
 
-export type TokenUsage = { total_tokens?: unknown; input_tokens?: unknown; output_tokens?: unknown; prompt_tokens?: unknown; completion_tokens?: unknown };
-export function usageTokens(usage: unknown): number | null {
-  if (!record(usage)) return null;
-  const u = usage as TokenUsage;
-  const total = amountOf(u.total_tokens);
-  if (total != null) return total;
-  const input = amountOf(u.input_tokens ?? u.prompt_tokens), output = amountOf(u.output_tokens ?? u.completion_tokens);
-  return input == null && output == null ? null : (input ?? 0) + (output ?? 0);
-}
-
-/**
- * Google answered 200 with no image — the model declined to draw it, in its
- * own words when it gave any. It reported the tokens it used in `usage`;
- * that count is its charge (in its own unit, tokens). With no usage, it did
- * not say. Why it declined is read from its reason or words, never assumed.
- */
-export function googleRefusalOutcome(usage: unknown, text: unknown, finishReason?: unknown): ProviderOutcome {
-  const tokens = usageTokens(usage);
+/** Usage tokens describe processing, not a settled charge or refund. */
+export function googleRefusalOutcome(_usage: unknown, text: unknown, finishReason?: unknown): ProviderOutcome {
   const code = outcomeCode(finishReason) ?? "no_image";
-  const message = providerText(text);
-  const billing = tokens == null ? unknown() : said("google-usage", tokens > 0 ? "billed" : "not_charged", tokens, "tokens");
-  return outcome("google", "run", code, message, billing);
+  return outcome("google", "run", code, providerText(text), unknown());
 }
 
 /* ── The AI Gateway ──────────────────────────────────────────────────── */
@@ -439,7 +420,7 @@ export function parseOutcome(value: unknown): ProviderOutcome | null {
   const billing = record(v.billing) ? v.billing : null;
   if (!OUTCOME_PROVIDERS.includes(v.provider as OutcomeProvider) || (v.stage !== "submit" && v.stage !== "run") ||
       !FAILURE_KINDS.includes(v.kind as FailureKind) || !billing || !BILLING_STATES.includes(billing.state as BillingState) ||
-      typeof billing.basis !== "string" || !(billing.basis in BASIS) || typeof v.at !== "number") return null;
+      typeof billing.basis !== "string" || !Object.hasOwn(BASIS, billing.basis) || (typeof v.at !== "number" || !Number.isFinite(v.at) || v.at < 0)) return null;
   const code = outcomeCode(v.code);
   if (!code) return null;
   const amount = amountOf(billing.amount);
@@ -486,12 +467,13 @@ export function takeFailure(outcome: ProviderOutcome | null, options: { credits:
   if (!outcome)
     return { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: options.credits ? null : unknown(), payer: options.credits ? null : "own" };
   let billing: ProviderBilling | null = outcome.billing;
-  if (options.credits) {
-    if (outcome.funding !== "own") billing = null;
-    else if (billing.unit === "usd") billing = { state: billing.state, basis: billing.basis };
-  }
-  const payer = !options.credits ? "own" : outcome.funding === "own" ? "own" : outcome.funding === "platform" ? "platform" : null;
-  return { provider: outcome.provider, stage: outcome.stage, code: outcome.code, kind: outcome.kind, message: outcome.message, billing, payer };
+  if (outcome.funding !== "own") billing = null;
+  else if (options.credits && billing.unit === "usd") billing = { state: billing.state, basis: billing.basis };
+  const payer = outcome.funding ?? (options.credits ? null : "own");
+  // Platform diagnostics can contain balances, rates or credential material.
+  // Customer-facing failures use the typed reason; raw diagnostics stay private.
+  const message = options.credits || outcome.funding !== "own" ? null : outcome.message;
+  return { provider: outcome.provider, stage: outcome.stage, code: outcome.code, kind: outcome.kind, message, billing, payer };
 }
 
 /** A take's failure from the connected account: always its owner's own credits. */
@@ -506,7 +488,7 @@ export function parseTakeFailure(value: unknown): TakeFailure | null {
   if (!record(value)) return null;
   const code = outcomeCode(value.code);
   if (!code || !FAILURE_KINDS.includes(value.kind as FailureKind)) return null;
-  const billing = record(value.billing) && BILLING_STATES.includes(value.billing.state as BillingState) && typeof value.billing.basis === "string" && value.billing.basis in BASIS
+  const billing = record(value.billing) && BILLING_STATES.includes(value.billing.state as BillingState) && typeof value.billing.basis === "string" && Object.hasOwn(BASIS, value.billing.basis)
     ? (() => {
         const b = value.billing as Record<string, unknown>;
         const amount = amountOf(b.amount), unit = BILLING_UNITS.includes(b.unit as BillingUnit) ? (b.unit as BillingUnit) : undefined;

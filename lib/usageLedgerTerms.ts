@@ -15,7 +15,7 @@
 
 export type LedgerState =
   | "charged" | "held" | "running" | "not-billed" | "own-key"
-  | "failed-not-billed" | "failed-charged" | "waiting" | "unpriced";
+  | "failed-not-billed" | "failed-charged" | "failed-unknown" | "waiting" | "unpriced";
 
 /**
  * A failed job's row also says why, in the product's words (`why`, lib/errors.ts),
@@ -55,14 +55,13 @@ export function creditLedgerState(status: string, credits: number, paidByPlatfor
 }
 
 /**
- * A take in a workspace that pays its vendors. Render cost exists only on
- * delivered work, so a failed take with none recorded was not billed; a
- * delivered one with none recorded is not claimed either way.
+ * A take in a workspace that pays its vendors. Missing accounting evidence
+ * is unknown, including when a render failed.
  */
 export function dollarLedgerState(status: string, usd: number | null): LedgerState {
   const billed = usd != null && Number.isFinite(usd) && usd > 0;
   if (status === "succeeded") return billed ? "charged" : usd == null ? "unpriced" : "not-billed";
-  if (status === "failed" || status === "cancelled") return billed ? "failed-charged" : "failed-not-billed";
+  if (status === "failed" || status === "cancelled") return billed ? "failed-charged" : usd == null ? "failed-unknown" : "failed-not-billed";
   if (status === "held") return "waiting";
   return "running";
 }
@@ -81,6 +80,7 @@ export const LEDGER_LABEL: Record<LedgerState, string> = {
   "own-key": "Own key · not billed",
   "failed-not-billed": "Failed · not billed",
   "failed-charged": "Failed · charged",
+  "failed-unknown": "Failed · charge unknown",
   waiting: "Waiting",
   unpriced: "No cost recorded",
 };
@@ -135,6 +135,7 @@ export function settledFact(page: { unit?: unknown; rows?: unknown } | null, quo
     case "not-billed": case "failed-not-billed": return "Not billed";
     case "own-key": return "Own key · not billed";
     case "failed-charged": return `${ledgerAmount(row)} · failed`;
+    case "failed-unknown": return "Charge unknown";
     case "unpriced": return "—";
     default: return ledgerAmount(row);
   }

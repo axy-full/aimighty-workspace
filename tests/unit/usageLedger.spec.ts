@@ -55,7 +55,7 @@ test("each state is read off the ledger alone: held while reserved, not billed o
   expect(dollarLedgerState("succeeded", 1.3)).toBe("charged");
   expect(dollarLedgerState("succeeded", 0)).toBe("not-billed");
   expect(dollarLedgerState("succeeded", null)).toBe("unpriced");
-  expect(dollarLedgerState("failed", null)).toBe("failed-not-billed");
+  expect(dollarLedgerState("failed", null)).toBe("failed-unknown");
   expect(dollarLedgerState("cancelled", 0)).toBe("failed-not-billed");
   expect(dollarLedgerState("failed", 0.4)).toBe("failed-charged");
   expect(dollarLedgerState("held", null)).toBe("waiting");
@@ -244,11 +244,11 @@ test("a dollar workspace reads its takes in dollars; the connected account's and
     const page = await usageLedgerPage(q(), admin("u_producer"));
     expect(page.unit).toBe("usd");
     expect(page.rows.map((r) => [r.id, r.state])).toEqual([
-      ["d_charged", "charged"], ["d_failed", "failed-not-billed"], ["d_cancelled", "failed-not-billed"],
+      ["d_charged", "charged"], ["d_failed", "failed-unknown"], ["d_cancelled", "failed-not-billed"],
       ["d_running", "running"], ["d_held", "waiting"], ["d_unpriced", "unpriced"],
     ]);
     expect(page.rows[0]).toMatchObject({ usd: 1.3, who: "Producer" });
-    expect(page.totals).toEqual({ jobs: 6, charged: 1.3, notBilled: 2 });
+    expect(page.totals).toEqual({ jobs: 6, charged: 1.3, notBilled: 1 });
     expect(JSON.stringify(page)).not.toContain("credits");
     expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd,failure,provider_charge");
   });

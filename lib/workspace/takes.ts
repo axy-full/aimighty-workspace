@@ -37,7 +37,7 @@ export type Take = {
   version: string;
   /** "2.5 · 5s" or "4032×3024 · JPEG" / "1920×1080 · MP4 · 12s". */
   meta: string;
-  /** Billed credits once settled (failed → 0); null for uploads, renders in flight and non-credit billing. */
+  /** Billed credits once settled; null for uploads, renders in flight and non-credit billing. */
   credits: number | null;
   /** Billed dollars, only for a workspace billed in dollars. */
   usd: number | null;
@@ -97,7 +97,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
   });
 }
 
-/** "12 assets · 84 cr settled" — summed from billed credits only; failed renders count 0. */
+/** "12 assets · 84 cr settled" — summed from recorded billed credits only. */
 export function takesSubtitle(takes: readonly Pick<Take, "credits">[]): string {
   const settled = takes.reduce((sum, t) => sum + (t.credits ?? 0), 0);
   return `${takes.length.toLocaleString("en-US")} ${takes.length === 1 ? "asset" : "assets"} · ${settled.toLocaleString("en-US")} cr settled`;

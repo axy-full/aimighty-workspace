@@ -48,8 +48,6 @@ async function serviceFixture() {
     generation: randomUUID(), wallet: randomUUID(), credits: 9, providerJobId: randomUUID(), mediaId: randomUUID(),
     mode: "accepted" as "accepted" | "uncertain" | "throw-after-claim", catalogueReads: 0, quoteCount: 0, importCount: 0, paidCount: 0, statusCount: 0, collectCount: 0,
     pollRaw: undefined as unknown, collectorError: undefined as unknown, submitBarrier: undefined as (() => Promise<void>) | undefined,
-    /** What the account's own credit ledger says about the job, read in the same session as a failed status. */
-    pollLedger: undefined as unknown, ledgerAsked: 0,
     originals: new Map<string, ConsumerVideoOriginal>(),
     batchPaid: 0, batchItems: [] as unknown[], batchResult: null as null | { state: string; providerJobId?: string }[], presetChecks: [] as string[],
     /** Runs inside the batch call's preflight, before its admission: where a lost reply's check can land. */
@@ -156,12 +154,11 @@ async function serviceFixture() {
         state.batchPaid++;
         return { raw: { jobs: [] }, items: state.batchResult ?? entries.map(() => ({ state: "uncertain" })) };
       },
-      readConsumerGenerationJob: async (_token: string, providerJobId: string, wallet: string, model: string, type: string, options: { ledgerOnFailure?: boolean } = {}) => {
+      readConsumerGenerationJob: async (_token: string, providerJobId: string, wallet: string, model: string, type: string) => {
         state.statusCount++;
         expect(providerJobId).toBe(state.providerJobId); expect(model).toBe("nano_banana_2"); expect(type).toBe("image");
         if (wallet !== state.wallet) throw new contract.ConsumerVideoError("workspace_changed");
-        if (options.ledgerOnFailure) state.ledgerAsked++;
-        return { raw: state.pollRaw ?? { job_id: providerJobId, status: "processing" }, pollAfterSeconds: 20, ...(state.pollLedger === undefined ? {} : { ledger: state.pollLedger }) };
+        return { raw: state.pollRaw ?? { job_id: providerJobId, status: "processing" }, pollAfterSeconds: 20 };
       },
     },
   };
@@ -344,44 +341,18 @@ test("polling collects the verified original once, records failure from the prov
     f.state.collectorError = undefined;
   }));
 
-test("an NSFW rejection keeps the account's own status and words; the charge is its ledger's to say — unknown, then refunded in its credits, never overwritten", async () =>
+test("an NSFW rejection keeps its status and redacted words without inferring a refund", async () =>
   fixture(async (f) => {
-    const { accountBilling } = await import("../../lib/providerOutcome");
     const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
     await f.service.submitConsumerGenerationJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
     const params = JSON.parse((await f.jobs.getConsumerJob(scoped(quote.id)))!.payloadJson).params;
     f.state.pollRaw = { generation: { ...terminal(f, params, "nsfw").generation, error: { message: "Flagged by the safety checker. Contact ops@example.com" } } };
     const failed = await f.service.pollConsumerGeneration(scoped(quote.id));
-    /* Its real status is kept (not only "provider_failed"), its words bounded and redacted, and the charge unknown: the ledger has not named it. */
     expect(failed.job).toMatchObject({ status: "failed", failureCode: "provider_failed",
       failure: { provider: "higgsfield_account", code: "nsfw", kind: "content_filter", message: "Flagged by the safety checker. Contact [email]", payer: "account", billing: { state: "unknown", basis: "hf-account-silent" } } });
-    expect(f.state.ledgerAsked).toBe(1);
-    /* The heartbeat looks the charge up again, a few times, until the ledger names the job. */
-    const claimed = await f.jobs.claimConsumerBillingCheck(["generation"]);
-    expect(claimed).toMatchObject({ id: quote.id, workflow: "generation" });
-    expect(await f.jobs.claimConsumerBillingCheck(["generation"])).toBeNull();
-    await f.jobs.recordConsumerBilling({ ...scoped(quote.id), billing: null });
-    expect((await f.service.consumerGenerationView((await f.jobs.getConsumerJob(scoped(quote.id)))!)).failure?.billing?.state).toBe("unknown");
-    await f.jobs.recordConsumerBilling({ ...scoped(quote.id), billing: accountBilling({ refund: true, spend: true, refunded: 9, spent: 9 }) });
-    const refunded = await f.service.consumerGenerationView((await f.jobs.getConsumerJob(scoped(quote.id)))!);
-    expect(refunded.failure).toMatchObject({ code: "nsfw", billing: { state: "refunded", amount: 9, unit: "higgsfield_credits", basis: "hf-ledger" } });
-    /* A settled charge is never overwritten, and is not looked up again. */
-    await f.jobs.recordConsumerBilling({ ...scoped(quote.id), billing: accountBilling({ refund: false, spend: true, refunded: null, spent: 9 }) });
-    expect((await f.service.consumerGenerationView((await f.jobs.getConsumerJob(scoped(quote.id)))!)).failure?.billing?.state).toBe("refunded");
-    await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET billing_checked_at=0 WHERE id=?", args: [quote.id] });
-    expect(await f.jobs.claimConsumerBillingCheck(["generation"])).toBeNull();
-    /* No dollar, no conversion: the account's own credits only. */
-    expect(JSON.stringify(refunded)).not.toMatch(/usd|\$/i);
-
-    /* The ledger named the job in the same read as the failure: refunded at once. */
-    const second = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt: "Second" }, randomUUID());
-    f.state.providerJobId = randomUUID();
-    await f.service.submitConsumerGenerationJob(scoped(second.id), { workspaceId: f.state.wallet, credits: f.state.credits });
-    f.state.pollRaw = terminal(f, JSON.parse((await f.jobs.getConsumerJob(scoped(second.id)))!.payloadJson).params, "ip_detected");
-    f.state.pollLedger = { refund: true, spend: true, refunded: 9, spent: 9 };
-    const known = await f.service.pollConsumerGeneration(scoped(second.id));
-    expect(known.job.failure).toMatchObject({ code: "ip_detected", kind: "rights", billing: { state: "refunded", amount: 9 } });
-    f.state.pollLedger = undefined;
+    expect((await f.service.pollConsumerGeneration(scoped(quote.id))).job.failure?.billing?.state).toBe("unknown");
+    expect(f.state.paidCount).toBe(1);
+    expect(f.state.statusCount).toBe(1);
   }));
 
 test("a Gen composer take carries its composer, completes on a status read nobody is watching, and an editor that loaded the draft meanwhile still saves", async () =>

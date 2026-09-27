@@ -5,11 +5,10 @@ import path from "node:path";
 import {
   accountBilling, arkRefusalOutcome, arkTaskOutcome, elevenLabsErrorOutcome, falErrorOutcome, gatewayErrorOutcome, gatewayRefusalOutcome,
   googleErrorOutcome, googleRefusalOutcome, higgsfieldAccountOutcome, higgsfieldRefusalOutcome, higgsfieldRequestOutcome, noAnswerOutcome,
-  openaiErrorOutcome, parseOutcome, parseTakeFailure, providerText, serializeOutcome, silentOutcome, takeFailure, accountFailure,
+  openaiErrorOutcome, outcomeCode, parseOutcome, parseTakeFailure, providerText, serializeOutcome, silentOutcome, takeFailure, accountFailure,
   xaiErrorOutcome, xaiVideoOutcome, type ProviderOutcome, type TakeFailure,
 } from "../../lib/providerOutcome";
 import { billingSentence, failedChip, failureChargeWord, failureCopy, failureLine, failureUncharged } from "../../lib/errors";
-import { accountLedgerFor } from "../../lib/higgsfield-consumer/ledger";
 
 /*
  * What a provider did with a take it rejected or failed, read from its own
@@ -58,33 +57,6 @@ test("the connected account: its status alone never settles the charge; its own 
   expect(accountFailure(null, "invalid_result")).toMatchObject({ kind: "not_kept" });
 });
 
-test("the account's ledger is read strictly: an entry counts only when it names the job and says refund or spend", () => {
-  const other = "9a9a9a9a-1111-4222-8333-444455556666";
-  const page = {
-    items: [
-      { id: "tx_4", type: "grant", amount: 500, created_at: 4 },
-      { id: "tx_3", type: "refund", amount: 12, job_id: JOB.toUpperCase(), created_at: 3 },
-      { id: "tx_2", type: "spend", amount: -12, job_id: JOB, created_at: 2 },
-      { id: "tx_1", type: "spend", amount: -40, job_id: other, created_at: 1 },
-    ],
-    next_cursor: 20,
-  };
-  expect(accountLedgerFor(page, JOB)).toEqual({ refund: true, spend: true, refunded: 12, spent: 12 });
-  /* Another job's entries never count for this one. */
-  expect(accountLedgerFor(page, other)).toEqual({ refund: false, spend: true, refunded: null, spent: 40 });
-  /* The job named a level down, under any key; a list under `transactions` or `data`. */
-  expect(accountLedgerFor({ transactions: [{ kind: "refund", credits: 8, metadata: { generation: { id: JOB } } }] }, JOB)).toEqual({ refund: true, spend: false, refunded: 8, spent: null });
-  expect(accountLedgerFor({ data: [{ type: "Refund", job_id: JOB }] }, JOB)).toEqual({ refund: true, spend: false, refunded: null, spent: null });
-  /* No kind, both kinds, a job it does not name, or an unreadable page: nothing is claimed. */
-  expect(accountLedgerFor({ items: [{ amount: 12, job_id: JOB }] }, JOB)).toBeNull();
-  expect(accountLedgerFor({ items: [{ type: "refund", note: "spend", amount: 12, job_id: JOB }] }, JOB)).toBeNull();
-  expect(accountLedgerFor({ items: [{ type: "refund", amount: 12, job_id: other }] }, JOB)).toBeNull();
-  expect(accountLedgerFor("Rate limited", JOB)).toBeNull();
-  expect(accountLedgerFor(page, "not-a-uuid")).toBeNull();
-  /* Two amounts that disagree name no amount. */
-  expect(accountLedgerFor({ items: [{ type: "refund", amount: 12, credits: 13, job_id: JOB }] }, JOB)).toEqual({ refund: true, spend: false, refunded: null, spent: null });
-});
-
 test("BytePlus ModelArk: a failed or refused Seedance task is not charged (only successfully generated videos are)", () => {
   const moderated = arkTaskOutcome({ id: "cgt-2026", model: "dreamina-seedance-2-5-260628", status: "failed",
     error: { code: "OutputVideoSensitiveContentDetected", message: "The generated video may contain sensitive information." } })!;
@@ -101,13 +73,13 @@ test("BytePlus ModelArk: a failed or refused Seedance task is not charged (only 
   expect(arkRefusalOutcome(502, "<html>Bad gateway</html>")).toMatchObject({ code: "http_502", billing: { state: "unknown" } });
 });
 
-test("Google: a 400 or 500 is not charged (its billing page); a reply with no image bills the tokens its usage states", () => {
+test("Google: only documented HTTP refusals establish no charge; usage tokens alone do not establish billing", () => {
   expect(googleErrorOutcome(400, { error: { code: 400, message: "Request contains an invalid argument.", status: "INVALID_ARGUMENT" } }))
     .toMatchObject({ provider: "google", code: "INVALID_ARGUMENT", kind: "invalid_request", billing: { state: "not_charged", basis: "google-errors" } });
-  expect(googleErrorOutcome(503, { error: { code: 503, message: "The model is overloaded.", status: "UNAVAILABLE" } })).toMatchObject({ billing: { state: "not_charged" } });
+  expect(googleErrorOutcome(503, { error: { code: 503, message: "The model is overloaded.", status: "UNAVAILABLE" } })).toMatchObject({ billing: { state: "unknown" } });
   const declined = googleRefusalOutcome({ input_tokens: 1030, output_tokens: 260 }, "I can't create images of that person.");
-  expect(declined).toMatchObject({ stage: "run", code: "no_image", message: "I can't create images of that person.", billing: { state: "billed", amount: 1290, unit: "tokens", basis: "google-usage" } });
-  expect(googleRefusalOutcome({ total_tokens: 0 }, null)).toMatchObject({ billing: { state: "not_charged", amount: 0, unit: "tokens" } });
+  expect(declined).toMatchObject({ stage: "run", code: "no_image", message: "I can't create images of that person.", billing: { state: "unknown", basis: "silent" } });
+  expect(googleRefusalOutcome({ total_tokens: 0 }, null)).toMatchObject({ billing: { state: "unknown" } });
   expect(googleRefusalOutcome(undefined, "No.")).toMatchObject({ billing: { state: "unknown", basis: "silent" } });
   expect(googleRefusalOutcome({ total_tokens: 900 }, "Blocked.", "IMAGE_SAFETY")).toMatchObject({ code: "IMAGE_SAFETY", kind: "content_filter" });
 });
@@ -171,6 +143,14 @@ test("a provider's words are kept bounded and never carry a secret, a link, a to
   expect(providerText(42)).toBeNull();
 });
 
+test("diagnostic codes cannot expose a credential disguised as a machine code", () => {
+  expect(outcomeCode("sk-unitfixture1234567890secret")).toBeNull();
+  expect(outcomeCode("xai-unitfixture1234567890secret")).toBeNull();
+  expect(outcomeCode("token:unitfixture1234567890secret")).toBeNull();
+  expect(outcomeCode("InputImageSensitiveContentDetected.PolicyViolation")).toBe("InputImageSensitiveContentDetected.PolicyViolation");
+  expect(openaiErrorOutcome(400, { error: { code: "sk-unitfixture1234567890secret" } }).code).toBe("http_400");
+});
+
 test("an outcome survives storage exactly; anything unreadable reads as nothing (the take says 'didn't say')", () => {
   const outcome: ProviderOutcome = { ...higgsfieldAccountOutcome("nsfw", { ledger: { refund: true, spend: true, refunded: 12, spent: 12 }, at: 5 }) };
   expect(parseOutcome(serializeOutcome(outcome))).toEqual(outcome);
@@ -188,7 +168,7 @@ test("who may see the provider's charge: never on the platform's key for a credi
   /* The workspace's own key, in a credit workspace: the state, never the dollars. */
   expect(takeFailure({ ...xai, funding: "own" }, { credits: true }).billing).toEqual({ state: "billed", basis: "xai-ticks" });
   const google = { ...googleRefusalOutcome({ total_tokens: 1290 }, null), funding: "own" as const };
-  expect(takeFailure(google, { credits: true }).billing).toMatchObject({ state: "billed", amount: 1290, unit: "tokens" });
+  expect(takeFailure(google, { credits: true }).billing).toMatchObject({ state: "unknown" });
   /* A workspace that pays its vendors: its own money, in the vendor's unit. */
   expect(takeFailure({ ...xai, funding: "own" }, { credits: false }).billing).toEqual({ state: "billed", amount: 0.04, unit: "usd", basis: "xai-ticks" });
   /* No outcome recorded (an older row): unknown where the viewer may see it, nothing where they may not. */
@@ -246,7 +226,7 @@ test("a thrown adapter error becomes its provider's outcome; one that never left
   expect(outcomeOfError(new XaiHttpError(400, "refused", JSON.stringify({ error: "Too long" })), { provider: "xai" })).toMatchObject({ provider: "xai", message: "Too long" });
   expect(outcomeOfError(new ElevenLabsError(401, "rejected", { detail: { code: "invalid_api_key", message: "Invalid API key" } }), { provider: "elevenlabs" })).toMatchObject({ code: "invalid_api_key" });
   expect(outcomeOfError(new HiggsfieldHttpError(422, "returned 422", JSON.stringify({ detail: "Bad aspect ratio" })), { provider: "higgsfield" })).toMatchObject({ message: "Bad aspect ratio", billing: { state: "not_charged" } });
-  expect(outcomeOfError(new StillRefusalError("declined", googleRefusalOutcome({ total_tokens: 12 }, null)), { provider: "google" })).toMatchObject({ billing: { state: "billed", amount: 12 } });
+  expect(outcomeOfError(new StillRefusalError("declined", googleRefusalOutcome({ total_tokens: 12 }, null)), { provider: "google" })).toMatchObject({ billing: { state: "unknown" } });
   expect(outcomeOfError(new GoogleDoorError("Image engine request failed (400): bad", 400, { error: { status: "INVALID_ARGUMENT" } }), { provider: "google" })).toMatchObject({ billing: { state: "not_charged" } });
   /* The Google door shut before anything was sent (no key): no provider outcome. */
   expect(outcomeOfError(new GoogleDoorError("not connected", null), { provider: "google" })).toBeNull();
@@ -256,4 +236,25 @@ test("a thrown adapter error becomes its provider's outcome; one that never left
   expect(outcomeOfError(new PreflightError("A reference is gone."), { provider: "byteplus" })).toBeNull();
   expect(outcomeOfError(new Error("The video engine did not answer within 120s."), { provider: "byteplus" })).toMatchObject({ code: "no_answer", billing: { state: "unknown", basis: "no-answer" } });
   expect(outcomeOfError(new Error("Workspace storage is full."), { provider: "byteplus" })).toBeNull();
+});
+
+test("provider diagnostics preserve reserved credits and immutable receipt terms", async () => {
+  const { randomUUID } = await import("node:crypto");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { meter } = await import("../../lib/meter");
+  const { fundingOf } = await import("../../lib/providerFailure");
+  const workspaceId = randomUUID(), jobId = randomUUID();
+  const ws = { id: workspaceId, legacy: false, usesPlatformKeys: true, keys: {}, dbUrl: `file:${path.join(dir, `${workspaceId}.db`)}` } as import("../../lib/tenant").TenantWorkspace;
+  await platformReady();
+  await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at,credit_usd,credit_margin) VALUES(?,?,'image','google','fixture','running',1,19,1,1,1,0.25,2)", args: [jobId, workspaceId] });
+  await runInTenant(ws, async () => {
+    await meter({ id: jobId, kind: "image", engine: "google", model: "fixture", status: "failed", engineCostUsd: null,
+      providerOutcome: { ...googleRefusalOutcome({ total_tokens: 1234 }, "No image."), funding: "platform" } }, { critical: true });
+    const row = (await platformDb().execute({ sql: "SELECT billed_credits,credit_usd,credit_margin,provider_outcome FROM meter_events WHERE id=? AND workspace_id=?", args: [jobId, workspaceId] })).rows[0];
+    expect(row).toMatchObject({ billed_credits: 19, credit_usd: 0.25, credit_margin: 2 });
+    expect(parseOutcome(row.provider_outcome)).toMatchObject({ billing: { state: "unknown" }, funding: "platform" });
+    expect(await fundingOf(jobId)).toBe("platform");
+    expect(await fundingOf(randomUUID())).toBe("platform");
+  });
 });

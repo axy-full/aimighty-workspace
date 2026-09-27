@@ -514,8 +514,8 @@ function ProviderChargesCard() {
   };
   return (
     <section className="scard" data-testid="admin-provider-charges">
-      <div className="scard-h"><span>Failed takes · provider charges</span><span>Last 7 days, every workspace, the platform&rsquo;s own keys: what each provider said it did with the charge when it refused or failed a take.</span></div>
-      {failures.summary.length === 0 ? <span className="rail-help">No failed take on the platform&rsquo;s keys in the last week.</span> : (
+      <div className="scard-h"><span>Failed takes · provider charges</span><span>Latest 1,000 recorded failures in the last 7 days, across every workspace using the platform&rsquo;s own keys: what each provider said about the charge.</span></div>
+      {failures.summary.length === 0 ? <span className="rail-help">No provider outcome recorded for a failed take on the platform&rsquo;s keys in the last week.</span> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-[13px]">
             <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Charged</th><th className="pb-2 text-right font-medium">Refunded</th><th className="pb-2 text-right font-medium">Not charged</th><th className="pb-2 text-right font-medium">Didn&rsquo;t say</th><th className="pb-2 text-right font-medium">Charged, by the provider</th></tr></thead>

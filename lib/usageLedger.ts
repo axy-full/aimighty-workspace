@@ -236,7 +236,7 @@ async function dollarTotals(q: LedgerQuery): Promise<DollarLedgerPage["totals"]>
   const rs = await db().execute({
     sql: `SELECT COUNT(*) AS jobs,
                  COALESCE(SUM(CASE WHEN g.status IN ('succeeded','failed','cancelled') THEN COALESCE(${DOLLARS},0) ELSE 0 END),0) AS charged,
-                 COALESCE(SUM(CASE WHEN (g.status IN ('failed','cancelled') AND COALESCE(${DOLLARS},0)<=0)
+                 COALESCE(SUM(CASE WHEN (g.status IN ('failed','cancelled') AND ${DOLLARS} IS NOT NULL AND ${DOLLARS}<=0)
                                     OR (g.status='succeeded' AND ${DOLLARS} IS NOT NULL AND ${DOLLARS}<=0) THEN 1 ELSE 0 END),0) AS not_billed
           FROM generations g WHERE ${where.join(" AND ")}`,
     args,

@@ -232,7 +232,7 @@ const runNote = (job: GenjutsuJob, stalled: Stall | null) => (setAsideUnconfirme
 /** The direction a run was given, else what kind of run it was. */
 const brief = (job: GenjutsuJob) => job.input.prompt.trim() || VARIANT_NAME[job.input.variant];
 
-/** A run's credits: settled once it lands; none for a failed one. */
+/** A run's credits: report a recorded charge or confirmed refund only. */
 const runCredits = (job: GenjutsuJob) => (job.status === "completed" ? `${cr(job.quoteCredits)} settled` : job.status === "failed" ? null : cr(job.quoteCredits));
 
 function RunRow({ job, now, stalled, problem, onRecheck, send }: { job: GenjutsuJob; now: number; stalled: Stall | null; problem: string | null; onRecheck: (id: string) => void; send: Send }) {

@@ -36,6 +36,7 @@ import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
 import { fundedOutcome, outcomeOfPoll, outcomeProviderFor } from "./providerFailure";
+import { failureCopy } from "./errors";
 import { noAnswerOutcome, parseOutcome, serializeOutcome, takeFailure, type TakeFailure } from "./providerOutcome";
 
 export type Generation = {
@@ -174,6 +175,13 @@ export function rowToGeneration(r: any): Generation {
     params = withoutVendorDollars(params);
     if (vendorUnits) { delete params.estCredits; delete params.credits; delete params.tier; }
   }
+  const outcome = r.provider_outcome == null ? null : parseOutcome(String(r.provider_outcome));
+  const failed = r.status === "failed" || r.status === "cancelled";
+  const failure = failed ? takeFailure(outcome, { credits: inCredits }) : null;
+  // A held take discarded before admission has a server-written receipt of
+  // that fact even though it never needed a meter reservation.
+  if (failure && inCredits && r.status === "cancelled" && typeof params.discardedAt === "number")
+    failure.charge = { credits: 0, settled: true };
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -212,12 +220,8 @@ export function rowToGeneration(r: any): Generation {
     refineModel: r.refine_model ?? null,
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
     refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
-    error: r.error ?? null,
-    /* The provider's charge on the platform's key is never sent to a workspace
-       that pays in credits (takeFailure); what Particl charged comes from the ledger. */
-    failure: r.status === "failed" || r.status === "cancelled"
-      ? takeFailure(r.provider_outcome == null ? null : parseOutcome(String(r.provider_outcome)), { credits: inCredits })
-      : null,
+    error: outcome && (inCredits || outcome.funding !== "own") ? failureCopy(outcome.kind, "platform").what : r.error ?? null,
+    failure,
     createdBy: r.created_by ?? "",
     authorName: r.author_name ?? null,
     shotId: r.shot_id ?? null,
@@ -639,7 +643,8 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
       durationS: deliveredSeconds ?? gen.durationS,
       costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
       creditsBilled: (await getGeneration(gen.id))?.creditsBilled ?? null,
-      error: task.error,
+      error: failedOutcome && (creditsApply(currentTenant()?.workspace) || failedOutcome.funding !== "own")
+        ? failureCopy(failedOutcome.kind, "platform").what : task.error,
       failure: TERMINAL.has(task.status) && task.status !== "succeeded"
         ? takeFailure(failedOutcome, { credits: creditsApply(currentTenant()?.workspace) })
         : null,

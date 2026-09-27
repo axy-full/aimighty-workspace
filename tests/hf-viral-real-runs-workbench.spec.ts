@@ -148,7 +148,7 @@ test("History shows runs in words, reads the one still rendering until it lands,
   await expect(cards).toHaveCount(3);
   await expect(cards.nth(0).getByTestId("history-run-status")).toHaveText("Rendering");
   await expect(cards.nth(1).getByTestId("history-run-status")).toHaveText("Checking");
-  await expect(cards.nth(2).getByTestId("history-run-status")).toHaveText("Failed · not billed");
+  await expect(cards.nth(2).getByTestId("history-run-status")).toHaveText("Failed");
   await expect(cards.nth(2).getByRole("button", { name: "Recreate" })).toBeVisible();
   /* What a state means is on the card, not in a tooltip; each card says what sets it apart. */
   await expect(cards.nth(1).getByTestId("history-run-note")).toHaveText("Confirming · never sent twice");
@@ -296,7 +296,7 @@ test("Recent beside the composer: a read that fails says so and retries; each pa
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Object Swap/ }).click();
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
   const swap = page.getByTestId("viral-recent").getByTestId("viral-run-status");
-  await expect(swap).toHaveText(["Checking", "Failed · not billed"]);
+  await expect(swap).toHaveText(["Checking", "Failed"]);
   await noOverflow(page, "viral-recent");
 
   /* A finished row is a way into Takes. */

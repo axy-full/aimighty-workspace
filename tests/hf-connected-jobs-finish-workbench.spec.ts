@@ -244,7 +244,7 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
   confirmed = true;
   await page.clock.fastForward(NEXT_READ_AFTER_FAILURES);
-  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
+  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed");
   await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
   if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
   await shoot(page, info.project.name, "gen-landed", "gen-resumed");

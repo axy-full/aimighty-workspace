@@ -20,7 +20,6 @@ import { XaiHttpError } from "./xaiErrors";
 import { PreflightError } from "./preflight";
 import { FundingSourceChangedError } from "./meter";
 import { billedTo } from "./providers";
-import { paidByPlatformEngine } from "./platformSpend";
 import { platformDb, platformReady } from "./platform";
 import { currentTenant } from "./tenant";
 import {
@@ -82,9 +81,9 @@ export function outcomeOfPoll(provider: string | null | undefined, raw: unknown)
 /**
  * Whose key the provider billed for this job: the meter's own record of who
  * funded it (written at admission, never changed), or — for work that
- * predates the meter — who funds that engine now.
+ * predates the meter — platform-only diagnostics until its historical funding is known.
  */
-export async function fundingOf(id: string, engine: string): Promise<"platform" | "own"> {
+export async function fundingOf(id: string): Promise<"platform" | "own"> {
   const workspaceId = currentTenant()?.workspace?.id;
   if (workspaceId) {
     try {
@@ -92,14 +91,15 @@ export async function fundingOf(id: string, engine: string): Promise<"platform" 
       const row = (await platformDb().execute({ sql: "SELECT paid_by_platform FROM meter_events WHERE id=? AND workspace_id=?", args: [id, workspaceId] })).rows[0];
       if (row) return Number(row.paid_by_platform) === 1 ? "platform" : "own";
     } catch {
-      /* the engine's current funding below */
+      /* Missing funding evidence must never reveal platform diagnostics. */
     }
   }
-  return paidByPlatformEngine(engine) ? "platform" : "own";
+  return "platform";
 }
 
 /** The outcome stamped with whose key it was, ready to store; null stays null. */
 export async function fundedOutcome(outcome: ProviderOutcome | null, id: string, provider: string | null | undefined): Promise<ProviderOutcome | null> {
+  void provider; // Kept compatible with failure call sites; historical funding comes only from the receipt.
   if (!outcome) return null;
-  return { ...outcome, funding: await fundingOf(id, billedTo(provider ?? "byteplus")) };
+  return { ...outcome, funding: await fundingOf(id) };
 }

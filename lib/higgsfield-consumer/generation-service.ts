@@ -328,7 +328,6 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
       claim.job.higgsfieldWorkspaceId!,
       snapshot.params.model,
       snapshot.input.type,
-      { ledgerOnFailure: true },
     );
     pollAfterSeconds = Math.max(15, response.pollAfterSeconds ?? 30);
     const terminal = consumerGenerationOriginalResult(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type);
@@ -338,7 +337,6 @@ export async function pollConsumerGeneration(scope: ConsumerJobScope) {
       /* The account's own status (nsfw, ip_detected, canceled, failed) and words; the charge from its ledger, or unknown. */
       const outcome = higgsfieldAccountOutcome(failed, {
         message: consumerGenerationFailureWords(response.raw, claim.job.providerJobId!, snapshot.params, snapshot.input.type),
-        ledger: response.ledger ?? null,
       });
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed", outcome });
       return { job: await consumerGenerationView(settled ?? (await ownedGeneration(scope))), providerStatus: { status: failed }, pollAfterSeconds };

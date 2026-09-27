@@ -9,7 +9,7 @@ import { validateConsumerMarketingTemplateSources } from "./marketing-template-s
 import { validateConsumerVoiceToolSources } from "./voice-tool-sources";
 import { validateConsumerShortsSources } from "./shorts-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
-import { parseOutcome, serializeOutcome, type ProviderBilling, type ProviderOutcome } from "@/lib/providerOutcome";
+import { parseOutcome, serializeOutcome, type ProviderOutcome } from "@/lib/providerOutcome";
 
 export type ConsumerWorkflow =
   "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template" | "voice-tool" | "shorts";
@@ -223,9 +223,6 @@ export async function consumerJobsReady() {
           // words and, from its own credit ledger, what happened to the
           // charge (lib/providerOutcome.ts). Null reads as "didn't say". Additive.
           await add("higgsfield_consumer_jobs", "provider_outcome TEXT");
-          // When that charge was last looked up in the account's ledger, and how often.
-          await add("higgsfield_consumer_jobs", "billing_checked_at INTEGER");
-          await add("higgsfield_consumer_jobs", "billing_checks INTEGER NOT NULL DEFAULT 0");
         })
         .catch((error) => {
           initialized.delete(client);
@@ -971,67 +968,6 @@ export function failConsumerPoll(
   });
 }
 
-/* ── The account's ledger, after a failure ──────────────────────────── */
-
-/** A failed job's charge is looked up this long after it failed, no more often than this, at most this many times. */
-export const CONSUMER_BILLING_WINDOW_MS = 2 * 3_600_000;
-export const CONSUMER_BILLING_INTERVAL_MS = 4 * 60_000;
-export const CONSUMER_BILLING_CHECKS = 6;
-
-/**
- * What the account's own ledger said about a failed job's charge. Only a
- * failed job with a provider id and an outcome still reading unknown is
- * updated; a settled charge (refunded, billed) is never overwritten, and a
- * lookup that found nothing only counts the look.
- */
-export async function recordConsumerBilling(
-  input: ConsumerJobScope & { billing: ProviderBilling | null },
-  now = Date.now(),
-): Promise<ConsumerJob | null> {
-  jobScope(input);
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = await requiredRow(tx, input);
-    if (row.status !== "failed" || !row.provider_job_id) return asJob(row);
-    const current = row.provider_outcome == null ? null : parseOutcome(String(row.provider_outcome));
-    const settled = current && current.billing.state !== "unknown";
-    const next = input.billing && input.billing.state !== "unknown" && current && !settled ? serializeOutcome({ ...current, billing: input.billing }) : null;
-    await tx.execute({
-      sql: `UPDATE higgsfield_consumer_jobs SET provider_outcome=COALESCE(?,provider_outcome),billing_checked_at=?,billing_checks=billing_checks+1
-        WHERE id=? AND user_id=? AND draft_id=? AND status='failed'`,
-      args: [next, now, input.id, input.userId, input.draftId],
-    });
-    return asJob(await requiredRow(tx, input));
-  });
-}
-
-/**
- * The next failed job whose charge the account has not settled yet: failed
- * inside the window, looked up fewer than the most times, and not in the last
- * interval. Stamped as looked-at before it is read, like claimConsumerSweep.
- */
-export async function claimConsumerBillingCheck(
-  workflows: readonly ConsumerWorkflow[],
-  now = Date.now(),
-): Promise<(ConsumerJobScope & { workflow: ConsumerWorkflow }) | null> {
-  if (!workflows.length || workflows.some((workflow) => !CONSUMER_WORKFLOWS.includes(workflow))) invalid();
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = (
-      await tx.execute({
-        sql: `SELECT id,user_id,draft_id,workflow FROM higgsfield_consumer_jobs
-          WHERE status='failed' AND provider_job_id IS NOT NULL AND workflow IN (${workflows.map(() => "?").join(",")})
-            AND provider_outcome IS NOT NULL AND json_extract(provider_outcome,'$.billing.state')='unknown'
-            AND updated_at>? AND billing_checks<? AND (billing_checked_at IS NULL OR billing_checked_at<=?)
-          ORDER BY COALESCE(billing_checked_at,0) ASC,updated_at ASC,id ASC LIMIT 1`,
-        args: [...workflows, now - CONSUMER_BILLING_WINDOW_MS, CONSUMER_BILLING_CHECKS, now - CONSUMER_BILLING_INTERVAL_MS],
-      })
-    ).rows[0];
-    if (!row) return null;
-    await tx.execute({ sql: "UPDATE higgsfield_consumer_jobs SET billing_checked_at=? WHERE id=?", args: [now, row.id] });
-    return { id: String(row.id), userId: String(row.user_id), draftId: String(row.draft_id), workflow: row.workflow as ConsumerWorkflow };
-  });
-}
 export function releaseConsumerPoll(
   input: PollInput & { nextPollAt?: number },
 ) {

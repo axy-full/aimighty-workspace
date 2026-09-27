@@ -62,7 +62,7 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
  * re-edited from an instruction with the take as its reference, priced before
  * it renders; any take goes to the Timeline in one press.
  */
-/** A re-edit the page can no longer read: where it goes if it renders, and that a failed one costs nothing. */
+/** A re-edit the page can no longer read: its result still belongs in the library if it finishes. */
 const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library.";
 
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
