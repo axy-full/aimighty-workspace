@@ -7,9 +7,6 @@
  * the three widths (> 1040, 720–1040, ≤ 720). Measurements follow
  * design/particl-site/README.md.
  */
-/* The body face. app/fonts.css declares Outfit and Kode Mono; the app's Geist
-   is declared per surface (app/workbench/workbench.css), so the site declares it too. */
-@font-face { font-family: "Particl Geist"; src: url("/fonts/geist-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 .gx.mk { height: auto; min-height: 100dvh; display: block; overflow: visible; overflow-x: clip; font-family: "Particl Geist", Geist, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-size: 15px; line-height: 1.45; background: var(--gx-root); }
 .mk a { color: var(--gx-accent-text); }
 .mk a:hover { color: #8FC5FF; }

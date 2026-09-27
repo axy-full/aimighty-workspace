@@ -28,6 +28,7 @@ import { useAssetActions } from "@/lib/shell/use-asset-actions";
 import { ViralView } from "./viral/ViralView";
 import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
+import { ShellFrame, ShellTopBar, Provenance, ViewSummary } from "./redesign/ShellChrome";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
 import { PageHead } from "./PageHead";
@@ -63,7 +64,7 @@ import { FirstRun, type ProjectActions } from "./FirstRun";
  * overlays below 1280. It sits over the same state layer, Atomik host and Rig
  * provider as the shell it replaces, so every page body works from day one.
  */
-export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
+export function SuitesShell({ scope, initialAccount, seams = {}, planBridge, redesign = false }: { redesign?: boolean; scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
   /* A throw out here (the chrome itself) is app/suites/error.tsx's; everything below has its own boundary. */
   throwIfArmed("shell");
   const ws = useWorkspace();
@@ -256,11 +257,11 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const libraryError = library.state.status === "error" ? library.state.error ?? "The project library could not be loaded." : null;
 
   const overlay = !shell.wide;
-  const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
+  const showLibrary = (redesign ? shell.libOpen : shell.view !== "workspace" && (shell.wide || shell.libOpen));
   /* The desktop Studio home inspects nothing of its own: its Inspector column opens for a take picked there, never for a stage spec it does not show. */
   const onStudioHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "stages";
-  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
-  const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
+  const showInspector = (redesign || shell.view !== "workspace") && (shell.wide ? shell.inspector && (redesign || !(onStudioHome && state.selKind !== "take")) : shell.inspOpen);
+  const columns = redesign ? "minmax(0,1fr)" : [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
   /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
      Moving to another page, project or selection gives it a fresh go. */
@@ -269,14 +270,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
-      <div className="gx" data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
+      <div className="gx" data-redesign={redesign || undefined} data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
           <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
-        <Header account={account} />
-        <StageStrip />
+        {redesign ? <ShellTopBar account={account} project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry} onPick={pickProject} onCreate={createProject} /> : <Header account={account} />}
+        <ShellFrame enabled={redesign} project={project} onAsk={ask} inspector={redesign && showInspector ? <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`} fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}><Inspector scope={scope} project={project} overlay={overlay} provenance={<Provenance items={items} />} summary={shell.view !== "suite" ? <ViewSummary project={project} items={items} onAsk={ask} /> : undefined} /></Boundary> : null}>
+        <StageStrip redesign={redesign} />
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
           <AtomikGate />
@@ -290,16 +292,16 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </Boundary>
         ) : (
           <div className="gx-body" style={{ gridTemplateColumns: columns }} data-testid="shell-body" data-columns={columns}>
-            {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? (
+            {!redesign && overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
+            {showLibrary && !redesign ? (
               <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`}
                 fallback={(fault) => <FaultAside kind="library" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : undefined} />}>
                 <Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
               </Boundary>
             ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
-                onPick={pickProject} onCreate={createProject} />
+              {!redesign ? <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError} onRetry={data.retry}
+                onPick={pickProject} onCreate={createProject} /> : null}
               {shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
@@ -379,7 +381,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 <Boundary what="The run strip" probe="strip" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="strip" variant="inline" /></div>}><GenerationStrip /></Boundary>
               </div>
             </main>
-            {showInspector ? (
+            {showInspector && !redesign ? (
               <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
                 fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
                 <Inspector scope={scope} project={project} overlay={overlay} />
@@ -387,6 +389,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             ) : null}
           </div>
         )}
+        </ShellFrame>
+        {redesign && (shell.libOpen || (!shell.wide && shell.inspOpen)) ? <div className="gx-scrim rd-scrim" onClick={shell.closePanels} /> : null}
+        {redesign && showLibrary ? <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`} fallback={(fault) => <FaultAside kind="library" overlay fault={fault} onClose={shell.closePanels} />}><Library project={project} items={items} ready={library.state.status === "ready"} error={libraryError} onRetry={() => void library.refresh()} overlay now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} /></Boundary> : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
           <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
             <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Search" onClick={(e) => e.stopPropagation()}>
@@ -430,7 +435,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             </div>
           </div>
         ) : null}
-        <TabBar />
+        {!redesign ? <TabBar /> : null}
         {state.toast ? (() => {
           /* A confirmation with somewhere to go carries its Open (lib/shell/confirmations); one the undo stack can take back
              carries its Undo, the phone's ⌘Z (lib/shell/state › pushUndo), while that step is still the one ⌘Z would undo.

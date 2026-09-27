@@ -6,7 +6,7 @@ import { INSPECTOR_BODIES, KIND_LABEL } from "@/components/workspace/inspector/r
 import { AssetInspector } from "./AssetInspector";
 
 /** Right, 320px (an overlay below 1280); ⌘J. The body follows the selection. */
-export function Inspector({ scope, project, overlay }: { scope: string; project: Project | null; overlay: boolean }) {
+export function Inspector({ scope, project, overlay, provenance, summary }: { summary?: React.ReactNode; provenance?: React.ReactNode; scope: string; project: Project | null; overlay: boolean }) {
   const { state } = useWorkspace();
   const shell = useShell();
   /* The Cast stage edits its entries in place and selects nothing into the Inspector, so there it shows the stage. */
@@ -21,7 +21,8 @@ export function Inspector({ scope, project, overlay }: { scope: string; project:
         <button type="button" className="gx-hbtn gx-panel-close gx-insp-x" onClick={() => (overlay ? shell.closePanels() : shell.toggleInspector())} aria-label="Hide inspector" title="Hide inspector · ⌘J" data-testid="close-inspector">×</button>
       </div>
       <div className="gx-insp-body gx-scroll">
-        {state.selKind === "take" && state.selId ? <AssetInspector scope={scope} project={project} id={state.selId} /> : (
+        {provenance}
+        {state.selKind === "take" && state.selId ? <AssetInspector scope={scope} project={project} id={state.selId} /> : summary ?? (
           <div className="pxw gx-legacy"><div className="pxw-inspector-body"><Body state={kind === state.selKind ? state : { ...state, selKind: kind }} scope={scope} project={project} /></div></div>
         )}
       </div>

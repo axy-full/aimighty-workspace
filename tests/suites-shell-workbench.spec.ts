@@ -34,7 +34,7 @@ async function open(page: Page, path = "/suites") {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error" && /hydrat|did not match/i.test(message.text())) errors.push(message.text()); });
-  await page.goto(path);
+  await page.goto(path + (path.includes("?") ? "&" : "?") + "ui=classic");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   return errors;
 }
@@ -119,7 +119,7 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
 
   /* A pasted link opens the same place. */
-  await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
+  await page.goto("/suites?suite=subatomik&page=swap&sp=swap&ui=classic");
   await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
   await expect(suites.getByRole("tab", { name: "Viral" })).toHaveAttribute("aria-selected", "true");
   expect(errors).toEqual([]);

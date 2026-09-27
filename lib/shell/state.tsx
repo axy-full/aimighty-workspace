@@ -21,7 +21,7 @@ import { useConnectedCollector } from "./use-connected-collector";
  * the workspace provider carries them across its own URL writes.
  */
 export const SUITES_PATH = "/suites";
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room"] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", "ui"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
@@ -102,6 +102,7 @@ function writeParams(params: Params, mode: "push" | "replace") {
 }
 
 export function ShellProvider({ children, initialSearch }: { children: ReactNode; initialSearch?: string }) {
+  const redesign = new URLSearchParams(initialSearch ?? "").get("ui") !== "classic";
   const ws = useWorkspace();
   const [params, setParams] = useState<Params>(() => readParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
   const [memory, setMemory] = useState<Partial<Record<ShellSuiteId, string>>>({});
@@ -206,10 +207,11 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     openLibrary: (tab) => {
       if (tab) setLibTab(tab);
       /* Crew and Workspace have no Library: the suite page they were opened over hosts it. */
-      if (params.view === "crew" || params.view === "workspace") { setPaletteOpen(false); apply({ ...params, view: "suite" }, "push"); }
-      if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); }
+      if (!redesign && (params.view === "crew" || params.view === "workspace")) { setPaletteOpen(false); apply({ ...params, view: "suite" }, "push"); }
+      if (redesign || window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); }
     },
     openInspector: () => {
+      if (redesign) setLibOpen(false);
       if (window.innerWidth >= WIDE_FROM) { if (!ws.state.inspector) ws.dispatch({ type: "toggleInspector" }); }
       else { setInspOpen(true); setLibOpen(false); }
     },
@@ -240,7 +242,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live]);
+  }), [redesign, params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

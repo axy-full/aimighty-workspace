@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "public/vendor/pdfjs-*/**", // Unmodified Mozilla distribution, copied by postinstall.
     "docs/handoff/**/design-references/**",
     "design/**", // Supplied standalone design reference runtimes, not application code.
+    "design_handoff_particl_app/**", // Reference runtimes; never imported by the app.
     "out/**",
     "build/**",
     "next-env.d.ts",

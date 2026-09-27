@@ -199,3 +199,12 @@ test("the shell choice is written by a script with no URL text in it, or not at 
   expect(shellCookieScript(hostile)).toBeNull();
   for (const script of [set, clear]) expect(script).not.toContain("alert");
 });
+
+
+test("the redesigned root opens Gen on every viewport and preserves explicit routes and the classic flag", () => {
+  expect(at("/").searchParams.get("view")).toBe("gen");
+  expect(at("/", "project=p1").searchParams.get("view")).toBe("gen");
+  expect(at("/", "ui=classic").searchParams.has("view")).toBe(false);
+  expect(at("/", "suite=atomik").searchParams.get("suite")).toBe("atomik");
+  expect(at("/", "suite=atomik").searchParams.has("view")).toBe(false);
+});

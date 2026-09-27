@@ -177,6 +177,7 @@ export function workspaceUrlFor(
   const project = from.get("project");
   if (project) to.set("project", project);
   to.set("suite", suite);
+  if (route === "/" && !from.has("suite") && from.get("ui") !== "classic") to.set("view", "gen");
   if (page) {
     to.set("page", page);
     const sel = from.get("sel");

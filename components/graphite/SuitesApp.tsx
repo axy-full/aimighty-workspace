@@ -22,14 +22,18 @@ export default function SuitesApp({ scope, initialAccount }: { scope: string; in
      Only the first value is used: the shell writes view, tab and sp itself,
      and each of those writes updates useSearchParams too. */
   const search = useSearchParams().toString();
-  const [initialSearch] = useState(search);
+  const [initialSearch] = useState(() => {
+    const params = new URLSearchParams(search);
+    if (params.get("ui") !== "classic" && !["view", "suite", "page", "sp"].some((key) => params.has(key))) params.set("view", "gen");
+    return params.toString();
+  });
   /* The same element every time, so a URL change re-renders this component
      alone and not every provider below it. */
   const tree = useMemo(() => (
     <WorkspaceProvider initialSearch={initialSearch} plans={bridge.source} path={SUITES_PATH} keep={SHELL_PARAMS}>
       <ShellProvider initialSearch={initialSearch}>
         <RigProvider scope={scope}>
-          <RigSeams>{(seams) => <SuitesShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
+          <RigSeams>{(seams) => <SuitesShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} redesign={new URLSearchParams(initialSearch).get("ui") !== "classic"} />}</RigSeams>
         </RigProvider>
       </ShellProvider>
     </WorkspaceProvider>
