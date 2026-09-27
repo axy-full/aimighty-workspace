@@ -60,6 +60,9 @@ const headers = [
 const nextConfig: NextConfig = {
   // Keep framework debugging chrome from covering controls in mock browser rehearsals.
   ...(process.env.ENGINE_MOCK === "1" ? { devIndicators: false as const } : {}),
+  // CI's browser jobs only: Turbopack's source maps double the native memory
+  // each compiled route holds in `next dev` (see verify.yml).
+  ...(process.env.CI_DEV_SOURCE_MAPS === "off" ? { experimental: { turbopackSourceMaps: false } } : {}),
   async headers() {
     // Only the dedicated movie document can create the bundled AAC WASM worker.
     // Every other page retains the policy above; production never enables general eval.
