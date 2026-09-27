@@ -44,11 +44,11 @@ export const GET = withTenant(async function GET(req: Request) {
       z: Number(r.z), colour: r.colour ?? "",
       authorName: r.author_name ?? null, updatedAt: Number(r.updated_at),
       gen: r.gen_status ? {
-        status: r.gen_status, url: r.gen_url, kind: r.gen_kind === "image" ? "image" : "video",
+        status: r.gen_status, url: r.gen_url ? `/api/media/${r.ref_id}` : null, kind: r.gen_kind === "image" ? "image" : "video",
         prompt: r.gen_prompt, version: Number(r.gen_version ?? 1),
         shot: r.shot_code ? `${r.shot_scene ? `${r.shot_scene} · ` : ""}${r.shot_code}` : null,
       } : null,
-      upload: r.upload_url ? { url: r.upload_url, mime: r.upload_mime } : null,
+      upload: r.upload_url ? { url: `/api/uploads/${r.ref_id}`, mime: r.upload_mime } : null,
     })),
   });
 });

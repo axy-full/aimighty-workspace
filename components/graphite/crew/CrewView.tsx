@@ -159,11 +159,11 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
           </div>
         </div>
 
-        {/* The project list failed to read: said, with Retry — not "No project", which sent people to make duplicates. */}
+        {/* The project list failed to read: said, with Try again — not "No project", which sent people to make duplicates. */}
         {projectsError && !project ? (
           <div className="cw-notice" role="alert" data-testid="crew-projects-error">
             <span className="gx-gen-error">{projectsError}</span>
-            {onRetry ? <> <button type="button" className="gx-hbtn" style={{ display: "inline-flex" }} onClick={onRetry}>Retry</button></> : null}
+            {onRetry ? <> <button type="button" className="gx-hbtn" style={{ display: "inline-flex" }} onClick={onRetry}>Try again</button></> : null}
           </div>
         ) : null}
         {room.notice ? <p className="cw-notice" role="status" data-testid="crew-notice">{room.notice}</p> : null}

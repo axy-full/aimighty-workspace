@@ -25,13 +25,15 @@ export type LibraryState = {
   pages: Record<Source, number>;
   moreBusy: boolean;
   error: string | null;
+  /** A re-read failed while cards were on screen: they are the last good read (`error` says why). A failed Load more is not stale. */
+  stale: boolean;
   /** Upload progress, e.g. "still.png · 40%"; null when idle. */
   uploading: string | null;
 };
 
 const EMPTY: LibraryState = {
   status: "idle", uploads: [], generations: [], next: { uploads: null, generations: null },
-  pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, uploading: null,
+  pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, stale: false, uploading: null,
 };
 
 type Entry = {
@@ -44,6 +46,8 @@ type Entry = {
   rerun: Promise<void> | null;
   /** A first read that failed is tried again on its own, a few times, further apart each time. */
   retry: { attempts: number; timer: ReturnType<typeof setTimeout> | null };
+  /** Counts full reads that landed: a settle poll that began before one does not overwrite it. */
+  epoch: number;
 };
 const entries = new Map<string, Entry>();
 const keyOf = (scope: string, projectId: string) => JSON.stringify([scope, projectId]);
@@ -53,7 +57,7 @@ export const LIBRARY_RETRY_MS = [2_000, 8_000, 30_000] as const;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null } };
+    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null }, epoch: 0 };
     entries.set(key, found);
   }
   return found;
@@ -86,6 +90,7 @@ async function load(scope: string, projectId: string): Promise<void> {
     return e.rerun;
   }
   if (e.retry.timer) { clearTimeout(e.retry.timer); e.retry.timer = null; }
+  /* A retry after a failed first read shows the skeletons again, not the stale error. */
   if (e.state.status === "idle" || e.state.status === "error") set(key, { status: "loading", error: null });
   e.busy = (async () => {
     try {
@@ -103,15 +108,18 @@ async function load(scope: string, projectId: string): Promise<void> {
       };
       const [uploads, generations] = await Promise.all([read("uploads"), read("generations")]);
       e.retry.attempts = 0;
+      e.epoch++;
+      /* A full read just landed: a take still in flight is asked after again soon, not at the end of a long backoff. */
+      nudge(key);
       set(key, {
-        status: "ready", error: null,
+        status: "ready", error: null, stale: false,
         uploads: uploads.items as LibraryUpload[], generations: generations.items as Generation[],
         next: { uploads: uploads.next, generations: generations.next },
         pages: { uploads: uploads.pages, generations: generations.pages },
       });
     } catch (error) {
       const first = e.state.status !== "ready";
-      set(key, { status: first ? "error" : "ready", error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      set(key, { status: first ? "error" : "ready", stale: !first, error: error instanceof Error ? error.message : "The project library could not be loaded." });
       /* A blip on the first read is not left on screen for the session: try again, a few times, further apart. */
       const wait = first ? LIBRARY_RETRY_MS[e.retry.attempts] : undefined;
       if (wait !== undefined && e.listeners.size) {
@@ -163,7 +171,7 @@ async function more(scope: string, projectId: string) {
         if (source === "uploads") uploads = dedupe([...uploads, ...(pages[i].items as LibraryUpload[])]);
         else generations = dedupe([...generations, ...(pages[i].items as Generation[])]);
       });
-      set(key, { uploads, generations, next, pages: count, moreBusy: false, error: null });
+      set(key, { uploads, generations, next, pages: count, moreBusy: false, error: null, stale: false });
     } catch (error) {
       set(key, { moreBusy: false, error: error instanceof Error ? error.message : "More assets could not be loaded." });
     } finally {
@@ -200,6 +208,116 @@ export async function findProjectTake(scope: string, projectId: string, takeId: 
     await (e.busy ?? more(scope, projectId));
   }
   return has();
+}
+
+/* ── Settling ─────────────────────────────────────────────────────────── */
+
+/**
+ * How long a grid with a take in flight waits before it re-reads its newest
+ * page: soon while takes are moving, then less often while nothing changes
+ * (a render can sit on the engine for minutes, a take held for credits waits
+ * on a top-up), never more than a minute apart.
+ */
+export const SETTLE_MS = [6_000, 6_000, 12_000, 24_000, 60_000] as const;
+export const settleWait = (quiet: number) => SETTLE_MS[Math.min(Math.max(0, quiet), SETTLE_MS.length - 1)];
+
+/** A take that has not settled: queued, running, or held (for a free slot, or until credits arrive). */
+export function settling(generations: readonly Pick<Generation, "status">[]): boolean {
+  return generations.some((g) => g.status === "queued" || g.status === "running" || g.status === "held");
+}
+
+/** Whether the newest page says anything moved: a row not loaded yet, or one whose status, stored copy or last change differs. */
+export function pageMoved(loaded: readonly Pick<Generation, "id" | "status" | "storedUrl" | "updatedAt">[], newest: readonly Pick<Generation, "id" | "status" | "storedUrl" | "updatedAt">[]): boolean {
+  const known = new Map(loaded.map((g) => [g.id, g]));
+  return newest.some((g) => {
+    const old = known.get(g.id);
+    return !old || old.status !== g.status || old.storedUrl !== g.storedUrl || old.updatedAt !== g.updatedAt;
+  });
+}
+
+/**
+ * The newest generations page, merged into what is loaded: rows it carries
+ * replace their old copies, new rows join. The Queued / Rendering / Held
+ * chips move on their own and a finished take lands without a reload. A
+ * failed poll is not a failed library — the next tick tries again. Answers
+ * whether anything moved.
+ */
+async function settle(scope: string, projectId: string): Promise<boolean> {
+  const key = keyOf(scope, projectId);
+  const e = entry(key);
+  if (e.busy || e.state.status !== "ready") return false;
+  const epoch = e.epoch;
+  try {
+    const page = await readPage(scope, projectId, "generations", null);
+    /* A full read that started or landed meanwhile is newer than this page: it stands. */
+    if (e.busy || e.epoch !== epoch || e.state.status !== "ready") return false;
+    const newest = page.items as Generation[];
+    if (!pageMoved(e.state.generations, newest)) return false;
+    set(key, { generations: mergeNewest(e.state.generations, newest) });
+    return true;
+  } catch { return false; /* the next tick */ }
+}
+
+/** Rows in `newest` replace their loaded copies; rows not loaded yet join at the front. */
+export function mergeNewest<T extends { id: string }>(loaded: readonly T[], newest: readonly T[]): T[] {
+  const fresh = new Map(newest.map((g) => [g.id, g]));
+  const known = new Set(loaded.map((g) => g.id));
+  return [...newest.filter((g) => !known.has(g.id)), ...loaded.map((g) => fresh.get(g.id) ?? g)];
+}
+
+/* One timer per project, however many grids read it; it reads only while the tab is on screen. */
+type Poller = { count: number; quiet: number; timer: ReturnType<typeof setTimeout> | null; running: boolean; tick: () => Promise<void> };
+const pollers = new Map<string, Poller>();
+
+/** Something fresh happened (a full read landed, the tab came back): poll again from the short end of the backoff. */
+function nudge(key: string, wait: number = settleWait(0)) {
+  const poller = pollers.get(key);
+  if (!poller) return;
+  poller.quiet = 0;
+  /* A tick that is out reschedules itself when it lands. */
+  if (poller.running) return;
+  if (poller.timer) clearTimeout(poller.timer);
+  poller.timer = setTimeout(() => void poller.tick(), wait);
+}
+
+let watchingVisibility = false;
+function nudgeWhenVisible() {
+  if (watchingVisibility || typeof document === "undefined") return;
+  watchingVisibility = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") for (const key of pollers.keys()) nudge(key, 1_000);
+  });
+}
+
+function watch(scope: string, projectId: string): () => void {
+  const key = keyOf(scope, projectId);
+  const found = pollers.get(key);
+  if (found) found.count++;
+  else {
+    const poller: Poller = {
+      count: 1, quiet: 0, timer: null, running: false,
+      tick: async () => {
+        poller.timer = null;
+        poller.running = true;
+        try {
+          const visible = typeof document === "undefined" || document.visibilityState !== "hidden";
+          if (visible && settling(entry(key).state.generations)) poller.quiet = (await settle(scope, projectId)) ? 0 : poller.quiet + 1;
+        } finally {
+          poller.running = false;
+        }
+        if (pollers.get(key) === poller && !poller.timer) poller.timer = setTimeout(() => void poller.tick(), settleWait(poller.quiet));
+      },
+    };
+    poller.timer = setTimeout(() => void poller.tick(), settleWait(0));
+    pollers.set(key, poller);
+    nudgeWhenVisible();
+  }
+  return () => {
+    const poller = pollers.get(key);
+    if (!poller || --poller.count > 0) return;
+    if (poller.timer) clearTimeout(poller.timer);
+    pollers.delete(key);
+  };
 }
 
 function dedupe<T extends { id: string }>(items: T[]): T[] {
@@ -279,6 +397,46 @@ export async function uploadFilesToProject(scope: string, projectId: string, fil
   return { ids, uploads, notes };
 }
 
+/* ── What a grid of takes shows ───────────────────────────────────────── */
+
+export type LibraryView = {
+  /** Aspect-true placeholders while the first read is in flight. */
+  skeletons: boolean;
+  /**
+   * A failed read: "error" when the first read failed and nothing could be shown (every grid's
+   * top banner); "stale" when a re-read failed and the cards on screen are the last good read
+   * (Gen's banner; the Library and Takes say it at the list's end, beside Load more).
+   */
+  banner: { tone: "error" | "stale"; message: string } | null;
+  /** Only a finished, successful read may say the project is empty. */
+  empty: boolean;
+};
+
+/**
+ * One contract for every grid of takes: never "nothing here" while the read is
+ * in flight or after it failed, and a failed read always says so with a way to
+ * try again. With no project open, `projects` is the project list's own read:
+ * still opening shows skeletons; failed shows nothing here (the shell's banner
+ * says it and offers Try again).
+ */
+export function libraryView(load: Pick<LibraryState, "status" | "error"> & { stale?: boolean } | null, shown: number, projects: "loading" | "ready" | "error" = "ready"): LibraryView {
+  if (!load) return projects === "loading" ? { skeletons: shown === 0, banner: null, empty: false } : { skeletons: false, banner: null, empty: projects === "ready" && shown === 0 };
+  if (load.status === "error")
+    return { skeletons: false, banner: { tone: "error", message: load.error || "The project library could not be loaded." }, empty: false };
+  if (load.status !== "ready") return { skeletons: shown === 0, banner: null, empty: false };
+  return { skeletons: false, banner: load.stale && load.error ? { tone: "stale", message: load.error } : null, empty: shown === 0 };
+}
+
+/** The project's frame as a CSS aspect-ratio, held between 9:16 and 2:1 so a tile stays a tile. */
+export function tileAspect(aspect: string | null | undefined): string | null {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*[:x/×]\s*(\d+(?:\.\d+)?)\s*$/i.exec(aspect ?? "");
+  if (!m) return null;
+  const w = Number(m[1]), h = Number(m[2]);
+  if (!(w > 0 && h > 0)) return null;
+  const ratio = Math.min(2, Math.max(9 / 16, w / h));
+  return ratio === w / h ? `${m[1]} / ${m[2]}` : `${Math.round(ratio * 1000) / 1000} / 1`;
+}
+
 /* ── Cards ────────────────────────────────────────────────────────────── */
 
 export type LibraryEntry = {
@@ -304,6 +462,32 @@ export function libraryEntries(state: Pick<LibraryState, "uploads" | "generation
   });
 }
 
+/**
+ * What a card's picture area shows: the media; a live or held render; a
+ * failure, or a take stopped before it rendered; a finished take whose stored
+ * copy is not there yet ("Preview unavailable · Refresh"); or the sound /
+ * file glyph.
+ */
+export type EntryFace = "media" | "live" | "held" | "failed" | "stopped" | "unavailable" | "audio" | "file";
+export function entryFace(entry: Pick<LibraryEntry, "take" | "asset" | "url" | "media">): EntryFace {
+  if (entry.take.status === "failed") return entry.take.cancelled ? "stopped" : "failed";
+  if (entry.take.status === "rendering") return entry.take.stage === "held" ? "held" : "live";
+  if (entry.url && (entry.media === "image" || entry.media === "video")) return "media";
+  if (entry.media === "audio") return "audio";
+  /* A finished render with no stored copy to show: the store may still be landing, so a re-read can bring it. */
+  if (entry.asset.origin === "generation" && entry.asset.value.kind !== "model") return "unavailable";
+  return "file";
+}
+
+/** The kind a card is filed under, whether or not it rendered (a failed still is still a still). */
+export function entryKind(entry: Pick<LibraryEntry, "asset">): "image" | "video" | "audio" | "file" {
+  const kind = libraryKind(entry.asset);
+  return kind === "image" || kind === "video" || kind === "audio" ? kind : "file";
+}
+
+/** One project's library store, as a grid of takes holds it (Gen › Results, Library › Assets, Takes, the Rig). */
+export type ProjectLibrary = ReturnType<typeof useProjectLibrary>;
+
 export function useProjectLibrary(scope: string, projectId: string | null) {
   const key = projectId ? keyOf(scope, projectId) : null;
   const subscribe = useCallback((listener: () => void) => {
@@ -320,6 +504,8 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
     if (e.state.status === "error" && !e.busy && !e.retry.timer) e.retry.attempts = 0;
     if (e.state.status === "idle" || (e.state.status === "error" && !e.busy && !e.retry.timer)) void load(scope, projectId);
   }, [scope, projectId]);
+  const inFlight = state.status === "ready" && settling(state.generations);
+  useEffect(() => (projectId && inFlight ? watch(scope, projectId) : undefined), [scope, projectId, inFlight]);
   const items = useMemo(() => libraryEntries(state), [state]);
   return {
     state,
