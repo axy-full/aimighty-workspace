@@ -22,6 +22,11 @@
 .pv-step:hover, .pv-step:focus-visible { background: rgba(255, 255, 255, .14); outline: none; }
 .pv-step--prev { left: 8px; }
 .pv-step--next { right: 8px; }
+/* A viewer bound to the shell (lib/shell/preview-bridge): the take's own commands, under the picture. */
+.pv-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid rgba(255, 255, 255, .08); min-width: 0; }
+.pv-btn:disabled { opacity: .5; cursor: default; }
+.pv-btn:disabled:hover { background: rgba(255, 255, 255, .06); }
+.pv-said { flex: 1 1 180px; min-width: 0; font-size: 13px; color: #c8c8d0; overflow-wrap: anywhere; }
 @media (max-width: 759px) {
   .pv-veil { padding: 0; }
   .pv-frame { width: 100%; height: 100dvh; border-radius: 0; border: 0; }
@@ -29,6 +34,14 @@
   .pv-btn { min-height: 44px; }
   .pv-stage { padding: 8px; }
   .pv-step { top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); transform: none; width: 56px; height: 44px; }
+  /* The bar holds the home indicator's clearance, so the arrows above it need none of their own. */
+  .pv-bar { padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+  .pv-frame[data-bound] .pv-step { bottom: 12px; }
+}
+/* A landscape phone is wider than the breakpoint, and still a thumb: its targets stay 44px. */
+@media (pointer: coarse) {
+  .pv-btn { min-height: 44px; }
+  .pv-step { width: 44px; min-height: 44px; }
 }
 
 /* The drag layer (components/DragLayer): where a dropped file goes when no target takes it. */

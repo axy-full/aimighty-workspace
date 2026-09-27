@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -11,6 +11,7 @@ import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
 import { DEPT_COLORS, Glyph, KIND_DOT } from "./icons";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { publishGallery } from "@/lib/shell/preview-bridge";
 
 export type AssetFilter = "All" | "Images" | "Video" | "Audio" | "Uploads" | "Cast" | "Elements";
 const FILTERS: AssetFilter[] = ["All", "Images", "Video", "Audio", "Uploads", "Cast", "Elements"];
@@ -79,6 +80,11 @@ export function Library({ project = null, items, library, projects = "ready", ov
      three rows of filters, it sat under the tab bar. With nothing read, there is nothing to search or filter either, so the
      Assets tab is the banner alone. A later read that failed is said at the list's end, beside Load more. */
   const failed = view.banner?.tone === "error" ? view.banner : null;
+  /* The viewer walks the assets as this list shows them — every one the filter and search keep, in order, not the tiles a
+     long list has on screen (lib/shell/preview-bridge). Only while the list is the tab on show. */
+  const projectId = project?.id ?? null;
+  const listed = shell.libTab === "assets" && !failed;
+  useEffect(() => (projectId && listed ? publishGallery("library", { projectId, entries: shown }) : undefined), [projectId, listed, shown]);
   /* A tile selects its take through the shell (the URL carries it) and shows it in the Inspector. */
   const open = (entry: LibraryEntry) => {
     shell.selectAsset(entry.take.id, { reason: "pick" });
@@ -132,7 +138,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
           <VirtualItems
-            className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
+            className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets", "data-preview-gallery": "library" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
             before={view.skeletons ? <TakeSkeletons count={4} variant="library" /> : null}
             after={<>

@@ -15,6 +15,7 @@ import { movedOn, poll } from "@/lib/poll";
 import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { isVariation, takeLabel } from "@/lib/variations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { publishGallery } from "@/lib/shell/preview-bridge";
 import { useShell } from "@/lib/shell/state";
 import type { SelectReason } from "@/lib/shell/asset-link";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
@@ -112,7 +113,10 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const decided = useMemo(() => decidedBatches(items), [items]);
   const all = useMemo(() => deskTakes(deskItems(items, shots, decided)), [items, shots, decided]);
   const rows = useMemo(() => deskItems(items.filter((e) => inDesk(e, { filter, kind, query })), shots, decided), [items, shots, decided, filter, kind, query]);
-  const shownIds = useMemo(() => new Set(deskTakes(rows).map((e) => e.take.id)), [rows]);
+  /* The takes as the desk shows them, whole and in order: the viewer walks this list, not the tiles a windowed grid has mounted. */
+  const shownTakes = useMemo(() => deskTakes(rows), [rows]);
+  const shownIds = useMemo(() => new Set(shownTakes.map((e) => e.take.id)), [shownTakes]);
+  useEffect(() => publishGallery("takes", { projectId, entries: shownTakes }), [projectId, shownTakes]);
   const counts = useMemo(() => deskCounts(items, kind, query), [items, kind, query]);
   const narrowed = filter !== "all" || kind != null || Boolean(query.trim());
   const clear = () => { setFilter("all"); setKind(null); setTyped(""); };
@@ -444,7 +448,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         )}
         {rows.length ? (
           <VirtualItems
-            className="pd-take-grid pd-desk-grid" attrs={{ role: "radiogroup", "aria-label": "Takes", "data-testid": "takes-grid" }}
+            className="pd-take-grid pd-desk-grid" attrs={{ role: "radiogroup", "aria-label": "Takes", "data-testid": "takes-grid", "data-preview-gallery": "takes" }}
             items={rows} getKey={(item) => item.key} layout={{ minColumnWidth: 150 }} gap={10} estimateRowHeight={150} estimateWholeRow={28} scroll="ancestor"
             wholeRow={isHeading} runOf={runOf} revealKey={reveal?.key ?? null} revealNonce={reveal?.n} revealAlign="center"
             renderItem={(item) => item.type === "take" ? (

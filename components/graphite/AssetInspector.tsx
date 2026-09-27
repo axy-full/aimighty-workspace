@@ -13,6 +13,9 @@ import { takeStatusWord } from "@/lib/workspace/takes";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { openPreview } from "@/components/PreviewLayer";
+import { INSPECTOR_SURFACE } from "@/lib/shell/preview-bridge";
+import { copyAssetLink } from "@/lib/shell/copy-asset-link";
+import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 
 /**
@@ -26,6 +29,7 @@ const when = (ms: number) => new Date(ms).toLocaleString("en-US", { month: "shor
 
 export function AssetInspector({ scope, project, id }: { scope: string; project: Project | null; id: string }) {
   const shell = useShell();
+  const session = useSession();
   const { dispatch, state, toast } = useWorkspace();
   const recreate = useRecreate();
   const library = useProjectLibrary(scope, project?.id ?? null);
@@ -80,6 +84,9 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const copyPrompt = async () => {
     try { await navigator.clipboard.writeText(words); toast(SAY.promptCopied); } catch { toast(SAY.copyBlocked); }
   };
+  /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
+  const preview = entryPreview(entry);
+  const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
       <div className="gx-insp-row"><span className="gx-eyebrow">Output</span><span className="gx-eyebrow">{take.version}</span></div>
@@ -102,7 +109,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       ) : null}
       <div className="gx-insp-actions">
         <button type="button" className="gx-hbtn" disabled={!role} title={role ? undefined : "References are images and videos."} onClick={() => command("use-as-reference")}>Use as reference</button>
-        {entryPreview(entry) ? <button type="button" className="gx-hbtn" onClick={() => openPreview([entryPreview(entry)!])} data-testid="inspector-open-preview">Preview</button> : null}
+        {preview ? <button type="button" className="gx-hbtn" onClick={() => openPreview([preview], 0, { surface: INSPECTOR_SURFACE, asset: take.id })} data-testid="inspector-open-preview">Preview</button> : null}
+        {project?.productionProjectId ? <button type="button" className="gx-hbtn" title="A link to this take, for people in this workspace" onClick={() => void copyLink()} data-testid="inspector-copy-link">Copy link</button> : null}
         {downloadable ? <a className="gx-hbtn" href={download} download={upload ? upload.filename : true}>Download original</a> : null}
         <button type="button" className="gx-hbtn" title="The asset itself, to paste into another project" onClick={() => command("copy")} data-testid="inspector-copy-asset">Copy asset</button>
         <button type="button" className="gx-hbtn" onClick={() => command("move")}>Move to…</button>
@@ -119,7 +127,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
   const timed = Boolean(entry.url) && (entry.media === "video" || entry.media === "audio");
   const toggle = () => { const el = player.current; if (!el) return; if (el.paused) void el.play().catch(() => setPlaying(false)); else el.pause(); };
   return (
-    <div className="gx-insp-card" data-testid="inspector-preview" {...previewAttrs(entryPreview(entry))}>
+    <div className="gx-insp-card" data-testid="inspector-preview" data-preview-gallery={INSPECTOR_SURFACE} {...previewAttrs(entryPreview(entry))}>
       {entry.url && entry.media === "image" ? (
         // eslint-disable-next-line @next/next/no-img-element -- workspace-scoped media route, as the workbench library
         <img src={entry.url} alt={entry.take.name} />
