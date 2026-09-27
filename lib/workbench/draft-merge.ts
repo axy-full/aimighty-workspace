@@ -30,11 +30,11 @@ import { saveSchema } from "./studio-schema";
  *    screenplay whose text the merge changed is marked edited, as typing into
  *    it would; OCR pages asked for in two windows are all asked for.
  *  - A list merged past what the project holds is fitted the way its own
- *    stage fits it: takes and plates keep the newest, renders in flight the
- *    latest five, and any other list keeps what the saved version already
- *    had, then what this side added, up to its limit — and says, in `notes`,
- *    what of this side's did not fit. Text merged past its limit is the saved
- *    version's, and this side is told.
+ *    stage fits it: takes and plates keep the newest (renders in flight have
+ *    no count limit, so every one is kept), and any other list keeps what the
+ *    saved version already had, then what this side added, up to its limit —
+ *    and says, in `notes`, what of this side's did not fit. Text merged past
+ *    its limit is the saved version's, and this side is told.
  *
  * Each side was a valid save, so the merge is one as well. A rule no repair
  * above covers puts the saved version back where the merge broke it, the
