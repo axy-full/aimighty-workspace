@@ -40,7 +40,7 @@ const recipe = (id: string, name: string, prompt: string) => ({ prompt, model: "
 function busyTray(): TrayJob[] {
   const now = Date.now();
   return [
-    job({ id: "gen_held", name: "Harbour at dawn", stage: "held", label: "Held · needs 43 cr", tone: "amber", action: "release", createdAt: now - 12 * MIN }),
+    job({ id: "gen_held", name: "Harbour at dawn", stage: "held", label: "Held · needs 43 cr", tone: "amber", action: "release", releaseCredits: 43, createdAt: now - 12 * MIN }),
     job({ id: "gen_run", name: "A wide shot on the water at first light", stage: "rendering", label: "Rendering", tone: "blue", price: { amount: 13, unit: "cr" }, createdAt: now - 4 * MIN }),
     job({ id: "3f7a1c2e-5b6d-4e8f-9a0b-1c2d3e4f5a6b", source: "account", name: "Product spins on a marble plinth", stage: "rendering", label: "Rendering", tone: "blue", price: { amount: 40, unit: "account-cr" }, createdAt: now - 2 * MIN, draftId: "ws-other", projectName: "Trail bottle ads" }),
     job({ id: "gen_slot", name: "Nets drying on the quay", stage: "queued", label: "Queued", tone: "blue", reason: "Waiting for a free slot", price: { amount: 7, unit: "cr" }, createdAt: now - MIN }),
@@ -222,7 +222,8 @@ test("the pill counts the rows the way they are labelled, fits the header, and o
   await expect(panel.getByTestId("jobs-bar").first()).not.toHaveAttribute("aria-valuenow", /.*/);
   await expect(rows.nth(3).getByTestId("jobs-reason")).toHaveText("Waiting for a free slot");
   await expect(rows.nth(4).getByTestId("jobs-reason")).toHaveText("Refused by the content filter");
-  await expect(rows.getByTestId("jobs-action")).toHaveText(["Release", "Recreate", "Open in Takes", "Recreate"]);
+  /* Release carries the figure it approves. */
+  await expect(rows.getByTestId("jobs-action")).toHaveText(["Release · 43 cr", "Recreate", "Open in Takes", "Recreate"]);
   await expect(rows.nth(5).locator(".gx-jobs-thumb img")).toBeVisible();
   await expect(rows.nth(6)).toHaveAttribute("data-tone", "idle");
   expect(errors).toEqual([]);
@@ -300,25 +301,27 @@ test("a long list keeps a failed read's note in view at the top, above the rows 
   }
 });
 
-test("Release starts a held take; when the balance is short it says so and offers Top up", async ({ page }, info) => {
+test("Release approves the figure on its button; short, a moved price and a lost reply are said, and a second press is never a second charge", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const tray: Tray = { reads: 0, reply: () => reply(busyTray()) };
   await open(page, tray);
-  const releases: string[] = [];
-  let short = true;
+  const releases: { path: string; credits: unknown }[] = [];
+  let answer: "short" | "lost" | "moved" | "already" = "short";
   await page.route(/\/api\/jobs\/[^/]+\/release$/, (route) => {
-    releases.push(new URL(route.request().url()).pathname);
-    if (short) return route.fulfill({ status: 402, json: { error: "Still short: this needs 43 credits and 5 are left." } });
-    /* Released: from now on the read has it queued. */
-    tray.reply = () => reply(busyTray().map((j) => (j.id === "gen_held" ? { ...j, stage: "queued", label: "Queued", tone: "blue", action: null } : j)));
-    return route.fulfill({ json: { released: true, id: "gen_held" } });
+    releases.push({ path: new URL(route.request().url()).pathname, credits: (route.request().postDataJSON() as { credits?: unknown } | null)?.credits });
+    if (answer === "short") return route.fulfill({ status: 402, json: { error: "Still short: this needs 43 credits and 5 are left.", credits: 43 } });
+    if (answer === "lost") return route.abort("connectionreset");
+    if (answer === "moved") return route.fulfill({ status: 409, json: { error: "The price is now 45 cr. Press Release again to approve it.", credits: 45 } });
+    /* Released by the press whose reply was lost: from now on the read has it queued, and this press charges nothing more. */
+    tray.reply = () => reply(busyTray().map((j) => (j.id === "gen_held" ? { ...j, stage: "queued", label: "Queued", tone: "blue", action: null, releaseCredits: null } : j)));
+    return route.fulfill({ json: { released: true, id: "gen_held", already: true } });
   });
   await page.getByTestId("running-jobs").click();
   const held = page.getByTestId("jobs-row").filter({ hasText: "Harbour at dawn" });
-  await held.getByRole("button", { name: "Release: Harbour at dawn" }).click();
+  await held.getByRole("button", { name: "Release · 43 cr: Harbour at dawn" }).click();
   await expect(held.getByTestId("jobs-problem")).toHaveText("Still short: this needs 43 credits and 5 are left.");
   await expect(held.getByTestId("jobs-action")).toHaveText("Top up");
-  expect(releases).toEqual(["/api/jobs/gen_held/release"]);
+  expect(releases).toEqual([{ path: "/api/jobs/gen_held/release", credits: 43 }]);
   await arrived(page);
   if (TOUCH.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
   expect(await dimText(page, ".gx-jobs-tray")).toEqual([]);
@@ -330,16 +333,25 @@ test("Release starts a held take; when the balance is short it says so and offer
   await expect.poll(() => new URL(page.url()).searchParams.get("tab")).toBe("credits");
   await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("workspace");
 
-  /* With the balance topped up, Release starts it and the tray reads again at once. */
-  short = false;
+  /* Topped up: the reply to the next press is lost. Said so, and pressing again is safe. */
+  answer = "lost";
   await page.getByTestId("running-jobs").click();
   await expect(page.getByRole("dialog", { name: "Jobs" })).toBeVisible();
+  await held.getByRole("button", { name: "Release · 43 cr: Harbour at dawn" }).click();
+  await expect(held.getByTestId("jobs-problem")).toHaveText("The release was not confirmed. Press Release again to check — it is never charged twice.");
+  /* The price moved meanwhile: the route names it, and the button now approves that figure — nothing started at the old one. */
+  answer = "moved";
+  await held.getByRole("button", { name: "Release · 43 cr: Harbour at dawn" }).click();
+  await expect(held.getByTestId("jobs-problem")).toHaveText("The price is now 45 cr. Press Release again to approve it.");
+  await expect(held.getByTestId("jobs-action")).toHaveText("Release · 45 cr");
+  /* Pressed at the new figure: the lost press had started it after all, so this one is answered "already" and charges nothing. */
+  answer = "already";
   const before = tray.reads;
-  await page.getByRole("button", { name: "Release: Harbour at dawn" }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Released. It renders now.");
+  await held.getByRole("button", { name: "Release · 45 cr: Harbour at dawn" }).click();
+  await expect(page.getByTestId("toast")).toHaveText("Harbour at dawn was already released.");
   await expect.poll(() => tray.reads).toBeGreaterThan(before);
-  expect(releases).toHaveLength(2);
-  await expect(page.getByTestId("jobs-row").filter({ hasText: "Harbour at dawn" }).getByTestId("jobs-stage")).toHaveText("Queued");
+  expect(releases.map((r) => r.credits)).toEqual([43, 43, 43, 45]);
+  await expect(held.getByTestId("jobs-stage")).toHaveText("Queued");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 2 rendering · 2 queued");
 });
 
@@ -685,8 +697,8 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   expect(fresh).toMatchObject({ stage: "complete", action: "open", takeId: `generation:gen_t${tag}_done_new`, price: { amount: 17, unit: "cr" } });
   expect(Math.abs(fresh.settledAt! - Date.now())).toBeLessThan(60_000);
   /* Held: the figure its release is measured against, from the kept estimate at today's terms. */
-  expect(byId.get(`gen_t${tag}_held`)).toMatchObject({ stage: "held", tone: "amber", action: "release", label: expect.stringMatching(/^Held · needs [\d,]+ cr$/), draftId: DRAFT });
-  expect(Number(/needs ([\d,]+) cr/.exec(byId.get(`gen_t${tag}_held`)!.label)![1].replace(/,/g, ""))).toBeGreaterThan(40);
+  /* Held: the figure approved when it was held, never re-derived; its Release approves that figure. */
+  expect(byId.get(`gen_t${tag}_held`)).toMatchObject({ stage: "held", tone: "amber", action: "release", label: "Held · needs 40 cr", releaseCredits: 40, draftId: DRAFT });
   /* Failed: "not billed" only where the meter shows nothing charged; unmetered, nothing is claimed. */
   expect(byId.get(`gen_t${tag}_failed`)).toMatchObject({ stage: "failed", label: "Failed · not billed", price: null, action: "recreate", reason: "The engine hit an error" });
   expect(byId.get(`gen_t${tag}_failed`)!.preset).toMatchObject({ prompt: `Prompt for gen_t${tag}_failed`, billing: "workspace", from: { id: `gen_t${tag}_failed` } });
@@ -708,15 +720,16 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   const single = await page.request.get("/api/jobs?status=held&sync=0", { headers }).then((r) => r.json()) as { generations: { id: string }[] };
   expect(single.generations.map((g) => g.id).sort()).toEqual([`gen_t${tag}_held`, `gen_t${tag}_held_big`]);
 
-  /* A refused Release names the figure the row's label says (what the release is measured against now). */
+  /* Pressed at the figure approved when it was held, which the terms have since moved far past: refused as short, naming the
+     figure it was measured against, which rides along for the next press to approve. */
   const big = byId.get(`gen_t${tag}_held_big`)!;
-  const bigNeeds = Number(/needs ([\d,]+) cr/.exec(big.label)![1].replace(/,/g, ""));
-  expect(bigNeeds).toBeGreaterThan(1_000);
-  const refused = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers });
+  expect(big).toMatchObject({ label: "Held · needs 10 cr", releaseCredits: 10 });
+  const refused = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers, data: { credits: 10 } });
   expect(refused.status()).toBe(402);
-  const said = ((await refused.json()) as { error: string }).error;
-  expect(said).toMatch(/^Still short: this needs [\d,]+ credits and [\d,]+ are left\.$/);
-  expect(Number(/needs ([\d,]+) credits/.exec(said)![1].replace(/,/g, ""))).toBe(bigNeeds);
+  const answer = (await refused.json()) as { error: string; credits: number };
+  expect(answer.error).toMatch(/^Still short: this needs [\d,]+ credits and [\d,]+ are left\.$/);
+  expect(answer.credits).toBeGreaterThan(1_000);
+  expect(Number(/needs ([\d,]+) credits/.exec(answer.error)![1].replace(/,/g, ""))).toBe(answer.credits);
 
   /* Every slot busy (someone else's renders fill them), and a held take the balance covers: nothing starts, and the
      answer is the slot, never a cap refusal left on the take by an earlier attempt. */
@@ -724,12 +737,19 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   try {
     for (const n of [1, 2, 3, 4]) await slots.execute({ sql: "INSERT INTO generations(id,project_id,kind,model,prompt,params,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
       args: [`gen_t${tag}_slot_${n}`, "prod-tray", "video", ENGINE, "busy", "{}", "running", "someone-else", now, now] });
+    /* Released by an earlier press whose reply was lost. */
+    await slots.execute({ sql: "INSERT INTO generations(id,project_id,kind,model,prompt,params,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+      args: [`gen_t${tag}_released`, "prod-tray", "video", ENGINE, "released", JSON.stringify({ releasedAt: now - MIN }), "queued", me.id, now - MIN, now - MIN] });
     await slots.execute({ sql: "INSERT INTO generations(id,project_id,kind,model,prompt,params,status,created_by,created_at,updated_at,error) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
       args: [`gen_t${tag}_held_free`, "prod-tray", "video", ENGINE, "free", JSON.stringify({ held: { why: "credits", needs: 0, estUsd: 0, at: now } }), "held", me.id, now - 9 * MIN, now - 9 * MIN, "The production is over the cap."] });
   } finally { slots.close(); }
-  const busy = await page.request.post(`/api/jobs/gen_t${tag}_held_free/release`, { headers });
+  const busy = await page.request.post(`/api/jobs/gen_t${tag}_held_free/release`, { headers, data: { credits: 0 } });
   expect(busy.status()).toBe(409);
   expect(((await busy.json()) as { error: string }).error).toBe("Every render slot is busy. It starts on its own when one frees up.");
+  /* Pressed again after a lost reply: answered "already", and nothing more is charged. */
+  const again = await page.request.post(`/api/jobs/gen_t${tag}_released/release`, { headers, data: { credits: 43 } });
+  expect(again.status()).toBe(200);
+  expect(await again.json()).toEqual({ released: true, id: `gen_t${tag}_released`, already: true });
   const still = await page.request.get("/api/jobs?status=held&sync=0", { headers }).then((r) => r.json()) as { generations: { id: string }[] };
   expect(still.generations.map((g) => g.id)).toContain(`gen_t${tag}_held_free`);
   platform.close();

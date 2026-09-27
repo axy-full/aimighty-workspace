@@ -22,7 +22,8 @@ import { onJobAnnounced } from "./jobs-bus";
  * a take that finishes while the tray is open is seen then, and one seen as
  * failed that later succeeds is news again.
  */
-export type RowProblem = { message: string; topUp: boolean };
+/** Why a row's action did not do what it said; `credits` is a new figure the route named, which the next Release approves. */
+export type RowProblem = { message: string; topUp: boolean; credits?: number };
 export type JobsTrayState = {
   status: "loading" | "ready" | "error";
   jobs: TrayJob[];
@@ -37,8 +38,8 @@ export type JobsTrayState = {
   setOpen: (open: boolean) => void;
   /** Try again: read now. */
   refresh: () => void;
-  /** Start a held take now, if the balance covers it (POST /api/jobs/:id/release). */
-  release: (id: string) => Promise<boolean>;
+  /** Start a held take at the figure on its button, if the balance covers it (POST /api/jobs/:id/release `{ credits }`). */
+  release: (job: Pick<TrayJob, "id" | "name" | "releaseCredits">) => Promise<boolean>;
   releasing: ReadonlySet<string>;
   problems: Readonly<Record<string, RowProblem>>;
   now: number;
@@ -48,6 +49,8 @@ const READ_FAILED = "Jobs could not be read. Trying again shortly.";
 /* Said plainly, with no Reload: this tab may hold work the changed account cannot save. */
 const READ_STOPPED = "Jobs stopped: this tab's account or workspace changed.";
 const SIGNED_OUT = "You are signed out. Sign in again to see your jobs.";
+/* No answer the route wrote (a lost reply, a gateway's page): it may have started. Asking again is safe. */
+const UNCONFIRMED = "The release was not confirmed. Press Release again to check — it is never charged twice.";
 /** A burst of signals (a job announced and the composer's slot moving, together) is one read. */
 const SOON_MS = 150;
 /** Enough seen rows for every row the tray can hold, many times over. */
@@ -207,26 +210,41 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
     readNow();
   }, [scope, readNow]);
 
-  const release = useCallback(async (id: string) => {
+  /* One press per row at a time: a double press is the same press. */
+  const pressing = useRef(new Set<string>());
+  const release = useCallback(async (job: Pick<TrayJob, "id" | "name" | "releaseCredits">) => {
+    const { id } = job;
+    /* The figure on the button: a new one the route named on the last press, else the one approved when it was held. */
+    const credits = problems[id]?.credits ?? job.releaseCredits;
+    if (pressing.current.has(id) || !credits) return false;
+    pressing.current.add(id);
     setReleasing((s) => new Set(s).add(id));
     setProblems((p) => Object.fromEntries(Object.entries(p).filter(([key]) => key !== id)));
+    const say = (problem: RowProblem) => setProblems((p) => ({ ...p, [id]: problem }));
     try {
-      const response = await scoped(`/api/jobs/${encodeURIComponent(id)}/release`, { method: "POST" });
-      const json = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) {
-        setProblems((p) => ({ ...p, [id]: { message: json?.error ?? "This take could not be released. Try again.", topUp: response.status === 402 } }));
-        return false;
+      const response = await scoped(`/api/jobs/${encodeURIComponent(id)}/release`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credits }),
+      });
+      const reply = await response.json().catch(() => null) as { released?: boolean; already?: boolean; error?: string; credits?: unknown } | null;
+      if (response.ok && reply?.released) {
+        toast(reply.already ? `${job.name} was already released.` : `${job.name} released · ${credits.toLocaleString("en-US")} cr. It renders now.`);
+        readNow();
+        return true;
       }
-      toast("Released. It renders now.");
-      readNow();
-      return true;
+      if (!reply?.error || response.status >= 500) { say({ message: UNCONFIRMED, topUp: false }); return false; }
+      /* The route's own words: short (Top up), a price that moved (the next press approves the new figure), a cap, or every slot busy. */
+      const moved = Number.isSafeInteger(reply.credits) && Number(reply.credits) > 0 && reply.credits !== credits ? Number(reply.credits) : undefined;
+      say({ message: reply.error, topUp: response.status === 402, ...(moved ? { credits: moved } : {}) });
+      return false;
     } catch {
-      setProblems((p) => ({ ...p, [id]: { message: "The connection dropped. Press Release again.", topUp: false } }));
+      /* The reply was lost: the server may have released it. Pressing again asks, and never charges twice. */
+      say({ message: UNCONFIRMED, topUp: false });
       return false;
     } finally {
+      pressing.current.delete(id);
       setReleasing((s) => { const next = new Set(s); next.delete(id); return next; });
     }
-  }, [scoped, toast, readNow]);
+  }, [problems, scoped, toast, readNow]);
 
   const summary = useMemo(() => traySummary(jobs, open ? seenWhenOpened : seenKeys), [jobs, open, seenWhenOpened, seenKeys]);
   const value = useMemo<JobsTrayState>(() => ({

@@ -55,6 +55,8 @@ export type TrayJob = {
   action: TrayAction | null;
   /** Open in Takes: the take as the project's Library names it ("generation:<id>"). */
   takeId?: string | null;
+  /** Release: the whole credits it approves — the figure on its button, sent with the press (POST /api/jobs/:id/release `{ credits }`). */
+  releaseCredits?: number | null;
   /** Recreate: the take's own recipe as Gen reads it (lib/shell/recipe recreatePreset), built where the take is read. */
   preset?: GenPreset | null;
 };
@@ -145,7 +147,7 @@ export type EngineMoney = {
   reserved: number | null;
   /** Settled: what the ledger charged — 0 is "not billed" — or null when the ledger has no settled figure. */
   charged: number | null;
-  /** Held for credits: what releasing it is measured against (lib/held heldNeeds). */
+  /** Held: what was approved when it was held (credits, whole), never re-derived; the figure its Release sends. */
   needs: number | null;
 };
 /** What Recreate does for a take: Gen's recipe for it, or why Gen cannot make it (lib/shell/recipe recreateBlock). */
@@ -198,7 +200,8 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
         ...base, stage: "held", tone: "amber",
         label: needs ? `Held · needs ${fmtLedgerCredits(needs)}` : "Held · needs credits",
         reason: kind === "balance" || kind === "slots" ? null : ownLine(row.error),
-        price: null, action: "release",
+        /* Release approves an exact figure: without one there is nothing to approve here. */
+        price: null, ...(needs ? { action: "release" as const, releaseCredits: needs } : {}),
       };
     }
     case "running":
@@ -299,12 +302,13 @@ export function parseTrayReply(value: unknown): TrayReply | null {
     const price = job.price && typeof job.price === "object" && Number.isFinite(job.price.amount) && UNITS.has(job.price.unit) ? job.price : null;
     const takeId = typeof job.takeId === "string" && TAKE_ID.test(job.takeId) ? job.takeId : null;
     const preset = parsePreset(job.preset);
-    const action = job.action && ACTIONS.has(job.action) && (job.action !== "open" || takeId) && (job.action !== "recreate" || preset) ? job.action : null;
+    const releaseCredits = Number.isSafeInteger(job.releaseCredits) && Number(job.releaseCredits) > 0 ? Number(job.releaseCredits) : null;
+    const action = job.action && ACTIONS.has(job.action) && (job.action !== "open" || takeId) && (job.action !== "recreate" || preset) && (job.action !== "release" || releaseCredits) ? job.action : null;
     return [{
       ...job,
       kind: KINDS.has(job.kind) ? job.kind : "other",
       tone: TONES.has(job.tone) ? job.tone : "blue",
-      action, takeId, preset, price,
+      action, takeId, preset, releaseCredits, price,
       settledAt: Number.isFinite(job.settledAt) ? job.settledAt : null,
       mediaUrl: typeof job.mediaUrl === "string" && job.mediaUrl.startsWith("/api/media/") ? job.mediaUrl : null,
       progress: typeof job.progress === "number" && job.progress >= 0 && job.progress <= 1 ? job.progress : null,

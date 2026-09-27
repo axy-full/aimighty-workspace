@@ -131,45 +131,6 @@ function shotCapExemption(adminReleasing: boolean): (author: string | null) => P
   };
 }
 
-/**
- * What a held take needs before it can be released: its kept estimate at
- * today's terms, which is what the release measures it against (see
- * heldRows); the figure the person was told only when no estimate was kept.
- * The jobs tray's label and a refused Release say this same number.
- */
-export function heldNeeds(held: Partial<HeldInfo> | null | undefined, kind: string | null | undefined, model: string | null | undefined): number {
-  const estUsd = Number(held?.estUsd ?? 0);
-  return (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held?.needs ?? 0);
-}
-
-/**
- * What each of these held takes needs now, read off the raw rows (the
- * browser's copy of a take carries no estimate to derive it from). The jobs
- * tray's "Held · needs N cr" and a refused Release both say this figure,
- * which is the one releaseHeldJobs measures the take against.
- */
-export async function heldNeedsFor(ids: readonly string[]): Promise<Map<string, number>> {
-  if (!ids.length) return new Map();
-  const wanted = new Set(ids);
-  /* Every held take fits one read: HELD_LIMIT keeps the line far under heldRows' 50. */
-  return new Map((await heldRows()).filter((r) => wanted.has(r.id)).map((r) => [r.id, r.needs]));
-}
-
-/**
- * Why a Release someone pressed started nothing. Short on credits is a 402
- * (the jobs tray turns its button into Top up); a reason written on the take
- * (a project, shot or token cap) is said as it is; otherwise it is waiting
- * for a render slot or the workspace's hourly room, and starts on its own —
- * never "short" while the balance covers it, which would send someone to buy
- * credits they do not need.
- */
-export function releaseRefusal(o: { needs: number; balance: number | null; reason: string | null; slotsFull: boolean }): { status: 402 | 409; error: string } {
-  if (o.balance != null && o.balance < o.needs)
-    return { status: 402, error: `Still short: this needs ${o.needs.toLocaleString("en-US")} credits and ${Math.max(0, Math.floor(o.balance)).toLocaleString("en-US")} are left.` };
-  if (o.reason) return { status: 409, error: o.reason };
-  return { status: 409, error: o.slotsFull ? "Every render slot is busy. It starts on its own when one frees up." : "It cannot start just now. It starts on its own when the workspace can run it." };
-}
-
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
@@ -201,7 +162,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
          The snapshot is still the fallback, for a row old enough to have no
          `estUsd` in it, where deriving would give zero and release it free. */
       estUsd,
-      needs: heldNeeds(held, kind, model),
+      needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
       why: held.why === "slots" ? "slots" : "credits",
       token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap) } : undefined,
     };
@@ -315,4 +276,32 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
     text: `${body}\n\n${link}`,
     html: `<p>${esc(body)}</p><p><a href="${esc(link)}">Open Settings</a></p>`,
   })));
+}
+
+/**
+ * What each of these held takes would cost to start now, read off the raw
+ * rows (the browser's copy of a take carries no estimate to derive it from):
+ * the figure releaseHeldJobs measures a take against, which a refused
+ * Release names so the next press can approve it.
+ */
+export async function heldNeedsFor(ids: readonly string[]): Promise<Map<string, number>> {
+  if (!ids.length) return new Map();
+  const wanted = new Set(ids);
+  const rows = ids.length === 1 ? await heldRows(ids[0]) : await heldRows();
+  return new Map(rows.filter((r) => wanted.has(r.id)).map((r) => [r.id, r.needs]));
+}
+
+/**
+ * Why a Release someone pressed started nothing. Short on credits is a 402
+ * (the jobs tray turns its button into Top up); a reason written on the take
+ * (a project, shot or token cap) is said as it is; otherwise it is waiting
+ * for a render slot or the workspace's hourly room, and starts on its own —
+ * never "short" while the balance covers it, which would send someone to buy
+ * credits they do not need.
+ */
+export function releaseRefusal(o: { needs: number; balance: number | null; reason: string | null; slotsFull: boolean }): { status: 402 | 409; error: string } {
+  if (o.balance != null && o.balance < o.needs)
+    return { status: 402, error: `Still short: this needs ${o.needs.toLocaleString("en-US")} credits and ${Math.max(0, Math.floor(o.balance)).toLocaleString("en-US")} are left.` };
+  if (o.reason) return { status: 409, error: o.reason };
+  return { status: 409, error: o.slotsFull ? "Every render slot is busy. It starts on its own when one frees up." : "It cannot start just now. It starts on its own when the workspace can run it." };
 }

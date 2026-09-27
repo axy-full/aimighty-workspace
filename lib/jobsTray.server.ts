@@ -1,7 +1,6 @@
 import { db } from "./db";
 import { listGenerations, type Generation } from "./jobs";
 import { creditsApply } from "./credits";
-import { heldNeedsFor } from "./held";
 import { platformDb, platformReady } from "./platform";
 import { currentTenant } from "./tenant";
 import { CONSUMER_CAPACITY_WINDOW_MS, consumerJobsReady } from "./higgsfield-consumer/jobs";
@@ -23,7 +22,7 @@ import {
  * meter — what admission reserved when the take was approved, then what it
  * settled at, zero once a reservation is released — and nothing else, so no
  * dollar leaves this path for it. A workspace that pays its vendors reads its
- * own dollars. A held take says what its release is measured against. A
+ * own dollars. A held take says what was approved when it was held. A
  * connected job is the account's own credits as quoted. Nothing is estimated
  * again from today's rates.
  */
@@ -77,14 +76,16 @@ async function ledgerFor(rows: Generation[], inCredits: boolean, workspaceId: st
       for (const r of rs.rows) metered.set(String(r.id), { status: String(r.status), credits: Number(r.credits ?? 0), usd: r.engine_cost_usd == null ? null : Number(r.engine_cost_usd) });
     } catch { /* the rows still show, without a figure */ }
   }
-  const heldIds = rows.filter((g) => g.status === "held").map((g) => g.id);
-  const needs = inCredits && heldIds.length ? await heldNeedsFor(heldIds).catch(() => new Map<string, number>()) : new Map<string, number>();
   for (const g of rows) {
     const m = metered.get(g.id);
     const running = m?.status === "running";
     if (g.status === "held") {
-      const heldUsd = Number((g.params.held as { estUsd?: unknown } | undefined)?.estUsd);
-      out.set(g.id, { unit, reserved: null, charged: null, needs: inCredits ? needs.get(g.id) ?? null : Number.isFinite(heldUsd) && heldUsd > 0 ? heldUsd : null });
+      /* What the person approved when it was held (lib/held heldInfo; the browser's copy carries it in this
+         workspace's unit): never re-derived here. A release at a price that has since moved is refused with the
+         new figure, which the next press approves. */
+      const held = (g.params.held ?? {}) as { needs?: unknown; estUsd?: unknown };
+      const figure = Number(inCredits ? held.needs : held.estUsd);
+      out.set(g.id, { unit, reserved: null, charged: null, needs: Number.isFinite(figure) && figure > 0 ? (inCredits ? Math.ceil(figure) : figure) : null });
     } else if (!ENGINE_SETTLED.includes(g.status)) {
       out.set(g.id, { unit, reserved: running ? (inCredits ? m!.credits : m!.usd) : null, charged: null, needs: null });
     } else if (inCredits) {

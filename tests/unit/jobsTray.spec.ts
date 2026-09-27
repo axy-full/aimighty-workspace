@@ -4,7 +4,7 @@ import {
   trayOrder, traySummary, trayWhen, withComposerSlot, type AccountRow, type EngineMoney, type EngineRow, type TrayJob,
 } from "../../lib/jobsTray";
 import type { GenPreset } from "../../lib/shell/recipe";
-import { heldNeeds, releaseRefusal } from "../../lib/held";
+import { releaseRefusal } from "../../lib/held";
 
 /**
  * The header's jobs tray (lib/jobsTray): stored rows from both engines become
@@ -52,8 +52,11 @@ test("a take in flight shows the price it was approved and reserved at, off the 
 });
 
 test("a held take says what it needs and waits on Release; one waiting for a slot is in the line, with nothing to press", () => {
-  const held = engineTrayJob(engine({ id: "h", status: "held", params: { held: { why: "credits", needs: 40 } } }), money({ needs: 43 }));
-  expect(held).toMatchObject({ stage: "held", label: "Held · needs 43 cr", tone: "amber", action: "release", price: null, reason: null });
+  const held = engineTrayJob(engine({ id: "h", status: "held", params: { held: { why: "credits", needs: 43 } } }), money({ needs: 43 }));
+  /* The figure approved when it was held is the one its Release approves again: on the button, and sent with the press. */
+  expect(held).toMatchObject({ stage: "held", label: "Held · needs 43 cr", tone: "amber", action: "release", releaseCredits: 43, price: null, reason: null });
+  /* With no figure there is nothing to approve: no Release. */
+  expect(engineTrayJob(engine({ id: "h0", status: "held", params: { held: { why: "credits" } } }), money())).toMatchObject({ label: "Held · needs credits", action: null });
   expect(active(held)).toBe(true);
   expect(moving(held)).toBe(false);
   const slot = engineTrayJob(engine({ id: "s", status: "held", params: { held: { why: "slots" } } }), money({ needs: 13 }));
@@ -222,29 +225,28 @@ test("a reply is checked row by row before the tray draws it", () => {
       { ...row("open", "complete", T0, T0), action: "open", takeId: "generation:gen_1" },
       { ...row("again-nothing", "failed", T0, T0), action: "recreate", preset: { prompt: 4 } },
       { ...row("again", "failed", T0, T0), action: "recreate", preset: preset("again") },
+      { ...row("free", "held", T0), action: "release", releaseCredits: 12.5 },
+      { ...row("priced", "held", T0), action: "release", releaseCredits: 43 },
       { ...row("bad-stage", "rendering", T0), stage: "exploding" },
       { id: 7, name: "no id" },
     ],
   });
   expect(reply?.pollAfterSeconds).toBe(10);
   expect(reply?.partial).toBe(true);
-  expect(reply?.jobs.map((j) => j.id)).toEqual(["ok", "open-nowhere", "open", "again-nothing", "again"]);
+  expect(reply?.jobs.map((j) => j.id)).toEqual(["ok", "open-nowhere", "open", "again-nothing", "again", "free", "priced"]);
   expect(reply?.jobs[0]).toMatchObject({ mediaUrl: null, action: null, tone: "blue", kind: "other", price: null, progress: null, settledAt: null });
   /* An action whose target is missing is no action. */
   expect(reply?.jobs[1]).toMatchObject({ action: null, takeId: null });
   expect(reply?.jobs[2]).toMatchObject({ action: "open", takeId: "generation:gen_1" });
   expect(reply?.jobs[3]).toMatchObject({ action: null, preset: null });
   expect(reply?.jobs[4].action).toBe("recreate");
+  /* Release approves whole credits, or it is no Release. */
+  expect(reply?.jobs[5]).toMatchObject({ action: null, releaseCredits: null });
+  expect(reply?.jobs[6]).toMatchObject({ action: "release", releaseCredits: 43 });
   expect(parseTrayReply({ jobs: [] })?.pollAfterSeconds).toBe(60);
 });
 
-test("a held take needs what its kept estimate costs now, and a refused Release says why without sending anyone to top up needlessly", () => {
-  /* Re-derived from the estimate at today's terms (what the release measures), not the figure told when it was held. */
-  const now = heldNeeds({ needs: 40, estUsd: 2.86 }, "video", "dreamina-seedance-2-5-260628");
-  expect(now).toBeGreaterThan(40);
-  expect(heldNeeds({ needs: 40 }, "video", "dreamina-seedance-2-5-260628")).toBe(40);
-  expect(heldNeeds(undefined, "video", "m")).toBe(0);
-
+test("a refused Release says why without sending anyone to top up needlessly", () => {
   expect(releaseRefusal({ needs: 43, balance: 5, reason: null, slotsFull: true })).toEqual({ status: 402, error: "Still short: this needs 43 credits and 5 are left." });
   expect(releaseRefusal({ needs: 6000, balance: 1250.7, reason: null, slotsFull: false }).error).toBe("Still short: this needs 6,000 credits and 1,250 are left.");
   /* Covered, but refused for a reason of its own, or waiting for room: never "short", never Top up. */

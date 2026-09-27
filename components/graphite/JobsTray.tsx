@@ -157,7 +157,7 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
       case "gen": toProject(); if (shell.view === "gen") shell.closePanels(); else shell.goGen(); onDone(); return;
       case "ads": toProject(); shell.goSuite("business", "ads"); onDone(); return;
       case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
-      case "release": void tray.release(job.id); return;
+      case "release": void tray.release(job); return;
       case "recreate": {
         if (!job.preset) return;
         /* Gen is handed the take's own recipe (lib/shell/recipe, as the Library's Recreate builds it); it is priced again before anything runs. */
@@ -169,7 +169,9 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
       }
     }
   };
-  const label = problem?.topUp ? "Top up" : job.action ? ACTION_LABEL[job.action] : null;
+  /* Release carries the figure it approves: the one approved when it was held, or a new one the route named. */
+  const releaseAt = job.action === "release" ? problem?.credits ?? job.releaseCredits ?? null : null;
+  const label = problem?.topUp ? "Top up" : releaseAt ? `Release · ${releaseAt.toLocaleString("en-US")}\u00a0cr` : job.action ? ACTION_LABEL[job.action] : null;
   return (
     <li className="gx-jobs-row" data-stage={job.stage} data-tone={job.tone} data-source={job.source} data-testid="jobs-row" data-job={job.id}>
       <span className="gx-jobs-thumb" aria-hidden="true">
