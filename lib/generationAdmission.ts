@@ -9,7 +9,6 @@ import {
   generatedReferenceSeconds,
   videoReferenceSeconds,
 } from "@/lib/referenceDuration";
-import { billCredits } from "@/lib/creditTerms";
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
@@ -63,7 +62,7 @@ import {
   notifyHeld,
   HELD_LIMIT,
 } from "@/lib/held";
-import { creditState, creditsApply } from "@/lib/credits";
+import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
@@ -204,14 +203,16 @@ export async function executeGenerationAdmission(
 
     // A token may carry a monthly ceiling. Checked before submit, so an agent
     // in a loop stops at the wall instead of discovering it on the invoice.
+    // Measured and stated in what the workspace pays: credits on the
+    // platform's keys, its vendors' dollars on its own (tokenSpendThisMonth).
     if (got.token?.capUsd != null) {
       const spent = await tokenSpendThisMonth(got.token.id);
-      if (spent >= got.token.capUsd) {
+      if (spent.usd >= got.token.capUsd) {
         return admissionReply(
           {
             error:
-              `The token "${got.token.name}" has reached its ${got.token.capUsd.toFixed(2)} USD monthly ceiling ` +
-              `(${spent.toFixed(2)} spent). Raise or remove the cap in Settings.`,
+              `The token "${got.token.name}" has reached its $${got.token.capUsd.toFixed(2)} monthly ceiling ` +
+              `(${spent.credits != null ? `${Math.round(spent.credits).toLocaleString("en-US")} cr` : `$${spent.usd.toFixed(2)}`} this month). Raise or remove the cap in Settings.`,
           },
           { status: 429 },
         );
@@ -1074,7 +1075,7 @@ export async function executeGenerationAdmission(
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
       if (
         body.maxCredits != null &&
-        billCredits(estStillUsd, modelId) > body.maxCredits
+        quotedCredits(estStillUsd, modelId) > body.maxCredits
       ) {
         return admissionReply(
           {
@@ -1678,7 +1679,7 @@ export async function executeGenerationAdmission(
       )?.net ?? 0;
     if (
       body.maxCredits != null &&
-      billCredits(estUsd, modelId) > body.maxCredits
+      quotedCredits(estUsd, modelId) > body.maxCredits
     ) {
       return admissionReply(
         {

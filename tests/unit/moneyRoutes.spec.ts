@@ -73,6 +73,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     "@/lib/auth": await auth(ws),
     "@/lib/reconcile": await import("../../lib/reconcile"),
     "@/lib/storageCost": { storageLedger: async () => null },
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/creditUsage": { creditUsage: async () => ({}), creditUsageSummary: async () => ({}) },
     "@/lib/credits": await import("../../lib/credits"),
@@ -80,6 +81,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     "@/lib/creditTerms": await import("../../lib/creditTerms"),
     "@/lib/memo": { memoGet: () => null, memoPut: () => {} },
     "@/lib/usageLedger": await import("../../lib/usageLedger"),
+    "@/lib/usageParams": await import("../../lib/usageParams"),
   };
   const usage = load<{ GET: Handler }>("app/api/usage/route.ts", modules).GET;
   const summary = load<{ GET: Handler }>("app/api/usage/summary/route.ts", modules).GET;
@@ -88,7 +90,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     await ready();
     const take = `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd,refine_model,refine_cost_usd,deleted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`;
     await db().batch([
-      { sql: take, args: ["g1", "dreamina-seedance-2-5-260628", "one", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
+      { sql: take, args: ["g1", "dreamina-seedance-2-5-260628", "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
       { sql: take, args: ["g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
       { sql: take, args: ["g3", "dreamina-seedance-2-5-260628", "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "anthropic/claude-test", 0.03, 1] },
       { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('c1',?,?,1,0.2)`, args: [reading, reading] },
@@ -98,6 +100,8 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
   });
 
   const body = await (await usage(new Request("http://localhost/api/usage"))).json();
+  expect(body.recent.find((row: { id: string }) => row.id === "g1").params).toEqual({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12 });
+  expect(JSON.stringify(body)).not.toContain("private-test-");
   const byteplus = body.vendors.find((v: { id: string }) => v.id === "byteplus");
   // The deleted take was paid for: it stays spent.
   expect(byteplus.renderSpend).toBeCloseTo(1.5, 6);

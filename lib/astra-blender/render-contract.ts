@@ -19,7 +19,8 @@ export type AstraRenderJob = {
     status: AstraRenderStatus;
     estimateCredits: number;
     billedCredits: number | null;
-    costUsd: number | null;
+    /** Compute dollars; only for a workspace that is not billed in credits (lib/astra-blender/render-jobs.ts). */
+    costUsd?: number | null;
     createdAt: number;
     updatedAt: number;
     error: string | null;
@@ -28,7 +29,8 @@ export type AstraRenderJob = {
 };
 export type AstraRenderQuote = {
     estimateCredits: number;
-    maxCostUsd: number;
+    /** The compute ceiling in dollars; never sent to a workspace billed in credits. */
+    maxCostUsd?: number;
     quoteDigest: string;
     sourceDigest: string;
     expiresAt: number;

@@ -204,9 +204,8 @@ export function GenerateComposer({
             {wantsVoice ? (
               <Field label="Voice">
                 {(id) => (
-                  <Select id={id} aria-label="Voice" value={state.voiceId} disabled={submitting} onChange={(event) => composer.dispatch({ type: "voice", value: event.target.value })}>
-                    <option value="">Choose a voice</option>
-                    {(composer.audio?.voices ?? []).map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+                  <Select id={id} aria-label="Voice" value={composer.voice?.id ?? ""} disabled={submitting} onChange={(event) => composer.dispatch({ type: "voice", value: event.target.value })}>
+                    {composer.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
                   </Select>
                 )}
               </Field>

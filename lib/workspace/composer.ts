@@ -1,5 +1,5 @@
 import { displayModelName } from "../models";
-import { audioTaskAvailable, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
+import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
 import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
 
 /**
@@ -179,6 +179,28 @@ export function audioSeconds(task: NodeAudioTask | null | undefined, value: numb
   return Math.min(max, Math.max(min, whole));
 }
 
+/** One press of Gen's length stepper: a second for a sound effect, five for music, whose range runs to five minutes. */
+export const AUDIO_SECONDS_STEP: Record<"sound" | "music", number> = { sound: 1, music: 5 };
+
+/** Where one press of the stepper lands: the next whole step up or down, held to the task's range. */
+export function stepAudioSeconds(task: "sound" | "music", seconds: number, direction: 1 | -1): number {
+  const step = AUDIO_SECONDS_STEP[task];
+  const now = audioSeconds(task, seconds);
+  return audioSeconds(task, direction > 0 ? Math.floor(now / step) * step + step : Math.ceil(now / step) * step - step);
+}
+
+/**
+ * The voices a speech model reads in: its own vendor's (speechVoicesFor — Grok
+ * Voice has xAI's, every other model the ElevenLabs account's), so the list
+ * swaps with the model and a line is never priced in the other vendor's voice.
+ * A reply without Grok Voice's own list names the default model's in `voices`.
+ */
+export function composerVoices(audio: Pick<NodeAudioSetup, "voices" | "grokVoices" | "defaultSpeechModel"> | null | undefined, modelId: string): { id: string; name: string }[] {
+  if (!audio) return [];
+  const own = speechVoicesFor(audio, modelId);
+  return own.length || modelId !== audio.defaultSpeechModel ? own : audio.voices;
+}
+
 /** The workspace's own audio models (workspaceModels below), so choosing one holds the length to its range. */
 const AUDIO_MODEL_TASK: Record<string, NodeAudioTask> = { eleven_sfx: "sound", eleven_music: "music" };
 
@@ -324,13 +346,19 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ...(engine.untestedResolutions?.length ? { untested: engine.untestedResolutions } : {}),
     }));
   if (audio?.configured) {
-    const speech = audio.defaultSpeechModel || audio.speechModels[0]?.id || "";
     /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone speaks only. */
     if (audioTaskAvailable(audio, "sound")) {
       out.push({ id: "eleven_sfx", label: displayModelName("eleven_sfx"), type: "audio", audioTask: "sound", description: "Sound effects from a description." });
       out.push({ id: "eleven_music", label: displayModelName("eleven_music"), type: "audio", audioTask: "music", description: "Music from a description, 10 s and up." });
     }
-    if (speech && audio.voices.length) out.push({ id: speech, label: displayModelName(speech), type: "audio", audioTask: "speech", description: "Your words, read in a chosen voice." });
+    /* Every speech model the workspace reaches that has voices to read in, the default first: picking another one
+       (Grok Voice, say) swaps the voice list with it. */
+    const speech = [...new Set([audio.defaultSpeechModel, ...audio.speechModels.map((m) => m.id)].filter(Boolean))];
+    for (const id of speech) {
+      if (!composerVoices(audio, id).length) continue;
+      const note = audio.speechModels.find((m) => m.id === id)?.note;
+      out.push({ id, label: displayModelName(id), type: "audio", audioTask: "speech", description: note || "Your words, read in a chosen voice." });
+    }
   }
   return out;
 }
@@ -457,6 +485,7 @@ export function quoteKeyFor(input: {
   references: readonly ComposerReference[];
   /** Sound and connected models price the prompt itself. */
   prompt: string;
+  /** Sound: the length billed, and the voice a line is read in (the one the picker shows, composerVoices). */
   seconds: number;
   instrumental: boolean;
   voiceId: string;
@@ -506,6 +535,7 @@ export const READING_MODELS = "Reading the available models…";
  * visible reason rather than a button that silently does nothing.
  */
 export function composerBlock(input: {
+  /** `voiceId`: the voice the line will be read in (composerVoices › speechVoiceFor), not only one picked. */
   state: Pick<ComposerState, "billing" | "type" | "prompt" | "voiceId">;
   model: ComposerModel | null;
   quote: ComposerQuote | null;
@@ -532,7 +562,7 @@ export function composerBlock(input: {
   if (!state.prompt.trim()) return "Write what to generate.";
   if (state.billing === "connected" && (input.sentPrompt?.length ?? 0) > PROMPT_LIMIT)
     return `With the setup written in, the words run past ${PROMPT_LIMIT.toLocaleString("en-US")} characters. Shorten them or set fewer chips.`;
-  if (model.audioTask === "speech" && !state.voiceId) return "Choose a voice.";
+  if (model.audioTask === "speech" && !state.voiceId) return `${model.label} has no voice to read in here. Choose another model.`;
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
     return quote.reason ?? "This model has no live price with these settings.";

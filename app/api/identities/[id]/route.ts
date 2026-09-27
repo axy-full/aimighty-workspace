@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { getIdentity, updateIdentity, deleteIdentity, syncIdentity } from "@/lib/identities";
+import { getIdentity, updateIdentity, deleteIdentity, syncIdentity, identityForBrowser } from "@/lib/identities";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
-const publicView = (i: Awaited<ReturnType<typeof getIdentity>>) =>
-  i ? { ...i, loraUrl: undefined, configUrl: undefined, trained: Boolean(i.loraUrl) } : null;
+const publicView = (i: Awaited<ReturnType<typeof getIdentity>>) => (i ? identityForBrowser(i) : null);
 
 /** One identity — asked about at the trainer if it is still training. */
 export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {

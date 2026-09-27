@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { listProductions, createProduction } from "@/lib/productions";
+import { listProductions, createProduction, withoutVendorSpend } from "@/lib/productions";
+import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
@@ -12,7 +13,9 @@ export const GET = withTenant(async function GET(req: Request) {
   if (got.response) return got.response;
   const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
-  return NextResponse.json({ productions: await listProductions() }, {
+  /* Credit responses carry only that workspace's unit. */
+  const productions = await listProductions();
+  return NextResponse.json({ productions: creditsApply(requireTenant()) ? withoutVendorSpend(productions) : productions }, {
     headers: { "Cache-Control": "private, no-store" },
   });
 });

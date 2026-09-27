@@ -508,12 +508,17 @@ test("acknowledgements accept only one consistent explicit UUID and preserve saf
 });
 
 test("a lost paid acknowledgement times out once and remains uncertain even if fetch ignores abort", async () => {
-  const f = fixture((_packet, state) =>
-    state.paid ? new Promise(() => {}) : undefined,
+  // Only the paid call gets 10 ms; a wallet read slower than that still passes.
+  const f = fixture((packet, state) =>
+    state.paid
+      ? new Promise(() => {})
+      : packet.params.name === "list_workspaces" && state.reads === 1
+        ? new Promise((resolve) => setTimeout(() => resolve(undefined), 15))
+        : undefined,
   );
   const result = await submitConsumerVideo(token, input, workspaceId, 75, {
     fetch: f.fetch,
-    callTimeoutMs: 10,
+    sendTimeoutMs: 10,
     admit: async () => {},
   });
   expect(result.state).toBe("uncertain");

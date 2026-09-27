@@ -24,6 +24,7 @@ import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { specToPhrase, CATEGORIES } from "@/lib/studio";
 import { takeCost } from "@/lib/breakdownCost";
+import { takeEstimate } from "@/lib/shotListCost";
 import QuotedAtomikAction from "@/components/atomik/QuotedAtomikAction";
 import type { PaidTextQuote } from "@/lib/paidText";
 import { mentionsIn } from "@/lib/mentions";
@@ -134,7 +135,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
       <div className="ak-bar">
         {(paid.error||paid.pending)&&<p role={paid.error?"alert":"status"} className="ak-sub">{paid.error||"A shot draft awaits confirmation. Recover it from that scene."}</p>}
         <span className="text-[14px] font-semibold">Breakdown</span>
-        <span className="mono-s">{shots.length} SHOT{shots.length === 1 ? "" : "S"} · {mmss(runtime)} OF {mmss(target)} · EST. {money.price(estimate)} AT ONE TAKE EACH</span>
+        <span className="mono-s">{shots.length} SHOT{shots.length === 1 ? "" : "S"} · {mmss(runtime)} OF {mmss(target)} · EST. {money.price(estimate).toUpperCase()} AT ONE TAKE EACH</span>
         <div className="cv-bar !h-1.5 w-[220px]">
           {scenes.map((sc) => <span key={sc.n} className={inScene(sc.n).filter((s) => s.kind !== "type").reduce((a, s) => a + (s.planned ?? 0), 0) > sc.secs ? "is-over" : "is-picked"} style={{ flex: Math.max(1, sc.secs) }} />)}
         </div>
@@ -227,7 +228,7 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
      session is the same for every one of them. */
   const money = useMoney();
   const { rates } = useSession();
-  const priceOf = (planned: number | null) => money.price(takeCost(rates, planned));
+  const price = money.price(takeEstimate(rates, shot));
   const [desc, setDesc] = useState(shot.description);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* The patch waiting on the timer, so unmounting sends it instead of
@@ -286,7 +287,7 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
           <span className="flex items-center gap-2.5">
             <button type="button" className="ak-act is-muted" onClick={() => onPatch({ kind: type ? "render" : "type" })} title={type ? "Type only — click to make it a rendered shot" : "Renders — click to make it type only, which never renders and never costs"}>{type ? "TYPE ONLY" : "RENDERS"}</button>
             <button type="button" className="ak-act is-muted" onClick={onRemove} title="Remove">×</button>
-            <span className="mono-s !font-medium">{type ? "0" : priceOf(shot.planned)}</span>
+            <span className="mono-s !font-medium">{type ? money.price(0) : price}</span>
           </span>
         </div>
       </div>
