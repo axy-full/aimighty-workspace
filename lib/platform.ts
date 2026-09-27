@@ -380,6 +380,8 @@ export function platformReady(): Promise<void> {
       // Already-migrated databases skip the data scan on cold starts.
       await addColumn("credit_grants", GRANT_KIND_COLUMN, GRANT_KIND_BACKFILL);
       await addColumn("topup_requests", TOPUP_BONUS_COLUMN);
+      await addColumn("meter_events", "credit_usd REAL");
+      await addColumn("meter_events", "credit_margin REAL");
       /* Reporting content is open to anybody — a victim must not need an
          account — so the counting has to be by something an anonymous caller
          still has. Salted and truncated, the same shape access_requests

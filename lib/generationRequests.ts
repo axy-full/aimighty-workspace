@@ -8,6 +8,7 @@ import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCredits, marginKeyOf } from "./creditTerms";
+import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
 import { workspaceLimits } from "./limits";
@@ -274,7 +275,6 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
-  const billed = paid ? billCredits(cost, marginKeyOf(event.kind, event.model)) : 0;
   await ready();
   await reservationsReady();
   const cap = projectId ? await projectCap(projectId) : null;
@@ -302,9 +302,14 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);
     if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
     await syncBillingLedger(tx, ws.id, ts);
-    const own = await tx.execute({ sql: `SELECT workspace_id,status FROM meter_events WHERE id=?`, args: [event.id] });
+    const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
     if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
+    const prior = own.rows[0];
+    if (prior && (Boolean(prior.paid_by_platform) !== paid || prior.engine !== event.engine || prior.kind !== event.kind || prior.model !== event.model))
+      throw new SpendReservationError("This job's funding or engine changed. Request a new quote.", 409, true);
+    const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
+    const billed = paid ? creditsAtTerms(cost, terms) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
     try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
@@ -339,9 +344,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.cost, 0);
       if (spent + cost + (baseline.get(event.id)?.cost ?? 0) > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
-    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts] });
+    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, args: [event.id, ws.id, options.token?.id ?? null] });
   });
 }
