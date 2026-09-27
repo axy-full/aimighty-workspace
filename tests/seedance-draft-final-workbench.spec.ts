@@ -188,7 +188,15 @@ async function shot(page: Page, info: TestInfo, strip: Locator, name: string) {
   const size = info.project.name.replace("workbench-", "");
   await strip.evaluate((el) => { (el as HTMLElement).style.scrollMarginBottom = "120px"; el.scrollIntoView({ block: "end" }); });
   await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
-  await strip.screenshot({ path: path.join(dir, `${name}-${size}-strip.png`) });
+  /* The strip as it shows, clipped to the screen. An element shot taller than the viewport resizes the page to take it,
+     and on a touch phone that leaves (pointer: coarse) off for the rest of the test: the next 44px check then measures
+     desktop-sized controls (844×390's approval strip is taller than the screen). */
+  const box = await strip.boundingBox();
+  const view = page.viewportSize()!;
+  if (!box) return;
+  const x = Math.max(0, box.x), y = Math.max(0, box.y);
+  const clip = { x, y, width: Math.min(box.x + box.width, view.width) - x, height: Math.min(box.y + box.height, view.height) - y };
+  if (clip.width > 0 && clip.height > 0) await page.screenshot({ path: path.join(dir, `${name}-${size}-strip.png`), clip });
 }
 
 test("Draft first, then the 1080p final: approved at the price on each button, charged once each — the draft at the 480p price, the final at the 1080p price", async ({ page }, info) => {
