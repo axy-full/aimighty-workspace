@@ -101,6 +101,47 @@ test("a frame whose price cannot be read says why, offers Try again and sends no
   expect(submitted).toBe(0);
 });
 
+test("picked frames are sent once at their shown total and leave the selection", async ({ page }) => {
+  await signInLocally(page.request);
+  const project = fixture();
+  project.production!.beats!.scenes[0].shots.push({ id: "shot-2", description: "The keeper waits", framing: "Close", movement: "Static", lighting: "Dawn", sound: "Gulls" });
+  project.production!.boards!.frames["shot-2"] = { prompt: "The keeper waits on the quay", style: "bw-sketch", takes: [] };
+  const store = { current: project };
+  await mockProjects(page, store);
+  await mockMedia(page);
+  const posted: Record<string, unknown>[] = [];
+  let failKeeper = true;
+  await page.route(/\/api\/generate(\/quote)?$/, (route) => {
+    if (route.request().url().endsWith("/quote")) {
+      if (failKeeper && String(route.request().postDataJSON().prompt).includes("The keeper waits")) return route.fulfill({ status: 503, json: { error: "The price is unavailable. Try again." } });
+      return route.fulfill({ json: { estimatedCredits: 4, fingerprint: "a".repeat(64) } });
+    }
+    posted.push(route.request().postDataJSON());
+    return route.fulfill({ json: { id: `gen_batch_${posted.length}`, status: "queued" } });
+  });
+  await page.route(/\/api\/jobs\/gen_batch_\d+$/, (route) => route.fulfill({ json: { generation: generation({ id: new URL(route.request().url()).pathname.split("/").at(-1)!, status: "running" }) } }));
+  await page.goto(`/suites?suite=studio&page=boards&project=${project.id}`);
+  await page.getByTestId("boards-select-all").click();
+  const action = page.getByTestId("boards-render-selected");
+  /* One picked frame's price could not be read: the batch says so and reads just that frame again. */
+  await expect(action).toHaveText("Price unavailable");
+  await expect(action).toBeDisabled();
+  const retry = page.getByTestId("boards-render-selected-retry");
+  await fit(page, retry);
+  failKeeper = false;
+  await retry.click();
+  await expect(action).toHaveText("Storyboard 2 frames · 8 credits");
+  await expect(retry).toHaveCount(0);
+  expect(posted).toHaveLength(0);
+  await fit(page, action);
+  await action.click();
+  /* What was sent leaves the selection: the same priced batch is not offered a second time. */
+  await expect(page.getByTestId("boards-selection")).toContainText("Select frames to storyboard together");
+  expect(posted.map((body) => body.maxCredits)).toEqual([4, 4]);
+  await expect(action).toBeDisabled();
+  await expect.poll(() => [store.current.production!.boards!.frames.shot.pending?.length, store.current.production!.boards!.frames["shot-2"].pending?.length]).toEqual([1, 1]);
+});
+
 test("a changed plate discards the old quote, reads again on request failure, and never submits automatically", async ({ page }) => {
   await signInLocally(page.request);
   const store = { current: fixture() };

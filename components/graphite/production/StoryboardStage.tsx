@@ -225,12 +225,15 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
     try { deleteDrawing(latest.current, drawing.id); editor.change((old) => deleteDrawing(old, drawing.id)); setDropping(null); if (await editor.ensureSaved()) toast(`${drawing.name} deleted`); }
     catch (error) { setDropping(null); runs.setError(error instanceof Error ? error.message : "The drawing could not be deleted."); }
   };
+  /* Sent one by one at the prices shown, stopping at the first refusal or changed price; answers the frames sent. */
   const renderAll = async (list: NumberedShot[]) => {
-    if (batchSending.current || batchPrice(list) == null) return;
+    const sent: string[] = [];
+    if (batchSending.current || batchPrice(list) == null) return sent;
     const todo = list.map((shot) => ({ shot, frame: candidate(shot), credits: pricing.quotes[shot.id]!.credits! }));
     batchSending.current = true; setBatchWorking(true);
-    try { for (const { shot, frame, credits } of todo) if (!(await render(shot, credits, frame))) break; }
+    try { for (const { shot, frame, credits } of todo) { if (!(await render(shot, credits, frame))) break; sent.push(shot.id); } }
     finally { batchSending.current = false; setBatchWorking(false); }
+    return sent;
   };
 
   /* Line drawings: uploaded together, each put on its beat (the frame's drawing), read by the agent, converted in its look. */
@@ -441,7 +444,8 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
         <span className="gx-eyebrow" data-functional-label="">{picked.length ? `${picked.length} selected` : "Select frames to storyboard together"}</span>
         <span className="gx-spacer" />
         <button type="button" className="gx-hbtn" onClick={() => setPicked(picked.length === shots.length ? [] : shots.map((s) => s.id))} data-testid="boards-select-all">{picked.length === shots.length ? "Clear" : "Select all"}</button>
-        <button type="button" className="gx-primary" disabled={!picked.length || batchWorking || pickedPrice == null} onClick={() => void renderAll(pickedShots)} data-testid="boards-render-selected">
+        {/* What was sent leaves the selection, so the same priced batch is not offered a second time. */}
+        <button type="button" className="gx-primary" disabled={!picked.length || batchWorking || pickedPrice == null} onClick={() => void renderAll(pickedShots).then((sent) => setPicked((all) => all.filter((id) => !sent.includes(id))))} data-testid="boards-render-selected">
           {batchWorking ? "Sending frames…" : pickedPrice != null ? `Storyboard ${picked.length} frames · ${pickedPrice.toLocaleString()} credits` : pickedUnpriced.length ? "Price unavailable" : picked.length ? "Pricing selected frames…" : "Storyboard selected (0)"}
         </button>
         {pickedUnpriced.length && !batchWorking ? <button type="button" className="gx-hbtn" onClick={() => tryAgainAll(pickedUnpriced)} data-testid="boards-render-selected-retry">Try again</button> : null}
