@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { useSignInHref } from "@/lib/session";
 import {
   ChevronDown,
   Check,
@@ -37,6 +38,8 @@ export default function WorkspaceMenu({
   onSignOut: () => Promise<void>;
 }) {
   const pathname = usePathname();
+  /* Back to this stage and project after signing in, not to the front page. */
+  const signIn = useSignInHref();
   const [account, setAccount] = useState(initial),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -79,7 +82,7 @@ export default function WorkspaceMenu({
     }
   }
   if (!account) return <div className="studio-account-entry">
-    <a className="studio-account-signin" href="/login">Sign in</a>
+    <a className="studio-account-signin" href={signIn}>Sign in</a>
     <a href="/pricing">Create workspace</a>
   </div>;
   const initials = account.name.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join("").toUpperCase() || "P";
