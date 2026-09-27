@@ -22,7 +22,10 @@ import {
   consumerGenerationJobs,
   presentCatalogue,
   quoteConsumerGeneration,
+  quoteConsumerGenerationBatch,
   submitConsumerGenerationJob,
+  submitConsumerGenerationBatchJobs,
+  checkConsumerGenerationBatch,
   pollConsumerGeneration,
 } from "@/lib/higgsfield-consumer/generation-service";
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
@@ -44,6 +47,16 @@ const submit = z
   .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) })
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
+/** Takes 2–4 of one Generate: one quote per take, one approval of their exact sum, one paid batch call. */
+const takeIds = z.array(z.uuid()).min(2).max(4);
+const quoteBatch = z
+  .object({ action: z.literal("quote-batch"), draftId: id, input: consumerGenerationInputSchema, idempotencyKeys: takeIds, batchId: z.string().regex(/^b_[a-z0-9]{4,20}$/), composer: z.literal("gen").optional() })
+  .strict();
+const submitBatch = z
+  .object({ action: z.literal("submit-batch"), draftId: id, ids: takeIds, workspaceId: z.uuid(), credits: z.number().positive().max(400000) })
+  .strict();
+/** A batch whose submit reply was lost: checked, and fenced if it never arrived. Never a paid call. */
+const checkBatch = z.object({ action: z.literal("check-batch"), draftId: id, ids: takeIds }).strict();
 /** Read-only explainer style listing (slice F6); nothing is generated from it. */
 const explainer = z.object({ action: z.literal("explainer-presets"), refresh: z.boolean().optional() }).strict();
 /** The account's trained characters (Soul IDs), for a Soul model's `soul_id`. */
@@ -65,7 +78,7 @@ const elementsCreate = z.object({
   sources: z.array(z.union([z.object({ uploadId: z.string().max(100) }).strict(), z.object({ genId: z.string().max(100) }).strict()])).min(1).max(8),
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
 }).strict();
-const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer, characters, charactersPlan, charactersCreate, elements, elementsCreate]);
+const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, quoteBatch, submitBatch, checkBatch, explainer, characters, charactersPlan, charactersCreate, elements, elementsCreate]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -142,7 +155,7 @@ export const POST = withTenant(async (req: Request) => {
     const body = parsed.data;
     await takeAccountLimit(
       `hf-consumer-generation:${requireTenant().id}:${owner.user.id}:${body.action}`,
-      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" || body.action === "characters-plan" || body.action === "elements" ? 12 : body.action === "characters-create" || body.action === "elements-create" ? 3 : 6,
+      body.action === "status" || body.action === "check-batch" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" || body.action === "characters" || body.action === "characters-plan" || body.action === "elements" ? 12 : body.action === "characters-create" || body.action === "elements-create" ? 3 : 6,
       60_000,
     );
     if (body.action === "catalogue")
@@ -178,6 +191,21 @@ export const POST = withTenant(async (req: Request) => {
     }
     if (body.action === "status")
       return Response.json(await pollConsumerGeneration({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
+    if (body.action === "quote-batch")
+      return Response.json(
+        { jobs: await quoteConsumerGenerationBatch(owner.user.id, body.draftId, body.input, body.idempotencyKeys, { batchId: body.batchId, composer: body.composer ?? null }) },
+        { headers },
+      );
+    if (body.action === "submit-batch") {
+      const render = await requireRender();
+      if (render.response) return render.response;
+      return Response.json(
+        { jobs: await submitConsumerGenerationBatchJobs(owner.user.id, body.draftId, body.ids, { workspaceId: body.workspaceId, credits: body.credits }) },
+        { headers },
+      );
+    }
+    if (body.action === "check-batch")
+      return Response.json(await checkConsumerGenerationBatch(owner.user.id, body.draftId, body.ids), { headers });
     return Response.json(
       { job: await quoteConsumerGeneration(owner.user.id, body.draftId, body.input, body.idempotencyKey, { composer: body.composer ?? null }) },
       { headers },
