@@ -30,9 +30,10 @@ export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
-  const hit = cached<unknown>(PROJECTS_KEY, TTL_MS);
-  if (hit) return NextResponse.json(hit);
   const inCredits = creditsApply(requireTenant());
+  const unit = inCredits ? "cr" : "usd";
+  const hit = cached<{ unit?: "cr" | "usd" }>(PROJECTS_KEY, TTL_MS);
+  if (hit?.unit === unit) return NextResponse.json(hit);
 
   /* One grouped pass over generations for the counts and the money, then a
      handful of correlated subqueries for the shot-level facts the Projects
@@ -91,12 +92,8 @@ export const GET = withTenant(async function GET() {
       : r.status === "queued" || r.status === "running" ? "rendering" : r.status === "failed" ? "failed on" : "rendered";
     lastBy.set(String(r.project_id), { at: Number(r.updated_at), who: r.who ?? null, what: `${verb} ${what}` });
   }
-  /* A workspace on credits is shown credits. The vendor's dollars beside them
-     would give the margin away, so `spend` is withheld (0) there, as in
-     /api/shots and lib/jobs.ts; `unit` says which figure is the workspace's. */
-  const inCredits = creditsApply(requireTenant());
   const body = {
-    unit: inCredits ? "cr" : "usd",
+    unit,
     projects: rs.rows.map((r: any) => ({
       id: r.id,
       name: r.name,

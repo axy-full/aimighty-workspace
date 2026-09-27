@@ -224,3 +224,16 @@ test("a workspace on its own keys reads its own dollars, never credits beside th
     expect(vendorCostFindings(body, { figures: FIGURES }).length, url).toBeGreaterThan(0);
   }
 });
+
+test("a cached project list is not reused after the workspace's billing unit changes", async () => {
+  const route = ROUTES.find((item) => item.url === "/api/projects")!;
+  const { body: original } = await callAs(ownKeys, ACTORS.owner, route);
+  expect(original).toMatchObject({ unit: "usd" });
+  const { status, body } = await callAs({ ...ownKeys, usesPlatformKeys: true }, ACTORS.owner, route);
+  expect(status).toBe(200);
+  expect(body).toMatchObject({ unit: "cr" });
+  expect(vendorCostFindings(body, { figures: FIGURES })).toEqual([]);
+  const { body: restored } = await callAs(ownKeys, ACTORS.owner, route);
+  expect(restored).toMatchObject({ unit: "usd" });
+  expect(vendorCostFindings(restored, { figures: FIGURES }).length).toBeGreaterThan(0);
+});

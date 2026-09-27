@@ -101,19 +101,6 @@ export async function platformSpendSince(sinceMs: number): Promise<number> {
 }
 
 /**
- * Whether the platform has paid a vendor for any of this workspace's work.
- *
- * Every paid attempt is metered with who funded it (meter_events), so one
- * funded row is enough. A workspace with such work has read it in credits,
- * and its takes still hold what the vendors charged for it.
- */
-export async function hasPlatformFundedWork(workspaceId: string): Promise<boolean> {
-  await platformReady();
-  const rs = await platformDb().execute({ sql: "SELECT 1 FROM meter_events WHERE workspace_id=? AND paid_by_platform=1 LIMIT 1", args: [workspaceId] });
-  return rs.rows.length > 0;
-}
-
-/**
  * The vendor key an engine draws on. For a model's provider, pass it through
  * billedTo first (renderKeyNameFor): GPT Image and Grok Imagine without their
  * own key draw on the gateway's.

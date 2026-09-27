@@ -3,15 +3,12 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
-import { loadRouteModule } from "../helpers/vendorCostScan";
+import type { TenantWorkspace } from "../../lib/tenant";
 
 /* The walls a customer can walk into say nothing about what the vendors
    charge: a token's monthly ceiling trips on what the workspace pays, the
    monthly cap on the platform's engines is refused without its figures, a
-   quote never carries the margin beside a workspace's own dollars, and a
-   workspace billed in credits cannot move itself to its own keys and read its
-   history in the vendors' dollars. */
+   quote exposes only the approval amount and the workspace's own unit. */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-vendor-walls-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
@@ -28,7 +25,6 @@ function workspace(name: string, credits: boolean, allowanceUsd: number | null =
     flaggedAt: null, flagNote: null, concurrency: 10, rendersPerHour: 1000, storageQuotaBytes: null, deletedAt: null,
   };
 }
-const owner: TenantUser = { id: "u_owner", email: "owner@example.test", name: "Owner", role: "admin", owner: true, disabled: false, lastSeen: null, createdAt: 0 };
 const SEEDANCE = "dreamina-seedance-2-5-260628";
 
 async function granted(ws: TenantWorkspace, credits = 500) {
@@ -98,32 +94,6 @@ test("a quote's approval credits carry the margin only where credits are billed"
   expect(JSON.stringify(shown)).not.toMatch(/usd/i);
   expect(shown.totalCredits).toBe(q.totalCredits);
   expect(shown.lines.map((l) => l.credits)).toEqual(q.lines.map((l) => l.credits));
-});
-
-test("a workspace billed in credits cannot move itself to its own keys once the platform has paid for its work", async () => {
-  const { runInTenant } = await import("../../lib/tenant");
-  const platform = await import("../../lib/platform");
-  const { platformDb } = platform;
-  const auth = await import("../../lib/auth");
-  type Patch = { PATCH: (req: Request) => Promise<Response> };
-  const as = (ws: TenantWorkspace) => loadRouteModule<Patch>("app/api/workspaces/keys/route.ts", {
-    "@/lib/auth": { ...auth, withTenant: (fn: (req: Request) => Promise<Response>) => (req: Request) => runInTenant(ws, () => fn(req), { user: owner }) },
-    /* The mode itself is the platform record's; this asks only whether the route lets it change. */
-    "@/lib/platform": { ...platform, setWorkspaceMode: async () => {} },
-  });
-  const patch = (ws: TenantWorkspace) => as(ws).PATCH(new Request("https://studio.test/api/workspaces/keys", {
-    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "own" }),
-  }));
-  const fresh = workspace("mode_fresh", true);
-  expect((await patch(fresh)).status).toBe(200);
-  const billed = workspace("mode_billed", true);
-  await platformDb().execute({
-    sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,'video','byteplus',?,'succeeded',1,15,1,0,0)`,
-    args: [`gen_mode_${run}`, billed.id, SEEDANCE],
-  });
-  const refused = await patch(billed);
-  expect(refused.status).toBe(409);
-  expect(JSON.stringify(await refused.json())).not.toMatch(/\$/);
 });
 
 test("the MCP tools print a credit workspace's takes and projects in credits", async () => {

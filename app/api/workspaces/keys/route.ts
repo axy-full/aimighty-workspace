@@ -5,7 +5,6 @@ import { updateWorkspaceVendorKey, setWorkspaceMode, platformKeysByDefault } fro
 import { VENDOR_KEYS, type VendorKeyName } from "@/lib/vendorKeys";
 import { mask, keyringConfigured } from "@/lib/keyring";
 import { creditState } from "@/lib/credits";
-import { hasPlatformFundedWork } from "@/lib/platformSpend";
 
 export const dynamic = "force-dynamic";
 const NAMES = new Set<string>(VENDOR_KEYS.map((k) => k.name));
@@ -85,13 +84,6 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   if (!mode) return NextResponse.json({ error: "mode must be platform or own." }, { status: 400 });
   if (mode === "platform" && !platformKeysByDefault()) {
     return NextResponse.json({ error: "The platform doesn't lend its keys on this deployment." }, { status: 400 });
-  }
-  /* A workspace reads money in the unit of its current keys, and its takes keep what the vendors
-     charged. Moved to its own keys, the work the platform paid for would read in those vendors'
-     dollars — the other side of the credits it was billed. So that move is the platform desk's
-     (/api/admin/workspaces/[id]), not a request the workspace makes of itself. */
-  if (mode === "own" && ws.usesPlatformKeys && (await hasPlatformFundedWork(ws.id))) {
-    return NextResponse.json({ error: "This workspace has work billed in credits. Ask the platform to move it to its own keys." }, { status: 409 });
   }
   await setWorkspaceMode(ws.id, mode === "platform", got.user.id);
   return NextResponse.json({ ok: true, mode });

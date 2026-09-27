@@ -64,7 +64,13 @@ export function stepFromStage(stage: string | null | undefined): number {
 
 /** The list for a workspace on credits: the vendor's dollars withheld, credits kept. */
 export function withoutVendorSpend(list: ProductionRow[]): ProductionRow[] {
-  return list.map((p) => ({ ...p, spentUsd: 0, projects: p.projects.map((j) => ({ ...j, spentUsd: 0 })) }));
+  const clean = <T extends { spentUsd?: number; capUsd?: number | null }>(row: T): T => {
+    const copy = { ...row };
+    delete copy.spentUsd;
+    delete copy.capUsd;
+    return copy;
+  };
+  return list.map((p) => ({ ...clean(p), projects: p.projects.map(clean) }));
 }
 
 /** Board 7a in one read: productions, their projects, counts and money. */

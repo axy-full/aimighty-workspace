@@ -355,4 +355,3 @@ export function textQuoteCostUsd(m: CatalogModel, inTokens: number, outTokens: n
   }
   return Math.max(...costs);
 }
-
