@@ -86,6 +86,10 @@ test("the website tools account is designated, paused and released from the desk
   const me = await page.request.get("/api/me").then((r) => r.json());
   expect(me.superAdmin, `start the server with SUPER_ADMIN_EMAIL=${ownerEmail}`).toBe(true);
   const scope = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
+  /* The seeded connection holds no grant, so nothing may try to use it: the
+     side panel's Atomik read would ask the account for its models (and, finding
+     no grant, mark it for a new sign-in). It is answered here instead. */
+  await page.route("**/api/atomik**", (route) => route.fulfill({ status: 503, json: { error: "Not part of this test." } }));
   // A rerun starts from no designation.
   const first = await page.request.get("/api/admin/website-account").then((r) => r.json());
   if (first.state !== "unset") expect((await page.request.post("/api/admin/website-account", { headers: scope, data: { action: "release" } })).ok()).toBe(true);
@@ -101,7 +105,8 @@ test("the website tools account is designated, paused and released from the desk
 
   await page.goto("/admin");
   const card = page.getByTestId("website-account");
-  await expect(card.getByTestId("website-account-state")).toHaveText("Not designated");
+  // The desk's cards mount after its workspace list loads; a cold local server compiles each of their routes first.
+  await expect(card.getByTestId("website-account-state")).toHaveText("Not designated", { timeout: 60_000 });
   await expect(card.getByTestId("website-account-rate")).toHaveText(/Credit rate (not )?set/);
   const phone = (page.viewportSize()?.width ?? 1440) < 900;
   const fits = async (where: string) => {
