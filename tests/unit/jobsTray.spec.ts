@@ -244,5 +244,3 @@ test("a reply is checked row by row before the tray draws it", () => {
   expect(reply?.jobs[6]).toMatchObject({ action: "release", releaseCredits: 43 });
   expect(parseTrayReply({ jobs: [] })?.pollAfterSeconds).toBe(60);
 });
-
-

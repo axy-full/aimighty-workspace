@@ -22,9 +22,9 @@ import {
  * meter — what admission reserved when the take was approved, then what it
  * settled at, zero once a reservation is released — and nothing else, so no
  * dollar leaves this path for it. A workspace that pays its vendors reads its
- * own dollars. A held take says what was approved when it was held. A
- * connected job is the account's own credits as quoted. Nothing is estimated
- * again from today's rates.
+ * own dollars. A held take carries the current release quote from the
+ * generation response; a connected job uses the account's own credits as quoted.
+ * The tray does not calculate a price.
  */
 export async function trayJobs(userId: string, now = Date.now()): Promise<TrayReply> {
   const workspace = currentTenant()?.workspace;
@@ -80,9 +80,8 @@ async function ledgerFor(rows: Generation[], inCredits: boolean, workspaceId: st
     const m = metered.get(g.id);
     const running = m?.status === "running";
     if (g.status === "held") {
-      /* What the person approved when it was held (lib/held heldInfo; the browser's copy carries it in this
-         workspace's unit): never re-derived here. A release at a price that has since moved is refused with the
-         new figure, which the next press approves. */
+      /* The generation response carries the current release quote in this workspace's unit.
+         The tray uses that quote; a price that moves before Release is refused with the new figure. */
       const held = (g.params.held ?? {}) as { needs?: unknown; estUsd?: unknown };
       const figure = Number(inCredits ? held.needs : held.estUsd);
       out.set(g.id, { unit, reserved: null, charged: null, needs: Number.isFinite(figure) && figure > 0 ? (inCredits ? Math.ceil(figure) : figure) : null });
