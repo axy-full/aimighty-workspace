@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { audioVendor } from "./xaiVoice";
 import { xaiSubmissionRejected } from "./xaiErrors";
 import { PreflightError } from "./preflight";
@@ -471,7 +472,7 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       if (saved.model !== job.modelId) throw new Error("The accepted request model does not match its original admission.");
       const credentialFingerprint = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint;
       const vendorCostUsd = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd;
-      const state = await engine.poll!({ ...saved, credentialFingerprint });
+      const state = await withAcceptedJobCredentials(genId, "higgsfield", () => engine.poll!({ ...saved, credentialFingerprint }));
       if (state.status === "failed" || state.status === "cancelled") {
         // Higgsfield documents failed, NSFW and canceled requests as uncharged.
         await failJob(genId, state.error ?? "The connected-account request was canceled.", true);
@@ -582,9 +583,9 @@ export async function reconcileTopazImage(genId: string): Promise<void> {
       if (!job || job.kind !== "image") return;
       const previous = await producedOutcome(genId);
       if (previous) { await seal(job, previous); return; }
-      const state = await falStatus(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
+      const state = await withAcceptedJobCredentials(genId, "fal", () => falStatus(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId)));
       if (state.status !== "COMPLETED") return;
-      const result = await falResult<{ image?: { url?: string; content_type?: string } }>(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
+      const result = await withAcceptedJobCredentials(genId, "fal", () => falResult<{ image?: { url?: string; content_type?: string } }>(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId)));
       if (!result.image?.url) throw new Error("Topaz returned no image. The existing request remains available for reconciliation.");
       const out = await finishStill(job, { bytes: await fetchBytes(result.image.url, 60_000, 200 * 1024 * 1024), mime: result.image.content_type ?? "image/png",
         costUsd: estimateImageCostUsd(job.modelId, job.size, 0)?.net ?? null, totalTokens: null, via: "fal" }, 0, now() - job.startedAt);

@@ -8,7 +8,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
  * /connect lists the workspace's API tokens with what each spent this month.
  * A credit workspace reads that in the credits its takes were billed, never
  * the vendor's dollars behind them (beside its credits they are the margin).
- * The ceiling is still set in dollars. One real (mock) render through a
+ * The ceiling is set and enforced in credits. One real (mock) render through a
  * render token: nothing is spent.
  */
 test("API tokens on /connect: a credit workspace reads a token's month in credits billed, never the vendor's dollars", async ({ page, playwright, baseURL }) => {
@@ -22,7 +22,7 @@ test("API tokens on /connect: a credit workspace reads a token's month in credit
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: newProject(`Tokens ${randomUUID().slice(0, 6)}`), revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
   const projectId = String((await saved.json()).productionProjectId);
-  const minted = await page.request.post("/api/tokens", { headers, data: { name: "Render agent", scope: "render", capUsd: 20 } });
+  const minted = await page.request.post("/api/tokens", { headers, data: { name: "Render agent", scope: "render", capCredits: 250 } });
   expect(minted.ok(), await minted.text()).toBe(true);
 
   /* The agent renders with its token. */
@@ -41,12 +41,12 @@ test("API tokens on /connect: a credit workspace reads a token's month in credit
 
   /* The route says the unit, and the month is exactly the credits that take was billed. */
   const listed = await page.request.get("/api/tokens", { headers }).then((r) => r.json());
-  expect(listed).toMatchObject({ unit: "cr", tokens: [{ name: "Render agent", capUsd: 20, spendThisMonth: billed }] });
+  expect(listed).toMatchObject({ unit: "cr", tokens: [{ name: "Render agent", capCredits: 250, spendThisMonth: billed }] });
 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/connect");
-  await expect(page.getByText(`Can generate · ${billed} cr this month · $20.00 ceiling`, { exact: false })).toBeVisible();
+  await expect(page.getByText(`Can generate · ${billed} cr of 250 cr this month`, { exact: false })).toBeVisible();
   expect(await page.locator("body").innerText()).not.toMatch(/\$\d+\.\d\d (of|this month)/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);

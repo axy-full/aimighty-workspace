@@ -17,7 +17,8 @@ export function agentReserved(run: Run, inCredits: boolean): string {
   return `reserved up to ${credits(run.estimateCredits)}`;
 }
 
-export function agentCharged(run: Run, _inCredits: boolean): string | null {
+export function agentCharged(run: Run, inCredits: boolean): string | null {
+  void inCredits;
   if (run.ownKey === true) return "External account · historical";
   if (run.status === "failed" && run.credits === 0) return "not billed";
   return run.credits == null ? null : credits(run.credits);

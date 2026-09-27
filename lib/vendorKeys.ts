@@ -1,3 +1,5 @@
+import { currentTenant } from "./tenant";
+
 /** Shared provider credentials stay on the server. Workspace keys from the
  * previous billing mode are retained for history but never fund new work. */
 export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "fal" | "elevenlabs" | "higgsfield" | "xai";
@@ -19,6 +21,10 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
 ];
 
 export function vendorKey(name: VendorKeyName): string | null {
+  const context = currentTenant();
+  const accepted = context?.acceptedCredential;
+  if (accepted?.workspaceId === context?.workspace?.id && accepted?.vendor === name)
+    return accepted.value;
   if (name === "higgsfield" && !process.env.HF_CREDENTIALS && process.env.HF_API_KEY_ID && process.env.HF_API_KEY_SECRET)
     return `${process.env.HF_API_KEY_ID}:${process.env.HF_API_KEY_SECRET}`;
   return process.env[ENV[name]] || null;

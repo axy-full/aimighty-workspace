@@ -45,7 +45,8 @@ export const POST = withTenant(async (req: Request) => {
     await takeAccountLimit(`hf-consumer-connection:${identity.workspaceId}:${identity.userId}:developer-probe`, 12, 60_000);
     const access = await getConsumerAccess(identity.workspaceId, identity.userId);
     if (!access) return Response.json({ probe: { reachable: false, status: null, reason: "Connect the account first." } }, { headers });
-    return Response.json({ probe: await probeDeveloperApi(access.accessToken) }, { headers });
+    const probe = await probeDeveloperApi(access.accessToken);
+    return Response.json({ probe: probe.reachable ? { reachable: true, balance: null, unit: null } : probe }, { headers });
   } catch {
     return Response.json({ error: "The connected account is temporarily unavailable." }, { status: 503, headers });
   }

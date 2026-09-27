@@ -450,3 +450,78 @@ test("POST /api/generate/check fingerprints the request exactly as POST /api/gen
     expect((await db().execute("SELECT COUNT(*) AS n FROM generation_requests WHERE request_key LIKE 'route-bad-%'")).rows[0].n).toBe(0);
   });
 });
+
+
+test("shared engines isolate studio balances and credit token ceilings across concurrent jobs", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { vendorKey } = await import("../../lib/vendorKeys");
+  const { creditState } = await import("../../lib/credits");
+  const { tokenCreditUsage } = await import("../../lib/tokenUsage");
+  const { grantCredits } = await import("../../lib/platform");
+  const { billCredits } = await import("../../lib/creditTerms");
+  const a = workspace("managed-org-a", false), b = workspace("managed-org-b", false);
+  a.keys.openai = "retained-tenant-a"; b.keys.openai = "retained-tenant-b";
+  const prior = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "shared-unit-key";
+  try {
+    const price = billCredits(1, "text");
+    await grantCredits(a.id, price * 3, "Fixture", null, "manual");
+    await grantCredits(b.id, price * 3, "Fixture", null, "manual");
+    const token = { id: "same-token-id", capUsd: null, capCredits: price };
+    await runInTenant(a, async () => {
+      expect(vendorKey("openai")).toBe("shared-unit-key");
+      const jobs = await Promise.allSettled(["managed-a-first", "managed-a-second"].map(id => reserveGenerationSpend({ id, kind: "text", engine: "openai", model: "fixture", status: "running", engineCostUsd: 1 }, { token })));
+      expect(jobs.filter(job => job.status === "fulfilled")).toHaveLength(1);
+      expect(jobs.filter(job => job.status === "rejected")).toHaveLength(1);
+      expect((await creditState())?.balance).toBe(price * 2);
+      expect((await tokenCreditUsage(0)).get(token.id)).toBe(price);
+    });
+    await runInTenant(b, async () => {
+      expect(vendorKey("openai")).toBe("shared-unit-key");
+      expect((await creditState())?.balance).toBe(price * 3);
+      expect((await tokenCreditUsage(0)).get(token.id)).toBeUndefined();
+      await reserveGenerationSpend({ id: "managed-b-first", kind: "text", engine: "openai", model: "fixture", status: "running", engineCostUsd: 1 }, { token });
+      expect((await tokenCreditUsage(0)).get(token.id)).toBe(price);
+    });
+    expect(a.keys.openai).toBe("retained-tenant-a"); expect(b.keys.openai).toBe("retained-tenant-b");
+  } finally { if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior; }
+});
+
+
+test("accepted own-key jobs keep their collection key without changing new work or another studio", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { vendorKey } = await import("../../lib/vendorKeys");
+  const { withAcceptedJobCredentials } = await import("../../lib/acceptedJobCredentials");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const previous = process.env.FAL_KEY;
+  process.env.FAL_KEY = "shared-fal-unit-key";
+  const a = { ...workspace("accepted-a"), keys: { fal: "original-a" } };
+  const b = { ...workspace("accepted-b"), keys: { fal: "original-b" } };
+  try {
+    await platformReady();
+    for (const [ws, funded] of [[a, 0], [b, 1]] as const)
+      await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,paid_by_platform,created_at,updated_at) VALUES(?,?, 'video','fal','fixture','running',?,?,?)",
+        args: [`${ws.id}-collection`, ws.id, funded, Date.now(), Date.now()] });
+    await Promise.all([a, b].map((ws) => runInTenant(ws, async () => {
+      expect(vendorKey("fal")).toBe("shared-fal-unit-key");
+      await withAcceptedJobCredentials(`${ws.id}-collection`, "fal", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        expect(vendorKey("fal")).toBe(ws.id === a.id ? "original-a" : "shared-fal-unit-key");
+        await runInTenant(b, async () => expect(vendorKey("fal")).toBe("shared-fal-unit-key"));
+      });
+      expect(vendorKey("fal")).toBe("shared-fal-unit-key");
+    })));
+    await runInTenant(a, async () => {
+      await withAcceptedJobCredentials("pre-meter-history", "fal", async () => expect(vendorKey("fal")).toBe("original-a"));
+      await expect(withAcceptedJobCredentials(`${a.id}-collection`, "fal", async () => { throw new Error("collector failed"); })).rejects.toThrow("collector failed");
+      expect(vendorKey("fal")).toBe("shared-fal-unit-key");
+    });
+    await runInTenant({ ...a, keys: {} }, async () => {
+      let called = false;
+      await expect(withAcceptedJobCredentials(`${a.id}-collection`, "fal", async () => { called = true; })).rejects.toThrow("original connection is unavailable");
+      expect(called).toBe(false);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = previous;
+  }
+});

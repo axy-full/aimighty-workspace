@@ -1,11 +1,9 @@
-import { syncCreditReceipts } from "@/lib/creditReceipts";
+import { tokenCreditUsage } from "@/lib/tokenUsage";
 import { securityAuditStatement } from "@/lib/securityAudit";
 import { requireTenant } from "@/lib/tenant";
 import { parseCeiling } from "@/lib/tokenCeiling";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { creditsApply } from "@/lib/credits";
-import { billedCreditsExpr } from "@/lib/creditSql";
 import {
   currentUser, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
@@ -34,33 +32,25 @@ export const GET = withTenant(async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
   await ready();
-  await syncCreditReceipts();
-  /* A credit workspace reads each token's month in credits billed, never the vendor's dollars (see /api/analytics). */
-  const inCredits = creditsApply(requireTenant());
-
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);
 
+  const totals = await tokenCreditUsage(start.getTime());
   const rs = await db().execute({
-    sql: `SELECT t.id, t.name, t.scope, t.cap_usd, t.last_used, t.created_at,
-                 COALESCE((SELECT SUM(${inCredits ? billedCreditsExpr("g") : "COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)"})
-                           FROM generations g
-                           WHERE g.token_id = t.id AND g.created_at >= ?), 0) AS spend
-          FROM api_tokens t
-          WHERE t.user_id = ? AND t.revoked_at IS NULL
-          ORDER BY t.created_at DESC`,
-    args: [start.getTime(), user.id],
+    sql: "SELECT id,name,scope,cap_usd,cap_credits,last_used,created_at FROM api_tokens WHERE user_id=? AND revoked_at IS NULL ORDER BY created_at DESC",
+    args: [user.id],
   });
 
   return NextResponse.json({
-    unit: inCredits ? "cr" : "usd",
+    unit: "cr",
     tokens: rs.rows.map((r: any) => ({
       id: r.id,
       name: r.name,
       scope: r.scope,
-      capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
-      /** In `unit`. The ceiling is still set and enforced in dollars. */
-      spendThisMonth: Number(r.spend),
+      capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      legacyCeiling: r.cap_usd != null,
+      /** Actual recorded credits, including reservations. */
+      spendThisMonth: totals.get(String(r.id)) ?? 0,
       lastUsed: r.last_used == null ? null : Number(r.last_used),
       createdAt: Number(r.created_at),
     })),
@@ -78,21 +68,19 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "Give the token a name" }, { status: 400 });
 
   const scope: TokenScope = body.scope === "read" ? "read" : "render";
-  /* Absent or blank is "no limit"; any other value must be dollars above zero.
-     A value that is not one used to be stored as no limit — an uncapped
-     spending token from a typo. */
-  const ceiling = body.capUsd == null || body.capUsd === "" ? { capUsd: null } : parseCeiling(String(body.capUsd));
+  if (body.capUsd != null) return NextResponse.json({ error: "Set a monthly ceiling in Particl credits." }, { status: 400 });
+  const ceiling = body.capCredits == null ? { capCredits: null } : parseCeiling(String(body.capCredits));
   if ("error" in ceiling) return NextResponse.json({ error: ceiling.error }, { status: 400 });
-  const capUsd = ceiling.capUsd;
+  const capCredits = ceiling.capCredits;
 
   const secret = mintTokenSecret();
   const tid = id("tok");
   await db().batch([{
-    sql: `INSERT INTO api_tokens (id, token_hash, name, user_id, scope, cap_usd, created_at)
+    sql: `INSERT INTO api_tokens (id, token_hash, name, user_id, scope, cap_credits, created_at)
           VALUES (?,?,?,?,?,?,?)`,
-    args: [tid, tokenHash(secret), name, user.id, scope, capUsd, now()],
+    args: [tid, tokenHash(secret), name, user.id, scope, capCredits, now()],
   }, securityAuditStatement({workspaceId:requireTenant().id,actorId:user.id,action:"api_token.created",targetType:"api_token",targetId:tid,details:{scope}})], "write");
 
   // The only time the secret exists outside a hash. Shown once, never again.
-  return NextResponse.json({ id: tid, name, scope, capUsd, token: secret });
+  return NextResponse.json({ id: tid, name, scope, capCredits, token: secret });
 }, { requireRequestScope: true });

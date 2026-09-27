@@ -5,17 +5,10 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import { parseCeiling } from "../../lib/tokenCeiling";
 
-/* /connect's "New token — can generate" asks for a monthly ceiling. A
-   cancelled dialog, "$20" or "twenty" used to mint a token with no limit. */
-test("a ceiling is dollars above zero, blank is the only 'no limit', and anything else asks again", () => {
-  expect(parseCeiling("20")).toEqual({ capUsd: 20 });
-  expect(parseCeiling(" $20 ")).toEqual({ capUsd: 20 });
-  expect(parseCeiling("$ 12.5")).toEqual({ capUsd: 12.5 });
-  expect(parseCeiling("1,000")).toEqual({ capUsd: 1000 });
-  expect(parseCeiling("20 USD")).toEqual({ capUsd: 20 });
-  expect(parseCeiling("")).toEqual({ capUsd: null });
-  expect(parseCeiling("   ")).toEqual({ capUsd: null });
-  for (const bad of ["twenty", "0", "$0", "$", "USD", "0.001", "-5", "20$", "1e3", "NaN", "Infinity", "20 dollars"])
+test("a ceiling is whole credits above zero, blank alone means no limit", () => {
+  for (const [text, capCredits] of [["20", 20], ["20 cr", 20], ["1,000 credits", 1000], ["", null], ["   ", null]] as const)
+    expect(parseCeiling(text)).toEqual({ capCredits });
+  for (const bad of ["twenty", "0", "$20", "USD", "20 USD", "0.001", "-5", "1e3", "NaN", "Infinity", "1,2", "9007199254740992"])
     expect(parseCeiling(bad), bad).toHaveProperty("error");
 });
 
@@ -31,7 +24,7 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture" }) },
     "@/lib/tokenCeiling": { parseCeiling },
     "@/lib/credits": { creditsApply: () => true },
-    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
+    "@/lib/tokenUsage": { tokenCreditUsage: async () => new Map() },
     "@/lib/creditSql": { billedCreditsExpr: () => "0" },
     "@/lib/db": {
       db: () => ({ batch: async (statements: { args: unknown[] }[]) => { inserted.push(statements[0].args); } }),
@@ -52,14 +45,15 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
   const post = (body: unknown) => mod.exports.POST(new Request("http://localhost/api/tokens", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }));
-  for (const capUsd of ["twenty", 0, -5, "$"]) {
-    const refused = await post({ name: "Assistant", scope: "render", capUsd });
-    expect(refused.status, String(capUsd)).toBe(400);
+  for (const capCredits of ["twenty", 0, -5, "$"]) {
+    const refused = await post({ name: "Assistant", scope: "render", capCredits });
+    expect(refused.status, String(capCredits)).toBe(400);
   }
+  expect((await post({ name: "Old client", scope: "render", capUsd: 20 })).status).toBe(400);
   expect(inserted).toEqual([]);
-  expect((await (await post({ name: "Capped", scope: "render", capUsd: 20 })).json()).capUsd).toBe(20);
-  expect((await (await post({ name: "Typed", scope: "render", capUsd: "$35" })).json()).capUsd).toBe(35);
-  expect((await (await post({ name: "Open", scope: "render", capUsd: null })).json()).capUsd).toBeNull();
-  expect((await (await post({ name: "Reader", scope: "read" })).json()).capUsd).toBeNull();
+  expect((await (await post({ name: "Capped", scope: "render", capCredits: 20 })).json()).capCredits).toBe(20);
+  expect((await (await post({ name: "Typed", scope: "render", capCredits: "35 cr" })).json()).capCredits).toBe(35);
+  expect((await (await post({ name: "Open", scope: "render", capCredits: null })).json()).capCredits).toBeNull();
+  expect((await (await post({ name: "Reader", scope: "read" })).json()).capCredits).toBeNull();
   expect(inserted.map((args) => args[5])).toEqual([20, 35, null, null]);
 });

@@ -20,7 +20,8 @@ const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
 };
 
 /** Does this vendor's bill land on the platform for the current workspace? */
-export function paidByPlatform(_name: VendorKeyName): boolean {
+export function paidByPlatform(name: VendorKeyName): boolean {
+  void name;
   return Boolean(currentTenant()?.workspace);
 }
 

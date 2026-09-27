@@ -167,7 +167,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
   return runInTenant(ws, async () => {
     await ready();
     const rs = await db().execute({
-      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.last_used, u.*
+      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, u.*
             FROM api_tokens t JOIN users u ON u.id = t.user_id
             WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0 AND u.deleted_at IS NULL
             LIMIT 1`,
@@ -200,6 +200,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
         id: String(row.tid), name: String(row.tname),
         scope: row.scope === "read" ? "read" : "render",
         capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
+        capCredits: row.cap_credits == null ? null : Number(row.cap_credits),
       },
     };
   });

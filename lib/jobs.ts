@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
 import { isGenjutsuModel } from "./genjutsuTypes";
@@ -375,11 +376,11 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
   let task;
   try {
-    task = await engineFor(gen.provider ?? "byteplus").poll!({
+    task = await withAcceptedJobCredentials(gen.id, "ark", () => engineFor(gen.provider ?? "byteplus").poll!({
       provider: "byteplus",
-      ref: gen.arkTaskId,
+      ref: gen.arkTaskId!,
       model: gen.model,
-    });
+    }));
   } catch (e) {
     // Transient poll failure: leave the row alone, report it upward.
     if (options.strict) throw e;

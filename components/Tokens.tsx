@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { usd, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { fmtCredits } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import { parseCeiling } from "@/lib/tokenCeiling";
 
 export type Token = {
   id: string; name: string; scope: "read" | "render";
-  capUsd: number | null; spendThisMonth: number;
+  capCredits: number | null; legacyCeiling?: boolean; spendThisMonth: number;
   lastUsed: number | null; createdAt: number;
 };
 
@@ -32,22 +32,22 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
     );
     if (!name?.trim()) return;
     /* A token that can generate is made only once its ceiling is settled:
-       Cancel makes nothing, and anything that is not dollars asks again. */
-    let capUsd: number | null = null;
+       Cancel makes nothing, and anything that is not a credit amount asks again. */
+    let capCredits: number | null = null;
     if (scope === "render") {
-      let typed = "20", problem: string | undefined;
+      let typed = "250", problem: string | undefined;
       for (;;) {
-        const answer = await appPrompt("Monthly ceiling", typed, "USD — blank for no limit", problem);
+        const answer = await appPrompt("Monthly ceiling", typed, "Particl credits — blank for no limit", problem);
         if (answer === null) return;
         const ceiling = parseCeiling(answer);
         if ("error" in ceiling) { typed = answer; problem = ceiling.error; continue; }
-        capUsd = ceiling.capUsd;
+        capCredits = ceiling.capCredits;
         break;
       }
     }
     const res = await scopedFetch("/api/tokens", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, scope, capUsd }),
+      body: JSON.stringify({ name, scope, capCredits }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) { appAlert("Couldn't create the token", json.error); return; }
@@ -73,9 +73,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
   }
 
   const tokens = data?.tokens ?? [];
-  /* A credit workspace's month arrives in credits; the ceiling is still set in dollars. */
-  const inCredits = data?.unit === "cr";
-  const spent = (t: Token) => (inCredits ? fmtCredits(t.spendThisMonth) : usd(t.spendThisMonth, 2));
+  const spent = (t: Token) => fmtCredits(t.spendThisMonth);
 
   return (
     <>
@@ -108,10 +106,8 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
               <span className="truncate">{t.name}</span>
               <span className="text-[13px] text-mute">
                 {t.scope === "read" ? "Read-only" : "Can generate"}
-                {t.capUsd != null && (inCredits
-                  ? ` · ${spent(t)} this month · ${usd(t.capUsd, 2)} ceiling`
-                  : ` · ${spent(t)} of ${usd(t.capUsd, 2)} this month`)}
-                {t.capUsd == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
+                {t.capCredits != null ? ` · ${spent(t)} of ${fmtCredits(t.capCredits)} this month` : t.spendThisMonth > 0 ? ` · ${spent(t)} this month` : ""}
+                {t.legacyCeiling ? " · Saved spending ceiling active" : ""}
                 {" · "}{t.lastUsed ? `used ${timeAgo(t.lastUsed)}` : "never used"}
               </span>
             </span>

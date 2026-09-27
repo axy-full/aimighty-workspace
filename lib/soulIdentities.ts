@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import type { Client, Row, Transaction } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { db, ready, now, id as newId } from "./db";
@@ -728,8 +729,7 @@ export async function syncSoulIdentity(
       return publicIdentity((await rawIdentity(id))!);
     }
     if (
-      !higgsfieldConfigured() ||
-      higgsfieldCredentialFingerprint() !== row.credential_fingerprint
+      !(await withAcceptedJobCredentials(id, "higgsfield", async () => higgsfieldConfigured() && higgsfieldCredentialFingerprint() === row!.credential_fingerprint))
     ) {
       await db().execute({
         sql: "UPDATE soul_identities SET error=?,last_polled_at=? WHERE id=?",
@@ -747,9 +747,9 @@ export async function syncSoulIdentity(
     });
     if (leased.rowsAffected) {
       try {
-        const result = await (deps.poll ?? getSoulReference)(
-          String(row.provider_reference_id),
-        );
+        const result = await withAcceptedJobCredentials(id, "higgsfield", () => (deps.poll ?? getSoulReference)(
+          String(row!.provider_reference_id),
+        ));
         if (result.id !== row.provider_reference_id)
           throw new Error("Identity handle mismatch.");
         await saveReceipt(row, result);

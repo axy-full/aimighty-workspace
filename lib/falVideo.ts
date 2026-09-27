@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 /**
  * Video on fal.ai — Kling 3.0 (text-to-video, image-to-video, motion
  * control) and Topaz Astra (creative upscale) — on the same rows, ledgers
@@ -232,12 +233,12 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
 
   let polled;
   try {
-    polled = await engineFor("fal").poll!({
+    polled = await withAcceptedJobCredentials(gen.id, "fal", () => engineFor("fal").poll!({
       provider: "fal",
-      ref: p.falRequestId,
+      ref: p.falRequestId!,
       model: gen.model,
       endpoint: p.falModel,
-    });
+    }));
   } catch (e) {
     const msg = (e as Error).message;
     if (/\b404\b|not found/i.test(msg))

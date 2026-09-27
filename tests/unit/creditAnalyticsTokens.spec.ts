@@ -84,6 +84,7 @@ async function routes(ws: TenantWorkspace) {
   const { runInTenant } = await import("../../lib/tenant");
   const user = { id: "owner", role: "admin", name: "Owner", email: "owner@example.invalid" };
   const modules = {
+    "@/lib/tokenUsage": await import("../../lib/tokenUsage"),
     "next/server": nextServer,
     "@/lib/auth": {
       requireUser: async () => ({ user }),
@@ -138,12 +139,12 @@ test("a migrated workspace reads retail credits without exposing vendor spend", 
   expect(orders(body)).toEqual({ byModel: ["l", "h"], byProject: ["l", "h"], byPerson: ["l", "h"], byCategory: ["l", "h"], byShot: ["l", "h"] });
 });
 
-test("API tokens: a credit workspace's month is the credits billed; one on its own keys reads dollars", async () => {
+test("API tokens: a credit workspace's month is the credits billed; migrated workspaces receive the same credit-only view", async () => {
   const credit = workspace("ws_credit_tokens", true), own = workspace("ws_own_keys_tokens", false);
   await seed(credit);
   await seed(own);
   const inCredits = await (await routes(credit)).tokens();
-  expect(inCredits).toMatchObject({ unit: "cr", tokens: [{ id: "tok_1", capUsd: 20, spendThisMonth: 31 }] });
+  expect(inCredits).toMatchObject({ unit: "cr", tokens: [{ id: "tok_1", capCredits: null, legacyCeiling: true, spendThisMonth: 31 }] });
   const inDollars = await (await routes(own)).tokens();
   expect(inDollars.unit).toBe("cr");
   expect(inDollars.tokens[0].spendThisMonth).toBe(31);

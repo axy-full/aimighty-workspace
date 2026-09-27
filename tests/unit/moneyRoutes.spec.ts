@@ -12,7 +12,9 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-money-routes-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+let priorCreditValue: string | undefined;
+test.beforeEach(() => { priorCreditValue = process.env.CREDIT_USD; process.env.CREDIT_USD = "0.10"; });
+test.afterEach(() => { if (priorCreditValue === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = priorCreditValue; });
 process.env.ENGINE_MOCK = "1";
 
 function workspace(id: string, credits: boolean): TenantWorkspace {
@@ -90,20 +92,21 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     await ready();
     const take = `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd,refine_model,refine_cost_usd,deleted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`;
     await db().batch([
-      { sql: take, args: ["g1", "dreamina-seedance-2-5-260628", "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
-      { sql: take, args: ["g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
-      { sql: take, args: ["g3", "dreamina-seedance-2-5-260628", "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "anthropic/claude-test", 0.03, 1] },
-      { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('c1',?,?,1,0.2)`, args: [reading, reading] },
-      { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('m1','c1','assistant',0.2,?)`, args: [reading + 1_000] },
+      { sql: take, args: ["money-g1", "dreamina-seedance-2-5-260628", "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
+      { sql: take, args: ["money-g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
+      { sql: take, args: ["money-g3", "dreamina-seedance-2-5-260628", "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "anthropic/claude-test", 0.03, 1] },
+      { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('money-c1',?,?,1,0.2)`, args: [reading, reading] },
+      { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('money-m1','money-c1','assistant',0.2,?)`, args: [reading + 1_000] },
     ]);
-    const { meter } = await import("../../lib/meter");
-    for (const [id, kind, engine, cost] of [["g1", "video", "byteplus", 1], ["g2", "video", "byteplus", .5], ["g3", "text", "vercel", .03], ["m1", "text", "vercel", .2]] as const)
-      await meter({ id, kind, engine, model: "fixture", status: "succeeded", engineCostUsd: cost });
+    const { platformReady, platformDb } = await import("../../lib/platform");
+    await platformReady();
+    for (const [id, kind, engine, cost, credits] of [["money-g1", "video", "byteplus", 1, 15], ["money-g2", "video", "byteplus", .5, 8], ["money-g3", "text", "vercel", .03, 1], ["money-m1", "text", "vercel", .2, 3]] as const)
+      await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,?,?,'fixture','succeeded',?,?,1,?,?)", args: [id, ws.id, kind, engine, cost, credits, reading, reading] });
     await recordCheck({ provider: "vercel", balanceUsd: 10, spendUsd: 2, balanceCredits: null, spendCredits: null, note: "", checkedAt: reading, userId: "owner" });
   });
 
   const body = await (await usage(new Request("http://localhost/api/usage"))).json();
-  expect(body.recent.find((row: { id: string }) => row.id === "g1").params).toEqual({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12 });
+  expect(body.recent.find((row: { id: string }) => row.id === "money-g1").params).toEqual({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12 });
   expect(JSON.stringify(body)).not.toContain("private-test-");
   expect(body.unit).toBe("credits");
   expect(body.credits.used).toBe(27);
@@ -167,7 +170,7 @@ test("drafted shots and a rewritten scene carry credits to a credit workspace an
   expect(JSON.stringify(one)).not.toMatch(/usd/i);
 });
 
-test("a workspace that pays its vendors keeps the writing's dollars, and no take is priced by the route", async () => {
+test("a migrated workspace receives retail credits and no vendor amounts", async () => {
   const { shots } = await writerRoutes(workspace("ws_writer_usd", false), SHOTS);
   const drafted = await (await shots(post("http://localhost/api/atomik/shots/draft", { projectId: "p1", scene: 1 }))).json();
   expect(drafted.costUsd).toBeUndefined();

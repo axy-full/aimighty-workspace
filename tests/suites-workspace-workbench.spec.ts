@@ -157,8 +157,8 @@ test("Workspace tabs are Graphite over the real routes and speak their vocabular
 
   await tabs.getByRole("tab", { name: "Engines" }).click();
   await expect(page.getByTestId("ws-engine")).toHaveCount(2);
-  await expect(page.getByTestId("ws-engine").first()).toContainText("connected");
-  await expect(page.getByTestId("ws-engine").nth(1)).toContainText("platform key");
+  await expect(page.getByTestId("ws-engine").first()).toContainText("Available");
+  await expect(page.getByTestId("ws-engine").nth(1)).toContainText("Unavailable");
   await expect(page.getByTestId("ws-engines")).not.toContainText("Verify checks");
   /* The account every "Connect … in Workspace › Engines" points at is connected here. */
   await expect(page.getByTestId("engine-connected-account")).toContainText("Connected");
@@ -166,7 +166,7 @@ test("Workspace tabs are Graphite over the real routes and speak their vocabular
   await expect(page.getByTestId("engine-xai")).toContainText("Connected · grok-4.6");
   await expect(page.getByTestId("engine-developer-api")).toContainText("Same grant as the connected account");
   await page.getByTestId("developer-api-verify").click();
-  await expect(page.getByTestId("developer-api-result")).toHaveText("Reachable with this account's grant · balance 1,234 credits.");
+  await expect(page.getByTestId("developer-api-result")).toHaveText("Reachable with this account's grant.");
 
   await tabs.getByRole("tab", { name: "Security" }).click();
   await expect(page.getByTestId("ws-security")).toContainText("2 signed in");

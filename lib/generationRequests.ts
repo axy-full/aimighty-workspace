@@ -255,7 +255,7 @@ type Baseline = { id: string; projectId: string | null; shotId: string | null; t
  * Meter completions update this same row to the actual cost. */
 let reservationTurn: Promise<void> = Promise.resolve();
 type ReservationOptions = {
-  token?: { id: string; capUsd: number | null };
+  token?: { id: string; capUsd: number | null; capCredits?: number | null };
   projectId?: string | null;
   /** Whether the shot's credit cap is skipped. Omitted, the signed-in admin skips it;
    * a held take's release decides from its author instead of whoever's request released it. */
@@ -348,6 +348,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const verdict = capVerdict({ cap: Number(legacyCap.cap_usd), spent, needs: cost + (baseline.get(event.id)?.cost ?? 0), rule,
         unlocked: Boolean(legacyCap.cap_unlocked), warnPct: 80, unit: "$" });
       if (!verdict.allow) throw new SpendReservationError("This job exceeds the project's saved spending cap. Ask an admin to review its credit cap.", 409, true);
+    }
+    if (options.token?.capCredits != null) {
+      const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.credits, 0);
+      if (spent + billed > options.token.capCredits) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly credit ceiling.", 429, true);
     }
     if (options.token?.capUsd != null) {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.cost, 0);

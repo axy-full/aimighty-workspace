@@ -19,8 +19,11 @@ const secret = "fixture-key-id:fixture-key-secret";
 process.env.HF_CREDENTIALS = secret;
 const id = "31a51537-0563-4bcf-bc5a-f99f2979759f";
 const originalFetch = globalThis.fetch;
+let priorSuperAdmin: string | undefined;
+test.beforeEach(() => { priorSuperAdmin = process.env.SUPER_ADMIN_EMAIL; });
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (priorSuperAdmin === undefined) delete process.env.SUPER_ADMIN_EMAIL; else process.env.SUPER_ADMIN_EMAIL = priorSuperAdmin;
   process.env.ENGINE_MOCK = "0";
   process.env.HF_CREDENTIALS = secret;
 });

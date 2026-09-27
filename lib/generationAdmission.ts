@@ -210,8 +210,7 @@ export async function executeGenerationAdmission(
         return admissionReply(
           {
             error:
-              `The token "${got.token.name}" has reached its ${got.token.capUsd.toFixed(2)} USD monthly ceiling ` +
-              `(${spent.toFixed(2)} spent). Raise or remove the cap in Settings.`,
+              `The token "${got.token.name}" has reached its saved monthly spending ceiling. Create a token with a credit ceiling in Settings.`,
           },
           { status: 429 },
         );

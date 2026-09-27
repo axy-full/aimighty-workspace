@@ -60,13 +60,15 @@ export type TenantUser = {
   lastSeen: number | null; createdAt: number;
 };
 
-export type TenantToken = { id: string; name: string; scope: "read" | "render"; capUsd: number | null };
+export type TenantToken = { id: string; name: string; scope: "read" | "render"; capUsd: number | null; capCredits?: number | null };
 
 export type TenantStore = {
   workspace: TenantWorkspace | null;
   user: TenantUser | null;
   token?: TenantToken;
   mfaRequired?: boolean;
+  /** Internal scope used only while collecting an already accepted request. */
+  acceptedCredential?: { workspaceId: string; vendor: string; value: string };
   /** Every workspace the signed-in account belongs to, for the switcher. */
   workspaces?: { id: string; slug: string; name: string; role: WorkspaceRole }[];
 };
