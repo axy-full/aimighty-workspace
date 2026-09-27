@@ -1,3 +1,4 @@
+import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { billedCreditsSum } from "@/lib/creditSql";
 import { db, ready } from "@/lib/db";
@@ -26,6 +27,7 @@ export const GET = withTenant(async function GET(req: Request) {
    * composer opens, and an unscoped GROUP BY over generations would become a
    * full scan of the whole table as the library grows (R5). */
   await ready();
+  await syncCreditReceipts();
   /* A workspace on credits is shown credits. The vendor's dollars beside them
      would give the margin away (lib/jobs.ts withholds costUsd the same way). */
   const inCredits = creditsApply(currentTenant()?.workspace);

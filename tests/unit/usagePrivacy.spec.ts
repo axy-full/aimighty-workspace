@@ -83,6 +83,7 @@ async function usageAs(ws: TenantWorkspace, user: TenantUser): Promise<{ body: B
     "@/lib/elevenlabs": { elevenConfigured: () => false, subscription: async () => null, FALLBACK_USD_PER_CREDIT: 0.0001 },
     "@/lib/reconcile": await import("../../lib/reconcile"),
     "@/lib/storageCost": { storageLedger: async () => null },
+    "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/creditUsage": await import("../../lib/creditUsage"),
     "@/lib/credits": await import("../../lib/credits"),
