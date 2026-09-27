@@ -184,7 +184,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
 
   /* Regenerate one scene: a proposal, priced before pressing, shown beside the scene; "Use this" is the only way it lands (brief 1.8). */
   const [regen, setRegen] = useState<number | null>(null);
-  const [proposal, setProposal] = useState<{ n: number; scene: Scene; model: string; credits: string } | null>(null);
+  const [proposal, setProposal] = useState<{ n: number; scene: Scene; model: string; credits: string | null } | null>(null);
   async function regenerate(idx: number, quote?: PaidTextQuote) {
     if (!doc || (!paid.pending && !quote)) return;
     const pending=paid.pending?JSON.parse(paid.pending.body):null;
@@ -341,7 +341,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
               </div>
               {proposal && proposal.n === s.n && (
                 <div className="ak-proposal">
-                  <span className="mono-s">PROPOSED BY {proposal.model.split("/").pop()} · {proposal.scene.secs}s · {proposal.credits}</span>
+                  <span className="mono-s">PROPOSED BY {proposal.model.split("/").pop()} · {proposal.scene.secs}s{proposal.credits ? ` · ${proposal.credits}` : ""}</span>
                   {proposal.scene.title && <span className="font-medium">{proposal.scene.title}</span>}
                   <p className="text-[13.5px] leading-relaxed">{proposal.scene.prose}</p>
                   <div className="flex gap-2">

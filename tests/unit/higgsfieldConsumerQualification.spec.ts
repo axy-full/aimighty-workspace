@@ -240,23 +240,26 @@ test("provider tool errors and JSON-RPC errors are per-read observations, never 
 
 test("a per-read timeout cancels its stream, never retries it, and permits remaining independent reads", async () => {
   let cancelled = false;
-  const f = fixture((p, i) =>
-    i === 0
-      ? new Response(
-          new ReadableStream({
-            cancel() {
-              cancelled = true;
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        )
-      : reply(p.id!, { content: [{ type: "text", text: "ok" }] }),
-  );
-  const result = await readConsumerQualification(token, {
-    fetch: f.fetch,
-    callTimeoutMs: 10,
-    timeoutMs: 500,
+  // Each call reads callTimeoutMs as it starts: only the first read gets 10 ms,
+  // and a later read slower than that still answers.
+  const options: { fetch?: typeof fetch; callTimeoutMs?: number } = { callTimeoutMs: 10 };
+  const f = fixture(async (p, i) => {
+    if (i === 0) {
+      options.callTimeoutMs = undefined;
+      return new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    if (i === 1) await new Promise((resolve) => setTimeout(resolve, 15));
+    return reply(p.id!, { content: [{ type: "text", text: "ok" }] });
   });
+  options.fetch = f.fetch;
+  const result = await readConsumerQualification(token, options);
   expect(cancelled).toBe(true);
   expect(result.results[0].error?.code).toBe("timeout");
   expect(result.results.slice(1).every((r) => r.result === "ok")).toBe(true);
@@ -271,9 +274,10 @@ test("whole-session deadline prevents later admission and preserves completed ob
       ? reply(p.id!, { structuredContent: { completed: true } })
       : new Promise(() => {}),
   );
+  // The session's own handshake runs inside this deadline, so leave it room.
   const result = await readConsumerQualification(token, {
     fetch: f.fetch,
-    timeoutMs: 15,
+    timeoutMs: 250,
   });
   expect(result.results[0].result).toEqual({ completed: true });
   expect(result.results[1].error?.code).toBe("timeout");
@@ -284,8 +288,9 @@ test("whole-session deadline prevents later admission and preserves completed ob
 });
 
 test("elapsed monotonic deadlines stop admission even when resolved promises starve timeout callbacks", async () => {
+  // The handshake gets 250 ms; two 150 ms reads still outlast the session.
   const f = fixture((p) => {
-    const until = performance.now() + 4;
+    const until = performance.now() + 150;
     while (performance.now() < until) {
       /* Reproduce a synchronous provider/decoder blocking timer delivery. */
     }
@@ -293,7 +298,7 @@ test("elapsed monotonic deadlines stop admission even when resolved promises sta
   });
   const result = await readConsumerQualification(token, {
     fetch: f.fetch,
-    timeoutMs: 7,
+    timeoutMs: 250,
     callTimeoutMs: 2,
   });
   expect(result.results.some((r) => r.result !== undefined)).toBe(false);
@@ -427,16 +432,18 @@ test("analysis model errors and instruction-shaped responses remain redacted ine
 });
 
 test("analysis per-read timeout is not retried and an expired session cannot admit the second read", async () => {
-  const f = fixture((packet, index) =>
-    index === 0
-      ? new Promise(() => {})
-      : reply(packet.id!, { content: [{ type: "text", text: "second" }] }),
-  );
-  const partial = await readConsumerAnalysisQualification(token, {
-    fetch: f.fetch,
-    callTimeoutMs: 5,
-    timeoutMs: 250,
+  // Only the first read gets 5 ms (see the per-read test above).
+  const options: { fetch?: typeof fetch; callTimeoutMs?: number } = { callTimeoutMs: 5 };
+  const f = fixture(async (packet, index) => {
+    if (index === 0) {
+      options.callTimeoutMs = undefined;
+      return new Promise<Response>(() => {});
+    }
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    return reply(packet.id!, { content: [{ type: "text", text: "second" }] });
   });
+  options.fetch = f.fetch;
+  const partial = await readConsumerAnalysisQualification(token, options);
   expect(partial.results[0].error?.code).toBe("timeout");
   expect(partial.results[1].result).toBe("second");
   expect(f.calls.slice(2).map((call) => call.packet.params)).toEqual(
@@ -445,7 +452,7 @@ test("analysis per-read timeout is not retried and an expired session cannot adm
   const expired = fixture(() => new Promise(() => {}));
   const stopped = await readConsumerAnalysisQualification(token, {
     fetch: expired.fetch,
-    timeoutMs: 10,
+    timeoutMs: 250,
   });
   expect(stopped.results[0].error?.code).toBe("timeout");
   expect(stopped.results[1].error?.code).toBe("not_run");

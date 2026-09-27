@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/session";
 import {
@@ -20,18 +20,20 @@ import { useMobileViewport } from "@/components/workbench/mobile-ui";
 import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
 
+/**
+ * The (app) shell, with the page inside it and NO Suspense boundary round the
+ * two. A boundary here put every page's server work in a streamed hole: a page
+ * that answers with redirect() — /, /atomik and /subatomik switching a signed-in
+ * person to Suites, /images, /make/… — had already sent 200 and the shell by
+ * the time it ran, so the redirect went out as a meta refresh and a second
+ * document. Outside any boundary it is the response itself: a 307.
+ *
+ * useSearchParams needs no boundary here: the (app) layout reads the session
+ * cookie, so every route under it renders per request and is never prerendered
+ * (the only render in which the hook would bail out to the client).
+ */
 export default function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense
-      fallback={
-        <div className="shell suite-application" role="status">
-          Opening workspace…
-        </div>
-      }
-    >
-      <SuiteShell>{children}</SuiteShell>
-    </Suspense>
-  );
+  return <SuiteShell>{children}</SuiteShell>;
 }
 function SuiteShell({ children }: { children: React.ReactNode }) {
   useMobileViewport();

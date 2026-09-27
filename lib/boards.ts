@@ -75,17 +75,41 @@ export async function createBoard(projectId: string, name: string): Promise<Boar
   return (await getBoard(bid))!;
 }
 
+type BoardPatch = { name?: string; nodes?: BoardNode[]; wires?: BoardWire[] };
+
 /** The whole graph, written back; the board is the unit of edit. */
-export async function saveBoard(boardId: string, patch: { name?: string; nodes?: BoardNode[]; wires?: BoardWire[] }): Promise<Board | null> {
+export async function saveBoard(boardId: string, patch: BoardPatch): Promise<Board | null> {
+  const saved = await writeBoard(boardId, patch, null);
+  return saved && "board" in saved ? saved.board : null;
+}
+
+/**
+ * The same write, refused when the board has changed since `expectedUpdatedAt`
+ * — the revision the browser edited from. Two people on one board used to
+ * overwrite each other's whole graph on every keystroke; now the second write
+ * gets the board as it stands instead, and nothing is lost.
+ */
+export async function saveBoardIfCurrent(boardId: string, patch: BoardPatch, expectedUpdatedAt: number): Promise<{ board: Board } | { conflict: Board } | null> {
+  return writeBoard(boardId, patch, expectedUpdatedAt);
+}
+
+async function writeBoard(boardId: string, patch: BoardPatch, expected: number | null): Promise<{ board: Board } | { conflict: Board } | null> {
   await ready();
   const sets: string[] = []; const args: unknown[] = [];
   if (typeof patch.name === "string") { sets.push("name = ?"); args.push(patch.name.trim().slice(0, 80)); }
   if (patch.nodes) { sets.push("nodes = ?"); args.push(JSON.stringify(patch.nodes.slice(0, 200))); }
   if (patch.wires) { sets.push("wires = ?"); args.push(JSON.stringify(patch.wires.slice(0, 400))); }
-  if (!sets.length) return getBoard(boardId);
-  sets.push("updated_at = ?"); args.push(now(), boardId);
-  await withMediaSources(patch.nodes?.slice(0, 200), (tx) => tx.execute({ sql: `UPDATE boards SET ${sets.join(", ")} WHERE id = ?`, args: args as never[] }));
-  return getBoard(boardId);
+  if (!sets.length) { const board = await getBoard(boardId); return board ? { board } : null; }
+  /* Strictly later than the revision it replaces, so two writes in one
+     millisecond can never share a revision. */
+  sets.push("updated_at = ?"); args.push(expected == null ? now() : Math.max(now(), expected + 1), boardId);
+  const where = expected == null ? "id = ?" : "id = ? AND updated_at = ?";
+  if (expected != null) args.push(expected);
+  const written = await withMediaSources(patch.nodes?.slice(0, 200), (tx) => tx.execute({ sql: `UPDATE boards SET ${sets.join(", ")} WHERE ${where}`, args: args as never[] }));
+  const board = await getBoard(boardId);
+  if (!board) return null;
+  if (expected != null && Number(written.rowsAffected ?? 0) === 0) return { conflict: board };
+  return { board };
 }
 
 export { markStale } from "./boardGraph";
