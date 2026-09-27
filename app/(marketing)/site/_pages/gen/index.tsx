@@ -16,7 +16,7 @@ const COMPOSER_TILES: [string, string, string][] = [
   ["Edit", "Edit a finished clip", "A take or an upload, up to 8 image references and an edit direction. Quoted from the source's real duration; a changed quote is refused before any new charge."],
   ["Finish", "Upscale in place", "Astra 2 for video and Topaz for stills, each quoted on the original pixels. The original is kept; the upscale is a new take with its lineage."],
   ["Recover", "Nothing lost on reload", "Drafts, interrupted paid requests and lost responses come back as “Recover …”. Reusing a take loads its prompt; it never starts a paid job by itself."],
-  ["Modes", "Video · Images · Audio · 3D", "One segment switches the composer. Every tool in every suite is a preset that opens it pre-configured."],
+  ["Modes", "Video · Images · Audio", "One segment switches the composer. Every tool in every suite is a preset that opens it pre-configured."],
 ];
 
 export default async function GenHome() {
@@ -41,7 +41,7 @@ export default async function GenHome() {
         <img className="mk-hero-img" src="/campaign/hero.webp" alt="" width={1672} height={941} fetchPriority="high" />
         <div className="mk-hero-shade" aria-hidden="true" />
         <div className="mk-hero-in">
-          <div className="mk-eyebrow">Gen · Video · Images · Audio · 3D</div>
+          <div className="mk-eyebrow">Gen · Video · Images · Audio</div>
           <h1 className="mk-h1 mk-hero-title">The studio&rsquo;s own room for making shots.</h1>
           <p className="mk-hero-lead">Five suites in one shell: Gen, the Production Studio, the Business Suite, the Viral Studio and the Atomik agent. Seedance, Kling and Nano Banana behind them, with the cost on every button.</p>
           <HeroPrompt model={hero.id} label={hero.name} short={hero.short} credits={hero.credits} />
@@ -50,7 +50,7 @@ export default async function GenHome() {
 
       <Section id="gen-composer" label="Gen composer">
         <Head eyebrow="Gen · one composer" title="The cost is on the button."
-          lead="One composer for video, images, audio and 3D. Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
+          lead="One composer for video, images and audio. Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
         <Cols col={420}>
           <Window path="particl.app / gen" src={shot("gen-composer-blank")} alt="The Gen composer" width={924} height={540} />
           <Grid col={220}>

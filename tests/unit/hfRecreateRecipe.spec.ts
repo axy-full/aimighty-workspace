@@ -187,6 +187,30 @@ test("a connected recipe: named by the account's list, the right reason for each
   expect(owner([])).toMatchObject({ state: "changed", why: "No longer on the account" });
 });
 
+test("a recreated sound take: its length, Instrumental and voice read kept until Gen holds something else, and say why", () => {
+  const music: ComposerModel = { id: "eleven_music", label: "Eleven Music", type: "audio", audioTask: "music" };
+  const sfx: ComposerModel = { id: "eleven_sfx", label: "Eleven Sound Effects", type: "audio", audioTask: "sound" };
+  const grok: ComposerModel = { id: "grok-tts", label: "Grok Voice", type: "audio", audioTask: "speech" };
+  const track = recreatePreset(take({ kind: "audio", model: "eleven_music", params: { task: "music", lengthMs: 45_000, instrumental: false } }), { name: "Theme" });
+  const held = (seconds: number, instrumental: boolean) => ({ seconds, instrumental, voice: null, voices: [] });
+  const chips = (model: ComposerModel, sound: ReturnType<typeof held>) =>
+    chipsFor({ preset: track, model, settings: composerSettings(model), sound }).filter((c) => c.key !== "model").map((c) => [c.key, c.value, c.state, c.why]);
+  expect(chips(music, held(45, false))).toEqual([["length", "45 s", "kept", undefined], ["instrumental", "With vocals", "kept", undefined]]);
+  /* Changed in Gen afterwards: the card says so, rather than calling the take's length kept. */
+  expect(chips(music, held(50, true))).toEqual([["length", "45 s → 50 s", "changed", "Changed here"], ["instrumental", "With vocals → Instrumental", "changed", "Changed here"]]);
+  /* A take longer than an effect runs is held to the effect's range, and the card says why. */
+  expect(chips(sfx, held(30, true))).toEqual([["length", "45 s → 30 s", "changed", "Eleven Sound Effects runs 1–30 s"]]);
+
+  const line = recreatePreset(take({ kind: "audio", model: "grok-tts", params: { task: "speech", voiceId: "ara" } }), { name: "Line" });
+  const voices = [{ id: "eve", name: "Eve" }, { id: "ara", name: "Ara" }];
+  const voice = (now: { id: string; name: string } | null, list = voices) =>
+    chipsFor({ preset: line, model: grok, settings: composerSettings(grok), sound: { seconds: 10, instrumental: true, voice: now, voices: list } }).find((c) => c.key === "voice");
+  expect(voice(voices[1])).toMatchObject({ value: "Ara", state: "kept" });
+  expect(voice(voices[0])).toMatchObject({ value: "Ara → Eve", state: "changed", why: "Changed here" });
+  /* A voice the model no longer lists falls to its first, and the card names the fall. */
+  expect(voice(voices[0], [voices[0]])).toMatchObject({ value: "Voice → Eve", state: "changed", why: "Not one of Grok Voice’s voices here" });
+});
+
 test("the composer takes a recipe in one step, a settings-only one keeps its words, and Undo puts it back", () => {
   const before: ComposerState = {
     ...INITIAL_COMPOSER, type: "image", prompt: "my own words", count: 3,
