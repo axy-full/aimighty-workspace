@@ -704,8 +704,7 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   expect(fresh).toMatchObject({ stage: "complete", action: "open", takeId: `generation:gen_t${tag}_done_new`, price: { amount: 17, unit: "cr" } });
   expect(Math.abs(fresh.settledAt! - Date.now())).toBeLessThan(60_000);
   /* Held: the figure its release is measured against, from the kept estimate at today's terms. */
-  /* Held: the figure approved when it was held, never re-derived; its Release approves that figure. */
-  expect(byId.get(`gen_t${tag}_held`)).toMatchObject({ stage: "held", tone: "amber", action: "release", label: "Held · needs 40 cr", releaseCredits: 40, draftId: DRAFT });
+  expect(byId.get(`gen_t${tag}_held`)).toMatchObject({ stage: "held", tone: "amber", action: "release", label: "Held · needs 43 cr", releaseCredits: 43, draftId: DRAFT });
   /* Failed: "not billed" only where the meter shows nothing charged; unmetered, nothing is claimed. */
   expect(byId.get(`gen_t${tag}_failed`)).toMatchObject({ stage: "failed", label: "Failed · not billed", price: null, action: "recreate", reason: "The engine hit an error" });
   expect(byId.get(`gen_t${tag}_failed`)!.preset).toMatchObject({ prompt: `Prompt for gen_t${tag}_failed`, billing: "workspace", from: { id: `gen_t${tag}_failed` } });
@@ -727,11 +726,14 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   const single = await page.request.get("/api/jobs?status=held&sync=0", { headers }).then((r) => r.json()) as { generations: { id: string }[] };
   expect(single.generations.map((g) => g.id).sort()).toEqual([`gen_t${tag}_held`, `gen_t${tag}_held_big`]);
 
-  /* Pressed at the figure approved when it was held, which the terms have since moved far past: refused as short, naming the
-     figure it was measured against, which rides along for the next press to approve. */
+  /* An older approval cannot start a repriced take; approving the current quote still cannot exceed the balance. */
   const big = byId.get(`gen_t${tag}_held_big`)!;
-  expect(big).toMatchObject({ label: "Held · needs 10 cr", releaseCredits: 10 });
-  const refused = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers, data: { credits: 10 } });
+  expect(big.releaseCredits).toBeGreaterThan(1_000);
+  expect(big.label).toBe(`Held · needs ${big.releaseCredits!.toLocaleString("en-US")} cr`);
+  const stale = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers, data: { credits: 10 } });
+  expect(stale.status()).toBe(409);
+  expect(await stale.json()).toMatchObject({ credits: big.releaseCredits });
+  const refused = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers, data: { credits: big.releaseCredits } });
   expect(refused.status()).toBe(402);
   const answer = (await refused.json()) as { error: string; credits: number };
   expect(answer.error).toMatch(/^Still short: this needs [\d,]+ credits and [\d,]+ are left\.$/);
@@ -752,7 +754,7 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   } finally { slots.close(); }
   const busy = await page.request.post(`/api/jobs/gen_t${tag}_held_free/release`, { headers, data: { credits: 0 } });
   expect(busy.status()).toBe(409);
-  expect(((await busy.json()) as { error: string }).error).toBe("Every render slot is busy. It starts on its own when one frees up.");
+  expect(((await busy.json()) as { error: string }).error).toBe("Every render slot is busy. It starts on its own when one is free.");
   /* Pressed again after a lost reply: answered "already", and nothing more is charged. */
   const again = await page.request.post(`/api/jobs/gen_t${tag}_released/release`, { headers, data: { credits: 43 } });
   expect(again.status()).toBe(200);
