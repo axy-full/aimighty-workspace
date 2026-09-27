@@ -10,10 +10,18 @@ export function StageStrip() {
   const current = `${shell.suite.id}:${shell.page.id}`;
   useEffect(() => {
     const strip = nav.current;
-    const tab = strip?.querySelector<HTMLElement>('[aria-current="page"]');
-    if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
-    const box = strip.getBoundingClientRect(), at = tab.getBoundingClientRect();
-    strip.scrollLeft += at.left - box.left - (box.width - at.width) / 2;
+    if (!strip) return;
+    const reveal = () => {
+      const tab = strip.querySelector<HTMLElement>('[aria-current="page"]');
+      if (!tab || strip.scrollWidth <= strip.clientWidth) return;
+      const box = strip.getBoundingClientRect(), at = tab.getBoundingClientRect();
+      strip.scrollLeft += at.left - box.left - (box.width - at.width) / 2;
+    };
+    reveal();
+    /* Rotation keeps this component mounted, but changes the space beside the project. */
+    const resize = new ResizeObserver(reveal);
+    resize.observe(strip);
+    return () => resize.disconnect();
   }, [current]);
   /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
      On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away. */

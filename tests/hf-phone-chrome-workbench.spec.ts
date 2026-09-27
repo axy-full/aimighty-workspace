@@ -27,6 +27,16 @@ const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
 const PHONES = [...PORTRAIT, "workbench-844x390"];
 const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
 
+/* CI and Android fallback faces can be wider than the local macOS font. */
+test.beforeEach(async ({ page }) => {
+  if (!process.env.PHONE_CHROME_WIDE_FONT) return;
+  await page.addInitScript(() => {
+    const style = document.createElement("style");
+    style.textContent = "*, *::before, *::after { font-family: Verdana, 'DejaVu Sans', sans-serif !important; }";
+    document.documentElement.appendChild(style);
+  });
+});
+
 const node = (id: string, title: string, x: number, y: number, linked: string[] = []): CanvasNode => ({
   id, title, type: "scene", x, y, width: 238, linked, role: "Director", status: "draft", mode: "Video",
   engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
@@ -399,6 +409,23 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   expect(tab!.x).toBeGreaterThanOrEqual(bar!.x - 0.5);
   expect(tab!.x + tab!.width).toBeLessThanOrEqual(bar!.x + bar!.width + 0.5);
   expect(errors).toEqual([]);
+});
+
+test("phone: rotation keeps the current stage visible without moving the page sideways", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "the phone sizes");
+  await open(page, "/suites?suite=studio&page=deliver&sp=deliver");
+  const original = page.viewportSize()!;
+  const rotated = original.width < 768 ? { width: 844, height: 390 } : { width: 390, height: 844 };
+  for (const viewport of [original, rotated, original]) {
+    await page.setViewportSize(viewport);
+    const strip = page.getByRole("navigation", { name: "Pages" });
+    await expect.poll(async () => {
+      const box = await strip.boundingBox();
+      const tab = await strip.locator('[aria-current="page"]').boundingBox();
+      return !!box && !!tab && tab.x >= box.x - 0.5 && tab.x + tab.width <= box.x + box.width + 0.5;
+    }).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+  }
 });
 
 /** Where the desktop chrome sits: the parts that do not depend on a font's widths. */
