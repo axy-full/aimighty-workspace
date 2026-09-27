@@ -324,15 +324,19 @@ test("while the owner's connection is read Business says so, a failed read is an
 test("the member's Studio alternative takes a fresh credit quote before explicit Generate", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { project: film, consumer } = await asMember(page, playwright);
-  let quoted = 0;
+  /* The server's own live quote, held until released: Generate waits for it. Its figure is the one the
+     submit-time quote (POST /api/generate/quote) must match exactly before anything is sent. */
+  const quotes: number[] = [];
   let release!: () => void;
   const hold = new Promise<void>((resolve) => { release = resolve; });
   const submitted: Record<string, unknown>[] = [];
   await page.route("**/api/workbench/engines**", async (route) => {
     if (!new URL(route.request().url()).searchParams.has("model")) return route.fallback();
-    quoted++;
+    const response = await route.fetch();
+    const quote = await response.json() as { credits?: unknown };
+    if (typeof quote.credits === "number") quotes.push(quote.credits);
     await hold;
-    return route.fulfill({ json: { credits: 17 } });
+    return route.fulfill({ response });
   });
   await page.route("**/api/generate", async (route) => {
     submitted.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -347,17 +351,21 @@ test("the member's Studio alternative takes a fresh credit quote before explicit
     await fingerSized(card, info.project.name);
     await page.getByTestId("owner-run-business-gen").click();
     await page.getByTestId("gen-prompt").fill("A product still against a neutral studio background.");
-    await expect.poll(() => quoted).toBeGreaterThan(0);
+    await expect.poll(() => quotes.length).toBeGreaterThan(0);
     await expect(page.getByTestId("gen-generate")).toBeDisabled();
     expect(submitted).toEqual([]);
     release();
     const generate = page.getByTestId("gen-generate");
     await expect(generate).toBeEnabled();
-    await expect(generate).toContainText("17 cr");
+    /* The button asks for one of the server's own quotes — a real figure, never a guess — and exactly that is sent. */
+    await expect(generate).toContainText(/· [\d,]+ cr/);
+    const credits = Number(/· ([\d,]+) cr/.exec((await generate.textContent()) ?? "")![1].replace(/,/g, ""));
+    expect(credits).toBeGreaterThan(0);
+    expect(quotes).toContain(credits);
     expect(submitted).toEqual([]);
     await generate.click();
     await expect.poll(() => submitted.length).toBe(1);
-    expect(submitted[0]).toMatchObject({ maxCredits: 17 });
+    expect(submitted[0]).toMatchObject({ maxCredits: credits });
     expect(consumer).toEqual([]);
   } finally { release(); }
 });
