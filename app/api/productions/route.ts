@@ -13,8 +13,7 @@ export const GET = withTenant(async function GET(req: Request) {
   if (got.response) return got.response;
   const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
-  /* A workspace on credits is shown credits; the vendor's dollars beside them
-     would give the margin away, so its spentUsd is withheld (0). */
+  /* Credit responses carry only that workspace's unit. */
   const productions = await listProductions();
   return NextResponse.json({ productions: creditsApply(requireTenant()) ? withoutVendorSpend(productions) : productions }, {
     headers: { "Cache-Control": "private, no-store" },

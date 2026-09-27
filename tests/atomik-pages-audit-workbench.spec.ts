@@ -19,7 +19,7 @@ test("Atomik shot list and breakdown price a credit workspace in credits, never 
   /* Takes with a vendor cost are exercised in tests/unit/appPagesAuditDb.spec.ts; here the lists carry no dollar figure field at all for this workspace. */
   const listed = (await (await page.request.get("/api/projects")).json()) as { unit: string; projects: { id: string; spend: number }[] };
   expect(listed.unit).toBe("cr");
-  expect(listed.projects.every((p) => p.spend === 0)).toBe(true);
+  expect(listed.projects.every((p) => !Object.hasOwn(p, "spend"))).toBe(true);
 
   await page.goto("/atomik/shots");
   await expect(page.getByRole("heading", { name: "Shot list" })).toBeVisible();

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
 import { requireUser, withTenant } from "@/lib/auth";
 import {
-  listIdentities, createIdentity, updateIdentity, syncIdentity,
+  listIdentities, createIdentity, updateIdentity, syncIdentity, identityForBrowser,
   MIN_PHOTOS, MAX_PHOTOS, RECOMMENDED_PHOTOS, TRAIN_STEPS, trainCostUsd, RENDER_USD_PER_MP, TRAINER,
 } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
@@ -45,7 +45,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const synced = await Promise.all(identities.map(async (i) =>
     i.status === "training" ? (await syncIdentity(i)).identity : i));
   return NextResponse.json({
-    identities: synced.map((i) => ({ ...i, loraUrl: undefined, configUrl: undefined, trained: Boolean(i.loraUrl) })),
+    identities: synced.map(identityForBrowser),
     terms: {
       configured: falConfigured(),
       trainer: TRAINER,
@@ -101,7 +101,7 @@ export const POST = withTenant(async function POST(req: Request) {
           ...(description !== undefined ? { description } : {}),
           photos: Array.isArray(body.photos) ? body.photos.map(String) : [],
         });
-        return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined } });
+        return NextResponse.json({ identity: identity && identityForBrowser(identity) });
       }
     }
     const identity = await createIdentity({
@@ -111,7 +111,7 @@ export const POST = withTenant(async function POST(req: Request) {
       projectId: body.projectId ? String(body.projectId) : null,
       userId: got.user.id,
     });
-    return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined } }, { status: 201 });
+    return NextResponse.json({ identity: identityForBrowser(identity) }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

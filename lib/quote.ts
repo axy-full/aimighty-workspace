@@ -98,6 +98,19 @@ export type Quote = {
 
 export const EMPTY_QUOTE: Quote = { totalCredits: 0, unitCredits: null, units: 0, usd: 0, lines: [] };
 
+/**
+ * A quote as it leaves the server: the credits, and nothing the vendors
+ * charge. `usd` is what the gates weigh an allowance or a dollar cap with,
+ * and beside the credits it is the margin, so it stays on the server.
+ */
+export type PublicQuote = Omit<Quote, "usd" | "lines"> & { lines: Omit<QuoteLine, "usd">[] };
+export function publicQuote(q: Quote): PublicQuote {
+  return {
+    totalCredits: q.totalCredits, unitCredits: q.unitCredits, units: q.units,
+    lines: q.lines.map(({ usd: _vendor, ...line }) => { void _vendor; return line; }),
+  };
+}
+
 export type Terms = { perCredit: number; table: Record<string, number> };
 
 /** The terms in force, read from the environment once. */
@@ -201,7 +214,6 @@ export type Context = {
 };
 
 const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`;
-const usdFmt = (n: number): string => `$${n.toFixed(2)}`;
 
 export function verdictOf(q: Quote, c: Context): Verdict {
   /* A choice that spends nothing is never gated. Leaving existing takes alone
@@ -230,9 +242,11 @@ export function verdictOf(q: Quote, c: Context): Verdict {
     const needs = q.lines.reduce((n, l) => n + (l.platformPays ? l.usd : 0), 0);
     const { cap, spent } = c.allowance;
     if (spent >= cap || spent + needs > cap) {
+      /* No figures: the cap and what counts against it are the vendors' dollars, and this is read by
+         a workspace billed in credits. */
       return {
         allow: false, gate: "allowance", notice: "",
-        line: `This workspace has used ${usdFmt(spent)} of its ${usdFmt(cap)} monthly cap on the platform's engines. An admin can add a vendor key or raise it.`,
+        line: "This workspace has reached its monthly cap on the platform's engines. An admin can add a vendor key or raise it.",
       };
     }
   }

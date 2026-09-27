@@ -81,14 +81,16 @@ export type Message = {
   text: string; activity: string[]; ask: Ask | null;
   /** What the person handed the agent with this message. */
   attachments: Attachment[];
-  workedMs: number | null; costUsd: number; model: string; effort?: string;
+  /** The vendor's dollars for this turn; absent for a workspace that pays in credits (inWorkspaceUnit). */
+  workedMs: number | null; costUsd?: number; model: string; effort?: string;
   createdAt: number;
 };
 
 export type Chat = {
   id: string; projectId: string | null; title: string;
   model: string; effort?: string; agentMode: AgentMode; status: ChatStatus;
-  textCostUsd: number; createdBy: string;
+  /** The vendor's dollars for planning; absent for a workspace that pays in credits (chatForBrowser). */
+  textCostUsd?: number; createdBy: string;
   createdAt: number; updatedAt: number;
   /** Only for a workspace that pays in credits (getChat): what planning was billed. */
   textCredits?: number;
@@ -139,6 +141,35 @@ const toChat = (r: Row): Chat => ({
 
 /* ── Chats ────────────────────────────────────────────────────────────── */
 
+/**
+ * A chat as a workspace may read it. Planning is billed in credits on the
+ * platform's keys, and `textCostUsd` is what the model's vendor charged the
+ * platform for it: beside the credits it is the margin, so it is left out.
+ */
+function chatForBrowser<C extends Chat>(chat: C): C {
+  if (!creditsApply(currentTenant()?.workspace)) return chat;
+  const { textCostUsd: _vendor, ...rest } = chat;
+  void _vendor;
+  return rest as C;
+}
+
+/**
+ * A step as a workspace may read it outside its chat (the step routes).
+ *
+ * The stored estimate is the engine's dollars. A workspace that pays in
+ * credits is sent the credits admission would bill for it in their place —
+ * the same figure inWorkspaceUnit gives the chat — and the estimate itself is
+ * blanked, never both. A workspace on its own keys keeps its dollars.
+ */
+export function stepForBrowser(step: Step): Step {
+  if (!creditsApply(currentTenant()?.workspace)) return step;
+  return {
+    ...step,
+    estCostUsd: null,
+    estCredits: step.estCostUsd == null || connectedMeta(step.params) ? null : billCredits(step.estCostUsd, marginKeyOf(step.kind, step.model)),
+  };
+}
+
 export async function listChats(limit = 40): Promise<(Chat & { needsApproval: boolean })[]> {
   await ready();
   const rs = await db().execute({
@@ -149,7 +180,7 @@ export async function listChats(limit = 40): Promise<(Chat & { needsApproval: bo
           ORDER BY c.updated_at DESC LIMIT ?`,
     args: [Math.min(Math.max(1, limit), 100)],
   });
-  return rs.rows.map((r: Row) => ({ ...toChat(r), needsApproval: Number(r.needs) === 1 }));
+  return rs.rows.map((r: Row) => chatForBrowser({ ...toChat(r), needsApproval: Number(r.needs) === 1 }));
 }
 
 export async function createChat(opts: {
@@ -192,13 +223,14 @@ export async function getChat(chatId: string): Promise<{
  * (lib/price.ts: "every figure that reaches this hook is ALREADY in credits").
  *
  * The stored estimates are the engines' dollars, and the browser has no
- * margin to convert them with — which is how a dollar estimate used to
- * read "1 cr" on a button that then billed far more. A workspace that pays in
- * credits gets, beside them: each step's estimate as admission bills it
+ * margin to convert them with. A workspace that pays in credits gets,
+ * in their place: each step's estimate as admission bills it
  * (the same `billCredits` at the same margin key that the /api/generate and
  * /api/audio ceilings check), what the ledger billed for each step that ran,
- * and what its planning turns were billed. A workspace that pays its vendors
- * in dollars keeps the dollars and nothing is added.
+ * and what its planning turns were billed. The dollars themselves are left
+ * out — the chat's planning total, each turn's cost and each step's
+ * estimate — because beside the credits they are the margin. A workspace
+ * that pays its vendors in dollars keeps the dollars and nothing is added.
  *
  * A proposed audio step saved before audio was priced ahead is priced here,
  * so an old plan does not keep a blank where a price belongs.
@@ -213,11 +245,10 @@ async function inWorkspaceUnit(loaded: { chat: Chat; messages: Message[]; steps:
   const turns = loaded.messages.filter((m) => m.role === "assistant").map((m) => m.id);
   const billed = await ledgerCredits(ws.id, [...turns, ...steps.flatMap((s) => (s.genId ? [s.genId] : []))]);
   return {
-    chat: { ...loaded.chat, textCredits: turns.reduce((a, id) => a + (billed.get(id) ?? 0), 0) },
-    messages: loaded.messages,
+    chat: { ...chatForBrowser(loaded.chat), textCredits: turns.reduce((a, id) => a + (billed.get(id) ?? 0), 0) },
+    messages: loaded.messages.map(({ costUsd: _vendor, ...m }) => { void _vendor; return m; }),
     steps: steps.map((s) => ({
-      ...s,
-      estCredits: s.estCostUsd == null || connectedMeta(s.params) ? null : billCredits(s.estCostUsd, marginKeyOf(s.kind, s.model)),
+      ...stepForBrowser(s),
       billedCredits: s.genId ? (billed.get(s.genId) ?? null) : null,
     })),
   };
