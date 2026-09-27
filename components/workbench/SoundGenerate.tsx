@@ -13,6 +13,7 @@ import {
   clearPendingGeneration,
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
+import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
 import {
   SOUND_TASKS,
   SOUND_TOOLS,
@@ -26,6 +27,7 @@ import {
   readSoundPlacements,
   replaceableClips,
   soundGenerationBody,
+  soundFormOf,
   soundJobLabel,
   soundSources,
   soundTask,
@@ -185,6 +187,27 @@ export function SoundGenerate({
       return { pending: null, pendingProblem: e instanceof Error ? e.message : "The saved request cannot be read." };
     }
   }, [pendingKey, pendingRaw]);
+  /* What a claimed request asked for is on show while it is unconfirmed; after a remount the form would be empty. */
+  const [shownClaim, setShownClaim] = useState<string | null>(null);
+  if (pending && pending.key !== shownClaim) {
+    setShownClaim(pending.key);
+    const sent = soundFormOf(JSON.parse(pending.body) as Record<string, unknown>);
+    if (sent.text !== undefined) setText(sent.text);
+    if (sent.seconds !== undefined && !isSoundTool(task)) setSeconds((s) => ({ ...s, [genTask]: sent.seconds! }));
+    if (sent.instrumental !== undefined) setInstrumental(sent.instrumental);
+    if (sent.promptInfluence !== undefined) setPromptInfluence(sent.promptInfluence);
+    if (sent.modelId !== undefined) setModelId(sent.modelId);
+    if (sent.voiceId !== undefined) (sent.modelId === GROK_TTS_MODEL ? setGrokVoiceId : setVoiceId)(sent.voiceId);
+    if (sent.removeBackgroundNoise !== undefined) setRemoveNoise(sent.removeBackgroundNoise);
+    if (sent.sourceLang !== undefined) setSourceLang(sent.sourceLang);
+    if (sent.targetLang !== undefined) setTargetLang(sent.targetLang);
+    if (sent.mode !== undefined) setMode(sent.mode);
+    const from = sent.source;
+    const original = from && isSoundTool(task)
+      ? soundSources(project, soundTool(task).sources).find((a) => ("generationId" in from ? a.generationId === from.generationId : a.uploadId === from.uploadId))
+      : undefined;
+    if (original) setSourceIds((ids) => ({ ...ids, [task]: original.id }));
+  }
 
   /* What the account offers: models from the audio setup, voices from their own route. */
   const fetchVoices = useCallback(
@@ -335,90 +358,110 @@ export function SoundGenerate({
     const replaceId = tool?.id === "voiceChange" && replaceClipId && replaceable.some((c) => c.id === replaceClipId) ? replaceClipId : undefined;
     const placementLane: SoundLane = tool ? "dialogue" : lane;
     const projectId = project.id;
+    const landsAt = () =>
+      tool?.id === "dub"
+        ? `The dubbed track lands on the dialogue lane at ${timecodeOf(startFrame, projectRef.current.fps)} when the vendor has finished; this takes a few minutes.`
+        : replaceId
+          ? "It replaces its dialogue clip when it is ready."
+          : `It lands on the ${placementLane === "sfx" ? "SFX" : placementLane} lane at ${timecodeOf(startFrame, projectRef.current.fps)} when it is ready.`;
+    const follow = (id: string) => {
+      remember([
+        ...readSoundPlacements(window.localStorage, placementsKey),
+        { jobId: id, task, lane: placementLane, startFrame, seconds: asked, label, ...(replaceId ? { replaceClipId: replaceId } : {}) },
+      ]);
+      setQuote(null);
+      void onSave(true).then((saved) => {
+        if (saved) onQueued();
+      });
+    };
+    /* What became of an earlier request of this lane whose reply was lost, said beside what this press does. */
+    let earlier = "";
     try {
-      attempt = key ? readPendingGeneration(window.localStorage, key) : null;
-      if (!attempt) {
-        if (audioClips(projectRef.current).length >= SOUND_CLIP_LIMIT)
-          throw new Error(`An edit supports up to ${SOUND_CLIP_LIMIT} audio clips. Remove one before generating more.`);
-        let target = findSoundNode(projectRef.current, task);
-        if (!target) {
-          const created = createSoundNode(projectRef.current, task);
-          onChange((p) => ({ ...p, nodes: [...p.nodes, created] }));
-          target = created;
-        }
-        if (!(await onSave())) throw new Error("Save your latest work before generating.");
-        const mapping = await studioRequest("/api/workbench/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-          body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.id }),
-        });
-        if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
-        /* The mapping is made after the save, so the draft does not hold it yet. Without it the
-           job feed (use-production-jobs) and asset recovery never see this lane's takes. It is
-           server state, not an edit (no undo step), and only for the project that asked: the
-           page may have opened another one during the awaits above. */
-        const nodeId = target.id;
-        onChange(
-          (p) =>
-            p.id !== projectId || (p.shotMappings?.[nodeId] === mapping.shotId && p.productionProjectId === mapping.productionProjectId)
-              ? p
-              : { ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...p.shotMappings, [nodeId]: mapping.shotId } },
-          false,
-        );
-        key = pendingGenerationKey(scope, project.id, target.id);
-        attempt = claimPendingGeneration(window.localStorage, key, {
-          key: crypto.randomUUID(),
-          body: JSON.stringify({
-            ...body,
-            projectId: mapping.productionProjectId,
-            shotId: mapping.shotId,
-            maxCredits: cost!,
-            title: tool?.id === "voiceChange"
-              ? `${source!.name.replace(/\.[A-Za-z0-9]{1,8}$/, "").slice(0, 50)} · voice changed${voiceName ? ` (${voiceName.slice(0, 20)})` : ""}`
-              : `${label} · ${(tool ? source!.name : text.trim()).slice(0, 60)}`,
-          }),
-          credits: cost!,
-          endpoint: endpoint as "/api/audio" | "/api/audio/dub",
-        });
+      if (key) {
+        /* Whatever is claimed for this lane is asked about first, by its own key, and never sent again. */
+        const settled = await settlePendingGeneration({ scope, storageId: key });
         notifyStorage();
+        if (settled.state === "unknown") throw new Error(settled.reason);
+        if (settled.state === "landed") {
+          const noun = label.toLowerCase();
+          if (settled.status === "failed" || settled.status === "cancelled") {
+            setStatus(`Your last ${noun} reached the server but did not render. Nothing new was sent.`);
+            return;
+          }
+          /* It reached the server: that take is followed, at the price approved for it, and nothing is sent. */
+          follow(settled.jobId);
+          setStatus(`Your last ${noun} reached the server; nothing new was sent. ${landsAt()}`);
+          return;
+        }
+        if (settled.state === "lost") earlier = settled.reason;
+        /* Recover never spends. Let go, the form is the person's again, priced afresh before anything can go. */
+        if (pending) { setStatus(earlier); return; }
       }
+      if (audioClips(projectRef.current).length >= SOUND_CLIP_LIMIT)
+        throw new Error(`An edit supports up to ${SOUND_CLIP_LIMIT} audio clips. Remove one before generating more.`);
+      let target = findSoundNode(projectRef.current, task);
+      if (!target) {
+        const created = createSoundNode(projectRef.current, task);
+        onChange((p) => ({ ...p, nodes: [...p.nodes, created] }));
+        target = created;
+      }
+      if (!(await onSave())) throw new Error("Save your latest work before generating.");
+      const mapping = await studioRequest("/api/workbench/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+        body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.id }),
+      });
+      if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
+      /* The mapping is made after the save, so the draft does not hold it yet. Without it the
+         job feed (use-production-jobs) and asset recovery never see this lane's takes. It is
+         server state, not an edit (no undo step), and only for the project that asked: the
+         page may have opened another one during the awaits above. */
+      const nodeId = target.id;
+      onChange(
+        (p) =>
+          p.id !== projectId || (p.shotMappings?.[nodeId] === mapping.shotId && p.productionProjectId === mapping.productionProjectId)
+            ? p
+            : { ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...p.shotMappings, [nodeId]: mapping.shotId } },
+        false,
+      );
+      key = pendingGenerationKey(scope, project.id, target.id);
+      const proposed: PendingGeneration = {
+        key: crypto.randomUUID(),
+        body: JSON.stringify({
+          ...body,
+          projectId: mapping.productionProjectId,
+          shotId: mapping.shotId,
+          maxCredits: cost!,
+          title: tool?.id === "voiceChange"
+            ? `${source!.name.replace(/\.[A-Za-z0-9]{1,8}$/, "").slice(0, 50)} · voice changed${voiceName ? ` (${voiceName.slice(0, 20)})` : ""}`
+            : `${label} · ${(tool ? source!.name : text.trim()).slice(0, 60)}`,
+        }),
+        credits: cost!,
+        endpoint: endpoint as "/api/audio" | "/api/audio/dub",
+      };
+      const claim = claimPendingGeneration(window.localStorage, key, proposed);
+      notifyStorage();
+      /* Another window claimed this lane meanwhile: that request is its own to send, never this one's. */
+      if (claim.key !== proposed.key) throw new Error("Another Generate of this is already on its way. Nothing new was sent.");
+      attempt = claim;
       const queued = (id: string) => {
         clearPendingGeneration(window.localStorage, key!, attempt!.key);
-        remember([
-          ...readSoundPlacements(window.localStorage, placementsKey),
-          { jobId: id, task, lane: placementLane, startFrame, seconds: asked, label, ...(replaceId ? { replaceClipId: replaceId } : {}) },
-        ]);
-        setStatus(
-          tool?.id === "dub"
-            ? `Dub submitted. The dubbed track lands on the dialogue lane at ${timecodeOf(startFrame, projectRef.current.fps)} when the vendor has finished; this takes a few minutes.`
-            : replaceId
-              ? `${label} submitted. It replaces its dialogue clip when it is ready.`
-              : `${label} submitted. It lands on the ${placementLane === "sfx" ? "SFX" : placementLane} lane at ${timecodeOf(startFrame, projectRef.current.fps)} when it is ready.`,
-        );
-        setQuote(null);
-        void onSave(true).then((saved) => {
-          if (saved) onQueued();
-        });
+        follow(id);
+        setStatus(`${earlier ? `${earlier} ` : ""}${label} submitted. ${landsAt()}`);
       };
       const result = await studioRequest<{ id: string }>(attempt.endpoint ?? "/api/audio", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key, "X-Workbench-Scope": scope },
         body: attempt.body,
       });
-      if (!result.id) throw new Error("The server has not confirmed a job yet. Retry to recover this same request.");
+      if (!result.id) throw new Error("The server has not confirmed a job yet. Recover asks what became of it; nothing is sent again.");
       queued(result.id);
     } catch (e) {
       if (attempt && key && e instanceof StudioRequestError) {
         if (typeof e.data.id === "string") {
           clearPendingGeneration(window.localStorage, key, attempt.key);
-          remember([
-            ...readSoundPlacements(window.localStorage, placementsKey),
-            { jobId: e.data.id, task, lane: placementLane, startFrame, seconds: asked, label, ...(replaceId ? { replaceClipId: replaceId } : {}) },
-          ]);
+          follow(e.data.id);
           setBusy(false);
-          void onSave(true).then((saved) => {
-            if (saved) onQueued();
-          });
           return;
         }
         // Only a durable, completed refusal permits a fresh request and another quote.
@@ -427,7 +470,7 @@ export function SoundGenerate({
           notifyStorage();
         }
       }
-      setError(e instanceof Error ? e.message : "The generation could not be submitted.");
+      setError(`${earlier ? `${earlier} ` : ""}${e instanceof Error ? e.message : "The generation could not be submitted."}`);
     } finally {
       setBusy(false);
     }
@@ -643,7 +686,7 @@ export function SoundGenerate({
           {busy
             ? "Submitting…"
             : pending
-              ? `Recover submitted ${(tool ? tool.label : def.label).toLowerCase()} · ${pending.credits} cr`
+              ? `Recover submitted ${(tool ? tool.label : def.label).toLowerCase()}`
               : cost != null && ready
                 ? `${tool ? tool.label : `Generate ${def.label.toLowerCase()}`} · ${cost} cr`
                 : tool ? tool.label : `Generate ${def.label.toLowerCase()}`}
@@ -656,6 +699,11 @@ export function SoundGenerate({
               : `Lands on the ${laneName(lane)} lane at ${timecodeOf(frame, project.fps)}.${task === "speech" ? " Per character." : task === "sound" ? " One price per effect, up to 30 s." : " Per minute, 10 s to 5 min."}`}
         </span>
       </div>
+      {pending && !busy && (
+        <p className={styles.note}>
+          Your last {(tool ? tool.label : def.label).toLowerCase()} ({pending.credits.toLocaleString("en-US")} cr) is unconfirmed. Recover asks the server what became of it; nothing is sent again.
+        </p>
+      )}
       {voicesError && (task === "speech" || tool?.id === "voiceChange") && (
         <p className={styles.note}>Voices: {voicesError}</p>
       )}
