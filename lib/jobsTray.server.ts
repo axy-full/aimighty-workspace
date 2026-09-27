@@ -91,7 +91,8 @@ async function ledgerFor(rows: Generation[], inCredits: boolean, workspaceId: st
       /* Settled on the meter: what it billed (0 is not billed). Still running there, or never metered: no figure is claimed. */
       out.set(g.id, { unit, reserved: null, charged: m && !running ? m.credits : null, needs: null });
     } else {
-      const usd = dollars(g.costUsd, g.refineCostUsd);
+      /* A recorded refinement is not evidence of what the render charged. */
+      const usd = g.costUsd == null ? null : dollars(g.costUsd, g.refineCostUsd);
       out.set(g.id, { unit, reserved: null, charged: usd, needs: null });
     }
   }
