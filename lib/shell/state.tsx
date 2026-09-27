@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
 import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
-import { canUndo, popUndo, pushUndo, type UndoEntry } from "./undo";
+import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
@@ -60,7 +60,8 @@ export type Shell = {
   openCtx: (ctx: CtxState) => void;
   closeCtx: () => void;
   setClip: (clip: Clip | null) => void;
-  pushUndo: (entry: UndoEntry) => void;
+  /** Records an inverse. With `say`, the shell toasts it with an Undo (a phone has no ⌘Z), shown while this step is the one ⌘Z would undo. */
+  pushUndo: (entry: UndoEntry, say?: string) => void;
   /** The shell's command path (SuitesShell registers it), so panels never grow a second one. */
   runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
   setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
@@ -217,7 +218,13 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     openCtx: (next) => setCtx(next),
     closeCtx: () => setCtx(null),
     setClip,
-    pushUndo: (entry) => setUndoStack((stack) => pushUndo(stack, { ...entry, projectId: entry.projectId ?? projectRef.current })),
+    pushUndo: (entry, say) => {
+      const stamped = { ...entry, projectId: entry.projectId ?? projectRef.current };
+      setUndoStack((stack) => pushUndo(stack, stamped));
+      /* The toast's Undo (lib/workspace/state › ToastAction) stays as long as an Open does, long enough to reach on a phone, and
+         shows only while this step is still the one ⌘Z would undo in this project. */
+      if (say) ws.toast(say, { label: "Undo", kind: "undo", run: () => void live().undo(), live: () => popUndo(undoRef.current, projectRef.current)?.entry === stamped });
+    },
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
     undo: async () => {
@@ -225,8 +232,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       if (!popped) { ws.toast(undoRef.current.length ? "Nothing to undo in this project." : "Nothing to undo."); return; }
       setUndoStack((stack) => stack.filter((entry) => entry !== popped.entry));
       try {
-        await popped.entry.undo();
-        ws.toast(popped.entry.label);
+        ws.toast(undoneLabel(popped.entry, await popped.entry.undo()));
       } catch (error) {
         /* The step is still owed: it goes back on the stack, and the toast says why it did not happen. */
         setUndoStack((stack) => pushUndo(stack, popped.entry));

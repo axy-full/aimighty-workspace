@@ -75,6 +75,9 @@ async function fixture() {
       quoteConsumerGeneration: service("quote", job),
       submitConsumerGenerationJob: service("submit", { ...job, status: "accepted" }),
       pollConsumerGeneration: service("status", { job: { ...job, status: "accepted" } }),
+      quoteConsumerGenerationBatch: service("quote-batch", [job, job]),
+      submitConsumerGenerationBatchJobs: service("submit-batch", [{ ...job, status: "accepted" }, { ...job, status: "accepted" }]),
+      checkConsumerGenerationBatch: service("check-batch", { state: "absent", jobs: [job, job] }),
     },
     "@/lib/higgsfield-consumer/characters": {
       connectedCharacters: service("characters", { connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] }),
@@ -319,4 +322,42 @@ test("the quote service's standalone refusal answers 409 setup_not_particl with 
   /* The route hands the whole input to the service, which runs the guard before anything is priced. */
   expect(f.calls.map((call) => call.name)).toEqual(["quote"]);
   expect(JSON.stringify(f.calls[0].args)).toContain("acct_p1");
+});
+
+test("takes 2–4: one batch quote, one exact-sum submit behind the render gate, and a check that never spends, each strictly shaped", async () => {
+  const f = await fixture(), original = f.store();
+  const second = "33333333-3333-4333-8333-333333333333";
+  const quoteBatch = { action: "quote-batch", draftId: "draft-1", input, idempotencyKeys: [key, second], batchId: "b_k1abc2", composer: "gen" };
+  const submitBatch = { action: "submit-batch", draftId: "draft-1", ids: [key, second], workspaceId: wallet, credits: 18 };
+  const checkBatch = { action: "check-batch", draftId: "draft-1", ids: [key, second] };
+  for (const [body, answer] of [[quoteBatch, "jobs"], [submitBatch, "jobs"], [checkBatch, "state"]] as const) {
+    const response = await f.request("POST", body, { origin: "https://particl.example" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.json()).toHaveProperty(answer);
+  }
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([
+    ["quote-batch", ["owner", "draft-1", input, [key, second], { batchId: "b_k1abc2", composer: "gen" }]],
+    ["submit-batch", ["owner", "draft-1", [key, second], { workspaceId: wallet, credits: 18 }]],
+    ["check-batch", ["owner", "draft-1", [key, second]]],
+  ]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([
+    ["hf-consumer-generation:workspace:owner:quote-batch", 6], ["hf-consumer-generation:workspace:owner:submit-batch", 6], ["hf-consumer-generation:workspace:owner:check-batch", 30],
+  ]);
+  const three = ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
+  const malformed = [
+    { ...quoteBatch, idempotencyKeys: [key] }, { ...quoteBatch, idempotencyKeys: [key, second, ...three] }, { ...quoteBatch, idempotencyKeys: [key, "bad"] },
+    { ...quoteBatch, batchId: "batch-1" }, { ...quoteBatch, batchId: "b_UPPER1" }, { ...quoteBatch, composer: "ads" }, { ...quoteBatch, ids: [key, second] },
+    { ...submitBatch, ids: [key] }, { ...submitBatch, ids: [key, second, ...three] }, { ...submitBatch, credits: 0 }, { ...submitBatch, credits: -9 }, { ...submitBatch, credits: "18" },
+    { ...submitBatch, credits: 400001 }, { ...submitBatch, workspaceId: "bad" }, { ...submitBatch, id: key }, { ...submitBatch, input },
+    { ...checkBatch, ids: [key] }, { ...checkBatch, ids: ["bad", second] }, { ...checkBatch, credits: 18 },
+  ];
+  for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 160)).toBe(400);
+  expect(f.calls).toHaveLength(3);
+  /* A paused workspace sends nothing, but can still price, and still ask what became of a batch. */
+  f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
+  expect((await f.request("POST", submitBatch)).status).toBe(423);
+  expect((await f.request("POST", checkBatch)).status).toBe(200);
+  expect((await f.request("POST", quoteBatch)).status).toBe(200);
+  expect(f.calls.slice(3).map((call) => call.name)).toEqual(["check-batch", "quote-batch"]);
 });

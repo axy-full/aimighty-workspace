@@ -12,6 +12,44 @@ function posterStyle(name: string): React.CSSProperties {
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "—";
 }
+/** A project's poster tile: its initials over the colour its name picks. */
+export function ProjectTile({ name }: { name: string }) {
+  return <span className="gx-project-tile" aria-hidden="true" style={posterStyle(name)}>{initials(name)}</span>;
+}
+
+/** The longest project name a draft saves with (projectSchema › name). */
+export const PROJECT_NAME_MAX = 100;
+
+/**
+ * The name field and Create that start a project: in the switcher below and on
+ * Studio's first-run card (FirstRun), both through the shell's one `onCreate`.
+ * One press makes one project: a second submit while the first is on its way is ignored.
+ */
+export function NewProjectForm({ onCreate, onDone, onCancel, testid = "project-new" }: {
+  onCreate: (name: string) => Promise<string | null>; onDone?: () => void; onCancel?: () => void; testid?: string;
+}) {
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [problem, setProblem] = useState("");
+  const busy = useRef(false);
+  const create = async () => {
+    if (busy.current) return;
+    busy.current = true; setCreating(true); setProblem("");
+    const why = await onCreate(name.trim() || "Untitled").catch(() => "The project could not be created. Try again.");
+    busy.current = false; setCreating(false);
+    if (why) { setProblem(why); return; }
+    onDone?.();
+  };
+  return (
+    <form className="gx-project-new" onSubmit={(e) => { e.preventDefault(); void create(); }} data-testid={`${testid}-form`}>
+      {/* 100: the longest name the save route takes (lib/workbench/studio-schema.ts). It said 120, and a longer name was refused after Create. */}
+      <input className="gx-field" autoFocus maxLength={PROJECT_NAME_MAX} placeholder="Project name" aria-label="New project name" value={name} onChange={(e) => setName(e.target.value)} data-testid={`${testid}-name`} />
+      <button type="submit" className="gx-primary" disabled={creating} data-testid={`${testid}-create`}>{creating ? "Creating…" : "Create"}</button>
+      {onCancel ? <button type="button" className="gx-hbtn" onClick={onCancel} data-testid={`${testid}-cancel`}>Cancel</button> : null}
+      {problem ? <p className="gx-reason" role="alert">{problem}</p> : null}
+    </form>
+  );
+}
 
 /** `[DS] Project ▾` — the project switcher: a list with ✓ on the current one, and New project. */
 export function ProjectHead({ project, projects, loading, error = null, onRetry, onPick, onCreate }: {
@@ -23,17 +61,7 @@ export function ProjectHead({ project, projects, loading, error = null, onRetry,
 }) {
   const shell = useShell();
   const [open, setOpen] = useState(false);
-  const [naming, setNaming] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [problem, setProblem] = useState("");
-  const create = async () => {
-    if (!onCreate || naming == null) return;
-    setCreating(true); setProblem("");
-    const why = await onCreate(naming.trim() || "Untitled");
-    setCreating(false);
-    if (why) { setProblem(why); return; }
-    setNaming(null); setOpen(false);
-  };
+  const [naming, setNaming] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -50,9 +78,9 @@ export function ProjectHead({ project, projects, loading, error = null, onRetry,
   return (
     <div className="gx-project" ref={box} data-row="project">
       <button type="button" className="gx-project-btn" aria-haspopup="listbox" aria-expanded={open} title="Switch project" onClick={() => setOpen((v) => !v)} data-testid="project-switcher">
-        <span className="gx-project-tile" aria-hidden="true" style={posterStyle(project?.name ?? "")}>{initials(project?.name ?? "")}</span>
+        <ProjectTile name={project?.name ?? ""} />
         <span style={{ minWidth: 0 }}>
-          <span className="gx-project-name"><span data-testid="project-name">{name}</span> <span style={{ color: "var(--gx-text-3)" }} aria-hidden="true">▾</span></span>
+          <span className="gx-project-name"><span className="gx-project-label" data-testid="project-name">{name}</span> <span style={{ color: "var(--gx-text-3)" }} aria-hidden="true">▾</span></span>
           {/* No "saved" dot: each stage says its own save state (Saved / Saving / Not saved) where the edit is made. */}
           {failed ? null : <span className="gx-project-meta">{meta || shell.suite.name}</span>}
         </span>
@@ -62,7 +90,7 @@ export function ProjectHead({ project, projects, loading, error = null, onRetry,
         <div className="gx-popover" role="listbox" aria-label="Projects">
           {projects.map((p) => (
             <button key={p.id} type="button" role="option" aria-selected={p.id === project?.id} className="gx-popover-item" onClick={() => { setOpen(false); onPick(p.id); }}>
-              <span className="gx-project-tile" aria-hidden="true" style={posterStyle(p.name)}>{initials(p.name)}</span>
+              <ProjectTile name={p.name} />
               <span style={{ flex: 1, minWidth: 0, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
               {p.id === project?.id ? <span style={{ color: "var(--gx-accent-text)" }} aria-hidden="true">✓</span> : null}
             </button>
@@ -72,16 +100,12 @@ export function ProjectHead({ project, projects, loading, error = null, onRetry,
             <a className="gx-popover-item gx-popover-item--new" href="/workbench?new=1" style={{ textDecoration: "none" }}>
               <span aria-hidden="true">+</span>New project
             </a>
-          ) : naming == null ? (
-            <button type="button" className="gx-popover-item gx-popover-item--new" onClick={() => setNaming("")} data-testid="project-new">
+          ) : !naming ? (
+            <button type="button" className="gx-popover-item gx-popover-item--new" onClick={() => setNaming(true)} data-testid="project-new">
               <span aria-hidden="true">+</span>New project
             </button>
           ) : (
-            <form className="gx-project-new" onSubmit={(e) => { e.preventDefault(); void create(); }} data-testid="project-new-form">
-              <input className="gx-field" autoFocus maxLength={120} placeholder="Project name" aria-label="New project name" value={naming} onChange={(e) => setNaming(e.target.value)} data-testid="project-new-name" />
-              <button type="submit" className="gx-primary" disabled={creating} data-testid="project-new-create">{creating ? "Creating…" : "Create"}</button>
-              {problem ? <p className="gx-reason" role="alert">{problem}</p> : null}
-            </form>
+            <NewProjectForm onCreate={onCreate} onDone={() => { setNaming(false); setOpen(false); }} />
           )}
         </div>
       ) : null}

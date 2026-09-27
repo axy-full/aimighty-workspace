@@ -5,6 +5,9 @@ import { randomBytes } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { askForLegacyShell } from "./helpers/legacyShell";
 
+/* A route handler still reading a real response when a test ends would throw "Response has been disposed". */
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
+
 test("paid writing recovers the same body after reload and is isolated from another account", async ({
   page,
 }, testInfo) => {
