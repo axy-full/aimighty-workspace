@@ -7,6 +7,7 @@ import {
   readPendingGeneration,
   type PendingGeneration,
 } from "../workbench/pending-generation";
+import { rememberWorkspaceQuote } from "./last-quote";
 import { dispatchGate, neutralCopy } from "./rig";
 
 /**
@@ -71,6 +72,8 @@ export async function dispatchGeneration(options: {
         });
         if (!Number.isFinite(fresh.estimatedCredits) || fresh.estimatedCredits < 0 || !FINGERPRINT.test(fresh.fingerprint ?? ""))
           throw new Error("The live price could not be confirmed. Nothing was submitted.");
+        /* The header's last quote (lib/workspace/last-quote.ts): this is the figure the press is measured against. */
+        rememberWorkspaceQuote(scope, fresh.estimatedCredits);
         const gate = dispatchGate(shown, fresh.estimatedCredits);
         if (!gate.ok) return { state: "repriced", credits: gate.credits, reason: gate.reason };
         credits = fresh.estimatedCredits;
@@ -82,6 +85,7 @@ export async function dispatchGeneration(options: {
           body: JSON.stringify({ ...request.quoteBody, quoteOnly: true }),
         });
         if (!validAudioQuote(fresh)) throw new Error("The live price could not be confirmed. Nothing was submitted.");
+        rememberWorkspaceQuote(scope, fresh.estimatedCredits);
         const gate = dispatchGate(shown, fresh.estimatedCredits);
         if (!gate.ok) return { state: "repriced", credits: gate.credits, reason: gate.reason };
         credits = fresh.estimatedCredits;

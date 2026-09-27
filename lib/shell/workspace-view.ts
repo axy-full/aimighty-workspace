@@ -37,13 +37,39 @@ export function planLine(plans: readonly BillingPlan[] | undefined, subscription
   ].filter(Boolean).join(" · ");
 }
 
-/** GET /api/workspaces/topups (lib/packs.ts Pack, lib/topups.ts TopupRequest). */
+/** GET /api/workspaces/topups (lib/packs.ts Pack, lib/topups.ts TopupRequest, lib/platform.ts listGrants). */
 export type TopupPack = { id: string; label: string; credits: number; bonus: number; total: number; usd: number };
-export type TopupRequestRow = { id: string; label: string; credits: number; bonus: number; usd: number; status: string };
-export type Topups = { applies: boolean; provider: string; canRequest: boolean; openLimit?: number; packs: TopupPack[]; requests: TopupRequestRow[] };
-/** A pack as the SOW writes it on the top-up screen: `2,200 cr · $200 · 200 free`. */
+export type TopupRequestRow = { id: string; label: string; credits: number; bonus: number; usd: number; status: string; createdAt?: number; decidedAt?: number | null };
+export type TopupGrant = { id: string; credits: number; note: string; createdAt: number };
+export type Topups = { applies: boolean; provider: string; canRequest: boolean; openLimit?: number; packs: TopupPack[]; requests: TopupRequestRow[]; history?: TopupGrant[] };
+/** A pack as the SOW writes it on the top-up screen: `2,200 cr · $200 · 200 free`. The price is the one dollar figure on the page. */
 export function packLine(pack: TopupPack): string {
   return [`${pack.total.toLocaleString("en-US")} cr`, `$${pack.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}`, pack.bonus > 0 ? `${pack.bonus.toLocaleString("en-US")} free` : null].filter(Boolean).join(" · ");
+}
+/** The button that asks for a pack says what lands in the balance: bought and free together. */
+export const packRequestLabel = (pack: Pick<TopupPack, "total">) => `Request ${pack.total.toLocaleString("en-US")} credits`;
+
+const day = (ms: number | null | undefined) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null);
+/**
+ * A request as its row reads: what was asked for, and where it stands. A
+ * withdrawn request is kept (lib/topups.ts cancelTopup marks it; nothing is
+ * erased), so it says "withdrawn" rather than vanishing.
+ */
+export function requestLine(r: TopupRequestRow): string {
+  const what = `${r.label} · ${(r.credits + r.bonus).toLocaleString("en-US")} cr`;
+  if (r.status === "requested") return `${what} · waiting on the platform${day(r.createdAt) ? ` since ${day(r.createdAt)}` : ""}`;
+  const word = r.status === "approved" ? "added" : r.status === "declined" ? "declined" : r.status === "cancelled" ? "withdrawn" : r.status;
+  return [what, `${word}${day(r.decidedAt) ? ` ${day(r.decidedAt)}` : ""}`].join(" · ");
+}
+/** Open requests first (they carry Withdraw), then the last few answered. */
+export function requestRows(requests: readonly TopupRequestRow[] | undefined, answered = 3): TopupRequestRow[] {
+  const all = requests ?? [];
+  return [...all.filter((r) => r.status === "requested"), ...all.filter((r) => r.status !== "requested").slice(0, answered)];
+}
+/** A grant as the history lists it: `+2,000 cr` beside what it was and when. */
+export function grantRow(g: TopupGrant): { amount: string; what: string; when: string } {
+  const amount = `${g.credits >= 0 ? "+" : "−"}${Math.abs(g.credits).toLocaleString("en-US")} cr`;
+  return { amount, what: g.note.trim() || "Credits added", when: day(g.createdAt) ?? "" };
 }
 /** Where a card checkout may send the browser: https only, never a scheme that runs code. */
 export function checkoutUrl(raw: unknown, origin: string): string | null {

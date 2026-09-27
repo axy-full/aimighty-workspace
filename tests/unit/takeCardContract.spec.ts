@@ -33,8 +33,9 @@ test("a render in flight is Queued, Rendering or Held — held for a slot is a p
   expect(take(gen("q", { status: "queued", creditsBilled: null }))).toMatchObject({ status: "rendering", stage: "queued", credits: null });
   expect(take(gen("q", { status: "queued" }))).not.toHaveProperty("reason");
   expect(take(gen("r", { status: "running", creditsBilled: null }))).toMatchObject({ status: "rendering", stage: "rendering" });
+  /* Held for credits is its own status (idea 4), not a render in flight: the chip carries what it needs. */
   expect(take(gen("h", { status: "held", params: { held: { why: "credits", needs: 11.2, estUsd: 0.7 } } })))
-    .toMatchObject({ stage: "held", reason: "Needs 12 cr", detail: "Starts on its own when credits arrive." });
+    .toMatchObject({ status: "held", needs: 12, reason: "Needs 12 cr", detail: "Starts on its own when credits arrive." });
   expect(take(gen("s", { status: "held", params: { held: { why: "slots" } } }))).toMatchObject({ stage: "queued", reason: "Waiting for a free slot" });
 
   expect(heldReason({ held: { why: "credits", needs: 1200 } })).toEqual({ reason: "Needs 1,200 cr", detail: "Starts on its own when credits arrive." });

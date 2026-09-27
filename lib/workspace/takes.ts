@@ -1,6 +1,7 @@
 import { libraryId, libraryName, type LibraryAsset } from "../genLibrary";
 import { failureKind } from "../jobState";
 import { engineLabel } from "./engines";
+import { heldNeeds } from "./release";
 
 /**
  * The Takes page: the project library (GET /api/workbench/library →
@@ -19,7 +20,8 @@ import { engineLabel } from "./engines";
  * storeOriginalBytes); other renders have no persisted digest, so null.
  */
 
-export type TakeStatus = "approved" | "picked" | "changes" | "review" | "rendering" | "failed" | "uploaded";
+/** `held`: parked at zero for credits (lib/held.ts), not rendering — it starts when credits arrive or someone releases it. */
+export type TakeStatus = "approved" | "picked" | "changes" | "review" | "rendering" | "held" | "failed" | "uploaded";
 
 export type Take = {
   /** Library id, `generation:<id>` or `upload:<id>` (lib/genLibrary.ts libraryId). */
@@ -40,8 +42,10 @@ export type Take = {
   failedUnbilled?: true;
   /** A take stopped before it rendered (a held take discarded): filed under `failed`, but nothing went wrong. */
   cancelled?: true;
-  /** Where a render that has not settled is: waiting its turn, on the engine, or parked for credits. */
+  /** Where a render in flight is: waiting its turn (or for a free slot), or on the engine. */
   stage?: TakeStage;
+  /** A take held for credits: the credits it needs to start (params.held.needs) — its Release button's price. */
+  needs?: number;
   /** One line on why a take failed or is held ("Refused by the content filter", "Needs 12 cr"). */
   reason?: string;
   /** The row's own words behind `reason`, for a tooltip; only when they say more. */
@@ -79,19 +83,22 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const failed = g.status === "failed" || g.status === "cancelled";
     const settled = failed || g.status === "succeeded";
     const billedCredits = g.providerCreditQuote ? null : g.creditsBilled;
-    const status: TakeStatus = failed ? "failed" : g.status !== "succeeded" ? "rendering"
+    /* Held for a slot is a place in the line (Queued); held for credits is its own state. */
+    const heldForCredits = g.status === "held" && takeStage(g) === "held";
+    const status: TakeStatus = failed ? "failed" : heldForCredits ? "held" : g.status !== "succeeded" ? "rendering"
       : g.reviewState === "approved" ? "approved" : g.reviewState === "picked" ? "picked" : g.reviewState === "changes" ? "changes" : "review";
     const unbilled = failed && !((billedCredits ?? 0) > 0) && !((g.costUsd ?? 0) > 0);
     const sha = typeof g.params.originalSha256 === "string" && SHA.test(g.params.originalSha256) ? g.params.originalSha256 : null;
     const stage = status === "rendering" ? takeStage(g) : null;
-    const why = failed ? failureReason(g) : stage === "held" || (stage === "queued" && g.status === "held") ? heldReason(g.params) : null;
+    const needs = heldForCredits ? heldNeeds(g.params) : null;
+    const why = failed ? failureReason(g) : heldForCredits ? heldBlock(g) ?? heldReason(g.params) : stage === "queued" && g.status === "held" ? heldReason(g.params) : null;
     return {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
       meta: [label, detail].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : billedCredits ?? null,
       usd: !settled ? null : unbilled ? (g.costUsd == null ? null : 0) : g.costUsd ?? null,
       status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
-      ...(stage ? { stage } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
+      ...(stage ? { stage } : {}), ...(needs != null ? { needs } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
       sha256: sha, createdAt: g.createdAt,
     };
   });
@@ -111,8 +118,21 @@ export function takeStage(g: Pick<Row, "status" | "params">): TakeStage {
 export function heldReason(params: Row["params"]): { reason: string; detail?: string } {
   const held = (params as HeldParams | null | undefined)?.held;
   if (held?.why === "slots") return { reason: "Waiting for a free slot" };
-  const needs = typeof held?.needs === "number" && Number.isFinite(held.needs) && held.needs > 0 ? Math.ceil(held.needs) : null;
-  return needs == null ? { reason: "Waiting for credits" } : { reason: `Needs ${needs.toLocaleString("en-US")} cr`, detail: "Starts on its own when credits arrive." };
+  const needs = heldNeeds(params);
+  return needs == null ? { reason: "Waiting for credits" } : { reason: needsLine(needs), detail: "Starts on its own when credits arrive." };
+}
+const needsLine = (needs: number) => `Needs ${needs.toLocaleString("en-US")} cr`;
+
+/**
+ * A take held for credits that a release could not start for a reason of
+ * its own (a shot, project or token cap — lib/held.ts writes it on the row):
+ * that reason, not the wait, is what to act on.
+ */
+export function heldBlock(g: Pick<Row, "status" | "error">): { reason: string; detail?: string } | null {
+  const raw = g.status === "held" ? (g.error ?? "").trim() : "";
+  if (!raw) return null;
+  const line = firstLine(raw);
+  return line && line !== raw ? { reason: line, detail: raw } : { reason: line || raw };
 }
 
 /** First sentence of an engine message, without URLs, ids or JSON, capped for one line. */
@@ -156,8 +176,10 @@ export type TakeChip = { label: string; tone: ChipTone };
  * upload carry none. `compact` shortens the one long label for a 2-up sidebar
  * tile; the billing note then rides on the reason line instead.
  */
-export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled">, compact = false): TakeChip | null {
+export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled" | "needs">, compact = false): TakeChip | null {
   switch (take.status) {
+    /* "Held · needs 12 cr": what it waits for, in the unit it is charged in. The 2-up tile says "Held" and the need under the name. */
+    case "held": return { label: compact ? "Held" : take.needs != null ? `Held · needs ${take.needs.toLocaleString("en-US")} cr` : "Held · needs credits", tone: "waiting" };
     case "rendering": return take.stage === "held" ? { label: "Held", tone: "waiting" } : take.stage === "queued" ? { label: "Queued", tone: "idle" } : { label: "Rendering", tone: "live" };
     case "failed": {
       const word = take.cancelled ? "Cancelled" : "Failed";
@@ -171,13 +193,18 @@ export function takeChip(take: Pick<Take, "status" | "stage" | "failedUnbilled" 
 }
 
 /** The status in words, where there is room for all of them (the Inspector's facts). */
-export function takeStatusWord(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled">): string {
+export function takeStatusWord(take: Pick<Take, "status" | "stage" | "failedUnbilled" | "cancelled" | "needs">): string {
   return takeChip(take)?.label ?? (take.status === "uploaded" ? "Uploaded" : "In review");
 }
 
-/** The line under a card's name: the failure or hold reason, with the billing note when the chip had no room for it. */
-export function takeReasonLine(take: Pick<Take, "status" | "reason" | "failedUnbilled">, compact = false): string | null {
+/**
+ * The line under a card's name: the failure or hold reason, with the billing
+ * note when the chip had no room for it. A held take's need rides on its chip
+ * ("Held · needs 12 cr"), so the line says only what else stops it.
+ */
+export function takeReasonLine(take: Pick<Take, "status" | "reason" | "failedUnbilled" | "needs">, compact = false): string | null {
   if (!take.reason) return null;
+  if (take.status === "held" && !compact && take.needs != null && take.reason === needsLine(take.needs)) return null;
   return compact && take.status === "failed" && take.failedUnbilled ? `Not billed · ${take.reason}` : take.reason;
 }
 

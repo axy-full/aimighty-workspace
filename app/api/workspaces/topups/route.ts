@@ -34,7 +34,11 @@ export const GET = withTenant(async function GET() {
   });
 });
 
-/** Ask for a pack. Owner or admin; the request waits for the platform to answer. */
+/**
+ * Ask for a pack. Owner or admin; the request waits for the platform to
+ * answer, and nothing is charged here. `emailed` says whether the platform
+ * admin was written to — never without a mail key (lib/mail mailConfigured).
+ */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
@@ -42,19 +46,28 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!creditsApply(ws)) return NextResponse.json({ error: "This workspace pays its vendors directly; there is nothing to top up." }, { status: 400 });
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin asks for credits." }, { status: 403 });
   const body = await req.json().catch(() => ({}));
+  let request: Awaited<ReturnType<typeof requestTopup>>;
   try {
-    const request = await requestTopup({ workspaceId: ws.id, packId: String(body.packId ?? ""), requestedBy: got.user.id, note: body.note ? String(body.note) : "" });
-    const checkout = await startCheckout(request);
-    if (checkout.kind === "queued" && mailConfigured() && SUPER_ADMIN_EMAIL) {
-      const origin = inviteOrigin(req);
-      const split = request.bonus > 0 ? ` (${request.credits.toLocaleString("en-US")} bought + ${request.bonus.toLocaleString("en-US")} free)` : "";
-      const text = `${ws.name} asks for the ${request.label} pack: ${(request.credits + request.bonus).toLocaleString("en-US")} credits${split} · $${request.usd.toFixed(2)}.\n${request.note ? `Note: ${request.note}\n` : ""}\nAnswer it on the platform desk: ${origin}/admin`;
-      await sendMail({ to: SUPER_ADMIN_EMAIL, subject: `Top-up requested: ${ws.name}`, text, html: `<p>${text.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p>` }).catch(() => {});
-    }
-    return NextResponse.json({ request, checkout }, { status: 201 });
+    request = await requestTopup({ workspaceId: ws.id, packId: String(body.packId ?? ""), requestedBy: got.user.id, note: body.note ? String(body.note) : "" });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
+  let checkout: Awaited<ReturnType<typeof startCheckout>>;
+  try {
+    checkout = await startCheckout(request);
+  } catch (e) {
+    /* A request nobody can pay for does not wait on the desk: withdrawn (kept, never erased), and said. */
+    await cancelTopup(request.id, ws.id).catch(() => false);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
+  let emailed = false;
+  if (checkout.kind === "queued" && mailConfigured() && SUPER_ADMIN_EMAIL) {
+    const origin = inviteOrigin(req);
+    const split = request.bonus > 0 ? ` (${request.credits.toLocaleString("en-US")} bought + ${request.bonus.toLocaleString("en-US")} free)` : "";
+    const text = `${ws.name} asks for the ${request.label} pack: ${(request.credits + request.bonus).toLocaleString("en-US")} credits${split} · $${request.usd.toFixed(2)}.\n${request.note ? `Note: ${request.note}\n` : ""}\nAnswer it on the platform desk: ${origin}/admin`;
+    emailed = await sendMail({ to: SUPER_ADMIN_EMAIL, subject: `Top-up requested: ${ws.name}`, text, html: `<p>${text.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p>` }).then(() => true, () => false);
+  }
+  return NextResponse.json({ request, checkout, emailed }, { status: 201 });
 });
 
 /** Withdraw a request that has not been answered. */

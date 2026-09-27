@@ -47,6 +47,7 @@ import { formatCredits } from "./cost";
 import { releaseConnectedJob, watchConnectedJob } from "../shell/connected-collector";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration } from "./generate-submit";
+import { rememberWorkspaceQuote } from "./last-quote";
 import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig";
 import { shotPatch } from "./shots";
 import { useWorkspace } from "./state";
@@ -516,6 +517,11 @@ export function useComposer(options: {
   }, [blockedForQuote, quoteKey, connectedKey, scope, target?.id]);
 
   const credits = liveCredits(quote, quoteKey);
+  /* The price on Generate, in this workspace's credits, is the header's last quote (lib/workspace/last-quote.ts): recorded, never asked for. */
+  const takes = Math.max(1, state.count);
+  useEffect(() => {
+    if (state.billing === "workspace" && credits != null) rememberWorkspaceQuote(scope, credits * takes);
+  }, [scope, state.billing, credits, takes]);
   const blocked = composerBlock({
     state, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
     catalogue: state.billing === "connected"

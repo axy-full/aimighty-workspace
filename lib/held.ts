@@ -169,10 +169,26 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
   });
 }
 
+/** Why one take a person pressed Release on did not start. Nothing was reserved or charged for it. */
+export type ReleaseRefusal = { status: number; error: string; needs: number; balance: number | null };
+
+export const SLOTS_BUSY = "Every render slot is busy. It starts on its own when one is free.";
+export function stillShort(needs: number, balance: number | null): string {
+  const left = Math.max(0, Math.floor(balance ?? 0));
+  return `Still short: this needs ${needs} credit${needs === 1 ? "" : "s"} and ${left} ${left === 1 ? "is" : "are"} left.`;
+}
+/** The price on the button is what the person approved (lib/workspace/rig.ts dispatchGate says the same for Generate). */
+export function repriced(needs: number): string {
+  return `The price is now ${needs.toLocaleString("en-US")} cr. Press Release again to approve it.`;
+}
+
 /**
  * Release what the balance now covers. `only` releases one take (a person
- * pressing Release); `defer` is how the caller keeps the render alive past
- * its response (by default, Next's `after` behind a recovery continuation).
+ * pressing Release); `approved` is the exact credits that person was shown,
+ * and a take whose price is now different is not started; `defer` is how the
+ * caller keeps the render alive past its response (by default, Next's
+ * `after` behind a recovery continuation). With `only`, a take that does not
+ * start comes back with `refused`: why, in the words to show.
  *
  * Takes held for credits keep their order among themselves: the first the
  * balance does not cover stops that line. A take that only waited for a
@@ -180,7 +196,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
  * or token cap), spends nothing and holds up nobody: the reason is written
  * on it, and the line is measured again without it.
  */
-export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {}): Promise<{ released: string[]; short: number }> {
+export async function releaseHeldJobs(opts: { only?: string; approved?: number; defer?: Defer } = {}): Promise<{ released: string[]; short: number; refused?: ReleaseRefusal }> {
   await assertRecoveryOpen();
   const rows = await heldRows(opts.only);
   if (!rows.length) return { released: [], short: 0 };
@@ -197,10 +213,15 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
   const exempt = shotCapExemption(opts.only ? currentTenant()?.user?.role === "admin" : false);
   const released: string[] = [];
   let creditsStalled = false;
+  let refusal: ReleaseRefusal | undefined;
+  const refuse = (status: number, error: string, r: HeldRow) => { if (opts.only) refusal = { status, error, needs: r.needs, balance }; };
   for (const r of rows) {
-    if (running >= limits.concurrency) break;
+    if (running >= limits.concurrency) { refuse(409, SLOTS_BUSY, r); break; }
+    /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
+    if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
     if (r.why === "credits" && (creditsStalled || !plan.release.includes(r.id))) {
       creditsStalled = true;
+      refuse(402, stillShort(r.needs, balance), r);
       continue;
     }
     // The meter first: work the platform cannot bill does not start.
@@ -210,6 +231,10 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
                     { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
     } catch (e) {
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
+      const status = e instanceof SpendReservationError ? e.status : 503;
+      /* Short at the reservation (another take reserved credits meanwhile): said with the balance as it is now. */
+      const left = status === 402 && opts.only ? ((await creditState().catch(() => null))?.balance ?? balance) : balance;
+      refuse(status, status === 402 ? stillShort(r.needs, left) : e instanceof SpendReservationError ? e.message : "This take could not be started just now. Nothing was charged.", r);
       // A workspace-wide stop (every slot reserved, the hourly limit, a paused workspace) ends the pass.
       if (!(e instanceof SpendReservationError) || !(e.perJob || e.status === 402)) break;
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held'",
@@ -248,7 +273,7 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
     running += 1;
   }
   if (released.length) invalidate(PROJECTS_KEY);
-  return { released, short: rows.length - released.length };
+  return { released, short: rows.length - released.length, ...(refusal && !released.length ? { refused: refusal } : {}) };
 }
 
 function siteUrl(): string {
