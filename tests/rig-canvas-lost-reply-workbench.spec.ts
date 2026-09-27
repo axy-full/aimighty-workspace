@@ -67,6 +67,15 @@ async function ledger(tenantUrl: string, workspaceId: string, projectId: string)
   }
 }
 
+/** The ledger once `jobs` jobs exist and each is on the meter: admission writes a job's row, then reserves its charge. */
+async function settledLedger(tenantUrl: string, workspaceId: string, projectId: string, jobs: number) {
+  await expect.poll(async () => {
+    const books = await ledger(tenantUrl, workspaceId, projectId);
+    return [books.jobs.length, books.charges.length];
+  }, { timeout: 60_000 }).toEqual([jobs, jobs]);
+  return ledger(tenantUrl, workspaceId, projectId);
+}
+
 /** The next paid POST reaches the server and makes its job; only its reply is lost. */
 async function loseNextReply(page: Page) {
   const landed: string[] = [];
@@ -118,7 +127,7 @@ test("a canvas node whose run reply was lost is followed by the next Run, never 
   const mark = f.sent.length;
   await run.click();
   await expect(run).toContainText("Run node again", { timeout: 120_000 });
-  const books = await ledger(f.tenantUrl, f.workspaceId, f.projectId);
+  const books = await settledLedger(f.tenantUrl, f.workspaceId, f.projectId, 1);
   expect({ sent: f.sent.slice(mark).map((s) => s.path), made: books.jobs.length, billed: books.charges })
     .toEqual({ sent: ["/api/generate/check"], made: 1, billed: [price] });
   expect(books.jobs).toEqual([landedId()]);
@@ -173,7 +182,7 @@ test("the phone board's Apply follows a take whose reply was lost, and never sen
   await expect(apply).toBeEnabled();
   await apply.click();
   await expect(page.getByRole("status").filter({ hasText: "rendering" })).toContainText(`Iver → v2 · 1 take rendering · ${price} cr`, { timeout: 60_000 });
-  const books = await ledger(f.tenantUrl, f.workspaceId, f.projectId);
+  const books = await settledLedger(f.tenantUrl, f.workspaceId, f.projectId, 1);
   expect({ sent: f.sent.slice(mark).map((s) => s.path), made: books.jobs.length, billed: books.charges })
     .toEqual({ sent: ["/api/generate/check"], made: 1, billed: [price] });
   expect(books.jobs).toEqual([landedId()]);
