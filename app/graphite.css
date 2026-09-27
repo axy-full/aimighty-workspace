@@ -598,6 +598,8 @@
 .gx-banner[data-compact] { flex-wrap: wrap; }
 .gx-banner[data-compact] .gx-banner-text { flex-basis: calc(100% - 18px); }
 .gx-banner[data-compact] .gx-hbtn { margin-left: 18px; }
+/* "Trying…" is the banner's status while its read is out, not a spent control: it keeps the #7C7C84 label floor. */
+.gx-banner .gx-hbtn:disabled { opacity: 1; color: var(--gx-text-2); }
 .gx-main > .gx-banner { flex: none; margin: 0 20px 8px; }
 /* In a stage that has nothing else to show (the project list did not load), the banner keeps the page's gutters. */
 .gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
