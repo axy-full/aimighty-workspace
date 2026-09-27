@@ -48,6 +48,8 @@ type Entry = {
   retry: { attempts: number; timer: ReturnType<typeof setTimeout> | null };
   /** Counts full reads that landed and reviews written here: a settle poll that began before either does not overwrite it. */
   epoch: number;
+  /** Assets a link asked for by id that sit older than the loaded pages: kept through every re-read of the range. */
+  pinned: { uploads: LibraryUpload[]; generations: Generation[] };
 };
 const entries = new Map<string, Entry>();
 const keyOf = (scope: string, projectId: string) => JSON.stringify([scope, projectId]);
@@ -57,10 +59,17 @@ export const LIBRARY_RETRY_MS = [2_000, 8_000, 30_000] as const;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null }, epoch: 0 };
+    found = { state: EMPTY, listeners: new Set(), busy: null, paging: null, rerun: null, retry: { attempts: 0, timer: null }, epoch: 0, pinned: { uploads: [], generations: [] } };
     entries.set(key, found);
   }
   return found;
+}
+
+/** The range read, then the pinned assets it does not hold. */
+function withPinned<T extends { id: string }>(items: T[], pinned: readonly T[]): T[] {
+  if (!pinned.length) return items;
+  const have = new Set(items.map((item) => item.id));
+  return [...items, ...pinned.filter((item) => !have.has(item.id))];
 }
 function set(key: string, patch: Partial<LibraryState>) {
   const e = entry(key);
@@ -113,7 +122,7 @@ async function load(scope: string, projectId: string): Promise<void> {
       nudge(key);
       set(key, {
         status: "ready", error: null, stale: false,
-        uploads: uploads.items as LibraryUpload[], generations: generations.items as Generation[],
+        uploads: withPinned(uploads.items as LibraryUpload[], e.pinned.uploads), generations: withPinned(generations.items as Generation[], e.pinned.generations),
         next: { uploads: uploads.next, generations: generations.next },
         pages: { uploads: uploads.pages, generations: generations.pages },
       });
@@ -225,26 +234,66 @@ export async function reviewProjectTake(scope: string, projectId: string, genera
   return review;
 }
 
-/** How far a search for one take pages back before it gives up (60 of each source a page). */
+/** How far a search for one take pages back before it gives up (60 of each source a page), when the lookup by id cannot answer. */
 const FIND_PAGES = 20;
+
+/**
+ * One asset of the project by id (GET /api/workbench/library `id`): the
+ * route's own membership, so an empty answer means it is not in this project
+ * for this person — missing, hidden, or someone else's — and says nothing more.
+ */
+async function lookupAsset(scope: string, projectId: string, source: Source, id: string): Promise<(LibraryUpload | Generation)[]> {
+  const query = new URLSearchParams({ projectId, source, id });
+  const response = await fetch("/api/workbench/library?" + query, { cache: "no-store", headers: { "X-Workbench-Scope": scope } });
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(json?.[source])) throw new Error(json?.error || "The project library could not be loaded.");
+  return (json[source] as (LibraryUpload | Generation)[]).filter((item) => item?.id === id);
+}
+
+/** Keep a looked-up asset in the store: shown now, and through every later re-read of the loaded range. */
+function pin(key: string, source: Source, row: LibraryUpload | Generation) {
+  const e = entry(key);
+  if (source === "uploads") {
+    const upload = row as LibraryUpload;
+    if (!e.pinned.uploads.some((item) => item.id === upload.id)) e.pinned.uploads = [...e.pinned.uploads, upload];
+    if (!e.state.uploads.some((item) => item.id === upload.id)) set(key, { uploads: [...e.state.uploads, upload] });
+  } else {
+    const generation = row as Generation;
+    if (!e.pinned.generations.some((item) => item.id === generation.id)) e.pinned.generations = [...e.pinned.generations, generation];
+    if (!e.state.generations.some((item) => item.id === generation.id)) set(key, { generations: [...e.state.generations, generation] });
+  }
+}
+
 /**
  * Make sure one take (`generation:<id>` or `upload:<id>`) is in the loaded
  * Library before anything opens it: the loaded range is read again (a take
- * filed a moment ago is on the first page), then older pages come in by the
- * existing cursors until it is there or nothing older is left. `since` is the
- * newest the take can be dated: a connected-account original is filed at its
- * job's own time, so pages older than that cannot hold it. Answers whether
+ * filed a moment ago is on the first page); a take still not there is asked
+ * for by id, and kept in the store beside the loaded pages however old it is
+ * (a link to an old take). If that lookup cannot answer, older pages come in by
+ * the existing cursors until it is there or nothing older is left. `since` is
+ * the newest the take can be dated: a connected-account original is filed at
+ * its job's own time, so pages older than that cannot hold it. Answers whether
  * the take is loaded now.
  */
 export async function findProjectTake(scope: string, projectId: string, takeId: string, since?: number): Promise<boolean> {
-  const e = entry(keyOf(scope, projectId));
+  const key = keyOf(scope, projectId);
+  const e = entry(key);
   const split = takeId.indexOf(":");
   const source: Source | null = takeId.slice(0, split) === "generation" ? "generations" : takeId.slice(0, split) === "upload" ? "uploads" : null;
   const id = takeId.slice(split + 1);
-  if (!source) return false;
+  if (!source || !/^[A-Za-z0-9_-]{1,160}$/.test(id)) return false;
   const has = () => (e.state[source] as { id: string }[]).some((item) => item.id === id);
   if (has()) return true;
   await load(scope, projectId);
+  if (has()) return true;
+  if (e.state.status === "ready" && !e.state.error) {
+    try {
+      const [row] = await lookupAsset(scope, projectId, source, id);
+      if (!row) return has();
+      pin(key, source, row);
+      return true;
+    } catch { /* The lookup did not answer: page back instead, as far as that goes. */ }
+  }
   for (let page = 0; page < FIND_PAGES && !has(); page++) {
     if (e.state.status !== "ready" || e.state.error || !e.state.next[source]) break;
     const oldest = e.state[source].at(-1);
