@@ -69,9 +69,11 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const agent = useAgentChoice(runs.models);
   useStageFacts("cast", p);
   /* Whether this person owns the workspace comes from the session: a member's page reads nothing from the account. */
-  const member = !useConnectedCapability(scope, { read: false }).owner;
+  const capability = useConnectedCapability(scope, { read: false });
+  const refreshConnection = capability.refresh;
+  const member = !capability.owner;
   const cast = p.production?.cast ?? EMPTY;
-  const [connected, setConnected] = useState<boolean | null>(null);
+  const connected = capability.status === "loading" ? null : capability.connected;
   const [models, setModels] = useState<Record<string, Model> | null>(null);
   const [elements, setElements] = useState<Elements | null>(null);
   const [confirmElement, setConfirmElement] = useState<string | null>(null);
@@ -93,12 +95,12 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     if (member) return;
     let alive = true;
     const since = markConnectedCapability(scope);
-    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then((r) => r.json()).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) setConnected(Boolean(j.connection?.connected)); settleConnectedCapability(scope, j.connection, since); }).catch(() => { if (alive) setConnected(false); });
+    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then(async (r) => { if (!r.ok) throw new Error("The connected account could not be read."); return r.json(); }).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) settleConnectedCapability(scope, j.connection, since); }).catch(() => { if (alive) refreshConnection(); });
     void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModels(Object.fromEntries(j.catalogue.models.map((m) => [m.id, m]))); }).catch(() => { if (alive) setModels({}); });
     void call<Elements>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
     void call<{ characters: ConnectedCharacter[] }>({ action: "characters" }).then((j) => { if (alive) setSouls(j.characters ?? []); }).catch(() => undefined);
     return () => { alive = false; };
-  }, [call, scoped, p.id, member, scope]);
+  }, [call, scoped, p.id, member, scope, refreshConnection]);
 
   /* An element sent without a named id (or with its answer lost) waits to be matched to the account's list: read it again while one waits. */
   const waiting = Boolean(elements?.pending?.some((b) => !b.stale));

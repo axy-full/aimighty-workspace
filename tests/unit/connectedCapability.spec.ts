@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import {
   ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_SUITES,
   alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunSuite, ownerBadgeNote, ownerRunBy,
-  ownerRunEyebrow, ownerRunTitle, runsOnOwnerAccount, type ConnectionReply,
+  ownerRunEyebrow, ownerRunTitle, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
 } from "../../lib/shell/connected-capability";
 import { SHELL_SUITES } from "../../lib/shell/ia";
 import { INITIAL_COMPOSER, activeModel, composerBlock, workspaceModels, type EngineRow } from "../../lib/workspace/composer";
 import { rowPrice } from "../../lib/workspace/model-picker";
 import { PLANS } from "../../lib/workspace/plans";
+import { AtomikRunEngine } from "../../lib/workspace/run-engine";
 
 /**
  * Idea 19 — who runs the connected account, read once per scope and shared.
@@ -59,7 +60,7 @@ test("the connection is read once per scope: surfaces opening together share one
   expect(store.get("scope-a")?.connected).toBe(true);
 });
 
-test("a stale answer stays on screen while it is read again; a failed re-read keeps it", async () => {
+test("a stale answer stays while reading, but a failed re-read blocks connected work", async () => {
   const { store, calls, pending, flush, tick } = harness();
   const first = store.ensure("s");
   await flush();
@@ -73,7 +74,7 @@ test("a stale answer stays on screen while it is read again; a failed re-read ke
   expect(calls).toHaveLength(2);
   pending[1].reject(new Error("The connected account is temporarily unavailable."));
   await again;
-  expect(store.get("s")).toMatchObject({ status: "ready", connected: true, error: null });
+  expect(store.get("s")).toMatchObject({ status: "error", connected: false, error: "The connected account is temporarily unavailable." });
 });
 
 test("a failed first read is the owner's error to retry — never a demotion to member — and Try again reads at once", async () => {
@@ -169,6 +170,46 @@ test("a disconnect busts the scope: the next surface reads afresh, and no answer
   expect(store.get("s")).toMatchObject({ status: "ready", connected: false, reconnect: true });
 });
 
+test("a newer surface answer supersedes an older connection request still in flight", async () => {
+  const { store, pending, flush } = harness();
+  const old = store.ensure("s");
+  await flush();
+  store.settle("s", { connected: false }, store.mark("s"));
+  pending[0].resolve({ connected: true });
+  await old;
+  expect(store.get("s")).toMatchObject({ status: "ready", connected: false });
+});
+
+test("a late pre-disconnect response cannot overwrite or clear the new read in flight", async () => {
+  const { store, pending, flush, calls } = harness();
+  const old = store.ensure("s");
+  const beforeDisconnect = store.mark("s");
+  await flush();
+  store.bust("s");
+  const fresh = store.ensure("s");
+  await flush();
+  pending[0].resolve({ connected: true });
+  await old;
+  expect(store.settle("s", { connected: true }, beforeDisconnect)).toBe(false);
+  expect(store.get("s")).toMatchObject({ status: "loading", connected: false });
+  expect(store.ensure("s")).toBe(fresh);
+  expect(calls).toEqual(["s", "s"]);
+  pending[1].resolve({ connected: false });
+  await fresh;
+  expect(store.get("s")).toMatchObject({ status: "ready", connected: false });
+});
+
+test("a disconnect in one workspace does not change another workspace's capability", () => {
+  const { store } = harness();
+  store.settle("studio-a", { connected: true });
+  store.settle("studio-b", { connected: true });
+  const before = store.mark("studio-a");
+  store.bust("studio-a");
+  expect(store.settle("studio-a", { connected: true }, before)).toBe(false);
+  expect(store.get("studio-a")).toBeUndefined();
+  expect(store.get("studio-b")).toMatchObject({ connected: true });
+});
+
 test("the connection reads as connected only when it needs nothing first; a lapsed grant is a reconnect", () => {
   expect(connectionFrom({ connected: true, requiresReconnect: false })).toEqual({ connected: true, reconnect: false });
   expect(connectionFrom({ connected: true, requiresReconnect: true })).toEqual({ connected: false, reconnect: true });
@@ -249,6 +290,21 @@ test("an Atomik plan that spends through the connected account is the owner's; p
   expect(runsOnOwnerAccount(PLANS.marketing)).toBe(false);
   expect(runsOnOwnerAccount(PLANS.boards)).toBe(false);
   expect(runsOnOwnerAccount(null)).toBe(false);
+});
+
+test("the run engine refuses every member's connected plan before reading or pricing, while workspace plans remain available", async () => {
+  let requests = 0;
+  const plans = ownerAccountPlans(PLANS, false, "Workspace owner");
+  const engine = new AtomikRunEngine({ plans, context: () => ({ projectId: "film", data: {}, fetch: async () => { requests++; throw new Error("A member must not reach the connected account."); } }) });
+  for (const page of ["motion", "swap", "generate", "shorts"]) {
+    expect(engine.start(page)).toEqual({ ok: false, reason: "Run by Workspace owner on the Higgsfield account" });
+    expect(engine.getState().run).toBeNull();
+    expect(await engine.approve()).toEqual({ ok: false, reason: "not-waiting" });
+  }
+  expect(requests).toBe(0);
+  expect(plans.marketing).toBe(PLANS.marketing);
+  expect(plans.boards).toBe(PLANS.boards);
+  expect(ownerAccountPlans(PLANS, true, null)).toBe(PLANS);
 });
 
 test("the owner's failed read of the account is said as it is on Generate — never 'no account is connected'", () => {

@@ -28,13 +28,14 @@ export function useConnectedCapability(scope?: string | null, options: { read?: 
   const session = useSession();
   const owner = session.signedIn && session.owner === true;
   const ownerName = session.workspace?.ownerName ?? null;
-  const key = (scope === undefined ? session.requestScope : scope) ?? "";
+  const requested = scope === undefined ? session.requestScope : scope;
+  const key = session.signedIn && requested === session.requestScope ? requested ?? "" : "";
   const read = options.read !== false;
   const entry = useSyncExternalStore(store.subscribe, () => (key ? store.get(key) : undefined), () => undefined);
   /* A bust drops the entry: a surface still on screen reads again. A failed read is not read again on
      its own (that would loop against a refusing route); Try again (`refresh`) or the next surface does. */
   const missing = !entry;
-  useEffect(() => { if (owner && read && key && missing) void store.ensure(key); }, [owner, read, key, missing]);
+  useEffect(() => { if (owner && read && key) void store.ensure(key); }, [owner, read, key, missing]);
   const refresh = useCallback(() => { if (owner && key) void store.ensure(key, true); }, [owner, key]);
   return useMemo(() => ({ ...capabilityOf(owner, entry, ownerName), refresh }), [owner, entry, ownerName, refresh]);
 }
@@ -46,7 +47,7 @@ export function markConnectedCapability(scope: string | null | undefined): numbe
 
 /** A surface that read the connection in its own reply shares it with the rest — unless the account changed since `since`. */
 export function settleConnectedCapability(scope: string | null | undefined, reply: ConnectionReply, since?: number) {
-  if (scope && reply && typeof reply === "object") store.settle(scope, reply, since);
+  return Boolean(scope && reply && typeof reply === "object" && store.settle(scope, reply, since));
 }
 
 /** Connecting, reconnecting or disconnecting: every surface reads the account afresh (Workspace › Engines). */

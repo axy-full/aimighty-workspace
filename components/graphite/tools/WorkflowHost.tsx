@@ -38,7 +38,8 @@ function OwnerWorkflow({ surface, scope, project }: { surface: WorkflowSurface; 
   const scoped = useScopedFetch(scope);
   const session = useSession();
   const suspended = session.workspace?.suspended === true;
-  const [capability, setCapability] = useState<WorkflowCapability | null>(null);
+  const shared = useConnectedCapability(scope, { read: false });
+  const capability: WorkflowCapability | null = shared.status === "loading" ? null : { owner: shared.owner, connected: shared.connected, suspended };
   const [capabilities, setCapabilities] = useState<VoiceCapabilities | null>(null);
   const [jobs, setJobs] = useState<ReturnType<typeof parseVoiceJob>[]>([]);
   const [revision, setRevision] = useState(0);
@@ -59,13 +60,12 @@ function OwnerWorkflow({ surface, scope, project }: { surface: WorkflowSurface; 
       setCapabilities({ voice: caps.voice === true, dubbing: caps.dubbing === true, analysis: caps.analysis === true, reframe: caps.reframe === true, languages });
       setJobs(Array.isArray(json?.jobs) && json.jobs.length <= 25 ? json.jobs.map((job) => parseVoiceJob(job, draftId)) : []);
       setRevision((n) => n + 1);
-      setCapability({ owner: true, connected: json?.connection?.connected === true && json?.connection?.requiresReconnect !== true, suspended });
       settleConnectedCapability(scope, json?.connection, since);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The connected account could not be read.");
     }
-  }, [scoped, draftId, suspended, scope]);
+  }, [scoped, draftId, scope]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
 
   const reason = workflowReason(surface, { hasProject: Boolean(project), capability, capabilities, error });

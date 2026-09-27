@@ -60,7 +60,7 @@ export function SpecInspector({ state }: InspectorBodyProps) {
           <Kicker className="pxw-insp-kicker">Atomik plan</Kicker>
           <div className="pxw-insp-plan-title">{plan.title}</div>
           <p className="pxw-insp-plan-line">{plan.line}</p>
-          <div className="pxw-insp-plan-price">{plan.priceLabel}</div>
+          {!ownerRun ? <div className="pxw-insp-plan-price">{plan.priceLabel}</div> : null}
           {ownerRun ? (
             <p className="pxw-insp-reason" data-testid="spec-plan-owner">{ownerBadgeNote(capability.ownerName)}.</p>
           ) : (<>

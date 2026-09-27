@@ -8,6 +8,8 @@
  * words.
  */
 
+import type { Plan, Runnable } from "../workspace/plan-types";
+
 export type CapabilityStatus = "member" | "loading" | "ready" | "error";
 export type ConnectedCapability = {
   /** This person owns the workspace: the server-rendered session says so, nothing is read. */
@@ -85,8 +87,6 @@ export function createCapabilityStore(read: (scope: string) => Promise<Connectio
           (reply) => { if (epochOf(scope) === epoch) put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() }); },
           (error: unknown) => {
             if (epochOf(scope) !== epoch) return;
-            /* A read again that fails keeps the answer on screen; only a first read that fails is the error. */
-            if (entries.get(scope)?.status === "ready") return;
             put(scope, { status: "error", connected: false, reconnect: false, error: error instanceof Error && error.message ? error.message : CAPABILITY_UNREADABLE, at: clock() });
           },
         )
@@ -96,8 +96,12 @@ export function createCapabilityStore(read: (scope: string) => Promise<Connectio
     },
     /** A reply that carried the connection; dropped when the scope was busted after `since` (a `mark`). */
     settle(scope: string, reply: ConnectionReply, since?: number) {
-      if (since !== undefined && since !== epochOf(scope)) return;
+      if (since !== undefined && since !== epochOf(scope)) return false;
+      // This answer supersedes any earlier connection read still in flight.
+      epochs.set(scope, epochOf(scope) + 1);
+      inflight.delete(scope);
       put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() });
+      return true;
     },
     /** The account was connected, reconnected or disconnected: nothing read before now is the answer any more. */
     bust(scope: string) {
@@ -189,6 +193,14 @@ export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";
 /** An Atomik plan with any step on the connected account is the owner's to run (Viral's Motion, Swap and History, say). */
 export function runsOnOwnerAccount(plan: { steps: readonly { executor: { backend: { path: string } } }[] } | null | undefined): boolean {
   return Boolean(plan?.steps.some((step) => step.executor.backend.path.startsWith(CONNECTED_ROUTE_PREFIX)));
+}
+
+/** The run engine applies the same role boundary as its panel, including keyboard and legacy entry points. */
+export function ownerAccountPlans(plans: Record<string, Plan>, owner: boolean, ownerName: string | null): Record<string, Plan> {
+  if (owner) return plans;
+  return Object.fromEntries(Object.entries(plans).map(([page, plan]) => [page,
+    runsOnOwnerAccount(plan) ? { ...plan, runnable: (): Runnable => ({ ok: false, reason: ownerBadgeNote(ownerName) }) } : plan,
+  ]));
 }
 
 /** A cast entry's words for a reference still: its prompt, else its description, else its name. */

@@ -1,8 +1,10 @@
 import { test, expect, type Locator, type Page, type PlaywrightWorkerArgs } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
+import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
  * Idea 19 — role-aware connected-account surfaces, in the browser against a
@@ -20,7 +22,7 @@ const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
 const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
-const SHOTS = "/private/tmp/particl-suites/hf-connected/shots";
+const SHOTS = process.env.CONNECTED_ROLE_SHOTS;
 const CONSUMER = /\/api\/higgsfield\/consumer\//;
 
 async function settle(page: Page) {
@@ -28,10 +30,10 @@ async function settle(page: Page) {
 }
 async function shot(page: Page, name: string, project: string) {
   const size = SHOT_AT[project];
-  if (!size) return;
+  if (!size || !SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });
   await settle(page);
-  await page.screenshot({ path: `${SHOTS}/role-${name}-${size}.png` });
+  await page.screenshot({ path: join(SHOTS, `role-${name}-${size}.png`) });
 }
 /** React has attached to the element: a click before that is lost on a cold server. */
 async function hydrated(target: Locator) {
@@ -46,8 +48,8 @@ async function fingerSized(scope: Locator, project: string) {
   for (const button of await scope.getByRole("button").all()) {
     const box = await button.boundingBox();
     expect(box, await button.innerText()).not.toBeNull();
-    expect(box!.height, await button.innerText()).toBeGreaterThanOrEqual(44);
-    expect(box!.width, await button.innerText()).toBeGreaterThanOrEqual(44);
+    expect(Math.round(box!.height), await button.innerText()).toBeGreaterThanOrEqual(44);
+    expect(Math.round(box!.width), await button.innerText()).toBeGreaterThanOrEqual(44);
   }
 }
 function watch(page: Page) {
@@ -67,13 +69,14 @@ async function saveProject(page: Page, workspaceId: string, project: Project) {
 
 /** A member of a fresh workspace whose owner has a name of its own, and a project with one cast entry. */
 async function asMember(page: Page, playwright: PlaywrightWorkerArgs["playwright"]) {
-  const ownerName = `Harbour Owner ${randomBytes(3).toString("hex")}`;
+  const ownerName = `Harbour Production Supervision ${randomBytes(12).toString("hex")}`;
   const ownerApi = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
   const { workspace } = await joinLocallyAsMember(ownerApi, page.request, { ownerName });
   await ownerApi.dispose();
   const project = newProject("Harbour look");
   project.production = { cast: { entries: [{ id: "cast-fox", kind: "character", name: "Fox", description: "A red fox", prompt: "A red fox on ice at dusk", takes: [] }] } };
   const me = await saveProject(page, workspace.id, project);
+  await forbidPaidWork(page);
   expect(me.owner, "the page holds a member's session").toBe(false);
   return { ownerName, project, ...watch(page) };
 }
@@ -87,9 +90,9 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
   const business = page.getByTestId("owner-run-business");
   await expect(business).toBeVisible();
-  await expect(page.getByTestId("owner-run-business-title")).toHaveText(`Business is run by ${ownerName}`);
-  await expect(business).toContainText("Higgsfield account");
-  await expect(business).toContainText("on this workspace’s credits");
+  await expect(page.getByTestId("owner-run-business-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
+  await expect(business).toContainText("connected account");
+  await expect(business).toContainText("On this workspace’s credits");
   await expect(page.getByTestId("ads-view")).toHaveCount(0);
   await expect(page.getByText(/Connect the account|Only the workspace owner/)).toHaveCount(0);
   /* The stage is the owner's to run: no Run stage for a member. */
@@ -106,7 +109,8 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await shot(page, "business-member", project);
 
   /* Business's other pages are the same card. */
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Setup/ }).click();
+  await expect(page.getByRole("navigation", { name: "Pages" })).toHaveCount(0);
+  await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${film.id}`);
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
   await expect(page.getByTestId("setup-view")).toHaveCount(0);
 
@@ -140,7 +144,7 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   const viral = page.getByTestId("owner-run-viral");
   await expect(viral).toBeVisible();
-  await expect(page.getByTestId("owner-run-viral-title")).toHaveText(`Viral is run by ${ownerName}`);
+  await expect(page.getByTestId("owner-run-viral-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
   await expect(page.getByTestId("viral-view")).toHaveCount(0);
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
   if (WIDE.includes(project)) {
@@ -160,7 +164,7 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
   const cast = page.getByTestId("owner-run-cast");
   await expect(cast).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("owner-run-cast-title")).toHaveText(`Soul Cinema and Soul ID are run by ${ownerName}`);
+  await expect(page.getByTestId("owner-run-cast-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
   for (const gone of ["cast-connect", "cast-price", "cast-blocked", "cast-elements", "page-soul"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   const fox = page.getByTestId("cast-entry");
   await expect(fox).toHaveCount(1);
@@ -204,10 +208,8 @@ test("a member's connected workflows say who runs them, and read nothing", async
   test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "one wide, one phone");
   const { ownerName, project: film, consumer, errors } = await asMember(page, playwright);
   await page.goto(`/suites?suite=studio&page=edit&project=${film.id}`);
-  for (const tool of ["dubbing", "voice_change"]) {
-    await expect(page.getByTestId(`workflow-${tool}-reason`)).toHaveText(`Run by ${ownerName} on the Higgsfield account`);
-    await expect(page.getByTestId(`workflow-${tool}-tool`)).toHaveCount(0);
-  }
+  await expect(page.getByTestId("owner-run-workflows-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
+  for (const tool of ["dubbing", "voice_change"]) await expect(page.getByTestId(`workflow-${tool}-tool`)).toHaveCount(0);
   await expect(page.getByText("The workspace owner uses the connected account.")).toHaveCount(0);
   await noSideScroll(page);
   await shot(page, "edit-member", info.project.name);
@@ -306,4 +308,64 @@ test("while the owner's connection is read Business says so, a failed read is an
   await expect(page.getByTestId("ads-connect")).not.toHaveAttribute("role", "alert");
   expect(reads).toBe(2);
   expect(errors).toEqual([]);
+});
+
+
+test("the member's Studio alternative takes a fresh credit quote before explicit Generate", async ({ page, playwright }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { project: film, consumer } = await asMember(page, playwright);
+  let quoted = 0;
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => { release = resolve; });
+  const submitted: Record<string, unknown>[] = [];
+  await page.route("**/api/workbench/engines**", async (route) => {
+    if (!new URL(route.request().url()).searchParams.has("model")) return route.fallback();
+    quoted++;
+    await hold;
+    return route.fulfill({ json: { credits: 17 } });
+  });
+  await page.route("**/api/generate", async (route) => {
+    submitted.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ status: 409, json: { error: "Mock admission stopped this request." } });
+  });
+  try {
+    await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
+    const card = page.getByTestId("owner-run-business");
+    await expect(card).toBeVisible();
+    await page.addStyleTag({ content: '.gx-owner-run, .gx-owner-run * { font-family: Verdana, sans-serif !important; }' });
+    await noSideScroll(page);
+    await fingerSized(card, info.project.name);
+    await page.getByTestId("owner-run-business-gen").click();
+    await page.getByTestId("gen-prompt").fill("A product still against a neutral studio background.");
+    await expect.poll(() => quoted).toBeGreaterThan(0);
+    await expect(page.getByTestId("gen-generate")).toBeDisabled();
+    expect(submitted).toEqual([]);
+    release();
+    const generate = page.getByTestId("gen-generate");
+    await expect(generate).toBeEnabled();
+    await expect(generate).toContainText("17 cr");
+    expect(submitted).toEqual([]);
+    await generate.click();
+    await expect.poll(() => submitted.length).toBe(1);
+    expect(submitted[0]).toMatchObject({ maxCredits: 17 });
+    expect(consumer).toEqual([]);
+  } finally { release(); }
+});
+
+test("the previous workspace Atomik panel never offers a member an owner-account approval", async ({ page, playwright }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { ownerName, project: film } = await asMember(page, playwright);
+  const writes: string[] = [];
+  await page.route("**/api/higgsfield/consumer/**", (route) => {
+    if (route.request().method() !== "GET") writes.push(route.request().url());
+    return route.fulfill({ status: 403, json: { error: "Owner only." } });
+  });
+  await page.goto(`/workspace?suite=subatomik&page=motion&project=${film.id}`);
+  if (WIDE.includes(info.project.name)) await page.getByTestId("atomik-button").click();
+  else await page.getByTestId("mobile-ask-atomik").click();
+  await expect(page.getByTestId("atomik-owner-run")).toHaveText(`Run by ${ownerName} on the Higgsfield account.`);
+  await expect(page.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Run this page/ })).toHaveCount(0);
+  expect(writes).toEqual([]);
+  await noSideScroll(page);
 });

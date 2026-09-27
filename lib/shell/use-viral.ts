@@ -66,8 +66,9 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
   const ready = Boolean(scope);
   const scoped = useScopedFetch();
   /* Only whether this person owns the workspace: the runs reply below carries the connection, and settles the shared answer. */
-  const { owner } = useConnectedCapability(scope || null, { read: false });
-  const [connection, setConnection] = useState<{ connected: boolean; owner: boolean } | null>(null);
+  const shared = useConnectedCapability(scope || null, { read: false });
+  const { owner } = shared;
+  const connection = shared.status === "loading" ? null : { owner, connected: shared.connected };
   const [capabilities, setCapabilities] = useState<ViralCapabilities | null>(null);
   const [runs, setRuns] = useState<Runs | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
@@ -102,13 +103,11 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
     setRuns((prev) => (mine() && prev?.draftId === draftId && prev.status === "error" ? { ...prev, status: "loading", error: null } : prev));
     try {
       if (!owner) {
-        setConnection({ connected: false, owner: false });
         setRuns((prev) => (mine() ? { draftId, jobs: [], status: "ready", error: null, nextCursor: null, pages: 1, more: "idle" } : prev));
         return;
       }
       const since = markConnectedCapability(scope);
       const json = await readPage(draftId, null);
-      setConnection({ connected: json?.connection?.connected === true && json?.connection?.requiresReconnect !== true, owner: true });
       settleConnectedCapability(scope, json?.connection, since);
       if (json?.capabilities) setCapabilities(json.capabilities);
       setRuns((prev) => {
