@@ -30,7 +30,6 @@ import {
   reserveGenerationSpend,
   SpendReservationError,
 } from "@/lib/generationRequests";
-import { billCredits } from "@/lib/creditTerms";
 import {
   heldInfo,
   heldMessage,
@@ -38,7 +37,7 @@ import {
   notifyHeld,
   HELD_LIMIT,
 } from "@/lib/held";
-import { creditState, creditsApply } from "@/lib/credits";
+import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
@@ -327,7 +326,8 @@ export async function executeAudioAdmission(
   }
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
-  const estimatedCredits = billCredits(vendorUsd, vendor);
+  /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
+  const estimatedCredits = quotedCredits(vendorUsd, vendor);
   if (quoteOnly)
     return admissionReply({
       estimatedCredits,

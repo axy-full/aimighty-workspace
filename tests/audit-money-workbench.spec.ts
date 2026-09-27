@@ -14,6 +14,10 @@ const overflow = (page: Page) => page.evaluate(() => ({
 
 test("a statement's back link opens Workspace › Plans & credits, and the page fits the screen", async ({ page }) => {
   await signInLocally(page.request);
+  // Compile the destination before opening the browser document, so dev HMR
+  // cannot replace that document while its real navigation is being asserted.
+  const destination = await page.request.get("/suites?view=workspace&tab=credits");
+  expect(destination.ok()).toBe(true);
   const month = new Date().toISOString().slice(0, 7);
   await page.goto(`/statements/${month}`);
   const back = page.getByRole("link", { name: "← Statements" });

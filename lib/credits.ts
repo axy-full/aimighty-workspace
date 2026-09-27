@@ -1,6 +1,6 @@
 import { currentTenant, type TenantWorkspace } from "./tenant";
 import { paidByPlatform } from "./platformSpend";
-import { billCredits, type CreditState } from "./creditTerms";
+import { billCredits, billCreditsWith, creditUsd, type CreditState } from "./creditTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { billingStateFor } from "./billingLedger";
 
@@ -20,6 +20,21 @@ export async function creditStateFor(ws: TenantWorkspace): Promise<CreditState |
 export async function creditState(): Promise<CreditState | null> {
   const ws = currentTenant()?.workspace;
   return ws ? creditStateFor(ws) : null;
+}
+
+/**
+ * The credits a quote states and its approval ceiling (`maxCredits`) is
+ * checked in.
+ *
+ * A workspace billed in credits is quoted what it will be billed. A workspace
+ * on its own keys is billed nothing in credits — its vendors bill it in
+ * dollars, which its quote states — and a credit count at the platform's
+ * rate beside those dollars would state the margin. Its approval counts the
+ * same dollars in whole credits at the price of a credit instead, so the
+ * ceiling still holds and says nothing else.
+ */
+export function quotedCredits(usd: number, engine?: string | null): number {
+  return creditsApply(currentTenant()?.workspace) ? billCredits(usd, engine) : billCreditsWith(usd, 1, creditUsd());
 }
 
 /** Credits, written for a sentence: one decimal under ten, whole above. */

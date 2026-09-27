@@ -12,6 +12,7 @@ import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
+import { withoutVendorDollars } from "./analyticsRedact";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -128,7 +129,7 @@ export function rowToGeneration(r: any): Generation {
   /* Read once per row rather than per field: which unit this workspace pays
      in decides what the row is allowed to carry. */
   const inCredits = creditsApply(currentTenant()?.workspace);
-  const params = JSON.parse(r.params || "{}");
+  let params = JSON.parse(r.params || "{}");
   const providerCreditQuote: ProviderCreditQuote | null =
     /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
     (isConsumerVideoModel(r.model) || isConsumerOriginalParams(params)) && r.status === "succeeded" &&
@@ -154,6 +155,18 @@ export function rowToGeneration(r: any): Generation {
   delete params.storeUntil;
   delete params.settledBy;
   if (params.held && typeof params.held === "object") params.held = heldForBrowser(params.held, inCredits);
+  /* A workspace on the platform's keys reads its params with no figure in the vendors' dollars
+     anywhere inside: admission and settlement keep their working numbers there (an audio estimate,
+     a dub's per-minute rate, a starter take's display price), each one what a vendor charges, beside
+     credits billed from it. An audio take's `estCredits` and `credits` are the voice vendor's own
+     credits — the same figure in that vendor's unit — and `tier` is the vendor plan that prices
+     them, so they go too (the take's `totalTokens` holds those credits, and is blanked below). A
+     workspace on its own keys pays those vendors itself and keeps every one of them. */
+  const vendorUnits = inCredits && r.kind === "audio";
+  if (inCredits) {
+    params = withoutVendorDollars(params);
+    if (vendorUnits) { delete params.estCredits; delete params.credits; delete params.tier; }
+  }
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -175,7 +188,7 @@ export function rowToGeneration(r: any): Generation {
     status: r.status,
     sourceUrl: r.source_url ?? null,
     storedUrl: r.stored_url ?? null,
-    totalTokens: r.total_tokens ?? null,
+    totalTokens: vendorUnits ? null : r.total_tokens ?? null,
     /* The unit this workspace pays in, and only that one.
        A workspace on the platform's keys is sent `creditsBilled` — the
        ledger's own figure, computed here on the server — and NOT `cost_usd`,

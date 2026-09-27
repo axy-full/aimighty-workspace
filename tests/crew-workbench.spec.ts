@@ -108,6 +108,8 @@ test("the minutes can be filed in the Library once a round exists; nothing to fi
 test("a legacy Crew room displays its recorded credit outcome without a dollar fallback", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, project, headers } = await open(page);
+  const members = await page.request.get(`/api/crew/members?projectId=${project.id}`, { headers });
+  expect(members.ok()).toBe(true);
   const response = await page.request.post("/api/crew/sessions", { headers, data: { projectId: project.id, goal: GOAL } });
   expect(response.ok()).toBe(true);
   const { session } = await response.json();

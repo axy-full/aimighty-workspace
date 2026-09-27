@@ -102,7 +102,7 @@ test('quote is read-only and accounts for every phase, complete source, prior ou
     expect(quote.estimateUsd).toBeGreaterThan(.015); expect(h.reservations()).toBe(0); expect(h.calls).toHaveLength(0);
     expect(await listDevelopmentJobs('owner', request.projectId, undefined, h.deps)).toEqual([]);
     await expect(prepareDevelopmentJob(request, 'owner', undefined, h.deps)).rejects.toThrow('quote');
-    await expect(prepareDevelopmentJob({ ...await approve(request, h.deps), maxUsd: 0 }, 'owner', undefined, h.deps)).rejects.toThrow('estimate changed');
+    await expect(prepareDevelopmentJob({ ...await approve(request, h.deps), maxCredits: 0 }, 'owner', undefined, h.deps)).rejects.toThrow('estimate changed');
   });
 });
 
@@ -184,7 +184,7 @@ test('a breakdown phase has room for its whole result; a fenced answer with a tr
   });
 });
 
-test('the per-request ceiling is $250 by default: a $150 worst case is quoted, a $300 one is refused with its figures', async () => {
+test('the per-request ceiling rejects excessive work without exposing provider amounts', async () => {
   await runInTenant(workspace(), async () => {
     const { request } = await fixture(), h = harness();
     const base = Number((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd);
@@ -193,7 +193,7 @@ test('the per-request ceiling is $250 by default: a $150 worst case is quoted, a
     priced(150);
     expect((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd).toBeCloseTo(150, 0);
     priced(300);
-    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow(/at most \$300\.\d\d across \d+ agent steps with Claude, against \$250\.00 per request/);
+    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow('The full development workflow is more than one request may spend: 3 agent steps with Claude. Choose a less expensive model or lower effort.');
   });
 });
 

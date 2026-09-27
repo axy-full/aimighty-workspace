@@ -123,7 +123,7 @@ async function listRoutes(ws: { current: unknown }) {
   };
 }
 
-test("a workspace on credits is sent its credits and never the vendor's dollars; one on its own keys gets its dollars", async () => {
+test("current and migrated workspaces receive credits without provider amounts", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { createShot } = await import("../../lib/shots");
@@ -151,27 +151,29 @@ test("a workspace on credits is sent its credits and never the vendor's dollars;
 
   const shotsCr = (await get(r.shots, "/api/shots?projectId=prj_l")).json.shots as { id: string; spend: number; credits: number }[];
   const mine = shotsCr.find((s) => s.id === shotId)!;
-  expect(mine.spend).toBe(0);
+  expect(mine).not.toHaveProperty("spend");
   expect(mine.credits).toBeGreaterThan(0);
   const projectsCr = (await get(r.projects, "/api/projects")).json as { unit: string; projects: { id: string; spend: number; credits: number }[] };
   expect(projectsCr.unit).toBe("cr");
-  expect(projectsCr.projects.find((p) => p.id === "prj_l")).toMatchObject({ spend: 0, credits: mine.credits });
+  expect(projectsCr.projects.find((p) => p.id === "prj_l")).toMatchObject({ credits: mine.credits });
+  expect(projectsCr.projects.find((p) => p.id === "prj_l")).not.toHaveProperty("spend");
   const prodsCr = (await get(r.productions, "/api/productions")).json.productions as { id: string; spentUsd: number; spentCredits: number; projects: { spentUsd: number; spentCredits: number }[] }[];
   const prodCr = prodsCr.find((p) => p.id === "prd_l")!;
-  expect(prodCr.spentUsd).toBe(0);
-  expect(prodCr.projects[0].spentUsd).toBe(0);
+  expect(prodCr).not.toHaveProperty("spentUsd");
+  expect(prodCr.projects[0]).not.toHaveProperty("spentUsd");
   expect(prodCr.spentCredits).toBe(mine.credits);
   /* Nothing in any of the three answers carries the vendor figure. */
   for (const body of [shotsCr, projectsCr, prodsCr]) expect(JSON.stringify(body)).not.toContain("1.88");
 
   ws.current = own;
   const shotsUsd = (await get(r.shots, "/api/shots?projectId=prj_l")).json.shots as { id: string; spend: number }[];
-  expect(shotsUsd.find((s) => s.id === shotId)!.spend).toBe(0);
+  expect(shotsUsd.find((s) => s.id === shotId)).not.toHaveProperty("spend");
+  expect(shotsUsd.find((s) => s.id === shotId)).toHaveProperty("credits");
   const projectsUsd = (await get(r.projects, "/api/projects")).json as { unit: string; projects: { id: string; spend: number }[] };
   expect(projectsUsd.unit).toBe("cr");
-  expect(projectsUsd.projects.find((p) => p.id === "prj_l")!.spend).toBe(0);
+  expect(projectsUsd.projects.find((p) => p.id === "prj_l")).not.toHaveProperty("spend");
   const prodUsd = ((await get(r.productions, "/api/productions")).json.productions as { id: string; spentUsd: number }[]).find((p) => p.id === "prd_l")!;
-  expect(prodUsd.spentUsd).toBe(0);
+  expect(prodUsd).not.toHaveProperty("spentUsd");
 
   /* One project, from its own row: the page asks here before it says a project does not exist. */
   ws.current = credits;
