@@ -29,8 +29,8 @@ import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
+import { useStageQuotes } from "./use-stage-quotes";
 
-type Quote = { key: string; credits: number };
 type Generation = { id: string; status: string; error?: string | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
 /** Library pictures an entry can use: renders and uploads, images only. */
@@ -61,7 +61,6 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
   useStageFacts("boards", p);
   const env = p.production?.environment ?? DEFAULT_ENVIRONMENT;
   const pictures = useMemo(() => items.filter(isPicture), [items]);
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [working, setWorking] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dropOver, setDropOver] = useState<string | null>(null);
@@ -108,17 +107,20 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
   const pendingKey = pendings.map((x) => x.pend.jobId).join(",");
   useEffect(() => {
     if (!pendingKey) return;
-    let alive = true;
+    let alive = true, reading = false;
+    const controller = new AbortController();
     const tick = async () => {
+      if (reading) return;
+      reading = true;
       for (const { entry, pend } of pendings) {
         try {
-          const { generation } = await studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pend.jobId)}`, { headers: { "X-Workbench-Scope": scope } });
+          const { generation } = await studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(pend.jobId)}`, { signal: controller.signal, headers: { "X-Workbench-Scope": scope } });
           if (!alive || !DONE.has(generation.status)) continue;
           const ok = generation.status === "succeeded";
           editor.change((old) => {
             const e = old.production?.environment ?? DEFAULT_ENVIRONMENT;
             const current = e.entries.find((x) => x.id === entry.id);
-            if (!current) return old;
+            if (!current?.pending?.some((job) => job.jobId === pend.jobId)) return old;
             const plate: EnvironmentPlate = { assetId: generation.id, at: new Date().toISOString(), source: "render" };
             const next: EnvironmentEntry = { ...current, pending: (current.pending ?? []).filter((x) => x.jobId !== pend.jobId), ...(ok ? { plates: [plate, ...current.plates].slice(0, ENVIRONMENT_LIMITS.plates), selected: generation.id } : {}) };
             const asset = plateAsset(current, { id: generation.id, generationId: generation.id, url: `/api/media/${generation.id}` }, current.plates.length + 1);
@@ -128,11 +130,13 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
           if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.error || "This plate did not render. Nothing was billed for a failed render." }));
           void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.plateBuilt(entry.name)); } });
         } catch { /* the next tick reads it again */ }
+        if (!alive) break;
       }
+      reading = false;
     };
     void tick();
     const timer = setInterval(() => void tick(), 4000);
-    return () => { alive = false; clearInterval(timer); };
+    return () => { alive = false; controller.abort(); clearInterval(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingKey, scope]);
 
@@ -214,31 +218,26 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
   };
 
   /* ── Rendering a plate through the quoted /api/generate path, as Storyboards does. ── */
-  const quoteKey = (entry: EnvironmentEntry) => JSON.stringify([entry.prompt, entry.name, env.world, env.model, entry.references, p.aspect]);
-  const price = async (entry: EnvironmentEntry) => {
-    setWorking((w) => ({ ...w, [entry.id]: "Pricing…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
-    try {
-      if (!(await editor.ensureSaved())) throw new Error("Save the project before pricing a plate.");
-      const input = plateRequest(latest.current, env, entry, getModel(env.model));
-      if (!input) throw new Error(entry.prompt.trim() || entry.name.trim() ? "Save the project to link its production first." : "Name the place or write its prompt first.");
-      const fresh = await studioRequest<{ estimatedCredits: number }>("/api/generate/quote", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify(generationRequestBody(input)) });
-      setQuotes((q) => ({ ...q, [entry.id]: { key: quoteKey(entry), credits: fresh.estimatedCredits } }));
-    } catch (error) { fail(entry.id, error, "This plate could not be priced."); }
-    finally { setWorking((w) => ({ ...w, [entry.id]: "" })); }
-  };
+  const quoteInputs = Object.fromEntries(env.entries.flatMap((entry) => {
+    const input = plateRequest(p, env, entry, getModel(env.model));
+    return input ? [[entry.id, { body: generationRequestBody(input) }]] : [];
+  }));
+  const pricing = useStageQuotes(scope, quoteInputs);
+  const sending = useRef(new Set<string>());
   const render = async (entry: EnvironmentEntry, shown: number) => {
     const input = plateRequest(latest.current, env, entry, getModel(env.model));
-    if (!input) return;
+    if (!input || sending.current.has(entry.id)) return;
+    sending.current.add(entry.id);
     setWorking((w) => ({ ...w, [entry.id]: "Sending…" }));
     try {
+      if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering a plate.");
       const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `env-${entry.id}`), shown, request: { endpoint: "/api/generate", input } });
-      if (outcome.state === "repriced") { setQuotes((q) => ({ ...q, [entry.id]: { key: quoteKey(entry), credits: outcome.credits } })); setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
+      if (outcome.state === "repriced") { pricing.reprice(entry.id, outcome.credits); setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
       if (outcome.state === "refused") { setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
-      setQuotes((q) => { const next = { ...q }; delete next[entry.id]; return next; });
-      setEntry(entry.id, (e) => ({ ...e, pending: [...(e.pending ?? []), { jobId: outcome.jobId, at: new Date().toISOString() }].slice(-5) }));
+      setEntry(entry.id, (e) => ({ ...e, pending: e.pending?.some((job) => job.jobId === outcome.jobId) ? e.pending : [...(e.pending ?? []), { jobId: outcome.jobId, at: new Date().toISOString() }] }));
       void editor.ensureSaved();
     } catch (error) { fail(entry.id, error, "The plate could not be sent."); }
-    finally { setWorking((w) => ({ ...w, [entry.id]: "" })); }
+    finally { sending.current.delete(entry.id); setWorking((w) => ({ ...w, [entry.id]: "" })); }
   };
 
   const fromBeats = useMemo(() => environmentsFromBeats(p.production?.beats, env.entries), [p.production?.beats, env.entries]);
@@ -299,7 +298,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
       <section className="pd-frames" aria-label="Places" data-testid="environment-entries" data-section="places">
         {env.entries.map((entry) => {
           const shown = entry.selected ?? entry.plates[0]?.assetId;
-          const quote = quotes[entry.id] && quotes[entry.id].key === quoteKey(entry) ? quotes[entry.id] : null;
+          const quote = pricing.quotes[entry.id];
           const rendering = Boolean(entry.pending?.length);
           const reason = !entry.name.trim() && !entry.prompt.trim() ? "Name the place or write its prompt first." : null;
           return (
@@ -355,20 +354,14 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
                 </div>
               ) : null}
               <div className="gx-gen-enhance">
-                {quote ? (
-                  <>
-                    <button type="button" className="gx-primary" disabled={Boolean(working[entry.id])} onClick={() => void render(entry, quote.credits)} data-testid="environment-render">{working[entry.id] || `Render a plate · ${quote.credits.toLocaleString()} credits`}</button>
-                    <button type="button" className="gx-hbtn" onClick={() => setQuotes((all) => { const next = { ...all }; delete next[entry.id]; return next; })}>Change</button>
-                  </>
-                ) : (
-                  <button type="button" className="gx-primary" disabled={Boolean(working[entry.id]) || Boolean(reason) || rendering} onClick={() => void price(entry)} data-testid="environment-price">
-                    {working[entry.id] || (rendering ? "Rendering…" : entry.plates.length ? "Price another plate" : "Price a plate")}
-                  </button>
-                )}
-                <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this place"}`} onClick={() => setEnv((x) => ({ ...x, entries: x.entries.filter((y) => y.id !== entry.id) }))}>Remove</button>
+                <button type="button" className="gx-primary" disabled={Boolean(working[entry.id]) || Boolean(reason) || rendering || quote?.credits == null} onClick={() => { if (quote?.credits != null) void render(entry, quote.credits); }} data-testid="environment-render">
+                  {working[entry.id] || (rendering ? "Rendering…" : quote?.credits != null ? `Render a plate · ${quote.credits.toLocaleString()} credits` : reason ? "Render a plate" : quote?.error ? "Price unavailable" : "Pricing…")}
+                </button>
+                {quote?.error ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain(entry.id)}>Try again</button> : null}
+                <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this place"}`} disabled={rendering || Boolean(working[entry.id])} title={rendering ? "Wait for this place’s renders to finish." : undefined} onClick={() => setEnv((x) => ({ ...x, entries: x.entries.filter((y) => y.id !== entry.id) }))}>Remove</button>
               </div>
-              {reason && !quote ? <span className="gx-reason" data-testid="environment-blocked">{reason}</span> : null}
-              {errors[entry.id] ? <p className="gx-gen-error" role="alert">{errors[entry.id]}</p> : null}
+              {reason ? <span className="gx-reason" data-testid="environment-blocked">{reason}</span> : null}
+              {errors[entry.id] || quote?.error ? <p className="gx-gen-error" role="alert">{errors[entry.id] || quote?.error}</p> : null}
             </article>
           );
         })}

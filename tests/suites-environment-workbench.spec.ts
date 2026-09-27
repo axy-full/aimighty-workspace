@@ -78,7 +78,6 @@ test("Environment: places from the beat sheet and the agent, a plate uploaded, a
   const harbour = places.filter({ has: page.locator('input[value="Frozen harbour"]') });
   await harbour.getByTestId("environment-upload-reference").setInputFiles({ name: "ice.png", mimeType: "image/png", buffer: await png("#99bbdd") });
   await expect(harbour.getByTestId("environment-references")).toContainText("References 1/6");
-  await harbour.getByTestId("environment-price").click();
   await expect(harbour.getByTestId("environment-render")).toContainText(/Render a plate · \d+ credits/);
   const quote = [...quotes].reverse().find((q) => String(q.prompt ?? "").includes("An environment plate")) as { prompt: string; references: { uploadId?: string; role: string }[]; model: string; ratio: string };
   expect(quote, "the plate's own quote request").toBeTruthy();
