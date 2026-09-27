@@ -8,12 +8,14 @@ import { pendingGenerationKey } from "../workbench/pending-generation";
 import { createSoundNode, findSoundNode } from "../workbench/sound-generate";
 import { stableId } from "../workbench/stable-id";
 import { newProject, type Asset, type CanvasNode, type Project } from "../workbench/studio";
-import type { MediaJob } from "../workbench/job-recovery";
+import { activeMediaJob, type MediaJob } from "../workbench/job-recovery";
+import { movedOn, poll, pollAfter, type Poller } from "../poll";
 import {
   CONNECTED_GENERATION_ENDPOINT,
   connectedEnhancedPrompt, connectedOriginal,
   connectedQuoteRequest,
   connectedStatusRequest,
+  CONNECTED_READ_FLOOR_S,
   connectedSubmitRequest,
   parseConnectedJob,
   type ConnectedJob,
@@ -44,7 +46,7 @@ import {
   type EngineRow,
 } from "./composer";
 import { formatCredits } from "./cost";
-import { releaseConnectedJob, watchConnectedJob } from "../shell/connected-collector";
+import { releaseConnectedJob, watchConnectedJob, type LastRead } from "../shell/connected-collector";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration } from "./generate-submit";
 import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig";
@@ -92,14 +94,13 @@ import type { Generation } from "./types";
  * a new take at the price on the button.
  *
  * Connected takes are followed once per scope, however many composers are
- * open: one poll per take every six seconds.
+ * open: one poll per take, at lib/poll's pace.
  */
 
 const API = "/api/workbench";
 const DONE_HOLD_MS = 1800;
 const FAILED_HOLD_MS = 6000;
 const QUOTE_DEBOUNCE_MS = 260;
-const CONNECTED_POLL_MS = 6000;
 
 type Run = {
   source: "workspace" | "connected";
@@ -147,9 +148,11 @@ function followConnected(scope: string, job: ConnectedJob) {
   const polled = polls.get(scope)?.jobs.get(job.id);
   if (polled) polled.status = job.status;
   if (!followed(job) && polled) {
+    polled.poller?.stop();
     polls.get(scope)!.jobs.delete(job.id);
     /* Done here: the shell's collector (lib/shell/connected-collector.ts) forgets it, or takes up one still in flight. */
-    releaseConnectedJob(job.draftId, job);
+    releaseConnectedJob(job.draftId, job, lastReads.get(job.id) ?? null);
+    lastReads.delete(job.id);
   }
   followers.get(scope)?.forEach((listener) => listener(job));
 }
@@ -157,41 +160,53 @@ function followConnected(scope: string, job: ConnectedJob) {
 /**
  * One poll per connected take per scope, however many composers follow it
  * (Gen's own and the overlay are open at once): each status goes to every
- * composer of the scope. A take stops being polled once it is done, or once
- * the account says it never got it. While a composer polls a take, the
- * shell's collector leaves it alone (watched); when the last composer lets
- * go, the collector follows what is still in flight — never both at once.
+ * composer of the scope. Each take is read at lib/poll's pace, never within
+ * 6 s of its last read (CONNECTED_READ_FLOOR_S: the route allows a person 30
+ * status reads a minute) — longer while it is unchanged, up to 10 s, a
+ * changed status starting it over; the account's pollAfterSeconds a floor,
+ * including a read made moments before (a read-back); jitter that never cuts
+ * a floor short; a failed read backs off; one read of a take at a time, and
+ * none while the tab is hidden. A take stops being polled
+ * once it is done, or once the account says it never got it. While a
+ * composer polls a take, the shell's collector leaves it alone (watched);
+ * when the last composer lets go, the collector follows what is still in
+ * flight, one pace after the last read here — never both at once.
  */
-type Polled = { draftId: string; status: ConnectedJob["status"] };
-const polls = new Map<string, { jobs: Map<string, Polled>; users: number; timer: ReturnType<typeof setInterval> | null }>();
+type Polled = { draftId: string; status: ConnectedJob["status"]; poller: Poller | null };
+const polls = new Map<string, { jobs: Map<string, Polled>; users: number }>();
+/** Each connected take's last good status read (a poll, or a read-back): the next read, here or the collector's, waits out the account's window. */
+const lastReads = new Map<string, LastRead>();
+const noteRead = (id: string, reply: unknown) => { lastReads.set(id, { at: Date.now(), hintSeconds: pollAfter(reply) }); };
 function pollConnected(scope: string, jobs: [draftId: string, id: string][]): () => void {
-  const entry = polls.get(scope) ?? { jobs: new Map<string, Polled>(), users: 0, timer: null };
+  const entry = polls.get(scope) ?? { jobs: new Map<string, Polled>(), users: 0 };
   polls.set(scope, entry);
   for (const [draftId, id] of jobs) {
     if (entry.jobs.has(id)) continue;
-    entry.jobs.set(id, { draftId, status: "uncertain" });
+    const polled: Polled = { draftId, status: "uncertain", poller: null };
+    entry.jobs.set(id, polled);
     watchConnectedJob(id);
+    const last = lastReads.get(id);
+    const owed = last?.hintSeconds ? Math.max(0, (last.at + last.hintSeconds * 1000 - Date.now()) / 1000) : 0;
+    const moved = movedOn();
+    polled.poller = poll({
+      firstHint: Math.max(owed, CONNECTED_READ_FLOOR_S),
+      read: (signal) => studioRequest<{ job?: unknown; pollAfterSeconds?: number }>(CONNECTED_GENERATION_ENDPOINT, {
+        method: "POST", signal,
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+        body: JSON.stringify(connectedStatusRequest(draftId, id)),
+      }),
+      hint: (data) => Math.max(pollAfter(data) ?? 0, CONNECTED_READ_FLOOR_S),
+      moved: (data) => moved(id, parseConnectedJob(data.job, draftId).status),
+      done: (data) => !followed(parseConnectedJob(data.job, draftId)),
+      onValue: (data) => { noteRead(id, data); followConnected(scope, parseConnectedJob(data.job, draftId)); },
+    });
   }
   entry.users++;
-  if (!entry.timer)
-    entry.timer = setInterval(() => {
-      for (const [id, { draftId }] of [...entry.jobs]) {
-        void studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-          body: JSON.stringify(connectedStatusRequest(draftId, id)),
-        })
-          .then((data) => followConnected(scope, parseConnectedJob(data.job, draftId)))
-          .catch(() => {});
-      }
-    }, CONNECTED_POLL_MS);
   return () => {
     entry.users--;
     if (entry.users > 0) return;
-    if (entry.timer) clearInterval(entry.timer);
-    entry.timer = null;
     /* No composer reads them now: the shell's collector follows each one still in flight. */
-    for (const [id, { draftId, status }] of entry.jobs) releaseConnectedJob(draftId, { id, status });
+    for (const [id, { draftId, status, poller }] of entry.jobs) { poller?.stop(); releaseConnectedJob(draftId, { id, status }, lastReads.get(id) ?? null); }
     entry.jobs.clear();
   };
 }
@@ -586,12 +601,14 @@ export function useComposer(options: {
         let unsent: ConnectedJob | null = null;
         if (again?.kind === "connected" && again.jobId) {
           /* Read back before anything is priced: a job the account took is followed, never submitted again. */
-          const read = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
+          const read = await studioRequest<{ job?: unknown; pollAfterSeconds?: number }>(CONNECTED_GENERATION_ENDPOINT, {
             method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
             body: JSON.stringify(connectedStatusRequest(project.id, again.jobId)),
           }).catch(() => { throw new Error("Your last take could not be checked. Nothing was submitted; press Generate again in a moment."); });
           const job = parseConnectedJob(read.job, project.id);
-          /* Followed as the account has it — and no longer polled if the account never got it, or it did not render. */
+          /* Followed as the account has it — and no longer polled if the account never got it, or it did not render;
+             its poll's first read waits out this read's window. */
+          noteRead(job.id, read);
           followConnected(scope, job);
           if (job.status === "quoted" && shown !== null && job.quoteCredits === shown && job.quoteExpiresAt > Date.now()) {
             /* Quoted still: its submit never reached the account, or reached it and is still being taken in. It is
@@ -773,20 +790,25 @@ export function useComposer(options: {
   const [read, setRead] = useState<{ id: string; job: MediaJob } | null>(null);
   const workspaceJobId = run?.source === "workspace" ? run.jobId : null;
   const mediaJob = read && read.id === workspaceJobId ? read.job : null;
+  /* Read at lib/poll's pace until the job is in its terminal set; a changed status starts the pace over,
+     a missed read backs off. */
   useEffect(() => {
     if (!workspaceJobId) return;
-    let live = true;
-    const controller = new AbortController();
-    const read = () => studioRequest<{ generation: MediaJob }>(`/api/jobs/${encodeURIComponent(workspaceJobId)}`, { signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" })
-      .then((data) => { if (live) setRead({ id: workspaceJobId, job: data.generation }); })
-      .catch(() => {});
-    void read();
-    const timer = setInterval(() => void read(), CONNECTED_POLL_MS);
-    return () => { live = false; clearInterval(timer); controller.abort(); };
+    const moved = movedOn();
+    const poller = poll({
+      immediate: true,
+      read: (signal) => studioRequest<{ generation: MediaJob }>(`/api/jobs/${encodeURIComponent(workspaceJobId)}`, { signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" }),
+      moved: (data) => moved(workspaceJobId, data.generation.status),
+      done: (data) => !activeMediaJob(data.generation),
+      onValue: (data) => setRead({ id: workspaceJobId, job: data.generation }),
+    });
+    return () => poller.stop();
   }, [workspaceJobId, scope]);
 
-  /* Every connected take still rendering is followed — each one, not only the last submitted — once per scope, however many composers are open. */
-  const waiting = JSON.stringify(connectedJobs.filter(followed).map((job) => [job.draftId, job.id]));
+  /* Every connected take still rendering is followed — each one, not only the last submitted — once per scope, however many composers are open.
+     Keyed by the set of takes, in a fixed order: a read that moves a take to the end of the list (track) is no reason to
+     start every take's poll over. */
+  const waiting = JSON.stringify(connectedJobs.filter(followed).map((job) => [job.draftId, job.id]).sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)));
   useEffect(() => {
     const jobs = JSON.parse(waiting) as [string, string][];
     if (!jobs.length) return;

@@ -31,6 +31,8 @@ import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
+import Boundary from "@/components/Boundary";
+import { PanelFault, TileFault } from "./PanelFault";
 import { cleanSetup, composeForSend, recipeSetup, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
 
@@ -632,6 +634,8 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
         </div>
+        {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
+        <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
           className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
@@ -660,6 +664,7 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
           ) : null}
           </>}
           renderItem={(entry) => (
+            <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />}>
             <div className="gx-asset" data-selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id}>
               <button type="button" className="gx-asset-thumb" title={entry.take.name} draggable data-ctx={`asset:${entry.take.id}`} {...previewAttrs(entryPreview(entry))}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}
@@ -669,9 +674,11 @@ export function GenView({ scope, project, items, workspaceName, onProject }: {
               <span className="gx-asset-name">{entry.take.name}</span>
               <span className="gx-asset-meta">{entry.take.meta}</span>
             </div>
+            </Boundary>
           )}
         />
         {!running && !pickedUp.length && !results.length ? <p className="gx-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+        </Boundary>
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`
