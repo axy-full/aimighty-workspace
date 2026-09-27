@@ -17,7 +17,7 @@ export function TakeInspector({ state, scope, project }: InspectorBodyProps) {
         <Kicker>Output</Kicker>
         <div className="pxw-preview" style={{ marginTop: 10 }} aria-hidden="true" />
         <p className="pxw-inspector-note">
-          {library.state.status === "ready" ? "Select an upload or a generation to see its details." : "Loading the project library…"}
+          {library.state.status === "ready" ? "Select an upload or a generation to see its details." : library.state.status === "error" ? "The project library did not load." : "Loading the project library…"}
         </p>
       </div>
     );
