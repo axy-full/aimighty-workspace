@@ -56,7 +56,7 @@ const dollars = (...values: (number | null | undefined)[]) =>
  * (this workspace's, by id) — its reservation while it runs, its bill once it
  * settles; only a take the platform's key paid for carries credits. Dollars:
  * the meter's estimate while it runs, the take's own recorded cost once it
- * settles (a failed take with none recorded was not billed). A ledger that
+ * settles (a missing recorded amount remains unknown). A ledger that
  * cannot be read leaves the figures blank, never guessed.
  */
 async function ledgerFor(rows: Generation[], inCredits: boolean, workspaceId: string | null): Promise<Map<string, EngineMoney>> {
@@ -93,7 +93,7 @@ async function ledgerFor(rows: Generation[], inCredits: boolean, workspaceId: st
       out.set(g.id, { unit, reserved: null, charged: m && !running ? m.credits : null, needs: null });
     } else {
       const usd = dollars(g.costUsd, g.refineCostUsd);
-      out.set(g.id, { unit, reserved: null, charged: usd ?? (g.status === "succeeded" ? null : 0), needs: null });
+      out.set(g.id, { unit, reserved: null, charged: usd, needs: null });
     }
   }
   return out;

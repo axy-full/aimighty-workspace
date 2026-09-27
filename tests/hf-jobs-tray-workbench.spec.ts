@@ -392,65 +392,72 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
 });
 
 test("the tray reads at the server's pace, not while the tab is hidden, and soon after a job starts or ends or the tray opens", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "timing is the same at every size");
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await page.clock.install();
+  /* Freeze before navigation: cold compilation must not advance the poll clock. */
+  await page.clock.pauseAt(Date.now() + 50);
+  let completedReads = 0;
+  page.on("requestfinished", (request) => {
+    if (request.method() === "GET" && /\/api\/jobs\?view=tray/.test(request.url())) completedReads++;
+  });
   const tray: Tray = { reads: 0, reply: () => reply(busyTray(), 10) };
   await open(page, tray);
-  await expect.poll(() => tray.reads).toBe(1);
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 50);
+  /* Strict Mode may abort its probe read; only completed responses advance the pace. */
+  await expect.poll(() => completedReads).toBe(1);
   await page.waitForTimeout(250);
 
   /* Never sooner than the 10 s the server asked for (plus the margin), nor much later. */
   await page.clock.runFor(9_000);
   await page.waitForTimeout(300);
-  expect(tray.reads).toBe(1);
+  expect(completedReads).toBe(1);
   await page.clock.runFor(4_000);
-  await expect.poll(() => tray.reads).toBe(2);
+  await expect.poll(() => completedReads).toBe(2);
   await page.waitForTimeout(250);
 
   /* Hidden: nothing is asked; back: the read that fell due is made at once. */
   await setHidden(page, true);
   await page.clock.runFor(60_000);
   await page.waitForTimeout(300);
-  expect(tray.reads).toBe(2);
+  expect(completedReads).toBe(2);
   await setHidden(page, false);
-  await expect.poll(() => tray.reads).toBe(3);
+  await expect.poll(() => completedReads).toBe(3);
   await page.waitForTimeout(250);
 
   /* A job started or ended anywhere is read for soon; two said together are one read. */
   await announce(page, "gen_new");
   await announce(page, "gen_new");
   await page.clock.runFor(200);
-  await expect.poll(() => tray.reads).toBe(4);
+  await expect.poll(() => completedReads).toBe(4);
   await page.waitForTimeout(250);
   await page.clock.runFor(200);
   await page.waitForTimeout(250);
-  expect(tray.reads).toBe(4);
+  expect(completedReads).toBe(4);
 
   /* Another is announced while that read is still out: one more read the moment it is back, not on the next turn. */
+  const startedBeforeGate = tray.reads;
   let letGo: () => void = () => {};
   tray.gate = new Promise<void>((resolve) => { letGo = resolve; });
   await announce(page, "gen_a");
   await page.clock.runFor(200);
-  await expect.poll(() => tray.reads).toBe(5);
+  await expect.poll(() => tray.reads).toBe(startedBeforeGate + 1);
   await announce(page, "gen_b");
   await page.clock.runFor(200);
   await page.waitForTimeout(250);
-  expect(tray.reads).toBe(5);
+  expect(tray.reads).toBe(startedBeforeGate + 1);
+  expect(completedReads).toBe(4);
   tray.gate = null;
   letGo();
   await page.waitForTimeout(250);
   await page.clock.runFor(50);
-  await expect.poll(() => tray.reads).toBe(6);
+  await expect.poll(() => completedReads).toBe(6);
   await page.waitForTimeout(250);
   await page.clock.runFor(2_000);
   await page.waitForTimeout(250);
-  expect(tray.reads).toBe(6);
+  expect(completedReads).toBe(6);
 
   /* Opening the tray reads it fresh. */
   await page.getByTestId("running-jobs").click();
-  await expect.poll(() => tray.reads).toBe(7);
+  await expect.poll(() => completedReads).toBe(7);
   await page.waitForTimeout(250);
 
   /* Nothing left: the open tray says what happened and offers the next step (the pill stays while it is open). */
@@ -464,36 +471,36 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
 
   /* A failed read says so, keeps asking on its own, and Try again asks at once. */
   tray.reply = () => ({ status: 503, json: { error: "down" } });
-  const failedAt = tray.reads;
+  const failedAt = completedReads;
   await page.clock.runFor(75_000);
-  await expect.poll(() => tray.reads).toBe(failedAt + 1);
+  await expect.poll(() => completedReads).toBe(failedAt + 1);
   await expect(page.getByTestId("jobs-error")).toContainText("Jobs could not be read. Trying again shortly.");
   await expect(page.getByTestId("jobs-empty")).toHaveCount(0);
   tray.reply = () => reply(busyTray());
   await page.getByTestId("jobs-retry").click();
-  await expect.poll(() => tray.reads).toBe(failedAt + 2);
+  await expect.poll(() => completedReads).toBe(failedAt + 2);
   await expect(page.getByTestId("jobs-error")).toHaveCount(0);
   await expect(page.getByTestId("jobs-row")).toHaveCount(7);
   await page.waitForTimeout(250);
 
   /* Signed out: said as that, and asked again (less often), so signing back in brings the jobs back. */
   tray.reply = () => ({ status: 401, json: { error: "Not signed in" } });
-  const outAt = tray.reads;
+  const outAt = completedReads;
   await page.clock.runFor(13_000);
-  await expect.poll(() => tray.reads).toBe(outAt + 1);
+  await expect.poll(() => completedReads).toBe(outAt + 1);
   await expect(page.getByTestId("jobs-error")).toHaveText("You are signed out. Sign in again to see your jobs.Try again");
   tray.reply = () => reply(busyTray());
   /* The failed read doubled the wait: the next comes within half a minute, on its own. */
   await page.clock.runFor(26_000);
-  await expect.poll(() => tray.reads).toBeGreaterThan(outAt + 1);
+  await expect.poll(() => completedReads).toBeGreaterThan(outAt + 1);
   await expect(page.getByTestId("jobs-error")).toHaveCount(0);
   await page.waitForTimeout(250);
 
   /* This tab is no longer the signed-in workspace: it stops asking and says why, keeping the rows. */
   tray.reply = () => ({ status: 409, json: { error: "Reload this page" } });
-  const stoppedAt = tray.reads;
+  const stoppedAt = completedReads;
   await page.clock.runFor(13_000);
-  await expect.poll(() => tray.reads).toBe(stoppedAt + 1);
+  await expect.poll(() => completedReads).toBe(stoppedAt + 1);
   await expect(page.getByTestId("jobs-error")).toHaveText("Jobs stopped: this tab's account or workspace changed.");
   await expect(page.getByTestId("jobs-retry")).toHaveCount(0);
   await expect(page.getByTestId("jobs-row")).toHaveCount(7);
@@ -501,11 +508,11 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
   await announce(page, "x");
   await page.clock.runFor(200);
   await page.waitForTimeout(500);
-  expect(tray.reads).toBe(stoppedAt + 1);
+  expect(completedReads).toBe(stoppedAt + 1);
   /* Closed, the pill goes: the last count is not the changed account's. */
   await page.getByTestId("jobs-close").click();
   await expect(page.getByTestId("running-jobs")).toHaveCount(0);
-  expect(tray.reads).toBe(stoppedAt + 1);
+  expect(completedReads).toBe(stoppedAt + 1);
 });
 
 test("with nothing running, what finished is news until it is seen; then the pill stays, quiet, so the rows can be reached again", async ({ page }, info) => {
@@ -759,4 +766,39 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   const other = await page.request.get("/api/jobs?view=tray&sync=0").then((r) => r.json()) as TrayReply;
   expect(other.jobs).toEqual([]);
   expect(await page.request.get("/api/jobs?view=elsewhere&sync=0").then((r) => r.status())).toBe(400);
+});
+
+test("own-key failed jobs keep unknown charges distinct from a recorded zero", async ({ page }) => {
+  const account = await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json()) as { id: string };
+  const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
+  const initial = await page.request.get("/api/jobs?view=tray&sync=0", { headers });
+  expect(initial.ok(), await initial.text()).toBe(true);
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  let tenantUrl: string;
+  try {
+    tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0].db_url);
+    await platform.execute({ sql: "UPDATE workspaces SET uses_platform_keys=0 WHERE id=?", args: [account.workspace.id] });
+  } finally { platform.close(); }
+  expect(tenantUrl).toMatch(/^file:/);
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
+  const tag = randomBytes(6).toString("hex");
+  const now = Date.now();
+  try {
+    for (const [suffix, status, cost] of [["unknown", "failed", null], ["zero", "failed", 0], ["cancelled", "cancelled", null]] as const) {
+      await tenant.execute({
+        sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_by,created_at,updated_at,settled_at,cost_usd,error) VALUES(?,'video',?,?,'{}',?,?,?,?,?,?,?)",
+        args: [`gen_${tag}_${suffix}`, "dreamina-seedance-2-5-260628", "A quiet harbour", status, me.id, now, now, now, cost, "The engine stopped."],
+      });
+    }
+    const response = await page.request.get("/api/jobs?view=tray&sync=0", { headers });
+    expect(response.ok(), await response.text()).toBe(true);
+    const body = await response.json() as TrayReply;
+    const rows = new Map(body.jobs.map((job) => [job.id, job]));
+    expect(rows.get(`gen_${tag}_unknown`)).toMatchObject({ label: "Failed", price: null });
+    expect(rows.get(`gen_${tag}_zero`)).toMatchObject({ label: "Failed · not billed", price: null });
+    expect(rows.get(`gen_${tag}_cancelled`)).toMatchObject({ label: "Cancelled", price: null });
+    const stored = await tenant.execute({ sql: "SELECT cost_usd FROM generations WHERE id=?", args: [`gen_${tag}_unknown`] });
+    expect(stored.rows[0].cost_usd).toBeNull();
+  } finally { tenant.close(); }
 });
