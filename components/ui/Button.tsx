@@ -33,7 +33,7 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  * drops to `outlined` so the rail's own primary is the one.
  *
  * `cost` is a number in the workspace's own unit — credits, or dollars for
- * a workspace still billed at cost — and it comes from the engine; the
+ * a workspace that pays its vendors directly — and it comes from the engine; the
  * button formats it through `useMoney` like every other price, and never
  * knows it. A button with no cost shows nothing where
  * the price would be, not "0 cr" (unless the caller says `0`, which is a
