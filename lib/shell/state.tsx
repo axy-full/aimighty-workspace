@@ -24,14 +24,12 @@ export const SUITES_PATH = "/suites";
 export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
-/** How long a toast that carries an Undo stays up. */
-export const UNDO_TOAST_MS = 6000;
 
 export type LibTab = "tools" | "assets";
 export type Clip = { mode: "copy" | "cut"; target: Exclude<CtxTarget, { kind: "empty" }>; name: string; /** What the paste needs to know about it (lib/shell/use-asset-actions). */ payload?: unknown };
 export type CtxState = { x: number; y: number; target: CtxTarget; title: string };
 
-type Shell = {
+export type Shell = {
   view: ShellView;
   suite: ShellSuite;
   page: ShellPage;
@@ -48,8 +46,6 @@ type Shell = {
   ctx: CtxState | null;
   clip: Clip | null;
   canUndo: boolean;
-  /** The toast that carries its own Undo button: what `pushUndo` said, while its step is the one ⌘Z would undo here. */
-  undoToast: string | null;
   goSuite: (suite: ShellSuiteId, page?: string) => void;
   goGen: () => void;
   goCrew: (page?: CrewPageId) => void;
@@ -64,12 +60,14 @@ type Shell = {
   openCtx: (ctx: CtxState) => void;
   closeCtx: () => void;
   setClip: (clip: Clip | null) => void;
-  /** Records an inverse. With `say`, the shell toasts it, and the toast carries an Undo button (a phone has no ⌘Z). */
+  /** Records an inverse. With `say`, the shell toasts it with an Undo (a phone has no ⌘Z), shown while this step is the one ⌘Z would undo. */
   pushUndo: (entry: UndoEntry, say?: string) => void;
   /** The shell's command path (SuitesShell registers it), so panels never grow a second one. */
   runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
   setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
   undo: () => Promise<void>;
+  /** The shell as it is now, for work that finishes after the component that started it has gone (a toast's Open). */
+  live: () => Shell;
 };
 
 const ShellContext = createContext<Shell | null>(null);
@@ -116,7 +114,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const [ctx, setCtx] = useState<CtxState | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoState] = useState<UndoEntry[]>([]);
-  const [undoOffer, setUndoOffer] = useState<{ entry: UndoEntry; text: string } | null>(null);
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
   /* The stack as of the last change, written with the state so two quick ⌘Z presses never pop one step twice. */
   const undoRef = useRef(undoStack);
@@ -127,6 +124,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   /* Every step remembers the project it was made in (lib/shell/undo.ts). */
   const projectRef = useRef(ws.state.projectId);
   useEffect(() => { projectRef.current = ws.state.projectId; }, [ws.state.projectId]);
+  const liveRef = useRef<Shell | null>(null);
+  const live = useCallback(() => liveRef.current!, []);
 
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
@@ -194,7 +193,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
        Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
     view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
-    undoToast: undoOffer && popUndo(undoStack, ws.state.projectId)?.entry === undoOffer.entry ? undoOffer.text : null,
     goSuite,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
     goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp }, "push"); },
@@ -223,9 +221,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     pushUndo: (entry, say) => {
       const stamped = { ...entry, projectId: entry.projectId ?? projectRef.current };
       setUndoStack((stack) => pushUndo(stack, stamped));
-      setUndoOffer(say ? { entry: stamped, text: say } : null);
-      /* Long enough to reach the Undo on a phone. */
-      if (say) ws.toast(say, UNDO_TOAST_MS);
+      /* The toast's Undo (lib/workspace/state › ToastAction) stays as long as an Open does, long enough to reach on a phone, and
+         shows only while this step is still the one ⌘Z would undo in this project. */
+      if (say) ws.toast(say, { label: "Undo", kind: "undo", run: () => void live().undo(), live: () => popUndo(undoRef.current, projectRef.current)?.entry === stamped });
     },
     runCommand: (command, target) => runRef.current?.(command, target),
     setRunCommand: (run) => { runRef.current = run; },
@@ -233,7 +231,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       const popped = popUndo(undoRef.current, ws.state.projectId);
       if (!popped) { ws.toast(undoRef.current.length ? "Nothing to undo in this project." : "Nothing to undo."); return; }
       setUndoStack((stack) => stack.filter((entry) => entry !== popped.entry));
-      setUndoOffer(null);
       try {
         ws.toast(undoneLabel(popped.entry, await popped.entry.undo()));
       } catch (error) {
@@ -242,7 +239,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
         ws.toast(`Could not undo: ${error instanceof Error && error.message ? error.message : "try again."}`);
       }
     },
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, undoOffer, goSuite, apply, ws, setUndoStack]);
+    live,
+  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live]);
+  useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
 }

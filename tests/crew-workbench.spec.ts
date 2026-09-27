@@ -76,8 +76,11 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await messages.first().getByRole("button", { name: "Pin" }).click();
   await expect(page.getByTestId("crew-solutions").locator(".cw-solution")).toHaveCount(4);
 
-  /* → Brief writes to the saved project and lands on Studio › Brief. */
+  /* → Brief writes to the saved project and says so, with an Open to Studio › Brief; the room stays put. */
   await page.getByTestId("crew-solutions").locator(".cw-solution").first().getByRole("button", { name: "→ Brief" }).click();
+  await expect(page.getByTestId("toast")).toContainText("Added to the Brief");
+  await expect(page.getByTestId("crew-solutions").locator(".cw-solution").first().getByTestId("crew-solution-status")).toHaveText("Added to the Brief");
+  await page.getByTestId("toast-open").click();
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   const saved = (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project;
   expect(saved.brief).toContain("Crew · Locked dawn frame — ");
@@ -94,13 +97,13 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   expect(errors).toEqual([]);
 });
 
-test("the minutes can be filed in Assets once a round exists; nothing to file is said inline", async ({ page }, info) => {
+test("the minutes can be filed in the Library once a round exists; nothing to file is said inline", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page);
   await page.goto(page.url() + "&view=crew");
   const file = page.getByTestId("crew-file-minutes");
   await expect(file).toBeVisible();
-  await expect(file).toHaveText("File minutes in Assets · free");
+  await expect(file).toHaveText("File minutes in the Library · free");
   await expect(file).toBeDisabled();
   expect(errors).toEqual([]);
 });

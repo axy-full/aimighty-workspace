@@ -356,6 +356,12 @@ export function useComposer(options: {
    * only where it starts differs.
    */
   initialType?: ComposerType;
+  /**
+   * How the words go out with the composer's `shot` (Gen's film vocabulary, lib/workspace/film-vocabulary.ts
+   * › composeForSend). Handed in by the one composer that has the chips, so the camera bank stays out of
+   * the others; without it the words go as typed.
+   */
+  compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -462,10 +468,13 @@ export function useComposer(options: {
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
+  /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts). */
+  const compose = options.compose;
+  const sent = useMemo(() => (compose ? compose(state.prompt, state.shot, state.type) : { prompt: state.prompt, shotSpec: null }), [compose, state.prompt, state.shot, state.type]);
 
   const quoteKey = quoteKeyFor({
     billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
-    references: state.references, prompt: state.prompt.trim(), seconds: state.seconds,
+    references: state.references, prompt: sent.prompt.trim(), seconds: state.seconds,
     instrumental: state.instrumental, voiceId: state.voiceId,
   });
 
@@ -489,7 +498,7 @@ export function useComposer(options: {
     /* FINAL_SPEC §3–4: the settings the live catalogue entry declares, never
        invented; `enhance_prompt` only when the schema declares it — true on
        Auto, false for a raw: prompt, which is never rewritten. */
-    const raw = /^\s*raw:/i.test(state.prompt);
+    const raw = /^\s*raw:/i.test(sent.prompt);
     const parameters: Record<string, string | number | boolean> = {
       ...(model.ratios?.length ? { aspect_ratio: settings.ratio } : {}),
       ...(model.durations?.length ? { duration: settings.duration } : {}),
@@ -498,12 +507,12 @@ export function useComposer(options: {
       ...(model.soulId && settings.soulId ? { soul_id: settings.soulId } : {}),
     };
     return {
-      type: state.type, model: model.id, prompt: raw ? state.prompt.replace(/^\s*raw:\s*/i, "").trim() : state.prompt.trim(), parameters,
+      type: state.type, model: model.id, prompt: raw ? sent.prompt.replace(/^\s*raw:\s*/i, "").trim() : sent.prompt.trim(), parameters,
       medias: roles.length
         ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
         : [],
     } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
+  }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
   const blockedForQuote = !open || !model || !state.prompt.trim()
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
@@ -573,11 +582,12 @@ export function useComposer(options: {
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
       : { loading: engines.loading, error: engines.error },
+    sentPrompt: connectedInput?.prompt,
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -752,9 +762,10 @@ export function useComposer(options: {
             : {
                 endpoint: "/api/generate",
                 input: {
-                  prompt: composer.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
+                  /* Every take of the batch goes in the words as sent: the film vocabulary written in, the setup as data. */
+                  prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
-                  batch: { id: batchId, variation },
+                  batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec,
                 },
               };
           const outcome = await sendWorkspaceBatch({ scope, shown, count, storageId, request });
@@ -932,7 +943,7 @@ export function useComposer(options: {
             : {
                 endpoint: "/api/generate",
                 input: {
-                  prompt: composer.prompt.trim(),
+                  prompt: now.sent.prompt.trim(),
                   kind: model.type === "video" ? "video" : "image",
                   model: { id: model.id },
                   mapping,
@@ -941,6 +952,7 @@ export function useComposer(options: {
                   duration: settings.duration,
                   references,
                   firstFrameAssetId: "",
+                  shotSpec: now.sent.shotSpec,
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null, projectId: project.id }),
