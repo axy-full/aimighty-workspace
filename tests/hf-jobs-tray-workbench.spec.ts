@@ -263,6 +263,10 @@ test("the pill counts the rows the way they are labelled, fits the header, and o
   await expect(panel).toHaveCount(0);
   await expect(pill).toBeFocused();
   expect(await headerFits(page), "header with a wider font").toEqual([]);
+  if (phone) {
+    const [pillTop, avatarTop] = await Promise.all([pill, page.getByTestId("workspace-avatar")].map((l) => l.evaluate((el) => Math.round(el.getBoundingClientRect().top))));
+    expect(avatarTop, "one header row with a wider font").toBe(pillTop);
+  }
   await noOverflow(page);
 });
 
@@ -280,6 +284,7 @@ test("a long list keeps a failed read's note in view at the top, above the rows 
   await expect.poll(() => tray.reads).toBe(failedAt + 1);
   const note = panel.getByTestId("jobs-error");
   await expect(note).toContainText("Jobs could not be read. Trying again shortly.");
+  await arrived(page);
   await expect(panel.getByTestId("jobs-retry")).toHaveText("Try again");
   /* In view without scrolling, and before the first row. */
   const [noteBox, listBox, firstRow] = await Promise.all([note.boundingBox(), panel.getByTestId("jobs-list").boundingBox(), panel.getByTestId("jobs-row").first().boundingBox()]);
@@ -314,6 +319,7 @@ test("Release starts a held take; when the balance is short it says so and offer
   await expect(held.getByTestId("jobs-problem")).toHaveText("Still short: this needs 43 credits and 5 are left.");
   await expect(held.getByTestId("jobs-action")).toHaveText("Top up");
   expect(releases).toEqual(["/api/jobs/gen_held/release"]);
+  await arrived(page);
   if (TOUCH.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
   expect(await dimText(page, ".gx-jobs-tray")).toEqual([]);
   await shoot(page, info.project.name, "jobs-tray-short");
@@ -491,7 +497,7 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
 });
 
 test("with nothing running, what finished is news until it is seen; then the pill stays, quiet, so the rows can be reached again", async ({ page }, info) => {
-  test.skip(![...DESKTOP, ...PHONES].includes(info.project.name), "desktop and phones");
+  test.skip(![...DESKTOP, ...TOUCH].includes(info.project.name), "desktop, phones and a phone on its side");
   const tray: Tray = { reads: 0, reply: () => reply([]) };
   await open(page, tray);
   await expect.poll(() => tray.reads).toBeGreaterThan(0);
@@ -519,6 +525,17 @@ test("with nothing running, what finished is news until it is seen; then the pil
   await expect(pill).toHaveAccessibleName("Jobs");
   await expect(pill).toHaveAttribute("data-kind", "quiet");
   await expect(pill).toHaveAttribute("data-tone", "idle");
+  if (TOUCH.includes(info.project.name)) {
+    /* Short of room it is the jobs glyph alone, on a 44px target, and the header keeps its one row. */
+    await expect(pill.locator(".gx-jobs-short svg")).toBeVisible();
+    const target = (await pill.boundingBox())!;
+    expect(Math.round(target.width * 100) / 100).toBeGreaterThanOrEqual(44);
+    expect(Math.round(target.height * 100) / 100).toBeGreaterThanOrEqual(44);
+    const [pillTop, avatarTop] = await Promise.all([pill, page.getByTestId("workspace-avatar")].map((l) => l.evaluate((el) => Math.round(el.getBoundingClientRect().top))));
+    expect(avatarTop).toBe(pillTop);
+  } else await expect(pill.locator(".gx-jobs-long")).toHaveText("Jobs");
+  expect(await headerFits(page), "the quiet pill in the header").toEqual([]);
+  await shoot(page, info.project.name, "jobs-pill-quiet");
   const beforeReload = tray.reads;
   await page.reload();
   await expect(page.getByTestId("project-name").first()).toHaveText("Harbour launch spot");
@@ -527,8 +544,17 @@ test("with nothing running, what finished is news until it is seen; then the pil
   await pill.click();
   await expect(page.getByTestId("jobs-row")).toHaveCount(3);
   await expect(page.getByTestId("jobs-summary")).toHaveText("Nothing running");
-  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
+  await arrived(page);
+  if (TOUCH.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
   await shoot(page, info.project.name, "jobs-tray-quiet");
+  await page.getByTestId("jobs-close").click();
+  await page.addStyleTag({ content: WIDE_FONT });
+  expect(await headerFits(page), "the quiet pill with a wider font").toEqual([]);
+  if (TOUCH.includes(info.project.name)) {
+    const [pillTop, avatarTop] = await Promise.all([pill, page.getByTestId("workspace-avatar")].map((l) => l.evaluate((el) => Math.round(el.getBoundingClientRect().top))));
+    expect(avatarTop, "with a wider font").toBe(pillTop);
+  }
+  await page.getByTestId("running-jobs").click();
   /* The failed one can still be made again from here. */
   await page.getByRole("button", { name: "Recreate: Lighthouse at dusk" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");

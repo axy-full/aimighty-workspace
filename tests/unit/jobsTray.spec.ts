@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  ACTION_LABEL, TRAY_LIMIT, accountTrayJob, active, engineTrayJob, failureLine, moving, parseTrayReply, priceLabel, seenKey, statusFilter,
+  ACTION_LABEL, TRAY_LIMIT, accountTrayJob, active, changing, engineTrayJob, failureLine, moving, parseTrayReply, priceLabel, seenKey, statusFilter,
   trayOrder, traySummary, trayWhen, withComposerSlot, type AccountRow, type EngineMoney, type EngineRow, type TrayJob,
 } from "../../lib/jobsTray";
 import type { GenPreset } from "../../lib/shell/recipe";
@@ -111,11 +111,17 @@ test("a take is named the way the Library names it — its title, else its words
 test("a connected-account job reads its stage from the account's own record, in the account's own credits", () => {
   expect(accountTrayJob(account({ id: "a", status: "accepted" }))).toMatchObject({ source: "account", stage: "rendering", label: "Rendering", price: { amount: 40, unit: "account-cr" }, action: null });
   expect(accountTrayJob(account({ id: "u", status: "uncertain", hasReceipt: true }))).toMatchObject({ stage: "confirming", label: "Confirming", tone: "amber" });
-  /* Nothing a read can move: said as it is, counted as unconfirmed, and never as rendering. */
+  /* Nothing a read can move: said as it is, counted as unconfirmed, never as rendering, and it opens where its card offers Check again. */
   const stuck = accountTrayJob(account({ id: "d", status: "dispatching" }));
-  expect(stuck).toMatchObject({ stage: "unconfirmed", label: "Not confirmed · never sent twice" });
+  expect(stuck).toMatchObject({ stage: "unconfirmed", label: "Not confirmed · never sent twice", action: "gen" });
   expect(moving(stuck)).toBe(false);
-  expect(accountTrayJob(account({ id: "s", status: "accepted", setAside: true }))).toMatchObject({ stage: "unconfirmed" });
+  expect(accountTrayJob(account({ id: "dv", status: "uncertain", workflow: "genjutsu" })).action).toBe("viral");
+  /* Set aside (or past the time it may hold a slot): never sent again, nothing to wait for — closed, not counted, not news. */
+  const aside = accountTrayJob(account({ id: "s", status: "accepted", setAside: true, updatedAt: T0 + 3 * MIN }));
+  expect(aside).toMatchObject({ stage: "aside", label: "Can't be checked", tone: "idle", settledAt: T0 + 3 * MIN, action: "gen" });
+  expect(active(aside)).toBe(false);
+  expect(accountTrayJob(account({ id: "s2", status: "uncertain", setAside: true }))).toMatchObject({ stage: "aside", label: "Set aside · never sent again" });
+  expect(traySummary([aside], new Set())).toMatchObject({ kind: "quiet" });
 
   const original = `gen_hfc_${"a".repeat(40)}`;
   expect(accountTrayJob(account({ id: "c", status: "completed", originalId: original, originalKind: "video", updatedAt: T0 + 9 * MIN })))
@@ -173,6 +179,9 @@ test("the pill counts the rows as they are labelled: rendering, queued, held and
   expect(traySummary([row("q", "queued", T0)], new Set())).toMatchObject({ text: "1 queued", tone: "blue" });
   /* A connected job nobody can confirm keeps the pill up, so its row can be reached. */
   expect(traySummary([row("u", "unconfirmed", T0)], new Set())).toMatchObject({ kind: "active", text: "1 unconfirmed", tone: "amber" });
+  /* The server reads often only while something moves on its own; a held take waits on a person, an unconfirmed job on nobody. */
+  expect(["rendering", "confirming", "submitting", "queued"].every((stage) => changing({ stage: stage as TrayJob["stage"] }))).toBe(true);
+  expect(["held", "unconfirmed", "complete", "failed", "cancelled", "aside"].some((stage) => changing({ stage: stage as TrayJob["stage"] }))).toBe(false);
 });
 
 test("with nothing running, what finished is news until it is seen in the tray; then the pill goes quiet but stays while rows remain", () => {
@@ -199,7 +208,7 @@ test("figures are written the ledger's way, and ages say how long it has run or 
   expect(trayWhen(row("r", "rendering", T0), T0 + 4 * MIN)).toBe("4 min");
   expect(trayWhen(row("d", "complete", T0 - 60 * MIN, T0), T0 + 20 * MIN)).toBe("20 min ago");
   expect(trayWhen(row("d", "complete", T0, T0), T0 + 20_000)).toBe("just now");
-  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Ads", "Open Viral"]);
+  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Gen", "Open Ads", "Open Viral"]);
 });
 
 test("a reply is checked row by row before the tray draws it", () => {

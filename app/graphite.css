@@ -108,6 +108,8 @@
   .gx-jobs-long { display: none; }
   .gx-jobs-short { display: inline; }
   .gx-jobs { min-width: 44px; justify-content: center; padding: 0 12px; gap: 6px; }
+  .gx-jobs[data-kind="quiet"] { padding: 0; }
+  .gx-jobs[data-kind="quiet"] .gx-jobs-dot { display: none; }
 }
 .gx-veil.gx-jobs-veil { z-index: 70; }
 .gx-jobs-tray:focus { outline: none; }

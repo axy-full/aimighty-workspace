@@ -10,7 +10,7 @@ import { shortName } from "./higgsfield-consumer/resume";
 import { recreateBlock, recreatePreset, type GenPreset, type RecipeSource } from "./shell/recipe";
 import {
   ENGINE_ACTIVE, ENGINE_SETTLED, TRAY_ACTIVE_POLL_S, TRAY_IDLE_POLL_S, TRAY_WINDOW_MS,
-  accountTrayJob, active, engineTrayJob, trayOrder, type AccountRow, type EngineMoney, type EngineRecreate, type TrayReply,
+  accountTrayJob, changing, engineTrayJob, trayOrder, type AccountRow, type EngineMoney, type EngineRecreate, type TrayReply,
 } from "./jobsTray";
 
 /**
@@ -45,7 +45,8 @@ export async function trayJobs(userId: string, now = Date.now()): Promise<TrayRe
       g.projectId ? drafts.get(g.projectId) ?? null : null, recreateFor(g))),
     ...(account ?? []).map((row) => accountTrayJob(row, accountRecipe(row))),
   ]);
-  return { jobs, pollAfterSeconds: jobs.some(active) ? TRAY_ACTIVE_POLL_S : TRAY_IDLE_POLL_S, ...(account ? {} : { partial: true }) };
+  /* Often while something moves on its own; a held take (waiting on a person) or an unconfirmed job (on nobody) is read at the idle pace. */
+  return { jobs, pollAfterSeconds: jobs.some(changing) ? TRAY_ACTIVE_POLL_S : TRAY_IDLE_POLL_S, ...(account ? {} : { partial: true }) };
 }
 
 const dollars = (...values: (number | null | undefined)[]) =>

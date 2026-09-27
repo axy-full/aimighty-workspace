@@ -22,10 +22,11 @@ import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-con
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
 
-export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled";
+/** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
+export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
 export type TrayTone = "blue" | "amber" | "green" | "red" | "idle";
 /** The one thing a row offers: see the take, start a held one, make a failed one again, or go where it was made. */
-export type TrayAction = "open" | "release" | "recreate" | "ads" | "viral";
+export type TrayAction = "open" | "release" | "recreate" | "gen" | "ads" | "viral";
 export type TrayPrice = { amount: number; unit: "cr" | "usd" | "account-cr" };
 
 export type TrayJob = {
@@ -87,10 +88,12 @@ export function statusFilter(raw: string | null): { status?: string; statuses?: 
 /** Actually moving on an engine or the account: the rows the moving bar is for, and the pill's "rendering". */
 const MOVING: readonly TrayStage[] = ["submitting", "rendering", "confirming"];
 export const moving = (job: Pick<TrayJob, "stage">) => MOVING.includes(job.stage);
-const SETTLED: readonly TrayStage[] = ["complete", "failed", "cancelled"];
+const SETTLED: readonly TrayStage[] = ["complete", "failed", "cancelled", "aside"];
 export const settled = (job: Pick<TrayJob, "stage">) => SETTLED.includes(job.stage);
 /** Not settled: in flight, waiting its turn, held, or sent and not yet confirmed. */
 export const active = (job: Pick<TrayJob, "stage">) => !settled(job);
+/** Something that moves on its own: worth reading often. A held take waits on a person, an unconfirmed job on nobody. */
+export const changing = (job: Pick<TrayJob, "stage">) => moving(job) || job.stage === "queued";
 
 const clean = (text: string | null | undefined) => (typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "");
 /** A row's own words, cut to their first sentence, without links, ids or JSON; null when they name a vendor or say nothing. */
@@ -239,6 +242,8 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
     id: row.id, source: "account" as const, kind, name, mediaUrl: null, reason: null, progress: null,
     createdAt: row.createdAt, settledAt: null, draftId: row.draftId, projectName: row.projectName, price: quoted, action: null,
   };
+  /* Where the job's own card is (with Check again and Dismiss), for one nobody can confirm from here. */
+  const where: TrayAction | null = row.workflow === "generation" ? "gen" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "ads" : null;
   switch (row.status) {
     case "completed":
       return {
@@ -256,20 +261,21 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
         price: kept ? quoted : null,
       };
     }
-    case "accepted":
-      return following ? { ...base, stage: "rendering", label: "Rendering", tone: "blue" } : { ...base, stage: "unconfirmed", label: phase.label, tone: "amber" };
     default:
-      /* Sent, or maybe sent, with no answer yet: confirmed on the next read that can move it, never sent twice. */
-      return following ? { ...base, stage: "confirming", label: phase.label, tone: "amber" } : { ...base, stage: "unconfirmed", label: phase.label, tone: "amber" };
+      /* Set aside, or past the time it may hold a slot: never sent again, and nothing here waits on it. */
+      if (row.setAside) return { ...base, stage: "aside", label: phase.label, tone: "idle", settledAt: row.updatedAt, action: where };
+      if (following) return row.status === "accepted" ? { ...base, stage: "rendering", label: "Rendering", tone: "blue" } : { ...base, stage: "confirming", label: phase.label, tone: "amber" };
+      /* Sent, or maybe sent, with nothing to confirm it by: never sent twice; its card says what can be done. */
+      return { ...base, stage: "unconfirmed", label: phase.label, tone: "amber", action: where };
   }
 }
 
 /* ── The browser: order, count, and the composer's own submit ───────── */
 
-const STAGES: ReadonlySet<string> = new Set(["submitting", "queued", "rendering", "confirming", "held", "unconfirmed", "complete", "failed", "cancelled"]);
+const STAGES: ReadonlySet<string> = new Set(["submitting", "queued", "rendering", "confirming", "held", "unconfirmed", "complete", "failed", "cancelled", "aside"]);
 const KINDS: ReadonlySet<string> = new Set(["video", "image", "audio", "other"]);
 const TONES: ReadonlySet<string> = new Set(["blue", "amber", "green", "red", "idle"]);
-const ACTIONS: ReadonlySet<string> = new Set(["open", "release", "recreate", "ads", "viral"]);
+const ACTIONS: ReadonlySet<string> = new Set(["open", "release", "recreate", "gen", "ads", "viral"]);
 const UNITS: ReadonlySet<string> = new Set(["cr", "usd", "account-cr"]);
 const TAKE_ID = /^generation:[A-Za-z0-9_-]{1,160}$/;
 /** A recipe as Gen's letterbox takes it: words, and the take it came from. */
@@ -310,7 +316,7 @@ export function parseTrayReply(value: unknown): TrayReply | null {
   return { jobs, pollAfterSeconds: Number(reply.pollAfterSeconds) || TRAY_IDLE_POLL_S, ...(reply.partial ? { partial: true } : {}) };
 }
 
-const RANK: Record<TrayStage, number> = { held: 0, submitting: 1, rendering: 1, confirming: 1, queued: 2, unconfirmed: 3, failed: 4, complete: 4, cancelled: 4 };
+const RANK: Record<TrayStage, number> = { held: 0, submitting: 1, rendering: 1, confirming: 1, queued: 2, unconfirmed: 3, failed: 4, complete: 4, cancelled: 4, aside: 4 };
 const when = (job: TrayJob) => job.settledAt ?? job.createdAt;
 /** Held first (it waits on you), then what renders, then what waits its turn, newest first; then what finished, latest first. */
 export function trayOrder(jobs: readonly TrayJob[]): TrayJob[] {
@@ -351,7 +357,7 @@ export function withComposerSlot(jobs: readonly TrayJob[], slot: ComposerSlot, n
 
 /** A settled row, as the person last saw it: seen again only if it changes (a late success after a failure). */
 export const seenKey = (job: Pick<TrayJob, "id" | "stage">) => `${job.id}:${job.stage}`;
-/** What finished is news until it has been seen; a discarded or cancelled take is the person's own doing, never news. */
+/** What finished is news until it has been seen; a discarded, cancelled or set-aside job is never news. */
 const news = (job: TrayJob, seen: ReadonlySet<string>) => (job.stage === "complete" || job.stage === "failed") && !seen.has(seenKey(job));
 
 export type TraySummary = {
@@ -394,7 +400,7 @@ export function traySummary(jobs: readonly TrayJob[], seen: ReadonlySet<string> 
   return { kind: "quiet", ...counts, text: "Jobs", short: "", tone: "idle" };
 }
 
-export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", ads: "Open Ads", viral: "Open Viral" };
+export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", gen: "Open Gen", ads: "Open Ads", viral: "Open Viral" };
 
 /** The ledger's own words for a figure: "13 cr", "$0.840"; a connected job's is the account's own credits, said so ("40 connected cr"). */
 export function priceLabel(price: TrayPrice | null): string | null {

@@ -78,7 +78,21 @@ function markSeen(scope: string, keys: ReadonlySet<string>) {
   try { localStorage.setItem(storeKey(scope), JSON.stringify([...keys].slice(-SEEN_MAX))); } catch { /* a private window: seen for this visit only */ }
   for (const listener of [...seenListeners]) listener();
 }
-const subscribeSeen = (listener: () => void) => { seenListeners.add(listener); return () => { seenListeners.delete(listener); }; };
+/* Another tab saw rows: this one reads the record again. */
+function onStorage(event: StorageEvent) {
+  const scope = [...seenByScope.keys()].find((key) => storeKey(key) === event.key);
+  if (!scope) return;
+  seenByScope.delete(scope);
+  for (const listener of [...seenListeners]) listener();
+}
+const subscribeSeen = (listener: () => void) => {
+  if (!seenListeners.size && typeof window !== "undefined") window.addEventListener("storage", onStorage);
+  seenListeners.add(listener);
+  return () => {
+    seenListeners.delete(listener);
+    if (!seenListeners.size && typeof window !== "undefined") window.removeEventListener("storage", onStorage);
+  };
+};
 
 const Ctx = createContext<JobsTrayState | null>(null);
 

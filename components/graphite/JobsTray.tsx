@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type { Fault } from "@/components/Boundary";
 import LazyMedia from "@/components/LazyMedia";
 import { ACTION_LABEL, moving, priceLabel, trayWhen, type TrayJob } from "@/lib/jobsTray";
+import { Glyph } from "./icons";
 import { SAY } from "@/lib/shell/assets";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { handTakeToTakes } from "@/lib/shell/take-handover";
@@ -36,7 +37,8 @@ export function JobsPill() {
         onClick={() => tray.setOpen(!tray.open)} data-testid="running-jobs">
         <span className="gx-jobs-dot" aria-hidden="true" />
         <span className="gx-jobs-long" aria-hidden="true">{quiet ? "Jobs" : summary.text}</span>
-        <span className="gx-jobs-short" aria-hidden="true">{quiet ? "Jobs" : summary.short}</span>
+        {/* Short of room, nothing new says itself as the jobs glyph alone. */}
+        <span className="gx-jobs-short" aria-hidden="true">{quiet ? <Glyph name="stack" size={16} className="gx-glyph" /> : summary.short}</span>
       </button>
       {tray.open ? <JobsTray tray={tray} anchor={anchor} /> : null}
     </>
@@ -152,6 +154,7 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
         /* That take and no other: Takes opens on it, and says so while it is found. */
         if (job.takeId) { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } }); handTakeToTakes(job.takeId); }
         shell.goSuite("studio", "takes"); onDone(); return;
+      case "gen": toProject(); if (shell.view === "gen") shell.closePanels(); else shell.goGen(); onDone(); return;
       case "ads": toProject(); shell.goSuite("business", "ads"); onDone(); return;
       case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
       case "release": void tray.release(job.id); return;
