@@ -5,8 +5,9 @@ import { useShell } from "@/lib/shell/state";
 /** 46px. The active suite's pages as `01 Label`, a hairline before each group. Hidden in Gen and Workspace. */
 export function StageStrip() {
   const shell = useShell();
-  /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens. */
-  if (shell.view !== "suite" || shell.page.phoneOnly) return null;
+  /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
+     On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away. */
+  if (shell.view !== "suite" || (shell.page.phoneOnly && !(shell.wide && shell.page.id === "stages"))) return null;
   return (
     <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip">
       {shell.suite.pages.filter((p) => !p.phoneOnly).map((p) => (
