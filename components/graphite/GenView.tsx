@@ -31,6 +31,8 @@ import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
+import Boundary from "@/components/Boundary";
+import { PanelFault, TileFault } from "./PanelFault";
 
 /** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
 const CONNECTED_JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -638,6 +640,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           </div>
         </div>
         {view.banner ? <LoadBanner banner={view.banner} onRetry={library.refresh} testId="gen-results-error" /> : null}
+        {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
+        <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
           className="gx-gen-grid" items={results} getKey={(entry) => entry.take.id} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
@@ -671,12 +675,15 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           {view.skeletons ? <TakeSkeletons count={6} variant="grid" /> : null}
           </>}
           renderItem={(entry) => (
-            <TakeTile entry={entry} variant="grid" selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh}
-              onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
+            <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />}>
+              <TakeTile entry={entry} variant="grid" selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh}
+                onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
+            </Boundary>
           )}
         />
         {!running && !pickedUp.length && !results.length && view.empty ? <p className="gx-empty" data-testid="gen-results-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
         {!running && !pickedUp.length && !results.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">No {filter === "Images" ? "images" : filter === "Video" ? "video" : "audio"} generated in this project yet.</p> : null}
+        </Boundary>
       </section>
 
       {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`
