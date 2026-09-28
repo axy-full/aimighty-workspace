@@ -88,17 +88,21 @@ const creditsIn = (text: string | null) => Number(/(\d[\d,]*) cr/.exec(text ?? "
 /** Ask Atomik in the open rail (or sheet): wait for the planning estimate for this production, then send at it. */
 async function ask(page: Page, surface: Locator, brief: string, production: string) {
   const field = surface.getByRole("textbox", { name: "Ask Atomik" });
-  /* The chat is filed under the production on screen: its estimate is asked for with it before Send. */
-  const quoted = page.waitForResponse((r) => {
-    const request = r.request();
-    if (request.method() !== "POST" || new URL(r.url()).pathname !== "/api/atomik") return false;
-    const body = request.postDataJSON() as { quoteOnly?: boolean; projectId?: string; text?: string } | null;
-    return body?.quoteOnly === true && body.projectId === production && body.text === brief;
-  }, { timeout: 60_000 });
-  await field.fill(brief);
-  expect((await quoted).status()).toBe(200);
   const send = surface.getByRole("button", { name: /^Send · \d+ cr estimated/ });
-  await expect(send).toBeEnabled({ timeout: 60_000 });
+  /* Typed once the composer is live (a page compiled cold may still be hydrating, which resets the field), and
+     sent only at the estimate asked for with the production on screen, so the chat is filed under it. */
+  await expect(async () => {
+    const quoted = page.waitForResponse((r) => {
+      const request = r.request();
+      if (request.method() !== "POST" || new URL(r.url()).pathname !== "/api/atomik") return false;
+      const body = request.postDataJSON() as { quoteOnly?: boolean; projectId?: string; text?: string } | null;
+      return body?.quoteOnly === true && body.projectId === production && body.text === brief;
+    }, { timeout: 20_000 });
+    await field.fill("");
+    await field.fill(brief);
+    expect((await quoted).status()).toBe(200);
+    await expect(send).toBeEnabled({ timeout: 10_000 });
+  }).toPass({ timeout: 120_000 });
   const turn = page.waitForResponse((r) => r.request().method() === "POST" && /\/api\/atomik\/ach_[^/]+$/.test(new URL(r.url()).pathname) && r.request().postDataJSON()?.quoteOnly !== true, { timeout: 120_000 });
   await send.click();
   const answered = await turn;
