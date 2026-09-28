@@ -53,7 +53,7 @@ async function setup(page: Page) {
   /* Two stills of one person, uploaded and filed in this project's library. */
   const stills: { id: string; url: string }[] = [];
   for (const [i, background] of ["#8a6f5a", "#6f5a8a"].entries()) {
-    const buffer = await sharp({ create: { width: 96, height: 128, channels: 3, background } }).png().toBuffer();
+    const buffer = await sharp({ create: { width: 360, height: 480, channels: 3, background } }).png().toBuffer();
     const uploaded = await page.request.post("/api/uploads", { headers, multipart: { file: { name: `mira-${i + 1}.png`, mimeType: "image/png", buffer } } });
     expect(uploaded.ok(), await uploaded.text()).toBe(true);
     const still = await uploaded.json();
@@ -65,7 +65,14 @@ async function setup(page: Page) {
   await page.route(`**/api/media/${OLD_BUILD}*`, (route) => route.fulfill({ body: pixel, contentType: "image/png" }));
   const consumer: string[] = [];
   const errors: string[] = [];
-  page.on("request", (request) => { if (CONSUMER.test(request.url())) consumer.push(`${request.method()} ${new URL(request.url()).pathname}`); });
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!CONSUMER.test(url.pathname)) return;
+    /* The shell's collector (lib/shell/connected-collector.ts) lists the open project's earlier connected jobs on every page,
+       so paid work already on the account still lands. That listing is not Cast's; anything else would be. */
+    if (request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation" && url.searchParams.has("draftId")) return;
+    consumer.push(`${request.method()} ${url.pathname}${url.search}`);
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   const read = async () => (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as Project;
   const identities = async () => (await page.request.get(`/api/soul/identities?projectId=${project.id}`, { headers }).then((r) => r.json())) as { identities: Identity[]; terms: { versions: { version: string; trainingCredits: number }[] } };
