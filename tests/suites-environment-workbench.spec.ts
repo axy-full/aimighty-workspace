@@ -78,9 +78,9 @@ test("Environment: places from the beat sheet and the agent, a plate uploaded, a
   const harbour = places.filter({ has: page.locator('input[value="Frozen harbour"]') });
   await harbour.getByTestId("environment-upload-reference").setInputFiles({ name: "ice.png", mimeType: "image/png", buffer: await png("#99bbdd") });
   await expect(harbour.getByTestId("environment-references")).toContainText("References 1/6");
-  await harbour.getByTestId("environment-price").click();
   await expect(harbour.getByTestId("environment-render")).toContainText(/Render a plate · \d+ credits/);
-  const quote = [...quotes].reverse().find((q) => String(q.prompt ?? "").includes("An environment plate")) as { prompt: string; references: { uploadId?: string; role: string }[]; model: string; ratio: string };
+  /* Every place is priced on its own, so the harbour's quote is picked by its place, not by being the last one read. */
+  const quote = [...quotes].reverse().find((q) => String(q.prompt ?? "").startsWith("Frozen harbour:") && String(q.prompt ?? "").includes("An environment plate")) as { prompt: string; references: { uploadId?: string; role: string }[]; model: string; ratio: string };
   expect(quote, "the plate's own quote request").toBeTruthy();
   expect(quote).toMatchObject({ model: "gemini-3.1-flash-image", ratio: "16:9", shotId: "" });
   expect(quote.prompt).toContain("The world of the film: Late winter on a northern coast");

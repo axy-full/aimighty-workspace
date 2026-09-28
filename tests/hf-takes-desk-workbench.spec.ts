@@ -56,15 +56,24 @@ function desk(): { generations: Generation[]; uploads: LibraryUpload[] } {
 
 type Library = { generations: Generation[]; uploads: LibraryUpload[] };
 
-/** The project library, paged by cursor like the route; a held Load more waits for release(). */
+/** The project library, paged by cursor like the route; a held Load more waits for release(). An `id` asks for one take, as the route answers a link. */
 async function mockDeskLibrary(page: Page, store: Library, opts: { pageSize?: number } = {}) {
-  const state = { reads: 0, pages: 0, hold: false, release: () => {}, gate: Promise.resolve() };
+  const state = { reads: 0, pages: 0, lookups: [] as string[], hold: false, release: () => {}, gate: Promise.resolve(), lookupGate: Promise.resolve(), releaseLookup: () => {} };
   const hold = () => { state.hold = true; state.gate = new Promise<void>((resolve) => { state.release = () => { state.hold = false; resolve(); }; }); };
+  const holdLookups = () => { state.lookupGate = new Promise<void>((resolve) => { state.releaseLookup = resolve; }); };
   await page.route("**/api/workbench/library**", async (route) => {
     const request = route.request();
     if (request.method() !== "GET") return route.fulfill({ json: { ok: true } });
     state.reads++;
     const url = new URL(request.url());
+    const id = url.searchParams.get("id");
+    if (id !== null) {
+      state.lookups.push(`${url.searchParams.get("source")}:${id}`);
+      await state.lookupGate;
+      return route.fulfill({ json: url.searchParams.get("source") === "uploads"
+        ? { uploads: store.uploads.filter((u) => u.id === id), nextCursor: null }
+        : { generations: store.generations.filter((g) => g.id === id), nextPageCursor: null } });
+    }
     const cursor = url.searchParams.get("cursor");
     if (cursor) { state.pages++; if (state.hold) await state.gate; }
     const size = opts.pageSize ?? 60, offset = Number(cursor ?? 0);
@@ -74,7 +83,7 @@ async function mockDeskLibrary(page: Page, store: Library, opts: { pageSize?: nu
     }
     return route.fulfill({ json: { generations: store.generations.slice(offset, offset + size), nextPageCursor: offset + size < store.generations.length ? String(offset + size) : null } });
   });
-  return { state, hold };
+  return { state, hold, holdLookups };
 }
 
 type Review = { id: string; body: { reviewState?: string }; scope: string | null };
@@ -311,9 +320,13 @@ test("a sound take opens its transcript: priced first, then run at exactly that 
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page);
   const bodies: Record<string, unknown>[] = [];
-  await page.route("**/api/audio/transcribe", (route) => {
+  /* The price read is held until the unpriced action has been seen: nothing can be pressed before its price is on it. */
+  let releaseQuote: () => void = () => undefined;
+  const quoteHeld = new Promise<void>((resolve) => { releaseQuote = resolve; });
+  await page.route("**/api/audio/transcribe", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     bodies.push(body);
+    if (body.quoteOnly) await quoteHeld;
     return route.fulfill({ json: body.quoteOnly ? { estimatedCredits: 3 } : { text: "The storm is coming.", language: "en", seconds: 4, words: [{ text: "The", start: 0, end: 0.3, speaker: 0 }, { text: "storm", start: 0.3, end: 0.8, speaker: 0 }], srt: "1\n", credits: 3 } });
   });
   await kindChip(page, "Audio").click();
@@ -324,9 +337,11 @@ test("a sound take opens its transcript: priced first, then run at exactly that 
   await expect(page.getByTestId("edit-to-timeline")).toHaveCount(0);
   await expect(page.getByTestId("edit-image")).toHaveCount(0);
   const panel = page.getByTestId("transcribe");
-  await expect(panel.getByTestId("transcribe-run")).toHaveCount(0);
-  expect(bodies).toEqual([]);
-  await panel.getByTestId("transcribe-price").click();
+  /* Opening the sound reads its price on its own — a quote only — and the priced action waits for it. */
+  await expect.poll(() => bodies.length).toBe(1);
+  await expect(panel.getByTestId("transcribe-run")).toHaveText("Pricing transcript…");
+  await expect(panel.getByTestId("transcribe-run")).toBeDisabled();
+  releaseQuote();
   await expect(panel.getByTestId("transcribe-run")).toHaveText("Transcribe · 3 credits");
   expect(bodies).toEqual([{ sourceGenId: "gen_voice", projectId: "prod-desk", diarize: true, quoteOnly: true }]);
   await panel.getByTestId("transcribe-run").click();
@@ -371,9 +386,12 @@ test("a long project is windowed and reads on as its end comes into view; the la
   await toEnd(page);
   await expect(last).toBeVisible();
   await clearsTabBar(page, last, "the last row");
-  /* Opened from the end of a windowed grid, then Back: its card, not mounted meanwhile, is brought back into view. */
+  /* Opened from the end of a windowed grid, the editor above comes into view: the grid holds its scroll corrections
+     until the smooth move is over (outside iOS, one made on the way stops it at the grid's end). Then Back: its card,
+     not mounted meanwhile, is brought back into view. */
   await last.getByTestId("edit-take").click();
   await expect(page.getByTestId("takes-selected")).toContainText("Selected · Take 300");
+  await expect(page.getByTestId("takes-selected")).toBeInViewport();
   await expect(last).toHaveCount(0);
   await page.getByTestId("takes-back").click();
   await expect(page.getByTestId("takes-selected")).toHaveCount(0);
@@ -447,5 +465,140 @@ test("long names stay inside the desk: a shot, a batch, a selected take and a se
   if (PHONES.includes(info.project.name)) expect(await dimLabels(page, '[data-testid="edit-stage"]'), "labels dimmer than #7C7C84").toEqual([]);
   await shot(page, info, "desk-long", selected);
   await noSideScroll(page);
+  expect(errors).toEqual([]);
+});
+
+/* ── Idea 26: one selected take for the desk, the Inspector and the address bar; links to a take ── */
+
+const assetParam = (page: Page) => new URL(page.url()).searchParams.get("asset");
+const selParam = (page: Page) => new URL(page.url()).searchParams.get("sel");
+
+test("a tile, Previous and Next move the one selected take: the desk, the Inspector and the address bar agree, Back leaves the take, and a phone's Inspector opens only when asked", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const wide = WIDE.includes(info.project.name);
+  const { errors } = await open(page);
+  const takes = grid(page), selected = page.getByTestId("takes-selected");
+  const before = await page.evaluate(() => history.length);
+  await tile(takes, "Lantern walk").getByTestId("edit-take").click();
+  await expect(selected).toContainText("Selected · Lantern walk");
+  await expect.poll(() => assetParam(page)).toBe("generation:gen_b1");
+  expect(selParam(page)).toBe("take:generation:gen_b1");
+  /* Opening a take is a place Back returns from. */
+  expect(await page.evaluate(() => history.length)).toBe(before + 1);
+  if (wide) await expect(page.getByTestId("inspector-title")).toHaveText("Lantern walk");
+  else await expect(page.getByTestId("inspector")).toHaveCount(0);
+
+  /* Next and Previous rewrite that entry; the Inspector follows. */
+  await page.getByTestId("takes-next").click();
+  await expect(selected).toContainText("Selected · Lantern walk, closer");
+  await expect.poll(() => assetParam(page)).toBe("generation:gen_b2");
+  if (wide) await expect(page.getByTestId("inspector-title")).toHaveText("Lantern walk, closer");
+  else await expect(page.getByTestId("inspector")).toHaveCount(0);
+  await page.getByTestId("takes-prev").click();
+  await expect(selected).toContainText("Selected · Lantern walk");
+  expect(await page.evaluate(() => history.length)).toBe(before + 1);
+
+  /* On a phone the Inspector opens when asked, on the same take. */
+  if (!wide) {
+    await page.getByTestId("toggle-inspector").click();
+    await expect(page.getByTestId("inspector-title")).toHaveText("Lantern walk");
+    await page.getByTestId("close-inspector").click();
+    await expect(page.getByTestId("inspector")).toHaveCount(0);
+  }
+
+  /* Back: the grid, and no take in the address bar; Forward: the take again. */
+  await page.goBack();
+  await expect(selected).toHaveCount(0);
+  await expect.poll(() => assetParam(page)).toBeNull();
+  expect(selParam(page)).toBeNull();
+  await expect(tile(takes, "Lantern walk").getByTestId("edit-take")).toHaveAttribute("aria-checked", "false");
+  await page.goForward();
+  await expect(selected).toContainText("Selected · Lantern walk");
+  await expect.poll(() => assetParam(page)).toBe("generation:gen_b1");
+
+  /* Back to the takes clears it: its own history entry. */
+  await page.getByTestId("takes-back").click();
+  await expect(selected).toHaveCount(0);
+  await expect.poll(() => assetParam(page)).toBeNull();
+  if (wide) await expect(page.getByTestId("inspector-title")).toHaveCount(0);
+  await noSideScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test("a Library tile opens its take in the desk too; Back to the takes leaves a take chosen since alone", async ({ page }, info) => {
+  test.skip(!WIDE.includes(info.project.name), "desktops: the Library is a column beside the desk");
+  const { errors } = await open(page);
+  const library = page.getByTestId("library");
+  await library.getByRole("tab", { name: /Assets/ }).click();
+  await library.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_gull']").click();
+  await expect(page.getByTestId("takes-selected")).toContainText("Selected · Gull over the breakwater");
+  await expect(page.getByTestId("inspector-title")).toHaveText("Gull over the breakwater");
+  await expect(tile(grid(page), "Gull over the breakwater").getByTestId("edit-take")).toHaveAttribute("aria-checked", "true");
+  /* The Library chooses another take in the same moment Back to the takes is pressed on this one: the newer choice stands. */
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>("[data-testid='library'] .gx-asset-thumb[data-ctx='asset:generation:gen_still']")!.click();
+    document.querySelector<HTMLElement>("[data-testid='takes-back']")!.click();
+  });
+  await expect(page.getByTestId("takes-selected")).toContainText("Selected · Ferry at the quay");
+  await expect.poll(() => assetParam(page)).toBe("generation:gen_still");
+  expect(errors).toEqual([]);
+});
+
+test("a link to an older take opens that take — not the newest, and not before it is found — asking for it by id instead of paging back", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const store: Library = { uploads: [], generations: Array.from({ length: 300 }, (_, i) => row(i, { id: `gen_${i}`, title: `Take ${String(i + 1).padStart(3, "0")}` })) };
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  await mockProjects(page, { current: fixture() });
+  const library = await mockDeskLibrary(page, store, { pageSize: 60 });
+  library.holdLookups();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/suites?page=takes&sp=takes&asset=generation%3Agen_250");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour review");
+  /* While it is being found: said, and no other take stands in for it — not in the desk, not in the Inspector. */
+  await expect(page.getByTestId("edit-finding")).toContainText("Finding the take…");
+  await expect(page.getByTestId("takes-selected")).toHaveCount(0);
+  await expect(grid(page).locator('[data-testid="edit-take"][aria-checked="true"]')).toHaveCount(0);
+  if (WIDE.includes(info.project.name)) await expect(page.getByTestId("asset-inspector")).toHaveCount(0);
+  expect(assetParam(page)).toBe("generation:gen_250");
+  library.state.releaseLookup();
+  await expect(page.getByTestId("takes-selected")).toContainText("Selected · Take 251");
+  if (WIDE.includes(info.project.name)) await expect(page.getByTestId("inspector-title")).toHaveText("Take 251");
+  /* Asked for by id (the desk and the Inspector share one search), no paging back through four pages. */
+  expect([...new Set(library.state.lookups)]).toEqual(["generations:gen_250"]);
+  expect(library.state.pages).toBe(0);
+  expect(assetParam(page)).toBe("generation:gen_250");
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="takes-selected"]'), "the opened take's tools under 44×44").toEqual([]);
+  await noSideScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test("a link to a take the project does not hold says so and selects nothing in its place", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, state } = await open(page, desk(), { url: "/suites?project=ws-desk&page=takes&sp=takes&asset=generation%3Agen_someone_elses" });
+  await expect(page.getByTestId("edit-finding")).toContainText("That take is not in this project");
+  expect([...new Set(state.lookups)]).toEqual(["generations:gen_someone_elses"]);
+  await expect(page.getByTestId("takes-selected")).toHaveCount(0);
+  if (WIDE.includes(info.project.name)) await expect(page.getByTestId("asset-inspector-missing")).toContainText("This asset is not in this project.");
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="edit-finding"]'), "Show every take under 44×44").toEqual([]);
+  await page.getByTestId("takes-show-all").click();
+  await expect(page.getByTestId("edit-finding")).toHaveCount(0);
+  await expect.poll(() => assetParam(page)).toBeNull();
+  await expect(grid(page).getByTestId("take-tile")).toHaveCount(10);
+  await noSideScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test("a malformed take in the address bar is never looked up and opens nothing", async ({ page }, info) => {
+  test.skip(!WIDE.includes(info.project.name) && info.project.name !== "workbench-390x844", "one desktop and one phone");
+  const { errors, state } = await open(page, desk(), { url: "/suites?project=ws-desk&page=takes&sp=takes&asset=generation%3A..%2Fgen_b1" });
+  await expect(grid(page).getByTestId("take-tile")).toHaveCount(10);
+  await expect(page.getByTestId("takes-selected")).toHaveCount(0);
+  await expect(page.getByTestId("edit-finding")).toHaveCount(0);
+  /* It does not stay in the address bar either. */
+  await expect.poll(() => new URL(page.url()).searchParams.has("asset")).toBe(false);
+  expect(state.lookups).toEqual([]);
   expect(errors).toEqual([]);
 });

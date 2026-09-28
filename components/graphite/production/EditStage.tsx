@@ -2,7 +2,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
-import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { VirtualItems, smoothScrollIntoView } from "@/components/workspace/VirtualItems";
 import { previewAttrs } from "@/lib/preview";
 import { StudioRequestError, studioRequest } from "@/components/workbench/GenerationDialog";
 import { trailLine } from "@/lib/approval";
@@ -12,10 +12,13 @@ import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
 import { movedOn, poll } from "@/lib/poll";
+import { failureKind } from "@/lib/jobState";
 import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { isVariation, takeLabel } from "@/lib/variations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
+import { publishGallery } from "@/lib/shell/preview-bridge";
 import { useShell } from "@/lib/shell/state";
+import type { SelectReason } from "@/lib/shell/asset-link";
 import { useHandedTake } from "@/lib/shell/take-handover";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
@@ -31,6 +34,7 @@ import { Chip, LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
 import { KIND_DOT } from "../icons";
 import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
+import { useStageQuotes } from "./use-stage-quotes";
 
 const EDIT_LIMIT = 4000;
 type Generation = { id: string; status: string; error?: string | null };
@@ -59,8 +63,17 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
 export function notOpenWords(entry: LibraryEntry): string {
   const { take } = entry;
   const face = entryFace(entry);
+  /* What starts a held take depends on what holds it. Credits start a shortfall; a block of its own (a cap, a moved or
+     incomplete price, a token's ceiling: lib/held.ts writes it on the row) is lifted otherwise, in the row's own next
+     words when it has them. */
+  const said = take.detail ?? take.reason ?? "";
+  const kind = failureKind(said);
+  const next = !said || kind === "balance" ? " It starts on its own when credits arrive."
+    : kind === "cap" ? " It starts on its own when the cap allows it or an admin raises the cap."
+    : /token's .*ceiling/.test(said) ? " It starts on its own when the token's monthly ceiling resets."
+    : take.detail && take.reason && take.detail.startsWith(take.reason) ? ` ${take.detail.slice(take.reason.length).trim()}`.trimEnd() : "";
   return face === "failed" || face === "stopped" ? `${take.name} did not render${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.`
-    : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}. It starts on its own when credits arrive.`
+    : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.${next}`
     : face === "live" ? `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`
     : face === "unavailable" ? `${take.name} rendered, but its stored copy is not here yet. Refresh on its card reads it again.`
     : "This file has no picture or sound to edit.";
@@ -98,6 +111,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const library = useProjectLibrary(scope, projectId);
   const { toast, state } = useWorkspace();
   const shell = useShell();
+  const { live: liveShell } = shell;
   const project = draft.project;
   useStageFacts("takes", project);
 
@@ -111,13 +125,18 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const decided = useMemo(() => decidedBatches(items), [items]);
   const all = useMemo(() => deskTakes(deskItems(items, shots, decided)), [items, shots, decided]);
   const rows = useMemo(() => deskItems(items.filter((e) => inDesk(e, { filter, kind, query })), shots, decided), [items, shots, decided, filter, kind, query]);
-  const shownIds = useMemo(() => new Set(deskTakes(rows).map((e) => e.take.id)), [rows]);
+  /* The takes as the desk shows them, whole and in order: the viewer walks this list, not the tiles a windowed grid has mounted. */
+  const shownTakes = useMemo(() => deskTakes(rows), [rows]);
+  const shownIds = useMemo(() => new Set(shownTakes.map((e) => e.take.id)), [shownTakes]);
+  useEffect(() => publishGallery("takes", { projectId, entries: shownTakes }), [projectId, shownTakes]);
   const counts = useMemo(() => deskCounts(items, kind, query), [items, kind, query]);
   const narrowed = filter !== "all" || kind != null || Boolean(query.trim());
   const clear = () => { setFilter("all"); setKind(null); setTyped(""); };
 
-  /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
-  const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
+  /* The take open here is the shell's selected take (lib/shell/state.tsx › selectAsset): a tile, Previous/Next, the Library, the
+     viewer's arrows and a link all move the one selection, so the Inspector and the desk always show the same take. A take sent
+     here (Viral's Send to Edit, the Library, a link) opens first — that take and no other: until it is loaded the page says so. */
+  const picked = state.selKind === "take" ? state.selId : null;
   const chosen = picked ? items.find((e) => e.take.id === picked) ?? null : null;
   const [lost, setLost] = useState<string | null>(null);
   /* A library that did not load is not an answer: its banner says so, and Try again searches again. */
@@ -150,17 +169,20 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   }, [focusOn]);
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<BoardModel>(BOARD_MODELS[0].id);
-  const [quote, setQuote] = useState<{ key: string; credits: number } | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const open = useCallback((e: LibraryEntry, scroll = true) => {
+  /* Another take, from wherever it was chosen: the last one's message does not carry over (its price is keyed on the request). */
+  const [shownTake, setShownTake] = useState(picked);
+  if (shownTake !== picked) { setShownTake(picked); setError(""); }
+  const open = useCallback((e: LibraryEntry, scroll = true, reason: SelectReason = "open") => {
     if (!openable(e)) { toast(notOpenWords(e)); return; }
-    setPicked(e.take.id); setQuote(null); setError("");
-    if (scroll) requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-  }, [toast]);
+    liveShell().selectAsset(e.take.id, { reason });
+    /* Smoothly, from wherever the desk is: from the end of a windowed grid the grid holds its corrections until the editor is in view. */
+    if (scroll) requestAnimationFrame(() => smoothScrollIntoView(document.querySelector("[data-section='edit-panel']")));
+  }, [toast, liveShell]);
   const step = (dir: 1 | -1) => {
     const next = stepTake(all, shownIds, entry?.take.id ?? null, dir);
-    if (next) open(next, false);
+    if (next) open(next, false, "step");
   };
   const prev = entry ? stepTake(all, shownIds, entry.take.id, -1) : null;
   const next = entry ? stepTake(all, shownIds, entry.take.id, 1) : null;
@@ -174,7 +196,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     return () => clearTimeout(timer);
   }, [reveal]);
   const backToGrid = (id: string) => {
-    setPicked(null); setFocus(null);
+    /* Only while it is still the selected take: a selection made since (the Library, a link) stands. */
+    liveShell().selectAsset(null, { reason: "close", ifCurrent: id }); setFocus(null);
     requestAnimationFrame(() => {
       const tile = document.querySelector(`[data-testid="takes-grid"] [data-take="${CSS.escape(id)}"]`);
       if (tile) tile.scrollIntoView({ block: "center" });
@@ -191,7 +214,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
       const media = section === "video" ? "video" : section === "image" ? "image" : null;
       if (!media || entry?.media === media) return;
       const newest = all.find((e) => e.media === media && openable(e));
-      if (newest) open(newest, false);
+      if (newest) open(newest, false, "pick");
     };
     window.addEventListener(SECTION_EVENT, onSection);
     return () => window.removeEventListener(SECTION_EVENT, onSection);
@@ -223,15 +246,18 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     const { media, unreadable } = await resolveAttached(scope, attached);
     const pictures = media.filter((m) => m.kind === "image").slice(0, 3);
     setExtras((prev) => [...prev, ...pictures.filter((m) => !prev.some((x) => x.id === m.key)).map((m) => ({ id: m.key, name: m.name, ref: m.origin === "generation" ? { genId: m.id } : { uploadId: m.id } }))].slice(0, 3));
-    setQuote(null);
+
     return [pictures.length ? `${pictures.map((m) => m.name).join(", ")} ${pictures.length === 1 ? "goes" : "go"} with the edit as ${pictures.length === 1 ? "a reference" : "references"}.` : "", keptNote([...unreadable, ...media.filter((m) => !pictures.includes(m)).map((m) => m.name)], "an edit takes up to three reference pictures.") ?? ""].filter(Boolean).join(" ") || null;
   };
   const [pending, setPending] = useState<{ jobId: string; from: string } | null>(null);
   /** The last status read of the re-edit in flight failed; cleared by the next good one. */
   const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
-  /* A take handed over while Takes is already open (the jobs tray's Open in Takes): picked and brought into view like one handed over on the way in. */
-  useHandedTake((id) => { setPicked(id); setFocus(id); setLost(null); setQuote(null); setError(""); });
+  /* A take handed over while Takes is already open (the jobs tray's Open in Takes): the desk shows the shell's selection, so the
+     take is already the one open (the tray selected it); the handover makes sure it is selected, brings it into view like one
+     handed over on the way in, and clears a stale "not in this project". Its re-edit price follows the picked take on its own
+     (useStageQuotes is keyed on the request), so there is no quote to clear. */
+  useHandedTake((id) => { liveShell().selectAsset(id, { reason: "open" }); setFocus(id); setLost(null); setError(""); });
 
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {
@@ -268,28 +294,23 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* The card contract (components/graphite/TakeTile.tsx): skeletons while the first read is out, a banner if it failed. */
   const view = libraryView(library.state, items.length);
   const failed = view.banner?.tone === "error" ? view.banner : null;
+  const request = entry?.media === "image" && project?.productionProjectId && instruction.trim()
+    ? reEditRequest(entry, instruction, model, project.productionProjectId, project.aspect, extras.map((x) => x.ref)) : null;
+  const pricing = useStageQuotes(scope, request ? { edit: { body: generationRequestBody(request) } } : {});
+  const shown = pricing.quotes.edit;
+  const sending = useRef(false);
   if (!project) return <p className="gx-empty" role="status">{draft.state.error ?? "Opening the takes…"}</p>;
-  const key = entry ? JSON.stringify([entry.take.id, instruction.trim(), model, project.aspect, extras.map((x) => x.id)]) : "";
-  const shown = quote && quote.key === key ? quote : null;
-  const request = () => reEditRequest(entry!, instruction, model, project.productionProjectId!, project.aspect, extras.map((x) => x.ref));
-  const price = async () => {
-    setBusy("Pricing…"); setError("");
-    try {
-      const fresh = await studioRequest<{ estimatedCredits: number }>("/api/generate/quote", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify(generationRequestBody(request())) });
-      setQuote({ key, credits: fresh.estimatedCredits });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "This re-edit could not be priced."); }
-    finally { setBusy(""); }
-  };
   const render = async () => {
-    if (!shown || !entry) return;
+    if (shown?.credits == null || !entry || !request || pending || sending.current) return;
+    sending.current = true;
     setBusy("Sending…"); setError("");
     try {
-      const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, project.id, `reedit-${entry.take.sourceId}`), shown: shown.credits, request: { endpoint: "/api/generate", input: request() } });
-      if (outcome.state === "repriced") { setQuote({ key, credits: outcome.credits }); setError(outcome.reason); return; }
+      const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, project.id, `reedit-${entry.take.sourceId}`), shown: shown.credits, request: { endpoint: "/api/generate", input: request } });
+      if (outcome.state === "repriced") { pricing.reprice("edit", outcome.credits); setError(outcome.reason); return; }
       if (outcome.state === "refused") { setError(outcome.reason); return; }
-      setQuote(null); setPending({ jobId: outcome.jobId, from: entry.take.id });
+      setPending({ jobId: outcome.jobId, from: entry.take.id });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The re-edit could not be sent."); }
-    finally { setBusy(""); }
+    finally { sending.current = false; setBusy(""); }
   };
   const toTimeline = (e: LibraryEntry) => {
     try { draft.onChange((p) => addTakeToCut(p, e)); void draft.ensureSaved(); toast(`${e.take.name} is in the cut`); }
@@ -358,7 +379,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
               source={entry.asset.origin === "generation" ? { genId: entry.take.sourceId } : { uploadId: entry.take.sourceId }} />
           ) : null}
           {entry.media === "audio" ? null : entry.media === "video" ? (
-            <div data-section="video"><SeedanceEditHost scope={scope} project={project} initialSource={sourceKey} onBack={() => setPicked(null)} /></div>
+            <div data-section="video"><SeedanceEditHost scope={scope} project={project} initialSource={sourceKey} onBack={() => liveShell().selectAsset(null, { reason: "close", ifCurrent: entry.take.id })} /></div>
           ) : (
             <section className="gx-gen-card gx-workflow" aria-label="Re-edit the image" data-testid="edit-image" data-section="image">
               <div className="gx-gen-row">
@@ -366,7 +387,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
                 <h2 className="gx-workflow-title">Change something in this still</h2>
                 <p className="gx-hint">The take is the reference; only what you ask for changes. The result is a new take — the original stays.</p>
               </div>
-              <PromptAttach scope={scope} projectId={projectId} onAttach={attachToEdit} testId="edit-attach"><textarea className="gx-textarea pd-small" aria-label="What should change" maxLength={EDIT_LIMIT} value={instruction} placeholder="Make it night, add rain on the glass, turn her head towards camera…" onChange={(e) => setInstruction(e.target.value)} data-testid="edit-instruction" />{extras.length ? <div className="pa-chips" data-testid="edit-extras">{extras.map((x) => <span key={x.id} className="pa-chip" {...previewAttrs({ url: "genId" in x.ref ? `/api/media/${x.ref.genId}` : `/api/uploads/${x.ref.uploadId}`, kind: "image", name: x.name })}><span className="pa-chip-name">{x.name}</span><button type="button" aria-label={`Remove ${x.name}`} onClick={() => { setExtras((prev) => prev.filter((y) => y.id !== x.id)); setQuote(null); }}>×</button></span>)}</div> : null}</PromptAttach>
+              <PromptAttach scope={scope} projectId={projectId} onAttach={attachToEdit} testId="edit-attach"><textarea className="gx-textarea pd-small" aria-label="What should change" maxLength={EDIT_LIMIT} value={instruction} placeholder="Make it night, add rain on the glass, turn her head towards camera…" onChange={(e) => setInstruction(e.target.value)} data-testid="edit-instruction" />{extras.length ? <div className="pa-chips" data-testid="edit-extras">{extras.map((x) => <span key={x.id} className="pa-chip" {...previewAttrs({ url: "genId" in x.ref ? `/api/media/${x.ref.genId}` : `/api/uploads/${x.ref.uploadId}`, kind: "image", name: x.name })}><span className="pa-chip-name">{x.name}</span><button type="button" aria-label={`Remove ${x.name}`} onClick={() => { setExtras((prev) => prev.filter((y) => y.id !== x.id)); }}>×</button></span>)}</div> : null}</PromptAttach>
               <div className="pd-row-head">
                 <span className="gx-hint">Engine</span>
                 <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Re-edit engine">
@@ -374,15 +395,11 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
                 </div>
               </div>
               <div className="gx-gen-enhance">
-                {shown ? (
-                  <>
-                    <button type="button" className="gx-primary" disabled={Boolean(busy)} onClick={() => void render()} data-testid="edit-render">{busy || `Re-edit · ${shown.credits.toLocaleString()} credits`}</button>
-                    <button type="button" className="gx-hbtn" onClick={() => setQuote(null)}>Change</button>
-                  </>
-                ) : (
-                  <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(blocked) || Boolean(pending)} onClick={() => void price()} data-testid="edit-price">{busy || (pending ? "Rendering…" : "Price the re-edit")}</button>
-                )}
-                {blocked && !shown ? <span className="gx-reason" data-testid="edit-blocked">{blocked}</span> : null}
+                <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(blocked) || Boolean(pending) || shown?.credits == null} onClick={() => void render()} data-testid="edit-render">
+                  {busy || (pending ? "Rendering…" : shown?.credits != null ? `Re-edit · ${shown.credits.toLocaleString()} credits` : blocked ? "Re-edit" : shown?.error ? "Price unavailable" : "Pricing…")}
+                </button>
+                {shown?.error ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain("edit")}>Try again</button> : null}
+                {blocked ? <span className="gx-reason" data-testid="edit-blocked">{blocked}</span> : null}
               </div>
               {pending && checking ? <p className="gx-reason" role="status" data-testid="edit-checking">{checking}</p> : null}
               {made && made.from === entry.take.id ? (
@@ -391,7 +408,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
                   <span className="gx-hint">The re-edit is a new take in the library.</span>
                 </div>
               ) : null}
-              {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
+              {error || shown?.error ? <p className="gx-gen-error" role="alert">{error || shown?.error}</p> : null}
             </section>
           )}
         </>
@@ -403,7 +420,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
       ) : picked && !chosen && !readFailed ? (
         <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-finding">
           <span className="gx-eyebrow" data-functional-label="">{finding ? "Finding the take…" : "That take is not in this project"}</span>
-          {finding ? null : <button type="button" className="gx-hbtn" onClick={() => setPicked(null)}>Show every take</button>}
+          {finding ? null : <button type="button" className="gx-hbtn" onClick={() => liveShell().selectAsset(null, { reason: "repair", ifCurrent: picked })} data-testid="takes-show-all">Show every take</button>}
         </div>
       ) : null}
 
@@ -439,7 +456,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         )}
         {rows.length ? (
           <VirtualItems
-            className="pd-take-grid pd-desk-grid" attrs={{ role: "radiogroup", "aria-label": "Takes", "data-testid": "takes-grid" }}
+            className="pd-take-grid pd-desk-grid" attrs={{ role: "radiogroup", "aria-label": "Takes", "data-testid": "takes-grid", "data-preview-gallery": "takes" }}
             items={rows} getKey={(item) => item.key} layout={{ minColumnWidth: 150 }} gap={10} estimateRowHeight={150} estimateWholeRow={28} scroll="ancestor"
             wholeRow={isHeading} runOf={runOf} revealKey={reveal?.key ?? null} revealNonce={reveal?.n} revealAlign="center"
             renderItem={(item) => item.type === "take" ? (

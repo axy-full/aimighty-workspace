@@ -48,18 +48,37 @@ export async function resolveProjectLibrary(owner: string, id: string) {
   return { productionProjectId, uploadIds: [...refs.uploads], generationIds: [...refs.generations], derivedUploadIds };
 }
 
+/** A take a link names (lib/shell/asset-link.ts): the id alone, never a URL or a path. */
+const TAKE_ID = /^[A-Za-z0-9_-]{1,160}$/;
+
+/**
+ * `id` asks for one asset of this project, as a deep link needs it: the same
+ * membership as the pages (a take older than every loaded page included), one
+ * row or none. None says the same thing whether the asset does not exist, is
+ * hidden, or belongs to another project or person: nothing about it leaks.
+ */
+function lookupId(params: URLSearchParams): string | null {
+  const ids = params.getAll('id');
+  if (!ids.length) return null;
+  if (ids.length !== 1 || !TAKE_ID.test(ids[0])) throw new AssetQueryError('Choose one asset id.');
+  if (params.has('cursor') || params.has('q')) throw new AssetQueryError('An asset lookup takes no page cursor or search.');
+  return ids[0];
+}
+
 export async function listProjectLibrary(owner: string, params: URLSearchParams) {
   if (params.getAll('projectId').length !== 1 || params.getAll('source').length !== 1)
     throw new AssetQueryError('Choose one Studio project and asset source.');
   const source = params.get('source');
   if (source !== 'uploads' && source !== 'generations') throw new AssetQueryError('Choose Uploads or Generations.');
   const page = assetPageQuery(params, 60);
+  const id = lookupId(params);
   const scope = await resolveProjectLibrary(owner, params.get('projectId')!);
   if (source === 'uploads') {
-    const result = await listLibraryUploads(params, scope);
+    const result = await listLibraryUploads(params, scope, id ? {id} : undefined);
     const derived = new Set(scope.derivedUploadIds);
-    return {...result,uploads:result.uploads.map(upload=>({...upload,...(derived.has(upload.id)?{librarySource:'generation' as const}:{})}))};
+    return {...result,...(id?{nextCursor:null}:{}),uploads:result.uploads.map(upload=>({...upload,...(derived.has(upload.id)?{librarySource:'generation' as const}:{})}))};
   }
+  if (id) return {generations:await listGenerations({projectLibrary:scope,id,limit:1}),nextPageCursor:null};
   const rows = await listGenerations({projectLibrary:scope,limit:page.limit,search:page.search,cursor:page.cursor,includeNext:true});
   const generations = rows.slice(0,page.limit), last = generations.at(-1);
   return {generations,nextPageCursor:rows.length>page.limit&&last?assetCursor({createdAt:last.createdAt,id:last.id}):null};

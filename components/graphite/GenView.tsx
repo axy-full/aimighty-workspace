@@ -710,7 +710,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
-        {block ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : null}
+        {/* Why Generate waits keeps its line when there is no reason: the takes stepper and Generate below it stay put as a
+            price lands or a submission starts, so a press on + made across that moment is neither lost nor carried onto Generate. */}
+        {block ? <p className="gx-reason gx-gen-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : <p className="gx-reason gx-gen-reason" aria-hidden="true" />}
         {/* The owner's read of the connected account failed: said as it is (never "not connected"), with Try again. */}
         {block && block === composer.capability?.unreadable ? (
           <div className="gx-retry" data-testid="gen-connection-retry"><button type="button" className="gx-hbtn" onClick={composer.retryConnection}>Try again</button></div>
@@ -757,7 +759,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
-            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live">
+            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live" data-done={running.tone === "green" || running.tone === "red"}>
               <div className="gx-tile-media">
                 {/* A solid ring: no invented progress. The chip carries the job's own phase. */}
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[running.tone ?? "blue"] }} aria-hidden="true" /></span>

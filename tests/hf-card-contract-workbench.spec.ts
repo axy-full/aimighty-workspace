@@ -384,3 +384,33 @@ test("long names and long messages stay inside their cards and banners", async (
   await shot(page, info, "long-banner", banner);
   expect(errors).toEqual([]);
 });
+
+test("a held take that cannot open yet says what holds it and what starts it: credits, a cap, a moved or incomplete price, a token's ceiling", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* All held for credits. The first only waits for them; each other's release was refused for a reason of its own,
+     which lib/held.ts writes on the row in these words. */
+  const held = { params: { held: { why: "credits", needs: 12 } }, kind: "video" as const, status: "held", storedUrl: null, creditsBilled: null, projectId: "prod-cards" };
+  const blocked = (i: number, id: string, title: string, error: string) => generation({ ...held, id, title, error, createdAt: BASE - i, updatedAt: BASE - i });
+  const rows = () => [
+    generation({ ...held, id: "gen_short", title: "Storm front", createdAt: BASE, updatedAt: BASE }),
+    blocked(1, "gen_capped", "Crane over the quay", "At this production's cap of 100 cr (100 cr spent, this needs 12 cr). An admin can unlock it or raise it."),
+    blocked(2, "gen_moved", "Pier crossing", "The price is now 14 cr. Release it at that price to start it."),
+    blocked(3, "gen_stale", "Gull line", "This take's saved price is incomplete. Recreate it to get a current quote; this take is kept."),
+    blocked(4, "gen_ceiling", "Night ferry", "This job and the reserved jobs would pass this token's 500 cr monthly ceiling."),
+  ];
+  const { errors } = await open(page, "/suites?suite=studio&page=takes", "ok", { rows });
+  const takes = page.getByTestId("edit-takes");
+  await expect(takes.getByTestId("take-tile")).toHaveCount(5);
+  const toast = page.getByTestId("toast");
+  const says = async (name: string, words: string) => {
+    await tile(takes, name).getByTestId("edit-take").click();
+    await expect(toast).toHaveText(words);
+  };
+  await says("Storm front", "Storm front is held · Needs 12 cr. It starts on its own when credits arrive.");
+  /* None of the others is a shortfall: credits arriving start none of them, so each says what does. */
+  await says("Crane over the quay", "Crane over the quay is held · At this production's cap of 100 cr (100 cr spent, this needs 12 cr). It starts on its own when the cap allows it or an admin raises the cap.");
+  await says("Pier crossing", "Pier crossing is held · The price is now 14 cr. Release it at that price to start it.");
+  await says("Gull line", "Gull line is held · This take's saved price is incomplete. Recreate it to get a current quote; this take is kept.");
+  await says("Night ferry", "Night ferry is held · This job and the reserved jobs would pass this token's 500 cr monthly ceiling. It starts on its own when the token's monthly ceiling resets.");
+  expect(errors).toEqual([]);
+});
