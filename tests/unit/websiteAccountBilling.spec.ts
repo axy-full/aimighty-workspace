@@ -156,6 +156,8 @@ test("the client is quoted exact Particl credits and told a failed job is still 
         providerJobId: null, providerReceipt: null, chargeTerms: { credits: price, onFailure: "charged" } });
       const text = JSON.stringify(view);
       for (const secret of [f.state.wallet, "Owner's own wallet", "higgsfield_credits", ACCESS_TOKEN]) expect(text).not.toContain(secret);
+      // Credits only: never the dollars it was converted from, nor the terms.
+      expect(text).not.toMatch(/usd|margin|creditUsd|engineCost/i);
       // Approval names the price alone: never the wallet, never the account's own figure.
       for (const approval of [{ credits: price + 1 }, { workspaceId: f.state.wallet, credits: price }, { credits: f.state.websiteCredits }])
         await expect(f.service.submitConsumerMarketingVideo(scopeOf(view.id), approval)).rejects.toMatchObject({ code: "approval_changed" });
@@ -215,6 +217,9 @@ test("a job that fails on the account is charged its approved price (owner decis
       const start = await balance(ws);
       const quote = await f.service.quoteConsumerMarketingVideo("member", "draft", input, randomUUID());
       const price = await priceOf(f.state.websiteCredits);
+      // The approved price that stands on failure carries the markup: never the account's price at cost.
+      const { billCreditsWith, creditUsd } = await import("../../lib/creditTerms");
+      expect(price).toBeGreaterThan(billCreditsWith(f.state.websiteCredits * Number(RATE), 1, creditUsd()));
       await f.service.submitConsumerMarketingVideo(scopeOf(quote.id), { credits: price });
       f.state.pollRaw = rejected(f.state.providerJobId, "nsfw");
       const failed = await f.service.pollConsumerMarketingVideo(scopeOf(quote.id));
