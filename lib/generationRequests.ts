@@ -170,6 +170,23 @@ export async function withGenerationRequestData(
   }
 }
 
+/**
+ * Give a claim that has no reply yet its final one, for a route whose work
+ * answers in its reply rather than with a job (transcription): once no request
+ * can still be running it, what it left behind is written as its answer, so a
+ * request under the key is answered with that and never runs. False when the
+ * claim already has a reply (its own, which stands) or does not exist.
+ */
+export async function completeGenerationRequest(input: { userId: string; key: string; status: number; reply: Record<string, unknown> }): Promise<boolean> {
+  await generationRequestsReady();
+  const done = await db().execute({
+    sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=?
+          WHERE user_id=? AND request_key=? AND response_json IS NULL`,
+    args: [JSON.stringify(input.reply), input.status, now(), input.userId, input.key],
+  });
+  return done.rowsAffected > 0;
+}
+
 /** What a paid request sent under an Idempotency-Key became, from its claim (checkGenerationRequest). */
 export type GenerationRequestCheck =
   /** It reached the server and made this job. The job's own status says how it went: a refused charge fails it, unbilled. */
