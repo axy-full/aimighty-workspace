@@ -6,6 +6,7 @@ import { inlineSafe } from "../serveType";
 import { uploadFile, type UploadedFile } from "../uploadClient";
 import { fileProjectUpload } from "../workbench/project-library-client";
 import { projectTakes, type ReviewState, type Take } from "./takes";
+import { finalOf, isDraft } from "../draftFinal";
 
 /**
  * The open project's library — every upload and generation filed to it —
@@ -25,6 +26,8 @@ export type LibraryState = {
   pages: Record<Source, number>;
   moreBusy: boolean;
   error: string | null;
+  /** A background read is trying again while the last failure stays visible. */
+  retrying: boolean;
   /** A re-read failed while cards were on screen: they are the last good read (`error` says why). A failed Load more is not stale. */
   stale: boolean;
   /** Upload progress, e.g. "still.png · 40%"; null when idle. */
@@ -33,7 +36,7 @@ export type LibraryState = {
 
 const EMPTY: LibraryState = {
   status: "idle", uploads: [], generations: [], next: { uploads: null, generations: null },
-  pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, stale: false, uploading: null,
+  pages: { uploads: 0, generations: 0 }, moreBusy: false, error: null, retrying: false, stale: false, uploading: null,
 };
 
 type Entry = {
@@ -92,17 +95,18 @@ async function readPage(scope: string, projectId: string, source: Source, cursor
 }
 
 /** Re-read the loaded range of both sources, first page onwards. */
-async function load(scope: string, projectId: string): Promise<void> {
+async function load(scope: string, projectId: string, quiet = false): Promise<void> {
   const key = keyOf(scope, projectId);
   const e = entry(key);
   /* A read already in flight may have started before the change this refresh is for: read once more after it. */
   if (e.busy) {
-    e.rerun ??= e.busy.then(() => { e.rerun = null; return load(scope, projectId); });
+    e.rerun ??= e.busy.then(() => { e.rerun = null; return load(scope, projectId, quiet); });
     return e.rerun;
   }
   if (e.retry.timer) { clearTimeout(e.retry.timer); e.retry.timer = null; }
-  /* A retry after a failed first read shows the skeletons again, not the stale error. */
-  if (e.state.status === "idle" || e.state.status === "error") set(key, { status: "loading", error: null });
+  /* Background retries keep the last failure in place. An explicit Try again can show initial skeletons. */
+  if (quiet && e.state.error) set(key, { retrying: true });
+  else if (e.state.status === "idle" || e.state.status === "error") set(key, { status: "loading", error: null, retrying: false });
   e.busy = (async () => {
     try {
       const read = async (source: Source) => {
@@ -123,19 +127,19 @@ async function load(scope: string, projectId: string): Promise<void> {
       /* A full read just landed: a take still in flight is asked after again soon, not at the end of a long backoff. */
       nudge(key);
       set(key, {
-        status: "ready", error: null, stale: false,
+        status: "ready", error: null, retrying: false, stale: false,
         uploads: withPinned(uploads.items as LibraryUpload[], e.pinned.uploads), generations: withPinned(generations.items as Generation[], e.pinned.generations),
         next: { uploads: uploads.next, generations: generations.next },
         pages: { uploads: uploads.pages, generations: generations.pages },
       });
     } catch (error) {
       const first = e.state.status !== "ready";
-      set(key, { status: first ? "error" : "ready", stale: !first, error: error instanceof Error ? error.message : "The project library could not be loaded." });
+      set(key, { status: first ? "error" : "ready", retrying: false, stale: !first, error: error instanceof Error ? error.message : "The project library could not be loaded." });
       /* A blip on the first read is not left on screen for the session: try again, a few times, further apart. */
       const wait = first ? LIBRARY_RETRY_MS[e.retry.attempts] : undefined;
       if (wait !== undefined && e.listeners.size) {
         e.retry.attempts++;
-        e.retry.timer = setTimeout(() => { e.retry.timer = null; if (e.listeners.size) void load(scope, projectId); }, wait);
+        e.retry.timer = setTimeout(() => { e.retry.timer = null; if (e.listeners.size) void load(scope, projectId, true); }, wait);
       }
     } finally {
       e.busy = null;
@@ -159,6 +163,19 @@ export function projectLibraryState(scope: string, projectId: string): LibrarySt
  */
 export function refreshProjectLibrary(scope: string, projectId: string) {
   if (entry(keyOf(scope, projectId)).state.status === "idle") return Promise.resolve();
+  return load(scope, projectId, true);
+}
+
+/**
+ * A grid's own refresh: Try again, a take's Refresh, the re-read after a Release. It resets the automatic retries.
+ * Only a first read that failed, with its automatic retry out, is joined: nothing is on screen for anything but
+ * Try again to have changed. Any other refresh reads once more after a read in flight (`load`), which may have
+ * begun before the change it is for.
+ */
+export function retryProjectLibrary(scope: string, projectId: string): Promise<void> {
+  const e = entry(keyOf(scope, projectId));
+  if (e.busy && e.state.status === "error") return e.busy;
+  e.retry.attempts = 0;
   return load(scope, projectId);
 }
 
@@ -515,7 +532,7 @@ export type LibraryView = {
    * top banner); "stale" when a re-read failed and the cards on screen are the last good read
    * (Gen's banner; the Library and Takes say it at the list's end, beside Load more).
    */
-  banner: { tone: "error" | "stale"; message: string } | null;
+  banner: { tone: "error" | "stale"; message: string; retrying?: boolean } | null;
   /** Only a finished, successful read may say the project is empty. */
   empty: boolean;
 };
@@ -527,12 +544,12 @@ export type LibraryView = {
  * still opening shows skeletons; failed shows nothing here (the shell's banner
  * says it and offers Try again).
  */
-export function libraryView(load: Pick<LibraryState, "status" | "error"> & { stale?: boolean } | null, shown: number, projects: "loading" | "ready" | "error" = "ready"): LibraryView {
+export function libraryView(load: Pick<LibraryState, "status" | "error"> & { stale?: boolean; retrying?: boolean } | null, shown: number, projects: "loading" | "ready" | "error" = "ready"): LibraryView {
   if (!load) return projects === "loading" ? { skeletons: shown === 0, banner: null, empty: false } : { skeletons: false, banner: null, empty: projects === "ready" && shown === 0 };
   if (load.status === "error")
-    return { skeletons: false, banner: { tone: "error", message: load.error || "The project library could not be loaded." }, empty: false };
+    return { skeletons: false, banner: { tone: "error", message: load.error || "The project library could not be loaded.", ...(load.retrying ? { retrying: true } : {}) }, empty: false };
   if (load.status !== "ready") return { skeletons: shown === 0, banner: null, empty: false };
-  return { skeletons: false, banner: load.stale && load.error ? { tone: "stale", message: load.error } : null, empty: shown === 0 };
+  return { skeletons: false, banner: load.stale && load.error ? { tone: "stale", message: load.error, ...(load.retrying ? { retrying: true } : {}) } : null, empty: shown === 0 };
 }
 
 /** The project's frame as a CSS aspect-ratio, held between 9:16 and 2:1 so a tile stays a tile. */
@@ -611,7 +628,7 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
     const e = entry(keyOf(scope, projectId));
     /* Opening a project whose last read failed reads it again, from the top of the retries. */
     if (e.state.status === "error" && !e.busy && !e.retry.timer) e.retry.attempts = 0;
-    if (e.state.status === "idle" || (e.state.status === "error" && !e.busy && !e.retry.timer)) void load(scope, projectId);
+    if (e.state.status === "idle" || (e.state.status === "error" && !e.busy && !e.retry.timer)) void load(scope, projectId, true);
   }, [scope, projectId]);
   const inFlight = state.status === "ready" && settling(state.generations);
   useEffect(() => (projectId && inFlight ? watch(scope, projectId) : undefined), [scope, projectId, inFlight]);
@@ -621,12 +638,8 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
     items,
     /** True while a cursor says the project has more than is loaded. */
     hasMore: Boolean(state.next.uploads || state.next.generations),
-    /** Try again after a failed read: resets the automatic retries. */
-    refresh: useCallback(() => {
-      if (!projectId) return Promise.resolve();
-      entry(keyOf(scope, projectId)).retry.attempts = 0;
-      return load(scope, projectId);
-    }, [scope, projectId]),
+    /** Try again after a failed read, a take's Refresh, the re-read after a Release (retryProjectLibrary). */
+    refresh: useCallback(() => (projectId ? retryProjectLibrary(scope, projectId) : Promise.resolve()), [scope, projectId]),
     more: useCallback(() => (projectId ? more(scope, projectId) : Promise.resolve()), [scope, projectId]),
     upload: useCallback((files: File[]) => (projectId ? uploadToProject(scope, projectId, files) : Promise.reject(new Error("Open a saved project first."))), [scope, projectId]),
   };
@@ -635,3 +648,35 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
 /** Which batch a library entry's take belongs to (Gen's takes 2–4), for lib/variations.ts's strips: a generation's own params. */
 export const entryBatch = (entry: LibraryEntry): { batchId?: unknown; variation?: unknown } | undefined =>
   entry.asset.origin === "generation" ? (entry.asset.value.params as { batchId?: unknown; variation?: unknown } | undefined) : undefined;
+
+/** A library entry's place in draft mode (lib/draftFinal.ts): a draft, a draft's final, or neither (null). */
+export const entryDraft = (entry: LibraryEntry): { id: string; draft: boolean; finalOf: string | null } | null => {
+  if (entry.asset.origin !== "generation") return null;
+  const g = entry.asset.value;
+  const draft = isDraft(g.params), of = finalOf(g.params);
+  return draft || of ? { id: g.id, draft, finalOf: of } : null;
+};
+
+/**
+ * The Library's flat grid keeps a draft beside its final: each draft moves up to
+ * sit just after the newest final made from it, when that final is in the list.
+ */
+export function pairOrder(entries: readonly LibraryEntry[]): LibraryEntry[] {
+  const finalsFor = new Map<string, LibraryEntry>();
+  for (const e of entries) {
+    const d = entryDraft(e);
+    if (d?.finalOf && !finalsFor.has(d.finalOf)) finalsFor.set(d.finalOf, e);
+  }
+  const moved = new Set(entries.filter((e) => { const d = entryDraft(e); return Boolean(d?.draft && finalsFor.has(d.id)); }));
+  if (!moved.size) return entries as LibraryEntry[];
+  const out: LibraryEntry[] = [];
+  for (const e of entries) {
+    if (moved.has(e)) continue;
+    out.push(e);
+    const d = entryDraft(e);
+    if (!d?.finalOf) continue;
+    const draft = entries.find((x) => moved.has(x) && x.asset.value.id === d.finalOf && !out.includes(x));
+    if (draft && finalsFor.get(d.finalOf) === e) out.push(draft);
+  }
+  return out;
+}

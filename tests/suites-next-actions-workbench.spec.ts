@@ -84,8 +84,9 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   await expect(page.getByTestId("takes-selected")).toContainText("Selected · Pier at dusk");
   await expect(page.getByTestId("edit-image")).toBeInViewport();
   await expect(page.getByTestId("edit-instruction")).toBeFocused();
-  /* The form's own priced button is the next step, and it has not been pressed. */
-  await expect(page.getByTestId("edit-price")).toBeVisible();
+  /* The form's own priced button is the next step: nothing is priced until the change is written, and nothing was sent. */
+  await expect(page.getByTestId("edit-render")).toBeDisabled();
+  await expect(page.getByTestId("edit-blocked")).toHaveText("Write what should change.");
   await expect.poll(() => new URL(page.url()).searchParams.get("asset")).toBe("generation:gen_still");
   if (!WIDE.includes(info.project.name)) await expect(page.getByTestId("inspector")).toHaveCount(0);
 

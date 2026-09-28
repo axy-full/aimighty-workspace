@@ -135,6 +135,71 @@ export function reachStateFrom(status: number, json: unknown, now = Date.now()):
   return { kind: "error", message: "The connected account could not be checked. Try again, or open Workspace › Engines." };
 }
 
+/**
+ * What a reply says of the connection itself, for the connected capability
+ * every surface shares (lib/shell/use-connected-capability › settle): a
+ * checked answer came through a working connection; "connect first" is none,
+ * or one to sign in again. Owner only, too often, or a failed check says
+ * nothing about the connection, and is not shared.
+ */
+export function reachConnection(state: ReachState): { connected: boolean; requiresReconnect: boolean } | null {
+  if (state.kind === "checked") return { connected: true, requiresReconnect: false };
+  if (state.kind === "connect") return { connected: false, requiresReconnect: state.reconnect === true };
+  return null;
+}
+
+/** How long a checked answer serves the page again: the owner's discovery allowance is six a minute, shared with Workspace › Engines. */
+export const REACH_REUSE_MS = 60_000;
+
+/**
+ * One check of the connected account, as it set out: the workspace scope, the
+ * connection's revision then (lib/shell/connected-capability › mark, which
+ * moves on connect, reconnect or disconnect, never on an ordinary read), and
+ * which check it is.
+ */
+export type ReachTicket = { scope: string; revision: number; id: number };
+
+/**
+ * The page's answers, one per workspace scope, kept a minute so moving
+ * between pages does not spend the owner's allowance — and only while the
+ * connection they were read under stands. A check that set out before a
+ * connect, reconnect or disconnect, or before a newer check of its scope, is
+ * dropped when it lands: it is neither shown nor kept, and the newer check
+ * still in flight stays the one that answers. Only a checked answer is kept;
+ * a newer answer of any other kind drops it ("connect first" must not outlive
+ * connecting in Engines, nor a checked answer the account going away).
+ */
+export function createReachMemory(clock: () => number = Date.now) {
+  const answers = new Map<string, { revision: number; at: number; state: ReachState }>();
+  const latest = new Map<string, number>();
+  let checks = 0;
+  return {
+    /** A checked answer under a minute old, read under the connection as it stands now (`revision`); otherwise null. */
+    recall(scope: string, revision: number): ReachState | null {
+      const kept = answers.get(scope);
+      return kept && kept.revision === revision && clock() - kept.at < REACH_REUSE_MS ? kept.state : null;
+    },
+    /** A check setting out under `revision`, taken before its request: it supersedes any check of the scope still in flight. */
+    begin(scope: string, revision: number): ReachTicket {
+      const id = ++checks;
+      latest.set(scope, id);
+      return { scope, revision, id };
+    },
+    /**
+     * A check's reply, with the connection's revision as it stands now. False,
+     * and nothing kept, when a newer check of the scope set out since or the
+     * connection changed since this one set out.
+     */
+    land(ticket: ReachTicket, revision: number, state: ReachState): boolean {
+      if (latest.get(ticket.scope) !== ticket.id || ticket.revision !== revision) return false;
+      latest.delete(ticket.scope);
+      if (state.kind === "checked") answers.set(ticket.scope, { revision, at: clock(), state });
+      else answers.delete(ticket.scope);
+      return true;
+    },
+  };
+}
+
 /* ── Particl as an MCP server ─────────────────────────────────────────── */
 
 /** Tools that write: a read-only token is refused them (lib/auth withTenant refuses its non-GET calls). */
