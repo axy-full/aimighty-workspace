@@ -1,5 +1,5 @@
 import type { Reference } from "./ark";
-import { GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS, genjutsuVariantForModel } from "./genjutsuTypes";
+import { GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS, genjutsuVariantForModel, type GenjutsuResolution } from "./genjutsuTypes";
 import { HiggsfieldHttpError, higgsfieldCredentials } from "./higgsfield";
 import { marketingJson, MarketingError } from "./higgsfieldMarketing";
 import { engineMock } from "./mock";
@@ -15,15 +15,24 @@ export function genjutsuPath(model: string): string {
 
 export function genjutsuSourceProblem(seconds: number): string | null {
   return !Number.isFinite(seconds) || seconds < GENJUTSU_LIMITS.minSeconds || seconds > GENJUTSU_LIMITS.maxSeconds
-    ? "Transform needs an original video between 1 and 30 seconds." : null;
+    ? `Transform needs an original video between ${GENJUTSU_LIMITS.minSeconds} and ${GENJUTSU_LIMITS.maxSeconds} seconds.` : null;
+}
+
+/** Object Swap refuses a source frame below its documented pixel floor; Motion Transfer has none. */
+export function genjutsuFrameProblem(model: string, width: number, height: number): string | null {
+  if (genjutsuVariantForModel(model) !== "object-swap") return null;
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 &&
+    width * height >= GENJUTSU_LIMITS.minObjectSwapPixels
+    ? null
+    : `Object Swap needs a source video of at least ${GENJUTSU_LIMITS.minObjectSwapPixels.toLocaleString("en-US")} pixels per frame, such as 854 × 480 or 640 × 640.`;
 }
 
 /** Only authorized, retained originals reach this helper; never accept client URLs. */
 export async function genjutsuInput(model: string, prompt: string, resolution: string, source: Reference | null, images: Reference[]) {
   genjutsuPath(model);
-  if (typeof prompt !== "string" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(resolution as "480p" | "720p") ||
+  if (typeof prompt !== "string" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(resolution as GenjutsuResolution) ||
       !source || source.kind !== "video" || images.length < GENJUTSU_LIMITS.minImages || images.length > GENJUTSU_LIMITS.maxImages || images.some(r => r.kind !== "image" || r.role !== "reference_image"))
-    throw new HiggsfieldHttpError(422, "Choose one original video, one to eight still references, and 480p or 720p output.");
+    throw new HiggsfieldHttpError(422, "Choose one original video, one to eight still references, and 480p, 720p or 1080p output.");
   const refs = [source, ...images];
   if (refs.some(r => !/^[A-Za-z0-9_-]{1,160}$/.test(r.id) || !/^[A-Za-z0-9]+$/.test(r.ext)))
     throw new HiggsfieldHttpError(422, "A transform source identity is invalid.");
@@ -32,7 +41,7 @@ export async function genjutsuInput(model: string, prompt: string, resolution: s
     const path = r.fromGeneration ? (r.kind === "video" ? videoPath(r.id) : imagePath(r.id)) : uploadPath(r.id, r.ext);
     return engineMock() ? `https://fixtures.particl.invalid/${path}` : presignedReadUrl(path, 0.25, r.storedUrl);
   }));
-  return { prompt, video_url: urls[0], image_urls: urls.slice(1), resolution: resolution as "480p" | "720p" };
+  return { prompt, video_url: urls[0], image_urls: urls.slice(1), resolution: resolution as GenjutsuResolution };
 }
 
 /** Official non-generating estimate API. A missing/invalid price never falls back to a list-rate guess. */

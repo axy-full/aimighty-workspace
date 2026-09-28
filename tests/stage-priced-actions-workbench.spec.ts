@@ -291,7 +291,7 @@ test("transcription reads its quote on selection and waits for the priced action
   await page.goto(`/suites?suite=studio&page=takes&project=${store.current.id}`);
   await page.getByTestId("edit-takes").getByText("Dialogue source", { exact: true }).click();
   const action = page.getByTestId("transcribe-run");
-  await expect(action).toHaveText("Transcribe · 3 credits");
+  await expect(action).toHaveText("Transcribe · about 3 credits");
   expect(quoted).toHaveLength(1);
   expect(quoted[0]).toMatchObject({ sourceGenId: "gen_dialogue", quoteOnly: true });
   expect(posted).toHaveLength(0);
@@ -326,7 +326,7 @@ test("a transcript whose price cannot be read says so, offers Try again and send
   await fit(page, retry);
   failQuote = false;
   await retry.click();
-  await expect(action).toHaveText("Transcribe · 3 credits");
+  await expect(action).toHaveText("Transcribe · about 3 credits");
   await expect(panel.getByRole("alert")).toHaveCount(0);
   expect(posted).toBe(0);
 });
