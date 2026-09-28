@@ -17,7 +17,7 @@ import {
  * back is never replayed: the server is asked what became of that key
  * (POST /api/generate/check). Finished, its saved transcript comes back and
  * nothing is sent; never arrived, the server sets the key aside and the slot
- * is let go; still running, nothing is sent and it is asked again later.
+ * is let go; no answer yet, nothing is sent and it is checked again shortly.
  */
 
 export const TRANSCRIBE_ENDPOINT = "/api/audio/transcribe" as const;
@@ -30,9 +30,13 @@ export type TranscriptionSettings = { diarize: boolean; language?: string };
 export type TranscriptionOutcome =
   /** The transcript: this press's own, or (`recovered`) the one an earlier request made — nothing was sent again. */
   | { state: "done"; result: TranscriptResult; recovered: boolean; note: string }
-  /** Answered for good without a transcript, and let go: a new press is a new request at the price then shown. `failed`: it was refused or failed (not merely never sent). */
-  | { state: "released"; reason: string; failed: boolean }
-  /** Not known yet: the claim stays and nothing is sent. `waiting`: the server is still working on it, so ask again shortly. */
+  /**
+   * Answered for good without a transcript, and let go: a new press is a new request at the price then shown.
+   * `failed`: it was refused or failed (not merely never sent). `repriced`: refused because the estimate moved past
+   * the price shown — the server's new estimate, for the button to show before anything else is pressed.
+   */
+  | { state: "released"; reason: string; failed: boolean; repriced?: number }
+  /** Not known yet: the claim stays and nothing is sent. `waiting`: the server has no answer for it yet, so ask again shortly. */
   | { state: "unknown"; reason: string; waiting: boolean };
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
@@ -42,7 +46,8 @@ function browserStorage(): Storage | null {
 }
 
 const NEVER_ARRIVED = "Your last transcription never reached the server. Nothing was charged for it.";
-const STILL_RUNNING = "Your last transcription is still running. Nothing new was sent; asking again shortly.";
+/* The server has no answer for it yet: it may still be running, or it stopped and its answer is not final yet. Never "still running". */
+const CHECKING = "Your last transcription has no answer yet and is being checked. Nothing new was sent.";
 const UNCHECKED = "Your last transcription could not be checked. Nothing new was sent.";
 const UNREADABLE = "The saved transcription request cannot be read. Check Activity before starting another.";
 const LOST_REPLY = "The connection dropped before the server answered. Asking what became of it; it is never sent twice.";
@@ -126,7 +131,7 @@ export async function settlePendingTranscription(options: { scope: string; slot:
     const said = typeof found.error === "string" && found.error ? found.error : "";
     return { state: "released", reason: found.state === "refused" ? `Your last transcription did not complete. ${said}`.trim() : said || UNCHECKED, failed: true };
   }
-  if (found.state === "pending") return { state: "unknown", reason: STILL_RUNNING, waiting: true };
+  if (found.state === "pending") return { state: "unknown", reason: CHECKING, waiting: true };
   return { state: "unknown", reason: UNCHECKED, waiting: false };
 }
 
@@ -176,9 +181,10 @@ export async function sendTranscription(options: {
     /* A completed answer is final: the server keeps it under this key, and the slot is let go. */
     if (error.resolved) {
       clearPendingGeneration(storage, slot, attempt.key);
-      return { state: "released", reason: `${before}${error.message}`, failed: true };
+      const repriced = error.status === 409 ? Number(error.data.estimatedCredits) : NaN;
+      return { state: "released", reason: `${before}${error.message}`, failed: true, ...(Number.isFinite(repriced) && repriced >= 0 ? { repriced } : {}) };
     }
-    if (error.data.pending === true) return { state: "unknown", reason: `${before}${STILL_RUNNING}`, waiting: true };
+    if (error.data.pending === true) return { state: "unknown", reason: `${before}${CHECKING}`, waiting: true };
     return { state: "unknown", reason: `${before}${error.status >= 500 ? LOST_REPLY : error.message}`, waiting: false };
   }
 }

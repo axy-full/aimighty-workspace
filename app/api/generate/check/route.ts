@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** The paid routes whose claim is bound in the same write as the job it makes (atomicBinding). */
 const CHECKABLE = new Set(["/api/generate", "/api/audio", "/api/audio/dub"]);
-/** Transcription answers in its reply rather than with a job: its check returns that saved reply (checkTranscriptionRequest). */
+/** Transcription answers in its reply rather than with a job: its check returns that saved reply, or the transcript saved before it (checkTranscriptionRequest). */
 const TRANSCRIBE = "/api/audio/transcribe";
 const KEY = /^[A-Za-z0-9._:-]{8,160}$/;
 
@@ -20,7 +20,8 @@ const KEY = /^[A-Za-z0-9._:-]{8,160}$/;
  * nothing is sent again. Never arrived: its key is fenced here, so it cannot
  * land afterwards, and what is on screen now may go under a new key at the
  * price on the button. The person's own claims, in this workspace's database
- * only. Nothing here spends.
+ * only. Nothing is ever sent again. The one bill a check may write is a saved
+ * transcript's own, once, when its request stopped before writing it.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();

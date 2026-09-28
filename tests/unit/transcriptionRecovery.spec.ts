@@ -98,11 +98,11 @@ async function estimate(seconds: number) {
   return billCredits(grokTranscriptionUsd(seconds), "xai");
 }
 
-/** Makes a claim look older than any request can live, as a function killed mid-transcription leaves it. */
-async function age(key: string) {
+/** Makes a claim `byMs` old — by default older than any transcription request can live, as a function killed mid-transcription leaves it. */
+async function age(key: string, byMs?: number) {
   const { db } = await import("../../lib/db");
-  const { STALE_CLAIM_MS } = await import("../../lib/generationRequests");
-  await db().execute({ sql: "UPDATE generation_requests SET created_at=? WHERE request_key=?", args: [Date.now() - STALE_CLAIM_MS - 60_000, key] });
+  const { TRANSCRIPTION_STALE_MS } = await import("../../lib/transcription");
+  await db().execute({ sql: "UPDATE generation_requests SET created_at=? WHERE request_key=?", args: [Date.now() - (byMs ?? TRANSCRIPTION_STALE_MS + 60_000), key] });
 }
 
 test("a key sent again is answered from its saved transcript and charge; the provider and the meter see one request", async () => {
@@ -230,21 +230,31 @@ test("a transcription still running is pending to the check, then answered with 
   });
 });
 
-test("a provider failure is answered for good with what the meter recorded: nothing charged", async () => {
+test("a provider failure is answered for good with what the meter recorded: nothing charged, in a sentence of Particl's, never the provider's text", async () => {
   const ws = await setup("failure", 60);
   const { runInTenant } = await import("../../lib/tenant");
+  const { XaiHttpError } = await import("../../lib/xaiErrors");
   await runInTenant(ws, async () => {
     const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(60) };
-    const { deps, calls } = await provider(60, { fail: new Error("Grok transcription failed (500): unavailable") });
+    const raw = "Grok transcription failed (500): upstream said key xai-abc123 is over quota";
+    const { deps, calls } = await provider(60, { fail: new XaiHttpError(500, raw) });
     const failed = await send(body, "stt-failure-001", deps);
     expect(failed.status).toBe(502);
     expect(failed.headers.get("Idempotency-Status")).toBe("complete");
     const reply = await failed.json();
-    expect(reply).toEqual({ error: "Grok transcription failed (500): unavailable Nothing was charged for it.", charged: 0 });
+    expect(reply).toEqual({ error: "Grok could not transcribe this take (500). Nothing was charged for it.", charged: 0 });
+    expect(JSON.stringify(reply)).not.toContain("xai-abc123");
     expect(await meterRows(ws.id)).toMatchObject([{ status: "failed", credits: 0 }]);
     expect(await check("stt-failure-001", body)).toEqual({ state: "refused", status: 502, error: reply.error });
     expect((await send(body, "stt-failure-001", deps)).status).toBe(502);
     expect(calls.n).toBe(1);
+    /* A timeout, and anything else, by kind: never its own text. */
+    const late = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    const odd = new Error("socket hang up at 10.0.0.7:443");
+    for (const [key, fail, said] of [["stt-failure-002", late, "Grok did not answer in time."], ["stt-failure-003", odd, "This take could not be transcribed."]] as const) {
+      const answer = await (await send(body, key, (await provider(60, { fail })).deps)).json();
+      expect(answer).toEqual({ error: `${said} Nothing was charged for it.`, charged: 0 });
+    }
   });
 });
 
@@ -313,6 +323,422 @@ test("a request that died holding its reservation is answered as unknown with th
     const { meter } = await import("../../lib/meter");
     await meter({ id: transcriptionEventId(ws.id, { userId: USER, key: "stt-held-00001" }), kind: "audio", engine: "xai", model: GROK_STT_MODEL, status: "failed", engineCostUsd: 0 });
     expect(await check("stt-held-00001", body)).toEqual({ state: "unknown", error: "Your last transcription stopped without an answer. Its reserved credits were returned. Nothing was sent again.", credits: 0 });
+  });
+});
+
+/* ── A function killed at each step (TranscriptionStep): never charged without a saved transcript, never charged twice, never sent twice ── */
+
+/** A source measured at SOURCE_S whose transcript counts SPOKEN_S: the reservation (at the estimate) and the charge (at its own length) differ, so the tests can tell them apart. */
+const SOURCE_S = 30_000;
+const SPOKEN_S = 6_000;
+const creditsWord = (n: number) => `${n} credit${n === 1 ? "" : "s"}`;
+
+/** The provider stub, and a step that never returns once `at` is reached: a function killed there. `reached` resolves when it is. */
+async function killedAt(at: string, seconds = SPOKEN_S) {
+  const { deps, calls } = await provider(seconds);
+  let reach!: () => void;
+  const reached = new Promise<void>((resolve) => { reach = resolve; });
+  deps.step = (step) => {
+    if (step !== at) return;
+    reach();
+    return new Promise<never>(() => {});
+  };
+  return { deps, calls, reached };
+}
+
+/**
+ * What one claim has left behind: its transcript saved or not, the status it
+ * was answered with, its bill queued or delivered, its meter event, what the
+ * workspace is debited for that event and what the workspace's credits have
+ * drawn in all. Every reading also holds the invariants: charged only with a
+ * saved transcript, debited exactly what its event records, and credits drawn
+ * exactly as debited.
+ */
+async function left(workspaceId: string, key: string) {
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { billingReady } = await import("../../lib/billingLedger");
+  const { transcriptionEventId } = await import("../../lib/transcription");
+  await billingReady();
+  const eventId = transcriptionEventId(workspaceId, { userId: USER, key });
+  const tables = new Set((await db().execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((r) => String(r.name)));
+  const saved = tables.has("transcription_outcomes")
+    && (await db().execute({ sql: "SELECT 1 FROM transcription_outcomes WHERE user_id=? AND request_key=?", args: [USER, key] })).rows.length > 0;
+  const bill = tables.has("generation_settlements") ? (await db().execute({ sql: "SELECT settled_at FROM generation_settlements WHERE id=?", args: [eventId] })).rows[0] : undefined;
+  const claim = (await db().execute({ sql: "SELECT response_status FROM generation_requests WHERE user_id=? AND request_key=?", args: [USER, key] })).rows[0];
+  const event = (await platformDb().execute({ sql: "SELECT status,billed_credits FROM meter_events WHERE workspace_id=? AND id=?", args: [workspaceId, eventId] })).rows[0];
+  const debit = (await platformDb().execute({ sql: "SELECT credits FROM billing_debits WHERE workspace_id=? AND event_id=?", args: [workspaceId, eventId] })).rows[0];
+  const debits = (await platformDb().execute({ sql: "SELECT COALESCE(SUM(credits),0) AS n FROM billing_debits WHERE workspace_id=?", args: [workspaceId] })).rows[0];
+  const drawn = (await platformDb().execute({ sql: "SELECT COALESCE(SUM(drawn),0) AS n FROM billing_lots WHERE workspace_id=?", args: [workspaceId] })).rows[0];
+  const record = {
+    saved,
+    answered: claim?.response_status == null ? null : Number(claim.response_status),
+    bill: bill ? (bill.settled_at == null ? "queued" : "delivered") : null,
+    meter: event ? { status: String(event.status), credits: Number(event.billed_credits) } : null,
+    debited: debit ? Number(debit.credits) : 0,
+    drawn: Number(drawn.n),
+  };
+  if (record.meter?.status === "succeeded") expect(record.saved, "charged without a saved transcript").toBe(true);
+  expect(record.debited).toBe(record.meter?.credits ?? 0);
+  expect(record.drawn).toBe(Number(debits.n));
+  return record;
+}
+
+test("a function killed after its claim, before anything was reserved, is answered once it cannot be running: interrupted, nothing charged", async () => {
+  const ws = await setup("killed-claimed", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { withGenerationRequest } = await import("../../lib/generationRequests");
+  await runInTenant(ws, async () => {
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(SOURCE_S) };
+    const key = "stt-killed-claimed";
+    let reach!: () => void;
+    const reached = new Promise<void>((resolve) => { reach = resolve; });
+    const req = new Request(`http://localhost${ROUTE}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) });
+    void withGenerationRequest(req, USER, () => { reach(); return new Promise<Response>(() => {}); });
+    await reached;
+    expect(await check(key, body)).toEqual({ state: "pending" });
+    expect(await left(ws.id, key)).toEqual({ saved: false, answered: null, bill: null, meter: null, debited: 0, drawn: 0 });
+    await age(key);
+    const interrupted = { state: "refused", status: 409, error: "It was interrupted before anything was charged." };
+    expect(await check(key, body)).toEqual(interrupted);
+    expect(await check(key, body)).toEqual(interrupted);
+    const { deps, calls } = await provider(SPOKEN_S);
+    expect((await send(body, key, deps)).status).toBe(409);
+    expect(calls.n).toBe(0);
+    expect(await left(ws.id, key)).toEqual({ saved: false, answered: 409, bill: null, meter: null, debited: 0, drawn: 0 });
+  });
+});
+
+for (const at of ["reserved", "transcribed"] as const) {
+  const when = at === "reserved" ? "after reserving, before the provider was asked" : "after the provider answered, before its transcript was saved";
+  test(`a function killed ${when} holds its reservation for review, never charges it as a transcript, and never sends the audio again`, async () => {
+    const ws = await setup(`killed-${at}`, SOURCE_S);
+    const { runInTenant } = await import("../../lib/tenant");
+    await runInTenant(ws, async () => {
+      const reserved = await estimate(SOURCE_S);
+      const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+      const key = `stt-killed-${at}`;
+      const { deps, calls, reached } = await killedAt(at);
+      void send(body, key, deps);
+      await reached;
+      const sent = at === "reserved" ? 0 : 1;
+      expect(calls.n).toBe(sent);
+      expect(await check(key, body)).toEqual({ state: "pending" });
+      expect(await left(ws.id, key)).toEqual({ saved: false, answered: null, bill: null, meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+      await age(key);
+      const held = { state: "unknown", error: `Your last transcription stopped without an answer. Its ${creditsWord(reserved)} stay reserved for review. Nothing was sent again.`, credits: reserved };
+      expect(await check(key, body)).toEqual(held);
+      expect(await check(key, body)).toEqual(held);
+      const replay = await send(body, key, deps);
+      expect(replay.status).toBe(502);
+      expect(await replay.json()).toMatchObject({ code: "uncertain", charged: reserved });
+      expect(calls.n).toBe(sent);
+      expect(await left(ws.id, key)).toEqual({ saved: false, answered: 502, bill: null, meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+    });
+  });
+}
+
+for (const at of ["saved", "settled", "answered"] as const) {
+  const when = { saved: "after its transcript was saved, before it was charged", settled: "after it was charged, before its reply was made", answered: "with its reply made but never saved" }[at];
+  test(`a function killed ${when} is answered by the check with its transcript, charged once at its own length`, async () => {
+    const ws = await setup(`killed-${at}`, SOURCE_S);
+    const { runInTenant } = await import("../../lib/tenant");
+    const { transcriptSrt } = await import("../../lib/xaiVoice");
+    const { creditsUsed } = await import("../../lib/meter");
+    await runInTenant(ws, async () => {
+      const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
+      expect(charged).toBeLessThan(reserved);
+      const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+      const key = `stt-killed-${at}`;
+      const { deps, calls, reached } = await killedAt(at);
+      void send(body, key, deps);
+      await reached;
+      expect(await left(ws.id, key)).toEqual(at === "saved"
+        ? { saved: true, answered: null, bill: "queued", meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved }
+        : { saved: true, answered: null, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });
+      /* A saved transcript is answered at once, and never as lost even once its claim is past the window. */
+      if (at === "saved") await age(key);
+      const reply = { text: "Not tonight.", language: "en", seconds: SPOKEN_S, words: WORDS, srt: transcriptSrt(WORDS), credits: charged };
+      expect(await check(key, body)).toEqual({ state: "answered", reply });
+      expect(await check(key, body)).toEqual({ state: "answered", reply });
+      const replay = await send(body, key, deps);
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toEqual(reply);
+      expect(calls.n).toBe(1);
+      expect(await left(ws.id, key)).toEqual({ saved: true, answered: 200, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });
+      expect(await creditsUsed(ws.id)).toBe(charged);
+    });
+  });
+}
+
+test("a charge that reached the meter but was not marked delivered is delivered again without charging twice", async () => {
+  const ws = await setup("half-delivered", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { meter } = await import("../../lib/meter");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-half-delivered";
+    const { deps, calls, reached } = await killedAt("saved");
+    void send(body, key, deps);
+    await reached;
+    /* The delivery wrote the meter and stopped before marking its bill delivered. */
+    const queued = (await db().execute("SELECT event FROM generation_settlements WHERE settled_at IS NULL")).rows;
+    expect(queued).toHaveLength(1);
+    await meter({ ...JSON.parse(String(queued[0].event)), workspaceId: ws.id }, { critical: true });
+    expect(await left(ws.id, key)).toMatchObject({ bill: "queued", meter: { status: "succeeded", credits: charged }, debited: charged });
+    expect(await check(key, body)).toMatchObject({ state: "answered", reply: { credits: charged } });
+    expect(calls.n).toBe(1);
+    expect(await left(ws.id, key)).toEqual({ saved: true, answered: 200, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });
+  });
+});
+
+test("the sync delivers a saved transcript's charge on its own, and the check then returns the transcript with that charge", async () => {
+  const ws = await setup("synced", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { flushGenerationSettlements } = await import("../../lib/generationSettlement");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-synced-00001";
+    const { deps, calls, reached } = await killedAt("saved");
+    void send(body, key, deps);
+    await reached;
+    expect(await flushGenerationSettlements()).toEqual({ attempted: 1, failed: 0 });
+    expect(await left(ws.id, key)).toEqual({ saved: true, answered: null, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });
+    expect(await check(key, body)).toMatchObject({ state: "answered", reply: { text: "Not tonight.", credits: charged } });
+    expect(await flushGenerationSettlements()).toEqual({ attempted: 0, failed: 0 });
+    expect(calls.n).toBe(1);
+    expect(await left(ws.id, key)).toMatchObject({ answered: 200, meter: { status: "succeeded", credits: charged }, debited: charged });
+  });
+});
+
+test("a transcript whose charge the meter refuses for now is kept: its request says it was interrupted, the check says pending — even past the window — then returns it charged once", async () => {
+  const ws = await setup("meter-refused", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb } = await import("../../lib/platform");
+  const { transcriptionEventId } = await import("../../lib/transcription");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-meter-refused";
+    /* The meter refuses the bill while its event reads as another workspace's: it writes nothing. */
+    const owner = (workspaceId: string) => platformDb().execute({ sql: "UPDATE meter_events SET workspace_id=? WHERE id=?", args: [workspaceId, transcriptionEventId(ws.id, { userId: USER, key })] });
+    const { deps, calls } = await provider(SPOKEN_S);
+    deps.step = async (step) => { if (step === "saved") await owner("ws_elsewhere"); };
+    const lost = await send(body, key, deps);
+    expect(lost.status).toBe(503);
+    expect(lost.headers.get("Idempotency-Status")).toBeNull();
+    expect(await check(key, body)).toEqual({ state: "pending" });
+    await age(key);
+    expect(await check(key, body)).toEqual({ state: "pending" });
+    await owner(ws.id);
+    expect(await left(ws.id, key)).toEqual({ saved: true, answered: null, bill: "queued", meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+    expect(await check(key, body)).toMatchObject({ state: "answered", reply: { text: "Not tonight.", credits: charged } });
+    expect(calls.n).toBe(1);
+    expect(await left(ws.id, key)).toEqual({ saved: true, answered: 200, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });
+  });
+});
+
+test("a maintenance pause that lands after the transcript is saved loses nothing: checks fail while it lasts, then the transcript comes back charged once", async () => {
+  const ws = await setup("paused", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { createClient } = await import("@libsql/client");
+  /* The recovery fence, set from outside the app as a checkpoint sets it: every write the app makes is refused while it is closed. */
+  const outside = createClient({ url: process.env.PLATFORM_DATABASE_URL! });
+  const fence = (state: "open" | "closed") => outside.execute({ sql: "UPDATE recovery_fence SET state=? WHERE id=1", args: [state] });
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-paused-00001";
+    const { deps, calls } = await provider(SPOKEN_S);
+    deps.step = async (step) => { if (step === "saved") await fence("closed"); };
+    try {
+      const lost = await send(body, key, deps);
+      expect(lost.status).toBe(503);
+      await expect(check(key, body)).rejects.toThrow(/paused/);
+    } finally {
+      await fence("open");
+      outside.close();
+    }
+    expect(await left(ws.id, key)).toEqual({ saved: true, answered: null, bill: "queued", meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+    expect(await check(key, body)).toMatchObject({ state: "answered", reply: { text: "Not tonight.", credits: charged } });
+    expect(calls.n).toBe(1);
+    expect(await left(ws.id, key)).toEqual({ saved: true, answered: 200, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });
+  });
+});
+
+test("a request that outlives its window cannot save a transcript over the answer its check gave: that answer and the held reservation stand", async () => {
+  const ws = await setup("late", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-late-000001";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { deps, calls } = await provider(SPOKEN_S, { gate });
+    const late = send(body, key, deps);
+    await expect.poll(() => calls.n).toBe(1);
+    await age(key);
+    const held = { state: "unknown", error: `Your last transcription stopped without an answer. Its ${creditsWord(reserved)} stay reserved for review. Nothing was sent again.`, credits: reserved };
+    expect(await check(key, body)).toEqual(held);
+    release();
+    /* It ended by being refused its save, so it answers with what its claim already says. */
+    const answer = await late;
+    expect(answer.status).toBe(502);
+    expect(await answer.json()).toEqual({ error: held.error, code: "uncertain", charged: reserved });
+    expect(await check(key, body)).toEqual(held);
+    expect(calls.n).toBe(1);
+    expect(await left(ws.id, key)).toEqual({ saved: false, answered: 502, bill: null, meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+  });
+});
+
+test("a transcription's claim waits ten minutes, not thirty: twice its route's limit, then it is answered for good", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { TRANSCRIPTION_STALE_MS } = await import("../../lib/transcription");
+  const { STALE_CLAIM_MS } = await import("../../lib/generationRequests");
+  const limit = Number(/export const maxDuration = (\d+);/.exec(readFileSync(path.resolve("app/api/audio/transcribe/route.ts"), "utf8"))?.[1]);
+  expect(limit).toBeGreaterThan(0);
+  expect(TRANSCRIPTION_STALE_MS).toBeGreaterThanOrEqual(2 * limit * 1000);
+  expect(TRANSCRIPTION_STALE_MS).toBeLessThan(STALE_CLAIM_MS);
+  const ws = await setup("window", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-window-0001";
+    const { deps, reached } = await killedAt("reserved");
+    void send(body, key, deps);
+    await reached;
+    await age(key, TRANSCRIPTION_STALE_MS - 60_000);
+    expect(await check(key, body)).toEqual({ state: "pending" });
+    await age(key, TRANSCRIPTION_STALE_MS + 60_000);
+    expect(await check(key, body)).toMatchObject({ state: "unknown", credits: reserved });
+  });
+});
+
+test("a request from before transcripts were saved first, charged without one, is still told so plainly", async () => {
+  const ws = await setup("legacy", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { withGenerationRequest, reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { meter } = await import("../../lib/meter");
+  const { transcriptionEventId } = await import("../../lib/transcription");
+  const { GROK_STT_MODEL, grokTranscriptionUsd } = await import("../../lib/xaiVoice");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-legacy-0001";
+    const req = new Request(`http://localhost${ROUTE}`, { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(body) });
+    /* What the earlier order could leave: charged on the meter, then killed before the reply was saved. */
+    expect((await withGenerationRequest(req, USER, async (claim) => {
+      const event = { id: transcriptionEventId(ws.id, claim), kind: "audio" as const, engine: "xai", model: GROK_STT_MODEL };
+      await reserveGenerationSpend({ ...event, status: "running", engineCostUsd: grokTranscriptionUsd(SOURCE_S) });
+      await meter({ ...event, status: "succeeded", engineCostUsd: grokTranscriptionUsd(SPOKEN_S) }, { critical: true });
+      throw new Error("function killed");
+    })).status).toBe(503);
+    await age(key);
+    expect(await check(key, body)).toEqual({ state: "unknown", error: `Your last transcription finished and was charged ${creditsWord(charged)}, but its transcript was not saved. Nothing was sent again.`, credits: charged });
+  });
+});
+
+test("a reservation whose acknowledgement was lost is found by its event and released before the answer says nothing was charged", async () => {
+  const ws = await setup("lost-reservation", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  await runInTenant(ws, async () => {
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(SOURCE_S) };
+    const said = { error: "The transcription could not be reserved. Nothing was sent or charged; try again.", charged: 0 };
+    /* Committed, then the reply to the commit was lost. */
+    const { deps, calls } = await provider(SPOKEN_S);
+    deps.reserve = async (event, options) => { await reserveGenerationSpend(event, options); throw new Error("connection reset after commit"); };
+    const landed = await send(body, "stt-lost-reserve1", deps);
+    expect(landed.status).toBe(503);
+    expect(landed.headers.get("Idempotency-Status")).toBe("complete");
+    expect(await landed.json()).toEqual(said);
+    expect(await left(ws.id, "stt-lost-reserve1")).toEqual({ saved: false, answered: 503, bill: null, meter: { status: "failed", credits: 0 }, debited: 0, drawn: 0 });
+    expect(await check("stt-lost-reserve1", body)).toEqual({ state: "refused", status: 503, error: said.error });
+    /* Refused by the connection before anything landed: nothing to release, the same answer, and no event written. */
+    deps.reserve = async () => { throw new Error("connection refused"); };
+    const never = await send(body, "stt-lost-reserve2", deps);
+    expect(await never.json()).toEqual(said);
+    expect(await left(ws.id, "stt-lost-reserve2")).toMatchObject({ answered: 503, meter: null, debited: 0 });
+    /* A refusal of the reservation itself says what it is, as before. */
+    const { SpendReservationError } = await import("../../lib/generationRequests");
+    deps.reserve = async () => { throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409); };
+    expect(await (await send(body, "stt-lost-reserve3", deps)).json()).toEqual({ error: "Every job slot is reserved. Wait for an active job to finish, then try again.", charged: 0 });
+    expect(calls.n).toBe(0);
+  });
+});
+
+test("a request that fails before it reserves is answered at once, interrupted with nothing charged, not left waiting on its window", async () => {
+  const ws = await setup("failed-early", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  await runInTenant(ws, async () => {
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(SOURCE_S) };
+    const key = "stt-failed-early";
+    const { deps, calls } = await provider(SPOKEN_S);
+    /* The workspace database fails the source lookup. */
+    await db().execute("ALTER TABLE uploads RENAME TO uploads_away");
+    let reply: Response;
+    try { reply = await send(body, key, deps); }
+    finally { await db().execute("ALTER TABLE uploads_away RENAME TO uploads"); }
+    expect(reply.status).toBe(409);
+    expect(reply.headers.get("Idempotency-Status")).toBe("complete");
+    expect(await reply.json()).toEqual({ error: "It was interrupted before anything was charged.", charged: 0 });
+    expect(await check(key, body)).toEqual({ state: "refused", status: 409, error: "It was interrupted before anything was charged." });
+    expect(calls.n).toBe(0);
+    expect(await left(ws.id, key)).toEqual({ saved: false, answered: 409, bill: null, meter: null, debited: 0, drawn: 0 });
+  });
+});
+
+test("a request that fails after the provider answered, before its transcript was saved, is answered at once: its reservation held for review", async () => {
+  const ws = await setup("failed-late", SOURCE_S);
+  const { runInTenant } = await import("../../lib/tenant");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S);
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
+    const key = "stt-failed-late";
+    const { deps, calls } = await provider(SPOKEN_S);
+    deps.step = (step) => { if (step === "transcribed") throw new Error("the transcript could not be saved"); };
+    const reply = await send(body, key, deps);
+    const held = `Your last transcription stopped without an answer. Its ${creditsWord(reserved)} stay reserved for review. Nothing was sent again.`;
+    expect(reply.status).toBe(502);
+    expect(reply.headers.get("Idempotency-Status")).toBe("complete");
+    expect(await reply.json()).toEqual({ error: held, code: "uncertain", charged: reserved });
+    expect(await check(key, body)).toEqual({ state: "unknown", error: held, credits: reserved });
+    expect(calls.n).toBe(1);
+    expect(await left(ws.id, key)).toEqual({ saved: false, answered: 502, bill: null, meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+  });
+});
+
+test("a transcription killed mid-run keeps its credits held for review but frees its job slot once its window has passed", async () => {
+  const ws = { ...(await setup("slots", SOURCE_S)), concurrency: 1 };
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend, TRANSCRIPTION_STALE_MS } = await import("../../lib/generationRequests");
+  const { transcriptionEventId } = await import("../../lib/transcription");
+  const { GROK_STT_MODEL, grokTranscriptionUsd } = await import("../../lib/xaiVoice");
+  await runInTenant(ws, async () => {
+    const reserved = await estimate(SOURCE_S);
+    const key = "stt-killed-slot";
+    const { deps, reached } = await killedAt("transcribed");
+    void send({ sourceUploadId: "up_line", diarize: true, maxCredits: reserved }, key, deps);
+    await reached;
+    const next = { id: `stt_${"b".repeat(32)}`, kind: "audio" as const, engine: "xai", model: GROK_STT_MODEL, status: "running" as const, engineCostUsd: grokTranscriptionUsd(60) };
+    /* It may still be running: the workspace's one slot is taken. */
+    await expect(reserveGenerationSpend(next)).rejects.toThrow("Every job slot is reserved");
+    /* Past its window no function can be running it: the slot is free again, and its credits stay held. */
+    const killed = transcriptionEventId(ws.id, { userId: USER, key });
+    await platformDb().execute({ sql: "UPDATE meter_events SET created_at=? WHERE id=?", args: [Date.now() - TRANSCRIPTION_STALE_MS - 60_000, killed] });
+    await reserveGenerationSpend(next);
+    const rows = await meterRows(ws.id);
+    expect(rows.find((r) => r.id === killed)).toMatchObject({ status: "running", credits: reserved });
+    expect(rows.find((r) => r.id === next.id)).toMatchObject({ status: "running" });
+    /* A fresh transcription holds its slot like any job. */
+    await expect(reserveGenerationSpend({ ...next, id: `stt_${"c".repeat(32)}` })).rejects.toThrow("Every job slot is reserved");
   });
 });
 
@@ -399,18 +825,18 @@ test("a lost reply keeps its claim; the next press asks by that key first and re
   });
 });
 
-test("the check's answers: never arrived or refused let go of the claim; still running or unanswerable keep it and send nothing", async () => {
+test("the check's answers: never arrived or refused let go of the claim; no answer yet or unanswerable keep it and send nothing", async () => {
   const { settlePendingTranscription, transcriptionSlot } = await import("../../lib/workbench/transcription-request");
   const { claimPendingGeneration, readPendingGeneration } = await import("../../lib/workbench/pending-generation");
   const slot = transcriptionSlot(SCOPE, "prod", { uploadId: "up_a" }, { diarize: true });
   const earlier = { key: "earlier-transcript-1", body: JSON.stringify({ sourceUploadId: "up_a", diarize: true, maxCredits: 4 }), credits: 4, endpoint: "/api/audio/transcribe" as const };
   const cases: [Answer, unknown, boolean][] = [
     [{ json: { state: "absent" } }, { state: "released", reason: "Your last transcription never reached the server. Nothing was charged for it.", failed: false }, false],
-    [{ json: { state: "refused", status: 502, error: "Grok transcription failed (500): unavailable Nothing was charged for it." } },
-      { state: "released", reason: "Your last transcription did not complete. Grok transcription failed (500): unavailable Nothing was charged for it.", failed: true }, false],
+    [{ json: { state: "refused", status: 502, error: "Grok could not transcribe this take (500). Nothing was charged for it." } },
+      { state: "released", reason: "Your last transcription did not complete. Grok could not transcribe this take (500). Nothing was charged for it.", failed: true }, false],
     [{ json: { state: "unknown", error: "Your last transcription stopped without an answer. Its 4 credits stay reserved for review. Nothing was sent again.", credits: 4 } },
       { state: "released", reason: "Your last transcription stopped without an answer. Its 4 credits stay reserved for review. Nothing was sent again.", failed: true }, false],
-    [{ json: { state: "pending" } }, { state: "unknown", reason: "Your last transcription is still running. Nothing new was sent; asking again shortly.", waiting: true }, true],
+    [{ json: { state: "pending" } }, { state: "unknown", reason: "Your last transcription has no answer yet and is being checked. Nothing new was sent.", waiting: true }, true],
     ["network", { state: "unknown", reason: "Your last transcription could not be checked. Nothing new was sent.", waiting: false }, true],
     [{ status: 409, json: { error: "This Idempotency-Key names a different request." } }, { state: "unknown", reason: "Your last transcription could not be checked. Nothing new was sent.", waiting: false }, true],
     [{ json: { state: "answered", reply: { text: "no words or subtitles" } } }, { state: "unknown", reason: "Your last transcription could not be checked. Nothing new was sent.", waiting: false }, true],
@@ -471,12 +897,14 @@ test("a completed refusal is final and lets go; one the server has not settled k
   const slot = transcriptionSlot(SCOPE, "prod", { genId: "gen_a" }, { diarize: true });
   const body = { sourceGenId: "gen_a", projectId: "prod", diarize: true, maxCredits: 3 };
   const answers: [Answer, unknown, boolean][] = [
-    [{ status: 502, json: { error: "Grok transcription failed (500): unavailable Nothing was charged for it.", charged: 0 }, headers: { "Idempotency-Status": "complete" } },
-      { state: "released", reason: "Grok transcription failed (500): unavailable Nothing was charged for it.", failed: true }, false],
+    [{ status: 502, json: { error: "Grok could not transcribe this take (500). Nothing was charged for it.", charged: 0 }, headers: { "Idempotency-Status": "complete" } },
+      { state: "released", reason: "Grok could not transcribe this take (500). Nothing was charged for it.", failed: true }, false],
     [{ status: 409, json: { error: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", estimatedCredits: 5 }, headers: { "Idempotency-Status": "complete" } },
-      { state: "released", reason: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", failed: true }, false],
+      { state: "released", reason: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", failed: true, repriced: 5 }, false],
+    [{ status: 402, json: { error: "Every job slot is reserved. Wait for an active job to finish, then try again.", charged: 0, estimatedCredits: 5 }, headers: { "Idempotency-Status": "complete" } },
+      { state: "released", reason: "Every job slot is reserved. Wait for an active job to finish, then try again.", failed: true }, false],
     [{ status: 409, json: { error: "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.", pending: true } },
-      { state: "unknown", reason: "Your last transcription is still running. Nothing new was sent; asking again shortly.", waiting: true }, true],
+      { state: "unknown", reason: "Your last transcription has no answer yet and is being checked. Nothing new was sent.", waiting: true }, true],
     [{ status: 503, json: { error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." } },
       { state: "unknown", reason: "The connection dropped before the server answered. Asking what became of it; it is never sent twice.", waiting: false }, true],
   ];

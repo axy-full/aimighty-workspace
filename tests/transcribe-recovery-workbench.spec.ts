@@ -15,7 +15,8 @@ import { grokTranscriptionUsd } from "../lib/xaiVoice";
  * transcript whose reply was lost comes back from its key; one still being
  * made when the page reloads is waited for; one that never reached the server
  * is let go with nothing charged, and the price on the button goes again under
- * a new key; a check that cannot be answered offers Try again. The paid route
+ * a new key; a check that cannot be answered offers Try again; a press refused
+ * because the estimate moved shows the new price for a new press. The paid route
  * and the check are a page-level stand-in for the server's claim rules (as
  * tests/helpers/claimsServer.ts is for renders), at every configured size.
  * The last case runs the real local routes on the ENGINE_MOCK server: a key
@@ -42,13 +43,14 @@ type Claim = { body: string; state: "running" | "answered" | "set_aside" | "held
  * one transcription per Idempotency-Key (a key seen again answers from its claim),
  * a check that reads a key's claim or sets a never-seen key aside.
  * `plan` says what the coming paid POSTs do: lost before the server, made with the
- * reply lost, made and still running with the reply lost, or answered.
+ * reply lost, made and still running with the reply lost, refused because the
+ * estimate rose by a credit since the quote, or answered.
  */
 async function transcriptionServer(page: Page, price = 3) {
   const claims = new Map<string, Claim>();
   const server = {
     price, claims,
-    plan: [] as ("before" | "after" | "running" | "answer")[],
+    plan: [] as ("before" | "after" | "running" | "reprice" | "answer")[],
     /** What the coming checks answer before the claim is read: a failure the server could not answer. */
     checkPlan: [] as ("fail" | "read")[],
     sent: [] as { key: string | undefined; body: Record<string, unknown> }[],
@@ -68,6 +70,10 @@ async function transcriptionServer(page: Page, price = 3) {
     if (known?.state === "set_aside") return route.fulfill({ status: 409, headers: complete, json: { error: "This request was set aside: it had not reached the server when it was checked. Nothing was charged.", code: "set_aside" } });
     if (known?.state === "running") return route.fulfill({ status: 409, json: { error: "This request is still being accepted.", pending: true } });
     if (known) return route.fulfill({ headers: complete, json: transcript(server.price) });
+    if (next === "reprice") {
+      server.price += 1;
+      return route.fulfill({ status: 409, headers: complete, json: { error: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", estimatedCredits: server.price } });
+    }
     server.charges.push(server.price);
     if (key) claims.set(key, { body: request.postData()!, state: next === "running" ? "running" : "answered" });
     if (next === "after" || next === "running") return route.abort("connectionreset");
@@ -181,7 +187,7 @@ test("a transcription still being made when the page reloads is asked about and 
   const action = panel.getByTestId("transcribe-run");
   await expect(action).toHaveText("Transcribe · about 3 credits");
   await action.click();
-  await expect(panel.getByTestId("transcribe-note")).toHaveText("Your last transcription is still running. Nothing new was sent; asking again shortly.");
+  await expect(panel.getByTestId("transcribe-note")).toHaveText("Your last transcription has no answer yet and is being checked. Nothing new was sent.");
   await expect(action).toHaveText("Checking last transcription…");
   await expect(action).toBeDisabled();
   await fit(page, action);
@@ -193,7 +199,7 @@ test("a transcription still being made when the page reloads is asked about and 
   await page.reload();
   await page.getByTestId("edit-takes").getByText("Harbour line", { exact: true }).click();
   await expect.poll(() => server.checks.length).toBeGreaterThan(asked);
-  await expect(panel.getByTestId("transcribe-note")).toHaveText("Your last transcription is still running. Nothing new was sent; asking again shortly.");
+  await expect(panel.getByTestId("transcribe-note")).toHaveText("Your last transcription has no answer yet and is being checked. Nothing new was sent.");
   await expect(action).toBeDisabled();
   server.claims.get(key)!.state = "answered";
   await expect(panel.getByTestId("transcript")).toContainText("Not tonight.", { timeout: 20_000 });
@@ -265,6 +271,35 @@ test("a check that cannot be answered offers Try again and sends nothing; one he
   expect(errors).toEqual([]);
 });
 
+test("a press refused because the estimate moved shows the new price on the button; only a new press sends it, at that price", async ({ page }, info) => {
+  const { store, errors } = await open(page);
+  const server = await transcriptionServer(page);
+  server.plan = ["reprice"];
+  const panel = await pickTake(page, store.current.id);
+  const action = panel.getByTestId("transcribe-run");
+  await expect(action).toHaveText("Transcribe · about 3 credits");
+  await action.click();
+  await expect(panel.getByRole("alert")).toHaveText("The transcription estimate exceeds the approved credit amount. Review the price before submitting.");
+  await expect(action).toHaveText("Transcribe · about 4 credits");
+  await expect(action).toBeEnabled();
+  expect(server.sent).toHaveLength(1);
+  expect(server.sent[0].body).toMatchObject({ maxCredits: 3 });
+  expect(server.charges).toEqual([]);
+  /* The refusal was final: nothing is left to ask about. */
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("particl:pending-generation:")))).toEqual([]);
+  await fit(page, action);
+  await fit(page, panel.getByRole("alert"));
+  await shot(page, info, "repriced", panel);
+  await action.click();
+  await expect(panel.getByTestId("transcript")).toContainText("The ferry is here.");
+  expect(server.sent).toHaveLength(2);
+  expect(server.sent[1].key).not.toBe(server.sent[0].key);
+  expect(server.sent[1].body).toEqual({ sourceGenId: "gen_line", projectId: PRODUCTION, diarize: true, maxCredits: 4 });
+  expect(server.charges).toEqual([4]);
+  expect(server.checks).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("an unconfirmed transcription found on opening the take is asked about before anything can be pressed", async ({ page }) => {
   const { store, errors } = await open(page);
   const server = await transcriptionServer(page);
@@ -280,7 +315,7 @@ test("an unconfirmed transcription found on opening the take is asked about befo
   }, { slot, claim });
   const panel = await pickTake(page, store.current.id);
   const action = panel.getByTestId("transcribe-run");
-  await expect(panel.getByTestId("transcribe-note")).toHaveText("Your last transcription is still running. Nothing new was sent; asking again shortly.");
+  await expect(panel.getByTestId("transcribe-note")).toHaveText("Your last transcription has no answer yet and is being checked. Nothing new was sent.");
   await expect(action).toHaveText("Checking last transcription…");
   await expect(action).toBeDisabled();
   await fit(page, action);

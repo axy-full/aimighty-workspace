@@ -4,6 +4,7 @@ import { withGenerationRequest, type GenerationRequest } from "@/lib/generationR
 import { transcribe } from "@/lib/transcription";
 
 export const dynamic = "force-dynamic";
+/* A transcription's claim is known to be gone at twice this (TRANSCRIPTION_STALE_MS, lib/transcription.ts): raise both together. */
 export const maxDuration = 300;
 
 /**
@@ -11,7 +12,9 @@ export const maxDuration = 300;
  * transcribe under an Idempotency-Key, refused if the estimate has passed the
  * price shown (`maxCredits`). The same key is answered from its saved reply —
  * the transcript and what it was charged — and never billed again; a lost
- * reply is asked about through POST /api/generate/check, never re-sent.
+ * reply is asked about through POST /api/generate/check, never re-sent. The
+ * transcript is saved before it is charged, so a reply lost at any point
+ * after the provider's answer was saved still comes back from the check.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();

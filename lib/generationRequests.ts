@@ -73,6 +73,16 @@ export type GenerationRequestOptions = { atomicBinding?: boolean };
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
 export const STALE_CLAIM_MS = 30 * 60_000;
+/**
+ * A transcription answers inside its own request, whose route stops at 300 s
+ * (maxDuration, app/api/audio/transcribe/route.ts): twice that, no request
+ * can still be running it. Its claim is answered by then (lib/transcription.ts),
+ * and its meter event, still `running` if the request was killed, holds no job
+ * slot: nothing is running. Its credits stay held until what became of it is known.
+ */
+export const TRANSCRIPTION_STALE_MS = 10 * 60_000;
+/** A transcription's meter event (transcriptionEventId, lib/transcription.ts). */
+const TRANSCRIPTION_EVENT = /^stt_/;
 
 /**
  * With atomic binding, a claim that names no job proves no job exists — so
@@ -345,7 +355,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
       else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
     }
-    const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")).length;
+    const gone = now() - TRANSCRIPTION_STALE_MS;
+    const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")
+      && !(TRANSCRIPTION_EVENT.test(r.id) && r.createdAt < gone)).length;
     const recent = [...merged.values()].filter((r) => r.status !== "held" && r.createdAt >= now() - 3_600_000).length;
     if (recent >= limits.rendersPerHour) throw new SpendReservationError("This workspace has reached its hourly job limit, including reserved jobs. Try again later.", 429);
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);

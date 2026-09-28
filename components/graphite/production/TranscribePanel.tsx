@@ -40,7 +40,7 @@ function readSlot(slot: string): string {
   try { return window.localStorage.getItem(slot) ?? ""; } catch { return ""; }
 }
 const noSlot = () => "";
-/** How long to wait before asking again about a transcription the server is still working on. */
+/** How long to wait before asking again about a transcription the server has no answer for yet. */
 const RECHECK_MS = [2_000, 4_000, 8_000, 15_000, 30_000];
 const SETTINGS = { diarize: true };
 const UNREADABLE = "The saved transcription request cannot be read. Check Activity before starting another.";
@@ -56,8 +56,9 @@ const UNREADABLE = "The saved transcription request cannot be read. Check Activi
  * (lib/workbench/transcription-request.ts). A request whose reply never came
  * back — a dropped connection, a reload, another window — is asked about by
  * its own key as soon as the panel sees it: a finished transcript comes back
- * with nothing sent again, one still running is asked about again shortly,
- * and one that never arrived is let go. Nothing is ever re-sent on its own.
+ * with nothing sent again, one the server has no answer for yet is checked
+ * again shortly, and one that never arrived is let go. Nothing is ever
+ * re-sent on its own.
  */
 export function TranscribePanel({ scope, source, name, projectId }: { scope: string; source: { genId?: string; uploadId?: string }; name: string; projectId?: string }) {
   const sending = useRef(false);
@@ -106,7 +107,7 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
      appearing and a Try again, a remount) waits for that answer rather than asking again. */
   const asking = useRef<{ key: string; inFlight: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null);
   const mounted = useRef(true);
-  /* The request the server said is still running, asked about again later even if another window lets its claim go. */
+  /* The request the server has no answer for yet, asked about again later even if another window lets its claim go. */
   const [waitingOn, setWaitingOn] = useState<PendingGeneration | null>(null);
   const waited = useRef(0);
   useEffect(() => {
@@ -137,7 +138,7 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
   }, [scope, slot, take]);
 
   /* A claim in the slot that is not this panel's own request in flight is asked about at once,
-     then again while the server is still working on it. Asking never sends it. */
+     then again while the server has no answer for it. Asking never sends it. */
   useEffect(() => {
     const attempt = claimed ?? waitingOn;
     if (!attempt || result) return;
@@ -160,7 +161,9 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
       setBusy("");
     }
     take(outcome);
-    /* Not known yet (the reply was lost, or the server is still on it): ask what became of it at once, never send it again. */
+    /* Refused because the estimate moved: the button shows the new one, and only a new press approves it. */
+    if (outcome.state === "released" && outcome.repriced != null) pricing.reprice("transcript", outcome.repriced);
+    /* Not known yet (the reply was lost, or the server has no answer yet): ask what became of it at once, never send it again. */
     if (outcome.state === "unknown") {
       setCheckFailed(false);
       setCheckRound((n) => n + 1);
