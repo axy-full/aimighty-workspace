@@ -1,5 +1,5 @@
 import { isGenjutsuModel } from "../genjutsuTypes";
-import { genjutsuInput, estimateGenjutsuInput, genjutsuPath, genjutsuPreflightError, genjutsuSourceProblem } from "../genjutsu";
+import { genjutsuInput, estimateGenjutsuInput, genjutsuPath, genjutsuPreflightError, genjutsuSourceProblem, genjutsuFrameProblem } from "../genjutsu";
 import { isIP } from "node:net";
 import type { EngineAdapter, PollResult, StillRenderRequest } from "./types";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "../models";
@@ -104,7 +104,9 @@ export const higgsfield: EngineAdapter = {
       let input: Awaited<ReturnType<typeof genjutsuInput>>;
       try {
         sameCredentials(fingerprint);
-        if (req.task.id !== "genjutsu" || !req.params.genjutsuSource || genjutsuSourceProblem(req.params.genjutsuSource.seconds)) throw new Error("source");
+        const measured = req.params.genjutsuSource;
+        if (req.task.id !== "genjutsu" || !measured || genjutsuSourceProblem(measured.seconds) ||
+            genjutsuFrameProblem(req.model.id, measured.width, measured.height)) throw new Error("source");
         const images = req.references.filter(r => r.kind === "image");
         if (req.references.filter(r => r.kind === "video").length !== 1 || !req.source || !req.references.some(r => r.kind === "video" && r.id === req.source!.id && r.fromGeneration === req.source!.fromGeneration)) throw new Error("source");
         input = await genjutsuInput(req.model.id, req.prompt, req.params.resolution, req.source, images);
