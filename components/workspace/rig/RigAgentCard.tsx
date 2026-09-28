@@ -61,19 +61,20 @@ export function RigAgentCard() {
     }
   }, [rig.scope]);
 
-  /* Read on arrival, then often while Atomik works and now and then otherwise (a teammate may start a build).
-     Switched off with nothing to show, it is read once and left alone. */
+  /* Read once the Rig has joined its team canvas (never alongside that first read), then often while Atomik works and
+     now and then otherwise (a teammate may start a build). Switched off with nothing to show, it is read once. */
   const active = !!run && ACTIVE.includes(run.state);
   const watching = !agent || agent.enabled || !!run;
+  const joined = rig.team.mode !== "off";
   useEffect(() => {
-    if (!pid) return;
+    if (!pid || !joined) return;
     let stopped = false;
     const tick = () => { if (!stopped && document.visibilityState !== "hidden") void read(pid); };
     tick();
     if (!watching) return () => { stopped = true; };
     const every = setInterval(tick, active ? BUSY_MS : IDLE_MS);
     return () => { stopped = true; clearInterval(every); };
-  }, [pid, active, watching, read]);
+  }, [pid, joined, active, watching, read]);
 
   /* As cards land (or come off in an undo), the board folds them in now rather than at its next check. */
   const landed = run ? `${run.id}:${run.state}:${run.built.cards}:${run.built.wires}:${run.undo ? "u" : ""}` : "";
