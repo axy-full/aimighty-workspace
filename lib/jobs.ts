@@ -195,7 +195,7 @@ export function rowToGeneration(r: any): Generation {
     params,
     status: r.status,
     sourceUrl: r.source_url ?? null,
-    storedUrl: r.stored_url ?? null,
+    storedUrl: r.stored_url ? (/^(?:https?:\/\/|\/)/.test(r.stored_url) ? r.stored_url : `/api/media/${r.id}`) : null,
     totalTokens: vendorUnits ? null : r.total_tokens ?? null,
     /* The unit this workspace pays in, and only that one.
        A workspace on the platform's keys is sent `creditsBilled` — the
@@ -533,7 +533,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     const settledBy = `${ts}:${Math.random().toString(36).slice(2)}`;
     const outcomeWrite = {
       sql: `UPDATE generations
-            SET status=?, source_url=?, stored_url=?, total_tokens=?,
+            SET status=?, source_url=?, stored_url=COALESCE(stored_url, ?), total_tokens=?,
                 cost_usd=COALESCE(?, cost_usd),
                 rate_usd_per_m=COALESCE(?, rate_usd_per_m),
                 duration_ms=COALESCE(duration_ms, ?),
@@ -639,7 +639,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
       ...gen,
       status: task.status,
       sourceUrl: task.videoUrl,
-      storedUrl,
+      storedUrl: storedUrl ? `/api/media/${gen.id}` : null,
       totalTokens: task.totalTokens,
       durationS: deliveredSeconds ?? gen.durationS,
       costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,

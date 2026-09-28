@@ -353,7 +353,7 @@ export async function marketingReferenceUrls(
         : uploadPath(ref.id, ref.ext);
       return engineMock()
         ? `https://fixtures.particl.invalid/${pathname}`
-        : presignedReadUrl(pathname);
+        : presignedReadUrl(pathname, 0.25, ref.storedUrl);
     }),
   );
 }
