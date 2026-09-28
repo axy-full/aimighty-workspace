@@ -11,6 +11,7 @@ import { ConsumerVideoError, consumerVideoInputSchema } from "@/lib/higgsfield-c
 import { SETUP_TYPE_IDS, connectedMarketingSetup } from "@/lib/higgsfield-consumer/marketing-setup";
 /* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
 import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
+import { websiteProblem } from "@/lib/higgsfield-consumer/website-problems";
 import {
   MARKETING_VIDEO_REHEARSAL, ConsumerVideoServiceError, ensureConsumerRehearsal,
   consumerMarketingJobs, quoteConsumerMarketingVideo, submitConsumerMarketingVideo,
@@ -24,7 +25,8 @@ const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options"
 const id = z.string().min(1).max(200).regex(/^[A-Za-z0-9_-]+$/);
 const quote = z.object({ action: z.literal("quote"), draftId: id, input: consumerVideoInputSchema, idempotencyKey: z.uuid() }).strict();
 const rehearse = z.object({ action: z.literal("quote-rehearsal"), idempotencyKey: z.uuid() }).strict();
-const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) }).strict();
+/* A job on the platform's website account is approved by its Particl credits alone: it names no wallet. */
+const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid().nullable().optional(), credits: z.number().nonnegative().max(100000) }).strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 /** FINAL_SPEC §2.3: the account's setup items, by type; read-only, never billed. */
 const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(SETUP_TYPE_IDS.length).optional() }).strict();
@@ -32,6 +34,8 @@ const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, p
 function problem(error: unknown) {
   if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
+  const website = websiteProblem(error);
+  if (website) return Response.json(website.body, { status: website.status, headers });
   if (error instanceof ConsumerOriginalError)
     return Response.json({ code: `original_${error.code}`, error: error.message }, {
       status: error.code === "quota" ? 507 : error.code === "timeout" ? 504 : error.code === "storage_unavailable" ? 503 : error.code === "invalid_video" ? 422 : error.code === "not_found" ? 404 : 409,

@@ -50,6 +50,9 @@ export function workspaceJobView<V extends Narrowable>(job: Pick<ConsumerJob, "f
     creditUnit: "particl_credits",
     providerJobId: null,
     providerReceipt: null,
+    /* Said before approval: the approved price is charged whether the job
+       succeeds or fails on the account (owner decision, 27 September). */
+    chargeTerms: { credits: job.particlCredits, onFailure: "charged" },
   };
   if ("result" in view) narrowed.result = clientResult(view.result);
   if ("settlement" in view && record(view.settlement))

@@ -119,6 +119,18 @@ export function websiteToolTransport(target: { workflow: ConsumerWorkflow; voice
 /**
  * Website tools whose client quote, reservation and settlement are built
  * (added one tool at a time as each is built). Until a tool is listed here it
- * refuses for every managed workspace, whatever the platform desk says.
+ * refuses for every managed workspace, whatever the platform desk says; a
+ * listed tool is still off until the private rate is set and the platform
+ * desk switches it on.
  */
-export const WEBSITE_BILLING_READY: ReadonlySet<WebsiteToolId> = new Set<WebsiteToolId>([]);
+export const WEBSITE_BILLING_READY: ReadonlySet<WebsiteToolId> = new Set<WebsiteToolId>(["marketing-video"]);
+
+/** The engine a website-account job is metered under, and its model id per
+ * tool (a margin key, like every engine's): never shown as a provider name. */
+export const WEBSITE_METER_ENGINE = "higgsfield_account";
+export const websiteMeterModel = (tool: WebsiteToolId) => `website:${tool}`;
+/** The product name a metered website job carries in the credits ledger. */
+export function websiteMeterLabel(model: string): string | null {
+  const id = model.startsWith("website:") ? model.slice("website:".length) : null;
+  return id && isWebsiteToolId(id) ? websiteTool(id).label : null;
+}

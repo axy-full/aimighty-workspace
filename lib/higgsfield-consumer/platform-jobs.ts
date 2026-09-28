@@ -186,6 +186,12 @@ export async function registerWebsiteDispatchTx(tx: Tx, entry: WebsiteJobEntry, 
   return "registered";
 }
 
+/** The registry row behind one meter id in this workspace, or null. Server-only. */
+export async function websiteJobPinByMeter(workspaceId: string, meterId: string): Promise<WebsiteJobPin | null> {
+  await websiteJobsReady();
+  const pin = await accountTransaction((tx) => pinTx(tx, { meterId }));
+  return pin && pin.workspaceId === workspaceId ? pin : null;
+}
 /** A workspace's job as the registry pinned it, or null. Server-only; never serialize. */
 export async function websiteJobPin(workspaceId: string, jobId: string): Promise<WebsiteJobPin | null> {
   await websiteJobsReady();

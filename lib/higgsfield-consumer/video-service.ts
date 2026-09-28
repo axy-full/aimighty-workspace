@@ -5,16 +5,17 @@ import { newProject } from "@/lib/workbench/studio";
 import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork } from "./access";
 import { websiteFunding } from "./funding";
+import { acceptWebsiteJob, admitWebsiteJob, holdUncertainWebsiteJob, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websitePrice } from "./account-billing";
 import {
   ownsConsumerJob,
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerRecoveryJobs, readConsumerJobAfterAdmissions,
-  claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain,
+  claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain, markConsumerFailed,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
   reconcileConsumerReceipt, completeConsumerJob, failConsumerPoll, consumerJobSetAside,
   type ConsumerJob, type ConsumerJobScope, type ConsumerJson,
 } from "./jobs";
 import { getConsumerVideoQuote, submitConsumerVideo, readConsumerVideoJob } from "./mcp";
-import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFailureResult, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
+import { ConsumerVideoError, parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFailureResult, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
 import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { setupIdsOfVideoInput } from "./marketing-records";
 import { refuseForeignMarketingSetup } from "./marketing-setup";
@@ -29,6 +30,8 @@ export const MARKETING_VIDEO_REHEARSAL: ConsumerVideoInput = {
   duration: 15, resolution: "720p", aspectRatio: "16:9", generateAudio: true, mode: "product_showcase",
 };
 const QUOTE_LIFETIME_MS = 5 * 60_000;
+/** This service's website tool, for the platform's account (lib/higgsfield-consumer/website-tools.ts). */
+const TOOL = "marketing-video" as const;
 export class ConsumerVideoServiceError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 409) {
     super(message);
@@ -80,7 +83,7 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
   const funding = await websiteFunding({ workflow: "marketing-video" });
   const normalized = parseConsumerVideoInput(input);
   // Standalone: a setup item Particl may not send refuses before anything else.
-  await refuseForeignMarketingSetup(userId, setupIdsOfVideoInput(normalized));
+  await refuseForeignMarketingSetup(userId, setupIdsOfVideoInput(normalized), funding);
   // An element token in the prompt must name one this workspace made.
   await refuseForeignAccountObjects({ prompt: normalized.prompt }, funding);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
@@ -96,12 +99,17 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
   const quote = await getConsumerVideoQuote(access.accessToken, normalized);
   // Reconnection during the quote cannot bind its result to a replacement grant.
   await accessForNewWork(userId, funding, access.generation);
+  // On the platform's account the client's price is Particl credits, converted
+  // privately from the account's own price; the account's wallet is never named.
+  const platform = funding.kind === "platform_account";
+  const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
   try {
     const { job } = await createConsumerJob({ userId, draftId, funding: funding.kind, connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation, higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "marketing-video", idempotencyKey,
-      payload: { input: { ...quote.input }, workspaceName: quote.workspace.name ?? "connected workspace" },
+      payload: { input: { ...quote.input }, workspaceName: platform ? "" : quote.workspace.name ?? "connected workspace" },
       quoteCredits: quote.credits, quoteExpiresAt: Date.now() + QUOTE_LIFETIME_MS, originalAssetIds: [],
+      ...(particlCredits === undefined ? {} : { particlCredits }),
     });
     return consumerVideoView(job);
   } catch (error) {
@@ -125,17 +133,31 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
   if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
+  const platform = job.funding === "platform_account";
+  // A tool switched off, unpriced or paused since the quote refuses here: nothing is sent.
+  if (platform && (await websiteFunding({ workflow: "marketing-video" })).kind !== "platform_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const input = parseConsumerVideoInput(JSON.parse(job.payloadJson).input);
   const access = await accessForJob(job);
   let claimToken: string | undefined;
+  let admitted = false;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
+  // One dispatch at a time on the shared account: its last wallet check and its paid call.
+  const lease = platform ? await takeDispatchLease() : null;
   try {
     const result = await submitConsumerVideo(access.accessToken, input, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
-        const claim = await claimConsumerDispatch(scope);
-        if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
-        claimToken = claim.claimToken;
+        if (platform) {
+          // Today's price must still be the approved one; it is reserved, with the job's registry row, then claimed.
+          const token = await admitWebsiteJob(scope, job, TOOL, job.quoteCredits);
+          if (!token) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
+          claimToken = token;
+        } else {
+          const claim = await claimConsumerDispatch(scope);
+          if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
+          claimToken = claim.claimToken;
+        }
+        admitted = true;
       },
     });
     if (!claimToken) throw new ConsumerVideoServiceError("not_admitted", "No paid request was admitted.");
@@ -149,19 +171,39 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
     const next = result.state === "accepted"
       ? await markConsumerAccepted({ ...scope, claimToken, providerJobId: result.providerJobId })
       : await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
+    if (platform) {
+      if (result.state === "accepted") await acceptWebsiteJob(job, result.providerJobId);
+      else await holdUncertainWebsiteJob(job);
+    }
     return consumerVideoView(next ?? await ownedVideo(scope));
   } catch (error) {
     // Once claimed, an interrupted request might have reached the provider.
     // Never turn it back into a quote or automatically submit it again.
     if (claimToken) {
+      // The transport throws only when its one paid call never left (an error
+      // after sending is an uncertain reply, not a throw); an admission that
+      // stopped after its claim never called it at all. On the platform's
+      // account that job is failed and its reservation released to zero.
+      if (platform && (!admitted || error instanceof ConsumerVideoError)) {
+        const failed = await markConsumerFailed({ ...scope, claimToken });
+        await releaseWebsiteJob(job, TOOL);
+        return consumerVideoView(failed ?? await ownedVideo(scope));
+      }
       const next = await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
+      if (platform) await holdUncertainWebsiteJob(job);
       return consumerVideoView(next ?? await ownedVideo(scope));
     }
     throw error;
+  } finally {
+    await lease?.release();
   }
 }
+/** A platform job that ended is settled once (also a repair when an earlier
+ * poll ended the job but did not reach its settlement). */
+const settleEnded = (job: ConsumerJob) => settleEndedWebsiteJob(job, TOOL);
 export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
   let prior = await ownedVideo(scope);
+  await settleEnded(prior);
   if (prior.status === "uncertain" && prior.providerReceipt) {
     const savedId = consumerVideoAcknowledgement(prior.providerReceipt);
     const responseId = consumerVideoAcknowledgement(prior.providerReceipt.response);
@@ -171,6 +213,7 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
     if (providerJobId) {
       await accessForJob(prior);
       prior = await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt }) ?? await ownedVideo(scope);
+      if (prior.status === "accepted" && prior.providerJobId && prior.funding === "platform_account") await acceptWebsiteJob(prior, prior.providerJobId);
     }
   }
   if (prior.status !== "accepted") return { job: await consumerVideoView(prior) };
@@ -192,7 +235,8 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
     if (failed) {
       await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
-      return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), providerStatus: { status: failed }, pollAfterSeconds };
+      if (settled) await settleEnded(settled);
+      return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), providerStatus: providerDetail(claim.job, { status: failed }), pollAfterSeconds };
     }
     if (terminal) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
@@ -206,9 +250,11 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
         // Refused the same way on every poll: settle once, receipt kept.
         if (!uncollectableOriginal(error)) throw error;
         const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+        if (settled) await settleEnded(settled);
         return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), collection: { code: error.code, message: error.message }, pollAfterSeconds };
       }
       const completed = await completeConsumerJob({ ...scope, leaseToken: claim.leaseToken, resultManifest: { original, providerResult } });
+      if (completed) await settleEnded(completed);
       // An expired/stolen lease cannot publish stale completion. The committed
       // original remains recoverable by the next admitted poll.
       return { job: await consumerVideoView(completed ?? await ownedVideo(scope)), pollAfterSeconds };

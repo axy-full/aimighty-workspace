@@ -9,6 +9,7 @@ import { syncIdentity, getIdentity, reconcileFalRender } from "./identities";
 import { syncSoulIdentity } from "./soulIdentities";
 import { runAtomikJob } from "./workbench/atomik-server";
 import { runDevelopmentStep } from "./workbench/development-server";
+import { drainWebsiteJob } from "./higgsfield-consumer/website-drain";
 
 /** The maintenance cron may only continue exact intents accepted before the
  * fence. It cannot create a job, release a held row, provision or purge. A
@@ -63,6 +64,8 @@ export async function drainRecoveryJobs(
             await reconcileAstraRender(jobId);
             return;
           }
+          // A platform-funded website job: its own continuation, never an ordinary take's.
+          if (await drainWebsiteJob(jobId)) return;
           if (["image", "audio", "video"].includes(String(intent.kind))) {
             const job = await getGeneration(jobId);
             if (!job || job.status === "held")

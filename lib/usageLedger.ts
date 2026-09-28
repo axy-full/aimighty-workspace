@@ -1,3 +1,4 @@
+import { WEBSITE_METER_ENGINE, websiteMeterLabel } from "./higgsfield-consumer/website-tools";
 import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { creditsApply } from "./credits";
@@ -102,6 +103,7 @@ function next<T extends { at: number; id: string }>(rows: T[], limit: number): {
 /** What a metered job was, in the ledger's words. */
 export function meteredEngine(kind: string, engine: string, model: string): string {
   if (engine === "vercel-sandbox") return "Astra render";
+  if (engine === WEBSITE_METER_ENGINE) return websiteMeterLabel(model) ?? "Website tool";
   if (model === GROK_STT_MODEL) return "Transcription";
   if (kind === "training") return "Identity training";
   if (kind === "text") return `Atomik · ${modelLabel(model)}`;

@@ -116,7 +116,7 @@ async function admit(entry: WebsiteJobEntry, job: { id: string; meterId: string 
   return { accepted: accepted!, provider };
 }
 
-test("the commercial API is always preferred, and a managed workspace refuses every website tool until its billing is built", async () => {
+test("the commercial API is always preferred, and a managed workspace is offered only a website tool whose billing is built", async () => {
   const { tools, funding, account, jobs } = await modules();
   expect(tools.websiteToolTransport({ workflow: "genjutsu" })).toEqual({ kind: "commercial_api", route: "studio-engines" });
   expect(tools.websiteToolTransport({ tool: "soul-build" })).toEqual({ kind: "commercial_api", route: "studio-identities" });
@@ -125,20 +125,26 @@ test("the commercial API is always preferred, and a managed workspace refuses ev
   expect(tools.websiteToolTransport({ workflow: "voice-tool", voiceTool: "reframe" })).toEqual({ kind: "website_account", tool: "reframe" });
   expect(tools.websiteToolTransport({ workflow: "voice-tool", voiceTool: null })).toEqual({ kind: "none" });
   expect(tools.websiteToolTransport({ workflow: "reference-match" })).toEqual({ kind: "none" });
-  expect([...tools.WEBSITE_BILLING_READY]).toEqual([]);
+  // Marketing video is the first whose Particl-credit quote, reservation and settlement are built.
+  expect([...tools.WEBSITE_BILLING_READY]).toEqual(["marketing-video"]);
   // Even designated, every tool switched on, priced, and the private rate set.
   const host = await designatedHost();
   await withEnv({ HF_ACCOUNT_CREDIT_USD: "0.02", HF_ACCOUNT_FIXED_CREDITS: JSON.stringify(Object.fromEntries(tools.WEBSITE_TOOL_IDS.map((id) => [id, 5]))) }, async () => {
     await account.setPlatformAccountTools(tools.WEBSITE_TOOL_IDS.filter((id) => !tools.servedByCommercialApi(id)), host.userId);
     await inClient(client(), async () => {
       for (const target of [
-        ...(["marketing-video", "shorts", "marketing-template", "generation", "virality", "genjutsu", "reference-match"] as const).map((workflow) => ({ workflow })),
+        ...(["shorts", "marketing-template", "generation", "virality", "genjutsu", "reference-match"] as const).map((workflow) => ({ workflow })),
         ...["reframe", "voice_change", "dubbing", "video_analysis", "unknown"].map((voiceTool) => ({ workflow: "voice-tool" as const, voiceTool })),
         { tool: "soul-build" as const }, { tool: "element-build" as const },
       ]) {
         await expect(funding.websiteFunding(target)).rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
         expect(await funding.readFunding(target)).toEqual({ kind: "own_account" });
       }
+      // The one built tool is offered through the platform's account, and only while the rate is set.
+      expect(await funding.websiteFunding({ workflow: "marketing-video" })).toEqual({ kind: "platform_account", tool: "marketing-video" });
+      await withEnv({ HF_ACCOUNT_CREDIT_USD: undefined }, async () => {
+        await expect(funding.websiteFunding({ workflow: "marketing-video" })).rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
+      });
       // The own-account guard of every managed workspace is unchanged.
       expect(() => jobs.requireConsumerFunding()).toThrow(jobs.ConsumerJobError);
     });

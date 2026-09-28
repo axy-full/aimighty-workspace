@@ -60,6 +60,8 @@ async function fixture() {
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
     /* The standalone guard runs inside the quote service (tests/unit/higgsfieldConsumerVideoService.spec.ts); the route maps its refusal. */
     '@/lib/higgsfield-consumer/marketing-records': { ConsumerSetupError: records.ConsumerSetupError },
+    /* The one neutral mapping every consumer route shares for the platform's website account. */
+    '@/lib/higgsfield-consumer/website-problems': await import('../../lib/higgsfield-consumer/website-problems'),
     '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
@@ -225,4 +227,33 @@ test('the quote service\'s standalone refusal answers 409 setup_not_particl with
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({ code: 'setup_not_particl', error: new records.ConsumerSetupError().message });
   expect(f.calls.map((call) => call.name)).toEqual(['quote']);
+});
+
+test('a platform job is approved by its credits alone, and website refusals answer neutrally', async () => {
+  const f = await fixture();
+  const approval = { action: 'submit', draftId: 'draft-1', id: key, credits: 25 };
+  expect((await f.request('POST', approval)).status).toBe(200);
+  expect((await f.request('POST', { ...approval, workspaceId: null })).status).toBe(200);
+  expect(f.calls.map((call) => call.args[1])).toEqual([
+    { action: 'submit', draftId: 'draft-1', id: key, credits: 25 },
+    { action: 'submit', draftId: 'draft-1', id: key, credits: 25, workspaceId: null },
+  ]);
+  const { WebsiteToolsUnavailableError } = await import('../../lib/higgsfield-consumer/platform-account');
+  const { WebsitePriceChangedError } = await import('../../lib/higgsfield-consumer/account-billing');
+  const { ForeignAccountObjectError } = await import('../../lib/higgsfield-consumer/account-objects');
+  const { SpendReservationError } = await import('../../lib/generationRequests');
+  for (const [error, status, code] of [
+    [new WebsiteToolsUnavailableError('account_changed'), 503, 'website_unavailable'],
+    [new WebsiteToolsUnavailableError('busy'), 503, 'website_unavailable'],
+    [new WebsitePriceChangedError(), 409, 'price_changed'],
+    [new ForeignAccountObjectError(), 409, 'object_not_particl'],
+    [new SpendReservationError('This job needs 25 credits; 3 are available after reserved jobs.', 402), 402, 'reservation_refused'],
+  ] as const) {
+    f.fail(error);
+    const refused = await f.request('POST', approval);
+    expect(refused.status).toBe(status);
+    const body = await refused.json();
+    expect(body.code).toBe(code);
+    expect(JSON.stringify(body)).not.toMatch(/account_changed|wallet|subject|generation/);
+  }
 });

@@ -2,13 +2,14 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 
 /**
- * The REAL funding decision, grant resolver, own-object guard and client view
- * (lib/higgsfield-consumer/funding.ts, access.ts, account-objects.ts,
- * client-view.ts) for a consumer service loaded with injected
- * dependencies. They are wired to the same tenant, job ledger and oauth
- * modules the test injects into the service, so an own-account job resolves
- * through the test's own fixture grant exactly as the service did before the
- * resolver existed, and a managed workspace refuses through the real rules.
+ * The REAL funding decision, grant resolver, own-object guard, client view
+ * and website-account billing (lib/higgsfield-consumer/funding.ts, access.ts,
+ * account-objects.ts, client-view.ts, account-billing.ts) for a consumer
+ * service loaded with injected dependencies. They are wired to the same
+ * tenant, job ledger and oauth modules the test injects into the service, so
+ * an own-account job resolves through the test's own fixture grant exactly as
+ * the service did before the resolver existed, and a managed workspace
+ * refuses through the real rules.
  */
 export async function consumerFundingModules(deps: { tenant: unknown; jobs: unknown; oauth: unknown }): Promise<Record<string, unknown>> {
   const load = (file: string, map: Record<string, unknown>) => {
@@ -38,5 +39,10 @@ export async function consumerFundingModules(deps: { tenant: unknown; jobs: unkn
     "./element-records": await import("../../lib/higgsfield-consumer/element-records"),
     "./platform-jobs": await import("../../lib/higgsfield-consumer/platform-jobs"),
   });
-  return { "./funding": funding, "./access": access, "./account-objects": objects, "./client-view": await import("../../lib/higgsfield-consumer/client-view") };
+  return {
+    "./funding": funding, "./access": access, "./account-objects": objects,
+    "./client-view": await import("../../lib/higgsfield-consumer/client-view"),
+    // The platform account's money path: every call returns at once for a job on its owner's own account.
+    "./account-billing": await import("../../lib/higgsfield-consumer/account-billing"),
+  };
 }

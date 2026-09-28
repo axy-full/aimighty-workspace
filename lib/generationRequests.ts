@@ -1,5 +1,5 @@
 import { acceptRecoveryJobTx } from "./recovery";
-import type { InStatement } from "@libsql/client";
+import type { InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
@@ -263,6 +263,14 @@ type ReservationOptions = {
   /** Whether the shot's credit cap is skipped. Omitted, the signed-in admin skips it;
    * a held take's release decides from its author instead of whoever's request released it. */
   shotCapExempt?: boolean;
+  /** The exact credits a person approved. The reservation refuses, having
+   * reserved nothing, when the job would bill anything else (a changed rate,
+   * margin or cost since the quote). */
+  expectedCredits?: number;
+  /** Runs inside the reservation's own platform transaction, after every
+   * check and before the reservation is written: whatever it records commits
+   * with the reservation or not at all (the website account's registry). */
+  within?: (tx: Transaction, ts: number) => Promise<void>;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -316,6 +324,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       throw new SpendReservationError("This job's funding or engine changed. Request a new quote.", 409, true);
     const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
     const billed = paid ? creditsAtTerms(cost, terms) : 0;
+    if (options.expectedCredits !== undefined && billed !== options.expectedCredits)
+      throw new SpendReservationError("The price changed since this quote. Review the new price; nothing was charged.", 409, true);
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
     try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
@@ -370,6 +380,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const needs = creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms);
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
+    if (options.within) await options.within(tx, ts);
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
       args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });

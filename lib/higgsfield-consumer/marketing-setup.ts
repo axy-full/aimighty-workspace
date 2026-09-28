@@ -1,5 +1,7 @@
 import { requireTenant } from "@/lib/tenant";
-import { getConsumerAccess, ConsumerOAuthError } from "./oauth";
+import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
+import { accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
+import { OWN_ACCOUNT, type ConsumerFunding } from "./funding";
 import { readConnectedPlannerReads } from "./mcp";
 import { CONNECTED_LIST_KEYS } from "./video-contract";
 import { SETUP_TYPES, isOwnedSetup, type SetupItem, type SetupType } from "@/lib/shell/business";
@@ -129,22 +131,23 @@ export function standaloneReads(types: readonly SetupType[], results: readonly R
  */
 const PRESETS_TTL_MS = 60_000;
 const presetCache = new Map<string, { ids: ReadonlySet<string>; at: number }>();
-const presetKey = (userId: string, generation: string, type: SetupType) => `${requireTenant().id}:${userId}:${generation}:${type}`;
-function rememberPresets(userId: string, generation: string, type: SetupType, ids: ReadonlySet<string>) {
-  presetCache.set(presetKey(userId, generation, type), { ids, at: Date.now() });
+/* Keyed by the workspace, the connection it reads with and its grant (lib/higgsfield-consumer/access.ts). */
+const presetKey = (userId: string, access: ResolvedAccess, type: SetupType) => `${consumerCacheScope(userId, access)}:${type}`;
+function rememberPresets(userId: string, access: ResolvedAccess, type: SetupType, ids: ReadonlySet<string>) {
+  presetCache.set(presetKey(userId, access, type), { ids, at: Date.now() });
   while (presetCache.size > 512) presetCache.delete(presetCache.keys().next().value!);
 }
 const setupRead = (type: SetupType) => ({ name: "setup" as const, tool: "show_marketing_studio", args: { type } });
 
-/** The engine's shared presets the account lists for these types; a type it does not list has none. */
-export async function connectedSetupPresets(userId: string, types: readonly SetupType[]): Promise<Partial<Record<SetupType, ReadonlySet<string>>>> {
-  const access = await getConsumerAccess(requireTenant().id, userId);
-  if (!access) throw new ConsumerOAuthError("reconnect_required");
+/** The engine's shared presets the account lists for these types; a type it does not list has none.
+ * Read with the grant the request will be quoted with (its funding). */
+export async function connectedSetupPresets(userId: string, types: readonly SetupType[], funding: ConsumerFunding = OWN_ACCOUNT): Promise<Partial<Record<SetupType, ReadonlySet<string>>>> {
+  const access = await accessForNewWork(userId, funding);
   const out: Partial<Record<SetupType, ReadonlySet<string>>> = {};
   const missing: SetupType[] = [];
   for (const type of types) {
     if (!PRESET_SETUP_TYPES.includes(type)) { out[type] = new Set(); continue; }
-    const hit = presetCache.get(presetKey(userId, access.generation, type));
+    const hit = presetCache.get(presetKey(userId, access, type));
     if (hit && Date.now() - hit.at < PRESETS_TTL_MS) out[type] = hit.ids;
     else missing.push(type);
   }
@@ -154,25 +157,27 @@ export async function connectedSetupPresets(userId: string, types: readonly Setu
       const result = results[i];
       if (!result || result.unavailable) { out[type] = new Set(); return; }
       out[type] = sharedSetupIds(result.value, type);
-      rememberPresets(userId, access.generation, type, out[type]!);
+      rememberPresets(userId, access, type, out[type]!);
     });
   }
   return out;
 }
 
 /** The quote guard as the quote services run it: Particl's record, then the account's presets when needed. */
-export function refuseForeignMarketingSetup(userId: string, wanted: SetupIds): Promise<void> {
-  return refuseForeignSetup(userId, wanted, (types) => connectedSetupPresets(userId, types));
+export function refuseForeignMarketingSetup(userId: string, wanted: SetupIds, funding: ConsumerFunding = OWN_ACCOUNT): Promise<void> {
+  return refuseForeignSetup(userId, wanted, (types) => connectedSetupPresets(userId, types, funding));
 }
 
-export async function connectedMarketingSetup(userId: string, types: readonly SetupType[] = SETUP_TYPE_IDS): Promise<{ connected: boolean; reads: SetupRead[] }> {
-  const access = await getConsumerAccess(requireTenant().id, userId);
-  if (!access) return { connected: false, reads: types.map((type) => ({ type, available: false, items: [] })) };
+export async function connectedMarketingSetup(userId: string, types: readonly SetupType[] = SETUP_TYPE_IDS, funding: ConsumerFunding = OWN_ACCOUNT): Promise<{ connected: boolean; reads: SetupRead[] }> {
+  // The caller's own connection may simply be absent (never connected): said, not thrown.
+  const own = funding.kind === "own_account" ? await getConsumerAccess(requireTenant().id, userId) : null;
+  if (funding.kind === "own_account" && !own) return { connected: false, reads: types.map((type) => ({ type, available: false, items: [] })) };
+  const access: ResolvedAccess = own ? { ...own, connectedOwnerId: userId, funding: "own_account" } : await accessForNewWork(userId, funding);
   try {
     const results = await readConnectedPlannerReads(access.accessToken, types.map(setupRead));
     types.forEach((type, i) => {
       const result = results[i];
-      if (PRESET_SETUP_TYPES.includes(type) && result && !result.unavailable) rememberPresets(userId, access.generation, type, sharedSetupIds(result.value, type));
+      if (PRESET_SETUP_TYPES.includes(type) && result && !result.unavailable) rememberPresets(userId, access, type, sharedSetupIds(result.value, type));
     });
     return { connected: true, reads: standaloneReads(types, results, await particlSetup(userId)) };
   } catch (error) {

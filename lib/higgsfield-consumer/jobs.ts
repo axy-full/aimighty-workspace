@@ -466,6 +466,15 @@ export async function getConsumerJob(
   const row = await rowFor(db(), input);
   return row ? asJob(row) : null;
 }
+/** Server-only: this workspace's jobs by id, for the platform's website-account
+ * housekeeping, which knows a job by its registry row (never a person's scope). */
+export async function consumerJobsById(ids: readonly string[]): Promise<ConsumerJob[]> {
+  const wanted = [...new Set(ids)].slice(0, 100);
+  wanted.forEach((id) => identifier(id));
+  if (!wanted.length) return [];
+  await consumerJobsReady();
+  return (await db().execute({ sql: `SELECT * FROM higgsfield_consumer_jobs WHERE id IN (${wanted.map(() => "?").join(",")})`, args: wanted })).rows.map(asJob);
+}
 /** Expiry is actionable only after any earlier dispatch transaction has
  * committed. A plain remote/WAL read can still observe its old quoted row. */
 export async function readConsumerJobAfterAdmissions(input: ConsumerJobScope): Promise<ConsumerJob | null> {
