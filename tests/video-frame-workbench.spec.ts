@@ -88,8 +88,9 @@ async function controlsFixture(page: Page, holdSource = false) {
   const me = await page.request.get("/api/me").then(response => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   const project = { ...newProject("Frame extraction"), id: "frames-draft", productionProjectId: "frames-production" };
-  const original = await readFile("tests/fixtures/astra-source.mp4");
-  const upload = { id: "frame-source", filename: "Portrait.mp4", kind: "video", mime: "video/mp4", durationS: 1.5, bytes: original.length, width: 720, height: 1280, createdAt: Date.now(), url: "/api/uploads/frame-source" };
+  // A transform source must run 4–30 s, so the controls use the 10 s landscape fixture.
+  const original = await readFile("public/fixtures/clip.mp4");
+  const upload = { id: "frame-source", filename: "Landscape.mp4", kind: "video", mime: "video/mp4", durationS: 10, bytes: original.length, width: 640, height: 360, createdAt: Date.now(), url: "/api/uploads/frame-source" };
   const writes: string[] = [], pngs: Buffer[] = [], filings: unknown[] = [], errors: string[] = [];
   let captures = 0, release: () => void = () => {};
   const held = new Promise<void>(resolve => { release = resolve; });
@@ -114,7 +115,7 @@ async function controlsFixture(page: Page, holdSource = false) {
     }
     if (name === "/api/uploads/finish") {
       const body = req.postDataJSON();
-      return json({ id: `frame-${pngs.length}`, filename: body.filename, mime: "image/png", kind: "image", bytes: pngs.at(-1)!.length, width: 720, height: 1280, durationS: null, sha256: createHash("sha256").update(pngs.at(-1)!).digest("hex"), url: `/api/uploads/frame-${pngs.length}` });
+      return json({ id: `frame-${pngs.length}`, filename: body.filename, mime: "image/png", kind: "image", bytes: pngs.at(-1)!.length, width: 640, height: 360, durationS: null, sha256: createHash("sha256").update(pngs.at(-1)!).digest("hex"), url: `/api/uploads/frame-${pngs.length}` });
     }
     if (name === "/api/workbench/library") {
       if (req.method() === "POST") { filings.push(req.postDataJSON()); return json({ ok: true }); }
@@ -142,10 +143,10 @@ test("frame controls upload full-resolution PNGs only after each explicit click 
   expect(f.captures).toBe(0); expect(f.writes).toEqual([]);
   for (const edge of ["start", "end"]) {
     await page.getByRole("button", { name: `Extract ${edge} frame`, exact: true }).click();
-    await expect(page.getByText(`${edge === "start" ? "Start" : "End"} frame saved to this project · 720 × 1280 PNG.`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`${edge === "start" ? "Start" : "End"} frame saved to this project · 640 × 360 PNG.`, { exact: true })).toBeVisible();
   }
   expect(f.captures).toBe(2); expect(f.pngs).toHaveLength(2);
-  for (const png of f.pngs) expect(await sharp(png).metadata()).toMatchObject({ format: "png", width: 720, height: 1280 });
+  for (const png of f.pngs) expect(await sharp(png).metadata()).toMatchObject({ format: "png", width: 640, height: 360 });
   expect(f.filings).toEqual([{ projectId: "frames-draft", uploadId: "frame-1" }, { projectId: "frames-draft", uploadId: "frame-2" }]);
   expect(f.writes).toEqual(["/api/uploads/chunk", "/api/uploads/finish", "/api/workbench/library", "/api/uploads/chunk", "/api/uploads/finish", "/api/workbench/library"]);
   expect(f.errors).toEqual([]);

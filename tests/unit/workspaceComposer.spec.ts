@@ -163,6 +163,9 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   expect(composerBlock({ ...base, quote: ready(key, 18), projects: "ready" })).toBeNull();
   expect(composerButtonLabel({ billing: "workspace", quote: ready(key, 18), quoteKey: key, submitting: false })).toBe("Generate · 18 cr");
   expect(composerButtonLabel({ billing: "connected", quote: ready(key, 1296), quoteKey: key, submitting: false })).toBe("Generate · 1,296 connected cr");
+  /* An approximate figure (an engine that settles on what it delivers) never reads as exact. */
+  expect(composerButtonLabel({ billing: "workspace", quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr");
+  expect(composerButtonLabel({ billing: "workspace", quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr");
   expect(composerButtonLabel({ billing: "workspace", quote: ready(key, 18), quoteKey: key, submitting: true })).toBe("Submitting…");
   expect(composerBlock({ ...base, quote: ready(key, 18), submitting: true })).toBe("Submitting this generation…");
   /* Changing the model moves the key, so the old figure cannot be sent. */

@@ -20,6 +20,9 @@ import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
+import { AssetNextActions, revealNext } from "./AssetNextActions";
+import type { NextActionId } from "@/lib/shell/next-actions";
+import { RememberAsset } from "./atomik/MemoryView";
 
 /**
  * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
@@ -46,6 +49,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const projectId = project?.id ?? null;
   const ready = library.state.status === "ready";
   const [looked, setLooked] = useState<string | null>(null);
+  /* "Remember" (Atomik memory) is open for this asset only: picking another closes it. */
+  const [remembering, setRemembering] = useState<string | null>(null);
   const lookKey = projectId ? `${projectId}\u0000${id}` : null;
   useEffect(() => {
     if (entry || !ready || !projectId || !lookKey || looked === lookKey) return;
@@ -98,6 +103,16 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
   const preview = entryPreview(entry);
   const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
+  /* Next opens the tool on this take: the take is selected first, so Takes opens on it (a page change is the history entry;
+     already on Takes, opening it is). Nothing is quoted or sent here. */
+  const openNext = (next: NextActionId) => {
+    if (next === "edit-sound") { shell.goSuite("studio", "edit"); return; }
+    const onTakes = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "takes";
+    shell.selectAsset(take.id, { reason: onTakes ? "open" : "pick" });
+    if (!onTakes) shell.goSuite("studio", "takes");
+    else if (!shell.wide) shell.closePanels();
+    revealNext(next);
+  };
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
       <div className="gx-insp-row"><span className="gx-eyebrow">Output</span><span className="gx-eyebrow">{take.version}</span></div>
@@ -115,6 +130,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
           <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
         </>
       ) : null}
+      <AssetNextActions entry={entry} saved={Boolean(project?.productionProjectId)} onAction={openNext} />
       <span className="gx-eyebrow">Actions</span>
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
@@ -132,8 +148,11 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {downloadable ? <a className="gx-hbtn" href={download} download={upload ? upload.filename : true}>Download original</a> : null}
         <button type="button" className="gx-hbtn" title="The asset itself, to paste into another project" onClick={() => command("copy")} data-testid="inspector-copy-asset">Copy asset</button>
         <button type="button" className="gx-hbtn" onClick={() => command("move")}>Move to…</button>
+        {/* Atomik memory: kept as a reference or an approved identity, by a person, for nothing. */}
+        <button type="button" className="gx-hbtn" aria-expanded={remembering === take.id} title="Keep it in Atomik's memory as a reference or an approved identity" onClick={() => setRemembering(remembering === take.id ? null : take.id)} data-testid="inspector-remember">Remember</button>
         <button type="button" className="gx-hbtn gx-hbtn--danger" onClick={() => { command("delete"); dispatch({ type: "patch", patch: { selKind: "page", selId: state.page } }); }}>Delete</button>
       </div>
+      {remembering === take.id ? <RememberAsset key={`remember:${take.id}`} scope={scope} projectId={project?.productionProjectId ?? null} assetId={take.id} name={take.name} onDone={() => setRemembering(null)} /> : null}
     </div>
   );
 }

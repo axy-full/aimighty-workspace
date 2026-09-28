@@ -411,6 +411,7 @@ test("POST /api/generate/check fingerprints the request exactly as POST /api/gen
     "@/lib/auth": { withTenant: (handler: Handler) => handler, requireUser: async () => ({ user: { id: "u_test" } }) },
     "@/lib/tenant": tenant,
     "@/lib/generationRequests": generationRequests,
+    "@/lib/transcription": await import("../../lib/transcription"),
     "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
   };
   const compiled = ts.transpileModule(readFileSync(path.resolve("app/api/generate/check/route.ts"), "utf8"), {
@@ -450,6 +451,14 @@ test("POST /api/generate/check fingerprints the request exactly as POST /api/gen
       { key: "route-bad-1", endpoint: "/api/generate", body: "[1]" },
       { key: "route-bad-1", endpoint: "/api/generate" },
     ]) expect((await ask(bad)).status).toBe(400);
+    /* A transcription answers in its reply rather than with a job: its check returns that saved reply. */
+    const spoken = { sourceUploadId: "up_route", diarize: true, maxCredits: 1 };
+    const transcript = { text: "Hold still.", language: "en", seconds: 1, words: [], srt: "", credits: 1 };
+    const said = new Request("http://localhost/api/audio/transcribe", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": "route-transcript-1", "X-Workbench-Scope": scope }, body: JSON.stringify(spoken) });
+    await generationRequests.withGenerationRequest(said, "u_test", async () => Response.json(transcript));
+    expect(await (await ask({ key: "route-transcript-1", endpoint: "/api/audio/transcribe", body: JSON.stringify(spoken) })).json()).toEqual({ state: "answered", reply: transcript });
+    expect((await ask({ key: "route-transcript-1", endpoint: "/api/audio/transcribe", body: JSON.stringify({ ...spoken, diarize: false }) })).status).toBe(409);
+    expect(await (await ask({ key: "route-transcript-2", endpoint: "/api/audio/transcribe", body: JSON.stringify(spoken) })).json()).toEqual({ state: "absent" });
     expect((await ask({ key: "route-bad-2", endpoint: "/api/generate", body: JSON.stringify(body) }, {})).status).toBe(409);
     expect((await ask({ key: "route-bad-2", endpoint: "/api/generate", body: JSON.stringify(body) }, { "X-Workbench-Scope": workbenchScopeFor(ws.id, "u_other") })).status).toBe(409);
     expect((await db().execute("SELECT COUNT(*) AS n FROM generation_requests WHERE request_key LIKE 'route-bad-%'")).rows[0].n).toBe(0);

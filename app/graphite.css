@@ -279,6 +279,10 @@
    inside the new chrome until each stage is rebuilt (build steps 2–6). */
 .gx .gx-legacy.pxw { height: auto; min-height: 100%; display: block; overflow: visible; background: transparent; flex: 1; }
 .gx .gx-legacy--fill.pxw { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* A spec page (Atomik's Agent, Runs, Approvals, Budget, Models) is taller than the stage it sits in: it runs past the
+   wrapper's box, so the stage's own 110px phone clearance (glass.css) lands above its end. It keeps that clearance itself,
+   so its last row ends above the floating tab bar. */
+@media (max-width: 767px) { .gx .gx-stage > .gx-legacy.pxw .pxw-spec { padding-bottom: 144px; } }
 
 /* ── ⌘K palette ────────────────────────────────────────────────────────── */
 .gx-veil { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .6); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
@@ -760,6 +764,13 @@
 .gx-facts dt { color: rgba(235, 235, 245, 0.62); }
 .gx-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .gx-insp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Next (components/graphite/AssetNextActions.tsx): the tool each take goes on to, in the Inspector and on the selected take. */
+.gx-next { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* Its label reads at --gx-text-2, not the eyebrow's --gx-text-3: that .45 ink composites under the #7C7C84 label floor on the
+   Inspector and on the selected take's card. */
+.gx-next > .gx-eyebrow { color: var(--gx-text-2); }
+.gx-next-row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.gx-next .gx-reason { margin: 0; overflow-wrap: anywhere; }
 .gx-hbtn--danger { color: #FF6961; }
 /* A Rig row that will take the asset being dragged over it. */
 .gx .pxw-rig-row[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: -2px; background: var(--gx-tint); }
@@ -844,6 +855,28 @@
 .tc-insp-title { font-size: 16px; font-weight: 600; letter-spacing: -.016em; }
 .tc-insp-sub { font-size: 12px; color: var(--gx-text-2); }
 .tc-insp-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--gx-text-2); }
+/* Atomik › Memory (components/graphite/atomik/MemoryView.tsx): the Tools page's cards, with rows that stack on a phone. */
+.am-form { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 4px 0 12px; }
+.am-form--inline { padding: 6px 0 2px; }
+.am-label { font-size: 12.5px; color: var(--gx-text-2); }
+.am-textarea { min-height: 84px; }
+.am-where { align-self: flex-start; max-width: 100%; }
+.am-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.am-form > .am-actions { justify-content: flex-start; }
+.am-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 16px; min-height: 52px; padding: 12px 0; border-top: 1px solid var(--gx-hair); }
+.am-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.am-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.am-asset { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.am-text { margin: 0; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.am-meta, .am-confirm { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
+.am-gone { color: #FFC266; }
+.am-confirm { flex: 1 1 100%; text-align: right; }
+@media (max-width: 767px) {
+  .am-row { grid-template-columns: minmax(0, 1fr); }
+  .am-actions { justify-content: flex-start; }
+  .am-confirm { text-align: left; }
+  .am-where { align-self: stretch; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+}
 /* The Workspace view is the shell's pane under the header: it scrolls itself (.gx clips), as .cw-page does. */
 .gx-workspace { flex: 1; min-height: 0; overflow-y: auto; }
 .wsx-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
