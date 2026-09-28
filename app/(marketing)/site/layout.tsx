@@ -5,7 +5,7 @@ import "../../marketing.css";
 
 export const metadata: Metadata = {
   title: { default: "particl studio", template: "%s · particl studio" },
-  description: "The studio's own room for making shots, and for knowing what they cost. Five suites in one shell, with an estimate on every button.",
+  description: "The studio's own room for making shots. Five suites in one shell.",
   openGraph: { images: ["/campaign/hero.webp"] },
 };
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };

@@ -5,8 +5,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
  * The public site (app/(marketing)/site, served by proxy.ts). A visitor sees
  * it at the product's own paths; a member at / still gets the app. Every
  * page is checked at the five sizes for overflow and phone targets, and the
- * hero's handoff is followed into Gen, where the quote on Gen's own button
- * must equal the one the site printed.
+ * hero's handoff is followed into Gen, which prices the take itself.
  */
 
 const PAGES: [string, string][] = [
@@ -78,15 +77,17 @@ test("a member keeps the app at /, and the site offers the app instead of sign-i
   await expect(page.locator(".mk-header").getByRole("link", { name: "Sign in" })).toHaveCount(0);
 });
 
-test("the hero keeps a visitor's prompt and opens it in Gen, quoted as the site said", async ({ page }, info) => {
+test("the hero keeps a visitor's prompt and opens it in Gen, which prices the take live", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one handoff");
   await page.goto("/");
   const go = page.locator(".mk-go");
-  const quoted = (await go.textContent())!.match(/(\d[\d,]*) cr/)![1];
+  /* The public hero prints no price. */
+  await expect(go).toHaveText("Generate");
   await page.getByLabel("Describe the shot").fill("A lighthouse keeper walks the gallery in a storm.");
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
   await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fview%3Dgen");
+  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
 
   await signInLocally(page.request);
   await page.goto("/suites?view=gen");
@@ -95,5 +96,5 @@ test("the hero keeps a visitor's prompt and opens it in Gen, quoted as the site 
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
   /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
-  await expect(page.getByTestId("gen-generate")).toContainText(`${quoted} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toContainText(/\d[\d,]* cr/, { timeout: 30_000 });
 });
