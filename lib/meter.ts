@@ -163,6 +163,19 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
   if (critical) throw new Error("The platform could not record this job, so it was not started. Try again in a moment.");
 }
 
+/**
+ * What one event stands at on the meter for this workspace: its status and
+ * the credits it charges (a running event's are its reservation). Null when
+ * no such event was ever written.
+ */
+export async function meteredCharge(id: string): Promise<{ status: MeterStatus; credits: number } | null> {
+  const workspaceId = currentTenant()?.workspace?.id;
+  if (!workspaceId) return null;
+  await platformReady();
+  const row = (await platformDb().execute({ sql: "SELECT status, billed_credits FROM meter_events WHERE workspace_id=? AND id=?", args: [workspaceId, id] })).rows[0];
+  return row ? { status: String(row.status) as MeterStatus, credits: Number(row.billed_credits ?? 0) } : null;
+}
+
 /** Credits the platform has billed a workspace, all time. */
 export async function creditsUsed(workspaceId: string): Promise<number> {
   await platformReady();
