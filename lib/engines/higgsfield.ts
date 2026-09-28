@@ -106,8 +106,8 @@ export const higgsfield: EngineAdapter = {
       let input: Awaited<ReturnType<typeof cinemaStudioInput>>;
       try {
         sameCredentials(fingerprint);
-        // The quote is frozen on the take. Send only while the same settings,
-        // references and private rates still price it exactly.
+        // The approximate quote is frozen on the take. Send only while the switch
+        // is on and the same settings and references still give the same figure.
         if (req.task.id !== "generate" || req.source ||
             Boolean(req.params.hasVideoInput) !== req.references.some(r => r.kind === "video")) throw new Error("source");
         const fresh = cinemaStudioEnabled() ? cinemaStudioQuoteUsd(req.params) : null;

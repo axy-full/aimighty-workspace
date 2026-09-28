@@ -310,7 +310,7 @@ export async function executeGenerationAdmission(
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
     }
     const cinema = isCinemaStudioModel(modelId);
-    // Off until the operator enables it with private rates: no price, no take.
+    // The deploy-time switch (HF_CINEMA_STUDIO_ENABLED=0) stops new takes; accepted ones still collect.
     if (cinema && !cinemaStudioEnabled())
       return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
     if (model.marketing && !options.checkpoint)
