@@ -118,11 +118,11 @@ function fullRequest(): PlanRequest {
     shots: [shot("Opening", "wide"), shot("Turn", "close")],
     stems: [{ name: "Music", body: { task: "music", text: "slow" } }, { name: "Effects", body: { task: "sound", text: "wind" } }],
     variants: [{ name: "Variant 1", body: { model: "image-m", prompt: "hook", marketing: { quality: "high" } } }],
-    /* Motion Transfer and Object Swap: /api/generate bodies for the API-key transform engines. */
-    motion: [{ name: "Transfer 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-motion-transfer", prompt: "recast", resolution: "720p", projectId: "prod-1",
-      references: [{ id: "u1", kind: "video", ext: "mp4", role: "reference_video" }, { id: "r1", kind: "image", ext: "png", role: "reference_image" }, { id: "r2", kind: "image", ext: "png", role: "reference_image" }] } }],
-    swap: [{ name: "Swap 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-object-swap", prompt: "swap it", resolution: "720p", projectId: "prod-1",
-      references: [{ id: "u1", kind: "video", ext: "mp4", role: "reference_video" }, { id: "r1", kind: "image", ext: "png", role: "reference_image" }] } }],
+    /* Motion Transfer and Object Swap: the bodies the API-key transform form sends to /api/generate. */
+    motion: [{ name: "Transfer 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-motion-transfer", prompt: "recast", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
+      sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }, { uploadId: "r2", role: "reference_image" }] } }],
+    swap: [{ name: "Swap 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-object-swap", prompt: "swap it", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
+      sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }] } }],
     /* What the connected account's Shorts form still publishes: no plan reads it any more. */
     shorts: { source: { uploadId: "u1" }, preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" }, aspectRatio: "9:16" },
     astra: { sourceDigest: "c".repeat(64) },

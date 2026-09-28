@@ -153,7 +153,9 @@ export type PlanRequest = {
   stems?: (NamedBody & { route?: "/api/audio" | "/api/audio/dub" })[];
   /** Marketing: /api/generate bodies carrying `marketing`, one per variant. */
   variants?: NamedBody[];
-  /** Motion Transfer / Object Swap: /api/generate bodies for the API-key transform engines (task `genjutsu`), one per take. */
+  /** Motion Transfer / Object Swap: the bodies the API-key transform form sends to /api/generate, one per take —
+   *  `task: "genjutsu"`, the transform model, the source original (`sourceUploadId` or `sourceGenId`), one to eight
+   *  still references (`role: "reference_image"`), resolution, prompt, `projectId` and `workbenchProjectId`. */
   motion?: NamedBody[];
   swap?: NamedBody[];
   /** Subatomik Shorts: the Shorts input (source, preset, aspectRatio) as /api/higgsfield/consumer/shorts takes it. */
