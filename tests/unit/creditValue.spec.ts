@@ -223,8 +223,8 @@ test("an unusable CREDIT_USD falls back to the one default, and only there", () 
   try {
     for (const bad of ["", "nope", "0", "-1"]) {
       process.env.CREDIT_USD = bad;
-      expect(creditUsd(), bad).toBe(0.08);
-      expect(buildRateTable("cr").creditUsd, bad).toBe(0.08);
+      expect(creditUsd(), bad).toBe(0.10);
+      expect(buildRateTable("cr").creditUsd, bad).toBe(0.10);
     }
   } finally { if (before === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = before; }
 });
