@@ -48,7 +48,7 @@ const SHELL_TILES: [string, string, string][] = [
   ["⌘J", "Inspector", "Controls, Inputs and Versions for whatever is selected: asset, take, run, node, item or stage."],
   ["Right-click", "Menu everywhere", "Copy, cut, paste, duplicate, move to, retry, and a 20-deep undo."],
   ["Enhancer", "One prompt enhancer", "One provider, chosen in Workspace › General. Never on raw: prompts."],
-  ["One balance", "Credits, everywhere", "Every quote is in credits and on the button; a failed render shows what it was charged, when that is known."],
+  ["One balance", "Credits, everywhere", "Every quote is in credits and on the button."],
 ];
 
 function Shell() {

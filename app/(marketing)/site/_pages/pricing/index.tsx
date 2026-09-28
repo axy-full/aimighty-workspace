@@ -34,7 +34,6 @@ export default async function Pricing() {
           <Note lead="Included credits expire at cycle end.">No rollover.</Note>
           <Note lead="No seat fees">on any paid plan.</Note>
           <Note lead="Pack credits sit still on a paid plan.">Off a plan, they last 12 months.</Note>
-          <Note lead="Failed renders">show what they were charged, when that is known.</Note>
         </Grid>
       </Section>
 

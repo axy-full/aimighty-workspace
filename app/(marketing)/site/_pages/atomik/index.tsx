@@ -35,7 +35,7 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
   { tag: "Crew · 7 departments", name: "Crew",
     body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions; Run round shows the most it can cost." },
   { tag: "02 Runs", name: "Runs",
-    body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place, its approved attempts and its accounting, and recovery never re-dispatches. A failed generation shows what it was charged, when that is known." },
+    body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place, its approved attempts and its accounting, and recovery never re-dispatches." },
   { tag: "03 Generate", name: "Generate", gated: "Analyse video gated",
     body: "Image, video, sound and 3D workflows from the connected account’s catalogue, quoted in connected credits. Tools: upscale image and video, remove background, extend canvas, reframe, deflicker, lip-sync. Voice: change voice and dub; Analyse video stays off until the account prices it." },
   { tag: "04 Recipes", name: "Recipes",
