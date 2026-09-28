@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { signInLocally } from "./helpers/workbenchLocal";
@@ -71,6 +71,12 @@ async function open(page: Page, path: string, named = true, atomik: boolean | ((
   /* The Workspace view has no project head. */
   if (named) await expect(page.getByTestId("project-name")).toHaveText("Harbour at dusk");
 }
+
+/** The alpha of an element's own fill: what of the page under it can read through. */
+const opacityOf = (target: Locator) => target.evaluate((el) => {
+  const channels = (getComputedStyle(el).backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
+  return channels.length === 4 ? channels[3] : channels.length === 3 ? 1 : 0;
+});
 
 /** Every entrance animation on the page has settled (the shell's `gx-in` rise moves what is measured). */
 const settle = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => null))));
@@ -177,11 +183,12 @@ const SCREENS: Screen[] = [
   { id: "atomik-gate", path: "/suites?suite=atomik&page=agent&sp=agent", atomik: true, target: "[data-testid='content']", pane: "[data-testid='content']", ready: gateRowUp },
 ];
 
-/** What main left for the page (px), measured with this spec on 27 September 2026: the floor nothing may fall under. */
+/** What main left for the page (px), measured with this spec on 28 September 2026 (with the Takes desk, the jobs tray
+    and Tools & connections): the floor nothing may fall under. */
 const BEFORE: Record<string, Record<string, number>> = {
-  "360x640": { home: 365, takes: 127, gen: 150, "rig-list": 180, "rig-canvas": 0, brief: 187, library: 8, plans: 370, "atomik-gate": 0 },
-  "390x844": { home: 569, takes: 331, gen: 351, "rig-list": 384, "rig-canvas": 0, brief: 388, library: 212, plans: 626, "atomik-gate": 193 },
-  "844x390": { home: 255, takes: 124, gen: 182, "rig-list": 124, "rig-canvas": 0, brief: 130, library: 0, plans: 330, "atomik-gate": 69 },
+  "360x640": { home: 365, takes: 184, gen: 150, "rig-list": 180, "rig-canvas": 0, brief: 187, library: 8, plans: 370, "atomik-gate": 0 },
+  "390x844": { home: 569, takes: 388, gen: 351, "rig-list": 384, "rig-canvas": 0, brief: 388, library: 212, plans: 626, "atomik-gate": 165 },
+  "844x390": { home: 255, takes: 130, gen: 182, "rig-list": 124, "rig-canvas": 0, brief: 130, library: 0, plans: 330, "atomik-gate": 69 },
 };
 /** On a portrait phone these pages get at least 60% of the screen; with Atomik's approval row up (itself something to press), at least half. */
 const TARGETS = ["takes", "gen", "rig-list", "rig-canvas", "brief"];
@@ -225,7 +232,7 @@ test("phone chrome: every layer measured, and the page gets most of the screen",
     if (PORTRAIT.includes(info.project.name) && screen.id === "library")
       expect.soft(content.height, "files stay visible below the Library controls").toBeGreaterThanOrEqual(Math.ceil(vh * 0.25));
   }
-  /* The owner's measure: Takes at 360×640 showed 127px of its page. */
+  /* The owner's measure: Takes at 360×640 showed 127px of its page when it was asked for (184px on main now). */
   if (size === "360x640") expect(report.takes.content.height).toBeGreaterThanOrEqual(380);
   /* The toast rests above the tab bar, never on it. */
   const { toast, tabBar } = report.toast.layers;
@@ -393,6 +400,9 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await settle(page);
   for (const target of [...await suites.getByRole("tab").all(), page.getByTestId("header-search")]) await expect(target).toBeInViewport();
   expect(await smallTargets(page, ".gx-header"), "menu targets under 44×44").toEqual([]);
+  /* The page under the open menu never reads through its tiles: inside the header island its glass cannot blur the
+     page, so its fill is opaque. */
+  expect(await opacityOf(suites), "the open menu's fill").toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-menu.png`), animations: "disabled" }); }
 
@@ -444,9 +454,12 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   const [act, price] = await Promise.all([primary.locator(".gx-go-act").boundingBox(), primary.locator(".gx-go-price").boundingBox()]);
   expect(price!.y).toBeGreaterThan(act!.y + act!.height - 1);
 
-  /* The bar's project switcher opens the project list; the strip shows the page you are on. */
+  /* The bar's project switcher opens the project list, which hides the page under it as the menu does; the strip
+     shows the page you are on. */
   await page.getByTestId("project-switcher").click();
   await expect(page.getByRole("listbox", { name: "Projects" }).getByRole("option", { name: /Harbour at dusk/ })).toBeInViewport();
+  expect(await opacityOf(page.locator(".gx-bar .gx-popover")), "the project list's fill").toBe(1);
+  if (SHOTS) { await settle(page); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-projects.png`), animations: "disabled" }); }
   await page.keyboard.press("Escape");
   const strip = page.getByRole("navigation", { name: "Pages" });
   await expect(strip.getByRole("button", { name: /Rig/ })).toHaveAttribute("aria-current", "page");
@@ -494,7 +507,7 @@ function desktopChrome(page: Page) {
   });
 }
 
-/* main's desktop chrome (27 September 2026), for the two desktops; W and H are the viewport. */
+/* main's desktop chrome (28 September 2026), for the two desktops; W and H are the viewport. */
 const desktopBefore = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
   const suite = {
     header: [10, 10, W - 20, 64], strip: [10, 84, W - 20, 48], project: [301, 143, W - 642, 75], pagehead: [301, 218, W - 642, 66.7],
@@ -503,7 +516,8 @@ const desktopBefore = (W: number, H: number): Record<string, Record<string, numb
   };
   return {
     rig: { ...suite, views: [232.8, 36], inspector: [234.8, 32], primary: [233.8, 34] },
-    takes: { ...suite, views: [232.8, 36], inspector: [234.8, 32], primary: null },
+    /* Studio › Takes filters on its own desk, so its page head has no view segment. */
+    takes: { ...suite, views: null, inspector: [234.8, 32], primary: null },
     gen: {
       ...suite, strip: null, project: [301, 85, W - 642, 75], pagehead: [301, 160, W - 642, 66.7], content: [301, 226.7, W - 642, H - 237.7], library: [10, 84, 280, H - 94],
       title: [174, 37.7], views: null, inspector: null, primary: null,

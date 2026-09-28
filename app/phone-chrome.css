@@ -13,6 +13,10 @@
   --ph-bar-gap: max(10px, calc(env(safe-area-inset-bottom, 0px) - 12px));
   /* What a scroll region keeps clear under its last row: the bar, its gap and 12px of air. */
   --ph-clear: calc(var(--ph-bar-h) + var(--ph-bar-gap) + 12px);
+  /* The fill of what opens from the header island (the Suites menu, the bar's project list). A blur inside a blurred
+     parent sees only that parent, never the page, so glass's see-through fill (app/glass.css) would leave the page
+     crisp under them: they take its colour, opaque. */
+  --ph-menu-fill: rgb(28, 28, 34);
 }
 
 /* Every width: the page head's toggles carry a glyph the phone shows, and a priced primary sets its price as its
@@ -47,7 +51,7 @@
   .gx .gx-header:not([data-static])[data-menu] > .gx-seg {
     position: absolute; z-index: 5; top: calc(100% + 8px); left: 0; right: 0; width: auto; min-height: 0;
     display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 60px 6px 6px;
-    border: var(--gl-edge); border-radius: 22px; background: var(--gl-panel-2); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift-dialog);
+    border: var(--gl-edge); border-radius: 22px; background: var(--ph-menu-fill); box-shadow: var(--gl-spec), var(--gl-lift-dialog);
     animation: om-pop .2s var(--om-ease) both;
   }
   .gx .gx-header:not([data-static])[data-menu] > .gx-seg > .gx-seg-btn { min-height: 56px; }
@@ -60,7 +64,7 @@
   .gx .gx-bar > .gx-project:only-child { flex: 1 1 auto; max-width: none; }
   .gx .gx-bar > .gx-project:not(:only-child) .gx-project-meta { display: none; }
   .gx .gx-bar .gx-project-btn { max-width: 100%; }
-  .gx .gx-bar .gx-popover { top: calc(100% + 10px); left: -6px; }
+  .gx .gx-bar .gx-popover { top: calc(100% + 10px); left: -6px; background: var(--ph-menu-fill); }
   .gx .gx-bar > .gx-strip { flex: 1 1 0; min-width: 0; height: 44px; margin: 0; padding: 0 2px; justify-content: flex-start; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .05); box-shadow: none; backdrop-filter: none; }
   .gx .gx-bar > .gx-strip > .gx-tab { padding: 0 10px; gap: 6px; }
   /* The strip runs on past both ends: they fade, so a cut tab reads as more to swipe to. */
