@@ -28,15 +28,16 @@ export function JobsPill() {
   if (!tray) return null;
   const { summary } = tray;
   /* Nothing at all, or stopped (the account changed in another tab: the last count is not this account's to show). */
-  if ((!summary || tray.stopped) && !tray.open) return null;
+  if (((!summary && !tray.error) || tray.stopped) && !tray.open) return null;
+  const unread = !summary && Boolean(tray.error);
   const quiet = !summary || summary.kind === "quiet";
   return (
     <>
-      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"}
-        aria-haspopup="dialog" aria-expanded={tray.open} aria-label={quiet ? "Jobs" : `Jobs: ${summary.text}`}
+      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={unread ? "red" : summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"}
+        aria-haspopup="dialog" aria-expanded={tray.open} aria-label={unread ? "Jobs could not be read. Open to try again." : quiet ? "Jobs" : `Jobs: ${summary.text}`}
         onClick={() => tray.setOpen(!tray.open)} data-testid="running-jobs">
         <span className="gx-jobs-dot" aria-hidden="true" />
-        <span className="gx-jobs-long" aria-hidden="true">{quiet ? "Jobs" : summary.text}</span>
+        <span className="gx-jobs-long" aria-hidden="true">{unread ? "Jobs · Try again" : quiet ? "Jobs" : summary.text}</span>
         {/* Short of room, nothing new says itself as the jobs glyph alone. */}
         <span className="gx-jobs-short" aria-hidden="true">{quiet ? <Glyph name="stack" size={16} className="gx-glyph" /> : summary.short}</span>
       </button>

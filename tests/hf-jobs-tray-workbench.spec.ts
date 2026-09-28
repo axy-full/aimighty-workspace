@@ -347,9 +347,13 @@ test("Release approves the figure on its button; short, a moved price and a lost
   /* Pressed at the new figure: the lost press had started it after all, so this one is answered "already" and charges nothing. */
   answer = "already";
   const before = tray.reads;
+  /* A release moves the balance: the header's credits read again at once, as a take card's Release has them do. */
+  let accountReads = 0;
+  page.on("request", (request) => { if (request.method() === "GET" && new URL(request.url()).pathname === "/api/me") accountReads++; });
   await held.getByRole("button", { name: "Release · 45 cr: Harbour at dawn" }).click();
   await expect(page.getByTestId("toast")).toHaveText("Harbour at dawn was already released.");
   await expect.poll(() => tray.reads).toBeGreaterThan(before);
+  await expect.poll(() => accountReads, { timeout: 5_000 }).toBeGreaterThan(0);
   expect(releases.map((r) => r.credits)).toEqual([43, 43, 43, 45]);
   await expect(held.getByTestId("jobs-stage")).toHaveText("Queued");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 2 rendering · 2 queued");
@@ -581,6 +585,28 @@ test("with nothing running, what finished is news until it is seen; then the pil
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
 });
 
+test("a failed first jobs read keeps recovery reachable without inventing an empty queue", async ({ page }, info) => {
+  const tray: Tray = { reads: 0, reply: () => ({ status: 503, json: { error: "Unavailable" } }) };
+  const errors = await open(page, tray);
+  const pill = page.getByTestId("running-jobs");
+  await expect(pill).toHaveAccessibleName("Jobs could not be read. Open to try again.");
+  await expect(pill).toHaveAttribute("data-tone", "red");
+  expect(await headerFits(page)).toEqual([]);
+  await noOverflow(page);
+  await pill.click();
+  await expect(page.getByTestId("jobs-error")).toContainText("Jobs could not be read. Trying again shortly.");
+  await expect(page.getByTestId("jobs-empty")).toHaveCount(0);
+  await expect(page.getByTestId("jobs-row")).toHaveCount(0);
+  await arrived(page);
+  if (TOUCH.includes(info.project.name)) expect(await smallTargets(page, ".gx-jobs-tray")).toEqual([]);
+  tray.reply = () => reply(busyTray());
+  await page.getByTestId("jobs-retry").click();
+  await expect(page.getByTestId("jobs-row")).toHaveCount(7);
+  await expect(page.getByTestId("jobs-error")).toHaveCount(0);
+  await expect(pill).toHaveAccessibleName("Jobs: 2 rendering · 1 queued · 1 held");
+  expect(errors).toEqual([]);
+});
+
 test("a tray that cannot be drawn costs the pill, not the header, and Try again brings it back", async ({ page }, info) => {
   test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "a desktop and a phone");
   const tray: Tray = { reads: 0, reply: () => reply(busyTray()) };
@@ -795,6 +821,8 @@ test("own-key failed jobs keep unknown charges distinct from a recorded zero", a
         args: [`gen_${tag}_${suffix}`, "dreamina-seedance-2-5-260628", "A quiet harbour", status, me.id, now, now, now, cost, "The engine stopped."],
       });
     }
+    /* A separate zero-cost refinement cannot prove the missing render charge was zero. */
+    await tenant.execute({ sql: "UPDATE generations SET refine_cost_usd=0 WHERE id=?", args: [`gen_${tag}_unknown`] });
     const response = await page.request.get("/api/jobs?view=tray&sync=0", { headers });
     expect(response.ok(), await response.text()).toBe(true);
     const body = await response.json() as TrayReply;

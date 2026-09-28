@@ -4,6 +4,7 @@ import { poll, type Poller } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
+import { requestAccountRefresh } from "@/lib/workspace/data";
 import { parseTrayReply, seenKey, settled, trayOrder, traySummary, withComposerSlot, type TrayJob, type TrayReply, type TraySummary } from "@/lib/jobsTray";
 import { onJobAnnounced } from "./jobs-bus";
 
@@ -228,6 +229,8 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
       const reply = await response.json().catch(() => null) as { released?: boolean; already?: boolean; error?: string; credits?: unknown } | null;
       if (response.ok && reply?.released) {
         toast(reply.already ? `${job.name} was already released.` : `${job.name} released · ${credits.toLocaleString("en-US")} cr. It renders now.`);
+        /* A release moves the balance: the header's credits read again now, as after a take card's Release (components/graphite/ReleaseTake.tsx). */
+        requestAccountRefresh();
         readNow();
         return true;
       }
