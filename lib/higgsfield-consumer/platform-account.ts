@@ -29,7 +29,7 @@ import {
   type ConsumerIdentity,
 } from "./store";
 import { WEBSITE_TOOLS, isWebsiteToolId, servedByCommercialApi, websiteTool, type WebsiteToolId, type WebsiteToolPricing } from "./website-tools";
-import { websiteJobsInFlightTx, websiteJobsReady } from "./platform-jobs";
+import { websiteAccountExposureTx, websiteJobsInFlightTx, websiteJobsReady, websiteWalletStateTx, type WebsiteAccountExposure } from "./platform-jobs";
 
 type Tx = Pick<Transaction, "execute">;
 let ready: Promise<void> | undefined;
@@ -112,6 +112,8 @@ export const PLATFORM_ACCOUNT_LOCKED =
 
 /** Why new website work cannot run through the designation right now. Server-side detail only. */
 export type WebsiteAccountReason = "unset" | "paused" | "disconnected" | "reconnect" | "account_changed" | "workspace_unavailable";
+/** Why one quote was refused though the account can serve: its credits would fall under the private floor. */
+export type WebsiteRefusalReason = WebsiteAccountReason | "busy" | "unavailable" | "low_balance";
 /**
  * The neutral refusal every client sees when the account cannot serve new
  * work: nothing was sent and nothing was charged. The reason stays on the
@@ -121,7 +123,7 @@ export class WebsiteToolsUnavailableError extends Error {
   readonly code = "website_unavailable";
   readonly status = 503;
   readonly paidAttempted = false;
-  constructor(readonly reason: WebsiteAccountReason | "busy" | "unavailable") {
+  constructor(readonly reason: WebsiteRefusalReason) {
     super("Website tools are temporarily unavailable. Nothing was charged.");
     this.name = "WebsiteToolsUnavailableError";
   }
@@ -191,6 +193,10 @@ export type WebsiteAccountStatus = {
   rateSet: boolean;
   /** `onApi`: the commercial API serves it, so the website account never does and it cannot be switched on here. */
   tools: { id: WebsiteToolId; label: string; pricing: WebsiteToolPricing; enabled: boolean; priceSet: boolean; onApi: boolean }[];
+  /** What the account holds and settled lately, in Particl credits (lib/higgsfield-consumer/platform-jobs.ts). */
+  exposure: WebsiteAccountExposure;
+  /** Whether a platform quote last saw the account under its private floor (never its balance), and when. */
+  accountLow: { low: boolean; checkedAt: number | null };
 };
 const REASON_TEXT: Record<WebsiteAccountReason, string | null> = {
   unset: null,
@@ -203,6 +209,7 @@ const REASON_TEXT: Record<WebsiteAccountReason, string | null> = {
 /** The platform desk's view: no token, generation, account hash, wallet or balance. */
 export async function platformAccountStatus(caller: ConsumerIdentity | null): Promise<WebsiteAccountStatus> {
   await platformAccountReady();
+  await websiteJobsReady();
   return accountTransaction(async (tx) => {
     const designation = await designationTx(tx);
     const reason = await healthTx(tx, designation);
@@ -221,6 +228,13 @@ export async function platformAccountStatus(caller: ConsumerIdentity | null): Pr
       ? (await tx.execute({ sql: "SELECT name FROM workspaces WHERE id=?", args: [designation.workspaceId] })).rows[0]?.name
       : undefined;
     const fixed = websiteAccountFixedCredits();
+    // Jobs pinned to anything but the designated connection's current grant are on an earlier one.
+    const current = designation
+      ? { host: { workspaceId: designation.workspaceId, userId: designation.userId }, subjectHash: designation.subjectHash,
+          generation: (await consumerConnectionIdentityTx(tx, designation))?.generation ?? null }
+      : null;
+    const exposure = await websiteAccountExposureTx(tx, current);
+    const accountLow = await websiteWalletStateTx(tx);
     return {
       state: !designation ? "unset" : reason === null ? "ready" : designation.pausedAt !== null ? "paused" : "unavailable",
       reason: reason === null ? null : REASON_TEXT[reason],
@@ -242,6 +256,8 @@ export async function platformAccountStatus(caller: ConsumerIdentity | null): Pr
         priceSet: tool.pricing === "get_cost" || fixed[tool.id] !== undefined,
         onApi: servedByCommercialApi(tool.id),
       })),
+      exposure,
+      accountLow,
     };
   });
 }

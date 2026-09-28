@@ -27,6 +27,17 @@ export function websiteAccountCreditUsd(): number | null {
 }
 
 /**
+ * The website account's floor, in its own credits (private runtime
+ * configuration, `HF_ACCOUNT_MIN_WALLET_CREDITS`): a platform quote whose
+ * price would leave the account below it is refused neutrally, and the
+ * platform desk shows the account running low. Unset or invalid: no floor.
+ */
+export function websiteAccountMinWalletCredits(): number {
+  const value = Number(process.env.HF_ACCOUNT_MIN_WALLET_CREDITS);
+  return Number.isFinite(value) && value > 0 && value < 10_000_000 ? value : 0;
+}
+
+/**
  * Fixed per-operation prices, in the website account's credits, for tools the
  * account cannot price itself (`HF_ACCOUNT_FIXED_CREDITS`, a private JSON
  * object keyed by website tool id). A tool without a valid entry here stays

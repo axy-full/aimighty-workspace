@@ -22,7 +22,7 @@ import { approvalMatches, providerDetail, workspaceJobView } from "./client-view
 import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
 import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
 import {
-  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websiteCallNeverLeft, websitePrice,
+  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, guardWebsiteWallet, noteWebsiteWalletShort, takeDispatchLease, websiteCallNeverLeft, websitePrice,
 } from "./account-billing";
 import {
   ownsConsumerJob,
@@ -218,6 +218,8 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
   // privately from the account's own price for the whole session; its wallet is never named.
   const platform = funding.kind === "platform_account";
   const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
+  // The account's wallet as this quote read it: under its private floor after this price, refused neutrally.
+  if (platform) await guardWebsiteWallet(quote.workspace.credits, quote.credits);
   const payload: Snapshot = { input: quote.input, params: quote.params, workspaceName: platform ? "" : quote.workspace.name ?? "Connected wallet", source: described };
   try {
     const { job } = await createConsumerJob({
@@ -305,6 +307,8 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
       await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerShortsView(next ?? (await ownedJob(scope)));
     }
+    // The account's wallet was short of the price (nothing was sent): the desk and the owner are told.
+    await noteWebsiteWalletShort(job, error);
     throw error;
   } finally {
     await lease?.release();

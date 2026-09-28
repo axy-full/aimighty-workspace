@@ -134,6 +134,11 @@ test("the website tools account is designated, paused and released from the desk
   // A tool with no private price cannot be switched on.
   await expect(card.getByTestId("website-tool-voice-change")).toBeDisabled();
   await expect(card.getByTestId("website-tool-voice-change")).toContainText("Needs a price");
+  // What the account holds and settled lately, in Particl credits: never its balance, wallet or rate.
+  const exposure = card.getByTestId("website-account-exposure");
+  await expect(exposure).toContainText(/In flight\s*\d+ jobs? · \d+ credits? reserved/);
+  await expect(exposure).toContainText("Last 30 days");
+  expect((await exposure.innerText()).toLowerCase()).not.toMatch(/wallet|balance|usd|\$/);
   await fits("designated");
   await card.getByTestId("website-account-pause").click();
   await expect(card.getByTestId("website-account-state")).toHaveText("Paused");

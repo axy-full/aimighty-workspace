@@ -2368,6 +2368,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .wacct-tool-name { font: 500 13px/1.2 var(--font-display); color: var(--color-ink); overflow-wrap: anywhere; }
 .wacct-tool-note { font: 400 12px/1.2 var(--font-display); color: var(--color-dim); }
 @media (max-width: 899px) { .wacct button { min-height: 44px; min-width: 44px; } }
+.wacct-exposure { display: grid; gap: 8px; margin: 0; min-width: 0; }
+.wacct-exposure > div { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr); gap: 4px 12px; min-width: 0; }
+.wacct-exposure dt { font: 500 12.5px/1.4 var(--font-display); color: var(--color-ink); }
+.wacct-exposure dd { margin: 0; font: 400 12.5px/1.4 var(--font-display); color: var(--color-dim); overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 599px) { .wacct-exposure > div { grid-template-columns: minmax(0, 1fr); } }
 .ecard { border: 1px solid var(--color-line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; background: var(--color-desk); }
 .ekey { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 6px; padding: 7px 10px; font: 400 11.5px/1 var(--font-kode); color: var(--color-dim); }
 .ekey > span:last-child { font: 500 11px/1 var(--font-display); }

@@ -46,6 +46,8 @@ export function websiteJobsReady() {
       `CREATE TABLE IF NOT EXISTS website_account_objects (
         provider_object_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('soul','element','setup','media')),
         workspace_id TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+      // Whether the account was last seen under its private floor (never its balance), and when the owner was last told.
+      `CREATE TABLE IF NOT EXISTS website_account_wallet (id INTEGER PRIMARY KEY CHECK(id=1), low INTEGER NOT NULL DEFAULT 0, checked_at INTEGER, alerted_at INTEGER)`,
     ])
       await tx.execute(sql);
   }).catch((error) => {
@@ -284,6 +286,91 @@ export async function releaseWebsiteLease(name: string, holder: string): Promise
   return accountTransaction(async (tx) =>
     (await tx.execute({ sql: "UPDATE website_account_leases SET until=0 WHERE name=? AND holder=?", args: [name, holder] })).rowsAffected === 1,
   );
+}
+
+/* ── The platform desk: exposure and the account's floor ─────────────── */
+
+/**
+ * What the shared account holds right now, and what it settled lately — for
+ * the platform desk alone. In Particl credits (what clients were reserved or
+ * charged), never the account's own credits, rate or balance.
+ */
+export type WebsiteAccountExposure = {
+  /** Jobs holding the account's capacity, against its caps. */
+  capacity: { inUse: number; max: number; share: number };
+  /** Admitted and not yet settled or released, and the Particl credits reserved for them. */
+  inFlight: { jobs: number; reserved: number };
+  /** Lost replies: their reservations stay until each is reconciled; never sent again. */
+  unconfirmed: { jobs: number; reserved: number };
+  /** In flight on a connection, account or grant the designation no longer uses: they collect only while it stays connected. */
+  earlierConnection: { jobs: number };
+  /** The last 30 days: collected, failed and still charged (owner decision), and never sent (released to zero). */
+  last30Days: { collected: number; failedCharged: number; charged: number; released: number };
+};
+export const WEBSITE_EXPOSURE_WINDOW_MS = 30 * 86_400_000;
+export async function websiteAccountExposureTx(
+  tx: Tx,
+  current: { host: ConsumerIdentity; subjectHash: string; generation: string | null } | null,
+  at = Date.now(),
+): Promise<WebsiteAccountExposure> {
+  const { maxActive, workspaceShare } = websiteAccountCapacity();
+  const rows = (await tx.execute(`SELECT state,host_workspace_id,host_user_id,subject_hash,generation,particl_credits,created_at FROM website_account_jobs WHERE state IN ${IN_FLIGHT_SQL}`)).rows;
+  const out: WebsiteAccountExposure = {
+    capacity: { inUse: 0, max: maxActive, share: workspaceShare },
+    inFlight: { jobs: 0, reserved: 0 }, unconfirmed: { jobs: 0, reserved: 0 }, earlierConnection: { jobs: 0 },
+    last30Days: { collected: 0, failedCharged: 0, charged: 0, released: 0 },
+  };
+  for (const row of rows) {
+    const reserved = Number(row.particl_credits);
+    out.inFlight.jobs++; out.inFlight.reserved += reserved;
+    if (Number(row.created_at) > at - WEBSITE_CAPACITY_WINDOW_MS) out.capacity.inUse++;
+    if (row.state === "uncertain") { out.unconfirmed.jobs++; out.unconfirmed.reserved += reserved; }
+    const same = current && row.host_workspace_id === current.host.workspaceId && row.host_user_id === current.host.userId &&
+      row.subject_hash === current.subjectHash && row.generation === current.generation;
+    if (!same) out.earlierConnection.jobs++;
+  }
+  // Settled from the ledger's own receipts: a failed job's bill stands at its approved price, one never sent at zero.
+  const settled = (await tx.execute({
+    sql: `SELECT m.status AS status, m.billed_credits AS billed FROM website_account_jobs j JOIN meter_events m ON m.id=j.meter_id
+      WHERE j.state IN ('settled','released') AND j.updated_at>?`,
+    args: [at - WEBSITE_EXPOSURE_WINDOW_MS],
+  }).catch(() => ({ rows: [] as Record<string, unknown>[] }))).rows;
+  for (const row of settled) {
+    const billed = Number(row.billed ?? 0);
+    if (row.status === "succeeded") { out.last30Days.collected++; out.last30Days.charged += billed; }
+    else if (row.status === "failed" && billed > 0) { out.last30Days.failedCharged++; out.last30Days.charged += billed; }
+    else if (row.status === "failed") out.last30Days.released++;
+  }
+  return out;
+}
+
+/** How often the platform owner is told the account is under its floor, at most. */
+export const WEBSITE_WALLET_ALERT_MS = 86_400_000;
+/**
+ * What a platform quote saw of the account's wallet: only whether it is under
+ * its floor (its balance is never kept). True when the owner should be told
+ * now (under the floor, and not told in the last day).
+ */
+export async function noteWebsiteWallet(low: boolean, at = Date.now()): Promise<{ alertDue: boolean }> {
+  await websiteJobsReady();
+  return accountTransaction(async (tx) => {
+    const row = (await tx.execute("SELECT alerted_at FROM website_account_wallet WHERE id=1")).rows[0];
+    await tx.execute({
+      sql: "INSERT INTO website_account_wallet(id,low,checked_at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET low=excluded.low,checked_at=excluded.checked_at",
+      args: [low ? 1 : 0, at],
+    });
+    const alerted = row?.alerted_at == null ? null : Number(row.alerted_at);
+    return { alertDue: low && (alerted === null || alerted <= at - WEBSITE_WALLET_ALERT_MS) };
+  });
+}
+export async function markWebsiteWalletAlerted(at = Date.now()) {
+  await websiteJobsReady();
+  await accountTransaction((tx) => tx.execute({ sql: "UPDATE website_account_wallet SET alerted_at=? WHERE id=1", args: [at] }));
+}
+/** The desk's view of the account's floor: whether it was last seen under it, and when. */
+export async function websiteWalletStateTx(tx: Tx): Promise<{ low: boolean; checkedAt: number | null }> {
+  const row = (await tx.execute("SELECT low,checked_at FROM website_account_wallet WHERE id=1")).rows[0];
+  return { low: Number(row?.low ?? 0) === 1, checkedAt: row?.checked_at == null ? null : Number(row.checked_at) };
 }
 
 /* ── Objects on the shared account ────────────────────────────────────── */

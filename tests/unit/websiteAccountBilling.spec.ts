@@ -451,3 +451,21 @@ test("the credits ledger names a website job by its tool, never by the account o
   // Its platform spend is counted with the provider's own key, for the desk alone.
   expect(vendorKeyNameFor("higgsfield_account")).toBe("higgsfield");
 });
+
+test("a quote that would leave the account under its private floor is refused with the one neutral answer, and no job is kept", async () => {
+  const { tenant, jobs } = await modules();
+  await withEnv({ HF_ACCOUNT_CREDIT_USD: RATE, HF_ACCOUNT_MIN_WALLET_CREDITS: "9990" }, async () => {
+    await designate();
+    const ws = await client();
+    const f = await service();
+    await tenant.runInTenant(ws, async () => {
+      // The account's wallet (10 000) less this price (12) would fall under 9 990.
+      await expect(f.service.quoteConsumerMarketingVideo("member", "draft", input, randomUUID())).rejects.toMatchObject({ code: "website_unavailable", status: 503 });
+      expect(f.state.quotes).toBe(1);
+      expect((await jobs.listConsumerJobs({ userId: "member", draftId: "draft" })).items).toHaveLength(0);
+      await withEnv({ HF_ACCOUNT_MIN_WALLET_CREDITS: "9000" }, async () => {
+        expect(await f.service.quoteConsumerMarketingVideo("member", "draft", input, randomUUID())).toMatchObject({ status: "quoted" });
+      });
+    });
+  });
+});

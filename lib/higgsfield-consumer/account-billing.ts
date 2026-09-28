@@ -27,7 +27,8 @@ import { accountTransaction } from "@/lib/accountDb";
 import { creditsAtTerms, currentBillingTerms } from "@/lib/billingTerms";
 import { reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
 import { meter } from "@/lib/meter";
-import { websiteAccountCreditUsd, websiteAccountFixedCredits } from "@/lib/vendorRates";
+import { websiteAccountCreditUsd, websiteAccountFixedCredits, websiteAccountMinWalletCredits } from "@/lib/vendorRates";
+import { mailConfigured, sendMail } from "@/lib/mail";
 import {
   ConsumerJobError,
   claimConsumerDispatch,
@@ -37,7 +38,9 @@ import {
   type ConsumerJobScope,
 } from "./jobs";
 import {
+  markWebsiteWalletAlerted,
   moveWebsiteJobTx,
+  noteWebsiteWallet,
   registerWebsiteDispatchTx,
   releaseWebsiteLease,
   takeWebsiteLease,
@@ -262,6 +265,43 @@ export async function takeDispatchLease(): Promise<{ release(): Promise<void> }>
   const holder = randomUUID();
   if (!(await takeWebsiteLease("dispatch", holder, WEBSITE_DISPATCH_LEASE_MS))) throw new WebsiteToolsUnavailableError("busy");
   return { release: () => releaseWebsiteLease("dispatch", holder).then(() => {}, () => {}) };
+}
+
+/* ── The account's floor ──────────────────────────────────────────────── */
+
+type Mail = (message: { to: string; subject: string; text: string; html: string }) => Promise<unknown>;
+/**
+ * The platform owner is told, at most once a day, that the account is under
+ * its floor — by email when mail is set up, and on the platform desk always.
+ * Best effort: a failed send is tried again with the next low reading.
+ */
+async function tellOwnerAccountLow(send: Mail = sendMail) {
+  const to = (process.env.SUPER_ADMIN_EMAIL ?? "").trim();
+  if (!to || !mailConfigured()) return;
+  const text = "The account that runs website tools for managed workspaces is under its floor. New website-tool quotes are refused until it is topped up; no client was charged for a refusal. The platform desk shows it too.";
+  await send({ to, subject: "Website tools: the account is running low", text, html: `<p>${text}</p>` });
+  await markWebsiteWalletAlerted();
+}
+/**
+ * A platform quote's own reading of the account's wallet (nothing else is
+ * read): the account must be able to pay its price and stay at or above its
+ * private floor (`HF_ACCOUNT_MIN_WALLET_CREDITS`, none by default), or the
+ * quote is refused with the one neutral answer before anyone approves a
+ * price the account cannot pay. The desk learns whether it was under, never
+ * the balance.
+ */
+export async function guardWebsiteWallet(balance: number, price: number, options: { send?: Mail } = {}) {
+  const floor = websiteAccountMinWalletCredits();
+  const low = !Number.isFinite(balance) || balance - price < floor;
+  const { alertDue } = await noteWebsiteWallet(low).catch(() => ({ alertDue: false }));
+  if (alertDue) await tellOwnerAccountLow(options.send).catch(() => {});
+  if (low) throw new WebsiteToolsUnavailableError("low_balance");
+}
+/** The transport found the account's wallet short of a price at submission: the desk and the owner are told. */
+export async function noteWebsiteWalletShort(job: Pick<ConsumerJob, "funding">, error: unknown, options: { send?: Mail } = {}) {
+  if (job.funding !== "platform_account" || !(error instanceof ConsumerVideoError) || error.code !== "insufficient_credits") return;
+  const { alertDue } = await noteWebsiteWallet(true).catch(() => ({ alertDue: false }));
+  if (alertDue) await tellOwnerAccountLow(options.send).catch(() => {});
 }
 
 /* ── The paid-call half every website-tool service shares ───────────── */

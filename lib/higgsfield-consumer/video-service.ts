@@ -5,7 +5,7 @@ import { newProject } from "@/lib/workbench/studio";
 import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork } from "./access";
 import { websiteFunding } from "./funding";
-import { acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websiteCallNeverLeft, websitePrice } from "./account-billing";
+import { acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, guardWebsiteWallet, noteWebsiteWalletShort, takeDispatchLease, websiteCallNeverLeft, websitePrice } from "./account-billing";
 import {
   ownsConsumerJob,
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerRecoveryJobs, readConsumerJobAfterAdmissions,
@@ -103,6 +103,8 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
   // privately from the account's own price; the account's wallet is never named.
   const platform = funding.kind === "platform_account";
   const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
+  // The account's wallet as this quote read it: under its private floor after this price, refused neutrally.
+  if (platform) await guardWebsiteWallet(quote.workspace.credits, quote.credits);
   try {
     const { job } = await createConsumerJob({ userId, draftId, funding: funding.kind, connectedOwnerId: access.connectedOwnerId,
       connectionGeneration: access.generation, higgsfieldWorkspaceId: quote.workspace.id,
@@ -182,6 +184,8 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
       await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerVideoView(next ?? await ownedVideo(scope));
     }
+    // The account's wallet was short of the price (nothing was sent): the desk and the owner are told.
+    await noteWebsiteWalletShort(job, error);
     throw error;
   } finally {
     await lease?.release();

@@ -15,7 +15,7 @@ import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess
 import { refuseForeignAccountObjects } from "./account-objects";
 import { OWN_ACCOUNT, jobFunding, websiteFunding, type ConsumerFunding } from "./funding";
 import {
-  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websiteCallNeverLeft, websitePrice,
+  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, guardWebsiteWallet, noteWebsiteWalletShort, takeDispatchLease, websiteCallNeverLeft, websitePrice,
 } from "./account-billing";
 import {
   ownsConsumerJob,
@@ -232,6 +232,8 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
   await accessForNewWork(userId, funding, access.generation);
   if (platform && quote.priceSource !== "get_cost") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
+  // The account's wallet as this quote read it: under its private floor after this price, refused neutrally.
+  if (platform) await guardWebsiteWallet(quote.workspace.credits, quote.credits);
   const payload: Snapshot = {
     input: quote.input,
     params: quote.params,
@@ -336,6 +338,8 @@ export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope
       await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerMarketingTemplateView(next ?? (await ownedTemplateJob(scope)));
     }
+    // The account's wallet was short of the price (nothing was sent): the desk and the owner are told.
+    await noteWebsiteWalletShort(job, error);
     throw error;
   } finally {
     await lease?.release();
