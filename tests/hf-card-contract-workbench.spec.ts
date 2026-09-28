@@ -384,3 +384,24 @@ test("long names and long messages stay inside their cards and banners", async (
   await shot(page, info, "long-banner", banner);
   expect(errors).toEqual([]);
 });
+
+test("a held take that cannot open yet says what it waits for: credits, or a cap an admin can raise", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* Both held for credits; the second's release was refused by the production's cap, which lib/held.ts writes on the row. */
+  const held = { params: { held: { why: "credits", needs: 12 } }, kind: "video" as const, status: "held", storedUrl: null, creditsBilled: null, projectId: "prod-cards" };
+  const rows = () => [
+    generation({ ...held, id: "gen_short", title: "Storm front", createdAt: BASE, updatedAt: BASE }),
+    generation({ ...held, id: "gen_capped", title: "Crane over the quay", createdAt: BASE - 1, updatedAt: BASE - 1,
+      error: "At this production's cap of 100 cr (100 cr spent, this needs 12 cr). An admin can unlock it or raise it." }),
+  ];
+  const { errors } = await open(page, "/suites?suite=studio&page=takes", "ok", { rows });
+  const takes = page.getByTestId("edit-takes");
+  await expect(takes.getByTestId("take-tile")).toHaveCount(2);
+  const toast = page.getByTestId("toast");
+  await tile(takes, "Storm front").getByTestId("edit-take").click();
+  await expect(toast).toHaveText("Storm front is held · Needs 12 cr. It starts on its own when credits arrive.");
+  /* A cap is not a shortfall: credits arriving start nothing, so the toast says what does. */
+  await tile(takes, "Crane over the quay").getByTestId("edit-take").click();
+  await expect(toast).toHaveText("Crane over the quay is held · At this production's cap of 100 cr (100 cr spent, this needs 12 cr). It starts on its own when the cap allows it or an admin raises the cap.");
+  expect(errors).toEqual([]);
+});
