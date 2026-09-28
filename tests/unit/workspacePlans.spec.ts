@@ -8,7 +8,7 @@ import {
   VISUAL_PACING_MS,
   isApprovedQuote,
 } from "../../lib/workspace/run-engine";
-import { activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
+import { activityFromAgentJobs, activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
 import { idempotencyKey } from "../../lib/workspace/plan-helpers";
 
@@ -579,6 +579,23 @@ test("activity merges real sources with this session's runs, newest first, with 
   const runs = loaded.entries[1];
   // Runs from another production are never shown.
   expect(runs.some((entry) => entry.label.includes("Other"))).toBe(false);
+});
+
+test("a failed planning run says what it was charged, never that it was not billed", () => {
+  const now = 10_000_000;
+  const lines = activityFromAgentJobs([
+    { id: "a1", status: "failed", request: "plan the opening", credits: 3, updatedAt: now - 60_000 },
+    /* Zero credits may be the workspace's own key, which its vendor billed: no claim either way. */
+    { id: "a2", status: "failed", request: "plan the close", credits: 0, updatedAt: now - 120_000 },
+    { id: "a3", status: "failed", request: "plan the pier", credits: null, updatedAt: now - 180_000 },
+    { id: "a4", status: "succeeded", request: "plan the harbour", credits: 5, updatedAt: now - 240_000 },
+  ], now);
+  expect(lines.map((line) => [line.label, line.meta])).toEqual([
+    ["Planning failed: plan the opening", "1 min · 3 cr"],
+    ["Planning failed: plan the close", "2 min"],
+    ["Planning failed: plan the pier", "3 min"],
+    ["Planned plan the harbour", "4 min · 5 cr"],
+  ]);
 });
 
 test("shorts: without Shorts data it refuses with a reason; with it, it quotes on the Shorts route and submits the exact approved wallet and credits", async () => {

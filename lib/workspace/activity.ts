@@ -126,7 +126,8 @@ export function activityFromAgentJobs(jobs: ActivityAgentJob[], now: number): Ac
     const meta = [
       ago(at, now),
       job.status === "succeeded" && job.credits != null ? formatCredits(job.credits, "cr") : null,
-      job.status === "failed" ? "not billed" : null,
+      /* A failed run that was charged says so; a zero here may be the workspace's own key, so no claim either way. */
+      job.status === "failed" && job.credits != null && job.credits > 0 ? formatCredits(job.credits, "cr") : null,
     ]
       .filter(Boolean)
       .join(" · ");
