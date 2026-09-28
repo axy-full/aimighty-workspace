@@ -5,7 +5,7 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { identifyImage } from "@/lib/imagemeta";
 import { identifyAudio } from "@/lib/audioMeta";
 import { inspectStoredUploadSeconds } from "@/lib/mediaSource.server";
-import { assembleChunks, streamAssembleUpload } from "@/lib/storage";
+import { assembleChunks, streamAssembleUpload, uploadPath } from "@/lib/storage";
 import { storeReferenceUpload } from "@/lib/uploadIntake";
 import { abandonUpload, beginUploadFinish, completeUpload, planUploadObjects, prepareUpload, UploadError, uploadFailure, type FinishClaim } from "@/lib/uploadReservations";
 
@@ -41,7 +41,7 @@ export const POST = withTenant(async function POST(req: Request) {
       durationS = await inspectStoredUploadSeconds({ id: claim.uploadId, ext, kind, storedUrl: response.url, bytes: stored.bytes }).catch(() => null);
     await prepareUpload(claim, { count, response: { ...response, durationS }, record: {
       id: claim.uploadId, filename, mime, kind, ext, bytes: stored.bytes, sha256: stored.sha256,
-      width: meta && "width" in meta ? meta.width : null, height: meta && "height" in meta ? meta.height : null, durationS, storedUrl: response.url,
+      width: meta && "width" in meta ? meta.width : null, height: meta && "height" in meta ? meta.height : null, durationS, storedUrl: uploadPath(claim.uploadId, ext),
     } });
     return NextResponse.json(await completeUpload(claim));
   } catch (error) {

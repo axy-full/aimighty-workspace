@@ -9,6 +9,7 @@ import { platformDb, platformReady, now, rowToWorkspace } from "./platform";
 import { securityAuditStatement } from "./securityAudit";
 import { accountDbReady } from "./accountDb";
 import { usingBlob } from "./storage";
+import { cloudBackend } from "./storage/backend";
 import { revokeGatewayKey } from "./vercelKeys";
 import { deleteTenantDatabase } from "./provision";
 import { purgeSoulIdentities } from "./soulIdentities";
@@ -157,14 +158,13 @@ async function removeFiles(ws: TenantWorkspace) {
   let files = 0,
     uploads = 0;
   if (usingBlob()) {
-    const { list, del: rawDel } = await import("@vercel/blob");
-    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
-    // Deleted objects leave the prefix. Bound each pass so large cleanups resume on cron.
+    const backend = cloudBackend();
+    // The selected backend owns cleanup; the migration fallback is read-only.
     for (let page = 0; page < 20; page++) {
-      const found = await list({ prefix: `ws/${ws.id}/`, limit: 500 });
-      if (!found.blobs.length) return { files, uploads };
-      await del(found.blobs.map((blob) => blob.url));
-      files += found.blobs.length;
+      const found = await backend.list({ prefix: `ws/${ws.id}/`, limit: 500 });
+      if (!found.items.length) return { files, uploads };
+      await backend.del(found.items.map((item) => item.key));
+      files += found.items.length;
       if (!found.hasMore) return { files, uploads };
     }
     throw new Error("File cleanup is continuing on the next run.");

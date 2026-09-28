@@ -12,7 +12,7 @@ import { db, ready } from "@/lib/db";
 import { archiveReady } from "@/lib/archive";
 import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
-import { openUploadStream } from "@/lib/storage";
+import { openUploadStream, backendKind, presignedUploadUrl } from "@/lib/storage";
 import { byteRange } from "@/lib/mediaRange";
 import { attachmentDisposition } from "@/lib/contentDisposition";
 
@@ -85,6 +85,13 @@ export const GET = withTenant(async function GET(
     });
   }
   try {
+    if (backendKind() === "r2" && new URL(req.url).searchParams.get("stream") !== "1") {
+      const signed = await presignedUploadUrl(id, row.ext, row.stored_url, {
+        contentType: serve.contentType,
+        ...(headers["Content-Disposition"] ? { contentDisposition: headers["Content-Disposition"] } : {}),
+      });
+      if (signed) return new Response(null, { status: 302, headers: { Location: signed, "Cache-Control": "private, no-store" } });
+    }
     const { stream, size } = await openUploadStream(
       id,
       row.ext,
