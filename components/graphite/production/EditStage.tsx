@@ -16,6 +16,7 @@ import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { isVariation, takeLabel } from "@/lib/variations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import { useShell } from "@/lib/shell/state";
+import { useHandedTake } from "@/lib/shell/take-handover";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
@@ -229,6 +230,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /** The last status read of the re-edit in flight failed; cleared by the next good one. */
   const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
+  /* A take handed over while Takes is already open (the jobs tray's Open in Takes): picked and brought into view like one handed over on the way in. */
+  useHandedTake((id) => { setPicked(id); setFocus(id); setLost(null); setQuote(null); setError(""); });
 
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {

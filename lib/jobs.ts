@@ -90,6 +90,8 @@ export type Generation = {
   sourceGenId: string | null;
   createdAt: number;
   updatedAt: number;
+  /** When it succeeded, failed or was cancelled (generations.settled_at); null while it runs, and on takes settled before that was kept. */
+  settledAt?: number | null;
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -233,6 +235,7 @@ export function rowToGeneration(r: any): Generation {
     sourceGenId: r.source_gen_id ?? null,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
+    settledAt: r.settled_at == null ? null : Number(r.settled_at),
   };
 }
 
@@ -253,6 +256,12 @@ export async function listGenerations(opts: {
   limit?: number;
   search?: string;
   status?: string;
+  /** Any of these statuses (GET /api/jobs?status=queued,running,held); used in place of `status`. */
+  statuses?: readonly string[];
+  /** Only takes that settled at or after this time (ms), latest first: what just finished, for the jobs tray. */
+  settledSince?: number | null;
+  /** Leave out the starter production's demo takes and the connected account's filed originals: only renders this person set going here. */
+  ownRenders?: boolean;
   kind?: string;
   /** Only renders made with this identity. */
   identityId?: string | null;
@@ -295,10 +304,19 @@ export async function listGenerations(opts: {
     const needle = `%${opts.search.toLowerCase()}%`;
     args.push(needle, needle);
   }
-  if (opts.status && opts.status !== "all") {
+  if (opts.statuses?.length) {
+    where.push(`g.status IN (${opts.statuses.map(() => "?").join(",")})`);
+    args.push(...opts.statuses);
+  } else if (opts.status && opts.status !== "all") {
     where.push("g.status = ?");
     args.push(opts.status);
   }
+  if (opts.settledSince) {
+    where.push("g.settled_at >= ?");
+    args.push(opts.settledSince);
+  }
+  if (opts.ownRenders)
+    where.push(`g.id NOT GLOB 'gen_hfc_*' AND NOT (json_valid(g.params) AND COALESCE(json_extract(g.params,'$.demo'),0)<>0)`);
   if (opts.kind === "image" || opts.kind === "video" || opts.kind === "audio") {
     where.push(opts.kind === "image" ? "g.kind = 'image'" : opts.kind === "audio" ? "g.kind = 'audio'" : "g.kind NOT IN ('image','audio','model')");
   }
@@ -326,7 +344,7 @@ export async function listGenerations(opts: {
   where.push("g.deleted = 0");
   const sql = `${SELECT}
     WHERE ${where.join(" AND ")}
-    ORDER BY g.created_at DESC, g.id DESC
+    ORDER BY ${opts.settledSince ? "g.settled_at DESC, g.id DESC" : "g.created_at DESC, g.id DESC"}
     LIMIT ?`;
   args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500) + (opts.includeNext ? 1 : 0));
 
