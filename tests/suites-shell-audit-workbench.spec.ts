@@ -154,7 +154,8 @@ test("Takes: an audio take opens its transcript; the picture tools stay with pic
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites?suite=particl&page=takes&sp=takes");
   await expect(page.getByTestId("edit-stage")).toBeVisible();
-  await page.getByTestId("edit-takes").locator("[data-testid='edit-take'][data-media='audio']").click();
+  /* Takes holds every take once now, the room tone upload too: the generated line is the one opened. */
+  await page.getByTestId("edit-takes").locator("[data-testid='edit-take'][data-media='audio']").filter({ hasText: "Harbour voice" }).click();
   await expect(page.getByTestId("transcribe")).toBeVisible();
   await expect(page.getByTestId("edit-to-timeline")).toHaveCount(0);
   await expect(page.getByTestId("edit-image")).toHaveCount(0);

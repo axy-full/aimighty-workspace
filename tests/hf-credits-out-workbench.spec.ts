@@ -256,8 +256,8 @@ test("owner: a held take says what it needs and releases at that price, once; st
   /* The header reads the balance again at once. */
   await expect(page.getByTestId("workspace-credits")).toContainText(String(before - 15));
 
-  /* A wheel (a finger) reaches the page's last row, and on a phone it ends above the tab bar. */
-  await clearOfTabBar(page, page.getByTestId("takes-assets").locator(":scope > *").last(), true);
+  /* A wheel (a finger) reaches the page's last row (the Takes desk's grid ends the page), and on a phone it ends above the tab bar. */
+  await clearOfTabBar(page, page.getByTestId("takes-grid").locator(":scope > *").last(), true);
 
   /* The Inspector's Release is the take's own: moving to another held take brings no word or price across. */
   const wide = WIDE.includes(info.project.name);

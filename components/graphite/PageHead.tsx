@@ -20,7 +20,8 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
   const shell = useShell();
   const { state, dispatch, setLibFilter } = useWorkspace();
   const atomik = useAtomik();
-  const views = pageViews(state.page);
+  /* Studio › Takes filters on its own desk (status, kind, search); the workspace's view segment would do nothing there. */
+  const views = shell.suite.id === "studio" && shell.page.id === "takes" ? [] : pageViews(state.page);
   const action = primaryAction(state.page);
   const availability = primaryAvailability(state, onGenerate, generate);
   /* What it does, then what it costs: the price is its own run of text, so a phone can set it under the action, whole. */
