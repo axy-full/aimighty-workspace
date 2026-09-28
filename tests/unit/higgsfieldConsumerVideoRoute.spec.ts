@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { websiteRouteModules } from '../helpers/websiteRouteAccess';
 import * as zod from 'zod';
 import * as tenant from '../../lib/tenant';
 import { MediaSourceError } from '../../lib/mediaBindings';
@@ -25,8 +24,6 @@ const scope = workbenchScopeFor('workspace', 'owner');
 
 /** Real withTenant, requireOwner, requireRender, input schema and byte reader.
  * Only session resolution, recovery transport, rate storage and service I/O are isolated. */
-/** Whether the platform's website tools can take this work now (a managed workspace). */
-let platformAvailable = true;
 async function fixture() {
   const auth = await import('../../lib/auth');
   let store = { workspace: { id: 'workspace', deletedAt: null, suspendedAt: null },
@@ -63,8 +60,6 @@ async function fixture() {
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
     /* The standalone guard runs inside the quote service (tests/unit/higgsfieldConsumerVideoService.spec.ts); the route maps its refusal. */
     '@/lib/higgsfield-consumer/marketing-records': { ConsumerSetupError: records.ConsumerSetupError },
-    /* The one neutral mapping every consumer route shares for the platform's website account. */
-    '@/lib/higgsfield-consumer/website-problems': await import('../../lib/higgsfield-consumer/website-problems'),
     '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
@@ -76,8 +71,6 @@ async function fixture() {
     },
   };
   const output = { exports: {} as Record<'GET' | 'POST', (req: Request, ctx?: unknown) => Promise<Response>> };
-  // The real route guard, read budget and neutral refusals, over this fixture's session, tenant and rate recorder.
-  Object.assign(deps, await websiteRouteModules({ auth: deps['@/lib/auth'], tenant, accountDb: deps['@/lib/accountDb'], available: () => platformAvailable }));
   new Function('require', 'module', 'exports', compile(readFileSync('app/api/higgsfield/consumer/video/route.ts', 'utf8')))((name: string) => {
     if (!(name in deps)) throw new Error(`Unexpected route dependency ${name}`);
     return deps[name];
@@ -232,91 +225,4 @@ test('the quote service\'s standalone refusal answers 409 setup_not_particl with
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({ code: 'setup_not_particl', error: new records.ConsumerSetupError().message });
   expect(f.calls.map((call) => call.name)).toEqual(['quote']);
-});
-
-test('a platform job is approved by its credits alone, and website refusals answer neutrally', async () => {
-  const f = await fixture();
-  const approval = { action: 'submit', draftId: 'draft-1', id: key, credits: 25 };
-  expect((await f.request('POST', approval)).status).toBe(200);
-  expect((await f.request('POST', { ...approval, workspaceId: null })).status).toBe(200);
-  expect(f.calls.map((call) => call.args[1])).toEqual([
-    { action: 'submit', draftId: 'draft-1', id: key, credits: 25 },
-    { action: 'submit', draftId: 'draft-1', id: key, credits: 25, workspaceId: null },
-  ]);
-  const { WebsiteToolsUnavailableError } = await import('../../lib/higgsfield-consumer/platform-account');
-  const { WebsitePriceChangedError } = await import('../../lib/higgsfield-consumer/account-billing');
-  const { ForeignAccountObjectError } = await import('../../lib/higgsfield-consumer/account-objects');
-  const { SpendReservationError } = await import('../../lib/generationRequests');
-  for (const [error, status, code] of [
-    [new WebsiteToolsUnavailableError('account_changed'), 503, 'website_unavailable'],
-    [new WebsiteToolsUnavailableError('busy'), 503, 'website_unavailable'],
-    [new WebsitePriceChangedError(), 409, 'price_changed'],
-    [new ForeignAccountObjectError(), 409, 'object_not_particl'],
-    [new SpendReservationError('This job needs 25 credits; 3 are available after reserved jobs.', 402), 402, 'reservation_refused'],
-  ] as const) {
-    f.fail(error);
-    const refused = await f.request('POST', approval);
-    expect(refused.status).toBe(status);
-    const body = await refused.json();
-    expect(body.code).toBe(code);
-    expect(JSON.stringify(body)).not.toMatch(/account_changed|wallet|subject|generation/);
-  }
-});
-
-test('a managed workspace: any signed-in member quotes, approves and follows their own jobs on the platform website tools; tokens never', async () => {
-  const f = await fixture(), original = f.store();
-  const member = { ...original, workspace: { ...original.workspace!, usesPlatformKeys: true }, user: { ...original.user!, id: 'member', role: 'member', owner: false } } as tenant.TenantStore;
-  const memberScope = workbenchScopeFor('workspace', 'member');
-  f.setStore(member);
-  // The page learns only whether the website tools can take this work now.
-  platformAvailable = false;
-  let listing = await f.request('GET', undefined, { scope: memberScope, query: '?draftId=draft-1' });
-  expect(listing.status).toBe(200);
-  expect(await listing.json()).toEqual({ jobs: [f.job], websiteTools: { managed: true, available: false } });
-  platformAvailable = true;
-  listing = await f.request('GET', undefined, { scope: memberScope, query: '?draftId=draft-1' });
-  expect(await listing.json()).toEqual({ jobs: [f.job], websiteTools: { managed: true, available: true } });
-  // Approved by credits alone, no wallet named.
-  const approve = { action: 'submit', draftId: 'draft-1', id: key, credits: 25 };
-  for (const body of [quote, approve, status, { action: 'setup', types: ['hook'] }])
-    expect((await f.request('POST', body, { scope: memberScope })).status, body.action).toBe(200);
-  expect(f.calls.map(call => [call.name, call.args[0]])).toEqual([
-    ['list', 'member'], ['list', 'member'], ['quote', 'member'], ['submit', { userId: 'member', draftId: 'draft-1', id: key }], ['status', { userId: 'member', draftId: 'draft-1', id: key }], ['setup', 'member'],
-  ]);
-  // Setup reads with the grant a quote would use: the platform's account.
-  expect(f.calls.at(-1)!.args[2]).toEqual({ kind: 'platform_account', tool: null });
-  // Every account-reading action draws on the shared account's one read budget.
-  expect(f.limits.filter(limit => limit[0] === 'hf-website-account:reads')).toEqual(Array(4).fill(['hf-website-account:reads', 120, 60_000]));
-  // The owner's own connection check stays the owner's; API tokens never run website tools.
-  expect((await f.request('POST', { action: 'quote-rehearsal', idempotencyKey: key }, { scope: memberScope })).status).toBe(403);
-  for (const tokenScope of ['read', 'render'] as const) {
-    f.setStore({ ...member, token: { id: 'api-token', name: 'Fixture', scope: tokenScope, capUsd: null } });
-    for (const method of ['GET', 'POST'] as const) expect((await f.request(method, quote, { scope: null })).status).toBe(403);
-  }
-  // A suspended workspace neither quotes nor approves; its saved jobs stay readable.
-  f.setStore({ ...member, workspace: { ...member.workspace!, suspendedAt: 1, suspendedReason: 'Paused' } });
-  for (const body of [quote, approve]) expect((await f.request('POST', body, { scope: memberScope })).status).toBe(423);
-  expect((await f.request('POST', status, { scope: memberScope })).status).toBe(200);
-  // The workspace's own four-job limit, in the words its funding calls for.
-  f.setStore(member);
-  f.fail(new ConsumerJobError('capacity', 429));
-  const refused = await f.request('POST', quote, { scope: memberScope });
-  expect(refused.status).toBe(429);
-  const body = await refused.json();
-  expect(body.error).toBe('Four website-tool jobs are already running in this workspace. Try again when one finishes.');
-  expect(JSON.stringify(body)).not.toMatch(/connected|Engines/);
-  // The account's own refusals (its wallet, its price, its tools) read neutrally; input the member can fix still says so.
-  for (const [error, status, code] of [
-    [new contract.ConsumerVideoError('insufficient_credits'), 503, 'website_unavailable'],
-    [new contract.ConsumerVideoError('workspace_changed'), 503, 'website_unavailable'],
-    [new contract.ConsumerVideoError('preflight_unavailable'), 503, 'website_unavailable'],
-    [new contract.ConsumerVideoError('quote_changed'), 409, 'price_changed'],
-    [new ConsumerDiscoveryError('protocol_error'), 503, 'website_unavailable'],
-    [new contract.ConsumerVideoError('invalid_input'), 400, 'invalid_input'],
-  ] as const) {
-    f.fail(error);
-    const answer = await f.request('POST', quote, { scope: memberScope });
-    expect([answer.status, (await answer.clone().json()).code], error.code).toEqual([status, code]);
-    if (code !== 'invalid_input') expect(await answer.text()).not.toMatch(/connected|wallet|workspace has/i);
-  }
 });

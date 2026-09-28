@@ -43,7 +43,6 @@ import type {
   WorkspaceSuite,
 } from "./plan-types";
 import { WORKSPACE_PLAN_PAGES } from "./plan-types";
-import { chargedEvenIfFails, websiteCharge, type WebsiteCharge } from "../higgsfield-consumer/website-charge";
 
 /** Same lifetime the product already gives a Particl quote (lib/quote.ts QUOTE_TTL_MS). */
 export const PARTICL_QUOTE_TTL_MS = 120_000;
@@ -267,8 +266,6 @@ const audioDispatch: DispatchExecutor = {
 
 /* ---------------------------------------- connected account (Motion, Swap, Generate) */
 
-/** A connected job, or (a managed workspace) one on the platform's website tools: priced in
- * the workspace's own credits, naming no wallet, charged even if it fails. */
 type ConsumerJob = {
   id: string;
   status: string;
@@ -276,8 +273,6 @@ type ConsumerJob = {
   quoteExpiresAt: number | null;
   workspaceId: string | null;
   workspaceName?: string | null;
-  creditUnit?: string;
-  chargeTerms?: { credits: number; onFailure: string } | null;
   input?: Record<string, unknown>;
   result?: { original?: { asset?: { url?: string } } } | null;
   originalAvailable?: boolean;
@@ -287,8 +282,6 @@ function connectedGate(
   route: string,
   input: (ctx: PlanContext) => Record<string, unknown> | null,
   line: (input: Record<string, unknown>, job: ConsumerJob) => string,
-  /** The line for a job on the platform's website tools: said before approval, with its charge-on-failure. */
-  platformLine: (input: Record<string, unknown>, charge: WebsiteCharge) => string = (_input, charge) => chargedEvenIfFails(charge.credits, "run"),
 ): GateExecutor {
   return {
     type: "gate",
@@ -300,17 +293,8 @@ function connectedGate(
       const { job } = await call<{ job: ConsumerJob }>(ctx, route, {
         body: { action: "quote", draftId: ctx.projectId, input: value, idempotencyKey: newId(ctx) },
       });
-      const charge = websiteCharge(job);
-      if (job.status !== "quoted" || job.quoteCredits == null || (!charge && !job.workspaceId))
+      if (job.status !== "quoted" || job.quoteCredits == null || !job.workspaceId)
         throw new Error("The connected account did not return a price. Nothing was dispatched.");
-      // On the platform's website tools: the workspace's own credits, approved by that price alone.
-      if (charge)
-        return {
-          unit: "cr",
-          parts: [{ credits: charge.credits, fingerprint: job.id, quoteId: job.id, body: { draftId: ctx.projectId, id: job.id }, meta: { platform: true } }],
-          expiresAt: job.quoteExpiresAt,
-          line: platformLine(value, charge),
-        };
       return {
         unit: "connected",
         parts: [
@@ -329,8 +313,7 @@ function connectedGate(
   };
 }
 
-/** Submit exactly the approved wallet and credits (on the platform's website tools, the credits alone);
- * the route refuses anything else (approval_changed). */
+/** Submit exactly the approved wallet and credits; the route refuses anything else (approval_changed). */
 function connectedDispatch(route: string, noun: string): DispatchExecutor {
   return {
     type: "dispatch",
@@ -342,12 +325,11 @@ function connectedDispatch(route: string, noun: string): DispatchExecutor {
           action: "submit",
           draftId: part.body.draftId,
           id: part.quoteId,
-          ...(part.meta?.platform === true ? {} : { workspaceId: part.meta?.workspaceId }),
+          workspaceId: part.meta?.workspaceId,
           credits: part.credits,
         },
       });
-      if (job.status === "failed")
-        throw new Error(part.meta?.platform === true ? `The ${noun} was refused before it was sent. Nothing was charged.` : `The ${noun} was refused. Failed jobs are not billed.`);
+      if (job.status === "failed") throw new Error(`The ${noun} was refused. Failed jobs are not billed.`);
       return { detail: job.status, io: { job } };
     },
   };
@@ -1293,8 +1275,6 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         "live quote",
         connectedGate(SHORTS, shortsInput, (input, job) =>
           `${String(input.aspectRatio ?? "")}${input.aspectRatio ? ", " : ""}one price for the whole set of clips. The source is copied to the connected account at quote time; charged to its selected wallet${job.workspaceName ? ` (${job.workspaceName})` : ""}.`,
-          (input, charge) =>
-            `${String(input.aspectRatio ?? "")}${input.aspectRatio ? ", " : ""}one price for the whole set of clips. The source is copied to Particl’s website tools at quote time. ${chargedEvenIfFails(charge.credits, "session")}`,
         ),
       ),
       step("Submit", "dispatch", (ctx) => String(shortsInput(ctx)?.aspectRatio ?? ""), connectedDispatch(SHORTS, "set of shorts")),

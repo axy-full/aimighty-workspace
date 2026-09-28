@@ -30,7 +30,6 @@ type ErrorCode =
   | "reconnect_required"
   | "connection_changed"
   | "connection_busy"
-  | "account_pinned"
   | "unavailable";
 const messages: Record<ErrorCode, string> = {
   configuration:
@@ -48,8 +47,6 @@ const messages: Record<ErrorCode, string> = {
     "The account connection changed. Request a new quote before starting a new job; existing jobs require their original connection.",
   connection_busy:
     "The account connection is refreshing. Try again shortly.",
-  account_pinned:
-    "This connection runs website tools for every workspace. Sign in with the same account it was designated with.",
   unavailable:
     "The connected account is temporarily unavailable. Try again shortly.",
 };
@@ -379,10 +376,6 @@ export async function finishConsumerAuthorization(
   session: string,
   params: URLSearchParams,
   fetcher: typeof fetch = fetch,
-  /** The account this connection is pinned to (the platform's designated
-   * connection): any other account's sign-in is refused and the grant is
-   * left exactly as it was, so no running job is stranded. */
-  options: { requiredSubjectHash?: string } = {},
 ) {
   if (!session) throw new ConsumerOAuthError("session_changed");
   for (const key of ["state", "code", "iss", "error"])
@@ -424,8 +417,6 @@ export async function finishConsumerAuthorization(
   const subject =
     consumerSubjectHash(data, authorization.clientId) ??
     (await consumerUserinfoSubject(tokens.accessToken, fetcher));
-  if (options.requiredSubjectHash !== undefined && subject !== options.requiredSubjectHash)
-    throw new ConsumerOAuthError("account_pinned");
   if (!(await completeAuthorization(authorization, tokens, Date.now(), subject)))
     throw new ConsumerOAuthError("session_changed");
 }
@@ -442,14 +433,13 @@ export type ConsumerAccess = { accessToken: string; generation: string };
 export async function getConsumerAccess(
   workspaceId: string,
   userId: string,
-  options: { expectedGeneration?: string; expectedSubjectHash?: string; fetch?: typeof fetch } = {},
+  options: { expectedGeneration?: string; fetch?: typeof fetch } = {},
 ): Promise<ConsumerAccess | null> {
   try {
     const access = await claimConsumerAccess({
       workspaceId,
       userId,
       expectedGeneration: options.expectedGeneration,
-      ...(options.expectedSubjectHash === undefined ? {} : { expectedSubjectHash: options.expectedSubjectHash }),
     });
     if (access.kind === "changed")
       throw new ConsumerOAuthError("connection_changed");

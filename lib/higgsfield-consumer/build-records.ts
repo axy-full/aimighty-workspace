@@ -19,9 +19,6 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready } from "@/lib/db";
-import { requireTenant } from "@/lib/tenant";
-import { isDesignatedIdentity } from "./platform-account";
-import { websiteObjectOwners } from "./platform-jobs";
 
 export type BuildKind = "character" | "element";
 export type BuildState = "sending" | "uncertain" | "pending" | "recorded" | "refused" | "not_sent" | "unmatched";
@@ -191,21 +188,4 @@ export function pagingForOpenBuilds(
       return at !== null && at < floor;
     });
   };
-}
-
-/**
- * The unrecorded account entries a build may be matched to, by name, in this
- * workspace. Never an object another workspace made on the platform's shared
- * account (its registry says whose it is). And none at all when this listing
- * reads the platform's shared account itself: there, builds from several
- * workspaces can carry the same name, so a build counts only when the
- * account's own reply named its id — otherwise it stays pending and closes as
- * unmatched, and nothing is ever adopted across workspaces by its name.
- */
-export async function matchableEntries<T extends { id: string }>(userId: string, entries: readonly T[]): Promise<T[]> {
-  if (!entries.length) return [];
-  const workspaceId = requireTenant().id;
-  if (await isDesignatedIdentity({ workspaceId, userId })) return [];
-  const owners = await websiteObjectOwners(entries.map((entry) => entry.id));
-  return entries.filter((entry) => !owners.has(entry.id) || owners.get(entry.id)!.workspaceId === workspaceId);
 }

@@ -19,7 +19,6 @@ import { parseElementCreate } from "../../lib/higgsfield-consumer/element-parse"
 import { accountCreatedAt, matchBuild, pagingForOpenBuilds, BUILD_MATCH_WINDOW } from "../../lib/higgsfield-consumer/build-records";
 import type * as Characters from "../../lib/higgsfield-consumer/characters";
 import type * as Elements from "../../lib/higgsfield-consumer/elements";
-import { consumerFundingModules } from "../helpers/consumerFunding";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-builds-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -259,10 +258,7 @@ async function buildServices() {
     "./element-parse": await import("../../lib/higgsfield-consumer/element-parse"),
     "./character-records": await import("../../lib/higgsfield-consumer/character-records"),
     "./build-records": await import("../../lib/higgsfield-consumer/build-records"),
-    "./element-records": await import("../../lib/higgsfield-consumer/element-records"),
   };
-  // The real funding decision (the website-tool seam), over this fixture's tenant, ledger and grant.
-  Object.assign(deps, await consumerFundingModules({ tenant: deps["@/lib/tenant"], jobs: deps["./jobs"], oauth: deps["./oauth"] }));
   const load = <T,>(file: string) => {
     const loaded = { exports: {} as T };
     const source = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;

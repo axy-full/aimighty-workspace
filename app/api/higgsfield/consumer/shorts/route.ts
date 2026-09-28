@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withTenant } from "@/lib/auth";
+import { requireOwner, requireRender, withTenant } from "@/lib/auth";
 import { getConsumerConnection, ConsumerOAuthError } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerGenjutsuError } from "@/lib/higgsfield-consumer/genjutsu-sources";
 import { ConsumerVideoServiceError } from "@/lib/higgsfield-consumer/video-service";
@@ -11,9 +11,6 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import { GENERATION_SOURCE_BYTES } from "@/lib/higgsfield-consumer/generation-sources";
-import { websiteProblem } from "@/lib/higgsfield-consumer/website-problems";
-import { consumerCapacityMessage, takeWebsiteAccountRead, websiteToolCaller, websiteToolSpend, websiteToolsAvailability } from "@/lib/higgsfield-consumer/route-access";
-import { readFunding } from "@/lib/higgsfield-consumer/funding";
 import { SHORTS_ASPECT_RATIOS, SHORTS_LIMITS, ShortsStudioError, consumerShortsInputSchema } from "@/lib/higgsfield-consumer/shorts-studio";
 import {
   connectedShortsPresets,
@@ -31,8 +28,7 @@ const id = z.string().min(1).max(200).regex(/^[A-Za-z0-9_-]+$/);
 const presets = z.object({ action: z.literal("presets"), refresh: z.boolean().optional() }).strict();
 const quote = z.object({ action: z.literal("quote"), draftId: id, input: consumerShortsInputSchema, idempotencyKey: z.uuid() }).strict();
 const submit = z
-  /* A session on the platform's website account is approved by its Particl credits alone: it names no wallet. */
-  .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid().nullable().optional(), credits: z.number().nonnegative().max(100000) })
+  .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) })
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [presets, quote, submit, poll]);
@@ -49,8 +45,6 @@ const neutral = (message: string) =>
 function problem(error: unknown) {
   if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
-  const website = websiteProblem(error);
-  if (website) return Response.json(website.body, { status: website.status, headers });
   if (error instanceof ShortsStudioError || error instanceof ConsumerGenjutsuError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
@@ -64,7 +58,7 @@ function problem(error: unknown) {
     return Response.json({
       code: error.code,
       error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before making shorts."
-        : error.code === "capacity" ? consumerCapacityMessage()
+        : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
         : "This session changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)
@@ -92,28 +86,24 @@ const capabilities = () => ({
   cancel: false,
 });
 export const GET = withTenant(async (req: Request) => {
-  const caller = await websiteToolCaller();
-  if (caller.response) return caller.response;
+  const owner = await requireOwner();
+  if (owner.response) return owner.response;
   const draftId = new URL(req.url).searchParams.get("draftId") ?? "";
   if (!id.safeParse(draftId).success)
     return Response.json({ error: "Choose a valid project." }, { status: 400, headers });
   try {
     return Response.json({
-      // A managed workspace runs on the platform's website tools: never a member's own connection.
-      ...(caller.managed
-        ? { websiteTools: await websiteToolsAvailability({ workflow: "shorts" }) }
-        : { connection: await getConsumerConnection({ workspaceId: requireTenant().id, userId: caller.user.id }) }),
+      connection: await getConsumerConnection({ workspaceId: requireTenant().id, userId: owner.user.id }),
       capabilities: capabilities(),
-      jobs: await consumerShortsJobs(caller.user.id, draftId),
+      jobs: await consumerShortsJobs(owner.user.id, draftId),
     }, { headers });
   } catch (error) {
     return problem(error);
   }
 }, { requireRequestScope: true });
 export const POST = withTenant(async (req: Request) => {
-  const caller = await websiteToolCaller();
-  if (caller.response) return caller.response;
-  const userId = caller.user.id;
+  const owner = await requireOwner();
+  if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 16000));
     const parsed = requestSchema.safeParse(raw);
@@ -121,27 +111,24 @@ export const POST = withTenant(async (req: Request) => {
       return Response.json({ error: "Review the Shorts request." }, { status: 400, headers });
     const body = parsed.data;
     await takeAccountLimit(
-      `hf-consumer-shorts:${requireTenant().id}:${userId}:${body.action}`,
+      `hf-consumer-shorts:${requireTenant().id}:${owner.user.id}:${body.action}`,
       body.action === "status" ? 30 : body.action === "presets" ? 12 : 6,
       60_000,
     );
-    await takeWebsiteAccountRead(caller);
     if (body.action === "presets")
-      return Response.json({ presets: await connectedShortsPresets(userId, { refresh: body.refresh === true, funding: await readFunding({ workflow: "shorts" }) }) }, { headers });
+      return Response.json({ presets: await connectedShortsPresets(owner.user.id, { refresh: body.refresh === true }) }, { headers });
     if (body.action === "submit") {
-      const refused = await websiteToolSpend(caller, "submit");
-      if (refused) return refused;
+      const render = await requireRender();
+      if (render.response) return render.response;
       return Response.json(
-        { job: await submitConsumerShortsJob({ userId, draftId: body.draftId, id: body.id }, body) },
+        { job: await submitConsumerShortsJob({ userId: owner.user.id, draftId: body.draftId, id: body.id }, body) },
         { headers },
       );
     }
     if (body.action === "status")
-      return Response.json(await pollConsumerShorts({ userId, draftId: body.draftId, id: body.id }), { headers });
-    const refused = await websiteToolSpend(caller, "quote");
-    if (refused) return refused;
+      return Response.json(await pollConsumerShorts({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
     return Response.json(
-      { job: await quoteConsumerShorts(userId, body.draftId, body.input, body.idempotencyKey) },
+      { job: await quoteConsumerShorts(owner.user.id, body.draftId, body.input, body.idempotencyKey) },
       { headers },
     );
   } catch (error) {

@@ -14,15 +14,13 @@ import {
   type ConsumerMarketingTemplateInput,
 } from "@/lib/higgsfield-consumer/marketing-templates";
 import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
-import { WEBSITE_PREFLIGHT_CODES, chargedEvenIfFails, chargedFailure, creditsText, jobPriceText, recoverableJob, websiteCharge, websiteToolsAnswer, type WebsiteCharge } from "@/lib/higgsfield-consumer/website-charge";
 import styles from "./marketing-templates.module.css";
 
 export const TEMPLATE_ASSET_CATEGORY = "Campaign template";
 const endpoint = "/api/higgsfield/consumer/marketing-templates";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-/** `allowed`: this person may run it (the owner; any member on a managed workspace). `connected`: it can take work now. */
-type Capability = { allowed: boolean; connected: boolean; suspended: boolean; managed: boolean };
+type Capability = { owner: boolean; connected: boolean; suspended: boolean };
 export type TemplateCard = {
   id: string; name: string; category: string; description: string; previewUrl: string | null;
   outputKind: "image" | "video"; inputs: string[]; credits: number | null; priceSource: "cost_table" | "catalogue" | null;
@@ -33,16 +31,14 @@ type Job = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
   input: ConsumerMarketingTemplateInput; template: { id: string; name: string; category: string; previewUrl: string | null };
   outputKind: "image" | "video"; priceSource: "get_cost" | "cost_table" | "catalogue"; costsVersion: string | null;
-  workspaceId: string | null; workspaceName: string | null; quoteCredits: number; creditUnit: "higgsfield_credits" | "particl_credits"; quoteExpiresAt: number;
-  /** On the platform's website tools: the workspace's own credits, charged even if the run fails. */
-  charge: WebsiteCharge | null; failureCode?: string | null;
-  quoteExpired?: boolean; providerJobId: string | null; result?: unknown; providerReceipt?: unknown; receiptSaved?: boolean;
+  workspaceId: string; workspaceName: string; quoteCredits: number; creditUnit: "higgsfield_credits"; quoteExpiresAt: number;
+  quoteExpired?: boolean; providerJobId: string | null; result?: unknown; providerReceipt?: unknown;
   originalAvailable?: boolean; originalAvailability?: string; createdAt: number;
 };
 class RequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
-const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "unapproved_adjustment", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy", "template_unknown", "price_unknown", "contract_unverified", ...WEBSITE_PREFLIGHT_CODES]);
+const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "unapproved_adjustment", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy", "template_unknown", "price_unknown", "contract_unverified"]);
 const recoverable = (job: Job) => ["dispatching", "accepted", "uncertain"].includes(job.status);
 const retain = (jobs: Job[], attempted: string[]) => {
   const pin = (job: Job) => recoverable(job) || (job.status === "quoted" && attempted.includes(job.id));
@@ -74,35 +70,28 @@ function parseListing(value: unknown): Listing {
   };
 }
 function parseJob(value: unknown, draftId: string): Job {
-  // A job on the platform's website tools names no wallet: its price is the workspace's own credits.
-  const charge = websiteCharge(value);
   if (!record(value) || typeof value.id !== "string" || !uuid.test(value.id) || value.draftId !== draftId ||
       !["quoted", "dispatching", "accepted", "uncertain", "failed", "completed"].includes(String(value.status)) ||
-      !charge && (typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" || value.workspaceName.length > 200 ||
-        value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !Number.isFinite(value.quoteCredits) || value.quoteCredits <= 0 || value.quoteCredits > 100000) ||
+      typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" || value.workspaceName.length > 200 ||
+      value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !Number.isFinite(value.quoteCredits) || value.quoteCredits <= 0 || value.quoteCredits > 100000 ||
       !(value.providerJobId === null || (typeof value.providerJobId === "string" && uuid.test(value.providerJobId))) ||
       typeof value.quoteExpiresAt !== "number" || typeof value.createdAt !== "number" ||
       !record(value.template) || typeof value.template.id !== "string" || typeof value.template.name !== "string" || typeof value.template.category !== "string" ||
       !["image", "video"].includes(String(value.outputKind)) || !["get_cost", "cost_table", "catalogue"].includes(String(value.priceSource)))
     throw new Error("The saved template job could not be verified. Refresh before continuing.");
-  return { ...value, charge, input: consumerMarketingTemplateInputSchema.parse(value.input), costsVersion: typeof value.costsVersion === "string" ? value.costsVersion : null } as Job;
+  return { ...value, input: consumerMarketingTemplateInputSchema.parse(value.input), costsVersion: typeof value.costsVersion === "string" ? value.costsVersion : null } as Job;
 }
-/** What a failed run says: one never sent was not charged; one that failed after it was sent is charged as quoted. */
-const failedNotice = (job: Job, fallback: string) => !job.charge ? fallback
-  : job.failureCode === "submission_rejected" ? "The template run was never sent. Nothing was charged." : chargedFailure(job.charge.credits, "template run");
 /** Only the service's collected local original can become a project asset. */
 function originalAsset(job: Job): Asset | null {
   if (job.status !== "completed" || job.originalAvailable !== true || job.originalAvailability !== "available" || !record(job.result) || !record(job.result.original)) return null;
   const original = job.result.original, asset = original.asset;
-  // A platform job's original carries no provider id or account price (lib/higgsfield-consumer/client-view.ts).
-  const own = !job.charge;
-  if (!record(asset) || typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) || own && !job.providerJobId ||
-      own && (original.providerJobId !== job.providerJobId || original.creditUnit !== "higgsfield_credits" || original.credits !== job.quoteCredits) ||
+  if (!record(asset) || typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) || !job.providerJobId ||
+      original.providerJobId !== job.providerJobId || original.creditUnit !== "higgsfield_credits" || original.credits !== job.quoteCredits ||
       typeof original.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(original.sha256) || typeof original.bytes !== "number" || original.bytes <= 0 ||
       asset.generationId !== original.generationId || typeof asset.mime !== "string" || asset.url !== `/api/media/${original.generationId}` || asset.kind !== job.outputKind) return null;
   return { id: original.generationId, generationId: original.generationId, url: asset.url, kind: job.outputKind, mime: asset.mime,
     name: `${job.template.name} · ${job.input.prompt.slice(0, 80) || "template variant"}`, category: TEMPLATE_ASSET_CATEGORY,
-    description: `Template variant · ${job.template.name} · ${jobPriceText(job)}`, prompt: job.input.prompt,
+    description: `Template variant · ${job.template.name} · ${job.quoteCredits} connected credits`, prompt: job.input.prompt,
     status: "Draft", version: 1, locked: false, refs: [] };
 }
 const selectionEvent = "particl-marketing-template-selection";
@@ -142,19 +131,11 @@ function useCapability(scope: string, draftId: string, enabled: boolean) {
     const me = await json("/api/me");
     if (typeof me.id !== "string" || !record(me.workspace) || typeof me.workspace.id !== "string" || workbenchScopeFor(me.workspace.id, me.id) !== scope)
       throw new Error("Your account or workspace changed. Reload this project before continuing.");
-    // A managed workspace runs templates on the platform's website tools, and any member may: the route says so
-    // itself (its `websiteTools` answer), and no member's own connection is read. Elsewhere, the owner only.
-    const refused = { capability: { allowed: false, connected: false, suspended: false, managed: false } as Capability, jobs: [] as Job[] };
-    if (me.owner !== true && me.workspace.platformKeys !== true) return refused;
-    let result: Record<string, unknown>;
-    try { result = await json(`${endpoint}?${new URLSearchParams({ draftId })}`); }
-    catch (reason) { if (reason instanceof RequestError && reason.status === 403) return refused; throw reason; }
-    const website = websiteToolsAnswer(result.websiteTools);
-    const connection = website ? null : await json("/api/higgsfield/consumer/connection");
+    if (me.owner !== true) return { capability: { owner: false, connected: false, suspended: false } as Capability, jobs: [] as Job[] };
+    const [connection, result] = await Promise.all([json("/api/higgsfield/consumer/connection"), json(`${endpoint}?${new URLSearchParams({ draftId })}`)]);
     if (!Array.isArray(result.jobs) || result.jobs.length > 25) throw new Error("Saved template jobs could not be loaded.");
-    const available = website ? website.available : connection?.connected === true && connection.requiresReconnect !== true;
     return {
-      capability: { allowed: true, connected: available, suspended: me.workspace.suspended === true, managed: !!website } as Capability,
+      capability: { owner: true, connected: connection.connected === true && connection.requiresReconnect !== true, suspended: me.workspace.suspended === true } as Capability,
       jobs: result.jobs.map((job) => parseJob(job, draftId)),
     };
   }, [json, scope, draftId]);
@@ -178,7 +159,7 @@ export function MarketingTemplateBrowser({ project, scope, enabled, onPicked }: 
       const { capability } = await load();
       if (!live.current || lifecycle.current !== token) return;
       setCapability(capability);
-      if (capability.allowed && capability.connected) {
+      if (capability.owner && capability.connected) {
         const result = await post({ action: "catalogue", limit: 400, ...(refreshCatalogue ? { refresh: true } : {}) });
         if (!live.current || lifecycle.current !== token) return;
         setListing(parseListing(result.catalogue));
@@ -197,11 +178,9 @@ export function MarketingTemplateBrowser({ project, scope, enabled, onPicked }: 
   const visible = (listing?.templates ?? []).filter((card) => (category === "all" || card.category === category) && (!needle || `${card.name} ${card.description} ${card.category}`.toLowerCase().includes(needle)));
   const categories = [...new Set(["all", ...MARKETING_TEMPLATE_CATEGORIES.filter((c) => c !== "all"), ...(listing?.categories ?? [])])];
   return <section className={`suite-panel ${styles.panel}`} aria-label="Template catalogue">
-    <div className="suite-section-heading"><div><h2>Template catalogue</h2><p>{capability?.managed ? "Browse the video templates Particl’s website tools run. Pick one here, then create with it in Variants at its price in this workspace’s credits." : "Browse the connected account’s Marketing Studio templates. Pick one here, then create with it in Variants at its exact connected-credit price."}</p></div><span className="suite-badge">{capability?.managed ? "Website tools" : "Connected account"}</span></div>
-    {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.allowed === false ? <p className="suite-footnote">The workspace owner can browse the connected account’s template catalogue. Particl’s native creative briefs above remain available.</p> : <>
-      {capability && !capability.connected && (capability.managed
-        ? <p className="suite-footnote">Website tools are not available for this workspace right now.</p>
-        : <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12} /></a>.</p>)}
+    <div className="suite-section-heading"><div><h2>Template catalogue</h2><p>Browse the connected account’s Marketing Studio templates. Pick one here, then create with it in Variants at its exact connected-credit price.</p></div><span className="suite-badge">Connected account</span></div>
+    {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.owner === false ? <p className="suite-footnote">The workspace owner can browse the connected account’s template catalogue. Particl’s native creative briefs above remain available.</p> : <>
+      {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12} /></a>.</p>}
       {selection && <p role="status" className={styles.selected}>Selected template · <strong>{selection.name}</strong> · {selection.category || "uncategorised"} · {selection.outputKind}{selection.credits !== null ? ` · ${selection.credits} connected credits` : ""}<button type="button" className="suite-text-button" onClick={() => select(null)}>Clear</button></p>}
       <div className={styles.filters}>
         <label className={styles.search}>Search templates<input aria-label="Search templates" value={search} maxLength={120} onChange={(e) => setSearch(e.target.value)} placeholder="Name, category or description" /></label>
@@ -270,7 +249,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
   const matches = !!selected && !!normalized && JSON.stringify(selected.input) === JSON.stringify(normalized);
   const missing = attempts.filter((id) => !jobs.some((job) => job.id === id));
   const unresolved = missing.length > 0 || jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
-  const ready = enabled && !!capability?.allowed && capability.connected && !capability.suspended && !busy;
+  const ready = enabled && !!capability?.owner && capability.connected && !capability.suspended && !busy;
   const canQuote = ready && valid && !unresolved && (!product || disclosed);
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   const change = (patch: Partial<typeof form>) => { setEdit({ ...form, ...patch }); setApproved(false); setNotice(""); };
@@ -301,11 +280,11 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
   }, [attemptKey, refresh]);
   useEffect(() => { if (!jobs.length) return; const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, [jobs.length]);
   async function act(action: "quote" | "submit" | "status", job: Job | null | undefined = selected, missingId?: string) {
-    if (!enabled || pending.current || !capability?.allowed) return;
+    if (!enabled || pending.current || !capability?.owner) return;
     if (action === "quote" && (!canQuote || !normalized)) return;
     if (action === "submit" && (!canSubmit || !job || job.id !== selectedId)) return;
     const recovering = action === "status" && job === null && !!missingId && missing.includes(missingId);
-    if (action === "status" && !recovering && (!job || !(job.status === "accepted" || recoverableJob(job)) || clock < (nextPoll[job.id] ?? 0))) return;
+    if (action === "status" && !recovering && (!job || !(job.status === "accepted" || (job.status === "uncertain" && job.providerReceipt)) || clock < (nextPoll[job.id] ?? 0))) return;
     const token = lifecycle.current;
     pending.current = true; setBusy(action); setError(""); setNotice("");
     try {
@@ -317,16 +296,16 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         attemptIds.current = next; setAttempts(next); setApproved(false);
       }
       const body = action === "quote" ? { action, draftId, input: consumerMarketingTemplateInputSchema.parse(normalized), idempotencyKey: crypto.randomUUID() }
-        : { action, draftId, id: job?.id ?? missingId!, ...(action === "submit" ? job!.charge ? { credits: job!.charge.credits } : { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
+        : { action, draftId, id: job?.id ?? missingId!, ...(action === "submit" ? { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
       const result = await post(body);
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") setNotice(saved.charge ? "Review the template, inputs and price below before creating." : "Review the template, inputs, wallet and exact price below before creating.");
-      if (action === "submit") setNotice(saved.status === "failed" ? failedNotice(saved, "The connected account refused this template run before it was sent.") : "Request recorded. Use Check result to recover its progress.");
+      if (action === "quote") setNotice("Review the template, inputs, wallet and exact price below before creating.");
+      if (action === "submit") setNotice("Request recorded. Use Check result to recover its progress.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save as a variant." : "The template run completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : failedNotice(saved, "The connected account reported that this template run failed.")) : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? (originalAsset(saved) ? "The original is ready to save as a variant." : "The template run completed, but its original is unavailable. Refresh saved jobs before saving it.") : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account reported that this template run failed.") : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -347,17 +326,15 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
     finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
   }
   return <section className={`suite-panel ${styles.panel}`} aria-label="Create with template">
-    <div className="suite-section-heading"><div><h2>Create with template</h2><p>{capability?.managed ? "Run the template picked in Format on Particl’s website tools. Every run is quoted in this workspace’s credits and approved before it is submitted." : "Run the template picked in Format on the connected account. Every run is quoted in connected credits and approved before it is submitted."}</p></div><span className="suite-badge">{capability?.managed ? "Website tools" : "Connected account"}</span></div>
-    {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.allowed === false ? <p className="suite-footnote">The workspace owner can create with the connected account’s templates. Your Particl variant tools above remain available.</p> : <>
-      {capability && !capability.connected && (capability.managed
-        ? <p className="suite-footnote">Website tools are not available for this workspace right now. Saved jobs can still be reviewed.</p>
-        : <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12} /></a>.</p>)}
+    <div className="suite-section-heading"><div><h2>Create with template</h2><p>Run the template picked in Format on the connected account. Every run is quoted in connected credits and approved before it is submitted.</p></div><span className="suite-badge">Connected account</span></div>
+    {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.owner === false ? <p className="suite-footnote">The workspace owner can create with the connected account’s templates. Your Particl variant tools above remain available.</p> : <>
+      {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12} /></a>.</p>}
       {capability?.suspended && <p role="status">Rendering is paused for this workspace. Saved jobs can still be reviewed.</p>}
       {!selection ? <p className="suite-footnote">No template picked yet. Choose one in the Format section’s template catalogue.</p> : <div className={styles.picked} aria-label="Picked template">
         {selection.previewUrl ? <img src={selection.previewUrl} alt="" /> : <span className={styles.placeholder} aria-hidden="true">{selection.outputKind === "video" ? "▶" : "▣"}</span>}
         <div><strong>{selection.name}</strong><small>{selection.category || "uncategorised"} · {selection.outputKind}{selection.credits !== null ? ` · ${selection.credits} connected credits listed` : " · price on quote"}</small></div>
       </div>}
-      <fieldset disabled={!enabled || !capability?.allowed || !!busy || !selection} className="suite-fields">
+      <fieldset disabled={!enabled || !capability?.owner || !!busy || !selection} className="suite-fields">
         <label className={styles.prompt}>Product or brand description<textarea aria-label="Template description" rows={5} maxLength={MARKETING_TEMPLATE_LIMITS.prompt} value={form.prompt} onChange={(e) => change({ prompt: e.target.value })} /><small>{form.prompt.length}/{MARKETING_TEMPLATE_LIMITS.prompt}</small></label>
         <div className={styles.settings}>
           <label>Brand name<input type="text" aria-label="Template brand name" maxLength={120} value={form.brandName} onChange={(e) => change({ brandName: e.target.value })} /></label>
@@ -366,25 +343,15 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
             {candidates.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
           </select></label>
         </div>
-        {product && <label className={styles.checkbox}><input type="checkbox" checked={disclosed} onChange={(e) => setDisclosed(e.target.checked)} />I understand this project original is copied to {capability?.managed ? "Particl’s website tools" : "the connected account"} to prepare the quote.</label>}
+        {product && <label className={styles.checkbox}><input type="checkbox" checked={disclosed} onChange={(e) => setDisclosed(e.target.checked)} />I understand this project original is copied to the connected account to prepare the quote.</label>}
       </fieldset>
       <div className={styles.actions}>
-        <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? capability?.managed ? "Reading the price…" : "Reading exact price…" : capability?.managed ? "Get quote" : "Get connected-credit quote"}</button>
+        <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
         <button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14} />Refresh saved template jobs</button>
       </div>
-      {unresolved && <p role="status" className="suite-footnote">{capability?.managed ? "A submission needs reconciliation. It is never sent again: check it below." : "A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines."}</p>}
+      {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
       {!!missing.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another template run.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missing[0])}>Recover earlier submission</button></div>}
-      {selected?.status === "quoted" && selected.charge && <div className={styles.quote} aria-label="Template quote">
-        <strong>{creditsText(selected.charge.credits)}</strong>
-        <small>{selected.template.name} · {selected.template.category || "uncategorised"} · {selected.outputKind}{selected.input.productImage ? " · 1 product image" : ""}</small>
-        <p>{matches ? selected.input.prompt || "No description." : "The template, description or product image changed. Request a new quote before creating."}</p>
-        {/* Said before approval (owner decision): the approved price stands whether the run succeeds or fails. */}
-        <p role="note" className={styles.charge}>{chargedEvenIfFails(selected.charge.credits, "template run")}</p>
-        <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The price is checked again before submission.</p>
-        <label className={styles.checkbox}><input type="checkbox" checked={approved} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={(e) => setApproved(e.target.checked)} />Charge {creditsText(selected.charge.credits)} for this template run, even if it fails.</label>
-        <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Create with template · ${creditsText(selected.charge.credits)}`}</button>
-      </div>}
-      {selected?.status === "quoted" && !selected.charge && <div className={styles.quote} aria-label="Template quote">
+      {selected?.status === "quoted" && <div className={styles.quote} aria-label="Template quote">
         <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
         <small>{selected.template.name} · {selected.template.category || "uncategorised"} · {selected.outputKind}{selected.input.productImage ? " · 1 product image" : ""}</small>
         <p>{matches ? selected.input.prompt || "No description." : "The template, description or product image changed. Request a new quote before creating."}</p>
@@ -396,11 +363,11 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         const original = originalAsset(job), saved = original && project.assets.some((asset) => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
         return <article key={job.id} className={styles.job}>
-          <div><strong>{job.status === "completed" ? (original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Template run failed" : "Saved quote"}</strong><span>{jobPriceText(job)}</span></div>
+          <div><strong>{job.status === "completed" ? (original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable") : job.status === "accepted" ? "In progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "Template run failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.input.prompt || "No description."}</p>
-          <small>{job.template.name} · {job.template.category || "uncategorised"} · {job.outputKind}{job.charge ? "" : ` · ${job.workspaceName}`}</small>
+          <small>{job.template.name} · {job.template.category || "uncategorised"} · {job.outputKind} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}
-          {(job.status === "accepted" || recoverableJob(job)) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved request" : "Check result"}</button>}
+          {(job.status === "accepted" || (job.status === "uncertain" && !!job.providerReceipt)) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved request" : "Check result"}</button>}
           {original && <div className={styles.result}>
             {original.kind === "image" ? <img src={original.url} alt={original.name} /> : <video src={original.url} controls playsInline preload="metadata" />}
             <div className={styles.actions}><a className="suite-text-button" href={`${original.url}?download=1`} download>Download original</a>{onAsset && <button type="button" className="suite-button" disabled={!!busy || !!saved} onClick={() => void attach(original)}>{saved ? "Saved as variant" : "Save as variant"}</button>}</div>

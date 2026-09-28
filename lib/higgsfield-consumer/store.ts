@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Transaction } from "@libsql/client";
 import { accountTransaction } from "../accountDb";
 import { open, seal } from "../keyring";
 
@@ -251,7 +250,7 @@ export type AccessClaim =
   | { kind: "ready"; token: string; generation: string }
   | { kind: "refresh"; claim: RefreshClaim };
 export async function claimConsumerAccess(
-  identity: ConsumerIdentity & { expectedGeneration?: string; expectedSubjectHash?: string },
+  identity: ConsumerIdentity & { expectedGeneration?: string },
   at = Date.now(),
 ): Promise<AccessClaim> {
   await consumerStoreReady();
@@ -267,13 +266,6 @@ export async function claimConsumerAccess(
     if (
       identity.expectedGeneration !== undefined &&
       (!row || row.generation !== identity.expectedGeneration)
-    )
-      return { kind: "changed" };
-    // A caller pinned to one account (the platform's designated connection)
-    // never reads a grant for any other, whatever its generation says.
-    if (
-      identity.expectedSubjectHash !== undefined &&
-      (!row || row.subject_hash == null || row.subject_hash !== identity.expectedSubjectHash)
     )
       return { kind: "changed" };
     if (!row || row.status === "disconnected") return { kind: "missing" };
@@ -389,35 +381,6 @@ export async function recordConsumerSubject(
         })
       ).rowsAffected === 1,
   );
-}
-
-/**
- * Server-only: which account a connection holds and the state of its grant —
- * never its tokens. Read inside the caller's platform transaction, so a
- * designation and the row it pins are decided together.
- */
-export async function consumerConnectionIdentityTx(
-  tx: Pick<Transaction, "execute">,
-  identity: ConsumerIdentity,
-): Promise<{ status: string; generation: string; subjectHash: string | null } | null> {
-  const row = (
-    await tx.execute({
-      sql: "SELECT status,generation,subject_hash FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
-      args: [identity.workspaceId, identity.userId],
-    })
-  ).rows[0];
-  return row
-    ? { status: String(row.status), generation: String(row.generation), subjectHash: row.subject_hash == null ? null : String(row.subject_hash) }
-    : null;
-}
-/** A sign-in started before now can no longer complete for this identity:
- * its authorization no longer matches the connection's (as a disconnect
- * does), while the grant, generation and account stay exactly as they are. */
-export async function fenceConsumerAuthorizationsTx(tx: Pick<Transaction, "execute">, identity: ConsumerIdentity, at = Date.now()) {
-  await tx.execute({
-    sql: "UPDATE higgsfield_consumer_connections SET authorization_id=?,updated_at=? WHERE workspace_id=? AND user_id=?",
-    args: [randomUUID(), at, identity.workspaceId, identity.userId],
-  });
 }
 
 /** Local removal completes before any optional upstream revocation. The grant

@@ -135,7 +135,6 @@ export function connectionOutcome(code: string | null): { ok: boolean; line: str
   if (code === "connected") return { ok: true, line: "Account connected." };
   if (code === "authorization_denied") return { ok: false, line: "Authorization was not approved." };
   if (code === "configuration") return { ok: false, line: "The account connection is not configured on this deployment." };
-  if (code === "account_pinned") return { ok: false, line: "Sign in with the same account: this connection runs website tools for every workspace." };
   return { ok: false, line: "The connection was not completed. Connect again from this workspace." };
 }
 

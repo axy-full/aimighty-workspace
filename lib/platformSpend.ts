@@ -113,8 +113,6 @@ export function vendorKeyNameFor(provider: string): VendorKeyName {
     case "fal": return "fal";
     case "elevenlabs": return "elevenlabs";
     case "higgsfield": return "higgsfield";
-    /* Website-only tools on the platform's designated website account. */
-    case "higgsfield_account": return "higgsfield";
     case "xai": return "xai";
     default: return "ark";
   }

@@ -18,7 +18,6 @@ import { pollConsumerGenjutsu } from "./genjutsu-service";
 import { pollConsumerMarketingTemplate } from "./marketing-template-service";
 import { pollConsumerVoiceTool } from "./voice-tool-service";
 import { pollConsumerShorts } from "./shorts-service";
-import { repairWebsiteJobs } from "./account-billing";
 
 export type ConsumerSweepPoll = (scope: ConsumerJobScope) => Promise<unknown>;
 const POLLS: Partial<Record<ConsumerWorkflow, ConsumerSweepPoll>> = {
@@ -39,13 +38,8 @@ export async function sweepConsumerJobs(options: {
   limit?: number;
   deadlineAt: number;
   polls?: Partial<Record<ConsumerWorkflow, ConsumerSweepPoll>>;
-  /** Housekeeping of this workspace's platform-funded jobs (lib/higgsfield-consumer/account-billing.ts). */
-  repair?: () => Promise<unknown>;
 }): Promise<{ read: number; unavailable: number; deferred: boolean }> {
   const polls = options.polls ?? POLLS;
-  // Settles ended platform jobs and releases reservations never claimed. A
-  // failure here is counted, never thrown: it is tried again on the next visit.
-  await (options.repair ?? repairWebsiteJobs)().catch(() => {});
   const workflows = Object.keys(polls) as ConsumerWorkflow[];
   const limit = options.limit ?? 2;
   const report = { read: 0, unavailable: 0, deferred: false };

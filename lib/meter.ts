@@ -46,12 +46,6 @@ export type MeterEvent = {
    * failed agent run: the vendor's cost is recorded, the bill is zero.
    */
   unbilled?: boolean;
-  /**
-   * A failed job whose charge stands at its approved price (a website-account
-   * tool: owner decision, 27 September). Its bill is final, like a success,
-   * so its recovery intent is resolved.
-   */
-  final?: boolean;
 };
 
 export class FundingSourceChangedError extends Error {
@@ -149,7 +143,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
                cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin],
         });
-        if (e.status === "succeeded" || (e.status === "failed" && (cost === 0 || e.final === true))) await resolveRecoveryJobTx(tx, workspaceId, e.id);
+        if (e.status === "succeeded" || (e.status === "failed" && cost === 0)) await resolveRecoveryJobTx(tx, workspaceId, e.id);
       }, ts);
       return;
     } catch (err) {

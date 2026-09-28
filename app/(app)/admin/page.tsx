@@ -21,7 +21,6 @@ import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, textModelFor, RULE_SCOPES, 
 import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
-import { WebsiteAccountCard } from "@/components/management/WebsiteAccountCard";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -146,7 +145,6 @@ export default function AdminPage() {
             <TopupsCard onChanged={refresh} />
 
             <EnginesCard />
-            <WebsiteAccountCard />
             <ConcurrencyCard c={data.concurrency} />
 
             <PlatformLayerCard />

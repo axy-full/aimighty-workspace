@@ -11,7 +11,6 @@ import type { Asset, Project } from "@/lib/workbench/studio";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { SHORTS_ASPECT_RATIOS, SHORTS_LIMITS, consumerShortsInputSchema, shortsClipName, type ConsumerShortsInput, type ShortsAspectRatio, type ShortsPreset } from "@/lib/higgsfield-consumer/shorts-studio";
 import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
-import { WEBSITE_PREFLIGHT_CODES, chargedEvenIfFails, chargedFailure, creditsText, jobPriceText, recoverableJob, websiteCharge, websiteToolsAnswer, type WebsiteCharge } from "@/lib/higgsfield-consumer/website-charge";
 import styles from "./atomik-generate.module.css";
 
 export const shortsEndpoint = "/api/higgsfield/consumer/shorts";
@@ -20,21 +19,18 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 type Source = { id: string; origin: "upload" | "generation"; name: string; url: string; seconds: number | null };
 type Draft = { source: Source | null; preset: { id: string; source: "cms" | "user"; name: string } | null; aspectRatio: ShortsAspectRatio };
 const empty: Draft = { source: null, preset: null, aspectRatio: "9:16" };
-/** `providerJobId` is null on the platform's website tools: a client never sees the account's ids. */
-type Clip = { index: number; providerJobId: string | null; state: "collected" | "failed"; reason?: string; availability?: string; original?: unknown };
+type Clip = { index: number; providerJobId: string; state: "collected" | "failed"; reason?: string; availability?: string; original?: unknown };
 type Job = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
-  input: ConsumerShortsInput; source: { kind: string; name: string }; pricedSeconds: number; workspaceId: string | null; workspaceName: string | null;
-  quoteCredits: number; creditUnit: "higgsfield_credits" | "particl_credits"; quoteExpiresAt: number; quoteExpired?: boolean; providerJobId: string | null;
-  /** On the platform's website tools: the workspace's own credits for the whole session, charged even if it yields no clip. */
-  charge: WebsiteCharge | null; failureCode?: string | null;
+  input: ConsumerShortsInput; source: { kind: string; name: string }; pricedSeconds: number; workspaceId: string; workspaceName: string;
+  quoteCredits: number; creditUnit: "higgsfield_credits"; quoteExpiresAt: number; quoteExpired?: boolean; providerJobId: string | null;
   clips: Clip[]; settlement: { clips: number; collected: number; failed: number } | null; progress?: { clips: number; collected: number; status: string };
-  providerReceipt?: unknown; receiptSaved?: boolean; createdAt: number;
+  providerReceipt?: unknown; createdAt: number;
 };
 class RequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
-const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy", "price_unknown", "contract_unverified", ...WEBSITE_PREFLIGHT_CODES]);
+const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy", "price_unknown", "contract_unverified"]);
 function draft(value: unknown): Draft {
   if (!record(value)) return empty;
   const s = value.source, p = value.preset;
@@ -47,30 +43,24 @@ function draft(value: unknown): Draft {
   };
 }
 function parseJob(value: unknown, draftId: string): Job {
-  // A session on the platform's website tools names no wallet: its price is the workspace's own credits.
-  const charge = websiteCharge(value);
   if (!record(value) || typeof value.id !== "string" || !uuid.test(value.id) || value.draftId !== draftId ||
       !["quoted", "dispatching", "accepted", "uncertain", "failed", "completed"].includes(String(value.status)) ||
-      !charge && (typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" ||
-        value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !(value.quoteCredits > 0) || value.quoteCredits > 100000) ||
+      typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" ||
+      value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !(value.quoteCredits > 0) || value.quoteCredits > 100000 ||
       typeof value.pricedSeconds !== "number" || !record(value.source) || typeof value.source.name !== "string" || !Array.isArray(value.clips) || value.clips.length > SHORTS_LIMITS.clips)
     throw new Error("The saved Shorts session could not be verified. Refresh before continuing.");
-  const clips = value.clips.flatMap((clip) => record(clip) && typeof clip.index === "number" && (typeof clip.providerJobId === "string" || charge && clip.providerJobId === null) && (clip.state === "collected" || clip.state === "failed")
-    ? [{ index: clip.index, providerJobId: clip.providerJobId as string | null, state: clip.state as Clip["state"], ...(typeof clip.reason === "string" ? { reason: clip.reason } : {}), ...(typeof clip.availability === "string" ? { availability: clip.availability } : {}), original: clip.original }] : []);
-  return { ...(value as unknown as Job), charge, clips, input: consumerShortsInputSchema.parse(value.input) };
+  const clips = value.clips.flatMap((clip) => record(clip) && typeof clip.index === "number" && typeof clip.providerJobId === "string" && (clip.state === "collected" || clip.state === "failed")
+    ? [{ index: clip.index, providerJobId: clip.providerJobId, state: clip.state as Clip["state"], ...(typeof clip.reason === "string" ? { reason: clip.reason } : {}), ...(typeof clip.availability === "string" ? { availability: clip.availability } : {}), original: clip.original }] : []);
+  return { ...(value as unknown as Job), clips, input: consumerShortsInputSchema.parse(value.input) };
 }
-/** What a failed session says: one never sent was not charged; one that failed after it was sent is charged as quoted. */
-const failedNotice = (job: Job, fallback: string) => !job.charge ? fallback
-  : job.failureCode === "submission_rejected" ? "The session was never sent. Nothing was charged." : chargedFailure(job.charge.credits, "session");
 /** A collected, available clip as a project asset. */
 function clipAsset(job: Job, clip: Clip, total: number): Asset | null {
   if (clip.state !== "collected" || clip.availability !== "available" || !record(clip.original) || !record(clip.original.asset)) return null;
   const original = clip.original, asset = clip.original.asset;
-  // A platform clip carries no provider id (lib/higgsfield-consumer/client-view.ts).
-  if (typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) || !job.charge && original.providerJobId !== clip.providerJobId ||
+  if (typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) || original.providerJobId !== clip.providerJobId ||
       asset.url !== `/api/media/${original.generationId}` || asset.kind !== "video") return null;
   return { id: original.generationId, generationId: original.generationId, url: asset.url, kind: "video", mime: "video/mp4", name: shortsClipName(job.source.name, clip.index, total, job.input.preset.name),
-    category: "Shorts", description: `Shorts · ${job.input.preset.name || "style"} · ${job.input.aspectRatio} · clip ${clip.index + 1} of ${total} · session ${jobPriceText(job)}`, prompt: "", status: "Draft", version: 1, locked: false, refs: [] };
+    category: "Shorts", description: `Shorts · ${job.input.preset.name || "style"} · ${job.input.aspectRatio} · clip ${clip.index + 1} of ${total} · session ${job.quoteCredits} connected credits`, prompt: "", status: "Draft", version: 1, locked: false, refs: [] };
 }
 
 /** Shorts Studio on the connected account: one project video restyled into a
@@ -87,8 +77,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
   const draftId = project.id;
   const stored = useDraft<Draft>(`subatomik-shorts:${project.id}`, empty), input = draft(stored.value);
   const attemptKey = `particl-consumer-shorts:${encodeURIComponent(scope)}:${encodeURIComponent(draftId)}:attempts`;
-  /** `allowed`: this person may run it (the owner; any member on a managed workspace). `connected`: it can take work now. */
-  const [capability, setCapability] = useState<{ allowed: boolean; connected: boolean; managed: boolean } | null>(null);
+  const [capability, setCapability] = useState<{ owner: boolean; connected: boolean } | null>(null);
   const [presets, setPresets] = useState<{ presets: ShortsPreset[]; complete: boolean; fetchedAt: number } | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]), [selectedId, setSelectedId] = useState(""), [attempts, setAttempts] = useState<string[]>([]);
   const [approved, setApproved] = useState(false), [disclosed, setDisclosed] = useState(false);
@@ -108,7 +97,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && !!normalized && JSON.stringify(selected.input) === JSON.stringify(normalized);
   const unresolved = jobs.some((job) => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
-  const ready = !!capability?.allowed && capability.connected && !busy;
+  const ready = !!capability?.owner && capability.connected && !busy;
   const canQuote = ready && !validation && !unresolved && disclosed;
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   /* What a host (the /workspace Shorts page) may price: exactly the body this
@@ -145,15 +134,12 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
       if (!Array.isArray(result.jobs) || result.jobs.length > 25) throw new Error("Saved Shorts sessions could not be loaded.");
       const saved = result.jobs.map((job) => parseJob(job, draftId));
       confirmAttempts(saved); setJobs(saved);
-      // A managed workspace runs Shorts on the platform's website tools: only whether they can take work now.
-      const website = websiteToolsAnswer(result.websiteTools);
       const connection = record(result.connection) ? result.connection : {};
-      setCapability(website ? { allowed: true, connected: website.available, managed: true }
-        : { allowed: true, connected: connection.connected === true && connection.requiresReconnect !== true, managed: false });
+      setCapability({ owner: true, connected: connection.connected === true && connection.requiresReconnect !== true });
       setClock(Date.now());
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
-        if (reason instanceof RequestError && reason.status === 403) setCapability({ allowed: false, connected: false, managed: false });
+        if (reason instanceof RequestError && reason.status === 403) setCapability({ owner: false, connected: false });
         else setError(reason instanceof Error ? reason.message : "Saved Shorts sessions could not be loaded.");
       }
     } finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
@@ -201,7 +187,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
         setApproved(false);
       }
       const body = action === "quote" ? { action, draftId, input: consumerShortsInputSchema.parse(normalized), idempotencyKey: crypto.randomUUID() }
-        : { action, draftId, id: target!.id, ...(action === "submit" ? target!.charge ? { credits: target!.charge.credits } : { workspaceId: target!.workspaceId, credits: target!.quoteCredits } : {}) };
+        : { action, draftId, id: target!.id, ...(action === "submit" ? { workspaceId: target!.workspaceId, credits: target!.quoteCredits } : {}) };
       let result: Record<string, unknown>;
       try { result = await post(body); }
       catch (reason) {
@@ -213,14 +199,14 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
       }
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") setNotice(saved.charge ? "Review the style, source and price below before making shorts." : "Review the style, source, wallet and exact price below before making shorts.");
-      if (action === "submit") setNotice(saved.status === "failed" ? failedNotice(saved, "The connected account refused this session before it was sent.") : "Session recorded. Use Check result to follow its clips.");
+      if (action === "quote") setNotice("Review the style, source, wallet and exact price below before making shorts.");
+      if (action === "submit") setNotice("Session recorded. Use Check result to follow its clips.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll((before) => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
         // A finished clip that could not be filed yet (storage full, …) says why.
         const held = record(result.collection) && typeof result.collection.message === "string" ? ` ${result.collection.message.slice(0, 200)}` : "";
-        setNotice(saved.status === "completed" ? "Every clip is settled." : saved.status === "failed" ? failedNotice(saved, "The connected account reported that this session produced no clips.") : saved.progress ? `Session ${saved.progress.status}: ${saved.progress.clips} clip${saved.progress.clips === 1 ? "" : "s"} so far.${held}` : `Status checked.${held}`);
+        setNotice(saved.status === "completed" ? "Every clip is settled." : saved.status === "failed" ? "The connected account reported that this session produced no clips." : saved.progress ? `Session ${saved.progress.status}: ${saved.progress.clips} clip${saved.progress.clips === 1 ? "" : "s"} so far.${held}` : `Status checked.${held}`);
       }
     });
   }
@@ -240,49 +226,37 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
     : job.status === "quoted" && job.quoteExpired ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || (attempts.includes(job.id) && job.status === "quoted") ? "Submission needs reconciliation" : job.status === "failed" ? "No clips produced" : "Saved quote";
   return <div className={styles.workspace}>
     <div className={styles.columns}>
-      <section className={`suite-panel ${styles.creator}`} aria-label={capability?.managed ? "Shorts on the website tools" : "Shorts on the connected account"}>
-        <div className="suite-section-heading"><div><h2>Shorts</h2><p>Restyle one project video ({SHORTS_LIMITS.minSeconds}–{SHORTS_LIMITS.maxSeconds} s) into a set of short clips. {capability?.managed ? "One quote in this workspace’s credits covers the whole set." : "One quote in connected credits covers the whole set."}</p></div><span className="suite-badge">{capability?.managed ? "Website tools" : "Connected account"}</span></div>
-        {capability?.allowed === false ? <p className="suite-footnote">The workspace owner can make shorts with the connected account.</p> : <>
-          {capability && !capability.connected && (capability.managed
-            ? <p className="suite-footnote">Website tools are not available for this workspace right now. Saved sessions can still be reviewed.</p>
-            : <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings</a>.</p>)}
-          <fieldset className={styles.form} disabled={!capability?.allowed || !!busy} aria-label="Shorts settings">
+      <section className={`suite-panel ${styles.creator}`} aria-label="Shorts on the connected account">
+        <div className="suite-section-heading"><div><h2>Shorts</h2><p>Restyle one project video ({SHORTS_LIMITS.minSeconds}–{SHORTS_LIMITS.maxSeconds} s) into a set of short clips. One quote in connected credits covers the whole set.</p></div><span className="suite-badge">Connected account</span></div>
+        {capability?.owner === false ? <p className="suite-footnote">The workspace owner can make shorts with the connected account.</p> : <>
+          {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings</a>.</p>}
+          <fieldset className={styles.form} disabled={!capability?.owner || !!busy} aria-label="Shorts settings">
             <label>Style<select aria-label="Style" value={input.preset ? `${input.preset.source}:${input.preset.id}` : ""} onChange={(e) => { const [kind, id] = e.target.value.split(":"); const preset = presets?.presets.find((p) => p.source === kind && p.id === id); change({ preset: preset ? { id: preset.id, source: preset.source, name: preset.name } : null }); }}>
               <option value="">{presets ? "Choose a style" : busy === "presets" ? "Reading styles…" : "Styles not loaded"}</option>
               {input.preset && !presets?.presets.some((p) => p.id === input.preset!.id) && <option value={`${input.preset.source}:${input.preset.id}`}>{input.preset.name || "Saved style"}</option>}
               {presets?.presets.some((p) => p.source === "cms") && <optgroup label="Library styles">{presets.presets.filter((p) => p.source === "cms").map((p) => <option key={`cms:${p.id}`} value={`cms:${p.id}`}>{p.name}</option>)}</optgroup>}
-            </select><small className={styles.hint}>{presets ? `${presets.presets.length.toLocaleString("en-US")} styles${presets.complete ? "" : " (partial listing)"} · read ${new Date(presets.fetchedAt).toLocaleTimeString()}` : capability?.managed ? "Styles are read once an hour." : "The connected account’s styles are read once an hour."}</small></label>
+            </select><small className={styles.hint}>{presets ? `${presets.presets.length.toLocaleString("en-US")} styles${presets.complete ? "" : " (partial listing)"} · read ${new Date(presets.fetchedAt).toLocaleTimeString()}` : "The connected account’s styles are read once an hour."}</small></label>
             <label>Orientation<select aria-label="Orientation" value={input.aspectRatio} onChange={(e) => change({ aspectRatio: e.target.value as ShortsAspectRatio })}>
               {SHORTS_ASPECT_RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratio === "9:16" ? "Vertical · 9:16" : "Horizontal · 16:9"}</option>)}
             </select><small className={styles.hint}>Clips are 720p.</small></label>
             <div className={styles.references} role="group" aria-label="Source video">
-              <span className={styles.hint}>Pick the video to restyle from the library. It is copied to {capability?.managed ? "Particl’s website tools" : "the connected account"} when a quote is requested.</span>
+              <span className={styles.hint}>Pick the video to restyle from the library. It is copied to the connected account when a quote is requested.</span>
               {input.source && <div className={styles.reference}>
                 <video src={input.source.url} muted playsInline preload="metadata" />
                 <span>{input.source.name}{input.source.seconds !== null ? ` · ${input.source.seconds.toLocaleString("en-US", { maximumFractionDigits: 1 })} s` : ""}</span>
                 <button type="button" aria-label={`Remove ${input.source.name}`} onClick={() => change({ source: null })}><X size={14} /></button>
               </div>}
-              {input.source && <label className={styles.checkbox}><input type="checkbox" checked={disclosed} onChange={(e) => setDisclosed(e.target.checked)} />I understand this project original is copied to {capability?.managed ? "Particl’s website tools" : "the connected account"} to prepare the quote.</label>}
+              {input.source && <label className={styles.checkbox}><input type="checkbox" checked={disclosed} onChange={(e) => setDisclosed(e.target.checked)} />I understand this project original is copied to the connected account to prepare the quote.</label>}
             </div>
           </fieldset>
           {validation && <p className={styles.hint} role="status">{validation}</p>}
           <div className={styles.actions}>
-            <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? capability?.managed ? "Reading the price…" : "Reading exact price…" : capability?.managed ? "Get quote" : "Get connected-credit quote"}</button>
+            <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
             <button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void loadPresets(!!presets)}><RefreshCw size={14} />{presets ? "Reload styles" : "Load styles"}</button>
             <button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh()}><RefreshCw size={14} />Refresh saved sessions</button>
           </div>
-          {unresolved && <p role="status" className="suite-footnote">{capability?.managed ? "A submission needs reconciliation. It is never sent again: check it below." : "A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines."}</p>}
-          {selected?.status === "quoted" && selected.charge && <div className={styles.quote} aria-label="Shorts quote">
-            <strong>{creditsText(selected.charge.credits)}</strong>
-            <small>Shorts · {selected.source.name} · {selected.input.preset.name || "style"} · {selected.input.aspectRatio} · priced for {selected.pricedSeconds.toLocaleString("en-US")} s</small>
-            <p>{matches ? "One price for the whole set of clips, whatever their number." : "The source or settings changed. Request a new quote before making shorts."}</p>
-            {/* Said before approval (owner decision): the approved price stands however many clips the session yields, even none. */}
-            <p role="note" className={styles.charge}>{chargedEvenIfFails(selected.charge.credits, "session")}</p>
-            <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The price is checked again before submission.</p>
-            <label className={styles.checkbox}><input type="checkbox" checked={approved} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={(e) => setApproved(e.target.checked)} />Charge {creditsText(selected.charge.credits)} for this set of shorts, even if it yields no clip.</label>
-            <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Make shorts · ${creditsText(selected.charge.credits)}`}</button>
-          </div>}
-          {selected?.status === "quoted" && !selected.charge && <div className={styles.quote} aria-label="Connected-credit quote">
+          {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
+          {selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
             <strong>{selected.quoteCredits.toLocaleString("en-US")} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
             <small>Shorts · {selected.source.name} · {selected.input.preset.name || "style"} · {selected.input.aspectRatio} · priced for {selected.pricedSeconds.toLocaleString("en-US")} s</small>
             <p>{matches ? "One price for the whole set of clips, whatever their number." : "The source or settings changed. Request a new quote before making shorts."}</p>
@@ -308,13 +282,13 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
         const unsaved = assets.filter((asset) => !project.assets.some((item) => item.generationId === asset.generationId));
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
         return <article key={job.id} className={styles.job}>
-          <div><strong>{statusLabel(job)}</strong><span>{jobPriceText(job)}</span></div>
+          <div><strong>{statusLabel(job)}</strong><span>{job.quoteCredits.toLocaleString("en-US")} connected credits</span></div>
           <p>{job.source.name}</p>
-          <small>{job.input.preset.name || "Style"} · {job.input.aspectRatio} · {job.pricedSeconds.toLocaleString("en-US")} s{job.charge ? "" : ` · ${job.workspaceName}`}</small>
+          <small>{job.input.preset.name || "Style"} · {job.input.aspectRatio} · {job.pricedSeconds.toLocaleString("en-US")} s · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { setSelectedId(job.id); setApproved(false); }}>Review this saved quote</button>}
-          {(job.status === "accepted" || recoverableJob(job)) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved request" : "Check result"}</button>}
+          {(job.status === "accepted" || (job.status === "uncertain" && !!job.providerReceipt)) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved request" : "Check result"}</button>}
           {job.status === "completed" && <>
-            {job.settlement && job.settlement.failed > 0 && <small>{job.settlement.failed} clip{job.settlement.failed === 1 ? "" : "s"} failed{job.charge ? "" : " on the connected account"}; the session was charged once{job.charge ? ", as quoted" : ""}.</small>}
+            {job.settlement && job.settlement.failed > 0 && <small>{job.settlement.failed} clip{job.settlement.failed === 1 ? "" : "s"} failed on the connected account; the session was charged once.</small>}
             <div className={styles.jobs} role="list" aria-label="Clips">{job.clips.map((clip) => {
               const asset = clipAsset(job, clip, total), saved = asset && project.assets.some((item) => item.generationId === asset.generationId);
               return <div key={clip.index} role="listitem" className={styles.result}>

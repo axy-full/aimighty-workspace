@@ -49,11 +49,6 @@ export const labels: Record<string, string> = {
   "api_token.revoked": "Revoked API token",
   "review_link.created": "Created review link",
   "review_link.revoked": "Revoked review link",
-  "website_account.designated": "Designated the website tools account",
-  "website_account.paused": "Paused website tools",
-  "website_account.resumed": "Resumed website tools",
-  "website_account.tools_changed": "Changed website tools",
-  "website_account.released": "Released the website tools account",
 };
 const targetLabels: Record<string, string> = {
   account: "Account",
@@ -62,7 +57,6 @@ const targetLabels: Record<string, string> = {
   vendor: "Provider",
   api_token: "API token",
   review_link: "Review link",
-  connection: "Connected account",
 };
 const empty: AuditPage = { events: [], nextCursor: null, actors: {} };
 

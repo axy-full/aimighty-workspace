@@ -13,8 +13,6 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import { GENERATION_SOURCE_BYTES } from "@/lib/higgsfield-consumer/generation-sources";
-import { websiteProblem } from "@/lib/higgsfield-consumer/website-problems";
-import { consumerCapacityMessage } from "@/lib/higgsfield-consumer/route-access";
 import { DUBBING_LANGUAGES, REFRAME_ASPECT_RATIOS, REFRAME_MAX_SECONDS, REFRAME_RESOLUTIONS, VOICE_TOOLS, VoiceToolError, consumerVoiceToolInputSchema } from "@/lib/higgsfield-consumer/voice-tools";
 import {
   VIDEO_ANALYSIS_ENABLED,
@@ -50,8 +48,6 @@ const neutral = (message: string) =>
 function problem(error: unknown) {
   if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
-  const website = websiteProblem(error);
-  if (website) return Response.json(website.body, { status: website.status, headers });
   if (error instanceof VoiceToolError || error instanceof CatalogueError || error instanceof ConsumerGenjutsuError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
@@ -65,7 +61,7 @@ function problem(error: unknown) {
     return Response.json({
       code: error.code,
       error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before running the tool."
-        : error.code === "capacity" ? consumerCapacityMessage()
+        : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)

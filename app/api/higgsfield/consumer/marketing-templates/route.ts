@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withTenant } from "@/lib/auth";
+import { requireOwner, requireRender, withTenant } from "@/lib/auth";
 import { getConsumerConnection } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerGenjutsuError } from "@/lib/higgsfield-consumer/genjutsu-sources";
 import {
@@ -18,9 +18,6 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import { GENERATION_SOURCE_BYTES } from "@/lib/higgsfield-consumer/generation-sources";
-import { websiteProblem } from "@/lib/higgsfield-consumer/website-problems";
-import { consumerCapacityMessage, takeWebsiteAccountRead, websiteToolCaller, websiteToolSpend, websiteToolsAvailability } from "@/lib/higgsfield-consumer/route-access";
-import { readFunding } from "@/lib/higgsfield-consumer/funding";
 import {
   connectedMarketingTemplateCatalogue,
   connectedMarketingTemplateCosts,
@@ -50,8 +47,7 @@ const quote = z
   .object({ action: z.literal("quote"), draftId: id, input: consumerMarketingTemplateInputSchema, idempotencyKey: z.uuid() })
   .strict();
 const submit = z
-  /* A job on the platform's website account is approved by its Particl credits alone: it names no wallet. */
-  .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid().nullable().optional(), credits: z.number().nonnegative().max(100000) })
+  .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) })
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [catalogue, costs, quote, submit, poll]);
@@ -68,8 +64,6 @@ const neutral = (message: string) =>
 function problem(error: unknown) {
   if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
-  const website = websiteProblem(error);
-  if (website) return Response.json(website.body, { status: website.status, headers });
   if (error instanceof MarketingTemplateError || error instanceof ConsumerGenjutsuError)
     return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
@@ -83,7 +77,7 @@ function problem(error: unknown) {
     return Response.json({
       code: error.code,
       error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before creating."
-        : error.code === "capacity" ? consumerCapacityMessage()
+        : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)
@@ -97,17 +91,14 @@ function problem(error: unknown) {
   return Response.json({ error: "The connected account could not complete this request. Check the saved job before trying again." }, { status: 503, headers });
 }
 export const GET = withTenant(async (req: Request) => {
-  const caller = await websiteToolCaller();
-  if (caller.response) return caller.response;
+  const owner = await requireOwner();
+  if (owner.response) return owner.response;
   const draftId = new URL(req.url).searchParams.get("draftId") ?? "";
   if (!id.safeParse(draftId).success)
     return Response.json({ error: "Choose a valid project." }, { status: 400, headers });
   try {
     return Response.json({
-      // A managed workspace runs on the platform's website tools: never a member's own connection.
-      ...(caller.managed
-        ? { websiteTools: await websiteToolsAvailability({ workflow: "marketing-template" }) }
-        : { connection: await getConsumerConnection({ workspaceId: requireTenant().id, userId: caller.user.id }) }),
+      connection: await getConsumerConnection({ workspaceId: requireTenant().id, userId: owner.user.id }),
       capabilities: {
         categories: MARKETING_TEMPLATE_CATEGORIES,
         promptLimit: MARKETING_TEMPLATE_LIMITS.prompt,
@@ -116,16 +107,15 @@ export const GET = withTenant(async (req: Request) => {
         importsMediaForQuote: true,
         cancel: false,
       },
-      jobs: await consumerMarketingTemplateJobs(caller.user.id, draftId),
+      jobs: await consumerMarketingTemplateJobs(owner.user.id, draftId),
     }, { headers });
   } catch (error) {
     return problem(error);
   }
 }, { requireRequestScope: true });
 export const POST = withTenant(async (req: Request) => {
-  const caller = await websiteToolCaller();
-  if (caller.response) return caller.response;
-  const userId = caller.user.id;
+  const owner = await requireOwner();
+  if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 48000));
     const parsed = requestSchema.safeParse(raw);
@@ -133,46 +123,40 @@ export const POST = withTenant(async (req: Request) => {
       return Response.json({ error: "Review the template request." }, { status: 400, headers });
     const body = parsed.data;
     await takeAccountLimit(
-      `hf-consumer-marketing-templates:${requireTenant().id}:${userId}:${body.action}`,
+      `hf-consumer-marketing-templates:${requireTenant().id}:${owner.user.id}:${body.action}`,
       body.action === "status" ? 30 : body.action === "catalogue" || body.action === "costs" ? 12 : 6,
       60_000,
     );
-    await takeWebsiteAccountRead(caller);
-    // Browsing reads with the grant a quote would use: the platform's account runs video templates only.
-    const funding = body.action === "catalogue" || body.action === "costs" ? await readFunding({ workflow: "marketing-template" }) : undefined;
     if (body.action === "catalogue") {
-      const listing = await connectedMarketingTemplateCatalogue(userId, { refresh: body.refresh === true, funding });
+      const listing = await connectedMarketingTemplateCatalogue(owner.user.id, { refresh: body.refresh === true });
       let table = null;
       try {
-        table = await connectedMarketingTemplateCosts(userId, { refresh: body.refresh === true, funding });
+        table = await connectedMarketingTemplateCosts(owner.user.id, { refresh: body.refresh === true });
       } catch (error) {
         // Browsing stays available without prices; quoting decides whether a price exists.
         if (!(error instanceof MarketingTemplateError || error instanceof ConsumerVideoError)) throw error;
       }
       return Response.json(
-        { catalogue: presentMarketingTemplates(listing, table, { category: body.category, search: body.search, limit: body.limit,
-          ...(funding?.kind === "platform_account" ? { outputKind: "video" as const } : {}) }) },
+        { catalogue: presentMarketingTemplates(listing, table, { category: body.category, search: body.search, limit: body.limit }) },
         { headers },
       );
     }
     if (body.action === "costs") {
-      const table = await connectedMarketingTemplateCosts(userId, { refresh: body.refresh === true, funding });
+      const table = await connectedMarketingTemplateCosts(owner.user.id, { refresh: body.refresh === true });
       return Response.json({ costs: { version: table.version, entries: table.entries.length, fetchedAt: table.fetchedAt } }, { headers });
     }
     if (body.action === "submit") {
-      const refused = await websiteToolSpend(caller, "submit");
-      if (refused) return refused;
+      const render = await requireRender();
+      if (render.response) return render.response;
       return Response.json(
-        { job: await submitConsumerMarketingTemplateJob({ userId, draftId: body.draftId, id: body.id }, body) },
+        { job: await submitConsumerMarketingTemplateJob({ userId: owner.user.id, draftId: body.draftId, id: body.id }, body) },
         { headers },
       );
     }
     if (body.action === "status")
-      return Response.json(await pollConsumerMarketingTemplate({ userId, draftId: body.draftId, id: body.id }), { headers });
-    const refused = await websiteToolSpend(caller, "quote");
-    if (refused) return refused;
+      return Response.json(await pollConsumerMarketingTemplate({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
     return Response.json(
-      { job: await quoteConsumerMarketingTemplate(userId, body.draftId, body.input, body.idempotencyKey) },
+      { job: await quoteConsumerMarketingTemplate(owner.user.id, body.draftId, body.input, body.idempotencyKey) },
       { headers },
     );
   } catch (error) {

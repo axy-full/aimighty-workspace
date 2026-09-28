@@ -10,7 +10,6 @@ import {requestWorkspace,resumeWorkspace,pendingWorkspaces,workspaceCreationRead
 import {accountFailure,sameOriginProblem,AccountError} from "@/lib/accountDb";
 import { deletionAllowed } from "@/lib/deletion";
 import { markWorkspaceDeleted } from "@/lib/purge";
-import { isDesignatedWorkspace } from "@/lib/higgsfield-consumer/platform-account";
 
 export const dynamic = "force-dynamic";
 export const maxDuration=300;
@@ -70,10 +69,6 @@ export const DELETE = recoveryRoute(async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const verdict = deletionAllowed({ name: ws.name, legacy: ws.legacy, role: ctx.role }, String(body.name ?? ""));
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: 400 });
-  // The workspace holding the platform's website tools account stays while it
-  // is designated: release or move it on the platform desk first.
-  if (await isDesignatedWorkspace(ws.id))
-    return NextResponse.json({ error: "This workspace holds the account that runs website tools for every workspace. Release or move it on the platform desk first." }, { status: 409 });
   await markWorkspaceDeleted(ws.id);
   const left = ctx.workspaces.filter((w) => w.id !== ws.id);
   return NextResponse.json({ ok: true, deleted: ws.id, next: left[0]?.id ?? null });

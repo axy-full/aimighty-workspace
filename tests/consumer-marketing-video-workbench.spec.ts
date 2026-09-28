@@ -12,12 +12,10 @@ const original = { generationId, providerJobId: providerId, bytes: 1234, sha256:
   credits: 75, creditUnit: 'higgsfield_credits', asset: { generationId, url: `/api/media/${generationId}`, kind: 'video', mime: 'video/mp4', width: 1080, height: 1920, durationS: 12 } };
 type FakeJob = Record<string, unknown> & { id: string; status: string };
 const viewJob = (job: FakeJob) => ({ ...job, quoteExpired: job.status === 'quoted' && Number(job.quoteExpiresAt) <= Date.now() });
-async function fixture(page: Page, options: { owner?: boolean; platformKeys?: boolean; connected?: boolean; loseSubmit?: boolean; unsafeResult?: boolean; refuseSubmit?: boolean; loseBeforeAdmission?: boolean } = {}) {
+async function fixture(page: Page, options: { owner?: boolean; connected?: boolean; loseSubmit?: boolean; unsafeResult?: boolean; refuseSubmit?: boolean; loseBeforeAdmission?: boolean } = {}) {
   await signInLocally(page.request);
   const me = await page.request.get('/api/me').then(response => response.json());
   me.owner = options.owner ?? true;
-  /* The owner's own connected account; a managed workspace's website tools are tests/website-tools-managed-workbench.spec.ts. */
-  if (options.platformKeys !== undefined) me.workspace = { ...me.workspace, platformKeys: options.platformKeys };
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   let project: Project = { ...seedProject(), id: 'consumer-campaign', name: 'Consumer campaign', nodes: [], productionProjectId: 'consumer-production',
     moleculr: { ...EMPTY_MOLECULR, productName: 'Our bottle', hooks: ['A considered opening'], creative: { kind: 'video', path: 'prompt', category: 'motion', aspect: '16:9', direction: 'A warm product scene.', seconds: 15 } } };
@@ -277,8 +275,7 @@ test('native campaign video requires a matching exact quote, recovers a lost ack
 });
 
 test('nonowner sees the capability boundary and makes no consumer API requests', async ({ page }) => {
-  // A workspace on its own account: its owner's connection is the owner's alone.
-  const state = await fixture(page, { owner: false, platformKeys: false });
+  const state = await fixture(page, { owner: false });
   await open(page);
   const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
   await expect(panel.getByText(/The workspace owner can use this connected account/)).toBeVisible();

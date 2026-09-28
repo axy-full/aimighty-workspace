@@ -121,22 +121,6 @@ test("a quote imports the product image once, verifies the create tool's adverti
   await expect(getConsumerMarketingTemplateQuote("fixture-private-access", hero, costs, input, source, { fetch: f.fetch, resolveMedia: async () => "" })).rejects.toMatchObject({ code: "invalid_input" });
 });
 
-test("on the platform's shared account only a template that prices itself is quoted, known before its product image is imported", async () => {
-  const unpriced = fixtureSession();
-  const imports: string[] = [];
-  const resolveMedia = async (_workspaceId: string, perform: () => Promise<string>) => { const id = await perform(); imports.push(id); return id; };
-  await expect(getConsumerMarketingTemplateQuote("fixture-private-access", studio, costs, input, source, { fetch: unpriced.fetch, requireGetCost: true, resolveMedia }))
-    .rejects.toMatchObject({ code: "price_unknown" });
-  expect(imports).toEqual([]);
-  expect(unpriced.reads().map(([name]) => name)).toEqual(["list_workspaces"]);
-  // With its get_cost form it is quoted as always: the image imported once, nothing submitted.
-  const priced = fixtureSession({ create: flatSchema(true) });
-  expect(await getConsumerMarketingTemplateQuote("fixture-private-access", studio, costs, input, source, { fetch: priced.fetch, requireGetCost: true, resolveMedia }))
-    .toMatchObject({ credits: 42, priceSource: "get_cost" });
-  expect(imports).toEqual([media]);
-  expect(priced.paid()).toEqual([]);
-});
-
 test("submission re-checks wallet, contract and price, admits once, sends exactly one create and keeps ambiguous replies uncertain", async () => {
   const params = consumerMarketingTemplateParams(input, media);
   const shape = { nested: false, getCost: false };

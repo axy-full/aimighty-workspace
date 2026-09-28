@@ -7,13 +7,12 @@ import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import {
-  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_FORMATS_MANAGED_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, INITIAL_ADS, INITIAL_IMAGE_ADS, isDtc,
+  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, INITIAL_ADS, INITIAL_IMAGE_ADS, isDtc,
   PRESET_KEY, PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsMedias, adsParameters, clampedDuration, draftKey, imageAdsBlock, imageAdsFromPreset, imageAdsMedias,
   isOwnedSetup, parsePreset, presetFor, presetSpent, pruneAds, pruneImageAds, restoreAds, restoreImageAds, withAdReference, withImageStill, withMode, withProductId, withSetup, withStill,
   type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type ImageAdsState, type SetupItem, type SetupPreset, type SetupType,
 } from "@/lib/shell/business";
 import { useShell } from "@/lib/shell/state";
-import { useSession } from "@/lib/session";
 import { useOpenTake } from "@/lib/shell/use-open-take";
 import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
@@ -602,7 +601,6 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
   const dtc = isDtc(s);
   const model: CatalogueModel | undefined = business.models[s.engine];
   const connected = business.connection?.connected ?? false;
-  const managed = useSession().workspace?.platformKeys === true;
   /* DTC needs the account's styles (the ad formats), brand kits and products; read once the engine is chosen. */
   const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
   useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.dtc]); }, [dtc, connected, hasStyles, setupLoading, setupFailed, readSetup]);
@@ -691,15 +689,14 @@ function ImageAdsView({ scope, project, business }: { scope: string; project: Pr
       {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
       <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
         <div className="gx-gen-row">
-          <span className="gx-eyebrow" data-functional-label="">{managed ? "Website tools · Video templates" : "Connected · Marketing Studio templates"}</span>
+          <span className="gx-eyebrow" data-functional-label="">Connected · Marketing Studio templates</span>
           <h2 className="gx-workflow-title">{AD_FORMATS_COPY.title}</h2>
-          <p className="gx-hint">{(managed ? AD_FORMATS_MANAGED_COPY : AD_FORMATS_COPY).line}</p>
+          <p className="gx-hint">{AD_FORMATS_COPY.line}</p>
         </div>
         {project ? (
           <div className="pxw gx-legacy" data-testid="ad-formats-client">
-            {/* A managed workspace runs templates on the platform's website tools: any member; the client decides from the route whether they can take work now. */}
-            <MarketingTemplateBrowser key={`${scope}:${project.id}`} project={project} scope={scope} enabled={managed || (connected && business.connection?.owner !== false)} />
-            <MarketingTemplateCreator key={`template:${scope}:${project.id}`} project={project} scope={scope} enabled={managed || (connected && business.connection?.owner !== false)} />
+            <MarketingTemplateBrowser key={`${scope}:${project.id}`} project={project} scope={scope} enabled={connected && business.connection?.owner !== false} />
+            <MarketingTemplateCreator key={`template:${scope}:${project.id}`} project={project} scope={scope} enabled={connected && business.connection?.owner !== false} />
           </div>
         ) : <p className="gx-reason" role="status">Save your project first.</p>}
       </section>

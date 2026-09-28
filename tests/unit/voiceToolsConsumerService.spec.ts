@@ -8,7 +8,6 @@ import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerVoiceToolInput } from "../../lib/higgsfield-consumer/voice-tools";
 import type * as Service from "../../lib/higgsfield-consumer/voice-tool-service";
 import type { ConsumerVideoOriginal } from "../../lib/higgsfield-consumer/video-original";
-import { consumerFundingModules } from "../helpers/consumerFunding";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-voice-service-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -133,8 +132,6 @@ async function serviceFixture(options: { analysis?: boolean }) {
   if (options.analysis) process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED = "1"; else delete process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED;
   const loaded = { exports: {} as typeof Service };
   const source = ts.transpileModule(readFileSync("lib/higgsfield-consumer/voice-tool-service.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  // The real funding decision and grant resolver, over this fixture's tenant, ledger and grant.
-  Object.assign(deps, await consumerFundingModules({ tenant: deps["@/lib/tenant"], jobs: deps["./jobs"], oauth: deps["./oauth"] }));
   new Function("require", "module", "exports", "process", source)((name: string) => { if (!(name in deps)) throw new Error(`Unexpected dependency: ${name}`); return deps[name]; }, loaded, loaded.exports, process);
   if (before === undefined) delete process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED; else process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED = before;
   return { service: loaded.exports, state, workspace, tenant, database, jobs };

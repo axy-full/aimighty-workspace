@@ -1,9 +1,8 @@
+import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
-import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
-import { accessForJob, accessForNewWork } from "./access";
-import { websiteFunding } from "./funding";
+import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
-  ownsConsumerJob,
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -74,7 +73,7 @@ function presentGenjutsu(
         Object.entries(result.original).filter(([key]) => key !== "asset"),
       ),
     };
-  return workspaceJobView(job, {
+  return {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -95,7 +94,7 @@ function presentGenjutsu(
     failureCode: job.failureCode,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
-  });
+  };
 }
 export async function consumerGenjutsuView(job: ConsumerJob) {
   const observedAt = Date.now();
@@ -113,15 +112,20 @@ export async function consumerGenjutsuView(job: ConsumerJob) {
   const availability = await consumerOriginalAvailability([job]);
   return presentGenjutsu(job, availability.get(job.id)!, observedAt);
 }
+async function connected(userId: string, expectedGeneration?: string) {
+  const access = await getConsumerAccess(requireTenant().id, userId, {
+    expectedGeneration,
+  });
+  if (!access) throw new ConsumerOAuthError("reconnect_required");
+  return access;
+}
 export async function quoteConsumerGenjutsu(
   userId: string,
   draftId: string,
   input: ConsumerGenjutsuInput,
   idempotencyKey: string,
 ) {
-  // Motion Transfer and Object Swap run on the commercial API in the Studio
-  // engines; a managed workspace never reaches them through this transport.
-  const funding = await websiteFunding({ workflow: "genjutsu" });
+  requireConsumerFunding();
   const normalized = parseConsumerGenjutsuInput(input);
   const previous = await getConsumerJobByKey({
     userId,
@@ -144,7 +148,7 @@ export async function quoteConsumerGenjutsu(
       "Save this project before requesting a quote.",
       404,
     );
-  const access = await accessForNewWork(userId, funding);
+  const access = await connected(userId);
   const { sources } = await resolveConsumerGenjutsuSources(normalized);
   const quote = await getConsumerGenjutsuQuote(
     access.accessToken,
@@ -152,7 +156,7 @@ export async function quoteConsumerGenjutsu(
     sources,
     {
       resolveMedia: async (index, workspaceId, perform) => {
-        await accessForNewWork(userId, funding, access.generation);
+        await connected(userId, access.generation);
         return resolveConsumerMediaImport(
           {
             userId,
@@ -169,13 +173,12 @@ export async function quoteConsumerGenjutsu(
     },
   );
   // Reconnection during the quote cannot bind its result to a replacement grant.
-  await accessForNewWork(userId, funding, access.generation);
+  await connected(userId, access.generation);
   try {
     const { job } = await createConsumerJob({
       userId,
       draftId,
-      funding: funding.kind,
-      connectedOwnerId: access.connectedOwnerId,
+      connectedOwnerId: userId,
       connectionGeneration: access.generation,
       higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "genjutsu",
@@ -218,7 +221,7 @@ async function ownedGenjutsu(input: ConsumerJobScope) {
   if (
     !job ||
     job.workflow !== "genjutsu" ||
-    !ownsConsumerJob(job, input.userId)
+    job.connectedOwnerId !== input.userId
   )
     throw new ConsumerVideoServiceError(
       "not_found",
@@ -229,11 +232,14 @@ async function ownedGenjutsu(input: ConsumerJobScope) {
 }
 export async function submitConsumerGenjutsuJob(
   scope: ConsumerJobScope,
-  approval: { workspaceId?: string | null; credits: number },
+  approval: { workspaceId: string; credits: number },
 ) {
   const job = await ownedGenjutsu(scope);
   if (job.status !== "quoted") return consumerGenjutsuView(job);
-  if (!approvalMatches(job, approval))
+  if (
+    approval.workspaceId !== job.higgsfieldWorkspaceId ||
+    approval.credits !== job.quoteCredits
+  )
     throw new ConsumerVideoServiceError(
       "approval_changed",
       "Review this job’s wallet and exact credit quote again.",
@@ -241,7 +247,7 @@ export async function submitConsumerGenjutsuJob(
   if (job.quoteExpiresAt <= Date.now())
     throw new ConsumerJobError("quote_expired");
   const input = parseConsumerGenjutsuInput(JSON.parse(job.payloadJson).input);
-  const access = await accessForJob(job);
+  const access = await connected(scope.userId, job.connectionGeneration);
   let claimToken: string | undefined;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
   try {
@@ -250,11 +256,11 @@ export async function submitConsumerGenjutsuJob(
       access.accessToken,
       input,
       params,
-      job.higgsfieldWorkspaceId!,
-      job.quoteCredits,
+      approval.workspaceId,
+      approval.credits,
       {
         admit: async () => {
-          await accessForJob(job);
+          await connected(scope.userId, job.connectionGeneration);
           const claim = await claimConsumerDispatch(scope);
           if (!claim)
             throw new ConsumerVideoServiceError(
@@ -329,7 +335,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
         ? null
         : (savedId ?? responseId);
     if (providerJobId) {
-      await accessForJob(prior);
+      await connected(scope.userId, prior.connectionGeneration);
       prior =
         (await reconcileConsumerReceipt({
           ...scope,
@@ -340,7 +346,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
   }
   if (prior.status !== "accepted")
     return { job: await consumerGenjutsuView(prior) };
-  const access = await accessForJob(prior);
+  const access = await connected(scope.userId, prior.connectionGeneration);
   const claim = await claimConsumerPoll(scope);
   if (!claim)
     return {
@@ -369,7 +375,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
       params,
     );
     if (failed) {
-      await accessForJob(claim.job);
+      await connected(scope.userId, claim.job.connectionGeneration);
       const settled = await failConsumerPoll({
         ...scope,
         leaseToken: claim.leaseToken,
@@ -386,7 +392,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
     if (terminal) {
       // A refresh is the same grant; reconnect/disconnect during the read cannot
       // authorize collection under a replacement connection.
-      await accessForJob(claim.job);
+      await connected(scope.userId, claim.job.connectionGeneration);
       let original;
       try {
         original = await collectConsumerVideoOriginal(claim.job, terminal.url);
@@ -421,7 +427,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
     }
     return {
       job: await consumerGenjutsuView(await ownedGenjutsu(scope)),
-      providerStatus: providerDetail(claim.job, response.raw),
+      providerStatus: response.raw,
       pollAfterSeconds,
     };
   } finally {

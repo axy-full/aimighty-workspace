@@ -17,23 +17,17 @@ import { db } from "@/lib/db";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { uploadReservationsReady } from "@/lib/uploadReservations";
-import { ConsumerOAuthError } from "./oauth";
-import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
-import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
-import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
+import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
-  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, guardWebsiteWallet, noteWebsiteWalletShort, takeDispatchLease, websiteCallNeverLeft, websitePrice,
-} from "./account-billing";
-import {
-  ownsConsumerJob,
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
   listConsumerRecoveryJobs,
   readConsumerJobAfterAdmissions,
+  claimConsumerDispatch,
   markConsumerAccepted,
   markConsumerUncertain,
-  markConsumerFailed,
   claimConsumerPoll,
   releaseConsumerPoll,
   ConsumerJobError,
@@ -68,8 +62,6 @@ import { ConsumerVideoServiceError } from "./video-service";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 const PRESETS_TTL_MS = 3_600_000;
-/** This service's website tool, for the platform's account (lib/higgsfield-consumer/website-tools.ts). */
-const TOOL = "shorts" as const;
 /** Stop starting new clip downloads after this much of one poll request. */
 const COLLECT_BUDGET_MS = 60_000;
 type Snapshot = {
@@ -128,7 +120,7 @@ async function presentShorts(job: ConsumerJob, observedAt: number, progress?: { 
   const clips = manifestClips(job);
   await clipAvailability(job, clips);
   for (const clip of clips) if (clip.availability !== "available" && object(clip.original)) clip.original = Object.fromEntries(Object.entries(clip.original).filter(([key]) => key !== "asset")) as ConsumerJson;
-  return workspaceJobView(job, {
+  return {
     id: job.id,
     draftId: job.draftId,
     status: job.status,
@@ -150,7 +142,7 @@ async function presentShorts(job: ConsumerJob, observedAt: number, progress?: { 
     failureCode: job.failureCode,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
-  });
+  };
 }
 export type ConsumerShortsView = Awaited<ReturnType<typeof presentShorts>>;
 export async function consumerShortsView(job: ConsumerJob, progress?: { clips: number; collected: number; status: string }) {
@@ -162,13 +154,18 @@ export async function consumerShortsView(job: ConsumerJob, progress?: { clips: n
   }
   return presentShorts(job, observedAt, progress);
 }
-const fingerprintFor = (userId: string, access: ResolvedAccess) =>
-  createHash("sha256").update(`${consumerCacheScope(userId, access)}:shorts-presets`).digest("hex").slice(0, 48);
+async function connected(userId: string, expectedGeneration?: string) {
+  const access = await getConsumerAccess(requireTenant().id, userId, { expectedGeneration });
+  if (!access) throw new ConsumerOAuthError("reconnect_required");
+  return access;
+}
+const fingerprintFor = (userId: string, generation: string) =>
+  createHash("sha256").update(`${requireTenant().id}:${userId}:${generation}:shorts-presets`).digest("hex").slice(0, 48);
 const presetCache = new Map<string, ShortsPresets>();
-/** The style presets, read at most once an hour per connection (memory cache), with the grant that will quote. */
-export async function connectedShortsPresets(userId: string, options: { refresh?: boolean; funding?: ConsumerFunding } = {}): Promise<ShortsPresets> {
-  const access = await accessForNewWork(userId, options.funding ?? OWN_ACCOUNT);
-  const key = fingerprintFor(userId, access), cached = presetCache.get(key), now = Date.now();
+/** The style presets, read at most once an hour per connection (memory cache). */
+export async function connectedShortsPresets(userId: string, options: { refresh?: boolean } = {}): Promise<ShortsPresets> {
+  const access = await connected(userId);
+  const key = fingerprintFor(userId, access.generation), cached = presetCache.get(key), now = Date.now();
   if (!options.refresh && cached && cached.fetchedAt > now - PRESETS_TTL_MS && cached.fetchedAt <= now) return cached;
   const presets = await readShortsPresets(access.accessToken);
   presetCache.set(key, presets);
@@ -180,7 +177,7 @@ export function forgetShortsPresets() {
 const sameInput = (a: unknown, b: ConsumerShortsInput) => sameConsumerValue(parseConsumerShortsInput(a), b);
 const PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 export async function quoteConsumerShorts(userId: string, draftId: string, input: ConsumerShortsInput, idempotencyKey: string) {
-  const funding = await websiteFunding({ workflow: "shorts" });
+  requireConsumerFunding();
   const normalized = parseConsumerShortsInput(input);
   // A style the owner saved on the account is its own library, never Particl's.
   if (!SHORTS_LISTED_SOURCES.includes(normalized.preset.source))
@@ -195,7 +192,7 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
   // The style must be one the account lists as a library style now, not one
   // the request merely labels "cms": the standalone rule is enforced here,
   // not only by what the page lists (hourly cached, free read).
-  const listed = await connectedShortsPresets(userId, { funding });
+  const listed = await connectedShortsPresets(userId);
   const presetId = normalized.preset.id.toLowerCase();
   if (!listed.presets.some((preset) => preset.id === presetId && SHORTS_LISTED_SOURCES.includes(preset.source)))
     throw new ShortsStudioError("invalid_input", "Choose one of the listed styles.");
@@ -203,30 +200,23 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
   const source = await resolveConsumerShortsSource(normalized);
   // The stored duration prices the session; an unknown or out-of-range one stops here.
   consumerShortsParams(normalized, PLACEHOLDER, source.durationSeconds);
-  const access = await accessForNewWork(userId, funding);
+  const access = await connected(userId);
   const quote = await getConsumerShortsQuote(access.accessToken, normalized, source, {
     resolveMedia: async (workspaceId, perform) => {
-      await accessForNewWork(userId, funding, access.generation);
+      await connected(userId, access.generation);
       return resolveConsumerShortsImport(
         { userId, draftId, quoteKey: idempotencyKey, request: normalized, workspaceId, connectionGeneration: access.generation },
         perform,
       );
     },
   });
-  await accessForNewWork(userId, funding, access.generation);
-  // On the platform's account the client's price is Particl credits, converted
-  // privately from the account's own price for the whole session; its wallet is never named.
-  const platform = funding.kind === "platform_account";
-  const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
-  // The account's wallet as this quote read it: under its private floor after this price, refused neutrally.
-  if (platform) await guardWebsiteWallet(quote.workspace.credits, quote.credits);
-  const payload: Snapshot = { input: quote.input, params: quote.params, workspaceName: platform ? "" : quote.workspace.name ?? "Connected wallet", source: described };
+  await connected(userId, access.generation);
+  const payload: Snapshot = { input: quote.input, params: quote.params, workspaceName: quote.workspace.name ?? "Connected wallet", source: described };
   try {
     const { job } = await createConsumerJob({
       userId,
       draftId,
-      funding: funding.kind,
-      connectedOwnerId: access.connectedOwnerId,
+      connectedOwnerId: userId,
       connectionGeneration: access.generation,
       higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "shorts",
@@ -235,7 +225,6 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
       quoteCredits: quote.credits,
       quoteExpiresAt: Date.now() + QUOTE_LIFETIME_MS,
       originalAssetIds: [consumerMediaKey(normalized.source)],
-      ...(particlCredits === undefined ? {} : { particlCredits }),
     });
     return consumerShortsView(job);
   } catch (error) {
@@ -248,36 +237,28 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
 }
 async function ownedJob(input: ConsumerJobScope) {
   const job = await getConsumerJob(input);
-  if (!job || job.workflow !== "shorts" || !ownsConsumerJob(job, input.userId))
+  if (!job || job.workflow !== "shorts" || job.connectedOwnerId !== input.userId)
     throw new ConsumerVideoServiceError("not_found", "This Shorts session is not available.", 404);
   return job;
 }
-export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval: { workspaceId?: string | null; credits: number }) {
+export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval: { workspaceId: string; credits: number }) {
   const job = await ownedJob(scope);
   if (job.status !== "quoted") return consumerShortsView(job);
-  if (!approvalMatches(job, approval))
+  if (approval.workspaceId !== job.higgsfieldWorkspaceId || approval.credits !== job.quoteCredits)
     throw new ConsumerVideoServiceError("approval_changed", "Review this session’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
-  const platform = job.funding === "platform_account";
-  // A tool switched off, unpriced or paused since the quote refuses here: nothing is sent.
-  if (platform && (await websiteFunding({ workflow: "shorts" })).kind !== "platform_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
   const input = parseConsumerShortsInput(snapshot.input);
-  const access = await accessForJob(job);
+  const access = await connected(scope.userId, job.connectionGeneration);
   let claimToken: string | undefined;
-  let admitted = false;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
-  // One dispatch at a time on the shared account: its last wallet check and its paid call.
-  const lease = platform ? await takeDispatchLease() : null;
   try {
-    const result = await submitConsumerShorts(access.accessToken, input, snapshot.params, job.higgsfieldWorkspaceId!, job.quoteCredits, {
+    const result = await submitConsumerShorts(access.accessToken, input, snapshot.params, approval.workspaceId, approval.credits, {
       admit: async () => {
-        await accessForJob(job);
-        // A platform session's price must still be the approved one; it is reserved, with its registry row, then claimed.
-        const token = await admitConsumerJob(scope, job, TOOL);
-        if (!token) throw new ConsumerVideoServiceError("already_submitted", "This session already has a submission. Refresh its status.");
-        claimToken = token;
-        admitted = true;
+        await connected(scope.userId, job.connectionGeneration);
+        const claim = await claimConsumerDispatch(scope);
+        if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This session already has a submission. Refresh its status.");
+        claimToken = claim.claimToken;
       },
     });
     if (!claimToken) throw new ConsumerVideoServiceError("not_admitted", "No paid request was admitted.");
@@ -292,32 +273,15 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
       result.state === "accepted"
         ? await markConsumerAccepted({ ...scope, claimToken, providerJobId: result.providerJobId })
         : await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
-    await recordWebsiteSubmission(job, result);
     return consumerShortsView(next ?? (await ownedJob(scope)));
   } catch (error) {
     if (claimToken) {
-      // On the platform's account a call that never left is failed and its
-      // reservation released to zero (lib/higgsfield-consumer/account-billing.ts).
-      if (websiteCallNeverLeft(job, error, admitted)) {
-        const failed = await markConsumerFailed({ ...scope, claimToken });
-        if (failed?.status === "failed") await releaseWebsiteJob(job, TOOL);
-        return consumerShortsView(failed ?? (await ownedJob(scope)));
-      }
       const next = await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
-      await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerShortsView(next ?? (await ownedJob(scope)));
     }
-    // The account's wallet was short of the price (nothing was sent): the desk and the owner are told.
-    await noteWebsiteWalletShort(job, error);
     throw error;
-  } finally {
-    await lease?.release();
   }
 }
-/** A platform session that ended is settled once, for the whole session:
- * collected or not, its approved price (also a repair when an earlier poll
- * ended it but did not reach its settlement). */
-const settleEnded = (job: ConsumerJob) => settleEndedWebsiteJob(job, TOOL);
 /**
  * One leased poll: read the session; once it is terminal read every clip's
  * `job_status`, collect each completed clip (idempotent per clip), and settle
@@ -325,19 +289,17 @@ const settleEnded = (job: ConsumerJob) => settleEndedWebsiteJob(job, TOOL);
  */
 export async function pollConsumerShorts(scope: ConsumerJobScope) {
   let prior = await ownedJob(scope);
-  await settleEnded(prior);
   if (prior.status === "uncertain" && prior.providerReceipt) {
     const saved = typeof prior.providerReceipt.job_id === "string" ? consumerShortsAcknowledgement({ id: prior.providerReceipt.job_id }) : null;
     const response = consumerShortsAcknowledgement(prior.providerReceipt.response);
     const providerJobId = saved && response && saved !== response ? null : (saved ?? response);
     if (providerJobId) {
-      await accessForJob(prior);
+      await connected(scope.userId, prior.connectionGeneration);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedJob(scope));
-      if (prior.status === "accepted" && prior.providerJobId && prior.funding === "platform_account") await acceptWebsiteJob(prior, prior.providerJobId);
     }
   }
   if (prior.status !== "accepted") return { job: await consumerShortsView(prior) };
-  const access = await accessForJob(prior);
+  const access = await connected(scope.userId, prior.connectionGeneration);
   const claim = await claimConsumerPoll(scope);
   if (!claim) return { job: await consumerShortsView(await ownedJob(scope)), pollAfterSeconds: 30 };
   let pollAfterSeconds = 30;
@@ -354,10 +316,9 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
     const progress = { clips: session.jobIds.length, collected: 0, status: session.status };
     if (!session.terminal) return { job: await consumerShortsView(await ownedJob(scope), progress), pollAfterSeconds };
     if (!session.jobIds.length) {
-      await accessForJob(claim.job);
+      await connected(scope.userId, claim.job.connectionGeneration);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
-      if (settled) await settleEnded(settled);
-      return { job: await consumerShortsView(settled ?? (await ownedJob(scope))), providerStatus: providerDetail(claim.job, { status: session.status }) };
+      return { job: await consumerShortsView(settled ?? (await ownedJob(scope))), providerStatus: { status: session.status } };
     }
     const statuses = await readConsumerShortsClips(access.accessToken, session.jobIds, wallet);
     const outcomes: ShortsClipOutcome[] = [];
@@ -370,7 +331,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
       const terminal = consumerVoiceToolOriginalResult(raw, jobId);
       if (!terminal || Date.now() - started > COLLECT_BUDGET_MS) { pending = true; continue; }
       try {
-        await accessForJob(claim.job);
+        await connected(scope.userId, claim.job.connectionGeneration);
         const original = await collectConsumerVideoOriginal(claim.job, terminal.url, { clip: { index, providerJobId: jobId } });
         outcomes.push({ index, providerJobId: jobId, state: "collected", original: original as unknown as Record<string, unknown> });
       } catch (error) {
@@ -393,7 +354,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
       pollAfterSeconds = 15;
       return { job: await consumerShortsView(await ownedJob(scope), progress), ...(collection ? { collection } : {}), pollAfterSeconds };
     }
-    await accessForJob(claim.job);
+    await connected(scope.userId, claim.job.connectionGeneration);
     const settlement = shortsSettlement(outcomes);
     const done = settlement.collected
       ? await completeConsumerJob({
@@ -406,7 +367,6 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
           },
         })
       : await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
-    if (done) await settleEnded(done);
     return { job: await consumerShortsView(done ?? (await ownedJob(scope))) };
   } finally {
     await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 }).catch(() => null);

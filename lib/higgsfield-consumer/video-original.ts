@@ -15,7 +15,7 @@ import {
   fetchPublicConsumerOriginalBytes,
   type ProductFetchDependencies,
 } from "../workbench/product-fetch";
-import { consumerJobMeterId, consumerJobsReady, type ConsumerJob } from "./jobs";
+import { consumerJobsReady, type ConsumerJob } from "./jobs";
 import { consumerVideoIdentity, type ConsumerOriginalKind } from "./original-identity";
 
 export const CONSUMER_ORIGINAL_LEASE_MS = 180_000;
@@ -101,13 +101,14 @@ const digest = (bytes: Uint8Array) =>
  * each clip is its own retained original, keyed apart from its parent job. */
 export const consumerClipKey = (jobId: string, index: number) => `${jobId}.clip-${index}`;
 export type ConsumerClip = { index: number; providerJobId: string };
-/** The collected original's generation id — the same identity as a platform
- * job's meter id (lib/higgsfield-consumer/jobs.ts › consumerJobMeterId). */
 export function consumerOriginalGenerationId(
   workspaceId: string,
   jobId: string,
 ) {
-  return consumerJobMeterId(workspaceId, jobId);
+  return `gen_hfc_${createHash("sha256")
+    .update(JSON.stringify([workspaceId, jobId]))
+    .digest("hex")
+    .slice(0, 40)}`;
 }
 
 /** Metadata/packet inspection only, never transcoding or fetching references. */
@@ -577,9 +578,6 @@ export async function collectConsumerVideoOriginal(
             ...(clip ? { consumerParentJobId: job.id, consumerParentProviderJobId: job.providerJobId, clipIndex: clip.index } : {}),
             consumerCredits: job.quoteCredits,
             consumerCreditUnit: "higgsfield_credits",
-            // Paid in Particl credits on the platform's shared account: the
-            // account's own figures above stay on the server (lib/jobs.ts › rowToGeneration).
-            ...(job.funding === "platform_account" ? { consumerFunding: "platform_account" } : {}),
             originalSha256: sha256,
             ...(options.enhancedPrompt ? { enhancedPrompt: options.enhancedPrompt } : {}),
             ...(metadata!.width !== undefined ? { width: metadata!.width } : {}),

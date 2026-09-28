@@ -36,20 +36,15 @@ export type PlannerRead = { name: PlannerReadName; tool: string; args: Record<st
 
 export const PLANNER_GOAL_LIMIT = 300;
 /** The fixed reads, in the order they are made. `recommend` carries the
- * person's request (bounded) as its goal; nothing else varies. The wallet
- * balance and plan are the account holder's own facts: they are read only
- * for the owner of the connection, never when a workspace plans on the
- * platform's shared account (`accountFacts: false`). */
-export function plannerReads(goal: string, options: { accountFacts?: boolean } = {}): PlannerRead[] {
+ * person's request (bounded) as its goal; nothing else varies. */
+export function plannerReads(goal: string): PlannerRead[] {
   const query = goal.replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, PLANNER_GOAL_LIMIT);
   return [
     ...(query ? [{ name: "recommend" as const, tool: "models_explore", args: { action: "recommend", query, limit: 5 } }] : []),
     { name: "presets", tool: "presets_show", args: {} },
     { name: "voices", tool: "list_voices", args: { size: 20 } },
-    ...(options.accountFacts === false ? [] : [
-      { name: "balance" as const, tool: "balance", args: {} },
-      { name: "plan" as const, tool: "show_plans_and_credits", args: { intent: "general" } },
-    ]),
+    { name: "balance", tool: "balance", args: {} },
+    { name: "plan", tool: "show_plans_and_credits", args: { intent: "general" } },
   ];
 }
 /** Every tool the reads may use; nothing outside this list is ever called here. */
@@ -137,13 +132,11 @@ export type PlannerContext = {
   unavailable: PlannerReadName[];
 };
 
-/** Reduces the raw read results to what the planner may see. Without the
- * account's own facts, a balance or plan reply is never read, whatever came back. */
-export function summarizePlannerReads(results: PlannerReadResult[], options: { accountFacts?: boolean } = {}): PlannerContext {
+/** Reduces the raw read results to what the planner may see. */
+export function summarizePlannerReads(results: PlannerReadResult[]): PlannerContext {
   const lines: string[] = [];
   const context: PlannerContext = { lines, recommended: [], presets: [], balance: null, unavailable: [] };
   for (const result of results) {
-    if (options.accountFacts === false && (result.name === "balance" || result.name === "plan")) continue;
     if (result.unavailable) {
       context.unavailable.push(result.name);
       continue;

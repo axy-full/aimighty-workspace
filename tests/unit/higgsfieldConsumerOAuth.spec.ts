@@ -1013,8 +1013,6 @@ async function routeFixture() {
     "@/lib/higgsfield-consumer/developer-api": {
       probeDeveloperApi: async () => ({ reachable: false, status: null, reason: "stub" }),
     },
-    // The real designation lock: nothing is designated here, so it never refuses.
-    "@/lib/higgsfield-consumer/platform-account": await import("../../lib/higgsfield-consumer/platform-account"),
     "@/lib/higgsfield-consumer/oauth": {
       ...(await modules()).oauth,
       beginConsumerAuthorization: async () => {

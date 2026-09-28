@@ -139,22 +139,8 @@ export function rowToGeneration(r: any): Generation {
      in decides what the row is allowed to carry. */
   const inCredits = creditsApply(currentTenant()?.workspace);
   let params = JSON.parse(r.params || "{}");
-  /* Collected on the platform's shared website account for this workspace: it
-     paid Particl credits, so the account's own credits and job ids never leave
-     the server, and no provider quote stands in for its receipt. */
-  const platformFunded = params.consumerFunding === "platform_account";
-  /* One clip of a Shorts session: the session carries the one receipt, so the
-     clip has no charge of its own to show (never a "0"). */
-  const sessionClip = platformFunded && typeof params.consumerParentJobId === "string";
-  if (platformFunded) {
-    delete params.consumerCredits;
-    delete params.consumerCreditUnit;
-    delete params.consumerProviderJobId;
-    delete params.consumerParentProviderJobId;
-    delete params.consumerFunding;
-  }
   const providerCreditQuote: ProviderCreditQuote | null =
-    !platformFunded && /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
+    /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
     (isConsumerVideoModel(r.model) || isConsumerOriginalParams(params)) && r.status === "succeeded" &&
     params.consumerCreditUnit === "higgsfield_credits" &&
     typeof params.consumerCredits === "number" && Number.isFinite(params.consumerCredits) && params.consumerCredits >= 0
@@ -228,7 +214,7 @@ export function rowToGeneration(r: any): Generation {
     costUsd: inCredits || providerCreditQuote ? null : (r.cost_usd ?? null),
     refineCostUsd: inCredits || providerCreditQuote ? null : (r.refine_cost_usd ?? null),
     providerCreditQuote,
-    creditsBilled: inCredits && !providerCreditQuote && !sessionClip
+    creditsBilled: inCredits && !providerCreditQuote
       ? Number(r.receipt_credits ?? 0)
       : null,
     refineModel: r.refine_model ?? null,

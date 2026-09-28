@@ -20,10 +20,9 @@ const actions = [
   "account.password_reset", "account.mfa_enabled", "account.mfa_replaced", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed",
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
-  "website_account.designated", "website_account.paused", "website_account.resumed", "website_account.tools_changed", "website_account.released",
 ] as const;
 export type SecurityAction = (typeof actions)[number];
-type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "connection";
+type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link";
 type Details = {
   role?: "admin" | "member";
   disabled?: boolean;
@@ -50,7 +49,7 @@ function identifier(value: string | null) {
 /** Explicit fields only. Never accept prompts, names, emails, URLs or credentials. */
 export function securityAuditStatement(input: SecurityAuditInput, changedOnly = false): InStatement {
   if (!(actions as readonly string[]).includes(input.action) ||
-      !["account", "member", "workspace", "vendor", "api_token", "review_link", "connection"].includes(input.targetType))
+      !["account", "member", "workspace", "vendor", "api_token", "review_link"].includes(input.targetType))
     throw new Error("Invalid security history action");
   const details = input.details ?? {};
   for (const [key, value] of Object.entries(details)) {
