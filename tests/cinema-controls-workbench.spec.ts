@@ -36,6 +36,9 @@ const TAKE = () => generation({
 });
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
+/** A surface measured only once its entrance (a sheet rising, a list scaling in) has finished. */
+const settled = (target: Locator) => target.evaluate((el) => Promise.all(el.getAnimations({ subtree: true })
+  .filter((a) => Number(a.effect?.getTiming().iterations) !== Infinity).map((a) => a.finished.catch(() => null))));
 
 /** Text under `scope` whose colour, blended over what it sits on, is dimmer than #7C7C84 (the label floor, after alpha). */
 async function dimText(page: Page, scope: string, selector: string): Promise<string[]> {
@@ -161,7 +164,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   const search = sheet.getByTestId("gen-film-search");
   await expect(search).toHaveAttribute("placeholder", "Search 33 moves");
   if (phone) {
-    await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished.catch(() => null))));
+    await settled(sheet);
     expect(await smallTargets(page, ".gx-sheet--vocab"), "grid targets under 44×44").toEqual([]);
     const box = (await sheet.boundingBox())!;
     expect(Math.round(box.y + box.height)).toBeLessThanOrEqual(page.viewportSize()!.height);
@@ -181,6 +184,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   await expect(sheet.locator(".gx-fv-tile[data-plain]")).toHaveCount(51);
   await expect(sheet.locator(".gx-fv-media")).toHaveCount(0);
   await expect(sheet.getByTestId("gen-film-search")).toHaveAttribute("placeholder", "Search 50 palettes");
+  await settled(sheet);
   if (phone) expect(await smallTargets(page, ".gx-sheet--vocab"), "palette targets under 44×44").toEqual([]);
   expect(await dimText(page, ".gx-sheet--vocab", ".gx-fv-name, .gx-fv-aka, .gx-fv-now"), "grid text under #7C7C84").toEqual([]);
   await shot(page, info, "cinema-palette");
@@ -188,6 +192,13 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   await expect(sheet.locator(".gx-fv-tile .gx-fv-name")).toHaveText(["Neon Rain at Midnight"]);
   await sheet.locator("[data-option='color_palette:neon-rain-at-midnight']").click();
   await expect(chip(page, "color_palette")).toHaveAttribute("aria-label", "Palette: Neon Rain at Midnight");
+  /* The last chip, just set, is on top: clear of the sticky Generate and, on a phone, the tab bar. */
+  const covered = await chip(page, "color_palette").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return hit && !el.contains(hit) ? `${hit.tagName}.${hit.className}` : null;
+  });
+  expect(covered, "palette chip covered after its pick").toBeNull();
 
   /* Genre: a short grid, no search; picking what is held puts it back to Auto, and Auto is sent as nothing. */
   await chip(page, "genre").click();
@@ -208,6 +219,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   await expect(hash.getByRole("option").first()).toContainText("Light");
   await expect(hash.getByRole("option").first()).toContainText("Contre-jour");
   await expect(hash.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await settled(hash);
   if (phone) expect(await smallTargets(page, ".gx-fv-hash"), "typeahead rows under 44×44").toEqual([]);
   await prompt.press("Enter");
   await expect(hash).toHaveCount(0);
