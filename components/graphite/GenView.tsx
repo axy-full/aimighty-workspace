@@ -97,7 +97,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video", compose: composeForSend });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType: "video", compose: composeForSend });
   const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
   /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
      "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
