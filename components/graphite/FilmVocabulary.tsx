@@ -258,7 +258,10 @@ function PreviewLoop({ url, active, onFail }: { url: string; active: boolean; on
   useEffect(() => {
     const el = video.current;
     if (!el || typeof IntersectionObserver !== "function") return;
-    const seen = new IntersectionObserver(([entry]) => setVisible(Boolean(entry?.isIntersecting)), { threshold: 0.5 });
+    /* The newest entry is where the loop is now. A busy page can hand over several at once, oldest first: on a
+       phone, "below the screen" while the grid is still rising, then "in view". Read alone, the first kept the
+       loop still, and nothing crosses a threshold again to correct it. */
+    const seen = new IntersectionObserver((entries) => setVisible(Boolean(entries[entries.length - 1]?.isIntersecting)), { threshold: 0.5 });
     seen.observe(el);
     return () => seen.disconnect();
   }, []);

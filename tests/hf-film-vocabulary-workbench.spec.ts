@@ -332,6 +332,56 @@ test("the grid says when its loops cannot be read and reads them again; Escape a
   expect(errors).toEqual([]);
 });
 
+test("a loop that rises into view with its grid plays, even when a busy page hands over what it saw all at once", async ({ page }, info) => {
+  test.skip(!["workbench-360x640", "workbench-390x844"].includes(info.project.name), "the phones whose grid rises from the foot of the screen");
+  /* A busy page (CI under load) delivers an observer's entries late and together, oldest first. Once armed, a loop's
+     observer here is handed nothing until the loop is in view (or a while has passed), then everything at once. */
+  await page.addInitScript(() => {
+    const w = window as unknown as { __loopLooks: boolean[][]; __holdLoops?: boolean };
+    w.__loopLooks = [];
+    const Native = window.IntersectionObserver;
+    window.IntersectionObserver = class extends Native {
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        let held: IntersectionObserverEntry[] = [];
+        let timer = 0;
+        const hand = (observer: IntersectionObserver) => {
+          window.clearTimeout(timer);
+          timer = 0;
+          const all = held;
+          held = [];
+          w.__loopLooks.push(all.map((e) => e.isIntersecting));
+          callback(all, observer);
+        };
+        super((entries, observer) => {
+          if (!w.__holdLoops || !entries.every((e) => e.target.matches(".gx-fv-media > video"))) return callback(entries, observer);
+          held.push(...entries);
+          if (entries.some((e) => e.isIntersecting)) hand(observer);
+          else if (!timer) timer = window.setTimeout(() => hand(observer), 5_000);
+        }, options);
+      }
+    };
+  });
+  const { errors } = await open(page);
+  const sheet = page.getByTestId("gen-film-sheet");
+  const loop = sheet.locator("[data-option='move:push'] video");
+  /* The first opening reads the loops; the next shows them as the grid starts to rise from the foot of the screen. */
+  await chip(page, "camera").click();
+  await expect(loop).toBeAttached();
+  await sheet.getByTestId("gen-film-close").click();
+  await expect(sheet).toHaveCount(0);
+  await page.evaluate(() => { (window as unknown as { __holdLoops: boolean }).__holdLoops = true; });
+  await chip(page, "camera").click();
+  const looks = () => page.evaluate(() => (window as unknown as { __loopLooks: boolean[][] }).__loopLooks);
+  await expect.poll(async () => (await looks()).length).toBeGreaterThan(0);
+  /* One delivery: below the screen as the grid began to rise, then in view. The newest is where the loop is. */
+  const [seen] = await looks();
+  expect(seen[0], "first look: below the screen").toBe(false);
+  expect(seen[seen.length - 1], "last look: in view").toBe(true);
+  await expect.poll(() => loop.evaluate((v: HTMLVideoElement) => !v.paused)).toBe(true);
+  await expect(loop).toHaveAttribute("data-ready", "true");
+  expect(errors).toEqual([]);
+});
+
 test("every grid draws every entry it offers, and picks from the keyboard", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors } = await open(page);
