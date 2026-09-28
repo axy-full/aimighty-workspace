@@ -358,6 +358,8 @@ export function useComposer(options: {
   open: boolean;
   /** The project the shell has open. */
   project: Project | null;
+  /** The shell must finish reading its projects before this composer may generate. */
+  projects?: "loading" | "ready" | "error";
   /** Adopt a project the composer created, so the shell opens it. */
   onProject: (projectId: string) => void;
   /** The workspace's own name, for the billing line. */
@@ -530,7 +532,7 @@ export function useComposer(options: {
     } as ConsumerGenerationInput;
   }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
-  const blockedForQuote = !open || !model || !state.prompt.trim()
+  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready")
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
   const connectedKey = connectedInput ? JSON.stringify(connectedInput) : "";
   /* A connected quote is a call to the account. One is asked per project and exact body and held
@@ -601,6 +603,7 @@ export function useComposer(options: {
     if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
   }, [scope, buttonTotal]);
   const blocked = composerBlock({
+    projects: options.projects,
     state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }

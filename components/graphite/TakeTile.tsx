@@ -175,13 +175,14 @@ export function TakeSkeletons({ count, variant }: { count: number; variant: Vari
 /** A read that failed says so, with the one action that helps. */
 export function LoadBanner({ banner, onRetry, testId, compact = false }: { banner: NonNullable<LibraryView["banner"]>; onRetry: () => Promise<unknown> | void; testId: string; compact?: boolean }) {
   const [busy, setBusy] = useState(false);
+  const trying = busy || Boolean(banner.retrying);
   return (
     <div className="gx-banner" data-tone={banner.tone} data-compact={compact || undefined} role={banner.tone === "error" ? "alert" : "status"} data-testid={testId}>
       <span className="gx-banner-dot" aria-hidden="true" />
       <span className="gx-banner-text">{banner.tone === "stale" ? `Not refreshed · ${banner.message}` : banner.message}</span>
-      <button type="button" className="gx-hbtn" disabled={busy} data-testid={`${testId}-retry`}
+      <button type="button" className="gx-hbtn" disabled={trying} data-testid={`${testId}-retry`}
         onClick={async () => { setBusy(true); try { await onRetry(); } finally { setBusy(false); } }}>
-        {busy ? "Trying…" : "Try again"}
+        {trying ? "Trying…" : "Try again"}
       </button>
     </div>
   );
