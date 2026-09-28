@@ -49,15 +49,17 @@ const fixture = (): Project => ({
 } as Project);
 const TAKES = Array.from({ length: 10 }, (_, i) => generation({ id: `gen_take_${i}`, title: `Take ${i + 1} on the water`, prompt: `Take ${i + 1} on the water` }));
 
-async function open(page: Page, path: string, named = true, atomik = false) {
+async function open(page: Page, path: string, named = true, atomik: boolean | (() => number) = false) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
-  /* Atomik's run engine, answered here: a quote of 12 cr and nothing dispatched (these specs never approve). */
+  /* Atomik's run engine, answered here: a quote (12 cr, or the figure a test names as it asks) and nothing dispatched
+     (these specs never approve). */
   if (atomik) await page.route("**/api/workbench/atomik**", (route) => {
     const request = route.request();
     if (request.method() === "GET") return route.fulfill({ json: { configured: false, models: [], jobs: [] } });
-    if ((request.postDataJSON() as { quoteOnly?: unknown } | null)?.quoteOnly === true) return route.fulfill({ json: { estimateCredits: 12, estimateUsd: 1.2, quoteOnly: true } });
+    const credits = typeof atomik === "function" ? atomik() : 12;
+    if ((request.postDataJSON() as { quoteOnly?: unknown } | null)?.quoteOnly === true) return route.fulfill({ json: { estimateCredits: credits, estimateUsd: credits / 10, quoteOnly: true } });
     throw new Error("The phone chrome spec never approves an Atomik run.");
   });
   await mockProjects(page, { current: fixture() });
@@ -310,6 +312,49 @@ test("phone: with Atomik's approval row up, a page that failed offers Try again 
   await retry.click();
   await expect(fault).toHaveCount(0);
   await expect(page.getByTestId("suites-atomik-gate")).toBeVisible();
+});
+
+test("phone: a re-quote on the approval row says the old and the new figure whole, and Approve carries the new one", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "the phone sizes");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  /* A quote lives five minutes (QUOTE_MAX_AGE_MS in lib/workspace/run-engine.ts); the page's clock is run past it. */
+  await page.clock.install();
+  let credits = 12;
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent", true, () => credits);
+  await page.getByTestId("primary-action").click();
+  await expect(page.getByTestId("atomik-gate")).toBeVisible();
+  await page.keyboard.press("Escape");
+  const row = page.getByTestId("suites-atomik-gate");
+  const approve = row.getByTestId("suites-gate-approve");
+  await expect(approve).toHaveText(/^Approve 12 (cr|credits)$/);
+
+  /* Pressed after the quote has gone stale, at a figure that has moved: nothing is sent, the quote is taken again,
+     and the row says what moved; Approve now names the new figure. */
+  credits = 14;
+  await page.clock.fastForward("06:00");
+  await approve.click();
+  const status = row.locator('.gx-gate-line[role="status"]');
+  await expect(status).toHaveText(/12 (cr|credits).* 14 (cr|credits)/);
+  await expect(approve).toHaveText(/^Approve 14 (cr|credits)$/);
+  await settle(page);
+
+  /* Whole: no status and no button in the row is cut, the row sits on screen, and its targets keep the floor. */
+  const cut = await row.evaluate((el) => Array.from(el.querySelectorAll<HTMLElement>('.gx-gate-line[role], button'))
+    .filter((part) => part.scrollWidth > part.clientWidth + 0.5 || part.scrollHeight > part.clientHeight + 0.5)
+    .map((part) => `${part.textContent}: ${part.scrollWidth}×${part.scrollHeight} in ${part.clientWidth}×${part.clientHeight}`));
+  expect(cut, "cut short").toEqual([]);
+  const box = (await row.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await expect(status).toBeInViewport({ ratio: 1 });
+  await expect(approve).toBeInViewport({ ratio: 1 });
+  expect(await smallTargets(page, ".gx-gate")).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+  const size = info.project.name.replace("workbench-", "");
+  if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${size}-requote.png`), animations: "disabled" }); }
+  await info.attach(`requote-${size}.json`, { body: JSON.stringify(await measure(page, "[data-testid='content']"), null, 2), contentType: "application/json" });
+  expect(errors).toEqual([]);
 });
 
 test("phone: the chrome keeps the floors on every page — 44px targets, no label under #7C7C84, nothing sideways", async ({ page }, info) => {

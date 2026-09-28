@@ -8,6 +8,10 @@ export function StageStrip() {
   /* A strip wider than its row (a phone) scrolls the current page to its middle, so the page it names is in sight. */
   const nav = useRef<HTMLElement>(null);
   const current = `${shell.suite.id}:${shell.page.id}`;
+  /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
+     On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away.
+     A strip drawn again on the same page (back from Gen) is observed again too. */
+  const hidden = shell.view !== "suite" || Boolean(shell.page.phoneOnly && !(shell.wide && shell.page.id === "stages"));
   useEffect(() => {
     const strip = nav.current;
     if (!strip) return;
@@ -22,10 +26,8 @@ export function StageStrip() {
     const resize = new ResizeObserver(reveal);
     resize.observe(strip);
     return () => resize.disconnect();
-  }, [current]);
-  /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
-     On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away. */
-  if (shell.view !== "suite" || (shell.page.phoneOnly && !(shell.wide && shell.page.id === "stages"))) return null;
+  }, [current, hidden]);
+  if (hidden) return null;
   return (
     <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip" ref={nav}>
       {shell.suite.pages.filter((p) => !p.phoneOnly).map((p) => (
