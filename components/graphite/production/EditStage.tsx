@@ -18,6 +18,7 @@ import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import { publishGallery } from "@/lib/shell/preview-bridge";
 import { useShell } from "@/lib/shell/state";
 import type { SelectReason } from "@/lib/shell/asset-link";
+import { useHandedTake } from "@/lib/shell/take-handover";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
@@ -242,6 +243,10 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /** The last status read of the re-edit in flight failed; cleared by the next good one. */
   const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
+  /* A take handed over while Takes is already open (the jobs tray's Open in Takes): picked and brought into view like one handed over on the way in. */
+  /* The desk shows the shell's selection, so the take is already the one open (the tray selected it); the handover brings it
+     into view, clears a stale "not in this project", and makes sure it is selected even if the tray's own selection was not. */
+  useHandedTake((id) => { liveShell().selectAsset(id, { reason: "open" }); setFocus(id); setLost(null); });
 
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {

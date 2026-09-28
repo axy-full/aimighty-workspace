@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { ConnectedCollector, announceCollected, listConnectedJobs, setSharedCollector, showConnectedJob } from "./connected-collector";
+import { announceJob } from "./jobs-bus";
 
 /** A re-listing on focus is at most this often. */
 const FOCUS_LIST_MS = 30_000;
@@ -42,6 +43,7 @@ export function useConnectedCollector(input: {
       onSettled: (job) => {
         void refreshProjectLibrary(scope, job.draftId);
         toastRef.current(settledToast(job));
+        announceJob(job.id);
       },
       /* Gen's picked-up takes and the Business rows from earlier show what it has (lib/shell/use-resumed-jobs.ts). */
       onChange: announceCollected,
