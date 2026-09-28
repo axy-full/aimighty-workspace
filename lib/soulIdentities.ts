@@ -21,8 +21,13 @@ import {
   deleteSoulReference,
   higgsfieldConfigured,
   higgsfieldCredentialFingerprint,
+  higgsfieldReferenceUnreachable,
   higgsfieldSubmissionRejected,
+  soulReferenceOrigin,
+  SOUL_MODEL_VERSION,
+  SOUL_REFERENCE_ORIGIN,
   type SoulReference,
+  type SoulReferenceOrigin,
 } from "./higgsfield";
 
 export const SOUL_TRAINING_MODEL = "higgsfield/soul-id";
@@ -56,6 +61,34 @@ export class SoulIdentityError extends Error {
     this.name = "SoulIdentityError";
   }
 }
+/** Add nullable columns an older table lacks; a concurrent initializer may win the race. */
+async function addMissingColumns(
+  client: Pick<Client, "execute">,
+  table: "soul_identities" | "soul_training_receipts",
+  declarations: string[],
+): Promise<void> {
+  const present = new Set(
+    (await client.execute(`PRAGMA table_info(${table})`)).rows.map((column) =>
+      String(column.name),
+    ),
+  );
+  for (const declaration of declarations) {
+    if (present.has(declaration.split(" ")[0])) continue;
+    try {
+      await client.execute(`ALTER TABLE ${table} ADD COLUMN ${declaration}`);
+    } catch (error) {
+      if (!/duplicate column/i.test(String(error))) throw error;
+    }
+  }
+}
+/** Two stored markers name the same host; an unrecognized marker matches nothing. */
+function sameOrigin(left: unknown, right: unknown): boolean {
+  try {
+    return soulReferenceOrigin(left) === soulReferenceOrigin(right);
+  } catch {
+    return false;
+  }
+}
 const initialized = new WeakMap<Client, Promise<void>>();
 let receiptsReady: Promise<void> | undefined;
 export async function soulIdentitiesReady(): Promise<void> {
@@ -72,12 +105,13 @@ export async function soulIdentitiesReady(): Promise<void> {
       references_json TEXT NOT NULL, status TEXT NOT NULL, provider_reference_id TEXT, credential_fingerprint TEXT NOT NULL,
       paid_claim TEXT, cost_usd REAL, settlement_status TEXT, settled_at INTEGER, error TEXT,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_polled_at INTEGER, consent_at INTEGER NOT NULL,
-      purged_at INTEGER)`,
+      purged_at INTEGER, provider_origin TEXT, model_version TEXT)`,
             `CREATE INDEX IF NOT EXISTS soul_identity_project ON soul_identities(production_project_id,created_at)`,
           ],
           "write",
         )
-        .then(() => {})
+        // Rows saved before the origin marker keep NULL: their host is the earlier one.
+        .then(() => addMissingColumns(client, "soul_identities", ["provider_origin TEXT", "model_version TEXT"]))
         .catch((error) => {
           initialized.delete(client);
           throw error;
@@ -89,14 +123,8 @@ export async function soulIdentitiesReady(): Promise<void> {
     await platformDb()
       .execute(`CREATE TABLE IF NOT EXISTS soul_training_receipts(id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL, provider_reference_id TEXT NOT NULL, provider_status TEXT NOT NULL,
-      credential_fingerprint TEXT NOT NULL, updated_at INTEGER NOT NULL, settled_at INTEGER)`);
-    const columns = (
-      await platformDb().execute("PRAGMA table_info(soul_training_receipts)")
-    ).rows;
-    if (!columns.some((column) => column.name === "settled_at"))
-      await platformDb().execute(
-        "ALTER TABLE soul_training_receipts ADD COLUMN settled_at INTEGER",
-      );
+      credential_fingerprint TEXT NOT NULL, updated_at INTEGER NOT NULL, settled_at INTEGER, provider_origin TEXT)`);
+    await addMissingColumns(platformDb(), "soul_training_receipts", ["settled_at INTEGER", "provider_origin TEXT"]);
   })().catch((error) => {
     receiptsReady = undefined;
     throw error;
@@ -435,17 +463,19 @@ async function saveReceipt(row: Row, outcome: SoulReference) {
       current &&
       (current.workspace_id !== requireTenant().id ||
         current.provider_reference_id !== outcome.id ||
-        current.credential_fingerprint !== row.credential_fingerprint)
+        current.credential_fingerprint !== row.credential_fingerprint ||
+        !sameOrigin(current.provider_origin, row.provider_origin))
     )
       throw new Error("Identity receipt mismatch.");
     await tx.execute({
-      sql: `INSERT INTO soul_training_receipts(id,workspace_id,provider_reference_id,provider_status,credential_fingerprint,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider_status=CASE WHEN soul_training_receipts.settled_at IS NULL THEN excluded.provider_status ELSE soul_training_receipts.provider_status END,updated_at=excluded.updated_at`,
+      sql: `INSERT INTO soul_training_receipts(id,workspace_id,provider_reference_id,provider_status,credential_fingerprint,provider_origin,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider_status=CASE WHEN soul_training_receipts.settled_at IS NULL THEN excluded.provider_status ELSE soul_training_receipts.provider_status END,updated_at=excluded.updated_at`,
       args: [
         String(row.id),
         requireTenant().id,
         outcome.id,
         outcome.status,
         String(row.credential_fingerprint),
+        row.provider_origin == null ? null : String(row.provider_origin),
         ts,
       ],
     });
@@ -559,7 +589,9 @@ export async function createSoulIdentity(
     const paths = await verifiedPaths(tx, value.references, productionId);
     const ts = now();
     await tx.execute({
-      sql: `INSERT INTO soul_identities(id,owner,project_id,production_project_id,name,description,subject_type,references_json,status,credential_fingerprint,created_at,updated_at,consent_at) VALUES(?,?,?,?,?,?,?,?,'submitting',?,?,?,?)`,
+      // The host and render family are stamped with the identity, before any
+      // paid request, so every later read goes back to the host that accepts it.
+      sql: `INSERT INTO soul_identities(id,owner,project_id,production_project_id,name,description,subject_type,references_json,status,credential_fingerprint,created_at,updated_at,consent_at,provider_origin,model_version) VALUES(?,?,?,?,?,?,?,?,'submitting',?,?,?,?,?,?)`,
       args: [
         id,
         owner,
@@ -573,6 +605,8 @@ export async function createSoulIdentity(
         ts,
         ts,
         ts,
+        SOUL_REFERENCE_ORIGIN,
+        SOUL_MODEL_VERSION,
       ],
     });
     // Commit the recoverable ID with the identity, before any external paid operation.
@@ -643,7 +677,9 @@ export async function createSoulIdentity(
       });
       if (!won.rowsAffected) return;
       paidClaim = claimToken;
-      accepted = await (deps.submit ?? createSoulReference)(value.name, urls);
+      accepted = await (deps.submit ?? createSoulReference)(value.name, urls, {
+        modelVersion: SOUL_MODEL_VERSION,
+      });
       // Independent databases provide two recovery locations for a known remote UUID.
       await saveReceipt(row, accepted).catch(() => {});
       await finishKnown(row, accepted);
@@ -708,9 +744,17 @@ export async function syncSoulIdentity(
         args: [id, requireTenant().id],
       })
     ).rows[0];
+    // The receipt restores what the identity lost: its accepted handle, or a
+    // terminal outcome it never recorded. A non-terminal receipt for a handle
+    // the identity already holds adds nothing, and must not overwrite a newer
+    // status notice.
     if (
       receipt &&
-      receipt.credential_fingerprint === row.credential_fingerprint
+      receipt.credential_fingerprint === row.credential_fingerprint &&
+      sameOrigin(receipt.provider_origin, row.provider_origin) &&
+      (!row.provider_reference_id ||
+        receipt.provider_status === "completed" ||
+        receipt.provider_status === "failed")
     ) {
       await finishKnown(row, {
         id: String(receipt.provider_reference_id),
@@ -749,22 +793,40 @@ export async function syncSoulIdentity(
       args: [now(), id, now() - 15_000],
     });
     if (leased.rowsAffected) {
+      let origin: SoulReferenceOrigin | null = null;
       try {
+        origin = soulReferenceOrigin(row.provider_origin);
         const result = await (deps.poll ?? getSoulReference)(
           String(row.provider_reference_id),
+          origin,
         );
         if (result.id !== row.provider_reference_id)
           throw new Error("Identity handle mismatch.");
         await saveReceipt(row, result);
         await finishKnown(row, result);
-      } catch {
-        await db().execute({
-          sql: "UPDATE soul_identities SET error=? WHERE id=? AND status IN ('training','uncertain','submitting')",
-          args: [
-            "The identity trainer’s status is temporarily unavailable. The accepted training request will be checked again; no new request is sent.",
-            id,
-          ],
-        });
+      } catch (error) {
+        // A host that refuses this account or no longer knows the reference
+        // leaves the outcome unknown: keep the reservation, keep checking, and
+        // never send the training again.
+        if (origin && higgsfieldReferenceUnreachable(error))
+          await db().execute({
+            sql: "UPDATE soul_identities SET status='uncertain',error=?,updated_at=? WHERE id=? AND status IN ('training','uncertain','submitting') AND settlement_status IS NULL",
+            args: [
+              origin === SOUL_REFERENCE_ORIGIN
+                ? "The identity trainer refused this status check, so the training outcome is unknown. Its reservation is retained and no new training request is sent."
+                : "This identity was accepted by the trainer’s earlier host, which no longer answers for this account, so its outcome is unknown. Its reservation is retained and no new training request is sent.",
+              now(),
+              id,
+            ],
+          });
+        else
+          await db().execute({
+            sql: "UPDATE soul_identities SET error=? WHERE id=? AND status IN ('training','uncertain','submitting')",
+            args: [
+              "The identity trainer’s status is temporarily unavailable. The accepted training request will be checked again; no new request is sent.",
+              id,
+            ],
+          });
       }
     }
     return publicIdentity((await rawIdentity(id))!);
@@ -905,7 +967,10 @@ export async function purgeSoulIdentities(): Promise<void> {
           "Restore the original identity trainer account before purging its identities.",
           409,
         );
-      await deleteSoulReference(String(row.provider_reference_id));
+      await deleteSoulReference(
+        String(row.provider_reference_id),
+        soulReferenceOrigin(row.provider_origin),
+      );
     }
     await billingTransaction(async (tx) => {
       await tx.execute({
