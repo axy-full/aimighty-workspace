@@ -9,6 +9,7 @@ import {
 } from "../workbench/pending-generation";
 import { rememberWorkspaceQuote } from "./last-quote";
 import { dispatchGate, neutralCopy } from "./rig";
+import { announceJob } from "../shell/jobs-bus";
 
 /**
  * THE workspace-credit dispatch: re-quote the exact body that will be sent,
@@ -205,11 +206,13 @@ export async function dispatchGeneration(options: {
     });
     if (!result.id) throw new Error("The server has not confirmed a job yet. Generate again to recover this same request.");
     clearPendingGeneration(storage, storageId, attempt.key);
+    announceJob(result.id);
     return { state: "queued", jobId: result.id, credits: attempt.credits, ...(result.status === "held" ? { status: "held" as const } : {}) };
   } catch (error) {
     if (attempt && error instanceof StudioRequestError) {
       if (typeof error.data.id === "string") {
         clearPendingGeneration(storage, storageId, attempt.key);
+        announceJob(error.data.id);
         return { state: "queued", jobId: error.data.id, credits: attempt.credits };
       }
       /* Only a durable, completed refusal permits a fresh request and another quote. */
@@ -306,6 +309,7 @@ export async function sendClaimedGeneration(options: {
     });
     if (typeof result.id !== "string" || !result.id) return { state: "unknown", reason: "The server has not confirmed a job yet. Press again to check what became of it; it is never sent twice.", lost: true };
     clearPendingGeneration(storage, storageId, attempt.key);
+    announceJob(result.id);
     return { state: "queued", jobId: result.id, status: typeof result.status === "string" ? result.status : "queued", credits, followed: false };
   } catch (error) {
     if (!(error instanceof StudioRequestError) || error.status >= 500) return { state: "unknown", reason: LOST_REPLY, lost: true };

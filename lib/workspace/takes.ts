@@ -2,6 +2,7 @@ import { libraryId, libraryName, type LibraryAsset } from "../genLibrary";
 import { failureKind } from "../jobState";
 import { engineLabel } from "./engines";
 import { heldNeeds } from "./release";
+import { DRAFT_RESOLUTION, FINAL_RESOLUTION, finalOf, isDraft } from "../draftFinal";
 
 /**
  * The Takes page: the project library (GET /api/workbench/library →
@@ -50,6 +51,8 @@ export type Take = {
   reason?: string;
   /** The row's own words behind `reason`, for a tooltip; only when they say more. */
   detail?: string;
+  /** Draft mode (lib/draftFinal.ts): a 480p draft, or the 1080p final made from the draft `of`. */
+  pair?: { role: "draft" } | { role: "final"; of: string };
   sha256: string | null;
   createdAt: number;
 };
@@ -92,14 +95,16 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const stage = status === "rendering" ? takeStage(g) : null;
     const needs = heldForCredits ? heldNeeds(g.params) : null;
     const why = failed ? failureReason(g) : heldForCredits ? heldBlock(g) ?? heldReason(g.params) : stage === "queued" && g.status === "held" ? heldReason(g.params) : null;
+    const of = finalOf(g.params);
+    const pair = isDraft(g.params) ? { role: "draft" as const } : of ? { role: "final" as const, of } : null;
     return {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
-      meta: [label, detail].filter(Boolean).join(" · "),
+      meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : billedCredits ?? null,
       usd: !settled ? null : unbilled ? (g.costUsd == null ? null : 0) : g.costUsd ?? null,
       status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
       ...(stage ? { stage } : {}), ...(needs != null ? { needs } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
-      sha256: sha, createdAt: g.createdAt,
+      ...(pair ? { pair } : {}), sha256: sha, createdAt: g.createdAt,
     };
   });
 }
@@ -206,6 +211,52 @@ export function takeReasonLine(take: Pick<Take, "reason" | "needs"> & Partial<Pi
   if (!take.reason) return null;
   if (take.status === "held" && !compact && take.needs != null && take.reason === needsLine(take.needs)) return null;
   return take.reason;
+}
+
+/* ── The Takes desk (Studio › Takes): review filters and review words ──── */
+
+/**
+ * The desk's status filters. They read the same fields as the chips above
+ * (`status` and `stage`), so a filter and a card never disagree: Held is the
+ * card that says Held (a take held for credits, its own status, or one built
+ * with the in-flight `held` stage), Failed is everything filed under failed
+ * (a take stopped before it rendered wears Cancelled, and is here too).
+ */
+export const DESK_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "review", label: "Needs review" },
+  { id: "picked", label: "Picked" },
+  { id: "approved", label: "Approved" },
+  { id: "changes", label: "Changes" },
+  { id: "held", label: "Held" },
+  { id: "failed", label: "Failed" },
+] as const;
+export type DeskFilter = (typeof DESK_FILTERS)[number]["id"];
+
+export function inDeskFilter(take: Pick<Take, "status" | "stage">, filter: DeskFilter): boolean {
+  switch (filter) {
+    case "all": return true;
+    case "held": return take.status === "held" || (take.status === "rendering" && take.stage === "held");
+    default: return take.status === filter;
+  }
+}
+
+/** What PATCH /api/jobs/:id takes as `reviewState`: picked, approved, changes, or "" for back to review. */
+export type ReviewState = "" | "picked" | "approved" | "changes";
+
+/** A review button pressed on a take already in that state clears it (back to Needs review), as the wall's buttons always did. */
+export function nextReview(current: TakeStatus, pressed: Exclude<ReviewState, "">): ReviewState {
+  return current === pressed ? "" : pressed;
+}
+
+/** What a review did, and where the take now waits. */
+export function reviewSaid(name: string, state: ReviewState): string {
+  switch (state) {
+    case "picked": return `${name} is picked. It waits under Picked for approval.`;
+    case "approved": return `${name} is approved.`;
+    case "changes": return `Changes requested on ${name}. It waits under Changes.`;
+    default: return `${name} is back in Needs review.`;
+  }
 }
 
 /** "12 assets · 84 cr settled" — summed from billed credits only; failed renders count 0. */

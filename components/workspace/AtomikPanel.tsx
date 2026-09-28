@@ -7,6 +7,8 @@ import { formatCredits } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import { Keycap, Kicker } from "./ui";
+import { ownerBadgeNote, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 
 /**
  * The Atomik panel (04 "Panel"): fixed top 58 / right 14, 396px, over a
@@ -18,15 +20,17 @@ import { Keycap, Kicker } from "./ui";
 export function AtomikPanel() {
   const { state, dispatch, go } = useWorkspace();
   const atomik = useAtomik();
+  const capability = useConnectedCapability(undefined, { read: false });
   if (!state.agentOpen) return null;
   const close = () => dispatch({ type: "patch", patch: { agentOpen: false } });
 
   const def = pageDef(state.page);
   const plan = atomik.plan(state.page);
+  const ownerRun = !capability.owner && runsOnOwnerAccount(plan);
   const run = atomik.runFor(state.page);
   const runnable = atomik.runnable(state.page);
   const button = runButton(run, runnable);
-  const rows = plan ? stepRows(plan, run, atomik.ctx) : [];
+  const rows = plan && !ownerRun ? stepRows(plan, run, atomik.ctx) : [];
   const waiting = run?.status === "waiting";
   const quote = run?.quote ?? null;
   const gatePrice = quote ? formatCredits(quote.credits, quote.unit) : null;
@@ -80,7 +84,7 @@ export function AtomikPanel() {
           </ol>
         ) : null}
 
-        {waiting ? (
+        {waiting && !ownerRun ? (
           <div className="pxw-gate" role="group" aria-label="Approval required" data-testid="atomik-gate">
             <div className="pxw-gate-head">
               <span className="pxw-gate-title">Approval required</span>
@@ -110,7 +114,7 @@ export function AtomikPanel() {
           <div className="pxw-atomik-error" role="alert">{atomik.state.notice}</div>
         ) : null}
 
-        {plan ? (
+        {ownerRun ? <p className="pxw-atomik-reason" data-testid="atomik-owner-run">{ownerBadgeNote(capability.ownerName)}.</p> : plan ? (
           <div className="pxw-atomik-foot">
             <span className="pxw-atomik-price" data-paid={plan.paid || undefined} data-testid="atomik-price">{priceText(plan, run)}</span>
             <span style={{ flex: 1 }} />

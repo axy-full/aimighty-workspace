@@ -14,22 +14,23 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { AUDIO_SECONDS, COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, stepAudioSeconds, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { AUDIO_SECONDS, COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, draftOffered, stepAudioSeconds, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
-import { useSession } from "@/lib/session";
 import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
-import { entryBatch, entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
-import { groupSiblings, stripLabel, takeLabel, isVariation, type Strip } from "@/lib/variations";
+import { entryBatch, entryDraft, entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
+import { groupTakes, stripLabel, takeLabel, isVariation, type TakeCell } from "@/lib/variations";
 import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { TakeStrip } from "./TakeStrip";
+import { DraftStrip } from "./DraftFinal";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer, type BatchView } from "@/lib/workspace/use-composer";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
@@ -83,7 +84,12 @@ type RecipeCard = {
   };
 };
 
-/** Gen (README › Gen): one composer on the left, this project's results on the right. */
+/**
+ * Gen (README › Gen): one composer on the left, this project's results on the
+ * right. The Higgsfield catalogue and Analysis run on the owner's connected
+ * account, so a member is offered neither: Studio engines on this
+ * workspace's credits are the whole of Gen for them (idea 19).
+ */
 export function GenView({ scope, project, items, library, projects = "ready", workspaceName, onProject }: {
   scope: string; project: Project | null; items: LibraryEntry[];
   /** The open project's library store (its read: skeletons, a failed read's banner); `projects` is the project list's own read. */
@@ -92,7 +98,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video", compose: composeForSend });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType: "video", compose: composeForSend });
   const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
   /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
      "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
@@ -116,6 +122,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   }, []);
   const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
+  /* Whether this person owns the workspace, from the session: nothing is read to decide what a member is offered. */
+  const { owner } = useConnectedCapability(scope, { read: false });
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);
   const [characters, setCharacters] = useState<{ list: ConnectedCharacter[] | null; note: string }>({ list: null, note: "Reading the account’s characters…" });
@@ -136,9 +144,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
   /* The connected catalogue is the owner's (composerBlock refuses anyone else): members are not shown the switch at all. */
-  const session = useSession();
-  const groups = session.owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
-  useEffect(() => { if (!session.owner && state.billing === "connected") dispatchComposer({ type: "billing", value: "workspace" }); }, [session.owner, state.billing, dispatchComposer]);
+  const groups = owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
   /* What this browser remembers for the sheet (recent picks, last connected quotes), read fresh each time it opens. */
   const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
   const modelButton = useRef<HTMLButtonElement>(null);
@@ -150,8 +156,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   /* Every Studio row is priced where the composer stands (its picks, the project's aspect, its references,
      one take, a sound's length in the whole seconds it bills): the list's own rates cover the untouched composer; anything else is one read of the engines
      route's list, priced there, while the sheet is open. It quotes nothing and reserves nothing. */
-  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: Math.round(state.seconds), takes: state.count }),
-    [composer.project?.aspect, state.picks, state.references, state.seconds, state.count]);
+  const draftTakes = settings.draft ? 1 : state.count;
+  const priceAt = useMemo<PriceAt>(() => ({ aspect: composer.project?.aspect, picks: state.picks, references: state.references, seconds: Math.round(state.seconds), takes: draftTakes }),
+    [composer.project?.aspect, state.picks, state.references, state.seconds, draftTakes]);
   const priceKey = rateQuery(priceAt);
   const [sheetRates, setSheetRates] = useState<SheetRates | null>(null);
   const wantsRates = sheet && state.billing === "workspace" && needsPricedRead(offered, priceAt);
@@ -211,7 +218,6 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const recipeEpoch = useRef(0);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; });
-  const owner = session.owner;
   const { dismiss: dismissEnhanced, auto: autoNow, setAuto } = enhancer;
   const autoWas = useRef(autoNow);
   useEffect(() => { autoWas.current = autoNow; });
@@ -395,8 +401,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     const kind = FILTER_KIND[filter];
     return items.filter((entry) => entry.take.kind === "GEN" && (kind === "all" || entryKind(entry) === kind) && !liveIds.has(String(entryBatch(entry)?.batchId ?? "")));
   }, [items, filter, liveIds]);
-  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
-  const cells = useMemo(() => groupSiblings(results, entryBatch), [results]);
+  /* Takes 2–4 of one Generate sit together as one strip, in take order; a draft and its final as another (lib/variations.ts). */
+  const cells = useMemo(() => groupTakes(results, entryBatch, entryDraft), [results]);
   const byGeneration = useMemo(() => new Map(items.map((entry) => [entry.take.sourceId, entry])), [items]);
   const made = useMemo(() => items.some((entry) => entry.take.kind === "GEN"), [items]);
   const view = libraryView(project ? library.state : null, made ? 1 : 0, projects);
@@ -439,6 +445,15 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const tile = (entry: LibraryEntry, label?: string) => (
     <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
       <TakeTile entry={entry} variant="grid" label={label} selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh}
+        onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
+    </Boundary>
+  );
+  /* A draft's or its final's card in their strip (components/graphite/DraftFinal.tsx): the card contract's TakeTile, named
+     by its role, with its watermark under the name once it has rendered. */
+  const pairTile = (entry: LibraryEntry, label: string, note: string | null) => (
+    <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
+      <TakeTile entry={entry} variant="grid" label={label} testId="gen-draft-take" selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh}
+        meta={note ? <span data-testid="gen-draft-take-note">{note}</span> : undefined}
         onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
     </Boundary>
   );
@@ -505,12 +520,12 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
   const tabs = (
-    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
+    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output" data-tabs={owner ? 5 : 4}>
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
         <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
       ))}
       <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "edit"} onClick={() => setMode("edit")} data-testid="gen-tab-edit"><span>Edit</span></button>
-      <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button>
+      {owner ? <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button> : null}
     </div>
   );
   if (mode === "edit") {
@@ -523,7 +538,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
       </div>
     );
   }
-  if (mode === "analysis") {
+  if (mode === "analysis" && owner) {
     return (
       <div className="gx-gen gx-enter" data-testid="gen-view">
         <div className="gx-gen-col">
@@ -636,11 +651,24 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             </div>
           </div>
         ) : null}
+        {/* Draft mode (lib/draftFinal.ts): this workspace's own route only — the connected catalogue's version is unverified. */}
+        {state.billing === "workspace" && state.type === "video" && draftOffered(model) ? (
+          <div className="gx-gen-row" data-testid="gen-draft-option">
+            <span className="gx-eyebrow" data-functional-label="">Draft</span>
+            <div className="gx-draft-option">
+              <button type="button" className="gx-toggle" role="switch" aria-checked={Boolean(settings.draft)} onClick={() => composer.dispatch({ type: "pick", value: { draft: !settings.draft } })} data-testid="gen-draft-toggle">
+                <span className="gx-toggle-dot" aria-hidden="true" /><span>Draft first · 480p</span>
+              </button>
+              {settings.draft ? <p className="gx-hint" data-testid="gen-draft-note">A watermarked draft at the 480p price. Make its 1080p final from it within seven days.</p> : null}
+            </div>
+          </div>
+        ) : null}
         {model?.resolutions?.length ? (
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">Resolution</span>
             <div className="gx-chips" role="group" aria-label="Resolution">
-              {model.resolutions.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.resolution === r} onClick={() => composer.dispatch({ type: "pick", value: { resolution: r } })}>{r}</button>)}
+              {model.resolutions.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.resolution === r} disabled={Boolean(settings.draft) && r !== settings.resolution}
+                title={settings.draft && r !== settings.resolution ? "A draft is 480p; its final is 1080p." : undefined} onClick={() => composer.dispatch({ type: "pick", value: { resolution: r } })}>{r}</button>)}
             </div>
           </div>
         ) : null}
@@ -683,14 +711,19 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
         {block ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : null}
+        {/* The owner's read of the connected account failed: said as it is (never "not connected"), with Try again. */}
+        {block && block === composer.capability?.unreadable ? (
+          <div className="gx-retry" data-testid="gen-connection-retry"><button type="button" className="gx-hbtn" onClick={composer.retryConnection}>Try again</button></div>
+        ) : null}
         {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
             sticky Generate (GLASS_SPEC §3) is the button and its one-line foot, nothing taller. */}
         <div className="gx-gen-takes" data-testid="gen-takes">
-            <span className="gx-hint">Takes</span>
+            {/* A draft goes one at a time: its final is made from it (lib/draftFinal.ts). */}
+            <span className="gx-hint">{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
             <div className="gx-stepper" role="group" aria-label="Takes per generate">
-              <button type="button" aria-label="Fewer" disabled={state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
-              <span data-testid="gen-takes-count">{state.count}</span>
-              <button type="button" aria-label="More" disabled={state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
+              <button type="button" aria-label="Fewer" disabled={Boolean(settings.draft) || state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
+              <span data-testid="gen-takes-count">{settings.draft ? 1 : state.count}</span>
+              <button type="button" aria-label="More" disabled={Boolean(settings.draft) || state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
             </div>
         </div>
         <div className="gx-gen-cta">
@@ -721,7 +754,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
         <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
         <VirtualItems
-          className="gx-gen-grid" items={cells} getKey={(cell: Strip<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
+          className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
             <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live">
@@ -769,7 +802,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           ) : null}
           {view.skeletons ? <TakeSkeletons count={6} variant="grid" /> : null}
           </>}
-          renderItem={(cell: Strip<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : (
+          renderItem={(cell: TakeCell<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : cell.kind === "draft" ? (
+            <DraftStrip scope={scope} projectId={project?.id ?? null} draft={cell.draft} finals={cell.finals} tile={pairTile} testId="gen-draft" />
+          ) : (
             <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
               label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
               {cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return tile(entry, takeLabel(isVariation(v) ? v : i + 1)); })}
@@ -792,7 +827,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             empty={!offered.length && blocked ? blocked : state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}
             emptyActions={state.billing === "connected"
               ? [{ label: "Use Studio engines", onClick: () => composer.dispatch({ type: "billing", value: "workspace" }), testId: "gen-model-use-studio" },
-                 ...(session.owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
+                 ...(owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
               /* The engine list itself is missing (a failed read): read it again. */
               : composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
             onPick={pickModel} onClose={closeSheet} />
