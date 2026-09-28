@@ -85,10 +85,18 @@ const surfaceOf = (page: Page) => (phone(page) ? page.getByRole("dialog", { name
 const noSideways = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 const creditsIn = (text: string | null) => Number(/(\d[\d,]*) cr/.exec(text ?? "")?.[1].replace(/,/g, "") ?? NaN);
 
-/** Ask Atomik in the open rail (or sheet): wait for the planning estimate, then send at it. */
-async function ask(page: Page, surface: Locator, brief: string) {
+/** Ask Atomik in the open rail (or sheet): wait for the planning estimate for this production, then send at it. */
+async function ask(page: Page, surface: Locator, brief: string, production: string) {
   const field = surface.getByRole("textbox", { name: "Ask Atomik" });
+  /* The chat is filed under the production on screen: its estimate is asked for with it before Send. */
+  const quoted = page.waitForResponse((r) => {
+    const request = r.request();
+    if (request.method() !== "POST" || new URL(r.url()).pathname !== "/api/atomik") return false;
+    const body = request.postDataJSON() as { quoteOnly?: boolean; projectId?: string; text?: string } | null;
+    return body?.quoteOnly === true && body.projectId === production && body.text === brief;
+  }, { timeout: 60_000 });
   await field.fill(brief);
+  expect((await quoted).status()).toBe(200);
   const send = surface.getByRole("button", { name: /^Send · \d+ cr estimated/ });
   await expect(send).toBeEnabled({ timeout: 60_000 });
   const turn = page.waitForResponse((r) => r.request().method() === "POST" && /\/api\/atomik\/ach_[^/]+$/.test(new URL(r.url()).pathname) && r.request().postDataJSON()?.quoteOnly !== true, { timeout: 120_000 });
@@ -116,7 +124,7 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   await page.goto(await legacyShell(page, `/atomik?project=${encodeURIComponent(f.draft)}&page=generate`));
   const surface = surfaceOf(page);
   await expect(surface).toBeVisible({ timeout: 60_000 });
-  await ask(page, surface, "Motion transfer the dance clip onto the wardrobe still, and a marketing campaign still of the product.");
+  await ask(page, surface, "Motion transfer the dance clip onto the wardrobe still, and a marketing campaign still of the product.", f.production);
 
   /* The plan: a Motion Transfer and a Marketing Studio still, each with a price and never "priced at checkpoint". */
   const rows = await planRows(page, surface);
@@ -190,7 +198,7 @@ test("a library step nothing can price is not proposed: the reply says why, and 
   const surface = surfaceOf(page);
   await expect(surface).toBeVisible({ timeout: 60_000 });
   /* The fixture clip is 640 × 360: too small a frame for Object Swap, which admission measures before any estimate. */
-  await ask(page, surface, "Object swap the bottle in the dance clip for the product in the wardrobe still.");
+  await ask(page, surface, "Object swap the bottle in the dance clip for the product in the wardrobe still.", f.production);
   const reply = surface.getByText(/Not proposed:/).first();
   await expect(reply).toBeVisible({ timeout: 60_000 });
   await expect(reply).toContainText("Mocked swap — no price: Object Swap needs a source video of at least 409,600 pixels per frame");

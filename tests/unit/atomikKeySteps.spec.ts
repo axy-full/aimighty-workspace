@@ -192,6 +192,7 @@ test("the planner reads the library as fenced data by handle, with the library s
   expect([handleOf("S1"), handleOf(" s01 (Product)"), handleOf("V12"), handleOf("upl_abc"), handleOf("S1abc"), handleOf(3)]).toEqual(["S1", "S1", "V12", null, null, null]);
   expect(keyStepInputsLine({ model: MOTION, params: { inputs: { source: "Dance.mp4", references: ["A", "B"] } } })).toBe("Works on Dance.mp4 and 2 stills from the library.");
   expect(keyStepInputsLine({ model: MARKETING, params: { inputs: { references: ["A"], preset: "Bold studio" } } })).toBe("Uses 1 still from the library with the Bold studio preset.");
+  expect(keyStepInputsLine({ model: MARKETING, params: { inputs: { references: [] } } })).toBe("Made from the prompt alone.");
   expect(keyStepInputsLine({ model: SEEDANCE, params: {} })).toBeNull();
   expect(engineChoices([{ kind: "video", id: SEEDANCE }, { kind: "image", id: "x" }], { kind: "video", model: MOTION })).toEqual([]);
   expect(engineChoices([{ kind: "video", id: SEEDANCE }, { kind: "image", id: "x" }], { kind: "video", model: SEEDANCE })).toEqual([{ kind: "video", id: SEEDANCE }]);

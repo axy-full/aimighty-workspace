@@ -188,7 +188,7 @@ export function keyStepInputsLine(step: { model?: unknown; params?: Record<strin
     const source = typeof inputs.source === "string" && inputs.source ? inputs.source : "a clip";
     return `Works on ${source}${stills ? ` and ${stills}` : ""} from the library.`;
   }
-  return stills ? `Uses ${stills} from the library${preset}.` : `From the words alone${preset}.`;
+  return stills ? `Uses ${stills} from the library${preset}.` : "Made from the prompt alone.";
 }
 
 /**
