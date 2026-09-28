@@ -10,6 +10,7 @@ import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
+import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { heldPriceNow } from "./creditTerms";
@@ -159,8 +160,13 @@ export function rowToGeneration(r: any): Generation {
     typeof params.consumerCredits === "number" && Number.isFinite(params.consumerCredits) && params.consumerCredits >= 0
       ? { provider: "higgsfield", unit: "higgsfield_credits", credits: params.consumerCredits, basis: "approved_quote" }
       : null;
+  /* A rendered draft says until when its final can be made: seven days from when its request left
+     (lib/draftFinal.ts), read before the submission record below is dropped. */
+  if (isDraft(params) && r.status === "succeeded")
+    params.draftExpiresAt = draftExpiresAt(draftSentAt(Number(r.created_at), (params.producedOutcome as { queueMs?: unknown } | undefined)?.queueMs));
   // Queue recovery state contains vendor cost and storage internals, never UI input.
   delete params.producedOutcome;
+  delete params.draftTaskId;
   delete params.paidClaim;
   delete params.soulReferenceId;
   delete params.soulCredentialFingerprint;

@@ -39,7 +39,7 @@ const verified = {
   },
 };
 
-test("verification lists one account-owned identity and only estimates exact Soul Character inputs on fixed hosts", async () => {
+test("verification lists one account-owned identity on the production host and only estimates exact Soul Character inputs", async () => {
   const { verifyHiggsfieldConnection } =
     await import("../../lib/higgsfieldVerification");
   const calls: { url: string; method: string }[] = [];
@@ -52,11 +52,11 @@ test("verification lists one account-owned identity and only estimates exact Sou
     const headers = new Headers(init?.headers);
     if (init?.method === "GET") {
       expect(String(url)).toBe(
-        "https://dev-api.higgsfield.com/v1/custom-references/list?page=1&page_size=1",
+        "https://api.higgsfield.ai/v1/custom-references/list?page=1&page_size=1",
       );
-      expect(headers.get("hf-api-key")).toBe("fixture-key-id");
-      expect(headers.get("hf-secret")).toBe("fixture-key-secret");
-      expect(headers.has("Authorization")).toBe(false);
+      expect(headers.get("Authorization")).toBe(`Key ${secret}`);
+      expect(headers.has("hf-api-key")).toBe(false);
+      expect(headers.has("hf-secret")).toBe(false);
       return Response.json({
         total: 1,
         page: 1,

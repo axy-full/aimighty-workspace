@@ -598,7 +598,8 @@ export function useComposer(options: {
   const credits = liveCredits(quote, quoteKey);
   /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
      (lib/workspace/last-quote.ts): recorded, never asked for. */
-  const buttonTotal = state.billing === "workspace" ? shownTotal(quote, quoteKey, Math.max(1, state.count)) : null;
+  /* A draft goes one take at a time (lib/draftFinal.ts), whatever the takes stepper held before it was switched on. */
+  const buttonTotal = state.billing === "workspace" ? shownTotal(quote, quoteKey, settings.draft ? 1 : Math.max(1, state.count)) : null;
   useEffect(() => {
     if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
   }, [scope, buttonTotal]);
@@ -693,7 +694,8 @@ export function useComposer(options: {
     if (!now.model) return;
     const model = now.model, composer = now.state;
     /* Two to four takes go as ONE batch at the total on the button (lib/workspace/take-batch.ts). */
-    const count = Math.max(1, composer.count);
+    /* A draft goes one at a time (lib/draftFinal.ts): its final is made from it, take by take. */
+    const count = now.settings.draft ? 1 : Math.max(1, composer.count);
     /* What the button shows is what this press approves: one take's price, or the batch's total. */
     const shown = count > 1 ? shownTotal(now.quote, now.quoteKey, count) : now.credits;
     busy.current = true;
@@ -981,6 +983,7 @@ export function useComposer(options: {
                   references,
                   firstFrameAssetId: "",
                   shotSpec: now.sent.shotSpec,
+                  ...(settings.draft ? { draft: true } : {}),
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null, projectId: project.id }),
@@ -1146,7 +1149,8 @@ export function useComposer(options: {
     if (run?.jobId && phase?.done && announced.current !== run.jobId) {
       announced.current = run.jobId;
       if (phase.tone === "green") {
-        toast(`${run.name} rendered. Filed in Takes for review.`);
+        /* The run's name is its prompt cut at 60 characters: never the subject of a sentence ("…lamp in rendered."). */
+        toast("Your take rendered. Filed in Takes for review.");
         /* Takes and the Library sidebar may already be loaded; re-read so the new take shows. */
         const id = run.projectId ?? target?.id;
         if (id) void refreshProjectLibrary(scope, id);
@@ -1169,8 +1173,8 @@ export function useComposer(options: {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
     /** What the account says it rendered for the last connected take, once it completed. */
     connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
-    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
-    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
+    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
     audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, retryConnection: shared.refresh, scope,

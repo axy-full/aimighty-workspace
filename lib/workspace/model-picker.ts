@@ -129,6 +129,8 @@ export function rateQuery(at: PriceAt): string {
   if (at.picks.ratio) q.set("pickRatio", at.picks.ratio);
   if (at.picks.resolution) q.set("pickResolution", at.picks.resolution);
   if (at.picks.duration != null) q.set("pickDuration", String(at.picks.duration));
+  /* "Draft first": an engine with draft mode is priced as its 480p draft. */
+  if (at.picks.draft) q.set("pickDraft", "1");
   if (at.aspect) q.set("aspect", at.aspect);
   q.set("seconds", String(at.seconds));
   const refs = at.references.length ? mediaQuoteReferences(at.references.map(quoteAsset)) : "";
