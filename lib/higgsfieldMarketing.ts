@@ -213,9 +213,41 @@ async function catalogReady() {
   }
   await boot;
 }
+/**
+ * A preset as a picker shows it: the documented public metadata only — its
+ * cover picture (an https URL, never with credentials), the group the provider
+ * files it under ("Product shots", "Graphic ads"…) and the aspect it was made
+ * for. Each is present only when the provider gives a usable value.
+ */
+export type MarketingPresetItem = MarketingPreset & { cover?: string; group?: string; aspectRatio?: string };
+/** The documented `search`: 1–100 characters. */
+export const PRESET_SEARCH_MAX = 100;
+function presetCover(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > 2048) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function presetLabel(value: unknown, max: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
+  return text && text.length <= max ? text : undefined;
+}
+function presetExtras(item: unknown): Pick<MarketingPresetItem, "cover" | "group" | "aspectRatio"> {
+  const value = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+  const metadata = value.metadata && typeof value.metadata === "object" && !Array.isArray(value.metadata) ? (value.metadata as Record<string, unknown>) : {};
+  const cover = presetCover(value.cover_image), group = presetLabel(metadata.group_name, 100);
+  const aspectRatio = presetLabel(metadata.aspect_ratio, 20);
+  return { ...(cover ? { cover } : {}), ...(group ? { group } : {}), ...(aspectRatio && /^(auto|\d{1,2}:\d{1,2})$/.test(aspectRatio) ? { aspectRatio } : {}) };
+}
+
 export async function listMarketingPresets(
   cursor?: string,
-): Promise<{ items: MarketingPreset[]; total: number; cursor: string | null }> {
+  search?: string,
+): Promise<{ items: MarketingPresetItem[]; total: number; cursor: string | null }> {
   if (
     cursor != null &&
     (cursor.length > 2048 || !cursor || /[\x00-\x1f]/.test(cursor))
@@ -225,12 +257,20 @@ export async function listMarketingPresets(
       400,
       "invalid_cursor",
     );
+  const term = search?.trim();
+  if (search != null && (!term || term.length > PRESET_SEARCH_MAX || /[\x00-\x1f\x7f]/.test(term)))
+    throw new MarketingError(
+      `Search presets with 1–${PRESET_SEARCH_MAX} characters.`,
+      400,
+      "invalid_search",
+    );
   const fingerprint = higgsfieldCredentials().fingerprint;
   // Mock mode never invents a production preset identifier or contacts a provider.
   if (engineMock()) return { items: [], total: 0, cursor: null };
   const query = new URLSearchParams({
     size: "50",
     ...(cursor ? { cursor } : {}),
+    ...(term ? { search: term } : {}),
   });
   const response = await readCall(
     `${MARKETING_ORIGIN}/${MARKETING_PATH}/presets?${query}`,
@@ -299,7 +339,12 @@ export async function listMarketingPresets(
       })),
       "write",
     );
-  return { ...parsed.data, cursor: parsed.data.cursor ?? null };
+  const raw = Array.isArray(response.items) ? (response.items as unknown[]) : [];
+  return {
+    ...parsed.data,
+    items: parsed.data.items.map((item, i) => ({ ...item, ...presetExtras(raw[i]) })),
+    cursor: parsed.data.cursor ?? null,
+  };
 }
 export async function requireMarketingPreset(settings: MarketingSettings) {
   if (!settings.presetId) return;

@@ -3,7 +3,7 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../../lib
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision, type RigWiring } from "../../lib/shell/rig-wire";
 import { AUTO_RETRIES, DTC_ADS_MODEL, INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_TYPES, adsFromPreset, autoRetryMs, imageAdsFromPreset, parsePreset, presetFor, type BusinessPage, type SetupType } from "../../lib/shell/business";
-import { MIRROR_ECHO_MS, listedJobs, mirrorSeek, pendingJobIds, runAfterStatus, type MirrorMark, type ViralRun } from "../../lib/shell/viral";
+import { MIRROR_ECHO_MS, mirrorSeek, type MirrorMark } from "../../lib/shell/viral";
 import { libraryHasTools } from "../../lib/shell/production-tools";
 import { RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
 import { branchFromTake } from "../../lib/production/rig-build";
@@ -147,29 +147,7 @@ test("a resumed Business job lands only on the composer still waiting for it, an
   expect(submitRefused(409, "approval_changed")).toBe(true);
 });
 
-/* Viral › History lists what ran and keeps polling what the account still holds. */
-test("History and Recent leave estimates out; every pending job is polled, the one submitted here first", () => {
-  const jobs = [{ id: "q", status: "quoted" }, { id: "a", status: "accepted" }, { id: "c", status: "completed" }, { id: "u", status: "uncertain" }, { id: "d", status: "dispatching" }, { id: "f", status: "failed" }];
-  expect(listedJobs(jobs).map((j) => j.id)).toEqual(["a", "c", "u", "d", "f"]);
-  expect(pendingJobIds(jobs, null)).toEqual(["a", "u", "d"]);
-  expect(pendingJobIds(jobs, "a")).toEqual(["a", "u", "d"]);
-  expect(pendingJobIds(jobs, "new")).toEqual(["new", "a", "u", "d"]);
-  expect(pendingJobIds([], null)).toEqual([]);
-});
-
-test("a Viral submit whose reply was lost follows the account: listed as taken, the run shows it rendering, then done", () => {
-  type J = { id: string; status: string };
-  const lost: ViralRun<J> = { phase: "failed", job: { id: "j", status: "quoted" }, error: "The connected account could not complete this request." };
-  expect(runAfterStatus(lost, { id: "j", status: "accepted" })).toEqual({ phase: "running", job: { id: "j", status: "accepted" } });
-  expect(runAfterStatus({ phase: "running", job: { id: "j", status: "accepted" } }, { id: "j", status: "completed" }).phase).toBe("done");
-  expect(runAfterStatus({ phase: "running", job: { id: "j", status: "accepted" } }, { id: "j", status: "failed" })).toMatchObject({ phase: "failed", error: expect.stringContaining("not billed") });
-  /* Another listed job never takes over the composer, nor does anything replace a finished or idle one. */
-  expect(runAfterStatus(lost, { id: "other", status: "completed" })).toBe(lost);
-  const done: ViralRun<J> = { phase: "done", job: { id: "j", status: "completed" } };
-  expect(runAfterStatus(done, { id: "j", status: "accepted" })).toBe(done);
-  expect(runAfterStatus({ phase: "idle" }, { id: "j", status: "accepted" }).phase).toBe("idle");
-  expect(runAfterStatus({ phase: "failed", job: null, error: "x" }, { id: "j", status: "accepted" }).phase).toBe("failed");
-});
+/* Viral › History and Recent are the project's Library alone (tests/unit/suitesViral.spec.ts): nothing is read from the account. */
 
 /* Library › Tools only where the page has tools of its own. */
 test("the Library has Tools on the Studio stages and the spec pages, not on Gen, Business, Viral or the phone's pickers", () => {

@@ -43,6 +43,8 @@ import type {
   WorkspaceSuite,
 } from "./plan-types";
 import { WORKSPACE_PLAN_PAGES } from "./plan-types";
+import { GENJUTSU_LABELS, GENJUTSU_MODELS, isGenjutsuModel } from "../genjutsuTypes";
+import { genjutsuBody, mediaIdentity, type MediaIdentity } from "../genjutsuRequest";
 
 /** Same lifetime the product already gives a Particl quote (lib/quote.ts QUOTE_TTL_MS). */
 export const PARTICL_QUOTE_TTL_MS = 120_000;
@@ -365,6 +367,35 @@ const genjutsuInput =
   };
 const motionInput = genjutsuInput("motion", "motion-transfer");
 const swapInput = genjutsuInput("swap", "object-swap");
+/**
+ * Viral on Particl's API key: the composer's own input (published as `motion`
+ * or `swap` — the source, the ordered stills, the resolution, the direction)
+ * as the one body the key route takes (lib/genjutsuRequest.ts), filed to the
+ * open project. The gate prices it with POST /api/generate/quote and the
+ * dispatch sends it once at that ceiling, as the composer's own button does.
+ */
+const genjutsuBodies =
+  (key: "motion" | "swap", variant: "motion-transfer" | "object-swap") =>
+  (ctx: PlanContext): NamedBody[] => {
+    const value = ctx.request?.[key];
+    if (!value || typeof value !== "object" || !ctx.projectId || !ctx.productionId) return [];
+    const input = value as Record<string, unknown>;
+    const source = mediaIdentity(input.source);
+    const references = Array.isArray(input.references) ? input.references.map(mediaIdentity) : [];
+    if (!source || !references.length || references.some((reference) => !reference) || typeof input.resolution !== "string") return [];
+    return [{
+      name: GENJUTSU_LABELS[variant],
+      body: genjutsuBody({
+        model: GENJUTSU_MODELS[variant], prompt: typeof input.prompt === "string" ? input.prompt.trim() : "", resolution: input.resolution,
+        source, references: references as MediaIdentity[], projectId: ctx.productionId, workbenchProjectId: ctx.projectId,
+      }),
+    }];
+  };
+const motionBodies = genjutsuBodies("motion", "motion-transfer");
+const swapBodies = genjutsuBodies("swap", "object-swap");
+/** The gate's line: what is priced, and that the figure is the live estimate. */
+const transformLine = (input: Record<string, unknown> | null) =>
+  `${String(input?.resolution ?? "")}${input?.resolution ? ", " : ""}${plural(refsOf(input ?? {}), "ordered reference")}. An estimate from the live price; nothing is sent until you approve it.`;
 /** The Shorts page's current input, supplied through the page-request seam. */
 const shortsInput = (ctx: PlanContext): Record<string, unknown> | null => {
   const value = ctx.request?.shorts;
@@ -1181,13 +1212,14 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
 
   motion: plan("motion", {
     title: "Recast the motion",
-    line: "Resolves your originals, preserves reference order and takes a live quote before submission.",
+    line: "Resolves your originals, keeps the reference order and prices the transform before anything is sent.",
     priceLabel: "Quote at gate",
-    doneLine: (_ctx, io) => `Motion transfer ${String((io.job as ConsumerJob | undefined)?.status ?? "submitted")}`,
+    doneLine: (_ctx, io) => `Motion transfer ${String((io.admitted as Admitted[] | undefined)?.[0]?.status ?? "submitted")}`,
     runnable: (ctx) => {
       const project = needProject(ctx);
       if (!project.ok) return project;
-      return hasSource(motionInput(ctx)) ? OK : notYet("choose a source video on Motion Transfer first.");
+      if (!ctx.productionId) return notYet("save this project first.");
+      return motionBodies(ctx).length ? OK : notYet("choose a source video and a reference on Motion Transfer first.");
     },
     steps: [
       step(
@@ -1202,28 +1234,22 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         (ctx) => plural(refsOf(motionInput(ctx) ?? {}), "reference"),
         local("reference order", (ctx) => ({ detail: "order kept", io: { order: count(motionInput(ctx)?.references) } })),
       ),
-      step(
-        "Approval gate",
-        "gate",
-        "live quote",
-        connectedGate(GENJUTSU, motionInput, (input, job) =>
-          `${String(input.resolution ?? "")}${input.resolution ? ", " : ""}${plural(refsOf(input), "ordered reference")}. Originals are copied to the connected account at quote time; charged to its selected wallet${job.workspaceName ? ` (${job.workspaceName})` : ""}.`,
-        ),
-      ),
-      step("Submit", "dispatch", (ctx) => String(motionInput(ctx)?.resolution ?? ""), connectedDispatch(GENJUTSU, "motion transfer")),
-      step("Follow the job", "file", "→ Motion Transfer", connectedStatus(GENJUTSU)),
+      step("Approval gate", "gate", "live quote", generationGate(motionBodies, (_parts, ctx) => transformLine(motionInput(ctx)))),
+      step("Submit", "dispatch", (ctx) => String(motionInput(ctx)?.resolution ?? ""), generationDispatch("ws-motion", "motion transfer")),
+      step("Follow the take", "file", "→ Motion Transfer", fileJobs("motion transfer")),
     ],
   }),
 
   swap: plan("swap", {
     title: "Swap the product",
-    line: "Names the element to replace, orders the replacement references and quotes live before submission.",
+    line: "Names the element to replace, orders the replacement references and prices the transform before anything is sent.",
     priceLabel: "Quote at gate",
-    doneLine: (_ctx, io) => `Object swap ${String((io.job as ConsumerJob | undefined)?.status ?? "submitted")}`,
+    doneLine: (_ctx, io) => `Object swap ${String((io.admitted as Admitted[] | undefined)?.[0]?.status ?? "submitted")}`,
     runnable: (ctx) => {
       const project = needProject(ctx);
       if (!project.ok) return project;
-      return hasSource(swapInput(ctx)) ? OK : notYet("choose a source video on Object Swap first.");
+      if (!ctx.productionId) return notYet("save this project first.");
+      return swapBodies(ctx).length ? OK : notYet("choose a source video and a reference on Object Swap first.");
     },
     steps: [
       step(
@@ -1238,16 +1264,9 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         (ctx) => plural(refsOf(swapInput(ctx) ?? {}), "reference"),
         local("reference order", (ctx) => ({ detail: "order kept", io: { order: count(swapInput(ctx)?.references) } })),
       ),
-      step(
-        "Approval gate",
-        "gate",
-        "live quote",
-        connectedGate(GENJUTSU, swapInput, (input, job) =>
-          `${String(input.resolution ?? "")}${input.resolution ? ", " : ""}${plural(refsOf(input), "ordered reference")}. Approved against the exact wallet${job.workspaceName ? ` (${job.workspaceName})` : ""} and amount.`,
-        ),
-      ),
-      step("Submit", "dispatch", (ctx) => String(swapInput(ctx)?.resolution ?? ""), connectedDispatch(GENJUTSU, "object swap")),
-      step("Follow the job", "file", "→ Object Swap", connectedStatus(GENJUTSU)),
+      step("Approval gate", "gate", "live quote", generationGate(swapBodies, (_parts, ctx) => transformLine(swapInput(ctx)))),
+      step("Submit", "dispatch", (ctx) => String(swapInput(ctx)?.resolution ?? ""), generationDispatch("ws-swap", "object swap")),
+      step("Follow the take", "file", "→ Object Swap", fileJobs("object swap")),
     ],
   }),
 
@@ -1337,37 +1356,34 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
   }),
 
   history: plan("history", {
-    title: "Reconcile connected credits",
-    line: "Re-reads every unsettled job on this project so each one ends completed, failed or with its receipt recorded.",
+    title: "Settle the transforms",
+    line: "Reads this project's transform takes still rendering, so each one lands, fails or says why.",
     priceLabel: "Free",
-    doneLine: (_ctx, io) => `${plural(Number(io.reconciled ?? 0), "job")} reconciled`,
+    doneLine: (_ctx, io) => `${plural(Number(io.reconciled ?? 0), "take")} checked`,
     runnable: needProject,
     steps: [
       step(
-        "Read result history",
+        "Read the project's takes",
         "read",
         "",
-        run({ method: "GET", path: GENJUTSU }, async (ctx) => {
-          const { jobs } = await call<{ jobs: ConsumerJob[] }>(
-            ctx,
-            `${GENJUTSU}?draftId=${encodeURIComponent(ctx.projectId ?? "")}`,
-          );
-          const open = jobs.filter((job) => ["accepted", "dispatching", "uncertain"].includes(job.status));
-          return { detail: `${plural(jobs.length, "job")} · ${open.length} unsettled`, io: { open: open.map((job) => job.id) } };
+        run({ method: "GET", path: "/api/workbench/library" }, async (ctx) => {
+          const query = new URLSearchParams({ projectId: ctx.projectId ?? "", source: "generations", limit: "60" });
+          const { generations } = await call<{ generations: { id: string; model: string; status: string }[] }>(ctx, `/api/workbench/library?${query}`);
+          const transforms = generations.filter((take) => isGenjutsuModel(take.model));
+          const open = transforms.filter((take) => take.status === "queued" || take.status === "running");
+          return { detail: `${plural(transforms.length, "take")} · ${open.length} unsettled`, io: { open: open.map((take) => take.id) } };
         }),
       ),
       step(
-        "Match credit receipts",
+        "Read each one still rendering",
         "file",
         "",
-        run({ method: "POST", path: `${GENJUTSU} {action:"status"}` }, async (ctx, io) => {
+        run({ method: "GET", path: "/api/jobs/[id]" }, async (ctx, io) => {
           const ids = (io.open as string[]) ?? [];
           const states: Record<string, number> = {};
           for (const id of ids) {
-            const { job } = await call<{ job: ConsumerJob }>(ctx, GENJUTSU, {
-              body: { action: "status", draftId: ctx.projectId, id },
-            });
-            states[job.status] = (states[job.status] ?? 0) + 1;
+            const { generation } = await call<{ generation: { status: string } }>(ctx, `/api/jobs/${encodeURIComponent(id)}`);
+            states[generation.status] = (states[generation.status] ?? 0) + 1;
           }
           const summary = Object.entries(states).map(([state, n]) => `${n} ${state}`).join(" · ");
           return { detail: summary || "nothing unsettled", io: { reconciled: ids.length } };

@@ -117,8 +117,8 @@ export type CapabilityStore = ReturnType<typeof createCapabilityStore>;
 /** The provider whose account the owner connects. The owner's Suites design names it (the naming rule is retired). */
 export const CONNECTED_PROVIDER = "Higgsfield";
 
-/** The surfaces that run only on the owner's account. */
-export type OwnerRunSurface = "business" | "viral" | "cast" | "workflows";
+/** The surfaces that run only on the owner's account. (Viral and Business › Image ads run on Particl's API key for everyone.) */
+export type OwnerRunSurface = "business" | "cast" | "workflows";
 /** The same kind of thing on this workspace's credits: Gen, on Studio engines, opened on one output. */
 export type OwnerRunAlternative = { type: "image" | "video"; what: string; action: string };
 export type OwnerRun = {
@@ -132,13 +132,8 @@ export type OwnerRun = {
 export const OWNER_RUNS: Record<OwnerRunSurface, OwnerRun> = {
   business: {
     eyebrow: "Business · Marketing Studio",
-    line: "Ads and image ads render on their connected account.",
+    line: "Ads render on their connected account.",
     alternative: { type: "image", what: "Product stills in Gen, on Studio engines", action: "Open Gen · Images" },
-  },
-  viral: {
-    eyebrow: "Viral · Genjutsu",
-    line: "Motion Transfer and Object Swap render on their connected account.",
-    alternative: { type: "video", what: "Video takes in Gen, on Studio engines", action: "Open Gen · Video" },
   },
   cast: {
     eyebrow: "Cast · Soul Cinema and Soul ID",
@@ -182,10 +177,20 @@ export const OWNER_BADGE = "Owner";
 export function ownerBadgeNote(ownerName: string | null | undefined): string {
   return `Run by ${ownerRunBy(ownerName)} on the ${CONNECTED_PROVIDER} account`;
 }
-/** The shell's suites that run only on the owner's account, and the state layer's suites behind them. */
-export const OWNER_RUN_SUITES: readonly string[] = ["business", "viral"];
-export const OWNER_RUN_LEGACY_SUITES: readonly string[] = ["moleculr", "subatomik"];
+/**
+ * The shell's suites that run only on the owner's account, and the state
+ * layer's suites behind them: none now. Viral runs on Particl's API key for
+ * everyone, and so does Business › Image ads; the Business pages still on the
+ * account (Ads, Setup) are the owner's page by page (the owner-run card), so
+ * a member keeps the suite's tabs to reach Image ads.
+ */
+export const OWNER_RUN_SUITES: readonly string[] = [];
+export const OWNER_RUN_LEGACY_SUITES: readonly string[] = [];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
+/** The pages still run only on the owner's account, in a suite whose other pages everyone runs: a member meets the owner-run card there, and no Run stage. */
+export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "setup"] };
+export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
+  Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 
 /** The connected account's routes: whatever calls one spends through the owner's account. */
 export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";

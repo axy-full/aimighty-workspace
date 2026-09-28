@@ -41,6 +41,13 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
       return json({ estimatedCredits: price(), price: price(), unit: "cr", fingerprint: `fp${"0".repeat(60)}${String(calls.length).padStart(2, "0")}` });
     if (bare === "/api/generate") return json({ id: `gen-${(job += 1)}`, status: "queued" }, 202);
     if (bare.startsWith("/api/jobs/")) return json({ generation: { status: "queued" } });
+    /* The project's Library: one transform take on the key still rendering, one done, and an ordinary still. */
+    if (bare === "/api/workbench/library")
+      return json({ generations: [
+        { id: "t-open", model: "higgsfield-genjutsu-motion-transfer", status: "running" },
+        { id: "t-done", model: "higgsfield-genjutsu-object-swap", status: "succeeded" },
+        { id: "still", model: "image-a", status: "queued" },
+      ], nextPageCursor: null });
     if (bare === "/api/audio" || bare === "/api/audio/dub")
       return body?.quoteOnly
         ? json({ estimatedCredits: price(), price: price(), unit: "cr" })
@@ -358,16 +365,59 @@ test("approved Particl dispatch sends exactly the approved credits and fingerpri
 test("approved connected-account dispatch submits exactly the approved wallet and credits", async () => {
   const { fetcher, dispatches } = backend({ price: () => 142 });
   const engine = engineFor(context(fetcher));
-  engine.start("motion");
+  engine.start("shorts");
   await until(() => engine.getState().run?.status === "waiting");
   const quote = engine.getState().run!.quote!;
   expect(quote.unit).toBe("connected");
-  expect(quote.line).toContain("2 ordered references");
   await engine.approve();
   await until(() => engine.getState().run?.status === "done", "done");
   const [submit] = dispatches();
   expect(submit.body).toEqual({ action: "submit", draftId: "draft-1", id: quote.parts[0].quoteId, workspaceId: "wallet-1", credits: 142 });
-  expect(engine.getState().completed.motion).toBe(true);
+  expect(engine.getState().completed.shorts).toBe(true);
+});
+
+test("Viral's plans run on Particl's API key: the composer's own body is priced at the gate and sent once with that ceiling", async () => {
+  for (const page of ["motion", "swap"] as const) {
+    const { fetcher, dispatches, calls } = backend({ price: () => 22 });
+    const engine = engineFor(context(fetcher));
+    engine.start(page);
+    await until(() => engine.getState().run?.status === "waiting", page);
+    const quote = engine.getState().run!.quote!;
+    expect(quote.unit).toBe("cr");
+    expect(quote.line).toContain(page === "motion" ? "2 ordered references" : "1 ordered reference");
+    expect(quote.line).not.toMatch(/exact/i);
+    const model = page === "motion" ? "higgsfield-genjutsu-motion-transfer" : "higgsfield-genjutsu-object-swap";
+    const priced = calls.find((call) => call.path === "/api/generate/quote")!;
+    expect(priced.body).toEqual({
+      model, task: "genjutsu", sourceUploadId: "u1",
+      references: (page === "motion" ? ["r1", "r2"] : ["r1"]).map((uploadId) => ({ uploadId, role: "reference_image" })),
+      resolution: "720p", prompt: page === "motion" ? "" : "swap it", projectId: "prod-1", workbenchProjectId: "draft-1", refine: false,
+    });
+    expect(dispatches()).toHaveLength(0);
+    await engine.approve();
+    await until(() => engine.getState().run?.status === "done", `${page} done`);
+    const [sent] = dispatches();
+    expect(sent.path).toBe("/api/generate");
+    expect(sent.body).toEqual({ ...priced.body, maxCredits: 22, quoteFingerprint: quote.parts[0].fingerprint });
+    expect(sent.headers["Idempotency-Key"]).toMatch(/^[A-Za-z0-9._:-]{8,160}$/);
+    /* Nothing of the connected account is asked. */
+    expect(calls.some((call) => call.path.startsWith("/api/higgsfield/consumer/"))).toBe(false);
+  }
+  /* Without a saved production, or a source and a still, there is nothing to price. */
+  const { fetcher } = backend();
+  expect(PLANS.motion.runnable({ ...context(fetcher), productionId: null })).toEqual({ ok: false, reason: "Not runnable yet — save this project first." });
+  expect(PLANS.swap.runnable(context(fetcher, { ...fullRequest(), swap: { source: { uploadId: "u1" }, references: [], resolution: "720p" } })).ok).toBe(false);
+});
+
+test("Viral History's plan reads the project's Library and each transform take still rendering — never the connected account", async () => {
+  const { fetcher, calls, dispatches } = backend();
+  const engine = engineFor(context(fetcher));
+  engine.start("history");
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "history");
+  expect(engine.getState().run!.error).toBeNull();
+  expect(calls.map((call) => call.path.split("?")[0])).toEqual(["/api/workbench/library", "/api/jobs/t-open"]);
+  expect(engine.getState().session[0].label).toBe("1 take checked");
+  expect(dispatches()).toHaveLength(0);
 });
 
 test("audio stems dispatch with maxCredits equal to each approved quote", async () => {
