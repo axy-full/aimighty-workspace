@@ -10,7 +10,7 @@ import { test, expect } from "@playwright/test";
  * the credential /connect hands to third parties precisely because it
  * "cannot bill" — could mint a render-scoped one and start spending.
  *
- * Run the actual mutation handlers with the real session-only guard. A
+ * Run the actual management handlers with the real session-only guard. A
  * bearer caller must be refused before even initializing the tenant DB.
  */
 import { readFileSync } from "node:fs";
@@ -21,7 +21,7 @@ import type { TenantStore } from "../../lib/tenant";
 
 const read = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8");
 
-test("actual token POST and DELETE refuse read and render bearers before database work", async () => {
+test("actual token GET, POST and DELETE refuse read and render bearers before database work", async () => {
   const auth = await import("../../lib/auth");
   const tenant = await import("../../lib/tenant");
   type Handler = (
@@ -49,8 +49,10 @@ test("actual token POST and DELETE refuse read and render bearers before databas
     "@/lib/credits": { creditsApply: forbiddenDb },
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": { billedCreditsExpr: forbiddenDb },
+    "@/lib/cycle": await import("../../lib/cycle"),
   };
   for (const [file, method] of [
+    ["app/api/tokens/route.ts", "GET"],
     ["app/api/tokens/route.ts", "POST"],
     ["app/api/tokens/[id]/route.ts", "DELETE"],
   ] as const) {
@@ -90,7 +92,7 @@ test("actual token POST and DELETE refuse read and render bearers before databas
               Authorization: "Bearer local-fixture",
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ name: "Escalated", scope: "render" }),
+            ...(method === "GET" ? {} : { body: JSON.stringify({ name: "Escalated", scope: "render" }) }),
           }),
           { params: Promise.resolve({ id: "target" }) },
         );

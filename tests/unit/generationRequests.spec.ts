@@ -141,7 +141,12 @@ test("project and token ceilings include in-flight reservations", async () => {
     await db().execute(`INSERT INTO projects(id,name,created_at,cap_usd) VALUES('p_cap','Cap',0,1)`);
     await reserveGenerationSpend({ id: "gen_cap_a", projectId: "p_cap", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 });
     await expect(reserveGenerationSpend({ id: "gen_cap_b", projectId: "p_cap", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 })).rejects.toThrow(/cap/);
-    const token = { id: "token_unit", capUsd: 1 };
+    /* A dollar ceiling set before credits is measured in what the workspace now pays: credits billed at
+       the price of a credit, at the job's own terms (never the vendor's dollars). One job fits, two do not. */
+    const { creditsAtTerms, currentBillingTerms } = await import("../../lib/billingTerms");
+    const { creditUsd } = await import("../../lib/creditTerms");
+    const perJob = creditsAtTerms(.7, currentBillingTerms("video", "mock")) * creditUsd();
+    const token = { id: "token_unit", capUsd: perJob * 1.5 };
     await reserveGenerationSpend({ id: "gen_token_a", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 }, { token });
     await expect(reserveGenerationSpend({ id: "gen_token_b", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 }, { token })).rejects.toThrow(/token/);
   });

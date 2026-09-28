@@ -1,11 +1,13 @@
 import { tokenCreditUsage } from "@/lib/tokenUsage";
 import { securityAuditStatement } from "@/lib/securityAudit";
 import { requireTenant } from "@/lib/tenant";
-import { parseCeiling } from "@/lib/tokenCeiling";
+import { tokenCeiling } from "@/lib/tokenCeiling";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
+import { creditsApply } from "@/lib/credits";
+import { tokenMonthStart } from "@/lib/cycle";
 import {
-  currentUser, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
+  requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -15,7 +17,7 @@ export const dynamic = "force-dynamic";
  *
  * Deliberately session-only: a token may never mint another token, so a
  * leaked one can't quietly breed replacements or widen its own scope. You
- * make these while signed in, in Settings.
+ * make these while signed in, in Atomik › Tools & connections (or /connect).
  *
  * THAT PARAGRAPH WAS TRUE AND UNENFORCED. The guard was `currentUser()`,
  * which answers for a BEARER caller as well — `callerFromBearer` puts a user
@@ -28,14 +30,22 @@ export const dynamic = "force-dynamic";
  * paragraph meant.
  */
 
+/*
+ * The unit. A credit workspace (the platform's keys) reads each token's month
+ * in the credits its takes were billed, never the vendor's dollars behind them
+ * (see /api/analytics), and sets its ceiling in credits: the reply carries no
+ * dollar figure at all. `legacyCeiling` says a dollar ceiling set before
+ * credits still applies (the spend gate enforces it without naming the
+ * figure). A workspace on its own keys reads and caps in dollars.
+ */
 export const GET = withTenant(async function GET() {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
+  const got = await requireSession();
+  if (got.response) return got.response;
+  const user = got.user;
   await ready();
-  const start = new Date();
-  start.setDate(1); start.setHours(0, 0, 0, 0);
-
-  const totals = await tokenCreditUsage(start.getTime());
+  /* The token's month runs on the same boundary its ceiling is enforced on (lib/cycle.ts), and counts
+     every token-funded operation, reservations included (lib/tokenUsage.ts), in credits. */
+  const totals = await tokenCreditUsage(tokenMonthStart());
   const rs = await db().execute({
     sql: "SELECT id,name,scope,cap_usd,cap_credits,last_used,created_at FROM api_tokens WHERE user_id=? AND revoked_at IS NULL ORDER BY created_at DESC",
     args: [user.id],
@@ -68,19 +78,22 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "Give the token a name" }, { status: 400 });
 
   const scope: TokenScope = body.scope === "read" ? "read" : "render";
-  if (body.capUsd != null) return NextResponse.json({ error: "Set a monthly ceiling in Particl credits." }, { status: 400 });
-  const ceiling = body.capCredits == null ? { capCredits: null } : parseCeiling(String(body.capCredits));
+  /* The ceiling, in the workspace's unit (lib/tokenCeiling.ts). Absent or
+     blank is "no limit"; any other value must read as a figure or nothing is
+     made. A value that did not read used to be stored as no limit: an
+     uncapped spending token from a typo. */
+  const ceiling = tokenCeiling(body, { scope, inCredits: creditsApply(requireTenant()) });
   if ("error" in ceiling) return NextResponse.json({ error: ceiling.error }, { status: 400 });
-  const capCredits = ceiling.capCredits;
+  const { capUsd, capCredits } = ceiling;
 
   const secret = mintTokenSecret();
   const tid = id("tok");
   await db().batch([{
-    sql: `INSERT INTO api_tokens (id, token_hash, name, user_id, scope, cap_credits, created_at)
-          VALUES (?,?,?,?,?,?,?)`,
-    args: [tid, tokenHash(secret), name, user.id, scope, capCredits, now()],
+    sql: `INSERT INTO api_tokens (id, token_hash, name, user_id, scope, cap_usd, cap_credits, created_at)
+          VALUES (?,?,?,?,?,?,?,?)`,
+    args: [tid, tokenHash(secret), name, user.id, scope, capUsd, capCredits, now()],
   }, securityAuditStatement({workspaceId:requireTenant().id,actorId:user.id,action:"api_token.created",targetType:"api_token",targetId:tid,details:{scope}})], "write");
 
   // The only time the secret exists outside a hash. Shown once, never again.
-  return NextResponse.json({ id: tid, name, scope, capCredits, token: secret });
+  return NextResponse.json({ id: tid, name, scope, capUsd, capCredits, token: secret });
 }, { requireRequestScope: true });

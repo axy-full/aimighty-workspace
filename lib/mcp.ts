@@ -188,8 +188,12 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
   );
 }
 
+/**
+ * `credits`: the workspace pays in credits (lib/credits creditsApply), so
+ * spend is reported in credits and the engine's dollars are never named.
+ */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "render_shot": {
@@ -305,7 +309,7 @@ export async function runTool(
       };
       if (!projects.length) return "No projects yet.";
       return projects
-        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${unit === "cr" || p.spend == null ? cr(p.credits) : usd(p.spend)}`)
+        .map((p) => `${p.name} — ${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${options.credits || unit === "cr" || p.spend == null ? cr(p.credits) : usd(p.spend)}`)
         .join("\n");
     }
 

@@ -136,6 +136,11 @@ async function fixture(
         if (failure) throw failure;
         return discovered;
       },
+      discoverAtomikReach: async (value: string) => {
+        discoveries.push(`reach:${value}`);
+        if (failure) throw failure;
+        return { status: "checked", checkedAt: 1, reach: [{ id: "image", available: true }], available: 1, total: 1 };
+      },
     },
   };
   const output = {
@@ -182,6 +187,7 @@ async function fixture(
     post: (
       scope: string | null = workbenchScopeFor("workspace", "owner"),
       origin?: string,
+      body?: unknown,
     ) =>
       output.exports.POST(
         new Request(`http://localhost/api/higgsfield/consumer/${kind}`, {
@@ -191,7 +197,7 @@ async function fixture(
             ...(origin ? { origin } : {}),
           },
           // Caller-supplied identities, endpoints or tool calls must be ignored.
-          body: JSON.stringify({
+          body: JSON.stringify(body ?? {
             workspaceId: "other",
             userId: "other",
             endpoint: "https://evil.example",
@@ -297,6 +303,25 @@ test("owner discovery uses only resolved account/workspace, returns unverified s
   expect(f.limits).toEqual([
     ["higgsfield-consumer-discovery:workspace:owner", 6, 60_000],
   ]);
+});
+
+test("the reach view (Atomik › Tools & connections) goes through the same owner guard and allowance and returns only row flags", async () => {
+  const f = await fixture();
+  const reach = await f.post(undefined, undefined, { view: "reach" });
+  expect(reach.status).toBe(200);
+  const text = await reach.text();
+  expect(JSON.parse(text)).toEqual({ status: "checked", checkedAt: 1, reach: [{ id: "image", available: true }], available: 1, total: 1 });
+  expect(text).not.toContain(secret);
+  expect(f.discoveries).toEqual([`reach:${secret}`]);
+  expect(f.limits).toEqual([["higgsfield-consumer-discovery:workspace:owner", 6, 60_000]]);
+  f.disconnect();
+  const absent = await f.post(undefined, undefined, { view: "reach" });
+  expect(absent.status).toBe(409);
+  expect(await absent.json()).toMatchObject({ code: "not_connected", error: "Connect the owner’s account in Workspace › Engines." });
+  const member = await fixture();
+  member.setStore({ ...member.store(), user: { ...member.store().user!, owner: false, role: "member" } });
+  expect((await member.post(undefined, undefined, { view: "reach" })).status).toBe(403);
+  expect(member.discoveries).toEqual([]);
 });
 
 test("disconnected and rate-limited callers perform no MCP discovery", async () => {

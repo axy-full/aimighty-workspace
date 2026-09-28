@@ -35,7 +35,7 @@ import {
   TEXT_FREE_TOKENS,
   hasFreeTier,
 } from "@/lib/enhance";
-import { tokenSpendThisMonth } from "@/lib/auth";
+import { tokenCreditsThisMonth, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { ceilingProblem } from "@/lib/refLimits";
 import { videoReferenceProblem } from "@/lib/generationReferences";
@@ -203,14 +203,34 @@ export async function executeGenerationAdmission(
 
     // A token may carry a monthly ceiling. Checked before submit, so an agent
     // in a loop stops at the wall instead of discovering it on the invoice.
-    // Keep existing private ceilings intact; new tokens use credit ceilings.
+    // A ceiling cannot be edited: the way past it is a new token, made where
+    // tokens are made, or the turn of the month.
+    const pastCeiling = "Make a new token in Atomik › Tools & connections, or wait for the 1st.";
     if (got.token?.capUsd != null) {
       const spent = await tokenSpendThisMonth(got.token.id);
-      if (spent >= got.token.capUsd) {
+      if (spent.usd >= got.token.capUsd) {
+        return admissionReply(
+          {
+            /* A dollar ceiling set before the workspace moved to credits is
+               still enforced, but the engine's dollars are not named to it. */
+            error: creditsApply(requireTenant())
+              ? `The token "${got.token.name}" has reached the monthly ceiling it was made with. ${pastCeiling}`
+              : `The token "${got.token.name}" has reached its $${got.token.capUsd.toFixed(2)} monthly ceiling ` +
+                `($${spent.usd.toFixed(2)} spent). ${pastCeiling}`,
+          },
+          { status: 429 },
+        );
+      }
+    }
+    // The same wall in credits, for a token made in a credits workspace.
+    if (got.token?.capCredits != null) {
+      const spent = await tokenCreditsThisMonth(got.token.id);
+      if (spent >= got.token.capCredits) {
         return admissionReply(
           {
             error:
-              `The token "${got.token.name}" has reached its saved monthly spending ceiling. Create a token with a credit ceiling in Settings.`,
+              `The token "${got.token.name}" has reached its ${got.token.capCredits.toLocaleString("en-US")} cr monthly ceiling ` +
+              `(${spent.toLocaleString("en-US")} cr spent). ${pastCeiling}`,
           },
           { status: 429 },
         );

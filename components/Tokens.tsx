@@ -6,8 +6,10 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { timeAgo } from "@/lib/format";
 import { fmtCredits } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
-import { parseCeiling } from "@/lib/tokenCeiling";
+import { parseCreditCeiling } from "@/lib/tokenCeiling";
 
+/** GET /api/tokens answers in credits: each token's month and ceiling, and
+ *  whether a ceiling set before credits still applies. No dollar field. */
 export type Token = {
   id: string; name: string; scope: "read" | "render";
   capCredits: number | null; legacyCeiling?: boolean; spendThisMonth: number;
@@ -39,7 +41,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
       for (;;) {
         const answer = await appPrompt("Monthly ceiling", typed, "Particl credits — blank for no limit", problem);
         if (answer === null) return;
-        const ceiling = parseCeiling(answer);
+        const ceiling = parseCreditCeiling(answer);
         if ("error" in ceiling) { typed = answer; problem = ceiling.error; continue; }
         capCredits = ceiling.capCredits;
         break;

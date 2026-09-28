@@ -88,6 +88,7 @@ async function routes(ws: TenantWorkspace) {
     "next/server": nextServer,
     "@/lib/auth": {
       requireUser: async () => ({ user }),
+      requireSession: async () => ({ user }),
       currentUser: async () => user,
       withTenant: (fn: Handler) => (req: Request) => runInTenant(ws, () => fn(req), { user } as never),
     },
@@ -100,6 +101,7 @@ async function routes(ws: TenantWorkspace) {
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/analyticsRedact": await import("../../lib/analyticsRedact"),
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
+    "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
   };
   const analytics = load<{ GET: Handler }>("app/api/analytics/route.ts", modules).GET;

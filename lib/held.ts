@@ -165,7 +165,11 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       estUsd,
       needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
       why: held.why === "slots" ? "slots" : "credits",
-      token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap), capCredits: row.token_cap_credits == null ? null : Number(row.token_cap_credits) } : undefined,
+      token: row.token_id ? {
+        id: String(row.token_id),
+        capUsd: row.token_cap == null ? null : Number(row.token_cap),
+        capCredits: row.token_cap_credits == null ? null : Number(row.token_cap_credits),
+      } : undefined,
     };
   });
 }
