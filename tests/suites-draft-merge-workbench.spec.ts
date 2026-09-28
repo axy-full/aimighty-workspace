@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { moreTakes } from "./helpers/genTakes";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { newProject, type Asset, type Project } from "../lib/workbench/studio";
 
@@ -684,7 +685,7 @@ test("Gen: a batch of two takes after a Brief edit elsewhere keeps the Brief edi
   const prompt = page.getByTestId("gen-prompt");
   await hydrated(prompt);
   await prompt.fill("A red fox crosses the frozen harbour at dusk.");
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
+  await moreTakes(page, 1);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("2");
   const go = page.getByTestId("gen-generate");
   await expect(go).toBeEnabled({ timeout: 60_000 });
@@ -1393,7 +1394,7 @@ test("Gen, two takes: take 2's request cut off stops the batch; the next Generat
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("A red fox crosses the frozen harbour at dusk.");
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
+  await moreTakes(page, 1);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("2");
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveText(/\d cr/, { timeout: 60_000 });
@@ -1512,8 +1513,7 @@ test("Gen, connected: a batch submitted after the person left Gen is still follo
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("A red fox crosses the frozen harbour at dusk.");
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
+  await moreTakes(page, 2);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveText(/3 takes · 27 connected cr/, { timeout: 60_000 });
@@ -1558,7 +1558,7 @@ test("Gen: a batch's shot saved while other saves land before and on top of it �
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("A red fox crosses the frozen harbour at dusk.");
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
+  await moreTakes(page, 1);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("2");
   const go = page.getByTestId("gen-generate");
   await expect(go).toBeEnabled({ timeout: 60_000 });
@@ -2352,7 +2352,7 @@ async function connectedTakes(page: Page, project: Project, takes: number) {
   const { box, go } = await openGen(page, project);
   await chooseConnected(page);
   await box.fill(FOX);
-  for (let i = 1; i < takes; i++) await page.getByTestId("gen-takes").getByRole("button", { name: "More" }).click();
+  await moreTakes(page, takes - 1);
   await expect(page.getByTestId("gen-takes-count")).toHaveText(String(takes));
   await expect(go).toHaveText(takes > 1 ? new RegExp(`${takes} takes · ${takes * 9} connected cr`) : /9 connected cr/, { timeout: 60_000 });
   return go;

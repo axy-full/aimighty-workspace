@@ -4,6 +4,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { moreTakes } from "./helpers/genTakes";
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
@@ -200,8 +201,7 @@ test("the rows follow the composer: the aspect chip, a bigger size and a longer 
   /* A bigger size, a longer take and three takes: the row is one take at those settings, the button three. */
   await page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p", exact: true }).click();
   await page.getByTestId("gen-length").selectOption("10");
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true }).click();
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true }).click();
+  await moreTakes(page, 2);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
   sheet = await openSheet(page);
   await priced(page);
