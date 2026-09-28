@@ -347,9 +347,13 @@ test("Release approves the figure on its button; short, a moved price and a lost
   /* Pressed at the new figure: the lost press had started it after all, so this one is answered "already" and charges nothing. */
   answer = "already";
   const before = tray.reads;
+  /* A release moves the balance: the header's credits read again at once, as a take card's Release has them do. */
+  let accountReads = 0;
+  page.on("request", (request) => { if (request.method() === "GET" && new URL(request.url()).pathname === "/api/me") accountReads++; });
   await held.getByRole("button", { name: "Release · 45 cr: Harbour at dawn" }).click();
   await expect(page.getByTestId("toast")).toHaveText("Harbour at dawn was already released.");
   await expect.poll(() => tray.reads).toBeGreaterThan(before);
+  await expect.poll(() => accountReads, { timeout: 5_000 }).toBeGreaterThan(0);
   expect(releases.map((r) => r.credits)).toEqual([43, 43, 43, 45]);
   await expect(held.getByTestId("jobs-stage")).toHaveText("Queued");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 2 rendering · 2 queued");
