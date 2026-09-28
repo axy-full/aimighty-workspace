@@ -35,7 +35,7 @@ const ENDPOINT = `${BASE}/api/mcp`;
 function requireToken() {
   if (!TOKEN) {
     throw new Error(
-      "PARTICL_TOKEN is not set. Make one in Particl under Settings → Connect."
+      "PARTICL_TOKEN is not set. Make one in Particl under Atomik › Tools & connections."
     );
   }
 }

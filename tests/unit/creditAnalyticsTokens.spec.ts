@@ -87,6 +87,7 @@ async function routes(ws: TenantWorkspace) {
     "next/server": nextServer,
     "@/lib/auth": {
       requireUser: async () => ({ user }),
+      requireSession: async () => ({ user }),
       currentUser: async () => user,
       withTenant: (fn: Handler) => (req: Request) => runInTenant(ws, () => fn(req), { user } as never),
     },
@@ -99,6 +100,7 @@ async function routes(ws: TenantWorkspace) {
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/analyticsRedact": await import("../../lib/analyticsRedact"),
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
+    "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
   };
   const analytics = load<{ GET: Handler }>("app/api/analytics/route.ts", modules).GET;
@@ -143,8 +145,11 @@ test("API tokens: a credit workspace's month is the credits billed; one on its o
   await seed(credit);
   await seed(own);
   const inCredits = await (await routes(credit)).tokens();
-  expect(inCredits).toMatchObject({ unit: "cr", tokens: [{ id: "tok_1", capUsd: 20, spendThisMonth: 31 }] });
+  /* Its ceiling is in credits too: the $20 set before credits is named as a ceiling, never shown as dollars. */
+  expect(inCredits).toMatchObject({ unit: "cr", tokens: [{ id: "tok_1", spendThisMonth: 31, capCredits: null, legacyCeiling: true }] });
+  expect(inCredits.tokens[0]).not.toHaveProperty("capUsd");
   const inDollars = await (await routes(own)).tokens();
   expect(inDollars.unit).toBe("usd");
   expect(inDollars.tokens[0].spendThisMonth).toBeCloseTo(1.98, 6);
+  expect(inDollars.tokens[0]).toMatchObject({ capUsd: 20 });
 });

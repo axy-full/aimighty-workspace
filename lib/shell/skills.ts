@@ -1,9 +1,12 @@
 /**
- * Atomik › Skills = the higgsfield-ai/skills packs (FINAL_SPEC §5). One row
- * per pack: its name, the prototype's one line, and where Install opens —
- * the pack's folder in the public repo, which is what the agent's tool reach
- * is made of. Nothing here is a fictional integration: the packs are read
- * and installed the way their INSTALL.md says.
+ * The higgsfield-ai/skills packs (FINAL_SPEC §5), which Atomik › Skills used
+ * to list as "the agent's tool reach". Nothing in Particl reads them: they
+ * teach an assistant on the person's own machine to use the connected
+ * account directly. They stay reachable, with the same install command and
+ * folder link, under Atomik › Tools & connections › Claude & ChatGPT ›
+ * "Skill packs for your own assistant". One row per pack: its name, the
+ * prototype's one line, and where Open goes — the pack's folder in the public
+ * repo; the command installs it the way its INSTALL.md says.
  */
 export const SKILLS_REPO = "https://github.com/higgsfield-ai/skills";
 export type SkillPack = { id: string; line: string; href: string; install: string };
