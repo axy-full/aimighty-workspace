@@ -733,11 +733,11 @@ export function ConsumerGenjutsu({
           setQuoteAttempt(null);
         } catch {
           throw Error(
-            "The quote is saved, but browser recovery storage could not be cleared. Recover this exact quote again before generating.",
+            "The quote is saved, but browser recovery storage could not be cleared. Recover this quote again before generating.",
           );
         }
         setNotice(
-          "Originals copied to the connected account for this quote. Review its wallet and exact connected-credit price.",
+          "Originals copied to the connected account for this quote. Review its wallet and connected-credit estimate.",
         );
       }
       if (action === "submit")
@@ -987,8 +987,8 @@ export function ConsumerGenjutsu({
               </li>
               <li>
                 <strong>Review copying and cost.</strong> Approve copying the
-                selected files to your connected account for an exact quote,
-                then separately approve its wallet and connected-credit price.
+                selected files to your connected account for a quote,
+                then separately approve its wallet and connected-credit estimate.
               </li>
               <li>
                 <strong>Compare and finish.</strong> Check the existing job,
