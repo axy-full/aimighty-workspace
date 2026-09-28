@@ -1,8 +1,9 @@
 import { PROJECT_LIMITS } from "../workbench/project-limits";
 import type { MediaJob } from "../workbench/job-recovery";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
-import { NODE_DEFS, createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
-import type { Asset, CanvasNode, Project } from "../workbench/studio";
+import { createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
+import { cardLabel, refKindOf } from "../workbench/ref-kind";
+import type { Asset, CanvasNode, Project, RefKind } from "../workbench/studio";
 import { engineLabel, type ShotSettings } from "./engines";
 import { isShotNode, jobUnbilled, liveJob, ShotPatchError } from "./shots";
 import { vendorNameIn } from "./vendor-names";
@@ -43,7 +44,8 @@ const allNodes = (project: Project) => {
 };
 const allAssets = (project: Project) => [...project.assets, ...(project.sharedAssets ?? [])];
 
-export type InputRow = { id: string; name: string; kind: string; version: string; asset: Asset | null };
+/** `kind`: the word the input is shown under (a reference's kind, else its node type); `refKind`: the reference kind, or null. */
+export type InputRow = { id: string; name: string; kind: string; refKind: RefKind | null; version: string; asset: Asset | null };
 
 /** The shot's connected inputs, resolved through the graph (the Inspector's Inputs tab). */
 export function shotInputs(project: Project, shotId: string): InputRow[] {
@@ -54,8 +56,16 @@ export function shotInputs(project: Project, shotId: string): InputRow[] {
     const input = nodes.find((n) => n.id === id);
     if (!input) return [];
     const asset = resolveAsset(input, nodes, assets) ?? null;
-    return [{ id: input.id, name: input.title, kind: NODE_DEFS[input.type].label, version: asset ? `v${asset.version}` : "—", asset }];
+    return [{ id: input.id, name: input.title, kind: cardLabel(input, project), refKind: refKindOf(input, project), version: asset ? `v${asset.version}` : "—", asset }];
   });
+}
+
+/** What an input row says under its name: the first frame, a kind with its medium ("Cast · image"), or a plain reference. */
+export function inputKindText(row: Pick<InputRow, "kind" | "refKind" | "asset">, firstFrame: boolean): string {
+  if (firstFrame) return "First frame";
+  if (!row.asset) return row.kind;
+  const medium = row.asset.kind === "video" ? "video" : "image";
+  return row.refKind && row.refKind !== "ref" ? `${row.kind} · ${medium}` : `Reference ${medium}`;
 }
 
 /** Image and video references bound to the shot, exactly as the Rig's Generate take collects them. */

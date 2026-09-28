@@ -57,6 +57,9 @@
 .pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
 .pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: #7fb6ff; }
+/* A reference's kind (Cast, Environment, Element, Ref) is a label people read and act on: above the label floor. */
+.pxw .pxw-graph-kind { color: var(--pxw-muted); }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-kind { color: #7fb6ff; }
 .pxw .pxw-graph-media { position: relative; display: flex; flex-direction: column; border-radius: 7px; margin-top: 9px; overflow: hidden; }
 .pxw .pxw-graph-node[data-shape="scene"] .pxw-graph-media { border-radius: 8px; margin-top: 10px; }
 .pxw .pxw-graph-media > span:not(.pxw-graph-badge) { display: block; }
