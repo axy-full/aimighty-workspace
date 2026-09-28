@@ -632,7 +632,7 @@ test("a crash after collection protects the original from deletion until a fresh
     expect(retained).toMatchObject({
       deleted: 0,
       bytes: original.length,
-      stored_url: collected.asset.url,
+      stored_url: (await import("../../lib/storage")).videoPath(collected.generationId),
     });
     expect((await m.quota.standing()).usedBytes).toBe(original.length);
     expect(

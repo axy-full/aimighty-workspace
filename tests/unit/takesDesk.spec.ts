@@ -63,6 +63,11 @@ test("the status filters read the chips' own fields: Held is the chip that says 
   expect(pick("changes")).toEqual(["changes"]);
   /* Held for credits is Held; held for a slot is Queued, as its chip says. */
   expect(pick("held")).toEqual(["held"]);
+  /* Held for credits is its own status; a take built with the in-flight `held` stage wears Held too, and is filed with it. */
+  expect(all.find((e) => e.take.sourceId === "held")!.take.status).toBe("held");
+  expect(inDeskFilter({ status: "rendering", stage: "held" }, "held")).toBe(true);
+  expect(inDeskFilter({ status: "rendering", stage: "queued" }, "held")).toBe(false);
+  expect(inDeskFilter({ status: "held" }, "review")).toBe(false);
   /* A take stopped before it rendered wears Cancelled and is filed under failed. */
   expect(pick("failed")).toEqual(["fail", "stop"]);
   expect(deskCounts(all, null, "")).toEqual({ all: 12, review: 4, picked: 1, approved: 1, changes: 1, held: 1, failed: 2 });
