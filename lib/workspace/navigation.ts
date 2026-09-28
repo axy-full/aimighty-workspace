@@ -1,4 +1,5 @@
 import { LEVEL_PARAM, levelFor, levelFromParam, levelParam, SHEET_PARAM, sheetFromParam, viewForLevel } from "./mobile";
+import { assetParam, selectedTakeParam } from "../shell/asset-link";
 import {
   PAGES,
   firstPage,
@@ -170,20 +171,25 @@ export type UrlState = {
 /**
  * Read the URL back. A page wins over a disagreeing suite (the page is the
  * more specific claim); aliases resolve; an unknown page opens the suite's
- * first page.
+ * first page. A take is selected by `asset` (lib/shell/asset-link.ts), or by
+ * the older `sel=take:<id>`; either way only a plain Library id is taken, and
+ * an `asset` with no page opens Takes, where it is shown.
  */
 export function fromSearch(search: string): UrlState {
   const query = new URLSearchParams(search);
-  const rawPage = query.get("page");
+  const asset = assetParam(query);
+  const rawPage = query.get("page") ?? (asset ? "takes" : null);
   const page = resolvePageId(rawPage);
   const suite = page ? suiteOfPage(page) : resolveSuite(query.get("suite")) ?? "particl";
   const rawSel = query.get("sel");
   let sel: UrlState["sel"] = null;
-  if (rawSel) {
+  const take = selectedTakeParam(query);
+  if (take) sel = { kind: "take", id: take };
+  else if (rawSel) {
     const at = rawSel.indexOf(":");
     const kind = rawSel.slice(0, at) as SelKind;
     const id = rawSel.slice(at + 1);
-    if (at > 0 && id && SEL_KINDS.includes(kind)) sel = { kind, id };
+    if (at > 0 && id && SEL_KINDS.includes(kind) && kind !== "take") sel = { kind, id };
   }
   const level = levelFromParam(query.get(LEVEL_PARAM));
   return {
@@ -199,7 +205,12 @@ export function fromSearch(search: string): UrlState {
   };
 }
 
-/** Apply a URL to state (initial load and popstate), repairing selection. */
+/**
+ * Apply a URL to state (initial load and popstate), repairing selection. The
+ * selected take is always in the URL (the shell writes it: lib/shell/state.tsx),
+ * so an entry that names none has none — Back from an opened take is the grid —
+ * while a shot or cast selection a URL leaves out is kept for its list to repair.
+ */
 export function applyUrl(state: AppState, url: UrlState): AppState {
   const base: AppState = {
     ...state,
@@ -210,8 +221,9 @@ export function applyUrl(state: AppState, url: UrlState): AppState {
     mobile: levelFor(url.level, url.view),
     sheet: url.sheet,
   };
-  if (url.view === "home") return base;
-  const seeded = url.sel ? { ...base, selKind: url.sel.kind, selId: url.sel.id } : base;
+  /* Home has no selection in its URL at all: a take a link names waits there for the page it opens. */
+  if (url.view === "home") return url.sel?.kind === "take" ? { ...base, selKind: "take", selId: url.sel.id } : base;
+  const seeded = url.sel ? { ...base, selKind: url.sel.kind, selId: url.sel.id } : state.selKind === "take" ? { ...base, selId: null } : base;
   return { ...seeded, ...repairSelection(seeded, url.page), inspTab: "Controls" };
 }
 

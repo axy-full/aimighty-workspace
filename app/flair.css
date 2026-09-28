@@ -229,6 +229,8 @@
 .gx-first-actions .gx-project-new .gx-field { height: 44px; font-size: 15px; }
 .gx-first-actions .gx-project-new .gx-primary, .gx-first-actions .gx-project-new .gx-hbtn { height: 44px; padding: 0 16px; justify-content: center; }
 .gx-first-note { margin: -4px 0 0; font-size: 13px; color: var(--gx-text-2); }
+/* A link to a take that cannot show it yet (components/graphite/AssetLinkCard.tsx): a long workspace or production name wraps. */
+.gx-link-card .gx-first-lead, .gx-link-card .gx-first-note { overflow-wrap: anywhere; }
 .gx-first .gx-gen-error { margin: 0; scroll-margin: 16px; }
 .gx-first-how, .gx-recent { display: flex; flex-direction: column; gap: 8px; }
 .gx-first-how-title, .gx-recent-title { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #6EB4FF; }

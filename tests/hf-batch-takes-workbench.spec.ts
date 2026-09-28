@@ -5,6 +5,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type LibraryRoute } from "./helpers/workspaceFixtures";
+import { moreTakes } from "./helpers/genTakes";
 
 /**
  * Takes 2–4 of one Generate go as ONE priced batch and land as ONE strip
@@ -66,8 +67,7 @@ async function gen(page: Page) {
 }
 
 async function takes(page: Page, count: number) {
-  const stepper = page.getByRole("group", { name: "Takes per generate" });
-  for (let n = 1; n < count; n++) await stepper.getByRole("button", { name: "More" }).click();
+  await moreTakes(page, count - 1);
   await expect(page.getByTestId("gen-takes-count")).toHaveText(String(count));
 }
 
@@ -342,6 +342,49 @@ test("this workspace's credits: when the credits run out mid-batch, takes 3–4 
   await floors(page, info);
   await clearOfTabBar(page);
   await shot(page, info, "workspace-held");
+  expect(errors).toEqual([]);
+});
+
+test("the takes stepper stays put as the live price lands: a press on More across that moment counts, and one just after it is More again, never Generate", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors } = await open(page);
+  const routes = await workspaceRoutes(page);
+  /* The take's live price waits until a press on More has gone down; open()'s engines route then answers it. */
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let asked = 0;
+  await page.route(/\/api\/workbench\/engines\?.*model=/, async (route) => { asked++; await held; return route.fallback(); });
+  await gen(page);
+  await page.getByTestId("gen-prompt").fill(PROMPT);
+  await expect.poll(() => asked, { timeout: 60_000 }).toBeGreaterThan(0);
+  await expect(page.getByTestId("gen-blocked")).toHaveText("Getting the live price…");
+  /* Where the stepper and Generate sit in the composer, whatever the scroll (at a scroller's end a shorter page scrolls back and hides a move). */
+  const place = () => page.getByTestId("gen-view").evaluate((view) => {
+    const top = (selector: string) => Math.round((view.querySelector(selector)!.getBoundingClientRect().top - view.querySelector(".gx-gen-card")!.getBoundingClientRect().top) * 10) / 10;
+    return { takes: top('[data-testid="gen-takes"]'), generate: top('[data-testid="gen-generate"]') };
+  });
+  const pricing = await place();
+  const more = page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true });
+  /* Scrolled to where a press hits it: on a phone Generate's sticky band floats over the rows above its own place. */
+  await more.click({ trial: true });
+  const box = (await more.boundingBox())!;
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  release();
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
+  await expect(page.getByTestId("gen-blocked")).toHaveCount(0);
+  const priced = await place();
+  /* Under 768px Generate's band sticks to the screen (it moves with the scroll), so its place is compared only where it is in the flow. */
+  expect({ takes: priced.takes, generate: page.viewportSize()!.width < 768 ? pricing.generate : priced.generate }, "nothing moved as the price landed").toEqual(pricing);
+  await page.mouse.up();
+  await expect(page.getByTestId("gen-takes-count")).toHaveText("2");
+  /* Aimed at More while the price was on its way, made once it is on the button: More again, never Generate. */
+  await page.mouse.click(at.x, at.y);
+  await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${3 * PRICE} cr`);
+  expect(routes.quotes).toEqual([]);
+  expect(routes.charges).toEqual([]);
   expect(errors).toEqual([]);
 });
 

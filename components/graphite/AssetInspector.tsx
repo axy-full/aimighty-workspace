@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SAY, referenceRole } from "@/lib/shell/assets";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
@@ -8,11 +8,16 @@ import { settledFact } from "@/lib/usageLedgerTerms";
 import { useLedgerEntry } from "./UsageLedger";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
-import { entryFace, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryDraft, entryFace, findProjectTake, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { takeStatusWord } from "@/lib/workspace/takes";
+import type { Generation } from "@/lib/jobs";
+import { DraftFinalBar } from "./DraftFinal";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { openPreview } from "@/components/PreviewLayer";
+import { INSPECTOR_SURFACE } from "@/lib/shell/preview-bridge";
+import { copyAssetLink } from "@/lib/shell/copy-asset-link";
+import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
 
@@ -27,6 +32,7 @@ const when = (ms: number) => new Date(ms).toLocaleString("en-US", { month: "shor
 
 export function AssetInspector({ scope, project, id }: { scope: string; project: Project | null; id: string }) {
   const shell = useShell();
+  const session = useSession();
   const { dispatch, state, toast } = useWorkspace();
   const recreate = useRecreate();
   const library = useProjectLibrary(scope, project?.id ?? null);
@@ -35,13 +41,28 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const made = entry?.asset.origin === "generation" ? entry.asset.value : null;
   const quote = made ? providerCreditQuote(made.providerCreditQuote) : null;
   const settled = useLedgerEntry(made && !quote ? made.id : null, entry?.take.status);
+  /* A take older than the loaded pages (a link, the desk's search) is asked for by id once the library has read; an answer
+     for another project or take than the one shown now is dropped. */
+  const projectId = project?.id ?? null;
+  const ready = library.state.status === "ready";
+  const [looked, setLooked] = useState<string | null>(null);
+  const lookKey = projectId ? `${projectId}\u0000${id}` : null;
+  useEffect(() => {
+    if (entry || !ready || !projectId || !lookKey || looked === lookKey) return;
+    let current = true;
+    void findProjectTake(scope, projectId, id).catch(() => false).then(() => { if (current) setLooked(lookKey); });
+    return () => { current = false; };
+  }, [entry, ready, scope, projectId, id, lookKey, looked]);
   if (!entry) {
-    const failed = library.state.status === "error";
+    /* A read that failed is said with Try again — never "not in this project", which only a read that answered can say. */
+    const searched = library.state.status === "ready" && !library.state.moreBusy && looked === lookKey;
+    const failed = library.state.status === "error" || (searched && Boolean(library.state.error));
+    const missing = searched && !library.state.error;
     return (
-      <div className="gx-insp-asset"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
+      <div className="gx-insp-asset" data-testid="asset-inspector-missing"><span className="gx-eyebrow">Output</span><div className="gx-insp-card" aria-hidden="true" />
         {failed
-          ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={library.refresh} testId="inspector-library-error" compact />
-          : <p className="gx-empty">{library.state.status === "ready" && !library.state.moreBusy ? "This asset is no longer in the project." : "Reading this project…"}</p>}
+          ? <LoadBanner banner={{ tone: "error", message: library.state.error ?? "The project library could not be loaded." }} onRetry={() => { setLooked(null); return library.refresh(); }} testId="inspector-library-error" compact />
+          : <p className="gx-empty" role="status">{missing ? "This asset is not in this project." : library.state.status === "ready" ? "Finding this asset…" : "Reading this project…"}</p>}
       </div>
     );
   }
@@ -49,7 +70,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const generation = asset.origin === "generation" ? asset.value : null;
   const upload = asset.origin === "upload" ? asset.value : null;
   const role = referenceRole(entry.media);
+  /* Draft mode (lib/draftFinal.ts): a draft offers its final here too; a final names the draft it was made from. */
+  const pair = generation ? entryDraft(entry) : null;
+  const finals = pair?.draft ? library.items.filter((item) => entryDraft(item)?.finalOf === pair.id).map((item) => item.asset.value as Generation) : [];
+  const madeFrom = pair?.finalOf ? library.items.find((item) => item.asset.origin === "generation" && item.asset.value.id === pair.finalOf)?.take.name ?? "Its draft" : null;
   const facts: [string, string][] = [
+    ...(madeFrom ? [["Made from", `${madeFrom} · draft`] as [string, string]] : []),
     ["Kind", generation ? "Generation" : "Upload"],
     /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
     ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
@@ -69,6 +95,9 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const copyPrompt = async () => {
     try { await navigator.clipboard.writeText(words); toast(SAY.promptCopied); } catch { toast(SAY.copyBlocked); }
   };
+  /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
+  const preview = entryPreview(entry);
+  const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
       <div className="gx-insp-row"><span className="gx-eyebrow">Output</span><span className="gx-eyebrow">{take.version}</span></div>
@@ -80,6 +109,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
       {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
+      {pair?.draft && generation ? (
+        <>
+          <span className="gx-eyebrow">Draft</span>
+          <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
+        </>
+      ) : null}
       <span className="gx-eyebrow">Actions</span>
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
@@ -92,7 +127,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       ) : null}
       <div className="gx-insp-actions">
         <button type="button" className="gx-hbtn" disabled={!role} title={role ? undefined : "References are images and videos."} onClick={() => command("use-as-reference")}>Use as reference</button>
-        {entryPreview(entry) ? <button type="button" className="gx-hbtn" onClick={() => openPreview([entryPreview(entry)!])} data-testid="inspector-open-preview">Preview</button> : null}
+        {preview ? <button type="button" className="gx-hbtn" onClick={() => openPreview([preview], 0, { surface: INSPECTOR_SURFACE, asset: take.id })} data-testid="inspector-open-preview">Preview</button> : null}
+        {project?.productionProjectId ? <button type="button" className="gx-hbtn" title="A link to this take, for people in this workspace" onClick={() => void copyLink()} data-testid="inspector-copy-link">Copy link</button> : null}
         {downloadable ? <a className="gx-hbtn" href={download} download={upload ? upload.filename : true}>Download original</a> : null}
         <button type="button" className="gx-hbtn" title="The asset itself, to paste into another project" onClick={() => command("copy")} data-testid="inspector-copy-asset">Copy asset</button>
         <button type="button" className="gx-hbtn" onClick={() => command("move")}>Move to…</button>
@@ -109,7 +145,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
   const timed = Boolean(entry.url) && (entry.media === "video" || entry.media === "audio");
   const toggle = () => { const el = player.current; if (!el) return; if (el.paused) void el.play().catch(() => setPlaying(false)); else el.pause(); };
   return (
-    <div className="gx-insp-card" data-testid="inspector-preview" {...previewAttrs(entryPreview(entry))}>
+    <div className="gx-insp-card" data-testid="inspector-preview" data-preview-gallery={INSPECTOR_SURFACE} {...previewAttrs(entryPreview(entry))}>
       {entry.url && entry.media === "image" ? (
         // eslint-disable-next-line @next/next/no-img-element -- workspace-scoped media route, as the workbench library
         <img src={entry.url} alt={entry.take.name} />

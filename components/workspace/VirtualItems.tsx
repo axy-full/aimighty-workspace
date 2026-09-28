@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 
 /**
  * A long list or grid that keeps only what is on screen in the page (SOW §5:
@@ -77,6 +77,47 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
     if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 1) return node;
   }
   return (document.scrollingElement as HTMLElement | null) ?? null;
+}
+
+type WindowedList = Virtualizer<HTMLElement, Element>;
+/* The windowed lists each scroller holds, so that a smooth move of the page can hold their corrections. */
+const listsIn = new WeakMap<Element, Set<WindowedList>>();
+
+/**
+ * Scroll `el` smoothly into view: a page's own move to something the list
+ * does not hold, such as the editor that opens above a long grid. A windowed
+ * list corrects its scroller's position whenever it measures a row above the
+ * fold that it had only estimated, and outside iOS (where virtual-core defers
+ * the correction) that correction is an instant scroll, which ends a smooth
+ * one where it stands: the page stays at the end of the grid and the editor
+ * never comes into view. So every windowed list in that scroller leaves its
+ * corrections out until the move is over; the move goes past those rows anyway.
+ */
+export function smoothScrollIntoView(el: Element | null | undefined, block: ScrollLogicalPosition = "start") {
+  if (!el) return;
+  const scroller = scrollParent(el as HTMLElement);
+  const lists = scroller ? listsIn.get(scroller) : undefined;
+  if (scroller && lists?.size) holdCorrections(scroller, [...lists]);
+  el.scrollIntoView({ block, behavior: "smooth" });
+}
+
+/** Until the scroller stops: its `scrollend`, or, where there is none, a moment without a scroll event (a move that never started lets go the same way). */
+function holdCorrections(scroller: HTMLElement, lists: WindowedList[]) {
+  const hold = () => false;
+  for (const list of lists) list.shouldAdjustScrollPositionOnItemSizeChange = hold;
+  const target: HTMLElement | Window = scroller === document.scrollingElement ? window : scroller;
+  const still = "onscrollend" in window ? 1000 : 250;
+  let timer = setTimeout(release, still);
+  function moved() { clearTimeout(timer); timer = setTimeout(release, still); }
+  function release() {
+    clearTimeout(timer);
+    target.removeEventListener("scroll", moved);
+    target.removeEventListener("scrollend", release);
+    /* A later move holds them with its own function: only this move lets go of its hold. */
+    for (const list of lists) if (list.shouldAdjustScrollPositionOnItemSizeChange === hold) list.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+  }
+  target.addEventListener("scroll", moved, { passive: true });
+  target.addEventListener("scrollend", release);
 }
 
 export function VirtualItems<T>(props: VirtualItemsProps<T>) {
@@ -161,6 +202,14 @@ function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight
     overscan: 4,
     scrollMargin: margin,
   });
+  /* Known to its scroller, so a smooth move of the page there can hold this list's corrections (smoothScrollIntoView). */
+  useEffect(() => {
+    if (!scroller) return;
+    const lists = listsIn.get(scroller) ?? new Set<WindowedList>();
+    listsIn.set(scroller, lists);
+    lists.add(virtualizer);
+    return () => { lists.delete(virtualizer); };
+  }, [scroller, virtualizer]);
 
   /* Keyboard selection: bring the row holding the selected item into view. */
   useEffect(() => {

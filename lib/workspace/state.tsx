@@ -81,6 +81,8 @@ type Workspace = {
   /** Hovering or focusing an actionable toast holds it on screen; leaving lets it go. */
   holdToast: (hold: boolean) => void;
   plans: PlanSource;
+  /** The state as of the last transition — ahead of the rendered `state` inside a commit's effects (a child's effect runs before its parent's). */
+  latest: () => AppState;
 };
 
 export type ToastAction = {
@@ -175,6 +177,7 @@ export function WorkspaceProvider({
     if (action.type === "lists" || action.type === "libFilter") writeUrl(next, "replace", target);
   }, [target]);
 
+  const latest = useCallback(() => ref.current, []);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toastAction, setToastAction] = useState<{ text: string; action: ToastAction } | null>(null);
   const clearToast = useCallback(() => { dispatch({ type: "toast", text: "" }); setToastAction(null); }, [dispatch]);
@@ -236,7 +239,8 @@ export function WorkspaceProvider({
     toastAction,
     holdToast,
     plans,
-  }), [state, dispatch, commit, toast, toastAction, holdToast, plans, target]);
+    latest,
+  }), [state, dispatch, commit, toast, toastAction, holdToast, plans, target, latest]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

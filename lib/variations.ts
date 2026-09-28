@@ -40,6 +40,49 @@ export function groupSiblings<T>(takes: T[], batchOf: BatchOf<T> = fromParams): 
     : s.kind === "batch" ? { ...s, takes: s.takes.map((t, i) => ({ t, i })).sort((a, b) => order(a.t) - order(b.t) || a.i - b.i).map(({ t }) => t) } : s));
 }
 
+/**
+ * A Seedance 2.5 draft and the final(s) made from it (lib/draftFinal.ts), as one
+ * strip: the draft first, then its finals, newest first. A final whose draft is
+ * not in the list stays a single take.
+ */
+export type DraftPair<T> = { kind: "draft"; draftId: string; draft: T; finals: T[] };
+export type TakeCell<T> = Strip<T> | DraftPair<T>;
+/** What a take says about draft mode: its own id, whether it is a draft, and the draft it is the final of. */
+export type DraftOf<T> = (take: T) => { id: string; draft: boolean; finalOf: string | null } | null;
+
+/**
+ * groupSiblings, with every draft and its finals drawn together first. Each
+ * cell sits where its newest take sits in the list, so a final that just
+ * landed brings its draft up with it.
+ */
+export function groupTakes<T>(takes: readonly T[], batchOf: BatchOf<T>, draftOf: DraftOf<T>): TakeCell<T>[] {
+  const drafts = new Set(takes.map(draftOf).filter((d) => d?.draft).map((d) => d!.id));
+  const pairKey = (t: T): string | null => {
+    const d = draftOf(t);
+    if (!d) return null;
+    if (d.draft) return d.id;
+    return d.finalOf && drafts.has(d.finalOf) ? d.finalOf : null;
+  };
+  const placed: { at: number; cell: TakeCell<T> }[] = [];
+  const pairs = new Map<string, { at: number; draft: T | null; finals: T[] }>();
+  const rest: T[] = [];
+  const index = new Map<T, number>();
+  takes.forEach((t, i) => {
+    index.set(t, i);
+    const key = pairKey(t);
+    if (!key) { rest.push(t); return; }
+    const pair = pairs.get(key) ?? { at: i, draft: null, finals: [] };
+    pairs.set(key, pair);
+    if (draftOf(t)?.draft) pair.draft = t; else pair.finals.push(t);
+  });
+  for (const [draftId, pair] of pairs) if (pair.draft) placed.push({ at: pair.at, cell: { kind: "draft", draftId, draft: pair.draft, finals: pair.finals } });
+  for (const strip of groupSiblings(rest, batchOf)) {
+    const members = strip.kind === "one" ? [strip.take] : strip.takes;
+    placed.push({ at: Math.min(...members.map((t) => index.get(t) ?? Number.MAX_SAFE_INTEGER)), cell: strip });
+  }
+  return placed.sort((a, b) => a.at - b.at).map((p) => p.cell);
+}
+
 /** "take 2": a take's label inside its strip. */
 export const takeLabel = (variation: number): string => `take ${variation}`;
 /** "take 1–4": what a strip holds, by the numbers of the takes in it. */

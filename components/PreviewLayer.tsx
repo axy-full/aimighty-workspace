@@ -1,17 +1,27 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { downloadUrl, galleryOf, originalUrl, type PreviewItem } from "@/lib/preview";
+import { assetIdFromUrl, downloadUrl, galleryOf, originalUrl, readPreview, validAssetId, type PreviewItem } from "@/lib/preview";
+import { bindPreview, onBindingsEnded, type ActResult, type BoundAction, type Binding } from "@/lib/shell/preview-bridge";
 
 const SELECTOR = "[data-preview-url]";
 const LONG_PRESS_MS = 550;
 const isField = (el: Element | null) => !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || (el as HTMLElement).isContentEditable);
 const inLayer = (el: Element | null) => !!el?.closest("[data-preview-layer]");
 
-/** Open the viewer from code (an inspector's "Preview" button, a menu item). */
-export function openPreview(items: PreviewItem[], index = 0) {
+/** Where a preview may bind to the shell's list (lib/shell/preview-bridge): the surface and the take it opens on. */
+export type PreviewBind = { surface: string; asset: string };
+
+/** Open the viewer from code (an inspector's "Preview" button, a menu item); `bind` walks the shell's list when it has one, else `items`. */
+export function openPreview(items: PreviewItem[], index = 0, bind?: PreviewBind) {
   if (typeof window === "undefined" || !items.length) return;
-  window.dispatchEvent(new CustomEvent("particl:preview", { detail: { items, index } }));
+  window.dispatchEvent(new CustomEvent("particl:preview", { detail: { items, index, bind } }));
+}
+
+/** One open viewer. `session` is new for every open, so a second open while one is up starts at its own item. */
+type Open = { items: PreviewItem[]; index: number; session: number; binding: Binding | null };
+function bound(binding: Binding | null, session: number): Open | null {
+  return binding && binding.items.length ? { items: binding.items.map((b) => b.item), index: binding.index, session, binding } : null;
 }
 
 /**
@@ -26,16 +36,27 @@ export function openPreview(items: PreviewItem[], index = 0) {
  * "Download original", Esc to close.
  */
 export default function PreviewLayer() {
-  const [open, setOpen] = useState<{ items: PreviewItem[]; index: number } | null>(null);
+  const [open, setOpen] = useState<Open | null>(null);
   const [hot, setHot] = useState<{ el: HTMLElement; top: number; left: number } | null>(null);
   const hotRef = useRef<HTMLElement | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const sessions = useRef(0);
 
+  /* A tile in a surface that publishes its list (the Library, the Takes desk, the Inspector) walks that whole list; anything else, its page's tiles. */
   const show = useCallback((el: Element) => {
     returnFocus.current = document.activeElement as HTMLElement | null;
     setHot(null);
-    setOpen(galleryOf(el));
+    const session = ++sessions.current;
+    const surface = el.closest("[data-preview-gallery]")?.getAttribute("data-preview-gallery") ?? null;
+    /* The take: the element's own, its tile's (a picture inside a tile carries only its URL), or the one its URL names. */
+    const own = readPreview(el);
+    const asset = own?.asset ?? validAssetId(el.closest("[data-preview-asset]")?.getAttribute("data-preview-asset")) ?? assetIdFromUrl(own?.url);
+    const shell = surface ? bound(bindPreview(surface, asset), session) : null;
+    setOpen(shell ?? { ...galleryOf(el), session, binding: null });
   }, []);
+
+  /* The shell left the scope or project a bound viewer was opened in: it closes, and its buttons with it. */
+  useEffect(() => onBindingsEnded(() => setOpen((o) => (o?.binding ? null : o))), []);
 
   /* The hover button: one floating ⤢ over whichever asset the mouse is on. */
   const place = useCallback((el: HTMLElement | null) => {
@@ -88,8 +109,12 @@ export default function PreviewLayer() {
     const up = () => { if (press && !press.fired) { clearTimeout(press.timer); press = null; } };
     const swallow = (e: Event) => { if (press?.fired) { e.preventDefault(); e.stopPropagation(); if (e.type === "click") press = null; } };
     const external = (e: Event) => {
-      const d = (e as CustomEvent<{ items: PreviewItem[]; index: number }>).detail;
-      if (d?.items?.length) { returnFocus.current = document.activeElement as HTMLElement | null; setOpen({ items: d.items, index: Math.max(0, Math.min(d.index, d.items.length - 1)) }); }
+      const d = (e as CustomEvent<{ items: PreviewItem[]; index: number; bind?: PreviewBind }>).detail;
+      if (!d?.items?.length) return;
+      returnFocus.current = document.activeElement as HTMLElement | null;
+      const session = ++sessions.current;
+      const shell = d.bind ? bound(bindPreview(d.bind.surface, d.bind.asset), session) : null;
+      setOpen(shell ?? { items: d.items, index: Math.max(0, Math.min(d.index, d.items.length - 1)), session, binding: null });
     };
     document.addEventListener("pointerover", over);
     window.addEventListener("scroll", reflow, true);
@@ -150,16 +175,44 @@ export default function PreviewLayer() {
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 1.5h4v4M12.5 1.5L8 6M5.5 12.5h-4v-4M1.5 12.5L6 8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
       ) : null}
-      {open ? <Viewer items={open.items} start={open.index} onClose={close} /> : null}
+      {open ? <Viewer key={open.session} items={open.items} start={open.index} binding={open.binding} onClose={close} /> : null}
     </>
   );
 }
 
-function Viewer({ items, start, onClose }: { items: PreviewItem[]; start: number; onClose: () => void }) {
+const ACTIONS: { id: BoundAction; label: string }[] = [
+  { id: "recreate", label: "Recreate" },
+  { id: "reference", label: "Use as reference" },
+  { id: "link", label: "Copy link" },
+];
+
+function Viewer({ items, start, binding, onClose }: { items: PreviewItem[]; start: number; binding: Binding | null; onClose: () => void }) {
   const [index, setIndex] = useState(start);
   const item = items[index];
   const closeBtn = useRef<HTMLButtonElement>(null);
-  const step = useCallback((d: number) => setIndex((i) => (i + d + items.length) % items.length), [items.length]);
+  /* The arrows move the shell's selection too when the viewer is bound to it (the Inspector and the desk follow). */
+  const at = useRef(start);
+  const step = useCallback((d: number) => {
+    const next = (at.current + d + items.length) % items.length;
+    at.current = next;
+    setIndex(next);
+    const id = binding?.items[next]?.id;
+    if (id) binding!.step(id);
+  }, [items.length, binding]);
+  const [said, setSaid] = useState<{ index: number; text: string } | null>(null);
+  const [acting, setActing] = useState(false);
+  const id = binding?.items[index]?.id ?? null;
+  const actions = id ? binding!.actions(id) : null;
+  const offered = actions ? ACTIONS.filter((a) => actions[a.id]) : [];
+  const act = async (action: BoundAction) => {
+    if (!id || !binding || acting) return;
+    setActing(true);
+    let result: ActResult = {};
+    try { result = await binding.act(action, id); } catch { result = { said: "That could not be done. Try again." }; }
+    setActing(false);
+    if (result.close) { onClose(); return; }
+    if (result.said) setSaid({ index: at.current, text: result.said });
+  };
   useLayoutEffect(() => { closeBtn.current?.focus(); }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -175,7 +228,7 @@ function Viewer({ items, start, onClose }: { items: PreviewItem[]; start: number
   const name = item.name || "Preview";
   return createPortal(
     <div className="pv-veil" data-preview-layer="" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="pv-frame" role="dialog" aria-modal="true" aria-label={`Preview: ${name}`} data-testid="preview-dialog" data-kind={item.kind}>
+      <div className="pv-frame" role="dialog" aria-modal="true" aria-label={`Preview: ${name}`} data-testid="preview-dialog" data-kind={item.kind} data-bound={binding ? "" : undefined} data-asset={id ?? undefined}>
         <header className="pv-head">
           <span className="pv-name" data-testid="preview-name" title={name}>{name}</span>
           {items.length > 1 ? <span className="pv-count" data-testid="preview-count">{index + 1} / {items.length}</span> : null}
@@ -192,6 +245,16 @@ function Viewer({ items, start, onClose }: { items: PreviewItem[]; start: number
             </>
           ) : null}
         </div>
+        {actions && offered.length ? (
+          /* The shell's own commands for this take: Recreate hands its recipe to Gen, Use as reference sends it there — neither sends anything paid; Gen prices on its button. */
+          <div className="pv-bar" role="group" aria-label={`Actions for ${name}`} data-testid="preview-actions">
+            {offered.map((a) => (
+              <button key={a.id} type="button" className="pv-btn" disabled={acting || !actions[a.id]!.enabled} title={actions[a.id]!.why} onClick={() => void act(a.id)} data-testid={`preview-${a.id}`}>{a.label}</button>
+            ))}
+            {said && said.index === index ? <span className="pv-said" role="status" data-testid="preview-said">{said.text}</span> : null}
+            {!said || said.index !== index ? offered.filter((a) => !actions[a.id]!.enabled && actions[a.id]!.why).slice(0, 1).map((a) => <span key={a.id} className="pv-said" data-testid="preview-why">{actions[a.id]!.why}</span>) : null}
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,

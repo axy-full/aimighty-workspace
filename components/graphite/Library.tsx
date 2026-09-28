@@ -1,9 +1,9 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import { entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
+import { entryKind, libraryView, pairOrder, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
@@ -11,6 +11,7 @@ import { usePublishedProject } from "@/lib/workspace/spec-store";
 import { useShell } from "@/lib/shell/state";
 import { DEPT_COLORS, Glyph, KIND_DOT } from "./icons";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { publishGallery } from "@/lib/shell/preview-bridge";
 
 export type AssetFilter = "All" | "Images" | "Video" | "Audio" | "Uploads" | "Cast" | "Elements";
 const FILTERS: AssetFilter[] = ["All", "Images", "Video", "Audio", "Uploads", "Cast", "Elements"];
@@ -70,7 +71,8 @@ export function Library({ project = null, items, library, projects = "ready", ov
   const live = usePublishedProject();
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
-  const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  /* A draft sits beside the 1080p final made from it (lib/draftFinal.ts): a linked pair in the flat grid. */
+  const shown = useMemo(() => pairOrder(filterAssets(items, filter, query, filed)), [items, filter, query, filed]);
   const view = libraryView(project ? library.state : null, items.length, projects);
   /* A count only once the read has answered: never "0 assets" while reading or after a failed read. */
   const counted = project ? !view.skeletons && view.banner?.tone !== "error" : projects === "ready";
@@ -81,8 +83,14 @@ export function Library({ project = null, items, library, projects = "ready", ov
      three rows of filters, it sat under the tab bar. With nothing read, there is nothing to search or filter either, so the
      Assets tab is the banner alone. A later read that failed is said at the list's end, beside Load more. */
   const failed = view.banner?.tone === "error" ? view.banner : null;
+  /* The viewer walks the assets as this list shows them — every one the filter and search keep, in order, not the tiles a
+     long list has on screen (lib/shell/preview-bridge). Only while the list is the tab on show. */
+  const projectId = project?.id ?? null;
+  const listed = shell.libTab === "assets" && !failed;
+  useEffect(() => (projectId && listed ? publishGallery("library", { projectId, entries: shown }) : undefined), [projectId, listed, shown]);
+  /* A tile selects its take through the shell (the URL carries it) and shows it in the Inspector. */
   const open = (entry: LibraryEntry) => {
-    dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } });
+    shell.selectAsset(entry.take.id, { reason: "pick" });
     shell.openInspector();
   };
   return (
@@ -133,7 +141,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
             {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" data-kind={f} style={{ "--kind": KIND_DOT[f] } as React.CSSProperties} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
           </div>
           <VirtualItems
-            className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets" }}
+            className="gx-assets gx-scroll" attrs={{ "data-testid": "library-assets", "data-preview-gallery": "library" }}
             items={shown} getKey={(entry) => entry.take.id} layout={{ columns: 2 }} gap={10} estimateRowHeight={130} scroll="self"
             before={view.skeletons ? <TakeSkeletons count={4} variant="library" /> : null}
             after={<>
