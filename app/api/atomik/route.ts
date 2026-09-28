@@ -9,6 +9,7 @@ import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } fro
 import { menuFor, type CatalogModel } from "@/lib/catalog";
 import { connectedEngineModels, connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
 import { RecipeError, recipeForMessage } from "@/lib/higgsfield-consumer/recipes-service";
+import { plannerMemoryText } from "@/lib/atomikMemory";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, connected, recipe,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
+      /* The team's memory, read as the turn will read it: the quote prices the same message. */
+      memory: await plannerMemoryText({ projectId, query: text }).catch(() => ""),
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }
   const id = await createChat({

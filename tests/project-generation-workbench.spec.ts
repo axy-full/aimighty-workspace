@@ -135,3 +135,22 @@ test('project Gen recovers older unfiled audio requests by their key first, keep
  expect(f.submissions[0].key).not.toBe(saved.key);
  expect(checks).toEqual([saved.key,f.submissions[0].key]);
 });
+
+test('an engine priced from its published rates says "about" on Generate, and that figure is the ceiling sent',async({page},info)=>{
+ test.skip(!['workbench-390x844','workbench-1440x900'].includes(info.project.name),'one phone, one desktop');
+ const f=await fixture(page);
+ const cinema={id:'higgsfield-cinema-studio-4.0',label:'Cinema Studio 4.0',kind:'video',family:'cinema-studio',resolutions:['720p','480p'],ratios:['16:9'],durations:[5],maxReferenceImages:30,maxReferenceVideos:10};
+ /* Registered after the fixture, so it answers first: Cinema Studio's quote is approximate. */
+ await page.route('**/api/workbench/engines**',route=>route.fulfill({json:new URL(route.request().url()).searchParams.has('model')?{credits:35,approximate:true}:{models:[cinema]}}));
+ await page.goto(await legacyShell(page,'/workbench?project=generation-fixture&stage=canvas'));
+ const dialog=await openNode(page);
+ await dialog.getByRole('combobox',{name:'Generation type'}).selectOption('video');
+ await expect(dialog.getByRole('combobox',{name:'Generation engine'})).toHaveValue(cinema.id);
+ const generate=dialog.getByRole('button',{name:'Generate · about 35 cr',exact:true});
+ await expect(generate).toBeEnabled();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ await generate.click();
+ await expect.poll(()=>f.submissions.length).toBe(1);
+ expect(JSON.parse(f.submissions[0].body)).toMatchObject({model:cinema.id,projectId:'production-fixture',maxCredits:35});
+ await page.screenshot({path:info.outputPath('node-approximate-price.png')});
+});

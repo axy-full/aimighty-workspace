@@ -259,7 +259,8 @@ test("a member's words: who runs the provider-account tools by name, what runs t
   expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "dtc", "setup"] });
   for (const page of ["ads", "dtc", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
   for (const page of OWN_PAGES) expect(isOwnerRunPage("business", page), page).toBe(false);
-  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunPage("viral", page), page).toBe(true);
+  /* A whole owner-run suite is its own rule: the page map names only the pages of a suite others use too. */
+  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunSuite("viral") && !isOwnerRunPage("viral", page), page).toBe(true);
   expect(isOwnerRunPage("studio", "cast") || isOwnerRunPage("business", null) || isOwnerRunPage(null, "ads")).toBe(false);
   /* Every owner-run page names a page the suite really has. */
   for (const [suite, pages] of Object.entries(OWNER_RUN_PAGES)) for (const page of pages) expect(SHELL_SUITES.find((s) => s.id === suite)?.pages.some((p) => p.id === page), `${suite}/${page}`).toBe(true);
