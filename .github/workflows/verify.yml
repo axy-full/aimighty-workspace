@@ -86,7 +86,11 @@ jobs:
     # 30-minute job was cancelled mid-run, hence 45. On 27 Sep, with the
     # warm-up in, workbench job 9 ran past 45 minutes on a PR that added
     # specs (#388), cancelled in its third sub-shard at 2.8 GB: hence 60.
-    timeout-minutes: 60
+    # On 28 Sep workbench job 9 was cancelled at 60 minutes on #442 with every
+    # spec still passing: its first warm-up took 6 minutes instead of 1, and
+    # the job was at test 154 of 166 in its second sub-shard, with the third
+    # not yet started. Hence 75.
+    timeout-minutes: 75
     env:
       ENGINE_MOCK: '1'
       APP_ORIGIN: http://localhost:4551
