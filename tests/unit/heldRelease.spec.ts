@@ -38,7 +38,7 @@ async function setup(name: string, concurrency = 1, credits = 1000) {
   });
   return ws;
 }
-async function held(id: string, options: { why?: "credits" | "slots"; kind?: "video" | "image"; token?: string; at?: number; estUsd?: number; shot?: string; by?: string } = {}) {
+async function held(id: string, options: { why?: "credits" | "slots"; kind?: "video" | "image"; token?: string; at?: number; estUsd?: number; needs?: number; shot?: string; by?: string } = {}) {
   const { db, ready } = await import("../../lib/db");
   await ready();
   const kind = options.kind ?? "video";
@@ -46,7 +46,7 @@ async function held(id: string, options: { why?: "credits" | "slots"; kind?: "vi
     sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,token_id,billed_to,task,shot_id)
           VALUES(?,?,?,?,'test',?,'held',?,?,?,?,?,'generate',?)`,
     args: [id, kind, kind === "video" ? "byteplus" : "google", kind === "video" ? "dreamina-seedance-2-0-260128" : "gemini-3-pro-image",
-      JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: options.estUsd ?? 1, needs: 15, at: 1, why: options.why ?? "slots" } }),
+      JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: options.estUsd ?? 1, needs: options.needs ?? 15, at: 1, why: options.why ?? "slots" } }),
       options.by ?? "u_test", options.at ?? Date.now(), options.at ?? Date.now(), options.token ?? null, kind === "video" ? "byteplus" : "google", options.shot ?? null],
   });
 }
@@ -176,7 +176,8 @@ test("the balance still stops the credits line in order, even for a smaller take
     // The slot-held take spends 15 of the 20 first; the credits line's first take then does not fit.
     await held("gen_order_slot", { why: "slots", at: t });
     await held("gen_order_first", { why: "credits", at: t + 1 });
-    await held("gen_order_small", { why: "credits", at: t + 2, estUsd: 0.1 });
+    /* Held at the price it was quoted (a moved price is a person's to approve, so it would wait anyway). */
+    await held("gen_order_small", { why: "credits", at: t + 2, estUsd: 0.1, needs: 2 });
     const out = await releaseHeldJobs({ defer: async () => {} });
     expect(out.released).toEqual(["gen_order_slot"]);
     expect(await status("gen_order_first")).toMatchObject({ status: "held", error: expect.any(String) });
