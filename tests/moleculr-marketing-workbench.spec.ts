@@ -191,6 +191,8 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   await expect(panel.getByLabel("Image quality")).toBeEnabled();
   await panel.getByLabel("Image quality").selectOption("max");
   await expect.poll(() => project.moleculr?.marketing).toMatchObject({ variant: "flare", quality: "max", enhancePrompt: true, presetId });
+  await panel.getByLabel("Marketing Studio build").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("moleculr-image-presets-25.png") });
   await panel.getByLabel("Product image").selectOption("product-b");
   await panel.getByRole("button", { name: "Review campaign image" }).click();
   const review = page.getByRole("dialog");
